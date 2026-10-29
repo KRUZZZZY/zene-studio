@@ -1,0 +1,67 @@
+FIXED
+
+new-p21-14: FIXED
+
+Decision: REAL. `clip.process` previously accepted a non-empty SampleClip with `sampleRate() == 0`, then passed that rate into both `prepared()`'s resampling divisor and the later window scale (`src/core/ControlCommandsClipProcess.cpp:64, 120-139`). The handler now refuses a nonpositive source rate before chain resolution or allocation. `tests/src/core/DeviceToolsChainTest.cpp:275` installs a non-empty zero-rate source, invokes the command with an empty chain, and asserts `InvalidArgs` plus unchanged source data and rate. The valid print/undo path remains in `aClipIsPrintedThroughAChain`.
+
+Test matrix: normal valid print/undo; invalid zero-rate non-empty source with source preservation; differing source/engine rates exercised by the tail test added with cluster 5602; all work stays in the offline control command; existing C++20/Qt6 test target, no platform-specific API.
+
+| Evidence | Command / result |
+| --- | --- |
+| Test dependency | `cmake --build build --target amplifier` → EXIT=0, because the original targeted test build did not yet build this plugin module. The DeviceToolsChainTest CMake target now depends on `amplifier` when available. |
+| Initial RED | `ctest -R '^DeviceToolsChainTest$' --output-on-failure` from `build/tests` → EXIT=8; with the amplifier target built, 8 Qt cases passed and `aClipWithNoSampleRateIsRefusedBeforeProcessing` failed (`actual Refused`, expected `InvalidArgs`). |
+| GREEN | `cmake --build build --target zene DeviceToolsChainTest` → EXIT=0; same ctest command from `build/tests` → EXIT=0 (1/1 CTest target). |
+| RED with fix removed (4b) | `git diff -- src/core/ControlCommandsClipProcess.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-14.r1/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-14.r1/logs/fix.patch` → EXIT=0; `cmake --build build --target zene DeviceToolsChainTest` → EXIT=0; same ctest command from `build/tests` → EXIT=8 with the same assertion. |
+| GREEN after restoring patch | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-14.r1/logs/fix.patch` → EXIT=0; `cmake --build build --target zene DeviceToolsChainTest` → EXIT=0; same ctest command from `build/tests` → EXIT=0 (1/1). |
+| Feature gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p21-14` → EXIT=0, all gates PASS. |
+| Completion gate | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p21-14 new-p21-14` → EXIT=0; final clean-tree submit check PASS. |
+| Commit files | `src/core/ControlCommandsClipProcess.cpp`, `tests/src/core/DeviceToolsChainTest.cpp`, `docs/qwen-fixes-2026-10/cluster-new-p21-14.md`. |
+
+5602: FIXED
+
+Decision: REAL. `prepared()` appended `tailFrames` to the processed source, but `clip.process` kept `sourceOut` at the old window's scaled end, so the rendered tail could not be played. In addition, `replaceSample()` only updates length when auto-resize is enabled, which is false for manually trimmed windows. For a positive tail, the handler now renders through the authored window's exclusive `sourceOut`, appends the tail there, and extends the kept window through the rendered buffer; this does not expose audio past a manual end trim. It also extends clip length to cover that window when necessary (`src/core/ControlCommandsClipProcess.cpp:135-153`) without shortening a clip whose authored length is already longer. The regression at `tests/src/core/DeviceToolsChainTest.cpp:307` uses a 2,000-frame source trimmed to `[200, 1000)`, resamples from half the engine rate, requests 0.25 seconds, checks that only the trimmed prefix plus tail is playable and that the timeline covers it, then verifies one undo restores the original source, window and length.
+
+Test matrix: normal zero-tail print remains covered by the existing command test; positive tail coverage uses an amplifier and a 0.25-second deterministic render; a manually trimmed source with auto-resize disabled and a half-rate source validate resampling, tail placement, preservation of the end trim and timeline extension; undo is checked in the same command test; all allocations and length edits remain in the offline control command; existing C++20/Qt6 test target, no platform-specific API.
+
+| Evidence | Command / result |
+| --- | --- |
+| Initial RED | `cmake --build build --target zene DeviceToolsChainTest` → EXIT=0; `ctest -R '^DeviceToolsChainTest$' --output-on-failure` from `build/tests` → EXIT=8; 9 Qt cases passed and `aRenderedTailExtendsThePlayableWindowAndClipLength` failed (`sourceOut` 4,000, expected 15,025). |
+| GREEN | `cmake --build build --target zene DeviceToolsChainTest` → EXIT=0; same ctest command from `build/tests` → EXIT=0 (1/1 CTest target; all Qt cases passed). |
+| Initial RED without the branch change (4b, before the end-trim follow-up) | `git diff -- src/core/ControlCommandsClipProcess.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-14.r1/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-14.r1/logs/fix.patch` → EXIT=0; `cmake --build build --target zene DeviceToolsChainTest` → EXIT=0; ctest from `build/tests` → EXIT=8 (`sourceOut` 4,000, expected 15,025; 9 passed, 1 failed). |
+| Initial GREEN after restoring branch change | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-14.r1/logs/fix.patch` → EXIT=0; `cmake --build build --target zene DeviceToolsChainTest` → EXIT=0; same ctest command → EXIT=0 (1/1). |
+| QA end-trim RED with only the QA correction reversed | `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-14.r1/negctl/qa-trim-fix-final.patch` → EXIT=0; `cmake --build build --target zene DeviceToolsChainTest` → EXIT=0; ctest from `build/tests` → EXIT=8; the tail case reported 15,025 frames instead of 13,025 (10 passed, 1 failed). |
+| QA end-trim GREEN after restoration | `git checkout -- src/core/ControlCommandsClipProcess.cpp` → EXIT=0; `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-14.r1/negctl/qa-trim-fix-final.patch` → EXIT=0; `cmake --build build --target zene DeviceToolsChainTest` → EXIT=0; same ctest command → EXIT=0 (1/1; all Qt cases passed). |
+| Revised full-batch RED without product change | `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-14.r1/negctl/qa-trim-fix-final.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-14.r1/negctl/full-product-final.patch` → EXIT=0; `cmake --build build --target zene DeviceToolsChainTest` → EXIT=0; ctest from `build/tests` → EXIT=8; zero-rate, error-message and tail cases all failed, with the tail case reporting 15,025 frames instead of 13,025 (8 passed, 3 failed). |
+| Revised full-batch GREEN after restoration | `git checkout -- src/core/ControlCommandsClipProcess.cpp` → EXIT=0; `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-14.r1/negctl/qa-trim-fix-final.patch` → EXIT=0; `cmake --build build --target zene DeviceToolsChainTest` → EXIT=0; same ctest command → EXIT=0 (1/1; all Qt cases passed). |
+| Targeted plugin build | `DeviceToolsChainTest` now adds a dependency on `amplifier` in `tests/CMakeLists.txt`, so a targeted build loads the real plugin instead of skipping the command cases. `cmake --build build --target zene DeviceToolsChainTest` → EXIT=0; ctest from `build/tests` → EXIT=0 (1/1). |
+| Feature gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p21-14` → EXIT=0, all gates PASS. |
+| Commit files | `src/core/ControlCommandsClipProcess.cpp`, `tests/src/core/DeviceToolsChainTest.cpp`, `tests/CMakeLists.txt`, `tests/upstream-modifications.txt`, `docs/qwen-fixes-2026-10/cluster-new-p21-14.md`. |
+
+new-p22-5: FIXED
+
+Decision: REAL. The invalid-clip branch fires when the clip is not a SampleClip, has no data, has no frames, or has a nonpositive rate, but its old error said `"'clip' is an audio clip with audio"` (`src/core/ControlCommandsClipProcess.cpp:125-127`). It now says the clip “must be an audio clip with audio.” `tests/src/core/DeviceToolsChainTest.cpp:292` passes an empty SampleClip and checks both `InvalidArgs` and that wording.
+
+Test matrix: existing valid print/undo exercises the normal path; an empty audio clip exercises the audio-less failure path; the zero-rate regression exercises invalid sample-rate refusal; the string-only change uses no audio-thread or platform-specific API.
+
+| Evidence | Command / result |
+| --- | --- |
+| RED | `cmake --build build --target zene DeviceToolsChainTest` → EXIT=0; `ctest -R '^DeviceToolsChainTest$' --output-on-failure` from `build/tests` → EXIT=8; 10 Qt cases passed and `anEmptyClipGetsAnActionableProcessError` failed because the message lacked “must be.” |
+| GREEN | `cmake --build build --target zene DeviceToolsChainTest` → EXIT=0; same ctest command from `build/tests` → EXIT=0 (1/1 CTest target). |
+| RED with fix removed (4b) | `git diff -- src/core/ControlCommandsClipProcess.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-14.r1/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-14.r1/logs/fix.patch` → EXIT=0; `cmake --build build --target zene DeviceToolsChainTest` → EXIT=0; `ctest -R '^DeviceToolsChainTest$' --output-on-failure` from `build/tests` → EXIT=8 with the same message assertion (10 passed, 1 failed). |
+| GREEN after restoring patch | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p21-14.r1/logs/fix.patch` → EXIT=0; `cmake --build build --target zene DeviceToolsChainTest` → EXIT=0; same ctest command from `build/tests` → EXIT=0 (1/1). |
+| Feature gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p21-14` → EXIT=0, all gates PASS. |
+| Completion gate | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p21-14 new-p21-14` → EXIT=0; final clean-tree submit check PASS. |
+| Commit files | `src/core/ControlCommandsClipProcess.cpp`, `tests/src/core/DeviceToolsChainTest.cpp`, `docs/qwen-fixes-2026-10/cluster-new-p21-14.md`. |
+
+## Self-check
+
+- Decisions: all three findings are REAL; their former failure conditions and the corrected paths are documented above.
+- RED/GREEN proof for each bug: new-p21-14's test fails with its source guard removed (log 010, ctest EXIT=8) and passes restored (log 013, EXIT=0); 5602's test fails with its tail window/length fix removed (log 045, EXIT=8) and passes restored (log 048, EXIT=0); new-p22-5's test fails with its message fix removed (log 055, EXIT=8) and passes restored (log 058, EXIT=0). Each test was rebuilt before each ctest run (build EXIT=0); every ctest run executed 1/1 `DeviceToolsChainTest` target.
+- Determinism: the zero-rate case injects rate 0 and four frames; the tail case injects a 2,000-frame source at half the engine rate, a [200, 1000) window and 0.25 seconds; the message case injects an empty SampleClip. They use no sleeps, wall-clock timing or races.
+- Completeness: `rg -n "prepared\\(" src/core/ControlCommandsClipProcess.cpp` found one definition and one caller, both in the `clip.process` implementation; the rate guard is before that caller. The tail duration helper is called from the same handler. No sibling command calls `prepared()`.
+- Collateral and saved data: the source-rate check is scoped to this command; zero-frame tails retain the old window; a positive tail extends its window and timeline, without shortening a longer authored duration. The edit adds no serialized fields, so old project data and save/load formats are unchanged. Valid print and one-step undo remain covered by the same CTest family.
+- Realtime and undo: `clip.process` remains on the offline control path; no audio-thread code was changed. The tail regression checks one undo restores the source contents, rate, window and length.
+- Verdicts: all three reports are REAL and FIXED, so the ALREADY-FIXED/FALSE-POSITIVE evidence question does not apply.
+- Feature gate: final `feature_check.py` command above → EXIT=0; all gates PASS.
+- Completion gate: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p21-14 new-p21-14` → EXIT=0; it reports PASS for commits, clean status, report, test registration and gates. Its five ASK items are answered by the evidence in this section.
+- Bug commits: `646017c98` (new-p21-14), `43c3815ce` (5602), and `b17bd11f8` (new-p22-5). Their changed files are listed under each bug's evidence above; report updates are in this file.

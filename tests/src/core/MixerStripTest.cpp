@@ -46,6 +46,7 @@
 #include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "AutomationClip.h"
+#include "EffectChain.h"
 #include "Engine.h"
 #include "Mixer.h"
 #include "MixerPostInserts.h"
@@ -563,6 +564,36 @@ private slots:
 		QVERIFY2(unmuted.ok, qPrintable(unmuted.errorMessage));
 		QCOMPARE(unmuted.result.value(QStringLiteral("count")).toInt(), 0);
 		QCOMPARE(run(QStringLiteral("control.undo_depth")).result.value(QStringLiteral("depth")).toInt(), depthBefore);
+	}
+
+	//! cluster new-p21-143: removing an effect takes it off its chain (effectChain() is nullptr and the chain no
+	//! longer lists it); appending it to another chain then attaches it to that chain only.
+	void removedEffectIsDetachedFromItsChain()
+	{
+		EffectChain chain{nullptr};
+		EffectChain next{nullptr};
+		auto* effect = new partd::FixedGainEffect(&chain, 1.f, 1.f);
+		chain.appendEffect(effect);
+		chain.removeEffect(effect);
+		QVERIFY2(effect->effectChain() == nullptr, "a removed effect still names the chain it was taken off");
+		QVERIFY(chain.effects().empty());
+		next.appendEffect(effect);
+		QCOMPARE(effect->effectChain(), &next);
+		next.removeEffect(effect);
+		delete effect;
+	}
+
+	//! cluster new-p21-143: removing an effect from a chain that does not hold it changes nothing; the owner keeps it.
+	void removeFromWrongChainLeavesOwnerIntact()
+	{
+		EffectChain owner{nullptr};
+		EffectChain other{nullptr};
+		auto* effect = new partd::FixedGainEffect(&owner, 1.f, 1.f);
+		owner.appendEffect(effect);
+		other.removeEffect(effect);
+		QCOMPARE(effect->effectChain(), &owner);
+		owner.removeEffect(effect);
+		delete effect;
 	}
 };
 

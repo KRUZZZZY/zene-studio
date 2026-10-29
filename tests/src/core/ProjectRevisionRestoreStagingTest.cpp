@@ -65,6 +65,20 @@ QByteArray documentWith(const int notes)
 	return xml;
 }
 
+//! A file of exactly \a size bytes, for a revision at or over the policy's per-revision cap.
+QByteArray bytesOfSize(const qint64 size)
+{
+	return QByteArray(static_cast<int>(size), 'x');
+}
+
+//! True when a restore left a staging file behind in \a dir for the project file named \a fileName.
+bool anyRestoreStageIn(const QString& dir, const QString& fileName)
+{
+	const QStringList stages = QDir(dir).entryList(
+		QStringList{fileName + QStringLiteral(".rev*.restore*")}, QDir::Files | QDir::Hidden);
+	return !stages.isEmpty();
+}
+
 bool writeBytes(const QString& path, const QByteArray& bytes)
 {
 	QFile file(path);
@@ -167,6 +181,66 @@ private slots:
 		QVERIFY2(restoreProjectRevision(project, 0, &error), qPrintable(error));
 		QCOMPARE(readBytes(project), requested);
 		QVERIFY(!QFileInfo::exists(pending));
+	}
+
+	//! A restore installs the whole revision, so the policy's per-revision cap binds it as it binds a
+	//! rotation. A revision over MaxRevisionBytes is refused BEFORE anything is staged, rotated or replaced:
+	//! the live file and the retained set keep their bytes, and no stage is left behind.
+	void anOversizedRevisionIsRefusedBeforeTheRetainedSetMoves()
+	{
+		const QString project = path(QStringLiteral("oversize-revision.mmp"));
+		const QByteArray oversized = bytesOfSize(ProjectRevisionPolicy::MaxRevisionBytes + 1);
+		const QByteArray live = documentWith(3);
+		QVERIFY(writeBytes(project, live));
+		QVERIFY(writeBytes(projectRevisionPath(project, 0), documentWith(2)));
+		QVERIFY(writeBytes(projectRevisionPath(project, 1), documentWith(4)));
+		// Revision 2 is the oversized one: the rotation only reads the slots below it, so restoring it
+		// reaches the install with nothing else refusing it.
+		QVERIFY(writeBytes(projectRevisionPath(project, 2), oversized));
+
+		QString error;
+		QVERIFY(!restoreProjectRevision(project, 2, &error));
+		QVERIFY(!error.isEmpty());
+		QCOMPARE(readBytes(project), live);
+		QCOMPARE(readBytes(projectRevisionPath(project, 0)), documentWith(2));
+		QCOMPARE(readBytes(projectRevisionPath(project, 1)), documentWith(4));
+		QCOMPARE(readBytes(projectRevisionPath(project, 2)), oversized);
+		QVERIFY(!anyRestoreStageIn(m_dir.path(), QStringLiteral("oversize-revision.mmp")));
+	}
+
+	//! A retry consumes a pending stage an earlier attempt left. A stage over the cap is refused the same
+	//! way: the bytes the restore would install are the stage, so the live file must not be replaced with
+	//! them, and the stage itself is kept for the user.
+	void anOversizedPendingStageIsNotInstalled()
+	{
+		const QString project = path(QStringLiteral("oversize-stage.mmp"));
+		const QByteArray live = documentWith(3);
+		const QString pending = projectRevisionPath(project, 0)
+			+ QStringLiteral(".restore.4c0c55e0-809d-4923-a9d0-c708fd0adf7c");
+		QVERIFY(writeBytes(project, live));
+		QVERIFY(writeBytes(projectRevisionPath(project, 0), live));
+		QVERIFY(writeBytes(projectRevisionPath(project, 1), documentWith(2)));
+		QVERIFY(writeBytes(pending, bytesOfSize(ProjectRevisionPolicy::MaxRevisionBytes + 1)));
+
+		QString error;
+		QVERIFY(!restoreProjectRevision(project, 0, &error));
+		QVERIFY(!error.isEmpty());
+		QCOMPARE(readBytes(project), live);
+		QVERIFY(QFileInfo::exists(pending));
+	}
+
+	//! The cap is a bound, not a ban: a revision of exactly MaxRevisionBytes is a legitimate revision and
+	//! must still restore over the live file.
+	void aRevisionExactlyAtTheCapStillRestores()
+	{
+		const QString project = path(QStringLiteral("at-cap-revision.mmp"));
+		const QByteArray atCap = bytesOfSize(ProjectRevisionPolicy::MaxRevisionBytes);
+		QVERIFY(writeBytes(project, documentWith(3)));
+		QVERIFY(writeBytes(projectRevisionPath(project, 1), atCap));
+
+		QString error;
+		QVERIFY2(restoreProjectRevision(project, 1, &error), qPrintable(error));
+		QCOMPARE(readBytes(project), atCap);
 	}
 
 #ifdef Q_OS_WIN

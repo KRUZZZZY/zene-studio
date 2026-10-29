@@ -282,7 +282,7 @@ LMMS_EXPORT qint64 aafFramesFromEditUnits(qint64 units, int rateNum, int rateDen
 LMMS_EXPORT qint64 aafTicksFromFrames(qint64 frames, int sampleRate, double tempo);
 
 /*! Where an import extracts embedded essence when the caller does not say: beside the project in
- *  "<project>-aaf-media/<aaf name>", or, for a project never saved, beside the AAF in
+ *  "<project>-aaf-media/<aaf name>-<hash of the AAF's path>", or, for a project never saved, beside the AAF in
  *  "<aaf name>-aaf-media" (a temporary directory would lose the media the clips play). */
 LMMS_EXPORT QString aafDefaultMediaDir(const QString& aafPath, const QString& projectFile);
 

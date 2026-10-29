@@ -134,6 +134,28 @@ private:
 	QtMessageHandler m_previous{ nullptr };
 };
 
+//! Enters \a path as the working directory for one test and puts the previous
+//! one back when the test returns - including through a failed QVERIFY, which
+//! returns early and would otherwise leave the rest of the run in the temp dir.
+class WorkingDirectory
+{
+public:
+	explicit WorkingDirectory( const QString& path )
+		: m_previous( QDir::currentPath() ), m_moved( QDir::setCurrent( path ) )
+	{
+	}
+	~WorkingDirectory() { QDir::setCurrent( m_previous ); }
+
+	WorkingDirectory( const WorkingDirectory& ) = delete;
+	WorkingDirectory& operator=( const WorkingDirectory& ) = delete;
+
+	bool moved() const { return m_moved; }
+
+private:
+	QString m_previous;
+	bool m_moved;
+};
+
 } // namespace
 
 
@@ -675,6 +697,99 @@ private slots:
 			qPrintable( QStringLiteral( "the declared size was not checked; captured: [%1]" ).arg( report ) ) );
 		QCOMPARE( probe, QStringLiteral( "old" ) );  // the valid project stands
 		QCOMPARE( readText( target ), oldText );
+	}
+
+	//! A complete pending save whose read permission was removed - the directory
+	//! stays writable - is an I/O failure, not a truncated temp. The open was
+	//! refused, and the recovery used to read that refusal as an incomplete
+	//! document and delete the only staged copy. It must now be left in place,
+	//! reported, and adopted once it can be read again.
+	void unreadableNewFileIsPreservedNotDeleted()
+	{
+		qunsetenv( "ZENE_TEST_SAVE_FAULT" );
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+
+		const QString target = dir.filePath( QStringLiteral( "song.mmp" ) );
+		const QString temp = target + QStringLiteral( ".new" );
+
+		DataFile first( DataFile::Type::SongProject );
+		first.content().setAttribute( "s5probe", "old" );
+		QVERIFY( first.writeFile( target ) );
+		const QString oldText = readText( target );
+
+		// A complete, recognised document: the content the user asked to save.
+		QVERIFY( writeText( temp, QStringLiteral( "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+			"<zene-project version=\"40\" type=\"song\"><head/>"
+			"<song s5probe=\"pending\"><trackcontainer type=\"song\"/></song></zene-project>\n" ) ) );
+		QVERIFY( QFile::setPermissions( temp, QFileDevice::WriteOwner ) );
+
+		// Root reads a file with no read permission, so the refused open this test
+		// needs cannot happen there; say so instead of passing without a check.
+		QFile unlocked( temp );
+		if( unlocked.open( QIODevice::ReadOnly ) )
+		{
+			unlocked.close();
+			QVERIFY( QFile::setPermissions( temp, QFileDevice::ReadOwner | QFileDevice::WriteOwner ) );
+			QSKIP( "this process can read a file without read permission, so the open cannot be refused" );
+		}
+
+		QString report;
+		QString probe;
+		{
+			MessageRecorder recorder;
+			DataFile loaded( target );
+			report = recorder.messages();
+			probe = loaded.content().attribute( QStringLiteral( "s5probe" ) );
+		}
+
+		QVERIFY2( !report.contains( QStringLiteral( "Discarded incomplete" ) ),
+			qPrintable( QStringLiteral( "an unreadable .new was treated as incomplete; captured: [%1]" ).arg( report ) ) );
+		QVERIFY2( report.contains( QStringLiteral( "Could not read" ) ),
+			qPrintable( QStringLiteral( "no report line for the unreadable .new; captured: [%1]" ).arg( report ) ) );
+		QVERIFY2( QFile::exists( temp ), "the unreadable .new was deleted - the only staged save is gone" );
+		QCOMPARE( probe, QStringLiteral( "old" ) );  // not adopted while it cannot be checked
+		QCOMPARE( readText( target ), oldText );
+
+		// Readable again: the preserved save is still there and is adopted.
+		QVERIFY( QFile::setPermissions( temp, QFileDevice::ReadOwner | QFileDevice::WriteOwner ) );
+		DataFile later( target );
+		QCOMPARE( later.content().attribute( QStringLiteral( "s5probe" ) ), QStringLiteral( "pending" ) );
+		QVERIFY( !QFile::exists( temp ) );
+	}
+
+	//! Cluster new-p23-77 (BUG 2). A DataFile built from an EMPTY name has no file
+	//! to recover, but recoverPendingWrite("") derived "./.new" from it and
+	//! discarded whatever interrupted-save temp sat in the working directory - a
+	//! file that belongs to some other project. An unnamed load must leave that
+	//! temp exactly where it is and must not report a recovery it never made.
+	void unnamedDataFileLeavesTheWorkingDirectoryTempAlone()
+	{
+		qunsetenv( "ZENE_TEST_SAVE_FAULT" );
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+
+		// A truncated temp, the kind recovery discards: someone else's save.
+		const QString temp = dir.filePath( QStringLiteral( ".new" ) );
+		QVERIFY( writeText( temp, QStringLiteral(
+			"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+			"<zene-project version=\"40\" type=\"song\"><head><s5" ) ) );
+
+		WorkingDirectory cwd( dir.path() );
+		QVERIFY2( cwd.moved(), "could not enter the temporary working directory" );
+
+		QString report;
+		{
+			MessageRecorder recorder;
+			DataFile unnamed{ QString() };
+			report = recorder.messages();
+		}
+
+		QVERIFY2( QFile::exists( temp ),
+			"an unnamed DataFile discarded the working directory's .new temp" );
+		QVERIFY2( !report.contains( QStringLiteral( "Discarded incomplete" ) ),
+			qPrintable( QStringLiteral( "an unnamed DataFile reported a discard; captured: [%1]" )
+				.arg( report ) ) );
 	}
 };
 

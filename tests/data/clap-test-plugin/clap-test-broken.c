@@ -25,6 +25,11 @@
  *   CLAP_TEST_FAULT_NULL_CALLBACK a current `clap_entry` whose required
  *                                 callbacks are null (a malformed table the
  *                                 host must refuse instead of calling)
+ *   CLAP_TEST_FAULT_NULL_FACTORY_COUNT / _DESCRIPTOR / _CREATE
+ *                                 a current `clap_entry` whose factory is
+ *                                 present but has ONE of its three required
+ *                                 callbacks null (get_plugin_count,
+ *                                 get_plugin_descriptor, create_plugin)
  *
  * The faults are mutually exclusive by construction and nothing else about the
  * modules differs, so a test that sees the wrong code has found a real defect in
@@ -152,6 +157,90 @@ CLAP_EXPORT const clap_plugin_entry_t clap_entry = {
 	.init = NULL,
 	.deinit = NULL,
 	.get_factory = NULL,
+};
+
+#elif defined(CLAP_TEST_FAULT_NULL_FACTORY_COUNT) || defined(CLAP_TEST_FAULT_NULL_FACTORY_DESCRIPTOR) || \
+	defined(CLAP_TEST_FAULT_NULL_FACTORY_CREATE)
+
+/* -------------------------------------------------------------------------
+ * NULL_FACTORY_*: a current, well-formed entry point whose init() succeeds and
+ * whose plugin factory is present, but is missing exactly ONE of the three
+ * callbacks the host calls on it (get_plugin_count, get_plugin_descriptor,
+ * create_plugin). Each of the three modules is built with one of these defined,
+ * and the other two callbacks are real, so a host that checks only some of them
+ * is caught by the module that is missing the one it skipped.
+ * ------------------------------------------------------------------------- */
+#if !defined(CLAP_TEST_FAULT_NULL_FACTORY_COUNT)
+static uint32_t null_factory_plugin_count(const clap_plugin_factory_t* factory)
+{
+	(void)factory;
+	return 1;
+}
+#endif
+
+#if !defined(CLAP_TEST_FAULT_NULL_FACTORY_DESCRIPTOR)
+static const clap_plugin_descriptor_t null_factory_descriptor = {
+	.clap_version = CLAP_VERSION_INIT,
+	.id = "org.lmms.test.null-factory",
+	.name = "Null factory",
+};
+
+static const clap_plugin_descriptor_t* null_factory_plugin_descriptor(const clap_plugin_factory_t* factory,
+	uint32_t index)
+{
+	(void)factory;
+	(void)index;
+	return &null_factory_descriptor;
+}
+#endif
+
+#if !defined(CLAP_TEST_FAULT_NULL_FACTORY_CREATE)
+static const clap_plugin_t* null_factory_create_plugin(const clap_plugin_factory_t* factory,
+	const clap_host_t* host, const char* plugin_id)
+{
+	(void)factory;
+	(void)host;
+	(void)plugin_id;
+	return NULL;
+}
+#endif
+
+static const clap_plugin_factory_t null_factory = {
+#if defined(CLAP_TEST_FAULT_NULL_FACTORY_COUNT)
+	.get_plugin_count = NULL,
+#else
+	.get_plugin_count = null_factory_plugin_count,
+#endif
+#if defined(CLAP_TEST_FAULT_NULL_FACTORY_DESCRIPTOR)
+	.get_plugin_descriptor = NULL,
+#else
+	.get_plugin_descriptor = null_factory_plugin_descriptor,
+#endif
+#if defined(CLAP_TEST_FAULT_NULL_FACTORY_CREATE)
+	.create_plugin = NULL,
+#else
+	.create_plugin = null_factory_create_plugin,
+#endif
+};
+
+static bool null_factory_entry_init(const char* plugin_path)
+{
+	(void)plugin_path;
+	return true;
+}
+
+static void null_factory_entry_deinit(void) {}
+
+static const void* null_factory_entry_get_factory(const char* factory_id)
+{
+	return strcmp(factory_id, CLAP_PLUGIN_FACTORY_ID) == 0 ? &null_factory : NULL;
+}
+
+CLAP_EXPORT const clap_plugin_entry_t clap_entry = {
+	.clap_version = CLAP_VERSION_INIT,
+	.init = null_factory_entry_init,
+	.deinit = null_factory_entry_deinit,
+	.get_factory = null_factory_entry_get_factory,
 };
 
 #else

@@ -46,7 +46,9 @@
 #include "lmmsconfig.h"
 
 #if !(defined(LMMS_HAVE_SYS_IPC_H) && defined(LMMS_HAVE_SEMAPHORE_H))
+#ifndef SYNC_WITH_SHM_FIFO // a build may already select it (tests/CMakeLists.txt)
 #define SYNC_WITH_SHM_FIFO
+#endif // SYNC_WITH_SHM_FIFO
 
 #ifdef LMMS_HAVE_PROCESS_H
 #include <process.h>

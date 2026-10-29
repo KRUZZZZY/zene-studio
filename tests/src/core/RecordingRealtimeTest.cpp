@@ -297,6 +297,43 @@ private slots:
 		}
 	}
 
+	//! read() treats a null destination the way writeBlock() treats a null
+	//! source: nothing is written and nothing is consumed. Before the guard,
+	//! read(nullptr, n) dereferenced the null pointer whenever frames were
+	//! queued.
+	void ringBufferReadRejectsNullDestination()
+	{
+		constexpr std::size_t capacity = 64;
+		constexpr std::size_t queued = 8;
+		SampleFrameRingBuffer ring{capacity};
+
+		std::vector<SampleFrame> block;
+		for (std::size_t i = 0; i < queued; ++i) { block.push_back(frameAt(i)); }
+		QCOMPARE(asNumber(ring.writeBlock(block.data(), block.size())), asNumber(queued));
+
+		// Nothing requested, nothing copied: a no-op with or without data queued.
+		QCOMPARE(asNumber(ring.read(nullptr, 0)), asNumber(0));
+		QCOMPARE(asNumber(ring.available()), asNumber(queued));
+
+		// A read into no destination is refused, and the frames stay queued
+		// for a later read that has somewhere to put them.
+		QCOMPARE(asNumber(ring.read(nullptr, 1)), asNumber(0));
+		QCOMPARE(asNumber(ring.read(nullptr, queued)), asNumber(0));
+		QCOMPARE(asNumber(ring.available()), asNumber(queued));
+
+		std::vector<SampleFrame> out(queued);
+		QCOMPARE(asNumber(ring.read(out.data(), out.size())), asNumber(queued));
+		for (std::size_t i = 0; i < queued; ++i)
+		{
+			QCOMPARE(out[i].left(), block[i].left());
+			QCOMPARE(out[i].right(), block[i].right());
+		}
+		QCOMPARE(asNumber(ring.available()), asNumber(0));
+
+		// Empty ring, null destination: still zero, still no dereference.
+		QCOMPARE(asNumber(ring.read(nullptr, 1)), asNumber(0));
+	}
+
 	// -----------------------------------------------------------------------
 	// D9c: the audio-thread entry point of the clip record path allocates
 	//      nothing and never grows without bound.

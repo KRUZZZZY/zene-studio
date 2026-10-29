@@ -41,6 +41,7 @@
 #include <cstdlib>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <barrier>
 #include <cmath>
 #include <new>
@@ -72,6 +73,12 @@
 
 using namespace lmms;
 
+namespace lmms
+{
+LMMS_EXPORT void resetInternLyricLookupWorkForTest() noexcept;
+LMMS_EXPORT std::uint64_t internLyricLookupWorkForTest() noexcept;
+}
+
 namespace
 {
 
@@ -99,6 +106,33 @@ std::pair<InstrumentTrack*, Instrument*> createModulatedMonstroTrack()
 	instrument->restoreState(settings);
 	return {track, instrument};
 }
+
+//! Pins the dummy device's rate for one test. The original rate and the sampleRateChanged
+//! listeners are restored however the test leaves.
+class DeviceRatePin
+{
+public:
+	explicit DeviceRatePin(sample_rate_t rate) :
+		m_device(Engine::audioEngine()->audioDev()),
+		m_original(m_device->sampleRate())
+	{
+		m_device->setSampleRateForTesting(rate);
+		emit Engine::audioEngine()->sampleRateChanged();
+	}
+
+	~DeviceRatePin()
+	{
+		m_device->setSampleRateForTesting(m_original);
+		emit Engine::audioEngine()->sampleRateChanged();
+	}
+
+	DeviceRatePin(const DeviceRatePin&) = delete;
+	DeviceRatePin& operator=(const DeviceRatePin&) = delete;
+
+private:
+	AudioDevice* m_device;
+	sample_rate_t m_original;
+};
 
 bool sameSamples(const std::vector<SampleFrame>& lhs, const std::vector<SampleFrame>& rhs)
 {
@@ -398,6 +432,51 @@ private slots:
 		Engine::destroy();
 	}
 
+	void importingDistinctLyricsUsesIndexedLookup()
+	{
+		QDomDocument document;
+		QDomElement emptyLyric = document.createElement(QStringLiteral("note"));
+		NoteConditions emptyConditions;
+		emptyConditions.load(emptyLyric);
+		QCOMPARE(emptyConditions.lyric, 0);
+		QCOMPARE(lyricText(0), QString());
+		QCOMPARE(lyricText(std::numeric_limits<int>::max()), QString());
+
+		constexpr int lyricCount = 512;
+		std::vector<QString> lyrics;
+		std::vector<QDomElement> notes;
+		std::vector<int> ids;
+		lyrics.reserve(lyricCount);
+		notes.reserve(lyricCount);
+		ids.reserve(lyricCount);
+		for (int i = 0; i < lyricCount; ++i)
+		{
+			lyrics.push_back(QStringLiteral("new-p18-69-import-") + QString::number(i));
+			QDomElement note = document.createElement(QStringLiteral("note"));
+			note.setAttribute(QStringLiteral("lyr"), lyrics.back());
+			notes.push_back(note);
+		}
+
+		resetInternLyricLookupWorkForTest();
+		for (const QDomElement& note : notes)
+		{
+			NoteConditions conditions;
+			conditions.load(note);
+			ids.push_back(conditions.lyric);
+		}
+		for (int i = 0; i < lyricCount; ++i)
+		{
+			QCOMPARE(ids[static_cast<std::size_t>(i)], ids.front() + i);
+			QCOMPARE(lyricText(ids[static_cast<std::size_t>(i)]), lyrics[static_cast<std::size_t>(i)]);
+
+			NoteConditions repeated;
+			repeated.load(notes[static_cast<std::size_t>(i)]);
+			QCOMPARE(repeated.lyric, ids[static_cast<std::size_t>(i)]);
+		}
+
+		QVERIFY(internLyricLookupWorkForTest() <= static_cast<std::uint64_t>(2 * lyricCount));
+	}
+
 	void monstroNoteStartDoesNotAllocate()
 	{
 		Engine::getSong()->clearProject();
@@ -505,6 +584,45 @@ private slots:
 			"a voice was dropped or its modulation changed at engine render concurrency");
 	}
 
+	void monstroRandomLfoAtLowSampleRateRenders()
+	{
+		// At 8 kHz the 0.1 ms LFO rate is 0.8 frames. The random LFO modes take the period as
+		// whole frames for their modulo, and it truncated to zero: a division by zero on the
+		// first period.
+		DeviceRatePin pin(8000);
+		const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+		// WAVE_RANDOM (9) and WAVE_RANDOM_SMOOTH (10): both take the period from the same LFO rate
+		for (const int wave : {9, 10})
+		{
+			Engine::getSong()->clearProject();
+			auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+			QVERIFY(track != nullptr);
+			Instrument* instrument = track->loadInstrument(QStringLiteral("monstro"));
+			QVERIFY(instrument != nullptr);
+			QDomDocument document;
+			QDomElement settings = document.createElement(QStringLiteral("monstro"));
+			settings.setAttribute(QStringLiteral("l1wav"), wave);
+			settings.setAttribute(QStringLiteral("l1rat"), 0.1);   // LFO 1 rate in ms, the minimum
+			settings.setAttribute(QStringLiteral("v1l1"), 1.0);
+			instrument->restoreState(settings);
+
+			std::vector<SampleFrame> output(static_cast<std::size_t>(frames));
+			const Note note(TimePos(384), TimePos(0), 60);
+			NotePlayHandle* handle = NotePlayHandleManager::acquire(track, 0, frames, note);
+			for (int period = 0; period < 16; ++period) { instrument->playNote(handle, output); }
+			NotePlayHandleManager::release(handle);
+
+			float peak = 0.0f;
+			for (const SampleFrame& frame : output)
+			{
+				QVERIFY(std::isfinite(frame[0]) && std::isfinite(frame[1]));
+				peak = std::max(peak, std::max(std::abs(frame[0]), std::abs(frame[1])));
+			}
+			QVERIFY2(peak > 0.0f, "the note rendered silence, so the LFO path proves nothing");
+		}
+		Engine::getSong()->clearProject();
+	}
+
 	void repeatsSoundAsMoreHits()
 	{
 		Note* note = oneNote();
@@ -533,6 +651,94 @@ private slots:
 
 		const QList<int> keys = playFrom(0, 3);
 		QVERIFY2(keys.size() >= 2, qPrintable(QString::number(keys.size())));
+		QVERIFY(std::all_of(keys.cbegin(), keys.cend(), [](int key) { return key == 60; }));
+	}
+
+	//! Cluster new-p14-121: with range 3 and repeats 2 the up/down and down/up arpeggios reach every step of the range.
+	void upDownArpeggioWithRepeatsReachesEveryStep()
+	{
+		oneNote();
+		for (const auto direction : {InstrumentFunctionArpeggio::ArpDirection::UpAndDown, InstrumentFunctionArpeggio::ArpDirection::DownAndUp})
+		{
+			QDomDocument doc;
+			QDomElement trackSettings = doc.createElement(QStringLiteral("instrumenttrack"));
+			QDomElement arpeggio = doc.createElement(QStringLiteral("arpeggiator"));
+			arpeggio.setAttribute(QStringLiteral("arp-enabled"), 1);
+			arpeggio.setAttribute(QStringLiteral("arp"), 0); // The "octave" chord: each step is one octave of the note.
+			arpeggio.setAttribute(QStringLiteral("arprange"), 3);
+			arpeggio.setAttribute(QStringLiteral("arprepeats"), 2);
+			arpeggio.setAttribute(QStringLiteral("arpdir"), static_cast<int>(direction));
+			arpeggio.setAttribute(QStringLiteral("arptime"), 25);
+			trackSettings.appendChild(arpeggio);
+			m_track->loadTrackSpecificSettings(trackSettings);
+			QVERIFY(m_track->isArpeggioEnabled());
+
+			// Render whole periods offline and record every key that sounds, so a step that never plays is seen.
+			Song* song = Engine::getSong();
+			song->setPlayPos(0, Song::PlayMode::Song);
+			song->playSong();
+			QList<int> sounded;
+			for (int period = 0; period < 256; ++period)
+			{
+				Engine::audioEngine()->renderNextPeriod();
+				for (int key : handleKeys(m_track)) { if (!sounded.contains(key)) { sounded << key; } }
+			}
+			song->stop();
+			for (int period = 0; period < 64 && !handleKeys(m_track).isEmpty(); ++period) { Engine::audioEngine()->renderNextPeriod(); }
+
+			std::sort(sounded.begin(), sounded.end());
+			QStringList soundedText;
+			for (int key : sounded) { soundedText << QString::number(key); }
+			QVERIFY2(sounded.contains(60) && sounded.contains(72) && sounded.contains(84),
+				qPrintable(QStringLiteral("direction %1 sounded keys: %2").arg(static_cast<int>(direction)).arg(soundedText.join(QLatin1Char(' ')))));
+		}
+	}
+
+	//! Note repeats are not rounded to their step, so 1.5 repeats reach the arpeggio. The slot arithmetic
+	//! then divided by range / repeats = 1 / 1.5, which truncates to zero: a cycled arpeggio took the
+	//! modulo by zero in the audio path. 1.5 plays as the whole number below it (1), a single pitch.
+	void cycledArpeggioWithFractionalRepeatsDoesNotDivideByZero()
+	{
+		oneNote();
+		QDomDocument doc;
+		QDomElement trackSettings = doc.createElement(QStringLiteral("instrumenttrack"));
+		QDomElement arpeggio = doc.createElement(QStringLiteral("arpeggiator"));
+		arpeggio.setAttribute(QStringLiteral("arp-enabled"), 1);
+		arpeggio.setAttribute(QStringLiteral("arp"), 0); // The "octave" chord contains one pitch.
+		arpeggio.setAttribute(QStringLiteral("arprange"), 1);
+		arpeggio.setAttribute(QStringLiteral("arprepeats"), QStringLiteral("1.5"));
+		arpeggio.setAttribute(QStringLiteral("arpcycle"), 1);
+		arpeggio.setAttribute(QStringLiteral("arpdir"), static_cast<int>(InstrumentFunctionArpeggio::ArpDirection::Up));
+		arpeggio.setAttribute(QStringLiteral("arptime"), 25);
+		trackSettings.appendChild(arpeggio);
+		m_track->loadTrackSpecificSettings(trackSettings);
+		QVERIFY(m_track->isArpeggioEnabled());
+
+		const QList<int> keys = playFrom(0, 3);
+		QVERIFY2(!keys.isEmpty(), qPrintable(QString::number(keys.size())));
+		QVERIFY(std::all_of(keys.cbegin(), keys.cend(), [](int key) { return key == 60; }));
+	}
+
+	//! The downward inversion uses the same slot count as the cycle: with 1.5 repeats and no cycle it
+	//! produced index -1, which is key 48 (an octave down) rather than the chord's only pitch.
+	void downArpeggioWithFractionalRepeatsStaysOnTheChord()
+	{
+		oneNote();
+		QDomDocument doc;
+		QDomElement trackSettings = doc.createElement(QStringLiteral("instrumenttrack"));
+		QDomElement arpeggio = doc.createElement(QStringLiteral("arpeggiator"));
+		arpeggio.setAttribute(QStringLiteral("arp-enabled"), 1);
+		arpeggio.setAttribute(QStringLiteral("arp"), 0); // The "octave" chord contains one pitch.
+		arpeggio.setAttribute(QStringLiteral("arprange"), 1);
+		arpeggio.setAttribute(QStringLiteral("arprepeats"), QStringLiteral("1.5"));
+		arpeggio.setAttribute(QStringLiteral("arpdir"), static_cast<int>(InstrumentFunctionArpeggio::ArpDirection::Down));
+		arpeggio.setAttribute(QStringLiteral("arptime"), 25);
+		trackSettings.appendChild(arpeggio);
+		m_track->loadTrackSpecificSettings(trackSettings);
+		QVERIFY(m_track->isArpeggioEnabled());
+
+		const QList<int> keys = playFrom(0, 3);
+		QVERIFY2(!keys.isEmpty(), qPrintable(QString::number(keys.size())));
 		QVERIFY(std::all_of(keys.cbegin(), keys.cend(), [](int key) { return key == 60; }));
 	}
 

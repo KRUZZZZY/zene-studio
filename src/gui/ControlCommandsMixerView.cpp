@@ -41,6 +41,8 @@
 #include "ControlWindowCommands.h"
 #include "Engine.h"
 #include "GuiApplication.h"
+#include "InputChannelMeters.h"
+#include "InputReadings.h"
 #include "Mixer.h"
 #include "MixerOverlays.h"
 #include "MixerStripInfo.h"
@@ -224,11 +226,54 @@ void registerPhaseScope(ControlRegistry& registry)
 	registry.registerCommand(cmd);
 }
 
+//! Q050-340: what the Input Meters window shows, meter by meter.
+QJsonArray metersJson(const std::vector<gui::InputChannelMeters::Meter>& meters)
+{
+	QJsonArray list;
+	for (const auto& meter : meters)
+	{
+		QJsonObject entry{{QStringLiteral("label"), meter.label}, {QStringLiteral("input_channel"), meter.inputChannel},
+			{QStringLiteral("level_db"), inputreadings::peakDb(meter.level)}};
+		if (meter.route >= 0) { entry.insert(QStringLiteral("route"), meter.route); }
+		list.append(entry);
+	}
+	return list;
+}
+
+ControlResult inputMeters(const QJsonObject&)
+{
+	if (controlMainWindow() == nullptr) { return noInterface(QStringLiteral("window.input_meters")); }
+	const gui::InputChannelMeters* window = gui::showInputMeters();
+	return ControlResult::success({{QStringLiteral("shown"), true}, {QStringLiteral("channels"), metersJson(window->channels())},
+		{QStringLiteral("armed"), metersJson(window->armed())}});
+}
+
+void registerInputMeters(ControlRegistry& registry)
+{
+	ControlCommand cmd;
+	cmd.id = QStringLiteral("window.input_meters");
+	cmd.group = QStringLiteral("window");
+	cmd.verb = QStringLiteral("input_meters");
+	cmd.mutating = false;
+	cmd.requiresEngine = false;
+	cmd.description = QStringLiteral("Q050-340: open the Input Meters window (an open one is raised): a labelled bar for every "
+		"capture channel the input carries ('In 1', 'In 2', ...) and one for every record-armed track's selected input "
+		"('<track> - In <n>'), -60..0 dB with the mixer's fall-off. The answer is what the window shows now: 'channels' "
+		"and 'armed', each meter's 'label', 'input_channel' (0-based), 'level_db' (-120 for silence) and, for an armed "
+		"track, its record 'route'. meter.inputs reads the same levels for an agent without taking the window's. A display.");
+	cmd.argsSchema = objectSchema({});
+	cmd.resultSchema = objectSchema({{QStringLiteral("shown"), booleanProperty()}, {QStringLiteral("channels"), arrayProperty()},
+		{QStringLiteral("armed"), arrayProperty()}});
+	cmd.handler = inputMeters;
+	registry.registerCommand(cmd);
+}
+
 } // namespace
 
 void registerMixerViewCommands(ControlRegistry& registry)
 {
 	registerPhaseScope(registry);  // MX-137
+	registerInputMeters(registry);  // Q050-340
 	ControlCommand cmd;
 	cmd.id = QStringLiteral("window.mixer_view");
 	cmd.group = QStringLiteral("window");
@@ -246,7 +291,9 @@ void registerMixerViewCommands(ControlRegistry& registry)
 		"Ctrl+click on a strip adds or removes its channel, and the mode bar's 'Pick...' chooses them; the answer lists them in "
 		"mixer order. The view options, kept in the config file (ui/mixerview): 'show_sends', "
 		"'show_pan', 'show_number', 'show_meter_info', 'show_inserts', 'show_macros' (a strip's sections - the meter line is "
-		"the gain reduction and the clip light, the inserts are listed by name, the macros are the rack's first four as knobs), 'strip_width' (narrow / normal / wide), 'filter' (all / instruments / audio / returns / used - "
+		"the gain reduction and the clip light, the inserts are listed by name, the macros are the rack's first four as knobs), 'show_console' (Q050-088: the Console section - "
+		"knobs and switches for the channel's trim, polarity, EQ and its Console's drive and glue compressor, each running "
+		"mixer.console_strip; off by default, hidden in the routing view and the compact density), 'strip_width' (narrow / normal / wide), 'filter' (all / instruments / audio / returns / used - "
 		"the channels a track plays into or a send reaches -, selected), 'meter_mode' (peak - after the fader -, rms, pre_fader) and "
 		"'meter_scale' (db42 - the default range -, db60, db24, linear); MX-128, the meters' ballistics: 'meter_falloff' (fast - "
 		"the default, about 116 dB/s -, medium - about 26 dB/s -, slow - about 12 dB/s, a peak programme meter's fall) and "
@@ -261,6 +308,7 @@ void registerMixerViewCommands(ControlRegistry& registry)
 	const QJsonObject fields{{QStringLiteral("show_sends"), booleanProperty()}, {QStringLiteral("show_pan"), booleanProperty()},
 		{QStringLiteral("show_number"), booleanProperty()}, {QStringLiteral("show_meter_info"), booleanProperty()},
 		{QStringLiteral("show_inserts"), booleanProperty()}, {QStringLiteral("show_macros"), booleanProperty()},
+		{QStringLiteral("show_console"), booleanProperty()},
 		{QStringLiteral("strip_width"), enumProperty(gui::mixerviewoptions::widthNames())},
 		{QStringLiteral("filter"), enumProperty(gui::mixerviewoptions::filterNames())},
 		{QStringLiteral("meter_mode"), enumProperty(gui::mixerviewoptions::meterModeNames())},

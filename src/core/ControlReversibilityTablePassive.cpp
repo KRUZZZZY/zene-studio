@@ -219,6 +219,16 @@ const ReversibilityRow kPassiveRows[] = {
 		"fallback for a render made with the wrong span or settings is to render "
 		"again",
 		""),
+	R("render.realtime", RC::NotMutating, false,
+		"it writes an OUTPUT ARTEFACT and changes nothing in the project: it plays the song once "
+		"through the running device and keeps the master mix. The loop switch and the metronome "
+		"are turned off for the pass and put back as they were, and the transport is stopped "
+		"after it, as a Stop would; no clip, model or setting is written, so there is no "
+		"checkpoint to take (Q050-089.2)",
+		"the project is unchanged; the rendered file is an output, not project state, and "
+		"overwriting it is the caller's decision. A pass already played is not undone by "
+		"anything here: to change it, render again",
+		""),
 	R("render.stems", RC::NotMutating, false,
 		"it writes OUTPUT ARTEFACTS - one file per unmuted track - and nothing "
 		"else: the export runs in a child process against a serialised copy of "

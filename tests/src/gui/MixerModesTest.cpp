@@ -68,6 +68,7 @@
 #include "MixerView.h"
 #include "SendButtonIndicator.h"
 #include "MixerViewOptions.h"
+#include "Song.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -591,23 +592,41 @@ private slots:
 		MixerView* view = getGUI()->mixerView();
 		view->setCurrentMixerChannel(m_sender);
 		Mixer* mixer = Engine::mixer();
+		Song* song = Engine::getSong();
 		QVERIFY(mixer->channelSendModel(m_sender, m_return) != nullptr);
+		song->noteProjectSaved(QStringLiteral("send-indicator-clean.mmpz"));
+		QVERIFY(!song->isModified());
 
 		SendButtonIndicator indicator{nullptr, strip(m_return), view};
 		QMouseEvent rightPress{QEvent::MouseButtonPress, QPointF{1, 1}, QPointF{1, 1}, QPointF{1, 1},
 			Qt::RightButton, Qt::RightButton, Qt::NoModifier};
 		QApplication::sendEvent(&indicator, &rightPress);
 		QVERIFY(mixer->channelSendModel(m_sender, m_return) != nullptr);
+		QVERIFY(!song->isModified());
 
 		QMouseEvent middlePress{QEvent::MouseButtonPress, QPointF{1, 1}, QPointF{1, 1}, QPointF{1, 1},
 			Qt::MiddleButton, Qt::MiddleButton, Qt::NoModifier};
 		QApplication::sendEvent(&indicator, &middlePress);
 		QVERIFY(mixer->channelSendModel(m_sender, m_return) != nullptr);
+		QVERIFY(!song->isModified());
 
 		QMouseEvent leftPress{QEvent::MouseButtonPress, QPointF{1, 1}, QPointF{1, 1}, QPointF{1, 1},
 			Qt::LeftButton, Qt::LeftButton, Qt::NoModifier};
 		QApplication::sendEvent(&indicator, &leftPress);
 		QVERIFY(mixer->channelSendModel(m_sender, m_return) == nullptr);
+		QVERIFY(song->isModified());
+
+		song->noteProjectSaved(QStringLiteral("send-indicator-clean.mmpz"));
+		QMouseEvent createPress{QEvent::MouseButtonPress, QPointF{1, 1}, QPointF{1, 1}, QPointF{1, 1},
+			Qt::LeftButton, Qt::LeftButton, Qt::NoModifier};
+		QApplication::sendEvent(&indicator, &createPress);
+		QVERIFY(mixer->channelSendModel(m_sender, m_return) != nullptr);
+		QVERIFY(song->isModified());
+
+		QMouseEvent cleanupPress{QEvent::MouseButtonPress, QPointF{1, 1}, QPointF{1, 1}, QPointF{1, 1},
+			Qt::LeftButton, Qt::LeftButton, Qt::NoModifier};
+		QApplication::sendEvent(&indicator, &cleanupPress);
+		song->noteProjectSaved(QStringLiteral("send-indicator-clean.mmpz"));
 	}
 
 	void renamingFromTheStripIsOneUndoStep()

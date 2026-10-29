@@ -36,6 +36,7 @@
 #include "lmmsconfig.h"
 #include "Plugin.h"
 #include "PluginFactory.h"
+#include "PluginInstantiationFailure.h"
 
 #ifdef LMMS_HAVE_LV2
 #include "Lv2Manager.h"
@@ -172,6 +173,11 @@ bool controlDeviceModule(const ControlDeviceEntry& entry, QString* pluginName,
 		// unit (ControlDeviceClap.cpp).
 		return controlClapDeviceModule(entry, pluginName, key, useKey, error);
 	}
+	if (entry.format == QLatin1String("au"))
+	{
+		// Q050-491: the Audio Unit half (ControlDeviceAu.cpp) - refused, typed, off macOS.
+		return controlAuDeviceModule(entry, pluginName, key, useKey, error);
+	}
 	return true; // a built-in module is addressed by its plugin name alone
 }
 
@@ -194,11 +200,16 @@ Effect* controlInstantiateDevice(const ControlDeviceEntry& entry, EffectChain* c
 	if (!controlDeviceModule(entry, &pluginName, &key, &useKey, error)) { return nullptr; }
 	if (!controlPluginIsInstantiable(pluginName, error)) { return nullptr; }
 
+	pluginload::takeInstantiationFailure(); // a reason an earlier load left is not this load's
 	Effect* effect = Effect::instantiate(pluginName, chain, useKey ? &key : nullptr);
 	if (effect == nullptr)
 	{
+		// Cluster stress-3: the host module's own reason (the plug-in's refusal, the layout it could not
+		// host) follows the old sentence, so the refusal says why.
+		const QString reason = pluginload::takeInstantiationFailure();
+		const QString refusal = QStringLiteral("the engine could not instantiate '%1'").arg(pluginName);
 		*error = ControlResult::failure(ControlErrorKind::Refused,
-			QStringLiteral("the engine could not instantiate '%1'").arg(pluginName));
+			reason.isEmpty() ? refusal : QStringLiteral("%1: %2").arg(refusal, reason));
 		return nullptr;
 	}
 	chain->appendEffect(effect);

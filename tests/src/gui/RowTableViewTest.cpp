@@ -56,6 +56,28 @@ private slots:
 		QVERIFY(model.insertRow(1));
 		QCOMPARE(view.itemDelegateForIndex(model.index(1, 0)), existingRowDelegate);
 	}
+
+	void tabAndBacktabWithoutModelAreSafe()
+	{
+		RowTableView view;
+		QVERIFY(view.model() == nullptr);
+
+		QTest::keyClick(&view, Qt::Key_Tab);
+		QTest::keyClick(&view, Qt::Key_Backtab);
+		QVERIFY(view.model() == nullptr);
+	}
+
+	void tabAndBacktabAfterClearingModelAreSafe()
+	{
+		QStandardItemModel model(1, 2);
+		RowTableView view;
+		view.setModel(&model);
+		view.setModel(nullptr);
+
+		QTest::keyClick(&view, Qt::Key_Tab);
+		QTest::keyClick(&view, Qt::Key_Backtab);
+		QVERIFY(view.model() == nullptr);
+	}
 };
 
 QTEST_MAIN(RowTableViewTest)

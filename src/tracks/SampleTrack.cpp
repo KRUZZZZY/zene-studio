@@ -182,6 +182,12 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 	class PatternTrack * pattern_track = nullptr;
 	if( _clip_num >= 0 )
 	{
+		// Audio thread: a clip this track does not hold has nothing to play, and getClip() would
+		// construct one here and append it to the track. InstrumentTrack::play makes the same check.
+		if( _clip_num >= numOfClips() )
+		{
+			return false;
+		}
 		auto sClip = dynamic_cast<SampleClip*>(getClip(_clip_num));
 
 		if (_start > sClip->length())
@@ -292,6 +298,7 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 			{
 				auto smpHandle = new SamplePlayHandle(st, scheduled.window);
 				smpHandle->setPatternTrack(pattern_track);
+				smpHandle->setClipEffects(st);  // Q050-111: the clip's own effects, before the track's sum
 				handle = smpHandle;
 			}
 			handle->setOffset( _offset + scheduled.lead );
@@ -331,6 +338,7 @@ void SampleTrack::saveTrackSpecificSettings(QDomDocument& doc, QDomElement& this
 	m_volumeModel.saveSettings(doc, thisElem, "vol");
 	m_panningModel.saveSettings(doc, thisElem, "pan");
 	m_mixerChannelModel.saveSettings(doc, thisElem, "mixch");
+	if (m_audioBusHandle.offsetFrames() != 0) { thisElem.setAttribute("offsetframes", m_audioBusHandle.offsetFrames()); }  // Q050-339
 }
 
 
@@ -338,6 +346,7 @@ void SampleTrack::saveTrackSpecificSettings(QDomDocument& doc, QDomElement& this
 
 void SampleTrack::loadTrackSpecificSettings(const QDomElement & thisElem)
 {
+	m_audioBusHandle.setOffsetFrames(thisElem.attribute("offsetframes", "0").toInt());  // Q050-339 (absent: none)
 	QDomNode node = thisElem.firstChild();
 	m_audioBusHandle.effects()->clear();
 	while(!node.isNull())

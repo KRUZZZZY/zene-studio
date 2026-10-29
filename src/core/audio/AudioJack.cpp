@@ -411,6 +411,11 @@ void AudioJack::renamePort(AudioBusHandle* port)
 int AudioJack::processCallback(jack_nframes_t nframes)
 {
 	crashreporter::installAlternateStackForCurrentThread();
+	// Open for the whole callback, whether or not the device runs: stopProcessing() waits for it, so
+	// no render or capture publish from this callback is still running once a stop has returned.
+	// JACK keeps the callback alive while the client is active, and a stopped device keeps its client
+	// active so that a restore reuses it (cluster new-p14-402).
+	const CallbackScope callback(*this);
 	// do midi processing first so that midi input can
 	// add to the following sound processing
 	if (m_midiClient && nframes > 0)
@@ -463,8 +468,9 @@ int AudioJack::processCallback(jack_nframes_t nframes)
 	// publisher (AudioDevice::publishCaptured), which feeds the N-channel path, the stereo
 	// bus and the capture counter - the stereo copy that indexed a SampleFrame per port
 	// (BUGS_FOUND 10.11) is gone with it.
+	// Only while running: a stopped device stages no input, and a restore discards what it staged.
 	const int width = static_cast<int>(m_inputPorts.size());
-	if (m_captureWide.size() >= static_cast<std::size_t>(nframes) * static_cast<std::size_t>(width))
+	if (isRunning() && m_captureWide.size() >= static_cast<std::size_t>(nframes) * static_cast<std::size_t>(width))
 	{
 		for (int c = 0; c < width; ++c)
 		{

@@ -46,7 +46,8 @@ namespace lmms::gui::ShortcutMap
  *  without an override keeps the shortcut the code gives it. */
 struct Binding
 {
-	QString id;        //!< "File ▸ Save"
+	QString id;        //!< "File ▸ Save", or a panel action's id
+	QString scope;     //!< a panel scope (arranger, note_editor, automation_editor, perform), else empty
 	QString command;   //!< the registry command the action declares, or empty
 	QString keys;      //!< current, portable text ("Ctrl+S"); empty when unbound
 	QString defaults;  //!< the code's own shortcut, portable text

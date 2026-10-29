@@ -64,6 +64,10 @@ SET(LMMS_COLLAB_SRCS
 	core/CollabPolicy.cpp
 	core/ControlCommandsCollab.cpp
 	core/ControlReversibilityTableCollab.cpp
+	# Q050-205: the OSC server's commands and its wire codec are always built; the UDP listener needs Qt Network.
+	core/ControlCommandsOsc.cpp
+	core/ControlReversibilityTableOsc.cpp
+	core/OscBridge.cpp
 )
 IF(ZENE_HAVE_COLLAB)
 	LIST(APPEND LMMS_COLLAB_SRCS
@@ -77,6 +81,7 @@ IF(ZENE_HAVE_COLLAB)
 		core/PortMappingCodec.cpp
 		core/PortMappingPmp.cpp
 		core/PortMappingUpnp.cpp
+		core/OscServer.cpp
 	)
 ENDIF()
 
@@ -118,6 +123,8 @@ SET(LMMS_SESSION_SRCS
 		# its own TU because SessionScheduler.h is AT the file-length limit, so
 		# the new declarations' bodies cannot live beside their class.
 		core/SessionPlayback.cpp
+		# Q050-489: the one boundary that keeps the launcher in step with grid edits, undo, redo and pattern renumbering.
+		core/SessionTransitions.cpp
 		# The session.* control-surface group (SPEC A11-A16): always compiled
 		# with the data layer since ARCH-4 S10 removed WANT_SESSION_VIEW.
 		core/ControlCommandsSession.cpp
@@ -136,6 +143,8 @@ SET(LMMS_SESSION_SRCS
 		core/ControlCommandsSessionRecordLand.cpp
 		# 0.5.0 L02 (WF-055): the audio take a launcher cell records (include/SessionAudioRecorder.h).
 		core/SessionAudioRecorder.cpp
+		# Q050-089.2: render.realtime's capture of the master mix (include/RealtimeExport.h).
+		core/RealtimeExport.cpp
 		# ...and a launched audio cell rendering its clip through its sample track (include/SessionAudioCells.h).
 		core/SessionAudioCells.cpp
 		core/SessionAudioBake.cpp
@@ -171,6 +180,8 @@ set(LMMS_SRCS
 	core/AutomationRamp.cpp
 	core/BandLimitedWave.cpp
 	core/base64.cpp
+	# Q050-486: the one bounded, validating loader for saved plug-in waveform data.
+	core/WaveformData.cpp
 	core/BrowserCatalog.cpp
 	core/BrowserMetadata.cpp
 	core/BrowserPeakCache.cpp
@@ -213,6 +224,8 @@ set(LMMS_SRCS
 	core/ControlCommandsConsolidate.cpp
 	core/ControlCommandsMonitor.cpp
 	core/ControlCommandsPluginEditor.cpp
+	# Q050-502: the Qt platform a Wayland desktop runs on, so plug-in editors can embed (XWayland).
+	core/PluginWindowPlatform.cpp
 	core/ControlBounceSupport.cpp
 	core/ControlCommandsBounceLand.cpp
 	core/ControlCommandsBrowserCollections.cpp
@@ -268,9 +281,13 @@ set(LMMS_SRCS
 	core/ControlCommandsMixer.cpp
 	core/ControlCommandsMixerListen.cpp
 	core/ControlCommandsMixerStrip.cpp
+	core/ControlCommandsConsoleStrip.cpp
+	core/ControlCommandsTrackOffset.cpp
+	core/ControlCommandsInputMeters.cpp
 	core/ControlCommandsMixerRename.cpp
 	core/ControlCommandsDeviceCopy.cpp
 	core/ControlCommandsDrumRack.cpp
+	core/DrumPadState.cpp
 	core/ControlCommandsHandoff.cpp
 	core/ControlCommandsImportTracks.cpp
 	core/ControlCommandsLaunchBindings.cpp
@@ -461,6 +478,8 @@ set(LMMS_SRCS
 	# render.sections (0.5.0 L12, Q050-009): the song's named sections exported one
 	# bounded file each, through render.render.
 	core/ControlCommandsRenderSections.cpp
+	# render.realtime (Q050-089.2): the project played through the device, so hardware inserts are heard.
+	core/ControlCommandsRenderRealtime.cpp
 	core/ControlCommandsRack.cpp
 	core/ControlCommandsRackMacros.cpp
 	core/ControlCommandsRackZones.cpp
@@ -577,11 +596,18 @@ set(LMMS_SRCS
 	# the instrument host's this lane adds - and plugin.load loads one onto a
 	# track. Its own translation unit, the same rule as the VST3 half above.
 	core/ControlDeviceClap.cpp
+	# Q050-491: the Audio Unit half of the catalogue, and the format-neutral AU rules (component ids,
+	# scan-cache records and quarantine, status names) it and the macOS-only hosts share.
+	core/ControlDeviceAu.cpp
+	core/AuComponent.cpp
 	# The chain PRESET store and the chain.* group (the 0.3.0 ladder's
 	# "plugin-chain presets", OWNER-31 item 2): the store, its read/capture half
 	# and its edit half. A chain preset is NOT a rack chain - see
 	# control/ControlCommandsChain.cpp.
 	core/ControlChainPresetSupport.cpp
+	core/PresetBindings.cpp
+	core/ControllerScript.cpp
+	core/ControlCommandsControllerScripts.cpp
 	core/ControlCommandsChain.cpp
 	core/ControlCommandsChainEdit.cpp
 	# The chord engine (feature row 35): the read-only view over the piano roll's
@@ -920,6 +946,9 @@ set(LMMS_SRCS
 	core/ControlReversibilityTableTask.cpp
 	core/MixerSendPan.cpp
 	core/MixerStrip.cpp
+	core/ConsoleStrip.cpp
+	core/StripMeters.cpp
+	core/InputReadings.cpp
 	core/Model.cpp
 	core/ModelVisitor.cpp
 	# Q050-016: scheduled playback of a note's MPE expression event streams -
@@ -957,6 +986,8 @@ set(LMMS_SRCS
 	core/PluginScanCache.cpp
 	# The vendor each VST3 / CLAP class's own factory reports, recorded by the hosts' discovery.
 	core/PluginVendors.cpp
+	# Cluster stress-3: the reason a hosted plug-in module's entry point produced no plug-in.
+	core/PluginInstantiationFailure.cpp
 	# 0.5.0 Q050-018: the placeholders a project open could not load (name, format, vendor)
 	core/MissingDevices.cpp
 	core/PresetPreviewPlayHandle.cpp
@@ -980,6 +1011,7 @@ set(LMMS_SRCS
 	core/RecordOptions.cpp
 	core/MusicalTime.cpp
 	core/RemoteControls.cpp
+	core/RenderDiagnostics.cpp
 	core/RemotePlugin.cpp
 	core/Rack.cpp
 	core/RackMacros.cpp
@@ -1010,6 +1042,7 @@ set(LMMS_SRCS
 	core/SampleBuffer.cpp
 	core/SampleBufferResample.cpp
 	core/SampleClip.cpp
+	core/SampleClipEffects.cpp
 	core/SampleDecoder.cpp
 	core/SamplePlayHandle.cpp
 	core/SampleRecordHandle.cpp

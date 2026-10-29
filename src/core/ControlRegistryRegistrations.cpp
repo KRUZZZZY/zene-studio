@@ -40,6 +40,8 @@
  */
 
 #include "CollabCommands.h"
+#include "OscCommands.h"
+#include "ControllerScript.h"
 #include "ControlHardwareIoSupport.h"
 #include "ControlRegistry.h"
 #include "ControlWindowCommands.h"
@@ -107,6 +109,9 @@ void registerControlCommands(ControlRegistry& registry)
 	registerControllerMapCommands(registry);
 	registerMixerListenCommands(registry);
 	registerMixerStripCommands(registry);
+	registerConsoleStripCommand(registry);  // Q050-088
+	registerTrackOffsetCommand(registry);  // Q050-339
+	registerInputMetersCommand(registry);  // Q050-340
 	registerMixerRenameCommands(registry);  // 0.5.0 theme 13: mixer.rename_channel
 	registerDeviceCopyCommands(registry);
 	registerPluginOrganiseCommands(registry);
@@ -178,6 +183,8 @@ void registerControlCommands(ControlRegistry& registry)
 	registerVideoCommands(registry);  // 0.5.0 F5 (ED-054)
 	registerTaskCommands(registry);  // 0.5.0 theme 24: the background task area
 	registerCollabCommands(registry);  // 0.5.0 F6 (WF-050/WF-052)
+	registerOscCommands(registry);  // Q050-205: the opt-in OSC control server
+	registerControllerScriptCommands(registry);  // Q050-081: Lua control-surface scripts
 #ifdef ZENE_TELEMETRY_ENABLED
 	// The telemetry.* group travels with the client. -DZENE_TELEMETRY=OFF
 	// removes the client, so the registry must not carry ids that would

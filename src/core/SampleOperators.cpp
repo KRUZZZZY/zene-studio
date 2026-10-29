@@ -86,6 +86,9 @@ std::vector<SampleFrame> silence(f_cnt_t frames)
 std::vector<SampleFrame> tone(double frequencyHz, float amplitude, f_cnt_t frames, int sampleRate)
 {
 	std::vector<SampleFrame> out;
+	// The phase step divides by the rate: with no positive rate there is no step,
+	// and the division would yield NaN frames, so nothing is generated instead.
+	if (sampleRate <= 0) { return out; }
 	out.reserve(static_cast<size_t>(frames));
 	const double step = frequencyHz * TwoPi / static_cast<double>(sampleRate);
 	for (f_cnt_t i = 0; i < frames; ++i)

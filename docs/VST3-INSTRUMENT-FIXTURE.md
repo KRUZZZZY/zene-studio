@@ -265,6 +265,14 @@ The SDK's Linux loader insists on the VST3 **directory bundle**
 (The host's scanner already accepts directories ending `.vst3` —
 `plugins/Vst3Effect/Vst3SubPluginFeatures.cpp:66-70`.)
 
+*(Q050-490, 2026-10-27.)* The bundle is now laid out per platform, by the same recipe as
+`tests/data/vst3-test-effect`: on Windows `Contents/<arch>-win/<stem>.vst3` (a DLL) entered through
+`dllmain.cpp`, on macOS a CFBundle - `Contents/MacOS/<stem>` plus `Contents/Info.plist` (from
+`Info.plist.in`) - entered through `macmain.cpp`; Linux is unchanged. With the option on, every
+platform builds the fixture and `Vst3EditorTest` (the editor cases); the probe,
+`Vst3InstrumentTest` and the integration and socket cases stay Linux-only. The macos and msvc jobs
+pass the option for the editor cases. The Windows and macOS halves were not built on this box.
+
 **Opt-in and never installed.** `WANT_VST3_TEST_INSTRUMENT` (`tests/CMakeLists.txt`, default `OFF`)
 gates both the bundle and the probe, so an ordinary build is unaffected. It is built under `tests/`,
 never under `plugins/`, so it is not in the product's plug-in set or its install rules.

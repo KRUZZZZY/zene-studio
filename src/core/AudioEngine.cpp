@@ -80,8 +80,10 @@
 
 #include "BufferManager.h"
 
+#include <cmath>
 #include <limits>
 #include <memory>
+#include <utility>
 
 namespace lmms
 {
@@ -1025,6 +1027,7 @@ void AudioEngine::renderStageNoteSetup()
 		const Song* song = Engine::getSong();
 		m_periodSongPlaying = song->isPlaying() && song->playMode() == Song::PlayMode::Song;
 		m_periodStartFrame = static_cast<double>(song->getFrames());
+		m_periodStartTick = song->getPlayPos(Song::PlayMode::Song).getTicks();  // Q050-074.1
 	}
 
 	// Retry engine-list additions deferred by capacity in the previous period.
@@ -1078,6 +1081,34 @@ void AudioEngine::renderStageInstruments()
 
 	AudioEngineWorkerThread::fillJobQueue(m_playHandles);
 	AudioEngineWorkerThread::startAndWaitForJobs();
+}
+
+
+
+void AudioEngine::foldSynthesisLoads(std::uint64_t period) noexcept
+{
+	// Q050-074.1: the workers are done, so every handle's time is in its track's accumulator. A track's
+	// handles fold it once (SynthesisLoad::fold returns at the second); a track without a handle this
+	// period is not visited and decays on its next fold or read. No allocation, no lock.
+	const sample_rate_t rate = outputSampleRate();
+	const double periodSeconds = rate > 0 ? static_cast<double>(m_framesPerPeriod) / rate : 0.0;
+	for (PlayHandle* const handle : std::as_const(m_playHandles))  // const: a QList never detaches here
+	{
+		if (SynthesisLoad* const load = handle->synthesisLoad()) { load->fold(period, periodSeconds); }
+	}
+}
+
+
+
+void AudioEngine::noteLatePeriod() noexcept
+{
+	// Q050-074.1: an offline render (an export) has no deadline to miss.
+	const Song* song = Engine::getSong();
+	const sample_rate_t rate = outputSampleRate();
+	if (song == nullptr || song->isExporting() || rate == 0) { return; }
+	const auto periodMicros = static_cast<std::uint32_t>(std::uint64_t{1000000} * m_framesPerPeriod / rate);
+	const std::uint32_t tookMicros = m_profiler.lastPeriodMicros();
+	if (tookMicros > periodMicros) { m_latePeriods.record(m_periodStartTick, m_periodSongPlaying, tookMicros, periodMicros); }
 }
 
 
@@ -1169,9 +1200,13 @@ std::span<const SampleFrame> AudioEngine::renderNextPeriod()
 	} periodEnd;
 	m_profiler.startPeriod();
 	s_renderingThread = true;
+	// Q050-074.1: this thread is the only writer, so a load and a store number the period.
+	const std::uint64_t period = m_renderedPeriods.load(std::memory_order_relaxed) + 1;
+	m_renderedPeriods.store(period, std::memory_order_relaxed);
 
 	renderStageNoteSetup();     // STAGE 0: clear old play handles and buffers, setup new play handles
 	renderStageInstruments();   // STAGE 1: run and render all play handles
+	foldSynthesisLoads(period); // Q050-074.1: each instrument track's share of STAGE 1
 	renderStageEffects();       // STAGE 2: process effects of all instrument- and sampletracks
 	renderStageMix();           // STAGE 3: do master mix in mixer
 
@@ -1226,6 +1261,12 @@ std::span<const SampleFrame> AudioEngine::renderNextPeriod()
 	// pre-allocated by the control-thread arm(), never here. Realtime-safe.
 	m_samplerTakeRecorder.push(m_inputBuffer[m_inputBufferRead], m_inputBufferFrames[m_inputBufferRead]);
 	inputmeter::measure(m_inputBuffer[m_inputBufferRead], m_inputBufferFrames[m_inputBufferRead]);  // 0.5.0 L08 (MX-134)
+	// Q050-340: each capture channel's own peak - the wide capture when the backend fills it, else the stereo bus.
+	if (m_wideInputStage != nullptr && m_wideInputStage->frames() > 0 && m_wideInputStage->channels() > 0)
+	{
+		inputmeter::measureChannels(m_wideInputStage->data(), m_wideInputStage->channels(), m_wideInputStage->frames());
+	}
+	else { inputmeter::measureStereoChannels(m_inputBuffer[m_inputBufferRead], m_inputBufferFrames[m_inputBufferRead]); }
 	// 0.5.0 L09 (MX-038): the control room on what is heard - skipped while exporting and while neutral.
 	controlroom::apply(m_outputBufferRead.get(), m_framesPerPeriod);
 	// 0.5.0 W3 (WF-147): the tuner's tap on the input bus - one relaxed load unless it listens here.
@@ -1233,6 +1274,7 @@ std::span<const SampleFrame> AudioEngine::renderNextPeriod()
 
 	s_renderingThread = false;
 	m_profiler.finishPeriod(outputSampleRate(), m_framesPerPeriod);
+	noteLatePeriod();
 	m_outputBufferReadIndex = 0;
 
 	return {m_outputBufferRead.get(), m_framesPerPeriod};
@@ -2124,6 +2166,12 @@ void AudioDummy::configureLoopback()
 	if (!m_loopback) { return; }
 	m_loopInLatency = latencyFromEnv("LMMS_DUMMY_INPUT_LATENCY");
 	m_loopOutLatency = latencyFromEnv("LMMS_DUMMY_OUTPUT_LATENCY");
+	// Q050-089.2: LMMS_DUMMY_LOOPBACK_GAIN makes the cable a piece of outboard gear that changes the level
+	// (-4 .. 4; a negative figure flips the polarity), so a render can tell the processed return from the dry
+	// signal. Unset or unparsable: 1, the plain cable it has always been.
+	bool gainOk = false;
+	const float gain = qEnvironmentVariable("LMMS_DUMMY_LOOPBACK_GAIN").toFloat(&gainOk);
+	m_loopGain = gainOk && std::isfinite(gain) ? std::clamp(gain, -4.f, 4.f) : 1.f;
 	// The line holds the whole delay plus the largest period a render can hand back.
 	m_loopLine.assign(static_cast<std::size_t>(m_loopInLatency + m_loopOutLatency) + MAXIMUM_BUFFER_SIZE + 1,
 		SampleFrame(0.0f, 0.0f));
@@ -2153,7 +2201,11 @@ void AudioDummy::feedBack(std::span<const SampleFrame> period)
 		m_loopLine[(m_loopWrite + f) % size] = !bus.active() ? (pair == 0 ? period[f] : SampleFrame(0.f, 0.f))
 			: SampleFrame(bus.sample(pair, at, period[f]), bus.sample(pair + 1, at, period[f]));
 	}
-	for (std::size_t f = 0; f < frames; ++f) { m_loopBlock[f] = m_loopLine[(m_loopWrite + f + size - delay) % size]; }
+	for (std::size_t f = 0; f < frames; ++f)
+	{
+		const SampleFrame& back = m_loopLine[(m_loopWrite + f + size - delay) % size];
+		m_loopBlock[f] = SampleFrame(back[0] * m_loopGain, back[1] * m_loopGain);
+	}
 	m_loopWrite = (m_loopWrite + frames) % size;
 	audioEngine()->pushInputFrames(m_loopBlock.data(), static_cast<f_cnt_t>(frames));
 }

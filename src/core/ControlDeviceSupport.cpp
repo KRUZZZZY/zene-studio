@@ -30,6 +30,7 @@
 #include <QStringList>
 
 #include "AutomatableModel.h"
+#include "ControlEdit.h"
 #include "Effect.h"
 #include "EffectChain.h"
 #include "Engine.h"
@@ -37,8 +38,10 @@
 #include "InstrumentTrack.h"
 #include "LinkedModelGroups.h"
 #include "Mixer.h"
+#include "ParameterReadOnly.h"
 #include "Plugin.h"
 #include "PluginFactory.h"
+#include "SampleClip.h"
 #include "SampleTrack.h"
 #include "Song.h"
 #include "Track.h"
@@ -78,9 +81,18 @@ bool resolveTrackTarget(const QString& id, ControlTarget* target, ControlResult*
 			QStringLiteral("'%1' is not a target id of the form trk-<n>").arg(id));
 		return false;
 	}
+	// No song yet (or torn down): there is no track to find. remote.target is
+	// engine-free, so it reaches this resolver before a song is open.
+	const Song* song = Engine::getSong();
+	if (song == nullptr)
+	{
+		*error = ControlResult::failure(ControlErrorKind::NotFound,
+			QStringLiteral("no track %1 (no song is open)").arg(id));
+		return false;
+	}
 	// By id, not by position (SPEC-stable-ids.md): the number names the track
 	// object, so a device chain is still addressable after a sibling moves.
-	const TrackContainer::TrackList& tracks = Engine::getSong()->tracks();
+	const TrackContainer::TrackList& tracks = song->tracks();
 	Track* track = nullptr;
 	for (Track* candidate : tracks)
 	{
@@ -227,6 +239,28 @@ bool resolvePostInsertsTarget(const QString& id, ControlTarget* target, ControlR
 	return true;
 }
 
+/*! Q050-111: "clip-<n>" - an audio clip's own effects (SampleClip::clipEffects()), addressed like a track's
+ *  chain by every device command. Only an audio clip carries one: a MIDI, pattern or automation clip is a typed
+ *  refusal, not an empty chain that would take a device and never sound it. */
+bool resolveClipTarget(const QString& id, ControlTarget* target, ControlResult* error)
+{
+	ClipRef ref;
+	if (!resolveClip(id, &ref, error)) { return false; }
+	auto* clip = dynamic_cast<SampleClip*>(ref.clip);
+	if (clip == nullptr)
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("%1 is a %2 clip: clip effects are carried by audio clips only").arg(id, ref.clip->nodeName()));
+		return false;
+	}
+	target->id = id;
+	target->kind = QStringLiteral("clip");
+	target->typeName = QStringLiteral("audio_clip");
+	target->chain = clip->clipEffects();
+	target->instrumentTrack = nullptr;
+	return true;
+}
+
 } // namespace
 
 bool resolveControlTarget(const QString& id, ControlTarget* target, ControlResult* error)
@@ -234,8 +268,9 @@ bool resolveControlTarget(const QString& id, ControlTarget* target, ControlResul
 	if (postinserts::isTarget(id)) { return resolvePostInsertsTarget(id, target, error); }
 	if (id.startsWith(QLatin1String("trk-"))) { return resolveTrackTarget(id, target, error); }
 	if (id.startsWith(QLatin1String("ch-"))) { return resolveChannelTarget(id, target, error); }
+	if (id.startsWith(QLatin1String("clip-"))) { return resolveClipTarget(id, target, error); }
 	*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
-		QStringLiteral("'%1' is not a target id of the form trk-<n> or ch-<n>").arg(id));
+		QStringLiteral("'%1' is not a target id of the form trk-<n>, ch-<n> or clip-<n>").arg(id));
 	return false;
 }
 
@@ -341,6 +376,10 @@ QJsonObject controlParameterJson(const AutomatableModel* model, int index)
 	out.insert(QStringLiteral("step"), static_cast<double>(model->step<float>()));
 	out.insert(QStringLiteral("type"),
 		boolean != nullptr ? QStringLiteral("boolean") : QStringLiteral("number"));
+	// stress-4: a parameter the plug-in owns (VST3 kIsReadOnly, CLAP_PARAM_IS_READONLY - a meter, an output,
+	// DPF's "Buffer Size") says so, and plugin.param_set refuses it. Written only when true, so every other
+	// parameter's object is what it was.
+	if (isParameterReadOnly(model)) { out.insert(QStringLiteral("read_only"), true); }
 	return out;
 }
 

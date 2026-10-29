@@ -93,6 +93,7 @@ struct AudioPacketHeader
 LMMS_EXPORT std::size_t encodeAudioPacket(const AudioPacketHeader& header, const float* interleaved,
 	std::uint8_t* out, std::size_t capacity);
 //! Decode a datagram; false for anything that is not a well-formed packet of ours (wrong magic/size/channels).
+//! A non-finite sample (NaN, infinity) in an otherwise valid packet is decoded as 0.f: it never reaches the mix.
 LMMS_EXPORT bool decodeAudioPacket(const std::uint8_t* data, std::size_t size, AudioPacketHeader& header,
 	float* interleavedOut, std::size_t outCapacityFloats);
 //! Dotted-quad IPv4 only (no name lookup, ever): true and \a address in host order on success.

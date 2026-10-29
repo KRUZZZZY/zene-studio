@@ -23,10 +23,12 @@
 
 #include "StemSplitController.h"
 
+#include <QActionGroup>
 #include <QDir>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QMenu>
 #include <QMessageBox>
 #include <QProgressDialog>
 #include <QTemporaryFile>
@@ -42,6 +44,8 @@
 #include "SampleClip.h"
 #include "Song.h"
 #include "Track.h"
+
+#include "StemSeparation/StemTypes.h"
 
 namespace lmms::gui
 {
@@ -59,7 +63,8 @@ StemSplitController::StatusReader s_statusReader;
 
 StemSplitController::StemSplitController(QWidget* parent) :
 	QObject(parent),
-	m_parent(parent)
+	m_parent(parent),
+	m_lastQuality(QString::fromLatin1(stemQualityName(DefaultStemQuality)))
 {
 }
 
@@ -84,6 +89,68 @@ StemSplitController* StemSplitController::instance()
 		s_instance = new StemSplitController(parent);
 	}
 	return s_instance;
+}
+
+
+
+
+void StemSplitController::addSplitToStemsMenu(QMenu* menu, SampleClip* clip)
+{
+	if (menu == nullptr || clip == nullptr) { return; }
+	QMenu* sub = menu->addMenu(tr("Split to stems"));
+	// One item per quality stem.job_start accepts (Q050-062.1), in its order.
+	// The item hands the NAME to the registered command, which validates it -
+	// the menu has no quality logic of its own beyond the label.
+	const std::pair<StemQuality, QString> items[] = {
+		{StemQuality::Fast, tr("Fast (25% overlap)")},
+		{StemQuality::Standard, tr("Standard (50% overlap)")},
+		{StemQuality::High, tr("High quality (75% overlap, about 2x the time)")}};
+	const QString last = instance()->lastQuality();
+	auto* group = new QActionGroup(sub);
+	QPointer<SampleClip> target(clip);
+	for (const auto& [quality, text] : items)
+	{
+		const QString name = QString::fromLatin1(stemQualityName(quality));
+		QAction* action = sub->addAction(text);
+		action->setCheckable(true);
+		action->setChecked(name == last);
+		action->setData(name);
+		group->addAction(action);
+		QObject::connect(action, &QAction::triggered, sub, [target, name] {
+			if (!target.isNull()) { instance()->splitClipToStems(target.data(), name); }
+		});
+	}
+}
+
+
+
+
+QString StemSplitController::qualityText(const QJsonObject& job)
+{
+	QString name = job.value(QStringLiteral("inference_quality")).toString();
+	if (name.isEmpty()) { name = job.value(QStringLiteral("quality")).toString(); }
+	StemQuality quality = DefaultStemQuality;
+	if (!control::stemQualityFromName(name, &quality)) { return QString(); }
+	return tr("%1 quality, %2% overlap")
+		.arg(name)
+		.arg(qRound(stemOverlapFraction(quality) * 100.0));
+}
+
+
+
+
+QString StemSplitController::progressLabel(const QJsonObject& job) const
+{
+	const QString quality = qualityText(job);
+	if (job.value(QStringLiteral("fetching_model")).toBool(false))
+	{
+		return quality.isEmpty()
+			? tr("Downloading the stem model, then separating (offline job)...")
+			: tr("Downloading the stem model, then separating at %1 (offline job)...").arg(quality);
+	}
+	return quality.isEmpty()
+		? tr("Separating stems (offline job)...")
+		: tr("Separating stems at %1 (offline job)...").arg(quality);
 }
 
 
@@ -138,7 +205,7 @@ bool StemSplitController::ensureBackendReady(bool* fetching)
 
 
 
-void StemSplitController::splitClipToStems(SampleClip* clip)
+void StemSplitController::splitClipToStems(SampleClip* clip, const QString& quality)
 {
 	if (clip == nullptr)
 	{
@@ -169,7 +236,7 @@ void StemSplitController::splitClipToStems(SampleClip* clip)
 		QMessageBox::warning(m_parent, tr("Split to stems"), error);
 		return;
 	}
-	startJob(snapshot, source);
+	startJob(snapshot, source, quality);
 }
 
 
@@ -250,10 +317,11 @@ bool StemSplitController::resolveSourceFile(const ClipSnapshot& snapshot, QStrin
 
 
 
-bool StemSplitController::startJob(const ClipSnapshot& snapshot, const QString& source)
+bool StemSplitController::startJob(const ClipSnapshot& snapshot, const QString& source, const QString& quality)
 {
-	const ControlResult started = ControlRegistry::instance()->invoke(
-		QStringLiteral("stem.job_start"), QJsonObject{{QStringLiteral("source"), source}});
+	QJsonObject args{{QStringLiteral("source"), source}};
+	if (!quality.isEmpty()) { args.insert(QStringLiteral("quality"), quality); }
+	const ControlResult started = ControlRegistry::instance()->invoke(QStringLiteral("stem.job_start"), args);
 	if (!started.ok)
 	{
 		releaseTemp();
@@ -263,13 +331,15 @@ bool StemSplitController::startJob(const ClipSnapshot& snapshot, const QString& 
 	}
 
 	m_jobId = started.result.value(QStringLiteral("job_id")).toInt();
+	// The setting the command says it took, not the one asked for.
+	const QString effective = started.result.value(QStringLiteral("quality")).toString();
+	if (!effective.isEmpty()) { m_lastQuality = effective; }
 	m_song = snapshot.song;
 	m_trackId = snapshot.trackId;
 	m_clipPosition = snapshot.position;
 	m_clipName = snapshot.name;
 
-	m_dialog = new QProgressDialog(
-		tr("Separating stems (offline job)..."), tr("Cancel"), 0, 100, m_parent);
+	m_dialog = new QProgressDialog(progressLabel(started.result), tr("Cancel"), 0, 100, m_parent);
 	m_dialog->setWindowTitle(tr("Split to stems"));
 	m_dialog->setWindowModality(Qt::WindowModal);
 	m_dialog->setMinimumDuration(0);
@@ -328,14 +398,7 @@ void StemSplitController::pollJob()
 	if (m_dialog != nullptr)
 	{
 		m_dialog->setValue(qRound(job.value(QStringLiteral("progress")).toDouble(0.0) * 100.0));
-		if (job.value(QStringLiteral("fetching_model")).toBool(false))
-		{
-			m_dialog->setLabelText(tr("Downloading the stem model, then separating (offline job)..."));
-		}
-		else
-		{
-			m_dialog->setLabelText(tr("Separating stems (offline job)..."));
-		}
+		m_dialog->setLabelText(progressLabel(job));
 	}
 	const QString state = job.value(QStringLiteral("state")).toString();
 	if (state == QLatin1String("completed")) { completeJob(job); }
@@ -371,10 +434,19 @@ void StemSplitController::completeJob(const QJsonObject& job)
 	}
 	else
 	{
-		QMessageBox::information(m_parent, tr("Split to stems"),
-			tr("Created %1 stem tracks in %2 s.")
-				.arg(created.result.value(QStringLiteral("track_count")).toInt())
-				.arg(job.value(QStringLiteral("since_submit_seconds")).toDouble(0.0), 0, 'f', 1));
+		// Q050-062.2: name the setting the worker actually ran, and say where the
+		// source is - stem.tracks_create adds tracks and never edits the clip.
+		const QString quality = qualityText(job);
+		QString text = quality.isEmpty()
+			? tr("Created %1 stem tracks in %2 s.")
+			: tr("Created %1 stem tracks at %3 in %2 s.");
+		text = text.arg(created.result.value(QStringLiteral("track_count")).toInt())
+			.arg(job.value(QStringLiteral("since_submit_seconds")).toDouble(0.0), 0, 'f', 1);
+		if (!quality.isEmpty()) { text = text.arg(quality); }
+		text += QLatin1Char('\n') + (m_clipName.isEmpty()
+			? tr("The original clip is unchanged on its track.")
+			: tr("The original clip \"%1\" is unchanged on its track.").arg(m_clipName));
+		QMessageBox::information(m_parent, tr("Split to stems"), text);
 	}
 	resetJob();
 }

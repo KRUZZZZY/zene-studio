@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-26T20:35:25Z",
+  "captured_at": "2026-10-28T09:13:52Z",
   "commands": [
     {
       "args_schema": {
@@ -1158,6 +1158,47 @@
       "mutating": true,
       "requires": [],
       "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "enum": [
+              "draw",
+              "erase",
+              "draw_out_values",
+              "edit_tangents"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "type": "object"
+      },
+      "description": "Set the automation editor's edit mode: draw (add and move points), erase (remove them), draw_out_values (draw a curve's out-values directly) or edit_tangents (shape the tangents of a cubic Hermite curve - refused, typed, for any other progression, exactly as the toolbar's own disabled button says). The toolbar's matching button is checked afterwards and 'previous' reports the mode it was in. The mode is interface state: it is not saved with the project and has no undo.",
+      "group": "automation",
+      "id": "automation.editor_mode",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "changed": {
+            "type": "boolean"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "previous": {
+            "type": "string"
+          }
+        },
+        "required": [],
         "type": "object"
       }
     },
@@ -3116,7 +3157,7 @@
         ],
         "type": "object"
       },
-      "description": "Apply a stored chain preset to a target: the target's chain becomes the preset's devices, IN THE PRESET'S ORDER, each one restored from its own state document, so the parameters are the values the chain was captured with. The target's existing devices are removed (the plugin.unload lifetime). A preset naming a device this build cannot load is refused and the target's chain is left untouched. Reversible: one control.undo puts the previous chain back, devices and settings. 'chain' (default 0) applies it to parallel chain n of a channel's rack instead.",
+      "description": "Apply a stored chain preset to a target: the target's chain becomes the preset's devices, IN THE PRESET'S ORDER, each one restored from its own state document, so the parameters are the values the chain was captured with. The target's existing devices are removed (the plugin.unload lifetime). A preset naming a device this build cannot load is refused and the target's chain is left untouched. Reversible: one control.undo puts the previous chain back, devices and settings. 'chain' (default 0) applies it to parallel chain n of a channel's rack instead. The devices' MIDI controller bindings come back on the new devices' own parameters; 'bindings' lists the restored ones and the skipped ones (a parameter the device no longer has), with a one-line 'summary'.",
       "group": "chain",
       "id": "chain.apply",
       "mutating": true,
@@ -3124,6 +3165,9 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "bindings": {
+            "type": "object"
+          },
           "device_count": {
             "type": "integer"
           },
@@ -3477,7 +3521,7 @@
         ],
         "type": "object"
       },
-      "description": "Capture a target's effect chain as a named preset: every device in the chain's own order, each with the state document plugin.state_save writes for it (enabled, wet, autoquit and every parameter). Writes ONE file in the store (chainpresets/<name>.zcp), outside the project, so the preset can be applied to a track in another project, and so project.save/project.open cannot lose it. An existing preset of that name is refused unless \"overwrite\":true. 'target' is a trk-<n> or ch-<n> id; 'chain' (default 0) captures parallel chain n of a channel's rack instead. Reversible through a recorded action checkpoint that puts the file - or the revision it replaced - back.",
+      "description": "Capture a target's effect chain as a named preset: every device in the chain's own order, each with the state document plugin.state_save writes for it (enabled, wet, autoquit and every parameter, with its MIDI controller binding, listed in a per-device binding manifest chain.apply reports against). Writes ONE file in the store (chainpresets/<name>.zcp), outside the project, so the preset can be applied to a track in another project, and so project.save/project.open cannot lose it. An existing preset of that name is refused unless \"overwrite\":true. 'target' is a trk-<n> or ch-<n> id; 'chain' (default 0) captures parallel chain n of a channel's rack instead. Reversible through a recorded action checkpoint that puts the file - or the revision it replaced - back.",
       "group": "chain",
       "id": "chain.save",
       "mutating": true,
@@ -8142,6 +8186,80 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "input": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "output": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Start a Lua control-surface script ('path', an absolute .lua file) under 'name', bound to the MIDI client's 'input' and 'output' ports (midi.device_list / surface.mcu_ports names). Each event from the input calls the script's on_midi(event) - event.type (note_on, note_off, cc, pitch_bend, ...), channel 1..16, key/velocity or controller/value - and the script runs registered commands with zene.command(id, args) and sends feedback to the output with surface.send_cc(channel, cc, value) and surface.send_note(channel, key, velocity). Sandboxed (no files, no OS), 1,000,000 Lua instructions per call, 8 MiB of Lua memory; 8 errors in a row stop it, and a lost input or output port is reported and re-bound when it returns. Replaces a running script of that name. Device state: not recorded, not saved.",
+      "group": "controller",
+      "id": "controller.script_start",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "The running control-surface scripts (or the one 'name'): their ports, whether they are faulted or have lost a bound MIDI port, how many events they received, ran and dropped, the commands and feedback they sent, their errors and recent log lines.",
+      "group": "controller",
+      "id": "controller.script_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "description": "Stop the control-surface script 'name' and release its MIDI ports.",
+      "group": "controller",
+      "id": "controller.script_stop",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "control": {
             "type": "string"
           },
@@ -9268,7 +9386,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Every device chain with its fx-<n> instances, each one's parameter values and, on an instrument track, its 'inst' entry with the instrument's parameters. With 'target' it reads exactly that target, an empty chain included; without it, every track and mixer channel that carries at least one device.",
+      "description": "Every device chain with its fx-<n> instances, each one's parameter values and, on an instrument track, its 'inst' entry with the instrument's parameters. With 'target' it reads exactly that target, an empty chain included; without it, every track and mixer channel that carries at least one device. A clip-<n> target reads an audio clip's own effects (Q050-111).",
       "group": "dsp",
       "id": "dsp.get_state",
       "mutating": false,
@@ -12540,6 +12658,22 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Q050-340: how loud each input is - 'channels': every capture channel the input carries (the interface's own channels, before the stereo bus picks its pair; the stereo bus as channels 0 and 1 for a backend without the wide capture path), each with its 'peak' (linear) and 'peak_db' (-120 for silence) since the last call and 'clipped'; 'armed': every record-armed route with its 'track' (id and 'track_name'), the 'input_channel' it records and that channel's level - silence when the channel delivered nothing - whatever the track's input monitoring. 'channel_count' is 0 until a capture has delivered audio. The agent's readings are its own: Large Meters' input meters keep theirs. Read only.",
+      "group": "meter",
+      "id": "meter.inputs",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {
           "path": {
             "type": "string"
@@ -13440,11 +13574,69 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "drive": {
+            "type": "number"
+          },
+          "eq_high_db": {
+            "type": "number"
+          },
+          "eq_low_db": {
+            "type": "number"
+          },
+          "eq_mid_db": {
+            "type": "number"
+          },
+          "eq_mid_freq": {
+            "type": "number"
+          },
+          "glue": {
+            "type": "boolean"
+          },
+          "glue_makeup_db": {
+            "type": "number"
+          },
+          "glue_ratio": {
+            "type": "number"
+          },
+          "glue_threshold_db": {
+            "type": "number"
+          },
+          "polarity_left": {
+            "type": "boolean"
+          },
+          "polarity_right": {
+            "type": "boolean"
+          },
+          "trim_db": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "channel"
+        ],
+        "type": "object"
+      },
+      "description": "Q050-088: one channel's Console section, as the mixer strip shows it (window.mixer_view 'show_console'): 'trim_db' (-24..24, before the inserts), 'polarity_left' / 'polarity_right', the strip EQ - 'eq_low_db' (a shelf at 100 Hz), 'eq_mid_db' (a bell at 'eq_mid_freq', 100..10000 Hz), 'eq_high_db' (a shelf at 8 kHz), each -18..18 - and, when the channel carries a Console device (mixer.console_apply puts one on every channel), that Console's 'drive' (0..100 %) and its glue compressor: 'glue' (on or off - off by default, and then the Console sounds exactly as it did), 'glue_threshold_db' (-40..0), 'glue_ratio' (1..20) and 'glue_makeup_db' (0..24). Only this channel changes. A Console field on a channel without a Console is refused; any refusal changes nothing. A field left out keeps its value; with only 'channel' it reports. The answer has every field ('console' says whether the channel has one; its fields are null without). Saved with the project; one undo step.",
+      "group": "mixer",
+      "id": "mixer.console_strip",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {},
         "required": [],
         "type": "object"
       },
-      "description": "How much of each audio period every mixer channel's devices and strip take, in percent of the period (smoothed over the last few dozen periods), each of its devices' own share ('devices': device id, name, cpu_percent), their sum, and the engine's whole load. An instrument's own synthesis runs before the mixer and is in engine_percent, not in its channel's figure. Read-only.",
+      "description": "How much of each audio period every mixer channel's devices and strip take, in percent of the period (smoothed over the last few dozen periods), each of its devices' own share ('devices': device id, name, cpu_percent), their sum, and the engine's whole load. An instrument's own synthesis runs before the mixer and is not in its channel's figure: 'tracks' gives each instrument track's own synthesis share (track id, name, instrument, synthesis_percent; CPU time, so several cores can pass 100) and synthesis_total_percent their sum. 'late_periods' counts the render periods that took longer than they last - the engine's deadline misses, not the audio device's xruns - and lists the newest (serial, tick, position, playing, took_us, period_us, percent). Read-only.",
       "group": "mixer",
       "id": "mixer.cpu_load",
       "mutating": false,
@@ -14348,6 +14540,17 @@
           "input_mono": {
             "type": "boolean"
           },
+          "meter_mode": {
+            "enum": [
+              "default",
+              "peak",
+              "rms",
+              "pre_fader",
+              "vu",
+              "lufs"
+            ],
+            "type": "string"
+          },
           "mono": {
             "type": "boolean"
           },
@@ -14392,7 +14595,7 @@
         ],
         "type": "object"
       },
-      "description": "A channel's own settings: 'trim_db' (-24..24, an input gain before the inserts), 'polarity_left' / 'polarity_right', 'mono', 'swap' (left and right exchanged), 'input_mono' (a mono source, summed before the inserts), 'pan_mode' (balance - the classic pan -, dual - 'pan' places the left side and 'pan_right' the right, so both centred sum the sides to mono; entering dual from centred pans spreads them hard left and right -, width - 'width' 0..2 scales the stereo side, then 'pan' balances), 'solo_safe' (soloing another channel never mutes this one) and 'note' (free text, shown as the strip's tooltip). A field left out keeps its value. Saved with the project; one undo step.",
+      "description": "A channel's own settings: 'trim_db' (-24..24, an input gain before the inserts), 'polarity_left' / 'polarity_right', 'mono', 'swap' (left and right exchanged), 'input_mono' (a mono source, summed before the inserts), 'pan_mode' (balance - the classic pan -, dual - 'pan' places the left side and 'pan_right' the right, so both centred sum the sides to mono; entering dual from centred pans spreads them hard left and right -, width - 'width' 0..2 scales the stereo side, then 'pan' balances), 'solo_safe' (soloing another channel never mutes this one), 'note' (free text, shown as the strip's tooltip) and, Q050-108, 'meter_mode' - what this strip's meter shows: default (the mixer view's meter_mode, as every older project), peak (after the fader), rms, pre_fader, vu (a VU meter: 300 ms integration, 0 VU at meter.set_reference's level for a steady sine) or lufs (BS.1770 short-term loudness and true peak of this channel, after the fader); other strips keep theirs. A field left out keeps its value. Saved with the project; one undo step.",
       "group": "mixer",
       "id": "mixer.set_strip",
       "mutating": true,
@@ -14628,7 +14831,7 @@
         ],
         "type": "object"
       },
-      "description": "A channel's own settings (as mixer.set_strip writes them) and its meters: pre-fader peak (held since the last clear), RMS after the fader (this period), the latched clip light, and the deepest gain reduction (dB) an insert reported.",
+      "description": "A channel's own settings (as mixer.set_strip writes them) and its meters: pre-fader peak (held since the last clear), RMS after the fader (this period), the latched clip light, and the deepest gain reduction (dB) an insert reported; Q050-108: its 'meter_mode' and, under 'meters', the VU needle ('vu_left' / 'vu_right', in VU against 'vu_reference_dbfs') and - while the strip is in lufs - 'lufs_momentary', 'lufs_short_term' and 'true_peak_dbtp' (null with no reading yet). meter.get_state and the shell's loudness readout stay the master's.",
       "group": "mixer",
       "id": "mixer.strip_get",
       "mutating": false,
@@ -18142,6 +18345,70 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The OSC control server: running or not, its address, port and scope, and how many requests it received, ran and refused.",
+      "group": "osc",
+      "id": "osc.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "port": {
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scope": {
+            "enum": [
+              "remote",
+              "full"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Start the OSC control server (off until this runs): listen for UDP on 'address' (an IP literal, default 127.0.0.1 - this machine only) and 'port' (default 9000; 0 = any free port). A message to /zene/<command-id> runs that registered command - its arguments one JSON-object string or string-key/value pairs - and the sender gets /zene/reply (id, result JSON) or /zene/error (id, kind, message). 'scope' remote (default) allows transport, markers, mixer faders and state reads; full allows every command except scripts, sessions and quitting, on a loopback address only. Replaces a running server. Device state: not recorded.",
+      "group": "osc",
+      "id": "osc.start",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Stop the OSC control server and close its port.",
+      "group": "osc",
+      "id": "osc.stop",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {
           "target": {
             "type": "string"
@@ -18278,7 +18545,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Plugin delay compensation as the mixer publishes it: the total latency to the master output, every channel's alignment point and the latency its own chain adds, the compensation applied at every send, and whether sidechain routing exists. Read-only.",
+      "description": "Plugin delay compensation as the mixer publishes it: the total latency to the master output, every channel's alignment point and the latency its own chain adds, its hardware insert's effective latency (hardware_insert_latency_frames: the typed override, else the measured ping; 0 while the insert is off or an export bypasses it) and where that figure comes from (hardware_insert_latency_source: off, bypassed, override, measured or unmeasured), the compensation applied at every send, and whether sidechain routing exists. Read-only.",
       "group": "pdc",
       "id": "pdc.report",
       "mutating": false,
@@ -18321,6 +18588,33 @@
           }
         },
         "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "offset_samples": {
+            "maximum": 8192,
+            "minimum": -8192,
+            "type": "integer"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "type": "object"
+      },
+      "description": "Q050-339: the manual delay of 'target' - an audio track or an instrument track (trk-<n>), or a mixer channel (ch-<n>, not the master) - as 'offset_samples', a whole number of samples at the engine's rate (-8192..8192): positive plays it later, negative earlier. It is added to the automatic delay compensation, so every other path stays aligned (pdc.report shows the result). A track's offset moves its audio output (not a hosted instrument's extra routed output buses); an instrument track's note delay (track.set_delay) is a separate setting. With only 'target' it reports; the answer adds 'offset_ms' and 'kind' (track or channel). Saved with the track or channel; one undo step.",
+      "group": "pdc",
+      "id": "pdc.set_offset",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
         "type": "object"
       }
     },
@@ -18588,7 +18882,7 @@
         ],
         "type": "object"
       },
-      "description": "Open a device's OWN editor - the plug-in's interface, not the host's generic knob view (which stays) - in a window of its own. 'target' is the track or channel (trk-<n>/ch-<n>) and 'plugin' the device on it (fx-<n>, or 'inst' for a track's instrument), as plugin.param_set names them. VST3 plug-ins with an editor view and CLAP plug-ins whose gui embeds in X11 open; a plug-in with no editor, or one that can only float, refuses with the reason. An editor already open is brought forward. Needs a display; interface state, not project state: nothing is saved or journalled.",
+      "description": "Open a device's OWN editor - the plug-in's interface, not the host's generic knob view (which stays) - in a window of its own. 'target' is the track or channel (trk-<n>/ch-<n>) and 'plugin' the device on it (fx-<n>, or 'inst' for a track's instrument), as plugin.param_set names them. VST3 and CLAP plug-ins whose editor embeds in this platform's window (X11, a Windows HWND, a macOS NSView) open; a plug-in with no editor, one that cannot embed on this platform (the refusal names the platform and the window API), or one that can only float, refuses with the reason. On Linux editors embed only in X11 windows: on a Wayland desktop Zene runs through XWayland, and natively on Wayland (QT_QPA_PLATFORM=wayland, no XWayland) every editor refuses ('requires') with the reason. An editor already open is brought forward. Needs a display; interface state, not project state: nothing is saved or journalled.",
       "group": "plugin",
       "id": "plugin.editor_open",
       "mutating": false,
@@ -18771,7 +19065,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Every device this build can load: built-in effect and instrument modules plus the devices of the shipped hosting formats (LADSPA, LV2, VST3 and CLAP), each with a dev-<n> id that is deterministic for the binary. dev-<n> is a catalogue index, not a persisted project id, and 'loadable' says whether plugin.load accepts the entry. Each entry carries 'vendor' - who made it, as its own format reports it (\"Zene Studio\" for a built-in, the LADSPA maker, the LV2 author, the VST3 or CLAP factory's vendor; empty when the format reports none, which the device picker reads as \"Not reported\"). Format order is built-in, then LADSPA, then LV2, then VST3, then CLAP, so adding a host does not renumber the ids of the formats that were already there.",
+      "description": "Every device this build can load: built-in effect and instrument modules plus the devices of the shipped hosting formats (LADSPA, LV2, VST3 and CLAP), each with a dev-<n> id that is deterministic for the binary. dev-<n> is a catalogue index, not a persisted project id, and 'loadable' says whether plugin.load accepts the entry. Each entry carries 'vendor' - who made it, as its own format reports it (\"Zene Studio\" for a built-in, the LADSPA maker, the LV2 author, the VST3 or CLAP factory's vendor; empty when the format reports none, which the device picker reads as \"Not reported\"). Format order is built-in, then LADSPA, then LV2, then VST3, then CLAP, then AU, so adding a host does not renumber the ids of the formats that were already there. macOS builds also list Audio Units (format 'au', from the system component registry; each entry carries its 'component' type:subtype:manufacturer and the 'scan_cache_path' its quarantine entry uses); other builds have no 'au' format.",
       "group": "plugin",
       "id": "plugin.list",
       "mutating": false,
@@ -18829,7 +19123,7 @@
         ],
         "type": "object"
       },
-      "description": "Load a device by its dev-<n> id: an effect onto a track's device chain or a mixer channel's insert chain, an instrument onto an instrument track. Returns the new instance id (fx-<n>, or inst for an instrument). Headless-safe: it declares no 'requires' at all, because no editor is created here - neither a built-in plugin view nor an LV2 UI. An LV2 device whose bundle ships a GUI loads and is fully parametrisable through plugin.param_get / plugin.param_set on a display-less instance. Optional for an effect: `chain` (default 0) puts it on parallel chain n of a mixer channel's rack (rack.add_chain), and `position` (0 = first) inserts it at that slot instead of appending; the reply's `index` is the slot it landed in.",
+      "description": "Load a device by its dev-<n> id: an effect onto a track's device chain or a mixer channel's insert chain, an instrument onto an instrument track. Returns the new instance id (fx-<n>, or inst for an instrument). Headless-safe: it declares no 'requires' at all, because no editor is created here - neither a built-in plugin view nor an LV2 UI. An LV2 device whose bundle ships a GUI loads and is fully parametrisable through plugin.param_get / plugin.param_set on a display-less instance. Optional for an effect: `chain` (default 0) puts it on parallel chain n of a mixer channel's rack (rack.add_chain), and `position` (0 = first) inserts it at that slot instead of appending; the reply's `index` is the slot it landed in. Q050-111: a `target` of clip-<n> (an audio clip) puts the effect on that clip's OWN chain - realtime, processing that clip alone before the track sums its clips; plugin.unload / plugin.bypass / plugin.move / plugin.param_set take the same clip-<n> target, and dsp.get_state reads it.",
       "group": "plugin",
       "id": "plugin.load",
       "mutating": true,
@@ -19418,7 +19712,7 @@
         ],
         "type": "object"
       },
-      "description": "Read one device parameter by 'name' or by 'index'. 'plugin' is an fx-<n> instance id or 'inst' for the target track's instrument. The range reported is the engine's own model range.",
+      "description": "Read one device parameter by 'name' or by 'index'. 'plugin' is an fx-<n> instance id or 'inst' for the target track's instrument. The range reported is the engine's own model range. A parameter the plug-in owns (a meter or output, declared read-only by the plug-in) carries read_only:true; plugin.param_set refuses it.",
       "group": "plugin",
       "id": "plugin.param_get",
       "mutating": false,
@@ -19443,6 +19737,9 @@
               },
               "name": {
                 "type": "string"
+              },
+              "read_only": {
+                "type": "boolean"
               },
               "step": {
                 "type": "number"
@@ -19556,7 +19853,7 @@
         ],
         "type": "object"
       },
-      "description": "Set one device parameter by 'name' or by 'index' with the engine's own range enforcement: a value outside the model's min..max is refused with invalid_args rather than silently clamped. Reversible through the ProjectJournal.",
+      "description": "Set one device parameter by 'name' or by 'index' with the engine's own range enforcement: a value outside the model's min..max is refused with invalid_args rather than silently clamped, and a parameter the plug-in declares read-only is refused. Reversible through the ProjectJournal.",
       "group": "plugin",
       "id": "plugin.param_set",
       "mutating": true,
@@ -19581,6 +19878,9 @@
               },
               "name": {
                 "type": "string"
+              },
+              "read_only": {
+                "type": "boolean"
               },
               "step": {
                 "type": "number"
@@ -20589,7 +20889,7 @@
         ],
         "type": "object"
       },
-      "description": "Remove a device instance (fx-<n>) from a track's chain or a mixer channel. When its state fits the capture cap and the undo stack is addressable, one control.undo re-instantiates the same plugin at the same index with its settings restored. If state exceeds the cap, 'state_xml' is empty and 'state_truncated' is true; its settings cannot be manually restored from that snapshot. When state fits the cap but no inverse is recorded, the transaction's 'before' snapshot contains usable XML for a manual rebuild.",
+      "description": "Remove a device instance (fx-<n>) from a track's chain, a mixer channel or an audio clip's own chain (clip-<n>). When its state fits the capture cap and the undo stack is addressable, one control.undo re-instantiates the same plugin at the same index with its settings restored. If state exceeds the cap, 'state_xml' is empty and 'state_truncated' is true; its settings cannot be manually restored from that snapshot. When state fits the cap but no inverse is recorded, the transaction's 'before' snapshot contains usable XML for a manual rebuild.",
       "group": "plugin",
       "id": "plugin.unload",
       "mutating": true,
@@ -25236,6 +25536,33 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "out": {
+            "type": "string"
+          },
+          "tail_ms": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "out"
+        ],
+        "type": "object"
+      },
+      "description": "Render the project IN REAL TIME through the running audio device, so every hardware insert that is on is heard: its send goes out to the outboard gear and its return is recorded into the mix (an offline render - render.render - bypasses them and renders the dry signal). The song plays from its start to its end plus 'tail_ms' (default 500, at most 10000), with the loop and the metronome off for the pass, and the master mix is written to 'out' (absolute, .wav) at the device's sample rate and the export bit depth in force; the head that delay compensation adds is dropped, so frame k of the file is song frame k, as offline. The reply has the path, frames, seconds, sha256, the compensation dropped and each insert played (channel, send, return, latency). Refused, with nothing rendered and no offline fallback, when no insert is on or the device cannot carry an insert's send or return or delivers no input. The surface does not answer until the pass ends (at most 600 s of song). Changes nothing in the project.",
+      "group": "render",
+      "id": "render.realtime",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "channels": {
             "enum": [
               "stereo",
@@ -25271,7 +25598,7 @@
         ],
         "type": "object"
       },
-      "description": "Render the current session to a file and return its hash (headless). Whole project by default; pass start_ticks and end_ticks TOGETHER to render only that span of the song (a selection), in which case the span is rendered exactly - no tail bar and no loop repetition - and the reply reports the range and the frame count. The render is started with the export settings in force: the preset applied through export.preset_apply (sample rate, bit depth, stereo mode), or the render path's own defaults when none is applied. `channels`: 'stereo' (the default; a surround master is folded with the ITU-R BS.775 downmix) or 'surround' - one WAV channel per speaker of the surround master (6 for 5.1, 8 for 7.1, WAVE_FORMAT_EXTENSIBLE with its channel mask), refused on a stereo master, for a format other than wav, and with the loudness report on; the reply's `channels` and `channel_layout` say what the file holds. Runs in a CHILD process, so the declared bound applies: this surface does not answer - not even control.ping - until it finishes (docs/KNOWN-LIMITATIONS.md).",
+      "description": "Render the current session to a file and return its hash (headless). Whole project by default; pass start_ticks and end_ticks TOGETHER to render only that span of the song (a selection), in which case the span is rendered exactly - no tail bar and no loop repetition - and the reply reports the range and the frame count. The render is started with the export settings in force: the preset applied through export.preset_apply (sample rate, bit depth, stereo mode), or the render path's own defaults when none is applied. `channels`: 'stereo' (the default; a surround master is folded with the ITU-R BS.775 downmix) or 'surround' - one WAV channel per speaker of the surround master (6 for 5.1, 8 for 7.1, WAVE_FORMAT_EXTENSIBLE with its channel mask), refused on a stereo master, for a format other than wav, and with the loudness report on; the reply's `channels` and `channel_layout` say what the file holds. The render is OFFLINE (no audio device), so hardware inserts are bypassed and the dry signal is rendered: the reply's `hardware_inserts` says so (hardware 'unavailable', `bypassed`, the inserts that are on); render.realtime plays the song through them. Runs in a CHILD process, so the declared bound applies: this surface does not answer - not even control.ping - until it finishes (docs/KNOWN-LIMITATIONS.md).",
       "group": "render",
       "id": "render.render",
       "mutating": false,
@@ -25299,6 +25626,9 @@
           },
           "frames": {
             "type": "integer"
+          },
+          "hardware_inserts": {
+            "type": "object"
           },
           "path": {
             "type": "string"
@@ -25348,7 +25678,7 @@
         ],
         "type": "object"
       },
-      "description": "Export the song's named sections (section.add/set/list) as separate files: one file per section, named after the section, each rendered to exactly the section's own start..end ticks (no tail bar). The file name is the section's name with the characters a filesystem refuses (/ \\ : * ? \" < > |) removed and leading dots dropped; trailing dots and spaces become one '_', and a Windows-reserved base name (CON, PRN, AUX, NUL, COM1-9, LPT1-9, even with an extension) gets '_' appended to the base (CON -> CON_), the same on every platform. Names that are equal after Unicode canonical decomposition and case folding (Intro/intro) would be one file on Windows and macOS, so the later section gets '-2', then '-3' (intro-2.wav), skipping any name already taken; a name empty once cleaned is its id (sec-<n>). 'out' is an absolute directory the files are written into; 'sections' picks specific sec-<n> ids (default: every section, in time order); 'format' is one of the build's renderable formats (default wav). Each file is rendered through render.render, so the export settings in force - the preset applied through export.preset_apply - set its rate and bit depth; the reply names them and one entry per written file. NOTE the declared bound: each render runs in a child process and this surface does not answer until it finishes (docs/KNOWN-LIMITATIONS.md).",
+      "description": "Export the song's named sections (section.add/set/list) as separate files: one file per section, named after the section, each rendered to exactly the section's own start..end ticks (no tail bar). The file name is the section's name with the characters a filesystem refuses (/ \\ : * ? \" < > |) removed and leading dots dropped; trailing dots and spaces become one '_', and a Windows-reserved base name (CON, PRN, AUX, NUL, COM1-9, LPT1-9, even with an extension) gets '_' appended to the base (CON -> CON_), the same on every platform. Names that are equal after Unicode canonical decomposition and case folding (Intro/intro) would be one file on Windows and macOS, so the later section gets '-2', then '-3' (intro-2.wav), skipping any name already taken; a name empty once cleaned is its id (sec-<n>). Before any render starts, every generated path is checked: a file, a directory or a symbolic link already there (even a dangling one) refuses the whole call with a typed refusal that names it, so no existing file is replaced and no part of the batch is written. 'out' is an absolute directory the files are written into; 'sections' picks specific sec-<n> ids (default: every section, in time order); 'format' is one of the build's renderable formats (default wav). Each file is rendered through render.render, so the export settings in force - the preset applied through export.preset_apply - set its rate and bit depth; the reply names them and one entry per written file. NOTE the declared bound: each render runs in a child process and this surface does not answer until it finishes (docs/KNOWN-LIMITATIONS.md).",
       "group": "render",
       "id": "render.sections",
       "mutating": false,
@@ -26008,7 +26338,7 @@
         ],
         "type": "object"
       },
-      "description": "Bake a gain change into a sample clip's source: every frame multiplied by the requested dB, swapped in through SampleClip::setSampleBuffer as a transformed COPY - the previous buffer is never modified, so a second clip sharing it keeps its audio, and one control.undo re-loads the previous source. No limiter is applied (the float pipeline keeps values past 0 dBFS); sample.normalize is the peak-targeted bake and clip.set_gain the non-baking alternative. A sample clip's Process menu offers it as Amplify..., and agents reach the same command on the control socket and through MCP (docs/KNOWN-LIMITATIONS.md).",
+      "description": "Bake a gain change into a sample clip's source: every frame multiplied by the requested dB, swapped in through SampleClip::setSampleBuffer as a transformed COPY - the previous buffer is never modified, so a second clip sharing it keeps its audio, and one control.undo re-loads the previous source. No limiter is applied (the float pipeline keeps values past 0 dBFS); sample.normalize is the peak-targeted bake, clip.set_gain the non-baking alternative and sample.edit_range the selected-range gain. A sample clip's Process menu offers it as Amplify..., and agents reach the same command on the control socket and through MCP (docs/KNOWN-LIMITATIONS.md).",
       "group": "sample",
       "id": "sample.amplify",
       "mutating": true,
@@ -26121,7 +26451,7 @@
         ],
         "type": "object"
       },
-      "description": "Bake a LINEAR fade into a sample clip's source: direction=in ramps 0 -> unity across the whole source, direction=out ramps unity -> 0, both channels together. The result replaces the source through SampleClip::setSampleBuffer as a transformed COPY and one control.undo re-loads the previous source. This release has no range/selection model, so a fade always spans the whole clip source and has only the linear curve; clip.set_fade remains the non-baking window fade. A sample clip's Process menu offers it as Fade, in or out (docs/KNOWN-LIMITATIONS.md).",
+      "description": "Bake a LINEAR fade into a sample clip's source: direction=in ramps 0 -> unity across the whole source, direction=out ramps unity -> 0, both channels together. The result replaces the source through SampleClip::setSampleBuffer as a transformed COPY and one control.undo re-loads the previous source. This whole-source bake has no range parameter, so it always spans the whole clip source and has only the linear curve; the Sample Editor's selected-range fades are sample.edit_range's fade_in / fade_out, and clip.set_fade remains the non-baking window fade. A sample clip's Process menu offers it as Fade, in or out (docs/KNOWN-LIMITATIONS.md).",
       "group": "sample",
       "id": "sample.fade",
       "mutating": true,
@@ -26187,7 +26517,7 @@
         ],
         "type": "object"
       },
-      "description": "Generate a buffer (kind: tone, white noise, pink noise or silence) into a NEW audio clip on a sample track, routed through the non-destructive clip model: Track::createClip makes the clip and SampleClip::setSampleBuffer hands it the source, so an existing clip's audio is never overwritten (decision design/specs/DECISION-706-DESTRUCTION-MODEL.md). One journal checkpoint before the clip exists: one control.undo removes clip and buffer together. length is in ticks, position the clip's start; frequency (Hz) and amplitude (0..1) reach the tone and noise kinds - silence ignores them. In the interface a sample track's More menu - the track header's and the Inspector's - offers it as Insert Test Signal..., which opens this command's form with that track fixed and position 0, length 192 and kind tone as the starting values; confirming creates the clip. Agents reach the same command on the control socket, through MCP and from a script (docs/KNOWN-LIMITATIONS.md).",
+      "description": "Generate a buffer (kind: tone, white noise, pink noise or silence) into a NEW audio clip on a sample track, routed through the non-destructive clip model: Track::createClip makes the clip and SampleClip::setSampleBuffer hands it the source, so an existing clip's audio is never overwritten (decision design/specs/DECISION-706-DESTRUCTION-MODEL.md). One journal checkpoint before the clip exists: one control.undo removes clip and buffer together. length is in ticks, position the clip's start; frequency (Hz) and amplitude (0..1) reach the tone and noise kinds - silence ignores them. In the interface a sample track's More menu - the track header's and the Inspector's - offers it as Insert Test Signal..., which opens this command's form with that track fixed and position 0, length 192 and kind tone as the starting values; confirming creates the clip. Agents reach the same command on the control socket, through MCP and from a script; the Sample Editor's range operations are sample.edit_range (docs/KNOWN-LIMITATIONS.md).",
       "group": "sample",
       "id": "sample.generate",
       "mutating": true,
@@ -27624,7 +27954,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Empty the whole Session View: no grid, no slot, no scene override, default quantisation. A project that never used the session then re-saves byte-identically (the <session> block is dropped). Reversible through the ProjectJournal.",
+      "description": "Empty the whole Session View: no grid, no slot, no scene override, default quantisation; every playing cell stops. A project that never used the session then re-saves byte-identically (the <session> block is dropped). Reversible through the ProjectJournal.",
       "group": "session",
       "id": "session.clear",
       "mutating": true,
@@ -27661,7 +27991,7 @@
         ],
         "type": "object"
       },
-      "description": "Empty one grid cell, whatever it held. Reversible through the ProjectJournal (action checkpoint on the <session> block).",
+      "description": "Empty one grid cell, whatever it held; if it is playing or queued it stops, as session.stop_slot stops it. Undo puts the clip back without launching it. Reversible through the ProjectJournal (action checkpoint on the <session> block).",
       "group": "session",
       "id": "session.clear_slot",
       "mutating": true,
@@ -28378,7 +28708,7 @@
         ],
         "type": "object"
       },
-      "description": "Resize the Session View grid (column = a song track, row = a scene). Existing cells keep their content and position; new cells are empty. Reversible through the ProjectJournal (action checkpoint on the <session> block).",
+      "description": "Resize the Session View grid (column = a song track, row = a scene). Existing cells keep their content and position; new cells are empty; a playing cell the grid no longer holds stops. Reversible through the ProjectJournal (action checkpoint on the <session> block).",
       "group": "session",
       "id": "session.set_grid",
       "mutating": true,
@@ -28626,7 +28956,7 @@
         ],
         "type": "object"
       },
-      "description": "Define one grid cell: a MIDI clip ('type':'midi' + 'pattern'), an audio clip ('type':'audio' + 'source'), or empty ('type':'empty'); plus its launch mode, launch quantisation and playback settings, and `follow_actions`, the cell's persisted Follow Action chain ([] clears it; session.follow_set arms it). Only the fields supplied are written. Reversible through the ProjectJournal (action checkpoint on the <session> block).",
+      "description": "Define one grid cell: a MIDI clip ('type':'midi' + 'pattern'), an audio clip ('type':'audio' + 'source'), or empty ('type':'empty'); plus its launch mode, launch quantisation and playback settings, and `follow_actions`, the cell's persisted Follow Action chain ([] clears it; session.follow_set arms it). Only the fields supplied are written; a playing cell sounds its new content at once, and one emptied stops. Reversible through the ProjectJournal (action checkpoint on the <session> block).",
       "group": "session",
       "id": "session.set_slot",
       "mutating": true,
@@ -29191,7 +29521,7 @@
         ],
         "type": "object"
       },
-      "description": "Write the shortcut set - the overrides and every binding - to 'file' as JSON, for another machine or a backup. Writes only that file.",
+      "description": "Write the shortcut set - the menu overrides, the panel overrides and every binding - to 'file' as JSON, for another machine or a backup. Writes only that file.",
       "group": "shortcuts",
       "id": "shortcuts.export",
       "mutating": false,
@@ -29206,6 +29536,9 @@
             "type": "string"
           },
           "overrides": {
+            "type": "integer"
+          },
+          "panels": {
             "type": "integer"
           }
         },
@@ -29223,6 +29556,9 @@
           "overrides": {
             "type": "object"
           },
+          "panels": {
+            "type": "object"
+          },
           "replace": {
             "type": "boolean"
           }
@@ -29230,7 +29566,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Apply a shortcut set: the overrides in 'file' (written by shortcuts.export) or given as 'overrides'; merged over the current ones, or replacing them with 'replace'. Ids this build's menus do not have are kept and listed in 'unknown'; a value that is no key sequence is left out and listed in 'invalid'; 'conflicts' lists the keys more than one action holds afterwards ({keys, ids}). One undo step.",
+      "description": "Apply a shortcut set: the overrides in 'file' (written by shortcuts.export) or given as 'overrides', plus a stage-1 'panels' object; merged over the current ones, or replacing them with 'replace'. Ids this build's actions do not have are kept and listed in 'unknown'; a value that is no key sequence is left out and listed in 'invalid'; 'conflicts' lists the keys more than one action of one scope holds afterwards ({keys, ids, scope}). One undo step.",
       "group": "shortcuts",
       "id": "shortcuts.import",
       "mutating": true,
@@ -29247,6 +29583,9 @@
           "invalid": {
             "type": "array"
           },
+          "panels": {
+            "type": "integer"
+          },
           "unknown": {
             "type": "array"
           }
@@ -29261,12 +29600,21 @@
         "properties": {
           "query": {
             "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "arranger",
+              "note_editor",
+              "automation_editor",
+              "perform"
+            ],
+            "type": "string"
           }
         },
         "required": [],
         "type": "object"
       },
-      "description": "Every menu action that can carry a keyboard shortcut: its id (\"File \u25b8 Save\" - where it lives and what it says), the registry command it declares, its current keys, the code's own default and whether the user overrode it. 'query' filters by id, keys or command.",
+      "description": "Every action that can carry a keyboard shortcut: the menu actions ('scope' empty) and the arranger's, note editor's, automation editor's and Perform's own actions ('scope' names which - the same key may differ in each). A binding is its id, its scope, the registry command it declares, its current keys, the code's own default and whether the user overrode it; 'conflict' names the actions of the SAME scope already on those keys (a clash to resolve, while the same key in another scope is not one). 'query' filters by id, keys, command or scope; 'scope' keeps one context. 'conflict_count' is how many rows clash.",
       "group": "shortcuts",
       "id": "shortcuts.list",
       "mutating": false,
@@ -29277,11 +29625,17 @@
           "bindings": {
             "type": "array"
           },
+          "conflict_count": {
+            "type": "integer"
+          },
           "count": {
             "type": "integer"
           },
           "overridden_count": {
             "type": "integer"
+          },
+          "scopes": {
+            "type": "array"
           }
         },
         "required": [],
@@ -29370,12 +29724,15 @@
         "properties": {
           "id": {
             "type": "string"
+          },
+          "scope": {
+            "type": "string"
           }
         },
         "required": [],
         "type": "object"
       },
-      "description": "Give one action ('id') - or, without it, every action - its own default shortcut back. One undo step.",
+      "description": "Give one action ('id') - or, without it, every action of one context ('scope': that panel's bindings; the menu map when 'scope' is empty) - its own default shortcut back; with no 'id' and no 'scope' argument at all, every menu AND panel binding. One undo step.",
       "group": "shortcuts",
       "id": "shortcuts.reset",
       "mutating": true,
@@ -29404,6 +29761,16 @@
           "keys": {
             "format": "keys",
             "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "",
+              "arranger",
+              "note_editor",
+              "automation_editor",
+              "perform"
+            ],
+            "type": "string"
           }
         },
         "required": [
@@ -29412,7 +29779,7 @@
         ],
         "type": "object"
       },
-      "description": "Bind a menu action to 'keys' (portable text such as \"Ctrl+Shift+K\"; empty unbinds it). Refused, typed, when another action already has those keys - unless 'force', which moves them here and unbinds the other. Kept in the config file (ui/shortcuts), applied at once, one undo step.",
+      "description": "Bind an action to 'keys' (portable text such as \"Ctrl+Shift+K\"; empty unbinds it) - a menu action, or one of a panel scope's actions ('scope' arranger, note_editor, automation_editor or perform). Refused, typed, when another action of the SAME scope already has those keys - unless 'force', which moves them here and unbinds the other; a binding in another scope is never touched. Kept in the config file (ui/shortcuts), applied at once, one undo step.",
       "group": "shortcuts",
       "id": "shortcuts.set",
       "mutating": true,
@@ -29430,6 +29797,9 @@
             "type": "string"
           },
           "previous": {
+            "type": "string"
+          },
+          "scope": {
             "type": "string"
           }
         },
@@ -30550,6 +30920,95 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track"
+        ],
+        "type": "object"
+      },
+      "description": "Read a drum rack back: 'track' is its folder. Answers the folder, its name, the bus its pads send to and 'pads', each {track, name, sample (absolute path; empty when embedded), key (the trigger key: the note that plays the sample at its own pitch), channel (the pad's own chain), sends_to, playback {amp, start, end, loop_start, loop, reversed, stutter, interpolation, attack (ms), release (ms), voice_limit}, chain (the effects on the pad's channel, in order: [{id (fx-<n>), plugin, display_name, enabled}] - plugin.load / plugin.unload / plugin.bypass with 'target' = the pad's channel edit it), chain_shared (true when anything else plays through that channel - the master, another track, a send into it - so an effect there would not be the pad's alone)} - what the project saves. Writes nothing.",
+      "group": "track",
+      "id": "track.drum_rack_get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sample": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "sample"
+        ],
+        "type": "object"
+      },
+      "description": "Add a sample pad to a drum rack: 'track' is the rack's folder, 'sample' a file, 'name' (the file's name when left out), 'key' (0..127; the next after 36 when left out). The pad is a sampler track in the folder with a channel of its own sending to the rack's bus. Answers the pad's state as track.drum_rack_get_state reads it. One undo step.",
+      "group": "track",
+      "id": "track.drum_rack_pad_add",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sample": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track"
+        ],
+        "type": "object"
+      },
+      "description": "Edit a drum-rack pad: 'track' is the pad, and any of 'name', 'key' (the trigger key, 0..127) and 'sample' (a file). Answers the pad's state as track.drum_rack_get_state reads it. One undo step.",
+      "group": "track",
+      "id": "track.drum_rack_pad_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "end": {
             "type": "integer"
           },
@@ -31029,7 +31488,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Every track in one list, for the track manager: id, index, name, type, colour, icon, muted, soloed, visible, folder, clip count, instrument, its mixer channel, that channel's device count and its processing load (cpu_percent, mixer.cpu_load's figure).",
+      "description": "Every track in one list, for the track manager: id, index, name, type, colour, icon, muted, soloed, visible, folder, clip count, instrument, its mixer channel, that channel's device count and its processing load (cpu_percent, mixer.cpu_load's figure), and for an instrument track its own synthesis load (synthesis_cpu_percent, apart from the channel's).",
       "group": "track",
       "id": "track.overview",
       "mutating": false,
@@ -31055,7 +31514,7 @@
         ],
         "type": "object"
       },
-      "description": "Put a track preset ('path') on a track of the same kind: its device, effects and settings; the track keeps its name. One undo step.",
+      "description": "Put a track preset ('path') on a track of the same kind: its device, effects and settings; the track keeps its name. One undo step. The preset's MIDI controller bindings come back on the loaded devices' own parameters; 'bindings' lists the restored ones and the skipped ones (a parameter the device no longer has), and 'bindings_summary' says it in one line.",
       "group": "track",
       "id": "track.preset_load",
       "mutating": true,
@@ -31081,7 +31540,7 @@
         ],
         "type": "object"
       },
-      "description": "Save a track as a preset ('path', an absolute file - .xpf by custom): its device, effects and settings, without its mute and solo. Writes the file only.",
+      "description": "Save a track as a preset ('path', an absolute file - .xpf by custom): its device, effects and settings - with their MIDI controller bindings - without its mute and solo. Writes the file only; 'bindings' is how many controller bindings it holds.",
       "group": "track",
       "id": "track.preset_save",
       "mutating": false,
@@ -32261,7 +32720,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Low-latency monitoring: with 'enabled', the devices whose latency is over 'max_ms' (0..100, 3 by default) stop processing on the chains of record-armed tracks, the channels they play into and the master ('scope' armed) - or on every chain ('scope' all) - so what you play is heard without their delay; off puts them back. Each call re-evaluates (arm a track, call again). Answers the devices it took out. Session state: nothing is saved or journalled.",
+      "description": "Low-latency monitoring: with 'enabled', the devices whose latency is over 'max_ms' (0..100, 3 by default) stop processing on the chains of record-armed tracks, the channels they play into and the master ('scope' armed) - or on every chain ('scope' all) - so what you play is heard without their delay; off puts them back. A latent instrument on those tracks (over 'max_ms') keeps playing but is monitored without the alignment delay PDC adds to line it up with later paths ('instruments': track, channel, path, latency, the frames skipped); every other path stays aligned. Each call re-evaluates (arm a track, call again). Answers the devices it took out. Session state: nothing is saved or journalled.",
       "group": "transport",
       "id": "transport.low_latency",
       "mutating": false,
@@ -35377,6 +35836,35 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Q050-340: open the Input Meters window (an open one is raised): a labelled bar for every capture channel the input carries ('In 1', 'In 2', ...) and one for every record-armed track's selected input ('<track> - In <n>'), -60..0 dB with the mixer's fall-off. The answer is what the window shows now: 'channels' and 'armed', each meter's 'label', 'input_channel' (0-based), 'level_db' (-120 for silence) and, for an armed track, its record 'route'. meter.inputs reads the same levels for an agent without taking the window's. A display.",
+      "group": "window",
+      "id": "window.input_meters",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "armed": {
+            "type": "array"
+          },
+          "channels": {
+            "type": "array"
+          },
+          "shown": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {
           "surface": {
             "enum": [
@@ -35709,6 +36197,9 @@
           "sends_on_faders": {
             "type": "string"
           },
+          "show_console": {
+            "type": "boolean"
+          },
           "show_inserts": {
             "type": "boolean"
           },
@@ -35746,7 +36237,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "The mixer view's modes, set and answered: 'sends_on_faders' (a ch-<n> return, or empty for the channel faders) makes every channel's fader drive its send to that return - a banner across the mixer names it, every fader is labelled with what it drives, and a channel with no send there keeps a dimmed, still 'No send' fader in place; the answer adds 'sends_on_faders_name' (the return's name) and 'faders' (per channel, what its fader drives: volume, send or no_send - the return's own fader and the master's stay volume); 'folded' answers the channel strips a collapsed folder hides (track.folder_set_collapsed folds). MX-005: 'selected_channels' (ch-<n> ids, never the master) are the channels the 'selected' filter shows - interface state, never saved, forgotten when the mixer is cleared for another project; a Ctrl+click on a strip adds or removes its channel, and the mode bar's 'Pick...' chooses them; the answer lists them in mixer order. The view options, kept in the config file (ui/mixerview): 'show_sends', 'show_pan', 'show_number', 'show_meter_info', 'show_inserts', 'show_macros' (a strip's sections - the meter line is the gain reduction and the clip light, the inserts are listed by name, the macros are the rack's first four as knobs), 'strip_width' (narrow / normal / wide), 'filter' (all / instruments / audio / returns / used - the channels a track plays into or a send reaches -, selected), 'meter_mode' (peak - after the fader -, rms, pre_fader) and 'meter_scale' (db42 - the default range -, db60, db24, linear); MX-128, the meters' ballistics: 'meter_falloff' (fast - the default, about 116 dB/s -, medium - about 26 dB/s -, slow - about 12 dB/s, a peak programme meter's fall) and 'peak_hold' (how long the peak line holds: off, 1.5s - the default -, 3s, 6s). Theme 16: 'view' (mix - levels, pan and processing, the default -, routing - each strip lists where its signal comes from and goes by name, the sends row always shown, inserts and macros left to the mix view) and 'density' (expanded - the default, every section the options show -, compact - no inserts, no macros, in the mix view no sends row, routing on one line); a mode bar across the mixer shows and sets both, the filter and the modes. The answer adds 'strips': per channel its 'type' (master, return, group, track, channel), 'format' (stereo, LCR, Quad, 5.1, 7.1), 'inputs' and 'outputs' (by name; each output with amount, pre_fader, enabled), 'hardware' (its hardware output's label, empty for none) and 'states' (afl, pfl, solo_safe, surround_pan, cue, hardware_insert). Interface state: nothing is journalled.",
+      "description": "The mixer view's modes, set and answered: 'sends_on_faders' (a ch-<n> return, or empty for the channel faders) makes every channel's fader drive its send to that return - a banner across the mixer names it, every fader is labelled with what it drives, and a channel with no send there keeps a dimmed, still 'No send' fader in place; the answer adds 'sends_on_faders_name' (the return's name) and 'faders' (per channel, what its fader drives: volume, send or no_send - the return's own fader and the master's stay volume); 'folded' answers the channel strips a collapsed folder hides (track.folder_set_collapsed folds). MX-005: 'selected_channels' (ch-<n> ids, never the master) are the channels the 'selected' filter shows - interface state, never saved, forgotten when the mixer is cleared for another project; a Ctrl+click on a strip adds or removes its channel, and the mode bar's 'Pick...' chooses them; the answer lists them in mixer order. The view options, kept in the config file (ui/mixerview): 'show_sends', 'show_pan', 'show_number', 'show_meter_info', 'show_inserts', 'show_macros' (a strip's sections - the meter line is the gain reduction and the clip light, the inserts are listed by name, the macros are the rack's first four as knobs), 'show_console' (Q050-088: the Console section - knobs and switches for the channel's trim, polarity, EQ and its Console's drive and glue compressor, each running mixer.console_strip; off by default, hidden in the routing view and the compact density), 'strip_width' (narrow / normal / wide), 'filter' (all / instruments / audio / returns / used - the channels a track plays into or a send reaches -, selected), 'meter_mode' (peak - after the fader -, rms, pre_fader) and 'meter_scale' (db42 - the default range -, db60, db24, linear); MX-128, the meters' ballistics: 'meter_falloff' (fast - the default, about 116 dB/s -, medium - about 26 dB/s -, slow - about 12 dB/s, a peak programme meter's fall) and 'peak_hold' (how long the peak line holds: off, 1.5s - the default -, 3s, 6s). Theme 16: 'view' (mix - levels, pan and processing, the default -, routing - each strip lists where its signal comes from and goes by name, the sends row always shown, inserts and macros left to the mix view) and 'density' (expanded - the default, every section the options show -, compact - no inserts, no macros, in the mix view no sends row, routing on one line); a mode bar across the mixer shows and sets both, the filter and the modes. The answer adds 'strips': per channel its 'type' (master, return, group, track, channel), 'format' (stereo, LCR, Quad, 5.1, 7.1), 'inputs' and 'outputs' (by name; each output with amount, pre_fader, enabled), 'hardware' (its hardware output's label, empty for none) and 'states' (afl, pfl, solo_safe, surround_pan, cue, hardware_insert). Interface state: nothing is journalled.",
       "group": "window",
       "id": "window.mixer_view",
       "mutating": false,
@@ -35820,6 +36311,9 @@
           },
           "sends_on_faders_name": {
             "type": "string"
+          },
+          "show_console": {
+            "type": "boolean"
           },
           "show_inserts": {
             "type": "boolean"
@@ -36970,7 +37464,7 @@
       }
     }
   ],
-  "count": 863,
+  "count": 878,
   "instance": {
     "binary": null,
     "binary_bytes": null,
@@ -36978,15 +37472,15 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-g1xlp9bw/zene.sock",
-    "version": "0.4.0-alpha.4951+9072aa2"
+    "source_socket": "/tmp/zctl-run-mvtw6ft4/zene.sock",
+    "version": "0.4.0-alpha.5690+d6c336f"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
-    "group_count": 76,
-    "id_count": 863,
-    "ids_sha256": "b5d5de2cffe6b11bce50bc4eb6eb8b271782d0c98b555c0ea74af685cb30d021"
+    "group_count": 77,
+    "id_count": 878,
+    "ids_sha256": "60473c71cd63735b5af096bbd2cd1d9a5a096cf4b2fd8855d1333df124ea362a"
   }
 }

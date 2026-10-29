@@ -105,7 +105,7 @@ public:
 	explicit CollabHost(QObject* parent = nullptr);
 	~CollabHost() override;
 
-	//! Nothing listens until this is called. False with \a error when the port cannot be bound.
+	//! Nothing listens until this is called. False with \a error filled when the port cannot be bound; \a error may be nullptr.
 	bool start(const QHostAddress& address, quint16 port, QString* error);
 	void stop();
 	bool isListening() const;

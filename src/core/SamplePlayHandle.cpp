@@ -622,6 +622,8 @@ void SamplePlayHandle::play( std::span<SampleFrame> buffer )
 		{
 			applyComp(workingBuffer, frames);
 		}
+		// Q050-111: the clip's own effects, on this clip's audio alone - the track sums its clips after this.
+		if (m_effectsClip != nullptr) { m_effectsClip->processClipEffects(buffer); }
 	}
 
 	m_frame += frames;

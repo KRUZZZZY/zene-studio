@@ -69,8 +69,18 @@ QString SampleBuffer::toBase64() const
 	return byteArray.toBase64();
 }
 
+auto SampleBuffer::engineSampleRate() -> sample_rate_t
+{
+	const AudioEngine* const engine = Engine::audioEngine();
+	return engine != nullptr ? engine->outputSampleRate() : static_cast<sample_rate_t>(SUPPORTED_SAMPLERATES.front());
+}
+
 auto SampleBuffer::emptyBuffer() -> std::shared_ptr<const SampleBuffer>
 {
+	// The shared buffer takes its rate from the first caller. One from before Engine::init() (a
+	// metronome sample that did not decode at command registration) gets a buffer of its own, so the
+	// shared one still carries the engine's rate, as it always has.
+	if (Engine::audioEngine() == nullptr) { return std::make_shared<const SampleBuffer>(); }
 	static auto s_buffer = std::make_shared<const SampleBuffer>();
 	return s_buffer;
 }
@@ -125,7 +135,7 @@ std::shared_ptr<const SampleBuffer> SampleBuffer::fromBase64(const QString& str,
 	{
 		qWarning() << QObject::tr(
 			"Base64 sample carries an invalid sample rate, loading it at the engine's output rate");
-		sampleRate = Engine::audioEngine()->outputSampleRate();
+		sampleRate = engineSampleRate();
 	}
 
 	const auto bytes = QByteArray::fromBase64(str.toUtf8());

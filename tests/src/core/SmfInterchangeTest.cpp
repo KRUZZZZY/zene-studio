@@ -337,6 +337,33 @@ private slots:
 	//! most FOUR bytes (0x0FFFFFFF file ticks), and a file tick is ten LMMS
 	//! ticks, so the widest gap the format can carry is 26,843,545 LMMS ticks.
 	//! A wider one used to be written as the five-byte quantity appendVlq can
+	//! An export to a path that holds a DANGLING symbolic link is refused without
+	//! `overwrite`. QFileInfo::exists is false for a link whose target is gone, so
+	//! the guard let the export through and the commit replaced the link. A link
+	//! is occupied, as it is for the hand-off and the clip save: nothing is written
+	//! and the link stays. Unix-only: QFile::link writes a .lnk shortcut on Windows.
+	void aDanglingLinkAtTheExportPathIsOccupied()
+	{
+#ifndef Q_OS_UNIX
+		QSKIP("symlinks are exercised on Unix only: QFile::link writes a .lnk shortcut on Windows");
+#else
+		QVERIFY(run(QStringLiteral("transport.tempo_map_add"),
+			{{QStringLiteral("tick"), 0}, {QStringLiteral("bpm"), 90}}).ok);
+		const QString file = path(m_directory, QStringLiteral("dangling.mid"));
+		const QString target = path(m_directory, QStringLiteral("never-created.mid"));
+		QVERIFY2(QFile::link(target, file), "the fixture symlink was not created");
+		QVERIFY2(!QFileInfo::exists(file), "the fixture link is not dangling");
+
+		const ControlResult exported = run(QStringLiteral("interchange.smf_export"),
+			{{QStringLiteral("path"), file}});
+		QVERIFY2(!exported.ok, "an export replaced a dangling link without overwrite");
+		QCOMPARE(exported.errorKind, ControlErrorKind::Refused);
+		QVERIFY(exported.errorMessage.contains(QStringLiteral("already exists")));
+		QVERIFY2(QFileInfo(file).isSymLink(), "the refused export replaced the link");
+		QVERIFY2(!QFileInfo::exists(target), "the refused export wrote the link's target");
+#endif
+	}
+
 	//! emit - a file no reader of the format would accept - and the scaled tick
 	//! was narrowed to quint32, which wraps above 429,496,729 LMMS ticks. A map
 	//! the format cannot carry is refused, and no file is left behind; one it

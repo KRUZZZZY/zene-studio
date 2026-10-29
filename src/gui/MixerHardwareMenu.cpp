@@ -107,6 +107,9 @@ void addHardwareMenu(QMenu* menu, const QString& channelId)
 	add(hardware, "Hardware Insert...", "mixer.hardware_insert", self, true);
 	QAction* ping = add(hardware, "Measure Insert Latency", "mixer.hardware_insert_ping", self, false, {}, true);
 	ping->setEnabled(state.value(QStringLiteral("insert")).toObject().value(QStringLiteral("enabled")).toBool());
+	// Q050-089.2: the project rendered through the device, so the inserts that are on are heard (render.realtime's form:
+	// the file and the tail; the reply, or the refusal when the device cannot carry them, is shown in it).
+	add(hardware, "Render Through Hardware (Real Time)...", "render.realtime", {}, true, {}, true);
 	hardware->addSeparator();
 	add(hardware, "Cue Mixes...", "mixer.cue_master", {}, true);
 	add(hardware, "Interface Channels...", "audio.io_setup", {}, true);

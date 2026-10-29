@@ -295,7 +295,7 @@ The view then asks for its new size through `IPlugFrame::resizeView`. A view wit
 but able to resize, gets the scaled size through its own `checkSizeConstraint`. A view that can do
 neither keeps its own size. At 1 nothing is asked of the view. The zoom is a VST3 *effect's* editor-scale
 option (`plugin.options editor_scale`, `DeviceOptions::editorScale`), read when its editor opens, as the
-CLAP effect host does. Instruments have no such option yet. `Vst3InstrumentTest::testTheEditorOpensAtTheDeviceScale`
+CLAP effect host does. Instruments have no such option yet. `Vst3EditorTest::testTheEditorOpensAtTheDeviceScale` (moved from `Vst3InstrumentTest` by Q050-490)
 covers both paths against the in-tree fixture, whose view now implements the interface (the
 `VST3_TEST_EDITOR_NO_CONTENT_SCALE` environment variable withholds it).
 `Vst3InstrumentIntegrationTest::testAnEffectsEditorOpensAtItsDeviceScale` covers the product path:
@@ -334,6 +334,16 @@ Named plainly, not softened. In descending order of importance:
    claim above is about that subject; real-world instruments will exercise code paths it does not
    (multi-event-bus layouts, plug-ins that read `inputParameterChanges`, unusual bus arrangements).
    **This is the single biggest gap between this evidence and a release claim.**
+   Update (cluster stress-2, 2026-10-27): the plug-in stress run did run third-party instruments, and
+   six JUCE ones rendered silence through three host gaps the fixture had not exposed. The host never
+   called `activateBus()` for audio buses (a bus starts inactive, and JUCE writes only into
+   host-activated buses). It mapped no output for an instrument whose only output is not
+   `kDefaultActive` (Vitalium). And it sent every parameter's reported value on the first block after
+   each `prepare()`, which overwrote Dexed's and Surge XT's patches with the zeros their controllers
+   report. All three are fixed in `Vst3Host.cpp`. The fixture now renders only into an activated bus
+   and can declare its output off by default (`VST3_TEST_INSTRUMENT_OUTPUT_OFF`).
+   `Vst3InstrumentTest` holds the host to all three, and it renders Surge XT, Dexed, Vitalium, JC303
+   and Vaporizer2 from the plug-in farm when the farm is present.
 2. **The plug-in's editor does not open** (§7), and — narrowly — the parameter view's *construction*
    was not verified in the harness: `InstrumentView::setModel` crashes inside Qt's
    `QWidget::setWindowIcon` on both the offscreen platform and under `Xvfb`, with the plug-in's logo

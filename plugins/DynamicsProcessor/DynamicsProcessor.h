@@ -62,7 +62,7 @@ private:
 	double m_attCoeff;
 	double m_relCoeff;
 	
-	bool m_needsUpdate;
+	bool m_needsUpdate = false;
 	
 	RmsHelper * m_rms [2];
 

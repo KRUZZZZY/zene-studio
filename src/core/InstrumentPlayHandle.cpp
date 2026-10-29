@@ -63,10 +63,17 @@ void InstrumentPlayHandle::play(std::span<SampleFrame> buffer)
 	}
 	while (nphsLeft);
 
+	// Q050-074.1: timed after the notes above, which their own handles time, so nothing counts twice.
+	const SynthesisLoad::Probe synthesis(synthesisLoad());
 	m_instrument->play(buffer);
 
 	// Process the audio buffer that the instrument has just worked on...
 	instrumentTrack->processAudioBuffer(buffer.data(), buffer.size(), nullptr);
+}
+
+SynthesisLoad* InstrumentPlayHandle::synthesisLoad() noexcept
+{
+	return m_instrumentTrack != nullptr ? &m_instrumentTrack->synthesisLoad() : nullptr;
 }
 
 bool InstrumentPlayHandle::isFromTrack(const Track* track) const

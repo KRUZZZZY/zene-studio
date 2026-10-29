@@ -137,13 +137,18 @@ void Graph::mouseMoveEvent ( QMouseEvent * _me )
 	y = qMax( 2, qMin( y, height()-3 ) );
 
 
-	if ( m_lastCursorX >= 0 )
+	// only a left-button stroke edits samples; a move with another
+	// button, or with none, must leave the waveform alone
+	if( m_mouseDown )
 	{
-		drawLineAt( x, y, m_lastCursorX );
-	}
-	else
-	{
-		changeSampleAt( x, y );
+		if ( m_lastCursorX >= 0 )
+		{
+			drawLineAt( x, y, m_lastCursorX );
+		}
+		else
+		{
+			changeSampleAt( x, y );
+		}
 	}
 
 	// update mouse
@@ -533,6 +538,18 @@ void graphModel::setSamples( const float * _samples )
 
 
 
+void graphModel::setSamples(const float* samples, int count)
+{
+	// Q050-486: a source with its own length never reads past its end.
+	const int copied = std::min(std::max(count, 0), length());
+	if (samples == nullptr || copied == 0) { return; }
+	std::copy(samples, samples + copied, m_samples.begin());
+
+	emit samplesChanged(0, copied - 1);
+}
+
+
+
 void graphModel::setWaveToSine()
 {
 	for( int i = 0; i < length(); i++ )
@@ -660,7 +677,10 @@ void graphModel::convolve(const float *convolution,
 		{
 			sum += convolution[j] * temp[( i + j ) % graphLength];
 		}
-		m_samples[( i + centerOffset ) % graphLength] = sum;
+		// '%' keeps the sign of its left operand, so a negative centerOffset
+		// needs a second modulo to land back in [0, graphLength)
+		const int target = ( ( i + centerOffset ) % graphLength + graphLength ) % graphLength;
+		m_samples[target] = sum;
 	}
 	emit samplesChanged(0, graphLength - 1);
 }

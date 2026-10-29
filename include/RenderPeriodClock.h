@@ -64,6 +64,13 @@ public:
 			&& s_renderThread.load(std::memory_order_relaxed) == threadKey();
 	}
 
+	//! Whether a period is being rendered right now, on any thread (the render thread or one of its workers):
+	//! then periodStart() is the start of the period whose output is being produced (Q050-246).
+	static auto inPeriod() noexcept -> bool
+	{
+		return s_inPeriod.load(std::memory_order_acquire);
+	}
+
 	static auto periodStart() noexcept -> std::chrono::steady_clock::time_point
 	{
 		return std::chrono::steady_clock::time_point{

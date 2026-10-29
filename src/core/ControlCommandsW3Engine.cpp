@@ -30,6 +30,7 @@
  *  - clip.pre_fade (ED-179): an audio clip's fade-in starting before it and fade-out ending after it (ClipPreFades.h). */
 
 #include <algorithm>
+#include <cmath>
 #include <memory>
 
 #include <QJsonArray>
@@ -214,7 +215,13 @@ ControlResult chainReceive(const QJsonObject& args)
 	// An existing send is kept as it is, so the reply names the tap it really uses.
 	if (!receive.routeExisted) { receive.tap = requested; }
 	receive.position = args.value(QStringLiteral("position")).toInt(-1);
-	receive.level = std::clamp(args.value(QStringLiteral("level")).toDouble(1.0), 0.0, 2.0);
+	const double level = args.value(QStringLiteral("level")).toDouble(1.0);
+	// std::clamp passes a NaN through (every comparison against it is false): refuse a non-finite level before anything is made.
+	if (!std::isfinite(level))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'level' is not a finite number"));
+	}
+	receive.level = std::clamp(level, 0.0, 2.0);
 	Effect* effect = makeReceive(receive, &error);
 	if (effect == nullptr) { return error; }
 	addUndoStep([receive]() { removeReceive(receive); }, [receive]() { ControlResult ignored; makeReceive(receive, &ignored); });

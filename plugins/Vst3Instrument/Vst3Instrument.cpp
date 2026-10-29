@@ -37,6 +37,7 @@
 #include "AudioEngine.h"
 #include "DeviceOptions.h"
 #include "Engine.h"
+#include "HostedTrackChannels.h"
 #include "InstrumentPlayHandle.h"
 #include "LmmsCommonMacros.h"
 #include "MidiEvent.h"
@@ -48,30 +49,6 @@
 
 namespace lmms
 {
-
-namespace
-{
-
-void applyParameterFallback(vst3::HostedPlugin& plugin, const QDomElement& element)
-{
-	const auto parameters = element.firstChildElement(QStringLiteral("parameters"));
-	for (auto parameter = parameters.firstChildElement(QStringLiteral("parameter"));
-		!parameter.isNull(); parameter = parameter.nextSiblingElement(QStringLiteral("parameter")))
-	{
-		bool idOk = false;
-		bool valueOk = false;
-		const auto id = parameter.attribute(QStringLiteral("id")).toUInt(&idOk);
-		const float value = parameter.attribute(QStringLiteral("value")).toFloat(&valueOk);
-		const int index = idOk ? plugin.paramIndex(id) : -1;
-		if (valueOk && std::isfinite(value) && index >= 0
-			&& !plugin.parameters()[static_cast<std::size_t>(index)].readOnly)
-		{
-			plugin.notifyController(id, value);
-		}
-	}
-}
-
-} // namespace
 
 extern "C"
 {
@@ -146,8 +123,11 @@ Vst3Instrument::Vst3Instrument(InstrumentTrack* parent,
 
 		if (auto* engine = Engine::audioEngine())
 		{
-			m_plugin.prepare(engine->outputSampleRate(), engine->framesPerPeriod(),
-				&error);
+			// A refused preparation is reported, not left as a silent instrument (cluster stress-2).
+			if (!m_plugin.prepare(engine->outputSampleRate(), engine->framesPerPeriod(), &error))
+			{
+				qWarning() << "VST3:" << modulePath << classId << "could not be prepared:" << error;
+			}
 		}
 		cacheLatency();  // MX-157
 		m_plugin.setLatencyChangedCallback([this] { m_latencyChanged.store(true, std::memory_order_relaxed); });
@@ -232,8 +212,7 @@ void Vst3Instrument::applyChannelCounts()
 	const auto mainInputs = static_cast<ch_cnt_t>(std::max(0, layout.inputs));
 	const auto mainOutputs = std::max<ch_cnt_t>(ch_cnt_t{2},
 		static_cast<ch_cnt_t>(std::max(0, layout.outputs)));
-	audioPorts().setAllChannelCounts(std::max(mainInputs, mainOutputs),
-		mainInputs, mainOutputs);
+	audioPorts().setAllChannelCounts(hostedTrackChannels(mainInputs, mainOutputs), mainInputs, mainOutputs);
 }
 
 bool Vst3Instrument::enableOutputBus(int bus)
@@ -525,10 +504,9 @@ void Vst3Instrument::loadSettings(const QDomElement& element)
 		qWarning() << "VST3: instrument state chunks could not be restored; applying parameter fallback";
 	}
 
-	if (!stateRestored || (componentState.isEmpty() && controllerState.isEmpty()))
-	{
-		applyParameterFallback(m_plugin, element);
-	}
+	// The host's saved values of the writable parameters: all of them when the chunks could not be applied
+	// (or there were none), and after a successful load each one the plug-in did not bring back (stress-4).
+	restoreSavedParameters(m_plugin, element);
 
 	// reflect the restored state in the models
 	m_syncing = true;

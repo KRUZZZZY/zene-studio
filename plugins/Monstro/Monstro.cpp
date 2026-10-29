@@ -698,6 +698,10 @@ inline void MonstroSynth::updateModulators(float * env1, float * env2, float * l
 
 	for( int i = 0; i < 2; ++i )
 	{
+		// the random modes take their period in whole frames; a rate under one frame
+		// (0.1 ms at 8 kHz) would truncate to zero and divide by it, so it is held at one
+		const int lfoPeriod = std::max( 1, static_cast<int>( m_lfo_rate[i] ) );
+
 		switch( m_lfovalue[i] )
 		{
 			case WAVE_SINE:
@@ -766,7 +770,7 @@ inline void MonstroSynth::updateModulators(float * env1, float * env2, float * l
 			case WAVE_RANDOM:
 				for( f_cnt_t f = 0; f < frames; ++f )
 				{
-					if( ( tfp + f ) % static_cast<int>( m_lfo_rate[i] ) == 0 ) m_lfo_last[i] = Oscillator::noiseSample( 0.0f );
+					if( ( tfp + f ) % lfoPeriod == 0 ) m_lfo_last[i] = Oscillator::noiseSample( 0.0f );
 					lfo[i][f] = m_lfo_last[i];
 					m_lfo_phase[i] += m_lfo_inc[i];
 				}
@@ -774,7 +778,7 @@ inline void MonstroSynth::updateModulators(float * env1, float * env2, float * l
 			case WAVE_RANDOM_SMOOTH:
 				for( f_cnt_t f = 0; f < frames; ++f )
 				{
-					const f_cnt_t tm = ( tfp + f ) % static_cast<int>( m_lfo_rate[i] );
+					const f_cnt_t tm = ( tfp + f ) % lfoPeriod;
 					if( tm == 0 )
 					{
 						m_lfo_last[i] = m_lfo_next[i];

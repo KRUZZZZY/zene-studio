@@ -457,6 +457,40 @@ private slots:
 			QString::fromLatin1( kContent ), &rebuilt, &error ), qPrintable( error ) );
 		QCOMPARE( rebuilt, original );
 	}
+
+	/*! Through the document entry point the recovery uses, a read that gives back
+	 *  nothing is refused AS A READ, so the caller can keep the file it could not
+	 *  check. Control: an opaque file is refused as malformed, not as unreadable. */
+	void aFailedDocumentReadIsNamedAsARead()
+	{
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+		const QString path = dir.filePath( QStringLiteral( "song.mmpz" ) );
+		const QByteArray skeleton( "<?xml version=\"1.0\"?>\n<zene-project version=\"31\" type=\"song\"/>\n" );
+		const std::vector<std::pair<QString, QByteArray>> sections{
+			{ projectcontainer::sectionEntryName( 0, QStringLiteral( "track" ) ),
+				QByteArray( "<track id=\"0\"/>" ) } };
+
+		QString error;
+		QVERIFY2( projectcontainer::writeContainer( path, skeleton, sections, &error ),
+			qPrintable( error ) );
+
+		QByteArray document;
+		qputenv( "ZENE_TEST_CONTAINER_READ_FAULT", "1" );
+		const bool ok = projectcontainer::readDocumentContainer( path, QStringLiteral( "song" ),
+			&document, &error );
+		qunsetenv( "ZENE_TEST_CONTAINER_READ_FAULT" );
+		QVERIFY( !ok );
+		QVERIFY2( error.contains( QStringLiteral( "cannot read" ) ), qPrintable( error ) );
+
+		QFile opaque( path );
+		QVERIFY( opaque.open( QIODevice::WriteOnly | QIODevice::Truncate ) );
+		QVERIFY( opaque.write( QByteArray( "\x00\x11\x22\x33\x44\x55\x66\x77", 8 ) ) == 8 );
+		opaque.close();
+		QVERIFY( !projectcontainer::readDocumentContainer( path, QStringLiteral( "song" ),
+			&document, &error ) );
+		QVERIFY2( !error.contains( QStringLiteral( "cannot read" ) ), qPrintable( error ) );
+	}
 };
 
 QTEST_GUILESS_MAIN( ProjectContainerEntriesTest )

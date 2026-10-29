@@ -133,7 +133,7 @@ bool CollabHost::start(const QHostAddress& address, quint16 port, QString* error
 	server->onDescriptor = [this](qintptr descriptor) { acceptDescriptor(descriptor); };
 	if (!server->listen(address, port))
 	{
-		*error = QStringLiteral("could not listen on port %1: %2").arg(port).arg(server->errorString());
+		if (error != nullptr) { *error = QStringLiteral("could not listen on port %1: %2").arg(port).arg(server->errorString()); }
 		return false;
 	}
 	m_server = std::move(server);

@@ -53,15 +53,18 @@ public:
 		: ItemListSource(parent)
 		, m_editor(editor)
 	{
-		connect(editor, &NoteEditor::clipChanged, this, [this] { follow(); });
-		connect(editor, &NoteEditor::stateChanged, this, &ItemListSource::changed);
+		if (editor != nullptr)
+		{
+			connect(editor, &NoteEditor::clipChanged, this, [this] { follow(); });
+			connect(editor, &NoteEditor::stateChanged, this, &ItemListSource::changed);
+		}
 		follow();
 	}
 
 protected:
 	MidiClip* clip() const { return m_editor != nullptr ? m_editor->clip() : nullptr; }
-	QString clipId() const { return m_editor->clipId(); }
-	int grid() const { return std::max(1, m_editor->state().gridTicks); }
+	QString clipId() const { return m_editor != nullptr ? m_editor->clipId() : QString(); }
+	int grid() const { return m_editor != nullptr ? std::max(1, m_editor->state().gridTicks) : 1; }
 
 private:
 	void follow()
@@ -128,7 +131,7 @@ public:
 
 	bool setValue(int row, int column, int value) override
 	{
-		if (clip() == nullptr || row >= rowCount()) { return false; }
+		if (clip() == nullptr || row < 0 || row >= rowCount()) { return false; }
 		const QList<ItemColumn> all = columns();
 		if (column >= all.size()) { return false; }
 		const ItemColumn& c = all.at(column);
@@ -238,7 +241,7 @@ public:
 	bool setValue(int row, int column, int value) override
 	{
 		std::vector<ControllerPoint> all = points();
-		if (row >= static_cast<int>(all.size())) { return false; }
+		if (row < 0 || row >= static_cast<int>(all.size())) { return false; }
 		ControllerPoint& point = all[static_cast<std::size_t>(row)];
 		if (column == 0)
 		{

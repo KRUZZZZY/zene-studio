@@ -154,7 +154,7 @@ ENDIF()
 IF(NOT ZENE_HAVE_COLLAB)
 	# Same reason as above: the collaboration transport's Q_OBJECT headers are globbed for AUTOMOC,
 	# and their .cpp files are not built without Qt Network.
-	FOREACH(_collab_header CollabLink CollabHost CollabClient CollabSession CollabPanel PortMapping)
+	FOREACH(_collab_header CollabLink CollabHost CollabClient CollabSession CollabPanel PortMapping OscServer)
 		SET_SOURCE_FILES_PROPERTIES("${CMAKE_SOURCE_DIR}/include/${_collab_header}.h"
 			PROPERTIES SKIP_AUTOMOC ON)
 	ENDFOREACH()

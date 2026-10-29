@@ -81,7 +81,9 @@ const QStringList& refusedIds()
 {
 	static const QStringList ids{QStringLiteral("control.quit"), QStringLiteral("settings.set"),
 		QStringLiteral("audio.device_set"), QStringLiteral("stem.model_download"),
-		QStringLiteral("window.header_set"), QStringLiteral("window.layout_save"), QStringLiteral("window.layout_remove")};
+		QStringLiteral("window.header_set"), QStringLiteral("window.layout_save"), QStringLiteral("window.layout_remove"),
+		// Q050-081: a script does not start or stop controller scripts (one script starting another).
+		QStringLiteral("controller.script_start"), QStringLiteral("controller.script_stop")};
 	return ids;
 }
 
@@ -326,6 +328,16 @@ int luaCommands(lua_State* L)
 }
 
 } // namespace
+
+QJsonObject tableToObject(lua_State* L, int index)
+{
+	return lua_istable(L, index) ? luaToJson(L, index, 0).toObject() : QJsonObject();
+}
+
+void pushJsonObject(lua_State* L, const QJsonObject& object)
+{
+	pushObject(L, object);
+}
 
 QString refusalFor(const QString& id)
 {

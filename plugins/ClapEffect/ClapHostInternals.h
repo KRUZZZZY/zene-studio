@@ -40,11 +40,13 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include <clap/clap.h>
 
 #include "PluginEditorHost.h"
+#include "PluginWindowSystem.h"
 
 namespace lmms::clap
 {
@@ -125,6 +127,9 @@ struct HostedPlugin::Impl
 	{
 		std::atomic<double> value{0.0};
 		std::atomic<std::uint32_t> revision{0};
+		//! The revision process() last handed the plug-in (stress-4): while it is behind `revision` the
+		//! host's own change has not reached the plug-in yet, and a rescan's read-back must not replace it.
+		std::atomic<std::uint32_t> delivered{0};
 	};
 
 	// --- module -----------------------------------------------------------
@@ -249,6 +254,8 @@ struct HostedPlugin::Impl
 	bool guiClosedByPlugin = false;
 	//! 0.5.0 L10 (MX-094): the zoom the editor is created at (clap.gui set_scale), the device's option.
 	double editorScale = 1.0;
+	//! Q050-490: the window system a test asked for (HostedPlugin::setEditorWindowSystem); unset, the running one.
+	std::optional<PluginWindowSystem> editorWindowSystem;
 	auto guiExt() const -> const clap_plugin_gui_t*
 	{
 		return plugin != nullptr ? static_cast<const clap_plugin_gui_t*>(plugin->get_extension(plugin, CLAP_EXT_GUI))
@@ -441,12 +448,20 @@ struct HostedPlugin::Impl
 	}
 
 	//! Main thread: mirror the plug-in's current parameter values into the lock-free slots,
-	//! without bumping the revisions (that would echo them back).
-	void mirrorParamValues()
+	//! without bumping the revisions (that would echo them back). With @a keepPending a slot whose
+	//! host change has not been delivered yet keeps it (stress-4): the plug-in's value is the one
+	//! from before that change - a rescan the plug-in asks for after loading its state replaced the
+	//! value the host restored over it, on an effect that had not processed, with the old one.
+	void mirrorParamValues(bool keepPending = false)
 	{
 		if (paramsExt == nullptr) { return; }
 		for (std::size_t i = 0; i < params.size(); ++i)
 		{
+			if (keepPending && paramSlots[i].delivered.load(std::memory_order_relaxed)
+				!= paramSlots[i].revision.load(std::memory_order_relaxed))
+			{
+				continue;
+			}
 			double value = params[i].defaultValue;
 			if (paramsExt->get_value(plugin, params[i].id, &value))
 			{

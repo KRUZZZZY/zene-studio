@@ -374,8 +374,13 @@ void InstrumentFunctionArpeggio::processNote( NotePlayHandle * _n )
 	const InstrumentFunctionNoteStacking::ChordTable & chord_table = InstrumentFunctionNoteStacking::ChordTable::getInstance();
 	const int cur_chord_size = chord_table.chords()[selected_arp].size();
 	const int total_chord_size = cur_chord_size * cnphv.size();
+	// The slot arithmetic below is whole-number arithmetic. The range and repeats models do not round
+	// to their step, so their values are cut to whole numbers here: range is then an exact multiple of
+	// repeats, and range / repeats (the slot count) is at least one, never zero.
+	const int arpRange = static_cast<int>(m_arpRangeModel.value());
+	const int repeats = static_cast<int>(m_arpRepeatsModel.value());
 	// how many notes are in a single chord (multiplied by range)
-	const int singleNoteRange = static_cast<int>(cur_chord_size * m_arpRangeModel.value() * m_arpRepeatsModel.value());
+	const int singleNoteRange = cur_chord_size * arpRange * repeats;
 	// how many notes are in the final chord
 	const int range = arpMode == ArpMode::Sort ? singleNoteRange * cnphv.size() : singleNoteRange;
 
@@ -438,18 +443,18 @@ void InstrumentFunctionArpeggio::processNote( NotePlayHandle * _n )
 			cur_arp_idx = (cur_frame / arp_frames) % range;
 		}
 		else if ((dir == ArpDirection::UpAndDown || dir == ArpDirection::DownAndUp) &&
-			range > static_cast<int>(m_arpRepeatsModel.value()))
+			range > repeats)
 		{
 			// imagine, we had to play the arp once up and then
 			// once down -> makes 2 * range possible notes...
 			// because we don't play the lower and upper notes
 			// twice, we have to subtract 2
-			cur_arp_idx = (cur_frame / arp_frames) % (range * 2 - (2 * static_cast<int>(m_arpRepeatsModel.value())));
+			cur_arp_idx = (cur_frame / arp_frames) % (range * 2 - (2 * repeats));
 			// if greater than range, we have to play down...
 			// looks like the code for arp_dir==DOWN... :)
 			if (cur_arp_idx >= range)
 			{
-				cur_arp_idx = range - cur_arp_idx % (range - 1) - static_cast<int>(m_arpRepeatsModel.value());
+				cur_arp_idx = range - cur_arp_idx % (range - 1) - repeats;
 			}
 		}
 		else if( dir == ArpDirection::Random )
@@ -459,19 +464,19 @@ void InstrumentFunctionArpeggio::processNote( NotePlayHandle * _n )
 		}
 
 		// Divide cur_arp_idx with wanted repeats. The repeat feature will not affect random notes.
-		cur_arp_idx = static_cast<int>(cur_arp_idx / m_arpRepeatsModel.value());
+		cur_arp_idx /= repeats;
 
 		// Cycle notes
 		if( m_arpCycleModel.value() && dir != ArpDirection::Random )
 		{
 			cur_arp_idx *= m_arpCycleModel.value() + 1;
-			cur_arp_idx %= static_cast<int>(range / m_arpRepeatsModel.value());
+			cur_arp_idx %= range / repeats;
 		}
 
 		// If ArpDirection::Down or ArpDirection::DownAndUp, invert the final range.
 		if (dir == ArpDirection::Down || dir == ArpDirection::DownAndUp)
 		{
-			cur_arp_idx = static_cast<int>(range / m_arpRepeatsModel.value()) - cur_arp_idx - 1;
+			cur_arp_idx = range / repeats - cur_arp_idx - 1;
 		}
 
 		// now calculate final key for our arp-note

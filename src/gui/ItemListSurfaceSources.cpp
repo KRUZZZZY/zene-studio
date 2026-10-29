@@ -138,7 +138,7 @@ public:
 
 	bool setValue(int row, int column, int value) override
 	{
-		if (row >= rowCount()) { return false; }
+		if (!hasRow(row)) { return false; }
 		const CompSwipeStrip::Segment s = segment(row);
 		if (column == 2) { return comp(s.begin, s.end, value); }
 		const bool start = column == 0;
@@ -192,6 +192,7 @@ public:
 	}
 
 private:
+	bool hasRow(int row) const { return row >= 0 && row < rowCount(); }
 	const CompSwipeStrip::Segment& segment(int row) const { return m_strip->segments().at(static_cast<std::size_t>(row)); }
 
 	bool comp(int begin, int end, int lane)

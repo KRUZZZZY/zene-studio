@@ -31,7 +31,8 @@
 // already runs on). A sample clip's Process menu reaches all four (Normalize,
 // Amplify, Reverse, Fade), each through its command form, and the same ids stay
 // on the control socket and through MCP; placing them anywhere else stays an
-// open owner decision for the UI phase (docs/KNOWN-LIMITATIONS.md).
+// open owner decision for the UI phase. The Sample Editor's SELECTED-RANGE
+// operations are a separate id, sample.edit_range (docs/KNOWN-LIMITATIONS.md).
 
 #include <memory>
 #include <vector>
@@ -164,7 +165,8 @@ void registerSampleAmplify(ControlRegistry& registry)
 		"as a transformed COPY - the previous buffer is never modified, so a second clip "
 		"sharing it keeps its audio, and one control.undo re-loads the previous source. No "
 		"limiter is applied (the float pipeline keeps values past 0 dBFS); sample.normalize "
-		"is the peak-targeted bake and clip.set_gain the non-baking alternative. A sample "
+		"is the peak-targeted bake, clip.set_gain the non-baking alternative and "
+		"sample.edit_range the selected-range gain. A sample "
 		"clip's Process menu offers it as Amplify..., and agents reach the same command on "
 		"the control socket and through MCP (docs/KNOWN-LIMITATIONS.md).");
 	cmd.argsSchema = objectSchema(
@@ -311,9 +313,10 @@ void registerSampleFade(ControlRegistry& registry)
 		"direction=in ramps 0 -> unity across the whole source, direction=out ramps unity -> "
 		"0, both channels together. The result replaces the source through "
 		"SampleClip::setSampleBuffer as a transformed COPY and one control.undo re-loads the "
-		"previous source. This release has no range/selection model, so a fade always spans "
-		"the whole clip source and has only the linear curve; clip.set_fade remains the "
-		"non-baking window fade. A sample clip's Process menu offers it as Fade, in or out "
+		"previous source. This whole-source bake has no range parameter, so it always spans "
+		"the whole clip source and has only the linear curve; the Sample Editor's selected-"
+		"range fades are sample.edit_range's fade_in / fade_out, and clip.set_fade remains "
+		"the non-baking window fade. A sample clip's Process menu offers it as Fade, in or out "
 		"(docs/KNOWN-LIMITATIONS.md).");
 	cmd.argsSchema = objectSchema(
 		{

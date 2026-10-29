@@ -34,6 +34,7 @@
 #include "TimePos.h"
 
 class QJsonObject;
+class QMenu;
 class QProgressDialog;
 class QTemporaryFile;
 class QTimer;
@@ -77,8 +78,24 @@ public:
 	// explanation (missing interpreter, missing model, ...).
 	static QString availabilityError();
 
-	// Asynchronous entry point of the clip context-menu action.
-	void splitClipToStems(SampleClip* clip);
+	/*! Asynchronous entry point of the clip context-menu action. \a quality is
+	 *  a `stem.job_start` quality name ("fast", "standard", "high"); empty
+	 *  omits it, so the command applies its own default (Q050-062.2). */
+	void splitClipToStems(SampleClip* clip, const QString& quality = QString());
+
+	/*! Q050-062.2: the clip menu's "Split to stems" submenu - one checkable
+	 *  item per quality `stem.job_start` accepts, the last one used checked.
+	 *  Picking an item splits \a clip at that quality through instance(). */
+	static void addSplitToStemsMenu(QMenu* menu, SampleClip* clip);
+
+	//! The quality the menu last started a job at (the command's default
+	//! before the first one).
+	QString lastQuality() const { return m_lastQuality; }
+
+	/*! How the job UI names a job's effective setting, from its `stem.*` job
+	 *  object: "high quality, 75% overlap". Uses `inference_quality` once the
+	 *  worker has run, else `quality`; empty when the job carries neither. */
+	static QString qualityText(const QJsonObject& job);
 
 	//! How pollJob reads one job's `stem.job_status` result. Empty means the
 	//! registry; the pipeline test replaces it to script the states a poll sees.
@@ -107,7 +124,9 @@ private:
 	//! The absolute file the engine should decode: the clip's own audio file
 	//! when there is one, else a temporary WAV of the clip's buffer.
 	bool resolveSourceFile(const ClipSnapshot& snapshot, QString* path, QString* error);
-	bool startJob(const ClipSnapshot& snapshot, const QString& source);
+	bool startJob(const ClipSnapshot& snapshot, const QString& source, const QString& quality);
+	//! The progress label for \a job's phase and effective quality.
+	QString progressLabel(const QJsonObject& job) const;
 	void completeJob(const QJsonObject& job);
 	void failJob(const QString& error);
 
@@ -125,6 +144,7 @@ private:
 	int m_trackId = -1;
 	TimePos m_clipPosition;
 	QString m_clipName;
+	QString m_lastQuality;
 	int m_jobId = -1;
 };
 

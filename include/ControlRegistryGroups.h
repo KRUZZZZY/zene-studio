@@ -717,9 +717,10 @@ LMMS_EXPORT void registerUndoHistoryCommands(ControlRegistry& registry);
  *  project load or by controller.template_apply all answer to the same
  *  address, the model's fullDisplayName().
  *
- *  OSC IS OUT (Bar 3): this group is MIDI controller surfaces only. There is no
- *  interface for any of it in this release - the group is the only way to reach
- *  it. Named in docs/KNOWN-LIMITATIONS.md and the release notes. */
+ *  This group is MIDI controller surfaces only; OSC is the separate, opt-in
+ *  osc.* server (Q050-205, include/OscCommands.h). Its interface is Customise >
+ *  MIDI Mappings... and Mapping Templates...; Lua control-surface scripts are
+ *  controller.script_* (Q050-081, include/ControllerScript.h). */
 LMMS_EXPORT void registerControllerSurfaceCommands(ControlRegistry& registry);
 /*! controller.template_save / template_list / template_apply / template_delete -
  *  the four FILE verbs of the same group, in their own translation unit
@@ -798,6 +799,12 @@ LMMS_EXPORT void registerMixerListenCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerVcaNestCommands(ControlRegistry& registry);
 //! 0.5.0 L08: mixer.set_many and the strip settings (ControlCommandsMixerStrip.cpp).
 LMMS_EXPORT void registerMixerStripCommands(ControlRegistry& registry);
+//! Q050-088: mixer.console_strip - one channel's Console section (ControlCommandsConsoleStrip.cpp).
+LMMS_EXPORT void registerConsoleStripCommand(ControlRegistry& registry);
+//! Q050-339: pdc.set_offset - a track's or a channel's manual delay (ControlCommandsTrackOffset.cpp).
+LMMS_EXPORT void registerTrackOffsetCommand(ControlRegistry& registry);
+//! Q050-340: meter.inputs - every capture channel's level and the armed tracks' inputs (ControlCommandsInputMeters.cpp).
+LMMS_EXPORT void registerInputMetersCommand(ControlRegistry& registry);
 LMMS_EXPORT void registerMixerRenameCommands(ControlRegistry& registry);  //!< 0.5.0 theme 13: mixer.rename_channel (ControlCommandsMixerRename.cpp)
 //! 0.5.0 L10 (MX-076/092): plugin.copy, chain.copy, plugin.ab (ControlCommandsDeviceCopy.cpp).
 LMMS_EXPORT void registerDeviceCopyCommands(ControlRegistry& registry);

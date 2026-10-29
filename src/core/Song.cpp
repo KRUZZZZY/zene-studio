@@ -787,7 +787,10 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 		if (relTime >= 0 && relTime < p->length())
 		{
 			const AutomatableModel* recordedModel = p->firstObject();
-			bool writes = p->isRecording();
+			// A clip with no live target has nothing to record from: firstObject() hands back a
+			// fallback model for it, which must not be written (new-p9-439). hasLiveTarget() is a
+			// lock-free read of the flag the clip publishes on every change to its targets.
+			bool writes = p->isRecording() && p->hasLiveTarget();
 			if( !writes && recordedModel
 				&& recordedModel->automationMode() != AutomatableModel::AutomationMode::Read )
 			{
@@ -1345,7 +1348,7 @@ void Song::startExport()
 }
 
 
-auto Song::prepareConverterModeForInstruments(AudioResampler::Mode mode) noexcept -> bool
+bool Song::prepareConverterModeForInstruments(AudioResampler::Mode mode) noexcept
 {
 	for (Track* const track : tracks())
 	{
@@ -1733,6 +1736,10 @@ void Song::clearProject()
 		getGUI()->mixerView()->clear();
 	}
 	QCoreApplication::sendPostedEvents();
+	// Q050-489: the grid goes BEFORE the tracks. A deleted pattern track renumbers the patterns and the session
+	// cells follow it (PatternTrack.cpp); the cells of a project being closed must not be rewritten one track at a
+	// time on the way out.
+	m_sessionModel.clear();
 	Engine::patternStore()->clearAllTracks();
 	clearAllTracks();
 
@@ -1774,7 +1781,6 @@ void Song::clearProject()
 
 	removeAllControllers();
 
-	m_sessionModel.clear();
 	ProjectSection::clearAll();
 	m_sessionScheduler.reset();
 

@@ -526,6 +526,20 @@ private slots:
 		QCOMPARE(channel(3)->m_fxChain.effects().size(), devices);
 	}
 
+	void aReceiveRefusesANonFiniteLevel()
+	{
+		// std::clamp passes a NaN through; the JSON wire cannot carry one, an in-process caller's QJsonValue can.
+		const std::size_t devices = channel(3)->m_fxChain.effects().size();
+		for (const double level : {std::nan(""), HUGE_VAL, -HUGE_VAL})
+		{
+			const ControlResult refused = run(QStringLiteral("chain.receive"), {{QStringLiteral("target"), ch(3)},
+				{QStringLiteral("from"), ch(1)}, {QStringLiteral("level"), level}});
+			if (refused.ok) { QVERIFY(run(QStringLiteral("control.undo")).ok); }  // a RED run leaves no receive behind
+			QCOMPARE(refused.errorKind, ControlErrorKind::InvalidArgs);
+			QVERIFY(Engine::mixer()->channelSidechainSend(1, 3) == nullptr && channel(3)->m_fxChain.effects().size() == devices);
+		}
+	}
+
 	void thePreFadeEnvelope()
 	{
 		const PreFadeSpan span{1000, 100, 200, 0, 0};

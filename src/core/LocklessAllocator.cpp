@@ -25,7 +25,9 @@
 #include "LocklessAllocator.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdio>
+#include <limits>
 #include <stdexcept>
 
 #include "lmmsconfig.h"
@@ -45,6 +47,10 @@ static size_t align( size_t size, size_t alignment )
 	size_t misalignment = size % alignment;
 	if( misalignment )
 	{
+		if( size > std::numeric_limits<size_t>::max() - ( alignment - misalignment ) )
+		{
+			throw std::length_error{"LocklessAllocator dimensions overflow"};
+		}
 		size += alignment - misalignment;
 	}
 	return size;
@@ -59,6 +65,15 @@ LocklessAllocator::LocklessAllocator( size_t nmemb, size_t size )
 
 	m_capacity = align( nmemb, SIZEOF_SET );
 	m_elementSize = align( size, sizeof( void * ) );
+
+	// The pool must be addressable by free(), which computes offsets as ptrdiff_t.
+	// m_elementSize is non-zero here, so the division cannot fail.
+	const size_t maxPoolSize = static_cast<size_t>( std::numeric_limits<ptrdiff_t>::max() );
+	if( m_capacity > maxPoolSize / m_elementSize )
+	{
+		throw std::length_error{"LocklessAllocator dimensions overflow"};
+	}
+
 	m_pool = new char[m_capacity * m_elementSize];
 
 	m_freeStateSets = m_capacity / SIZEOF_SET;

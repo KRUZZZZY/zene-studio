@@ -104,7 +104,7 @@ ControlResult convention(const QJsonObject&)
 			"rate (rounded) -> ticks at the project's global tempo, 48 ticks per quarter note; an active tempo "
 			"map is not followed")},
 		{QStringLiteral("media_rule"), QStringLiteral("embedded essence is extracted to WAV files in 'media_dir' "
-			"(default: <project>-aaf-media/<aaf name> beside a saved project, else <aaf name>-aaf-media beside "
+			"(default: <project>-aaf-media/<aaf name>-<hash of the AAF path> beside a saved project, else <aaf name>-aaf-media beside "
 			"the AAF); external essence is found by LibAAF (beside the AAF, or in 'media_location'); a file not "
 			"found, or in a format this build cannot decode, is listed in missing_media and its clips are not "
 			"built")},

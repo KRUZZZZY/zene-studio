@@ -101,6 +101,10 @@ LMMS_EXPORT QJsonObject shellSelectionState();
 //! keys, src/gui/ControlCommandsShortcuts.cpp), window.layout_* / detach / attach / header_*
 //! (src/gui/ControlCommandsLayouts.cpp) and macro.* (src/gui/ControlCommandsMacros.cpp).
 LMMS_EXPORT void registerShortcutCommands(ControlRegistry& registry);
+//! 0.5.0 L13, the context-aware keyboard map's stage 1: automation.editor_mode, the automation
+//! editor's four edit modes (src/gui/ControlCommandsAutomationMode.cpp); registered by
+//! registerWindowCommands.
+LMMS_EXPORT void registerAutomationEditorCommands(ControlRegistry& registry);
 //! 0.5.0 L09 (MX-049/066): window.mixer_view (src/gui/ControlCommandsMixerView.cpp).
 LMMS_EXPORT void registerMixerViewCommands(ControlRegistry& registry);
 //! 0.5.0 L14: app.help / app.tours / app.tour / window.appearance (ControlCommandsHelp.cpp).

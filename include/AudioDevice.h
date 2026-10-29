@@ -136,12 +136,42 @@ protected:
 	 *  the prepared bus is carried in bus-sized pieces. */
 	void publishCaptured( const float* interleaved, int channels, f_cnt_t frames ) noexcept;
 
+	/*! A backend callback that can run after stopProcessingImpl() has returned holds one of these
+	 *  for its whole body (render and capture). JACK's process callback is one: it runs for as long
+	 *  as its client stays active, whether or not the device runs. stopProcessing() waits until no
+	 *  such scope is open, so once it returns no render and no capture publish from a callback is
+	 *  still running - the precondition of resetInputStream() (cluster new-p14-402). */
+	class CallbackScope
+	{
+	public:
+		explicit CallbackScope(AudioDevice& device) noexcept : m_device(device)
+		{
+			m_device.m_openCallbacks.fetch_add(1, std::memory_order_seq_cst);
+			// Ordered before the isRunning() reads in the body: see waitForOpenCallbacks().
+			std::atomic_thread_fence(std::memory_order_seq_cst);
+		}
+		~CallbackScope() { m_device.m_openCallbacks.fetch_sub(1, std::memory_order_seq_cst); }
+
+		CallbackScope(const CallbackScope&) = delete;
+		CallbackScope& operator=(const CallbackScope&) = delete;
+
+	private:
+		AudioDevice& m_device;
+	};
+
+	/*! Called on every iteration while stopProcessing() waits for an open CallbackScope. Empty,
+	 *  except in tests, which use it to see the wait begin without a clock. */
+	virtual void onStopWait() {}
+
 protected:
 	bool m_supportsCapture;
 
 private:
 	virtual void startProcessingImpl() = 0;
 	virtual void stopProcessingImpl() = 0;
+
+	//! Waits until every CallbackScope that began before m_running was cleared has ended.
+	void waitForOpenCallbacks();
 
 	sample_rate_t m_sampleRate;
 	ch_cnt_t m_channels;
@@ -150,6 +180,8 @@ private:
 	int m_captureRight = 1;
 	AudioEngine* m_audioEngine = nullptr;
 	std::atomic_flag m_running = ATOMIC_FLAG_INIT;
+	//! Open CallbackScopes. Dekker pair with m_running: see waitForOpenCallbacks().
+	std::atomic<int> m_openCallbacks{0};
 };
 
 } // namespace lmms

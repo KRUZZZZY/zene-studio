@@ -31,6 +31,7 @@
 #include "AudioEngine.h"
 #include "ClapHost.h"
 #include "Engine.h"
+#include "ParameterReadOnly.h"
 
 namespace lmms
 {
@@ -58,6 +59,8 @@ ClapParamModel::ClapParamModel(const ClapParamDescriptor& descriptor, Model* par
 	// W6: the parameter's own id as the model's name - the stable key its alias is kept by (ParameterAliases.h),
 	// which a rename or a translation of its title does not move.
 	setObjectName(QStringLiteral("clap-%1").arg(descriptor.id));
+	// stress-4: a CLAP_PARAM_IS_READONLY parameter is the plug-in's to set; the control surface reports and refuses it.
+	markParameterReadOnly(this, m_descriptor.readOnly);
 }
 
 void ClapParamModel::setDescriptor(const ClapParamDescriptor& descriptor)
@@ -66,6 +69,7 @@ void ClapParamModel::setDescriptor(const ClapParamDescriptor& descriptor)
 		&& descriptor.stepped == m_descriptor.stepped;
 	m_descriptor = descriptor;
 	setDisplayName(descriptor.title);
+	markParameterReadOnly(this, descriptor.readOnly);
 	// An info or text rescan leaves the range as it is: the model's, which the audio thread may be reading while it
 	// automates the parameter, is then not written at all.
 	if (!sameRange)
@@ -153,6 +157,43 @@ void ClapParamModelList::pullValues(float tolerance)
 		if (std::abs(model->value() - value) > range * tolerance) { model->setValue(value); }
 	}
 	m_syncing = false;
+}
+
+void ClapParamModelList::saveValues(QDomDocument& doc, QDomElement& element) const
+{
+	auto parameters = doc.createElement(QStringLiteral("parameters"));
+	for (const auto* model : m_models)
+	{
+		if (model->descriptor().readOnly) { continue; }
+		auto parameter = doc.createElement(QStringLiteral("parameter"));
+		parameter.setAttribute(QStringLiteral("id"), QString::number(model->paramId()));
+		// 17 significant digits: the plain double reads back exactly.
+		parameter.setAttribute(QStringLiteral("value"), QString::number(m_plugin->paramPlain(model->paramId()), 'g', 17));
+		parameters.appendChild(parameter);
+	}
+	if (parameters.hasChildNodes()) { element.appendChild(parameters); }
+}
+
+auto ClapParamModelList::restoreValues(const QDomElement& element) -> bool
+{
+	bool restored = false;
+	const auto parameters = element.firstChildElement(QStringLiteral("parameters"));
+	for (auto parameter = parameters.firstChildElement(QStringLiteral("parameter")); !parameter.isNull();
+		parameter = parameter.nextSiblingElement(QStringLiteral("parameter")))
+	{
+		bool idOk = false;
+		bool valueOk = false;
+		const auto id = parameter.attribute(QStringLiteral("id")).toUInt(&idOk);
+		const double value = parameter.attribute(QStringLiteral("value")).toDouble(&valueOk);
+		const ClapParamModel* model = idOk ? modelFor(id) : nullptr;
+		if (model == nullptr || !valueOk || !std::isfinite(value) || model->descriptor().readOnly) { continue; }
+		// Straight into the host's snapshot, not through the model: the model rounds to its step, and the
+		// saved value is the snapshot's own. pullValues() then shows it.
+		if (m_plugin->paramPlain(id) == value) { continue; }
+		m_plugin->setParamPlain(id, value);
+		restored = true;
+	}
+	return restored;
 }
 
 } // namespace lmms

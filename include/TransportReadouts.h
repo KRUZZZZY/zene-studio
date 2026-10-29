@@ -137,6 +137,8 @@ public:
 	ReadoutField* recordRemaining() const { return m_recordRemaining; }
 	//! Q050-094: the Rec mode readout (overdub, replace or keep history; right-click chooses).
 	ReadoutField* recordMode() const { return m_recordMode; }
+	//! Q050-074.1: the CPU readout (right-click: CPU diagnostics, CpuDiagnosticsDialog.h).
+	ReadoutField* load() const { return m_load; }
 
 private:
 	void bindToSong(Song* song);

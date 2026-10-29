@@ -15,6 +15,7 @@
 #include <cstring>
 #include <functional>
 #include <memory>
+#include <new>
 #include <utility>
 #include "asio/any_completion_executor.hpp"
 #include "asio/any_io_executor.hpp"
@@ -515,6 +516,12 @@ public:
   /// Allocate space for @c n objects of the allocator's value type.
   T* allocate(std::size_t n) const
   {
+    // Zene patch (new-p15-163): refuse a count whose byte size would wrap, as std::allocator does.
+    if (n > std::size_t(-1) / sizeof(T))
+    {
+      std::bad_array_new_length ex;
+      asio::detail::throw_exception(ex);
+    }
     if (fn_table_)
     {
       return static_cast<T*>(

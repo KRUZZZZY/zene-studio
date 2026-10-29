@@ -393,6 +393,45 @@ private slots:
 		QVERIFY(!QFileInfo::exists(wav));
 	}
 
+	/*! A flatten REPLACES the track, so a track that makes no audio must be refused before anything changes: an
+	 *  automation lane renders silence and flattening it would delete its automation. The lane holds a clip, so
+	 *  the empty-track refusal does not catch it; a folder holds no clip and is refused by that check instead of
+	 *  by its type, so both are pinned here.
+	 */
+	void flattenRefusesATrackThatCarriesNoAudio()
+	{
+		trackWithClip(QStringLiteral("Keep"));
+		Track* lane = Track::create(Track::Type::Automation, Engine::getSong());
+		lane->createClip(TimePos(0));
+		Track* folder = Track::create(Track::Type::Folder, Engine::getSong());
+		const int before = trackCount();
+		const QString wav = out(QStringLiteral("automation-flat.wav"));
+
+		for (Track* track : {lane, folder})
+		{
+			const ControlResult flat = run(QStringLiteral("track.flatten"), {{QStringLiteral("track"), control::trackIdOf(track)}, {QStringLiteral("out"), wav}});
+			QCOMPARE(flat.errorKind, ControlErrorKind::Refused);
+			QVERIFY2(flat.errorMessage.contains(QStringLiteral("no audio")), qPrintable(flat.errorMessage));
+		}
+		QCOMPARE(trackCount(), before);
+		QVERIFY(std::find(Engine::getSong()->tracks().begin(), Engine::getSong()->tracks().end(), lane) != Engine::getSong()->tracks().end());
+		QCOMPARE(lane->numOfClips(), 1);
+		QVERIFY(!QFileInfo::exists(wav));
+	}
+
+	//! The queued flatten is the same command, so it refuses the same track at submit - before any job exists.
+	void queuedFlattenRefusesATrackThatCarriesNoAudio()
+	{
+		Track* lane = Track::create(Track::Type::Automation, Engine::getSong());
+		lane->createClip(TimePos(0));
+		const int before = trackCount();
+		const ControlResult accepted = run(QStringLiteral("render.queue_bounce"), {{QStringLiteral("operation"), QStringLiteral("flatten")},
+			{QStringLiteral("track"), control::trackIdOf(lane)}, {QStringLiteral("out"), out(QStringLiteral("automation-queued.wav"))}});
+		QCOMPARE(accepted.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(accepted.errorMessage.contains(QStringLiteral("no audio")), qPrintable(accepted.errorMessage));
+		QCOMPARE(trackCount(), before);
+	}
+
 	void rangeBounceRendersTheSelectedTracksTogetherOntoOneNewTrack()
 	{
 		Track* a = trackWithClip(QStringLiteral("A"));

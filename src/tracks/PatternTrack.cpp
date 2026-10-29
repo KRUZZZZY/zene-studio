@@ -31,6 +31,10 @@
 #include "PatternStore.h"
 #include "PatternTrackView.h"
 #include "PlayHandle.h"
+#include "SessionModel.h"
+#include "SessionPlayback.h"
+#include "SessionScheduler.h"
+#include "Song.h"
 
 
 namespace lmms
@@ -38,6 +42,27 @@ namespace lmms
 
 
 PatternTrack::infoMap PatternTrack::s_infoMap;
+
+
+namespace
+{
+
+//! Q050-489: applies @a remap to the song's session grid and tells the launcher what moved (SessionPlayback.h).
+//! A project being cleared has already emptied its grid (Song::clearProject), so this is a no-op there.
+template<typename Remap>
+void followPatternNumbers( Remap remap )
+{
+	Song* song = Engine::getSong();
+	if( song == nullptr ) { return; }
+	const SessionModel before = song->sessionModel();
+	if( remap( song->sessionModel() ) > 0 )
+	{
+		syncSessionLauncher( song->sessionScheduler(), before, song->sessionModel() );
+		song->setModified();
+	}
+}
+
+} // namespace
 
 
 PatternTrack::PatternTrack(TrackContainer* tc) :
@@ -76,6 +101,8 @@ PatternTrack::~PatternTrack()
 		}
 	}
 	s_infoMap.remove( this );
+	// Q050-489: session cells name a pattern by this number, so they follow the renumbering (SessionModel.h).
+	followPatternNumbers( [pattern]( SessionModel& model ) { return model.patternRemoved( pattern ); } );
 
 	// remove us from the Song and update the pattern selection combobox to reflect the change
 	trackContainer()->removeTrack( this );
@@ -244,6 +271,9 @@ void PatternTrack::swapPatternTracks(Track* track1, Track* track2)
 		qSwap( s_infoMap[t1], s_infoMap[t2] );
 		Engine::patternStore()->swapPattern(s_infoMap[t1], s_infoMap[t2]);
 		Engine::patternStore()->setCurrentPattern(s_infoMap[t1]);
+		const int first = s_infoMap[t1];
+		const int second = s_infoMap[t2];
+		followPatternNumbers( [first, second]( SessionModel& model ) { return model.patternsSwapped( first, second ); } );
 	}
 }
 

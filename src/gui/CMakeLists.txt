@@ -57,6 +57,10 @@ SET(LMMS_SRCS
 	# M3.2: the main window's own verbs (fullscreen, dialogs, save as new version).
 	gui/ControlCommandsShell.cpp
 	gui/ControlCommandsShortcuts.cpp
+	# Q050-055.1 x Q050-202: the shortcuts.* registration table, split from the handlers above.
+	gui/ControlCommandsShortcutsRegister.cpp
+	# 0.5.0 L13 stage 1: automation.editor_mode, the automation editor's edit modes.
+	gui/ControlCommandsAutomationMode.cpp
 	gui/ControlCommandsArrangerView.cpp
 	gui/ControlCommandsLayouts.cpp
 	gui/ControlCommandsMixerView.cpp
@@ -109,6 +113,7 @@ SET(LMMS_SRCS
 	gui/CommandLists.cpp
 	gui/InstrumentCommandMenus.cpp
 	gui/LayerRackPanel.cpp
+	gui/DrumRackPanel.cpp
 	gui/LibraryCommandMenus.cpp
 	gui/ReferenceProjectPanel.cpp
 	gui/CompSwipeStrip.cpp
@@ -116,10 +121,13 @@ SET(LMMS_SRCS
 	gui/CommandPalette.cpp
 	gui/MacroMenu.cpp
 	gui/MacroKnobs.cpp
+	gui/ConsoleStripSection.cpp
+	gui/InputChannelMeters.cpp
 	gui/MenuBarExtras.cpp
 	gui/RecordLaunchMenus.cpp
 	# Q050-156: the sampler views' "Record take" button, over the same registered record.sampler_capture* commands.
 	gui/SamplerTakeButton.cpp
+	gui/PanelShortcuts.cpp
 	gui/ShortcutMap.cpp
 	gui/ShortcutPresets.cpp
 	gui/UiConfigStore.cpp
@@ -225,6 +233,7 @@ SET(LMMS_SRCS
 	gui/shell/ShellPanel.cpp
 	gui/shell/ShellSelection.cpp
 	gui/shell/TransportReadouts.cpp
+	gui/shell/CpuDiagnosticsDialog.cpp
 	gui/shell/WaveformPreview.cpp
 	gui/GuiApplication.cpp
 	gui/LadspaControlView.cpp
@@ -245,6 +254,7 @@ SET(LMMS_SRCS
 	gui/BrowserSearchViewMedia.cpp
 	gui/BrowserResults.cpp
 	gui/ClipEditsMenu.cpp
+	gui/ClipEffectsDialog.cpp
 	gui/CrashReportMenu.cpp
 	gui/EffectDeviceMenu.cpp
 	gui/EffectHostingMenu.cpp

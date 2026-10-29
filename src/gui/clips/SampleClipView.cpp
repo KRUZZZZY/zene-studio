@@ -35,6 +35,8 @@
 
 #include "ArrangementEdits.h"
 #include "ClipEditsMenu.h"
+#include "ClipEffectsDialog.h"
+#include "EffectChain.h"
 #include "ClipTransients.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
@@ -76,6 +78,8 @@ SampleClipView::SampleClipView( SampleClip * _clip, TrackView * _tv ) :
 	connect(m_clip, SIGNAL(sampleChanged()), this, SLOT(updateSample()));
 
 	connect(m_clip, SIGNAL(wasReversed()), this, SLOT(update()));
+	// Q050-111: the "FX" badge follows the clip's own effects.
+	connect(m_clip->clipEffects(), &EffectChain::dataChanged, this, [this] { update(); });
 
 	setStyle( QApplication::style() );
 }
@@ -129,13 +133,12 @@ void SampleClipView::constructContextMenu(QMenu* cm)
 	addClipRecordAction(cm, m_clip);
 	// Trim to the playhead and slip the content by a beat (clip.trim / clip.slip).
 	addClipTrimActions(cm, m_clip);
+	// Q050-111: the clip's own realtime effects (plugin.* with the clip as the target).
+	addClipEffectsAction(cm, m_clip);
 
 #ifdef LMMS_HAVE_STEM_SPLIT
-	cm->addAction(
-		tr("Split to stems"),
-		this,
-		SLOT(splitToStems())
-	);
+	// Split to stems at a chosen quality (stem.job_start's `quality`, Q050-062.2).
+	StemSplitController::addSplitToStemsMenu(cm, m_clip);
 #endif
 
 }
@@ -685,6 +688,9 @@ void SampleClipView::paintEvent( QPaintEvent * pe )
 		p.setBrush( QBrush( textColor() ) );
 		p.drawEllipse( 4, 5, 4, 4 );
 	}
+
+	// Q050-111: a clip with effects of its own says so, bottom right.
+	paintClipEffectsBadge(p, rect(), *m_clip, textColor(), textShadowColor());
 
 	p.end();
 

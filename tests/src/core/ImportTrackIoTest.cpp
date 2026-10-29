@@ -32,11 +32,16 @@
 #include <QJsonArray>
 #include <QTemporaryDir>
 
+#include <QDomDocument>
+
 #include "AudioIoSetup.h"
+#include "ControlEdit.h"
+#include "ControlProjectTransplant.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "Mixer.h"
+#include "Model.h"
 #include "Song.h"
 #include "Track.h"
 
@@ -113,6 +118,34 @@ QString channelOf(const QString& name)
 	Track* track = trackNamed(name);
 	if (track == nullptr || track->mixerChannelModel() == nullptr) { return QStringLiteral("<no track>"); }
 	return Engine::mixer()->mixerChannel(track->mixerChannelModel()->value())->m_name;
+}
+
+//! A track document that does not parse: its start tag is never closed.
+const QString UnparsableTrack = QStringLiteral("<track type=\"0\" name=\"Broken\"");
+//! A channel description that does not parse: its start tag is never closed.
+const QString UnparsableChannel = QStringLiteral("<mixerchannel name=\"Ghost\" volume=\"1\"");
+const QString Ghost = QStringLiteral("Ghost");
+const QString Lead = QStringLiteral("Lead");
+
+//! A plain <mixerchannel> description of the channel called @a name, as the transplant resolves a need from.
+QString channelDescription(const QString& name)
+{
+	return QStringLiteral("<mixerchannel name=\"%1\" volume=\"1\" pan=\"0\"/>").arg(name);
+}
+
+//! The instrument track called @a name, saved as the detached document the transplant builds from (the track itself is removed).
+QString trackDocument(const QString& name)
+{
+	Track* track = Track::create(Track::Type::Instrument, Engine::getSong());
+	track->setName(name);
+	QDomDocument holder;
+	QDomElement parent = holder.createElement(QStringLiteral("holder"));
+	holder.appendChild(parent);
+	track->saveState(holder, parent);
+	control::removeTrack(track);
+	QDomDocument one;
+	one.appendChild(one.importNode(parent.firstChildElement(QStringLiteral("track")), true));
+	return one.toString();
 }
 
 } // namespace
@@ -267,6 +300,57 @@ private slots:
 		QVERIFY(ok(QStringLiteral("control.redo")));
 		QCOMPARE(channelCount(), without + 1);
 		QCOMPARE(channelOf(QStringLiteral("Drums")), DrumsBus);
+	}
+
+	//! A track document that does not parse makes no track, and no channel is made or described for it.
+	void anUnparsableTrackDocumentMakesNoTrackAndNoChannel()
+	{
+		control::transplant::TrackPlan plan;
+		plan.documents.append(UnparsableTrack);
+		plan.need = {0};
+		plan.needs.push_back({Ghost, channelDescription(Ghost)});
+		const int channelsBefore = channelCount();
+		QSignalSpy described(Engine::mixer(), &Model::dataChanged);
+		const control::transplant::Built made = control::transplant::buildAsOneStep(plan);
+		QVERIFY(made.tracks.empty());
+		QVERIFY(made.channels.empty());
+		QCOMPARE(channelCount(), channelsBefore);
+		QVERIFY(stateOf(Ghost).isEmpty());
+		QCOMPARE(static_cast<int>(described.count()), 0);  // Mixer::applyDescription() is the only emitter of this on a build
+	}
+
+	//! A channel description that does not parse makes no channel: its track is built on the master.
+	void anUnparsableChannelDescriptionLeavesItsTrackOnTheMaster()
+	{
+		control::transplant::TrackPlan plan;
+		plan.documents.append(trackDocument(Lead));
+		plan.need = {0};
+		plan.needs.push_back({Ghost, UnparsableChannel});
+		const int channelsBefore = channelCount();
+		QSignalSpy described(Engine::mixer(), &Model::dataChanged);
+		const control::transplant::Built made = control::transplant::buildAsOneStep(plan);
+		QCOMPARE(static_cast<int>(made.tracks.size()), 1);
+		QVERIFY(made.channels.empty());
+		QCOMPARE(channelCount(), channelsBefore);
+		QVERIFY(stateOf(Ghost).isEmpty());
+		QCOMPARE(channelOf(Lead), QStringLiteral("Master"));
+		QCOMPARE(static_cast<int>(described.count()), 0);
+	}
+
+	//! A document that does not parse, between good ones, leaves the good ones on the channels they need.
+	void anUnparsableDocumentDoesNotShiftTheOthers()
+	{
+		control::transplant::TrackPlan plan;
+		plan.documents = {UnparsableTrack, trackDocument(Lead)};
+		plan.need = {0, 1};
+		plan.needs.push_back({Ghost, channelDescription(Ghost)});
+		plan.needs.push_back({Keys, channelDescription(Keys)});
+		const control::transplant::Built made = control::transplant::buildAsOneStep(plan);
+		QCOMPARE(static_cast<int>(made.tracks.size()), 1);
+		QCOMPARE(static_cast<int>(made.channels.size()), 1);
+		QVERIFY(!stateOf(Keys).isEmpty());
+		QCOMPARE(channelOf(Lead), Keys);
+		QVERIFY(stateOf(Ghost).isEmpty());
 	}
 
 private:

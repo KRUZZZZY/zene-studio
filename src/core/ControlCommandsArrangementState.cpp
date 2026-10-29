@@ -135,7 +135,9 @@ void registerArrangementGetState(ControlRegistry& registry)
 //! addressable by id either, exactly as arrangement.get_state documents).
 int trackRouteOf(const Track* track)
 {
-	const TrackContainer::TrackList& list = Engine::getSong()->tracks();
+	Song* song = Engine::getSong();
+	if (song == nullptr) { return -1; }  // no song: no track is in its container
+	const TrackContainer::TrackList& list = song->tracks();
 	for (int i = 0; i < static_cast<int>(list.size()); ++i)
 	{
 		if (list[i] == track) { return i; }

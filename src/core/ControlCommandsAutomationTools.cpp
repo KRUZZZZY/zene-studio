@@ -176,7 +176,8 @@ ControlResult movePoint(const QJsonObject& args)
 			QStringLiteral("destination tick %1 is before automation clip start at %2")
 				.arg(static_cast<qint64>(toSong)).arg(static_cast<qint64>(origin)));
 	}
-	if (value < parameter.model->minValue<float>() || value > parameter.model->maxValue<float>())
+	// Written as "inside the range", not "outside it": NaN fails both comparisons, so it is refused with the rest.
+	if (!(value >= parameter.model->minValue<float>() && value <= parameter.model->maxValue<float>()))
 	{
 		return automatableRangeRefusal(parameter.model, value);
 	}
@@ -230,7 +231,7 @@ ControlResult writeToEnd(const QJsonObject& args)
 	if (!resolveAutomationParameter(args, &target, &parameter, &error)) { return error; }
 	AutomatableModel* model = parameter.model;
 	const double value = args.value(QStringLiteral("value")).toDouble(model->value<float>());
-	if (value < model->minValue<float>() || value > model->maxValue<float>()) { return automatableRangeRefusal(model, value); }
+	if (!(value >= model->minValue<float>() && value <= model->maxValue<float>())) { return automatableRangeRefusal(model, value); }
 	const auto fromSong = static_cast<tick_t>(args.value(QStringLiteral("ticks")).toDouble());
 	AutomationClip* existing = existingAutomationClip(model);
 	if (fromSong < 0 || (existing != nullptr && fromSong < existing->startPosition().getTicks()))

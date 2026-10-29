@@ -156,14 +156,18 @@ over `--control-socket`, on the real binary, with the tree's own fixtures
 
 ## 6. What is NOT done, stated rather than implied
 
-* **No meter in the interface.** There is no loudness widget, no readout, no meter bridge, no
-  loudness column and no R128 history graph; `grep -rniI 'lufs\|loudness' src/gui/` finds only the
-  export dialog's pre-existing report checkbox and its result label. The socket is the only way to
-  watch a level in this release. (One line in `docs/KNOWN-LIMITATIONS.md` and
-  `docs/RELEASE-NOTES-v0.3.0-alpha.md`.)
-* **Master mix only.** The tap measures the summed master output. There is no per-track, per-bus
-  or per-chain loudness, and no LUFS-M history/curve — the meter's own momentary value is the last
-  400 ms, not a graph.
+* **Interface meters (corrected 2026-10-25, Q050-108).** This bullet used to say there was no meter in
+  the interface; that stopped being true. The shell's transport bar shows the MASTER's short-term LUFS
+  and true peak (`src/gui/shell/TransportReadouts.cpp`, from this tap through `meter.get_state`), and
+  Large Meters its short-term loudness. Separately, each mixer strip can show its OWN loudness:
+  `mixer.set_strip` `meter_mode` lufs measures that channel's post-fader signal with its own `LufsMeter`
+  (`include/StripMeters.h`; momentary, short-term, true peak - read by `mixer.strip_get`), and vu gives a
+  300 ms VU needle against `meter.set_reference`. Still absent: a meter bridge, a loudness column and an
+  R128 history graph.
+* **This tap is the master mix only.** The tap measures the summed master output, and the shell readout
+  and `meter.get_state` stay master-only. Per-channel loudness is the strips' LUFS mode above - not this
+  tap - and has no integrated loudness, no LRA and no history; there is no per-track or per-chain
+  loudness, and no LUFS-M history/curve.
 * **No LRA / loudness range**, and no EBU Tech 3342 statistics: the surface publishes what
   `LufsMeter` measures and nothing it does not.
 * **Stereo in the application.** The tap is built with `DEFAULT_CHANNELS`. `meter.measure_file`

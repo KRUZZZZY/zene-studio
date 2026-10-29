@@ -210,6 +210,54 @@ library to work.
   chain keeps a saved one as its placeholder, state intact, as before.
   `ControlDeviceCatalogueTest::hostedEffectsListAndLoadThroughTheSurface` lists and loads the in-tree VST3
   and CLAP effect fixtures through the surface. Still true: no third-party effect has been loaded by us.
+- *(Added 2026-10-28, Q050-491.)* **Audio Units (AUv2) are hosted on macOS - and that host has not yet run.** The
+  `aueffect` and `auinstrument` modules (`plugins/AuEffect`, `plugins/AuInstrument`) are built on macOS only; every
+  other build compiles the format out and `plugin.list` has no `au` format there. Discovery is the system component
+  registry, each component recorded in the plug-in scan cache under its own path (`/AudioUnits/<type>/<subtype>/<maker>`)
+  and hidden by a quarantine entry for that path. Stereo in and out only; MIDI SysEx is not passed to an instrument;
+  AUv3 app extensions, side-chain buses, multiple output buses and the unit's factory presets are not offered.
+  **What was proved, and where:**
+  - **Linux (this lane):** `AuComponentTest` (the format-neutral rules: component keys, scan-cache records,
+    quarantine, persistence, typed errors) and the every-build half of `AuHostingTest` (no `au` format, a hand-made AU
+    device refused by name). The macOS sources were checked for syntax only: the seven plain C++ files with GCC against
+    the real headers, and `AuHost.cpp` (Objective-C++) with clang against stub Apple headers. **They have not been
+    compiled against the macOS SDK.**
+  - **Hosted macOS jobs (not yet observed; the lane is not pushed):** the rest of `AuHostingTest` against Apple's
+    AUBandpass, AUDistortion and DLSMusicDevice - listing, scan cache and quarantine, audio through an effect,
+    parameters and automation, state through a file and a project, MIDI to an instrument, the device picker, and the
+    editor button. Under the jobs' offscreen Qt platform the editor is refused by name (no NSView exists there), so the
+    Cocoa view itself is only opened on a real Mac.
+  - **For the owner's Mac mini:** open AUBandpass and DLSMusicDevice editors under the normal (cocoa) platform; play
+    DLSMusicDevice from a MIDI keyboard; load a third-party AU effect and instrument, save, quit, reopen; quarantine a
+    unit in Plug-in Modules and rescan; a project saved there opened on Linux keeps the AU device as a placeholder.
+- *(Added 2026-10-27, Q050-490.)* **VST3 and CLAP editors now try to open on Windows and macOS too.** The host
+  chooses the platform's native window when an editor opens (`include/PluginWindowSystem.h`): VST3 `HWND` /
+  CLAP `win32` on Windows, VST3 `NSView` / CLAP `cocoa` on macOS, and X11 on Linux as before. Before this change
+  every non-X11 view was refused. A plug-in that cannot embed in the platform's window is refused with the platform
+  and window API named (*"cannot embed on macOS (CLAP window API cocoa)"*). No editor is created, so no empty
+  window stays open. A native Wayland session is refused the same way (start with `QT_QPA_PLATFORM=xcb`).
+  **What was proved, and where:**
+  - **Linux:** every test named here was run, including the explicit Windows and macOS cases. `ClapHostTest`,
+    `Vst3EditorTest` and `ClapEffectIntegrationTest` choose the window system themselves, so all three paths
+    run on any machine.
+  - **Windows and macOS, hosted CI:** the hosted macOS, msvc and msys2 jobs build and run `ClapHostTest` and
+    `ClapEffectIntegrationTest` on their own native path. The macOS and msvc jobs now also pass
+    `WANT_VST3_TEST_INSTRUMENT=ON`: the VST3 fixture is laid out per platform (a Windows `.vst3` package with
+    `dllmain.cpp`; a macOS CFBundle with `macmain.cpp` and an `Info.plist`), and `Vst3EditorTest` opens,
+    resizes (host and plug-in), closes and reopens its editor as an `HWND` / `NSView` there. Those hosted runs had
+    **not yet been observed** when this was written, because lanes are not pushed; the Windows and macOS builds of
+    the fixture were not compiled on the Linux box either. The rest of the VST3 fixture suite
+    (`Vst3InstrumentTest`, the probe, the integration cases) still runs on Linux only.
+  - **Still to check on a real machine (the owner's Windows laptop and Mac mini):** a real third-party VST3 and
+    CLAP editor that opens, draws, resizes (host and plug-in), closes and reopens.
+  **Limits:**
+  - **Content scale on macOS:** both APIs use logical points on macOS and the OS applies the screen's factor
+    itself. So a VST3 view there is given the scaled size instead of `setContentScaleFactor`, and a CLAP editor
+    is never sent `set_scale`. `editor_scale` therefore has no effect on a CLAP editor on macOS.
+  - **Plug-in resizes:** a resize the plug-in asks for is granted to the view, but the host window keeps the
+    size it opened at, on every platform (as on X11 before).
+  - **Run loop:** the run loop for editor timers and file descriptors (Linux `IRunLoop`, CLAP fd/timer support) is
+    the same Qt loop on every platform.
 - *(Added 2026-10-07, plugin-hosting lane, MX-094.)* **A VST3 effect's own window now opens at the device's
   zoom** (`plugin.options editor_scale`, 0.5 to 3), as a CLAP effect's already did. A view that scales itself
   (`IPlugViewContentScaleSupport`) is told the factor. Any other view that can resize is given the scaled size.
@@ -219,6 +267,20 @@ library to work.
   button in `src/gui/Lv2ViewBase.cpp` sits behind `if (false)`), so there is no UI to send `ui:scaleFactor` to, and no
   LV2 UI fixture exists. Proved offscreen against the in-tree VST3 fixture only; no third-party editor has
   been zoomed on a real display.
+- *(Added 2026-10-27, Q050-502.)* **Plug-in editors on a Wayland desktop run through XWayland.** Both formats' editors
+  embed only in X11 windows (VST3 `kPlatformTypeX11EmbedWindowID`, CLAP `CLAP_WINDOW_API_X11`). On Qt's native
+  `wayland` platform a widget's window id is not an X11 window: measured in a nested KWin session, a heap pointer that
+  X11 answers with `BadWindow`, while `plugin.editor_open` still reported `open: true` for both in-tree fixtures. At
+  start-up a Wayland session (`WAYLAND_DISPLAY` or `XDG_SESSION_TYPE=wayland`) that has XWayland (`DISPLAY` set) now
+  runs on `QT_QPA_PLATFORM=xcb;wayland`, as other Linux DAWs do (`src/core/PluginWindowPlatform.cpp`). A
+  `QT_QPA_PLATFORM` or `-platform` set by the user is never overridden. Limits: on native Wayland (the user's choice,
+  no XWayland, or a Qt without its xcb plug-in) every hosted editor refuses with a typed `requires` that names the
+  reason, and there is no Wayland-native embedding. Running through XWayland means XWayland's scaling, so on a
+  fractionally scaled KDE screen the whole window can look soft (KDE's "Legacy Applications (X11)" scaling setting
+  decides this). The choice is made only when Zene starts: there is no setting in the interface, only the environment
+  variable. Proved in a nested headless `kwin_wayland --virtual --xwayland` against the in-tree fixtures. On 2026-10-27,
+  the live KDE Wayland session was also checked on XWayland `:0` with the pinned third-party DPF Nekobi VST3 and DPF ProM
+  CLAP editor probes (forced to `xcb`); both opened, drew for one second and closed. Their fractional-scaling appearance was not checked.
 - *(Updated 2026-09-30, R4.1/R4.2/R4.4.)* **A VST3 plug-in's own editor now opens** - in a window of its
   own, through `plugin.editor_open` (the host's `Vst3EditorSession`: createView, X11 embedding, resize,
   IPlugFrame and Linux::IRunLoop on the Qt loop). What is proved is the contract, offscreen, against the
@@ -1278,10 +1340,19 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   - A channel fed by a latent instrument has a non-zero alignment point, so its rack's key zones do not
     route notes (`RackZoneFeed` routes only through a channel aligned at 0) - the existing zone rule, now
     met by latent instruments too.
-  - Live playing through a latent instrument is late by its latency plus the alignment; nothing bypasses
-    an instrument the way the low-latency mode bypasses latent effects. *(Measured 2026-10-19, Q050-169:
+  - Live playing through a latent instrument is late by its latency plus the alignment unless low-latency
+    monitoring takes its path; nothing bypasses an instrument the way the low-latency mode bypasses latent
+    effects. *(Measured 2026-10-19, Q050-169:
     `InstrumentLatencyPdcTest::lowLatencyModeDoesNotBypassALatentInstrument` arms `transport.low_latency`,
     sees a latent EFFECT stopped and the latent INSTRUMENT's reference still delayed by its latency.)*
+    *(Updated 2026-10-27, Q050-174:)* the mode instead takes the **alignment** off a record-armed (or, with
+    `scope: all`, any) instrument track whose instrument reports more than `max_ms`: its track handle applies
+    no PDC delay, so it is heard after its own latency only, and its latency still counts in the graph, so
+    every other path stays aligned (`InstrumentLowLatencyMonitorTest::lowLatencyMonitorsTheArmedLatentInstrumentWithoutAlignment`).
+    Its limits: the instrument's own latency is still heard (it is the plug-in's); a delay PDC adds further
+    downstream - on a send from the channel it plays into to a later channel or the master - still applies;
+    a multi-output instrument's routed output buses keep their alignment; and the answer's
+    `alignment_skipped_frames` is the alignment as the mixer last published it (it moves once a period).
 - *(Updated 2026-09-30.)* **A mixer strip's tooltip now shows its delay compensation** - the latency its effects
   add and the point its input is aligned to, in frames and ms, and on the master the compensated total
   (`mixerLatencyText`, refreshed with the mixer's 500 ms sync; `MixerLatencyTextTest`). It is still not
@@ -1784,19 +1855,26 @@ feature works with no network at all.
   (`tests/control-stem-commands.py`), which drives the real pipeline over `--control-socket` on the
   committed stub ONNX graph, and which **skips** (exit 77) on a host with no python onnxruntime rather
   than passing.
-**Loudness metering is drivable and there is no meter in the interface — the socket is the only way to watch
-or measure a level.** `meter.get_state` reads the PASSIVE tap on the live master (gated integrated loudness,
+**Loudness metering: the shell's readout is the MASTER's; each mixer strip can show its own (corrected
+2026-10-25, Q050-108).** The earlier wording of this entry - "there is no meter in the interface" - is no longer
+true: the shell's transport bar has a LUFS field (`src/gui/shell/TransportReadouts.cpp`, the master's short-term
+LUFS and true peak from `meter.get_state` while the master meter is armed), Large Meters shows the master's
+short-term loudness, and since Q050-108 every mixer strip can pick its own meter (`mixer.set_strip`
+`meter_mode`: peak, rms, pre_fader, **vu** - 300 ms integration, 0 VU at `meter.set_reference`'s dBFS for a steady
+sine - or **lufs** - that channel's BS.1770 momentary / short-term loudness and true peak after its fader, read by
+`mixer.strip_get` and shown on the strip's meter line). What stays **master-only**: the shell's LUFS field,
+Large Meters' loudness line and `meter.get_state`; a strip's LUFS mode has no integrated loudness, no LRA and no
+history, and restarts its measurement whenever the strip enters the mode. The rest of this entry, as written:
+`meter.get_state` reads the PASSIVE tap on the live master (gated integrated loudness,
 momentary, short-term, the loudest short-term window and true peak, fed one period per rendered period out of
 `AudioEngine::renderStageMix()`), `meter.arm` arms or disarms it (arming starts a fresh measurement; a
 disarmed tap is one relaxed atomic load per audio period and measures nothing), and `meter.measure_file`
 measures a **rendered file** with the same BS.1770-4 meter the render path uses, with the EBU R 128 verdict.
 The render path's own report — the `.loudness.txt` sidecar — is reachable as well now: `export.get_settings`
 exposes `loudness_report` and `export.set_loudness_report` turns it on for the next render. What is **absent
-from the interface**: there is **no loudness meter widget, no LUFS/true-peak readout, no meter bridge and no
-loudness column** — `grep -rniI 'lufs\|loudness' src/gui/` finds only the export dialog's existing report
-checkbox and its result label — so nothing in this release shows a level while the transport runs. Stated
-limits: the live tap measures the **master mix only** (no per-track or per-bus loudness, no R128 momentary
-history graph and no loudness range / LRA); the meter is **stereo** in the application (`DEFAULT_CHANNELS`),
+from the interface** (as first written - see the correction above): no meter bridge and no loudness column.
+Stated limits: the live tap measures the **master mix only** (per-channel loudness is the strips' own LUFS mode,
+Q050-108; no R128 momentary history graph and no loudness range / LRA); the meter is **stereo** in the application (`DEFAULT_CHANNELS`),
 while `meter.measure_file` accepts 1 to 6 channels and refuses more, typed; a reading is JSON `null` — never a
 plausible number — while the meter has no measurement (silence, or a window that has not filled), and the
 **EBU R 128 target (−23.0 LUFS-I ±0.5 LU, −1.0 dBTP) is the only thing graded** (the −14 LUFS-I streaming
@@ -2037,7 +2115,9 @@ What is bounded, stated rather than implied:
   own counter (`MidiPort::outputEventsWritten()`) is read where `m_midiClient->processOutEvent()` is
   called. That is a write reaching the client, **not** a proof that a lamp lit — with the dummy client
   `sendByte()` is a no-op, and nothing here has been run against a controller that could confirm it.
-- **OSC is out** — this is the MIDI controller surface only.
+- **OSC is a separate, opt-in server** (Q050-205, `osc.*`, Customise > OSC Control Server): it maps `/zene/<command-id>`
+  onto the registry; this controller-surface group stays MIDI. The OSC server sends replies to requests only - no
+  unsolicited feedback, subscriptions or meter streams - and is not remembered across restarts.
 - **No motorised-fader return path is proved.** `controller.feedback` writes the value the project
   holds; whether a given device acts on it (moves a fader rather than lighting a ring) is a property of
   the device, and is unverified here.
@@ -2330,29 +2410,46 @@ ignored. (Adds the `fsync`-before-rename durability step on POSIX; on Windows th
 guarantee. The `complete="1"` index marker the same spec section sketches is *not* implemented — it belongs to
 `<z:index>`/`DocumentIndex`, which this slice is scoped out of.)
 
-## The destructive waveform editor's first slice (`sample.*`, board card #706) — its menus and its bounds
+## The destructive waveform editor (`sample.*`, board card #706) — the Sample Editor's range edits, and the whole-source bakers
 
-Five commands exist — `sample.generate` (tone / white / pink / silence into a new audio clip),
-`sample.amplify`, `sample.normalize`, `sample.reverse` and `sample.fade` (linear, in or out) — and
-**every one of them has an interface entry point as well as the control socket**: a sample track's
-**More** menu (the track header's and the Inspector's) offers `sample.generate` as **Insert Test
-Signal...**, which opens the command's own form with that track fixed and position `0`, length `192`
-and kind `tone` pre-filled; a sample clip's **Process** menu offers `sample.normalize`, `sample.amplify`,
-`sample.reverse` and `sample.fade` (in / out). The MCP bridge and the control socket are the same
-command, not a second implementation. There is still **no waveform view** that shows the result in
-place: a generated clip is drawn by the ordinary sample-clip view, and the bakers' feedback is the
-ordinary undo journal and clip repaint. **Placement beyond those two menus is an open owner decision
-for the UI phase** — mixer-slot vs clip editor vs window — and this lane did not take it (board card
-#706, question 4; `design/specs/DECISION-706-DESTRUCTION-MODEL.md` records the same defer). The
-bounds around them, stated rather than left to be discovered: every operator transforms
-the clip's **whole source** — there is no range/selection model, a clip playing a trimmed
-`srcin/srcout` window is REFUSED with the typed error naming that limit, and a fade therefore always
-spans the whole clip and has only the linear curve (`clip.set_fade` remains the non-baking window
-fade; `clip.set_gain` remains the non-baking gain); `sample.amplify` applies **no limiter** (the
-float pipeline keeps values past 0 dBFS); each step's undo bound is the ENGINE's own — `min(100
-steps, 16 MiB)` of retained checkpoints (`docs/UNDO-BOUNDS.md`), against which a baked buffer's
-serialized bytes count — not a private stack; and the deferred verbs register **no id at all** in this
-slice: noise reduction, pitch/tempo change and chirp are named here as not started, not stubbed.
+A sample clip's menu opens **Sample Editor...**. A selection dragged across the waveform, or typed into
+Start, End and Length, is the range every edit button acts on: **-3 dB** and **+3 dB** (gain),
+**Silence**, **Delete**, **Reverse**, **Fade In**, **Fade Out** and **Crop**. Each button is one
+`sample.edit_range` call over source frames `[from, to)` with `op` = `gain` (with `gain_db`),
+`silence`, `delete`, `reverse`, `fade_in`, `fade_out` or `crop` — the same registered command an agent
+runs, so there is one implementation and one undo step per edit (a Clip checkpoint, against the
+engine's `min(100 steps, 16 MiB)` bound in `docs/UNDO-BOUNDS.md`). Silence keeps the range's length;
+Delete closes the gap, so what followed the range moves earlier; Crop keeps only the range. A delete
+that would remove everything the clip plays is refused, and a crop or delete that would move the
+clip's warp markers is refused (remove them first). The buttons are disabled while nothing is
+selected, and each reports its outcome (or its typed refusal) on the editor's status line.
+`window.sample_editor` opens the editor, or brings its open window forward, and can set its range and
+view.
+Two more buttons act on the **whole source**, not the selection: **To Mono** is `sample.edit_range`
+`op: "mono"` (every frame becomes the documented `(L + R) / 2` on both sides, one undo step; a mono
+source is refused), and **Split Stereo...** is `sample.split_stereo`, which writes the left and right
+channels as two mono WAV files and leaves the clip unchanged.
+
+The bounds, stated rather than left to be discovered: range gain multiplies the selected frames and
+applies **no limiter** (the float pipeline keeps values past 0 dBFS), and the destructive **fades are
+linear** — Fade In and Fade Out have no curve choices. The Sample Editor's range tools have
+**no noise reduction**: `sample.edit_range` registers no denoise operation (its eighth value,
+`mono`, is the whole-source downmix above). (A denoiser exists as a
+separate plug-in effect; it is not a destructive range operation.)
+
+The whole-source commands are a different surface, and a clip's **Process** menu reaches them:
+**Normalize...** (`sample.normalize`), **Amplify...** (`sample.amplify`), **Reverse**
+(`sample.reverse`) and **Fade** (`sample.fade`, direction in or out) bake the clip's **whole source**
+and are refused for a clip playing a trimmed `srcin/srcout` window; that fade is linear too, and
+**Amplify...** applies **no limiter** either. The same menu's **Convert to Mono** is the editor's
+To Mono (`sample.edit_range` `op: "mono"`). A sample track's **More** menu (the track header's and
+the Inspector's) offers `sample.generate` as **Insert Test Signal...**, which opens the command's
+own form with that track fixed and position `0`, length `192` and kind `tone` pre-filled. The MCP
+bridge and the control socket are the same commands, not a second implementation. The editor's **Crop** is `sample.edit_range` `op: "crop"` over the
+selection; a clip menu's **Crop the Sample** is `sample.crop`, which discards the source frames
+outside the clip's play window. `clip.set_fade` and `clip.set_gain` remain the non-baking window fade
+and gain. Noise reduction, pitch/tempo change and chirp still register **no id at all** — not started,
+not stubbed.
 
 ## Scheduled Lua evaluation (livecode.*) - board card #708 - 2026-09-22
 
@@ -2684,8 +2781,19 @@ Fleshed out, because both halves of that sentence hide something real:
 - PulseAudio, SDL, OSS, sndio and SoundIo stay stereo; routes beyond 1/2 answer
   `multichannel:false` / `stereo_backend`. PortAudio is not compiled in this build.
 - Input channel names and buses are labels only; JACK port names do not use them.
-- A hardware insert is bypassed during an export: the dry signal passes and it reports 0 latency.
-- `pdc.report` does not list the insert's latency per channel, although PDC includes it.
+- A hardware insert is bypassed during an (offline) export: the dry signal passes and it reports 0 latency.
+  Since Q050-089.2 (2026-10-27) `render.render` says so in its reply (`hardware_inserts`: hardware
+  `unavailable`, `bypassed`, the inserts that are on), and `render.realtime` (the channel's Hardware I/O >
+  Render Through Hardware (Real Time)...) plays the song through the device so the inserts are heard. Its
+  limits: the whole song only (no range, stems or per-track print), WAV only, at the device's sample rate
+  (no resampling to the export preset's rate), stereo master only, at most 600 s of song; the control surface
+  and the interface wait while it plays; MIDI hardware instruments are not printed. The project export
+  dialog does not offer it yet (Q050-089 stage 3).
+- ~~`pdc.report` does not list the insert's latency per channel, although PDC includes it.~~ Lifted by
+  Q050-089.1 (2026-10-27): every channel carries `hardware_insert_latency_frames` (the figure PDC counts)
+  and `hardware_insert_latency_source`, and the strip tooltip names the same frames. During an export the
+  source reads `bypassed` and the figure 0 - a real-time render (`render.realtime`, Q050-089.2) is not
+  an export, so the insert keeps its latency there.
 
 **F2, instruments (MX-114/112/120).**
 - Output buses have an interface: Instrument Setup > Output Buses on the track's header menu, its
@@ -2850,8 +2958,10 @@ The record of what was built is `docs/MIXER-METERING.md`; this is what each piec
   (about 116 dB/s); medium and slow are about 26 and 12 dB/s.
 - After its hold, the peak line still falls by the inherited 0.05 (linear) per tick; there is no
   "hold until clicked" setting.
-- The RMS meter mode takes the same fall-off; its reading is still one period's RMS, not a 300 ms
-  VU integration.
+- The RMS meter mode takes the same fall-off; its reading is still one period's RMS. A 300 ms VU integration
+  is its own mode since Q050-108 (a strip's `meter_mode` vu: two critically damped stages on the rectified
+  signal, 99 % at 300 ms, 0 VU at `meter.set_reference` for a steady sine; the bars still fall by the
+  fall-off between readings).
 
 **MX-005, the Selected channel filter.**
 - The selection is the mixer's own: the arranger's track selection does not feed it.
@@ -2954,6 +3064,12 @@ into an empty launcher cell: it starts on the launch quantisation, stops on the 
   quantised stop, and the grid lands the take it started into the user's `samples/Recordings` folder. There is no
   record BUTTON on the cell itself, no keyboard shortcut for it, no count-in, and the grid does not land a take it
   did not start (an agent's take is left for the agent).
+- *(Updated 2026-10-28, Q050-493.)* Since Q050-013 a launched audio cell also plays on an instrument track's column
+  and its gain, loop region, transpose, detune and tempo warp ARE applied (`docs/050-features/Q050-013.md`); the
+  sentences below about them are the earlier record. These settings are no longer socket-only: the cell's
+  right-click menu has Playback and Warp (every `session.set_slot` playback field in one form, Warp to Song Tempo
+  and RAM Mode On/Off, a reset), and the cell shows its non-default settings after its name
+  (`docs/050-features/Q050-493.md`). RAM mode is stored and editable but still changes nothing in playback.
 - **A launched audio cell renders only on a sample track's column**, through that track, from the clip's top (or
   its loop start), looping the whole file. The cell's gain, transpose, detune, RAM mode and loop LENGTH are not
   applied to audio, and there is no warping: a file plays at its own speed whatever the tempo. A file at another
@@ -3062,9 +3178,13 @@ Evidence, all from the `050/feat-alloc-probe-fix` lane:
 `PerformView`: the setlist's song and the next one, transport and tempo, the playing scene and the next, one big
 button per scene, each column's playing cell and a large Stop All - every press a registered command
 (`PerformViewTest`). What it does not do:
-- Its keys (1-9, Up/Down, Enter, Space, Escape, Page Up/Down) are the window's own and cannot be rebound: the
-  shortcut map (`shortcuts.set`) binds main-window menu actions only. Launcher > Launch Scene 1-8 and Stop All
-  Clips remain rebindable there.
+- Its built-in keys (1-9, Up/Down, Enter, Space, Escape, Page Up/Down) are the window's own. Since Q050-055.1
+  stage 1 the shortcut map has a `perform` context (`shortcuts.set` `scope: "perform"`) covering Stop All, Start and
+  Stop Transport and Launch Scene 1-2, and a scoped key wins over the built-in table while Perform holds the focus -
+  but the remaining meanings (Up/Down, Enter, Page Up/Down, digits past 2) have no scoped action yet and cannot be
+  rebound. Launcher > Launch Scene 1-8 and Stop All Clips remain rebindable as menu actions.
+- Stage 2 of the context-aware map (keys bound to plug-in actions) is not implemented: a panel scope covers the four
+  panels' own commands only.
 - MIDI learn reaches what the launcher's controller bindings can do - launch a scene, stop everything
   (`session.bind_learn`). "Select the next scene", "launch the selected scene", play/stop, tempo and the song
   steps cannot be bound to a note.

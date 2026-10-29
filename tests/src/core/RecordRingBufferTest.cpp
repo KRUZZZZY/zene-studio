@@ -252,6 +252,79 @@ private slots:
 		QCOMPARE(output.front().left(), input[wrappedIndex(millisecondOffset, size)].left());
 	}
 
+	//! NaN and infinite millisecond offsets never reach an out-of-range float-to-integer conversion:
+	//! NaN means no offset, and infinities saturate to the largest offset of their integer type.
+	void RingBuffer_NonFiniteMillisecondOffsetsAreDefined()
+	{
+		const f_cnt_t period = Engine::audioEngine()->framesPerPeriod();
+		const f_cnt_t capacity = period + 8;
+		const auto size = static_cast<std::size_t>(capacity);
+		RingBuffer ring{f_cnt_t{8}};
+		std::vector<SampleFrame> input(size);
+		for (std::size_t i = 0; i < size; ++i)
+		{
+			input[i] = SampleFrame(static_cast<sample_t>(i), static_cast<sample_t>(-static_cast<float>(i)));
+		}
+		const auto refill = [&] {
+			ring.reset();
+			ring.write(input.data(), f_cnt_t{0}, capacity);
+		};
+		std::vector<SampleFrame> expected(static_cast<std::size_t>(period));
+		std::vector<SampleFrame> observed(static_cast<std::size_t>(period));
+		const float nan = std::numeric_limits<float>::quiet_NaN();
+		const float inf = std::numeric_limits<float>::infinity();
+
+		// A NaN read offset is the same as offset zero.
+		refill();
+		ring.read(expected.data(), std::int64_t{0});
+		refill();
+		ring.read(observed.data(), nan);
+		QCOMPARE(observed.front().left(), expected.front().left());
+
+		// Infinite and out-of-range read offsets saturate to the int64_t limits.
+		refill();
+		ring.read(expected.data(), std::numeric_limits<std::int64_t>::max());
+		for (const float ms : {inf, std::numeric_limits<float>::max()})
+		{
+			refill();
+			ring.read(observed.data(), ms);
+			QCOMPARE(observed.front().left(), expected.front().left());
+		}
+		refill();
+		ring.read(expected.data(), std::numeric_limits<std::int64_t>::min());
+		refill();
+		ring.read(observed.data(), -inf);
+		QCOMPARE(observed.front().left(), expected.front().left());
+
+		// movePosition() follows the same rules.
+		refill();
+		ring.movePosition(nan);
+		ring.read(observed.data());
+		QCOMPARE(observed.front().left(), input.front().left());
+
+		refill();
+		ring.movePosition(std::numeric_limits<std::int64_t>::max());
+		ring.read(expected.data());
+		refill();
+		ring.movePosition(inf);
+		ring.read(observed.data());
+		QCOMPARE(observed.front().left(), expected.front().left());
+
+		// write() offsets use the unsigned frame count: NaN writes at the current position and
+		// infinity saturates to the largest frame count, which wraps like any other offset.
+		ring.reset();
+		SampleFrame marker{0.5f, -0.5f};
+		ring.write(&marker, nan, f_cnt_t{1});
+		ring.read(observed.data());
+		QCOMPARE(observed.front().left(), marker.left());
+
+		ring.reset();
+		ring.write(&marker, inf, f_cnt_t{1});
+		const auto landing = static_cast<std::int64_t>(std::numeric_limits<f_cnt_t>::max() % size);
+		ring.read(observed.data(), landing);
+		QCOMPARE(observed.front().left(), marker.left());
+	}
+
 	//! Capacity is rounded up to a power of two and never below the request.
 	void Capacity_IsPowerOfTwoAndAtLeastRequested()
 	{

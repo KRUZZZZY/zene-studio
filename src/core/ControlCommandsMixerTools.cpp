@@ -289,7 +289,8 @@ ControlResult orderByTracks(const QJsonObject&)
 	for (const Track* track : Engine::getSong()->tracks())
 	{
 		auto* model = const_cast<Track*>(track)->mixerChannelModel();
-		MixerChannel* channel = model != nullptr && model->value() > 0 ? mixer()->mixerChannel(model->value()) : nullptr;
+		const bool onAChannel = model != nullptr && model->value() > 0 && model->value() < mixer()->numChannels();
+		MixerChannel* channel = onAChannel ? mixer()->mixerChannel(model->value()) : nullptr;
 		if (channel != nullptr && std::find(after.begin(), after.end(), channel->id()) == after.end()) { after.push_back(channel->id()); }
 	}
 	for (const int id : before) { if (std::find(after.begin(), after.end(), id) == after.end()) { after.push_back(id); } }

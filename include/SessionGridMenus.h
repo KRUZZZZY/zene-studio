@@ -43,7 +43,8 @@ namespace SessionGridMenus
 {
 
 //! A cell: edit it (type, clip, name, playback, follow actions), its launch mode and launch
-//! quantisation, arm or disarm its follow actions, record audio into it (WF-055: an empty cell, session.record_slot), clear it. @a slot is the cell's
+//! quantisation, arm or disarm its follow actions, record audio into it (WF-055: an empty cell, session.record_slot), clear it;
+//! an audio cell's Playback and Warp submenu (Q050-493: gain, transpose, detune, loop, warp, RAM mode). @a slot is the cell's
 //! session.get_state entry, or empty for an empty cell.
 LMMS_EXPORT void populateCell(QMenu* menu, int track, int scene, const QJsonObject& slot);
 

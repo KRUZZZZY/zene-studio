@@ -59,6 +59,8 @@
 #include "HardwareIo.h"
 #include "Mixer.h"
 #include "ProjectJournal.h"
+#include "RealtimeExport.h"
+#include "SampleBuffer.h"
 #include "MixerListen.h"
 #include "SampleFrame.h"
 
@@ -196,6 +198,25 @@ private slots:
 		QVERIFY2(!bus().active(), "two undos put the master back on 1/2");
 	}
 
+	void outOfRangeFrameReadsAsSilence()
+	{
+		// The bus holds 256 frames a period. Channel 0 carries 0.5 and channel 1 carries 0.25, so frame 256
+		// of channel 0 - past its plane - reads channel 1's first sample unless the frame is bounded.
+		HardwareOutputBus outputs;
+		outputs.init(256);
+		const std::vector<SampleFrame> half(256, SampleFrame(0.5f, 0.5f));
+		const std::vector<SampleFrame> quarter(256, SampleFrame(0.25f, 0.25f));
+		outputs.add(0, 1, half.data(), 256);
+		outputs.add(1, 1, quarter.data(), 256);
+		outputs.setMasterPlacement({-1, 2});  // the master is off the outputs
+		outputs.swap();  // the period just written is the one the device reads
+		const SampleFrame master(0.f, 0.f);
+		QVERIFY(outputs.sample(0, 255, master) == 0.5f);
+		QVERIFY(outputs.monoSample(255, master) == 0.5f);
+		QVERIFY2(outputs.sample(0, 256, master) == 0.f, "a frame past the period is silence");
+		QVERIFY2(outputs.monoSample(256, master) == 0.f, "a frame past the period is silence");
+	}
+
 	void cueMasterFieldsRequireACue()
 	{
 		const ControlResult result = run(QStringLiteral("mixer.cue_master"), {{QStringLiteral("name"), QStringLiteral("Phones")}});
@@ -286,6 +307,44 @@ private slots:
 		QCOMPARE(static_cast<qulonglong>(test::tlAllocationCount), static_cast<qulonglong>(0));
 		mixerlisten::clear();
 		QVERIFY(ok(QStringLiteral("mixer.hardware_output"), {{QStringLiteral("channel"), ch(2)}, {QStringLiteral("output"), QStringLiteral("default")}}));
+	}
+
+	//! Q050-089.2: render.realtime's capture keeps the master from the song's first period, drops the delay
+	//! compensation's head, ends at the end tick plus the tail and scales by the master gain - and the period
+	//! that feeds it allocates nothing.
+	void theRealtimeCaptureTrimsEndsAndAllocatesNothing()
+	{
+		RealtimeExportCapture capture;
+		// 100 frames a tick: the song ends at tick 10 = frame 1000; 100 frames of compensation, 50 of tail.
+		QVERIFY(capture.arm(44100, 10, 100, 50, 0.5f, 1000000));
+		QVERIFY(!capture.arm(44100, 10, 100, 50, 0.5f, 1000000));  // one take at a time
+		constexpr f_cnt_t Period = 256;
+		std::vector<SampleFrame> period(Period);
+		f_cnt_t played = 0;
+		test::resetAllocationCount();
+		test::tlCountAllocations = true;
+		for (int n = 0; n < 8 && capture.state() != RealtimeExportCapture::State::Done; ++n)
+		{
+			for (f_cnt_t f = 0; f < Period; ++f)
+			{
+				const float at = static_cast<float>(played + f) / 10000.f;
+				period[f] = SampleFrame(at, -at);
+			}
+			played += Period;
+			capture.push(period.data(), Period, played / 100, static_cast<double>(played % 100), 100.0);
+		}
+		test::tlCountAllocations = false;
+		QCOMPARE(static_cast<qulonglong>(test::tlAllocationCount), static_cast<qulonglong>(0));
+		QCOMPARE(static_cast<int>(capture.state()), static_cast<int>(RealtimeExportCapture::State::Done));
+		QCOMPARE(capture.targetFrames(), static_cast<std::uint64_t>(1000 + 50));
+		QVERIFY(!capture.capped());
+		const std::shared_ptr<const SampleBuffer> take = capture.takeFinished();
+		QVERIFY(take != nullptr);
+		QCOMPARE(static_cast<int>(take->size()), 1050);
+		// File frame k is song frame k: master frame k + 100, at half the level.
+		QCOMPARE(take->data()[0][0], 0.5f * 100 / 10000.f);
+		QCOMPARE(take->data()[1049][1], -0.5f * 1149 / 10000.f);
+		QCOMPARE(static_cast<int>(capture.state()), static_cast<int>(RealtimeExportCapture::State::Idle));
 	}
 
 	void aPingMeasuresTheLoopAndFeedsDelayCompensation()

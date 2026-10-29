@@ -56,6 +56,7 @@
 
 #include <QByteArray>
 #include <QDir>
+#include <QFile>
 #include <QList>
 #include <QPair>
 #include <QJsonArray>
@@ -286,6 +287,32 @@ private slots:
 		QVERIFY(!dawProjectBeatRepresentable(1.0e12));
 		QVERIFY(!dawProjectBeatRepresentable(std::numeric_limits<double>::quiet_NaN()));
 		QCOMPARE(dawProjectTicksFromBeats(lastTick / perBeat), static_cast<qint64>(lastTick));
+	}
+
+	/*! A read that gives back nothing is refused AS A READ by the strict reader the
+	 *  .mmpz container uses, so a recovery names the file it could not read. The
+	 *  same bytes read without the fault are refused as malformed. The fault is
+	 *  ZENE_TEST_CONTAINER_READ_FAULT. */
+	void aFailedReadOfTheStrictReaderIsNamedAsARead()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString path = dir.filePath(QStringLiteral("read-fault.dawproject"));
+		QFile file(path);
+		QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+		QVERIFY(file.write(QByteArray(64, 'x')) == 64);
+		file.close();
+
+		std::vector<DawProjectEntry> entries;
+		QString error;
+		qputenv("ZENE_TEST_CONTAINER_READ_FAULT", "1");
+		const bool ok = dawProjectZipRead(path, &entries, &error);
+		qunsetenv("ZENE_TEST_CONTAINER_READ_FAULT");
+		QVERIFY(!ok);
+		QVERIFY2(error.contains(QStringLiteral("cannot read")), qPrintable(error));
+
+		QVERIFY(!dawProjectZipRead(path, &entries, &error));
+		QVERIFY2(!error.contains(QStringLiteral("cannot read")), qPrintable(error));
 	}
 
 	void cleanupTestCase()
@@ -782,6 +809,55 @@ private slots:
 		const ControlResult result = run(QStringLiteral("dawproject.import"),
 			{{QStringLiteral("path"), file}});
 		QVERIFY(!result.ok);
+	}
+
+	//! The tempo arm rounds a point's value and casts it to int. A value that is
+	//! not finite, or that rounds outside the engine's bounds, has no int to
+	//! become (a NaN or out-of-range cast is undefined), so applyDawProjectModel
+	//! refuses it before the cast - naming the value, as the beat refusal names
+	//! its time - and the session's tempo map is left as it was.
+	void tempoPointValuesOutsideTheEngineAreRefusedBeforeTheCast()
+	{
+		Song* song = Engine::getSong();
+		const double refused[] = {
+			std::numeric_limits<double>::quiet_NaN(),
+			std::numeric_limits<double>::infinity(),
+			-std::numeric_limits<double>::infinity(),
+			1e300,
+			-1e300,
+			5000.0,
+			9.4,
+			999.5,
+		};
+		for (const double value : refused)
+		{
+			DawProjectModel model;
+			DawProjectPoint point;
+			point.time = 1.0;
+			point.value = value;
+			model.tempoPoints.append(point);
+
+			QString error;
+			QVERIFY(!applyDawProjectModel(song, model, &error));
+			QVERIFY2(error.contains(QString::number(value, 'g', 17)), qPrintable(error));
+			QCOMPARE(song->tempoMap().map().size(), 0);
+		}
+
+		// The rounding itself is unchanged at both edges of the accepted interval.
+		DawProjectModel accepted;
+		DawProjectPoint minimum;
+		minimum.time = 1.0;
+		minimum.value = 9.5;
+		accepted.tempoPoints.append(minimum);
+		DawProjectPoint maximum;
+		maximum.time = 2.0;
+		maximum.value = 999.4;
+		accepted.tempoPoints.append(maximum);
+		QString error;
+		QVERIFY2(applyDawProjectModel(song, accepted, &error), qPrintable(error));
+		QCOMPARE(song->tempoMap().map().size(), 2);
+		QCOMPARE(song->tempoMap().map()[0].tempo, 10);
+		QCOMPARE(song->tempoMap().map()[1].tempo, 999);
 	}
 
 	//! Claim 5: typed refusals - a missing file, a file that is not a ZIP, a
@@ -1786,6 +1862,51 @@ private slots:
 		QVERIFY2(std::fabs(roundTripped.rel - 0.2) < 1e-6,
 			qPrintable(QStringLiteral("the release velocity came back as %1, not 0.2")
 				.arg(roundTripped.rel)));
+	}
+
+	//! A note's time is its position and its duration its length. The import
+	//! passes Note's length first and its position second (Note.h), so a swap
+	//! would move the note to its duration and stretch it to its start. The
+	//! other notes in this file start at 0, which is why they cannot see one.
+	void noteTimeIsPositionAndDurationIsLength()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		Track* track = Track::create(Track::Type::Instrument, song);
+		QVERIFY(track != nullptr);
+		Clip* clip = track->createClip(TimePos(0));
+		QVERIFY(dynamic_cast<MidiClip*>(clip) != nullptr);
+
+		DawProjectModel model = previousSessionModel();
+		model.tracks.clear();
+		DawProjectTrack entry;
+		entry.typeName = QStringLiteral("instrument");
+		entry.contentType = QStringLiteral("notes");
+		entry.name = QStringLiteral("Pos");
+		DawProjectClip clipEntry;
+		clipEntry.time = 0.0;
+		clipEntry.duration = 4.0;
+		DawProjectNote noteEntry;
+		noteEntry.time = 1.0;
+		noteEntry.duration = 2.0;
+		noteEntry.key = 60;
+		noteEntry.vel = 0.8;
+		noteEntry.rel = 0.8;
+		clipEntry.notes.append(noteEntry);
+		entry.clips.append(clipEntry);
+		model.tracks.append(entry);
+
+		QString error;
+		QVERIFY2(applyDawProjectModel(song, model, &error), qPrintable(error));
+
+		DawProjectLossReport loss;
+		const DawProjectModel back = dawProjectModelFromSong(song, &loss);
+		QCOMPARE(back.tracks.size(), 1);
+		QCOMPARE(back.tracks[0].clips.size(), 1);
+		QCOMPARE(back.tracks[0].clips[0].notes.size(), 1);
+		const DawProjectNote& roundTripped = back.tracks[0].clips[0].notes[0];
+		QCOMPARE(roundTripped.time, 1.0);
+		QCOMPARE(roundTripped.duration, 2.0);
 	}
 
 //! Luna cluster 3137: a clip far past the engine's 32-bit tick grid cannot

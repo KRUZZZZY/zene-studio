@@ -245,6 +245,7 @@ void SessionGridView::refresh()
 	m_sceneStates = state.result.value(QStringLiteral("scenes")).toArray();
 	m_subScenes = state.result.value(QStringLiteral("subscenes")).toArray();
 	m_names = cellNames(m_slots);
+	readPlayback(m_slots);
 	paintHeaders();
 	for (int track = 0; track < tracks; ++track)
 	{
@@ -317,6 +318,24 @@ std::vector<QString> SessionGridView::cellNames(const QJsonArray& slotList) cons
 }
 
 
+void SessionGridView::readPlayback(const QJsonArray& slotList)
+{
+	const auto cells = static_cast<std::size_t>(std::max(m_tracks * m_scenes, 0));
+	m_badges.assign(cells, QString());
+	m_playback.assign(cells, QString());
+	for (const QJsonValue& value : slotList)
+	{
+		const QJsonObject slot = value.toObject();
+		const int track = slot.value(QStringLiteral("track")).toInt();
+		const int scene = slot.value(QStringLiteral("scene")).toInt();
+		if (cellButton(track, scene) == nullptr) { continue; }
+		const auto index = static_cast<std::size_t>(track * m_scenes + scene);
+		m_badges[index] = sessiongrid::playbackBadge(slot);
+		m_playback[index] = sessiongrid::playbackWords(slot);
+	}
+}
+
+
 void SessionGridView::paintHeaders()
 {
 	for (int track = 0; track < m_tracks; ++track)
@@ -355,7 +374,20 @@ void SessionGridView::paintCell(int track, int scene)
 		: tr("%1: %2%3").arg(where, name, phase.isEmpty() ? QString() : QStringLiteral(", ") + phase)) + selected);
 	if (!recording.isEmpty()) { cell->setAccessibleName(cell->accessibleName() + QStringLiteral(", ") + recording); }
 	setTip(cell, launchNote(track, scene));
+	paintPlayback(cell, index);
 	paintDropPreview(cell, index);
+}
+
+
+void SessionGridView::paintPlayback(QToolButton* cell, int index)
+{
+	const QString& badge = m_badges[static_cast<std::size_t>(index)];
+	const QString& words = m_playback[static_cast<std::size_t>(index)];
+	if (badge.isEmpty() || words.isEmpty()) { return; }
+	cell->setText(cell->text() + QStringLiteral("  ") + badge);
+	cell->setAccessibleName(cell->accessibleName() + QStringLiteral(", ") + words);
+	const QString note = cell->toolTip();
+	setTip(cell, note.isEmpty() ? words : note + QStringLiteral("\n") + words);
 }
 
 
