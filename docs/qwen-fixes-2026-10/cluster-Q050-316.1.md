@@ -9,6 +9,8 @@ Two commits on top of `050/m0-train-24` (`2a7fd9f9c7`):
 - `83783f4ec7` `test(browser): prove the tempo/key facets on both surfaces (Q050-316.1)` — the two
   test executables, registration, re-derived manifests, the live command snapshot, the feature
   record and the manual.
+- `df9dd97100` `docs(report): record the tempo/key facet evidence (Q050-316.1)` — this report and
+  its evidence note.
 
 ## What the feature does
 
@@ -148,8 +150,11 @@ Each item below answers one ASK of `submit_check.py`, with the commands and exit
    command readers/registrations and the Search view — none is reached from `processImpl`/
    `play`/render paths. The index read (`browserMeasuredFeatures`) takes the index's `QMutex`
    briefly to copy, then releases it before the filesystem walk; the walk itself runs on the
-   command's UI thread. `AudioHINT` did not flag the diff. No allocation/lock/I/O was added to any
-   audio callback; the new test executables never start audio processing.
+   command's UI thread. The completion check's audio-path hint fires only on this report's own
+   prose (the words `processImpl`/`play(` occur in the sentence above, not in `+` lines of product
+   code) — `git diff 2a7fd9f9c7..HEAD | grep -nE '^\+.*(processImpl|playImpl|renderPeriod|processAudioBuffer|pushPeriod)'`
+   finds nothing outside the report. No allocation/lock/I/O was added to any audio callback; the
+   new test executables never start audio processing.
 
 5. **Old projects load and render as before; new data round-trips.** No project format changed
    (no `DataFile`, `Song` or `ProjectJournal` file touched). `ProjectVersionTest`,
