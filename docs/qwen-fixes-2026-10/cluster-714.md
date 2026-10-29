@@ -161,7 +161,8 @@ Only Linux was built and run (this machine). Reviewed for portability: no new AP
 
 ## Self-check answers to the pre-submit ASK items
 
-`python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> 714` (`submit-check-1.log`, EXIT 1):
+`python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> 714` (`submit-check-1.log` and, on the
+committed tree, `submit-check-3-final.log`, both EXIT 1):
 PASS - commits on the branch; PASS - working tree clean; PASS - report; PASS - tests added or changed. The one FAIL is
 the gates row: it runs the UNMODIFIED `feature_check.py`, which creates its log directory at
 `<worktree>-feature-check` (`PermissionError 13`, reproduced with a bare `Path.mkdir` in that directory; the parent is
