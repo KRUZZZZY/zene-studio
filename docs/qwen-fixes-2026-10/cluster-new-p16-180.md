@@ -132,7 +132,10 @@ Log folder for this round: `/home/kruzzzzy/.cache/zene-tmp/new-p16-180.r2-logs/`
 | 17 | `python3 feature_check.py <worktree>` (unmodified) | gate-feature-unwrapped.log | 1 — `PermissionError` creating `<worktree>-feature-check` (jail), not a gate verdict |
 | 18 | `python3 gate_wrapper.py <worktree> …/gate-feature-check …/gate-baselines` | gate-feature-1.log | **0** — `RESULT: PASS`, all 8 rows PASS, `no new item in your files` for both ratchets |
 | 19 | `cd build/tests && ctest -R '^DeviceDspTest$' -V` (final) | test-7-family-final.log | **0** (`Totals: 38 passed, 0 failed, 7 skipped`) |
-| 20 | `python3 submit_check.py <worktree> new-p16-180` | submit-check-1.log | see Self-check |
+| 20 | `python3 submit_check.py <worktree> new-p16-180` | submit-check-1.log | **1** — only the `gates (feature_check.py)` row, which is the jail `PermissionError` (below) |
+| 21 | post-commit: `CCACHE_TEMPDIR=… /usr/bin/cmake --build build --target zene DeviceDspTest -j6` | build-6-post-commit.log | **0** |
+| 22 | post-commit: `cd build/tests && ctest -R '^DeviceDspTest$' -V` | test-8-post-commit.log | **0** — `Totals: 38 passed, 0 failed, 7 skipped`; all five LFO cases PASS |
+| 23 | post-commit: `python3 gate_wrapper.py … gate-feature-check-committed` | gate-feature-3-committed.log | **0** — `RESULT: PASS`, 8/8 rows on the committed tree |
 
 ### RED / GREEN evidence table
 
