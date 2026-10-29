@@ -93,6 +93,8 @@ and the build tree are writable). All logs below are therefore in
 | affected family GREEN | `ctest -R 'RevisionTimelineTest|ProjectRevisionRestoreStagingTest|ReversibilityUndoTest|RevisionRestoreCreatedFileUndoTest' --output-on-failure` (`test-8-family-final.log`) | 0 | 4 targets, 57 cases passed, 0 failed, 5 skipped |
 | family detail (-V) | same selection with `-V` (`test-11-family-verbose.log`) | 0 | RevisionTimelineTest 33 passed; ProjectRevisionRestoreStagingTest 9 passed; RevisionRestoreCreatedFileUndoTest 5 passed; ReversibilityUndoTest 10 passed + 5 skipped (all 5 `this build exposes no loadable built-in instrument`, environmental, present before this change) |
 
+| post-commit rebuild | the same build + family ctest as committed (`build-12-postcommit.log`, `test-12-postcommit.log`) | 0 / 0 | build EXIT 0; 4/4 ctest targets passed |
+
 Note on the first family run (`test-4-family.log`, EXIT 8): the three sibling binaries had never been built in this
 build tree, so ctest reported them "Not Run". They were built explicitly (`build-5-siblings.log`, EXIT 0) and the
 identical command then passed (`test-5-family.log`, EXIT 0). No test failed.
