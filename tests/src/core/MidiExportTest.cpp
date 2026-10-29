@@ -594,6 +594,26 @@ private slots:
 		QCOMPARE(ons, 1); // one note at tick 0 in a one-bar pattern
 	}
 
+	//! A zero tempo is not a tempo: the encoder divides 60000000 by it, and the quotient (+inf)
+	//! has no uint32_t value. Neither entry point may record one, so the track encodes only the
+	//! valid change: 120 bpm = 500000 us per quarter at tick 480 (delta 0x83 0x60).
+	void aZeroTempoIsNotEncoded()
+	{
+		MidiFile::MIDITrack track;
+		track.addTempo(0, 0);
+		MidiFile::Event sibling;
+		sibling.type = MidiFile::Event::TEMPO;
+		sibling.tempo = 0;
+		sibling.time = 0;
+		track.addEvent(sibling);
+		track.addTempo(120, 480);
+
+		std::vector<uint8_t> bytes;
+		track.writeEventsToBuffer(bytes);
+		const std::vector<uint8_t> expected{0x83, 0x60, 0xFF, 0x51, 0x03, 0x07, 0xA1, 0x20};
+		QVERIFY2(bytes == expected, "a zero tempo was encoded beside the valid change");
+	}
+
 private:
 	QTemporaryDir m_dir;
 };
