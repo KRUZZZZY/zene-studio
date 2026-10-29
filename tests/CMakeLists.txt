@@ -69,6 +69,9 @@ if(WIN32)
 	# Same COFF section limit as /bigobj above, for the MinGW and clang (windows-arm64) assemblers.
 	if(MINGW)
 		add_compile_options(-Wa,-mbig-obj)
+		# lmmsobjs keeps its debug info (RelWithDebInfo) and every test links it statically: the
+		# windows-arm64 build tree reached 120 GB and filled the runner (run 40828420263). Tests only.
+		add_link_options(-Wl,--strip-debug)
 	endif()
 endif()
 
