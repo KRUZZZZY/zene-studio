@@ -536,6 +536,9 @@ AudioEngine::AudioEngine(bool renderOnly)
 	BufferManager::init( m_framesPerPeriod );
 	m_outputBufferRead = std::make_unique<SampleFrame[]>(m_framesPerPeriod);
 	m_outputBufferWrite = std::make_unique<SampleFrame[]>(m_framesPerPeriod);
+	// cluster new-p9-551: the render tap's snapshot rotation, allocated once here so publishing a
+	// period on the audio thread only copies into the next slot - it never allocates or grows.
+	for (auto& slot : m_renderTapBuffers) { slot = std::make_unique<SampleFrame[]>(m_framesPerPeriod); }
 	m_hardwareOut.init(m_framesPerPeriod);  // 0.5.0 F1 (MX-040): allocated once, here, never on the render path
 
 
@@ -1175,7 +1178,20 @@ void AudioEngine::renderStageMix()
 	// 0.5.0 W3 (WF-147): the tuner's tap on the master - one relaxed load unless it listens here (TunerTap.h).
 	TunerTap::instance().push( TunerTap::Source::Master, m_outputBufferWrite.get(), m_framesPerPeriod );
 
-	emit nextAudioBuffer(m_outputBufferRead.get());
+	// cluster new-p9-551: publish THIS period into an owned snapshot slot, not the live output buffer.
+	// The emit used to hand out m_outputBufferRead.get(), which swapBuffers() zeroes and refills at the
+	// start of the next period - so a queued receiver could read the next period (or silence) instead
+	// of the one it was signalled for. A copy of one period is the smallest correct handoff: the slot
+	// is preallocated, so this is a memcpy with no allocation, lock or wait, and the pointer stays
+	// valid until that same slot is reused RenderTapSlots periods later.
+	{
+		const int slot = m_renderTapNext;
+		m_renderTapNext = (m_renderTapNext + 1) % RenderTapSlots;
+		SampleFrame* const tap = m_renderTapBuffers[static_cast<std::size_t>(slot)].get();
+		std::copy_n(m_outputBufferRead.get(), m_framesPerPeriod, tap);
+		m_renderTapSlot.store(slot, std::memory_order_release);
+		emit nextAudioBuffer(tap);
+	}
 
 	// and trigger LFOs
 	EnvelopeAndLfoParameters::instances()->trigger();

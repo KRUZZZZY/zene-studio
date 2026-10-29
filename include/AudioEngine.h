@@ -648,10 +648,40 @@ public:
 	//! Enable/disable sanitization of inf/nan values
 	void setSanitizationEnabled(bool enabled) { m_sanitizationEnabled.store(enabled, std::memory_order_relaxed); }
 
+	//! cluster new-p9-551: snapshot buffers kept for nextAudioBuffer() - a FIXED ROTATION, so the
+	//! pointer an emit hands out stays valid for that many periods and a queued receiver can copy it.
+	static constexpr int RenderTapSlots = 4;
+
+	//! cluster new-p9-551: the slot nextAudioBuffer() last published, or -1 before the first period.
+	int renderTapSlot() const noexcept { return m_renderTapSlot.load(std::memory_order_acquire); }
+
+	//! cluster new-p9-551: the snapshot buffer of \a slot; null until that slot has been published.
+	const SampleFrame* renderTapBuffer(int slot) const noexcept
+	{
+		if (slot < 0 || slot >= RenderTapSlots) { return nullptr; }
+		return m_renderTapBuffers[static_cast<std::size_t>(slot)].get();
+	}
+
 signals:
 	void qualitySettingsChanged();
 	void sampleRateChanged();
+
+	/*! cluster new-p9-551: the period just mixed, for a receiver that may run LATER.
+	 *
+	 *  The pointer is into a FIXED ROTATION of preallocated snapshot buffers,
+	 *  never into the engine's reusable output buffer, and it stays valid until
+	 *  the same slot comes round again (RenderTapSlots periods later) - long
+	 *  enough for a queued receiver to be dispatched, and bounded, so a receiver
+	 *  that keeps the pointer cannot make the engine allocate, grow or wait on
+	 *  the audio thread. It used to be the engine's output buffer, which
+	 *  swapBuffers() zeroes and refills every period: a queued receiver could
+	 *  read the NEXT period - or silence - instead of the one it was handed.
+	 *
+	 *  A receiver that runs inside the audio period should connect with
+	 *  Qt::DirectConnection (the engine's own taps do); a queued one gets this
+	 *  owned copy instead of a pointer into live engine state. */
 	void nextAudioBuffer(const lmms::SampleFrame* buffer);
+
 
 
 private:
@@ -821,6 +851,13 @@ private:
 
 	std::unique_ptr<SampleFrame[]> m_outputBufferRead;
 	std::unique_ptr<SampleFrame[]> m_outputBufferWrite;
+
+	/*! cluster new-p9-551: the buffers nextAudioBuffer() hands out, one per slot, each one period
+	 *  long. Allocated once in the constructor, so publishing a period copies into the next slot and
+	 *  never allocates. m_renderTapSlot is the slot of the last publication (-1 before the first). */
+	std::array<std::unique_ptr<SampleFrame[]>, RenderTapSlots> m_renderTapBuffers;
+	std::atomic<int> m_renderTapSlot{-1};
+	int m_renderTapNext = 0;
 	f_cnt_t m_outputBufferReadIndex;
 	//! 0.5.0 F1 (MX-040): the hardware outputs beyond the master, flipped with the two buffers above.
 	HardwareOutputBus m_hardwareOut;

@@ -55,6 +55,7 @@
 #include <QFile>
 #include <QTemporaryDir>
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <vector>
@@ -65,8 +66,12 @@
 #include "Engine.h"
 #include "OutputSettings.h"
 #include "ProjectRenderer.h"
+#include "SampleBuffer.h"
+#include "SampleClip.h"
 #include "SampleFrame.h"
+#include "SampleTrack.h"
 #include "Song.h"
+#include "TimePos.h"
 
 using namespace lmms;
 
@@ -337,6 +342,120 @@ private slots:
 		QVERIFY2(peakDifference > 1e-4,
 			qPrintable(QStringLiteral("volume 99 % rendered the source exactly (peak difference %1) - "
 				"the unity case cannot be discriminating").arg(peakDifference)));
+	}
+
+	/*! BUG 2 (cluster new-p9-551): a QUEUED receiver of nextAudioBuffer() must
+	 *  read the period it was signalled for.
+	 *
+	 *  The signal used to carry a pointer into the engine's reusable output
+	 *  buffer. A queued receiver runs after the emit returns - typically after
+	 *  the next period has been rendered - and by then swapBuffers() has zeroed
+	 *  and refilled that buffer, so the receiver read the next period or
+	 *  silence. This case reproduces exactly that ordering without any timing:
+	 *  it connects with Qt::QueuedConnection, renders one period whose content
+	 *  is known (a constant DC level, so the period's value identifies it),
+	 *  renders a SECOND period, and only then lets the event loop deliver the
+	 *  first queued call. Whatever the slot reads must still be the FIRST
+	 *  period's content.
+	 *
+	 *  A queued connection is what makes the receiver late deterministically -
+	 *  no sleeps, no threads - and the queued connection itself is the API
+	 *  contract under test: the engine must not hand out a pointer into state it
+	 *  is about to overwrite. */
+	void queuedAudioBufferReceiverSeesThePeriodItWasSignalledFor()
+	{
+		AudioEngine* const engine = Engine::audioEngine();
+		Song* const song = Engine::getSong();
+		song->clearProject();
+
+		// A per-frame-distinct source (a ramp): every period carries DIFFERENT audio,
+		// so a receiver that reads a later period - or a zeroed one - cannot match the
+		// period it was signalled for. A constant source would let a stale read pass.
+		const auto rate = static_cast<int>(engine->outputSampleRate());
+		const std::size_t frames = static_cast<std::size_t>(rate) / 4;
+		std::vector<SampleFrame> ramp(frames);
+		for (std::size_t i = 0; i < frames; ++i)
+		{
+			const auto value = static_cast<float>(static_cast<double>(i) / frames) * 0.5f - 0.25f;
+			ramp[i] = SampleFrame(value, -value);
+		}
+		auto* track = new SampleTrack(song);
+		auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		const auto buffer = std::make_shared<const SampleBuffer>(ramp.data(), ramp.size(), rate);
+		clip->setSampleBuffer(buffer);
+		clip->changeLength(TimePos(4 * 192));
+		clip->setAutoResize(false);
+
+		//! What each DELIVERED call read, kept per call: the queue delivers in emission
+		//! order, so call N is the period emitted N-th. A receiver that copies at
+		//! delivery time (the one under test) sees whatever the pointer holds NOW.
+		struct Capture
+		{
+			std::vector<std::vector<float>> perCall;
+		} capture;
+
+		const auto connection = QObject::connect(engine, &AudioEngine::nextAudioBuffer, this,
+			[&capture, engine](const SampleFrame* buffer) {
+				capture.perCall.emplace_back();
+				std::vector<float>& samples = capture.perCall.back();
+				if (buffer == nullptr) { return; }
+				// Copy at DELIVERY time, as the oscilloscope's slot does: what this
+				// lambda reads is exactly what a late receiver would have observed.
+				const f_cnt_t n = engine->framesPerPeriod();
+				for (f_cnt_t i = 0; i < n; ++i)
+				{
+					samples.push_back(buffer[i][0]);
+					samples.push_back(buffer[i][1]);
+				}
+			}, Qt::QueuedConnection);
+		QVERIFY(connection != QMetaObject::Connection());
+
+		// The engine's own render tap runs on the thread calling renderNextPeriod,
+		// and a queued slot is only delivered when an event loop runs - which this
+		// case controls, so the receiver's read happens AFTER the engine has moved
+		// on. The first period after play only creates the clip's handle, so one
+		// warm-up period settles the engine before the measured pair.
+		song->playSong();
+		engine->renderNextPeriod();
+		const std::span<const SampleFrame> first = engine->renderNextPeriod();
+		QVERIFY(!first.empty());
+		const std::vector<SampleFrame> firstCopy(first.begin(), first.end());
+		QVERIFY2(std::any_of(firstCopy.begin(), firstCopy.end(),
+				[](const SampleFrame& frame) { return frame[0] != 0.0f || frame[1] != 0.0f; }),
+			"the first rendered period is silent, so a stale read of silence would pass this case");
+
+		// Render a second period: on the tree that hands out its live output buffer,
+		// this is what the late receiver would read instead of `first`.
+		const std::span<const SampleFrame> second = engine->renderNextPeriod();
+		QVERIFY(!second.empty());
+		const std::vector<SampleFrame> secondCopy(second.begin(), second.end());
+		song->stop();
+		QObject::disconnect(connection);
+
+		// Now deliver everything that was queued while the three periods rendered.
+		QCoreApplication::processEvents();
+		QVERIFY2(capture.perCall.size() == 3,
+			qPrintable(QStringLiteral("expected three queued delivers (warm-up, measured, next), got %1")
+				.arg(capture.perCall.size())));
+		// perCall[1] is the receiver of the MEASURED period. It must hold that period's
+		// audio, even though two more periods were rendered before it was delivered.
+		const std::vector<float>& late = capture.perCall[1];
+		QVERIFY2(late.size() >= firstCopy.size() * 2,
+			"the queued receiver of the measured period recorded no audio");
+		int stale = 0;
+		for (std::size_t i = 0; i < firstCopy.size(); ++i)
+		{
+			if (late[2 * i] != firstCopy[i][0] || late[2 * i + 1] != firstCopy[i][1]) { ++stale; }
+		}
+		QVERIFY2(stale == 0,
+			qPrintable(QStringLiteral("the queued receiver did not see the period it was signalled for: "
+				"%1 of %2 frames differ (at frame 0 it read %3/%4, expected %5/%6; the NEXT period was %7/%8)")
+				.arg(stale).arg(firstCopy.size())
+				.arg(late[0]).arg(late[1])
+				.arg(firstCopy[0][0]).arg(firstCopy[0][1])
+				.arg(secondCopy.empty() ? 0.0f : secondCopy[0][0])
+				.arg(secondCopy.empty() ? 0.0f : secondCopy[0][1])));
 	}
 
 private:
