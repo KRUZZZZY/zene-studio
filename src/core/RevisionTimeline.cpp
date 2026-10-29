@@ -236,6 +236,20 @@ bool entryIsNewer(const RevisionEntry& left, const RevisionEntry& right)
 	return left.timestamp > right.timestamp;
 }
 
+//! The bytes a restore may install: readRevisionBytes() and, on top of it, the
+//! refusal of a zero-byte artefact. Zero bytes read back as success (the file
+//! exists and reads), but a zero-byte file is not a project revision, so it is
+//! refused here rather than staged, rotated in and installed over a valid project.
+bool readRestorableBytes(const QString& projectPath, const QString& recoveryFile, const QString& id,
+	QByteArray* bytes, RevisionEntry* entry, QString* error)
+{
+	if (!readRevisionBytes(projectPath, recoveryFile, id, bytes, entry, error)) { return false; }
+	if (!bytes->isEmpty()) { return true; }
+	*error = QStringLiteral("'%1' is empty: a zero-byte file is not a project revision, so "
+		"it is refused rather than restored over %2").arg(id).arg(projectPath);
+	return false;
+}
+
 } // namespace
 
 QString revisionLiveId()
@@ -421,7 +435,7 @@ bool restoreTimelineRevision(const QString& projectPath, const QString& recovery
 	// Stage FIRST, so nothing is written before the bytes are known readable.
 	QByteArray bytes;
 	RevisionEntry entry;
-	if (!readRevisionBytes(projectPath, recoveryFile, id, &bytes, &entry, error)) { return false; }
+	if (!readRestorableBytes(projectPath, recoveryFile, id, &bytes, &entry, error)) { return false; }
 	const QString staging = projectPath + QStringLiteral(".timeline-stage");
 	QFile::remove(staging);
 	QFile stage(staging);
