@@ -1709,6 +1709,10 @@ endif()
 # and re-runs the branch's tests finds it by name and rebuilds its binary.
 LIST(APPEND LMMS_TESTS src/core/ControlCrashAcknowledgeTest.cpp)
 
+# Cluster new-p12-328: the stored band-limited tables hold only harmonics whose period is at least
+# two samples. The fallback generator and the shipped wavetable files are both checked.
+LIST(APPEND LMMS_TESTS src/core/BandLimitedWaveTest.cpp)
+
 # Cluster new-p15-95: the LADSPA global stereo link over a plugin whose control total
 # is 65536. The LADSPA plug-in's own sources are compiled into the test (the
 # SlicerT plug-in tests' shape), so the link the test drives is the shipping one. Its
@@ -2724,6 +2728,11 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	endif()
 endforeach()
+
+# BandLimitedWaveTest's two scenarios each run in a fresh process: generateWaves() caches its result in
+# s_wavesGenerated, so the fallback generator and the shipped-file load must not share one cache.
+add_test(NAME BandLimitedWaveFallback COMMAND BandLimitedWaveTest fallbackTablesHoldOnlyInBandHarmonics)
+add_test(NAME BandLimitedWaveShipped COMMAND BandLimitedWaveTest shippedTablesHoldOnlyInBandHarmonics)
 
 # Compile the FIFO header in its shared-memory mode independently of the host's
 # selected socket transport, so the ownership and semaphore regressions run on
