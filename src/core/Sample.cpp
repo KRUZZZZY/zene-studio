@@ -117,37 +117,62 @@ bool Sample::play(SampleFrame* dst, PlaybackState* state, size_t numFrames, Loop
 	 *  own rate exactly one sample late, and made `zene render` of a plain
 	 *  sample track stop being bit-identical to the file it plays.
 	 *
-	 *  At ratio 1.0 with default pitch there is nothing to convert, so the read
-	 *  is the source's frames and the delay cannot enter the render. This branch
-	 *  is a read-and-copy of the same frames the converter would have consumed -
-	 *  same cursor advance, same window/loop bounds, same amplification - so every
-	 *  OTHER ratio keeps the converter path and its exact arithmetic. The frame
-	 *  buffer staging (`m_bufferView`) is bypassed here and left empty, so a
-	 *  ratio change in a later call cannot replay stale staged frames. */
+	 *  At ratio 1.0 the OUTPUT is the source's own frames, so the delay cannot
+	 *  enter the render. The converter is still DRIVEN over every frame this call
+	 *  consumes, exactly once, in order, and only its output is discarded. That
+	 *  matters for a run that passes through unity: a .5 -> 1.0 -> .5 sequence
+	 *  hands the converter the same input history it would have had without the
+	 *  unity segment, so the non-unity output after it is unchanged, and the
+	 *  source cursor advances by exactly the frames consumed. Skipping the
+	 *  converter here instead (as an earlier version of this fix did) left its
+	 *  state behind the cursor and changed that following output.
+	 *
+	 *  Every OTHER ratio keeps the converter path below unchanged, with its exact
+	 *  arithmetic and its own staging; the unity branch stages the same way. */
 	if (resampleRatio == 1.0)
 	{
-		if (!state->m_bufferView.empty())
-		{
-			// Staged frames are unconsumed source frames; at unity they are the output as well.
-			const auto staged = std::min(numFrames, state->m_bufferView.size());
-			std::copy_n(state->m_bufferView.data(), staged, dst);
-			state->m_bufferView = state->m_bufferView.subspan(staged);
-			dst += staged;
-			numFrames -= staged;
-		}
 		while (numFrames > 0)
 		{
-			const auto chunk = std::min(numFrames, state->m_buffer.size());
-			const auto rendered = render(state->m_buffer.data(), static_cast<f_cnt_t>(chunk), state, loop);
-			std::copy_n(state->m_buffer.data(), rendered, dst);
-			if (rendered < chunk) { std::fill_n(dst + rendered, chunk - rendered, SampleFrame{}); }
-			dst += chunk;
-			numFrames -= chunk;
-			// The source ended (the window or the loop): the rest of the block is silence.
-			if (rendered < chunk) { break; }
+			if (state->m_bufferView.empty())
+			{
+				const auto rendered = render(state->m_buffer.data(), state->m_buffer.size(), state, loop);
+				state->m_bufferView = {state->m_buffer.data(), rendered};
+				if (rendered <= 0)
+				{
+					// The window or the loop ended: the rest of this block is silence.
+					std::fill_n(dst, numFrames, SampleFrame{});
+					break;
+				}
+			}
+
+			// Feed exactly what this call may consume, so the converter's `used` can never
+			// exceed the frames we emit and the staging advance stays 1:1 with the output.
+			const auto chunk = std::min(numFrames, state->m_bufferView.size());
+			// The OUTPUT capacity is the whole remaining block, not `chunk`: the converter
+			// may generate frames from earlier input (its own delay), and giving it the same
+			// capacity the non-unity path does keeps its frame partition identical.
+			const auto result = state->m_resampler.process(
+				{&state->m_bufferView.data()[0][0], 2, chunk}, {&dst[0][0], 2, numFrames});
+			const auto inputFramesUsed = result.inputFramesUsed;
+
+			if (inputFramesUsed <= 0)
+			{
+				// The converter is not consuming (the source ended, or its filter tail only):
+				// stop rather than spin. Anything it still emits is not the source's frames.
+				std::fill_n(dst, numFrames, SampleFrame{});
+				break;
+			}
+
+			// The source frames the converter just consumed ARE the unity output; the
+			// converter's own interpolated (delayed) frames were written to `dst` and are
+			// overwritten here. Both buffers are the same storage, and the input span is not
+			// modified by process(), so reading it now is still the source's data.
+			std::copy_n(state->m_bufferView.data(), inputFramesUsed, dst);
+			state->m_bufferView = state->m_bufferView.subspan(inputFramesUsed);
+			dst += inputFramesUsed;
+			numFrames -= static_cast<std::size_t>(inputFramesUsed);
 		}
-		if (numFrames > 0) { std::fill_n(dst, numFrames, SampleFrame{}); }
-		return true;
+		return numFrames < Engine::audioEngine()->framesPerPeriod();
 	}
 
 	// TODO: These kind of playback pipelines/graphs are repeated within other parts of the codebase that work with

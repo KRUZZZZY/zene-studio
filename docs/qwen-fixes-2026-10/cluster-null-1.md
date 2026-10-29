@@ -18,8 +18,8 @@ nothing from them remains here. The branch now differs from base `2a7fd9f9c7` on
 |---|---|
 | verdict | **FIXED** |
 | product change | `src/core/Sample.cpp` (`Sample::play`, the ratio-1.0 branch) |
-| regression test | `tests/src/core/AudioEngineNullRenderTest.cpp` (376 lines) |
-| commits | `f121ea2340` (the fix) plus the scope-reduction and report commits |
+| regression test | `tests/src/core/AudioEngineNullRenderTest.cpp` (530 lines, 371 code lines) |
+| commits | `f121ea2340` (the first fix) plus the scope-reduction, corrected-fix and report commits |
 
 **Log location.** The given LOG FOLDER (`~/.local/share/zene-bunny-fix/…`) is not
 writable in this session: writes there fail with `EACCES`, including `touch` on the
@@ -72,13 +72,25 @@ source's own rate with default pitch) came back one sample late. That is the cau
 
 ## The fix
 
-`src/core/Sample.cpp:111-156`. When the composed ratio is exactly `1.0` there is nothing
-to convert, so the read copies the same window/loop-bounded, amplified frames the
-converter would have consumed — same cursor advance, same bounds, same amplification. The
-`m_bufferView` staging is bypassed there and left empty, so a later ratio change cannot
-replay stale staged frames. Every other ratio keeps the converter path and its exact
-arithmetic, including `SrcQuality` selection and the mismatch-rate path. No output
-trimming, no latency compensation, no change to the render pipeline.
+`src/core/Sample.cpp:111-176`. When the composed ratio is exactly `1.0` the **output** is
+the source's own frames, so the converter's delay cannot enter the render. Crucially, the
+converter is still **driven over every frame the call consumes** — exactly once, in order,
+through the same `m_bufferView` staging the non-unity path uses — and only its output is
+discarded. The source frames it just consumed are copied to `dst` in place of that output.
+
+Driving the converter is not incidental: it carries filter history and a phase, and a
+later non-unity call resumes from whatever state it was left in. An earlier version of
+this fix skipped the converter during unity and advanced the staging directly; that left
+the converter behind the cursor, so a `.5 → 1.0 → .5` run produced different output after
+the unity span (the round-3 review's finding). With the converter driven, the same
+sequence hands it the same input history it would have had without the unity segment.
+
+The converter is given the whole remaining block as its output capacity (as the non-unity
+path does) and at most `numFrames` of input, so its `input_frames_used` can never exceed
+the frames this call emits; a zero-consumption result stops the loop rather than spinning.
+Every other ratio keeps the converter path below unchanged, with its exact arithmetic,
+including `SrcQuality` selection and the mismatch-rate path. No output trimming, no latency
+compensation, no change to the render pipeline.
 
 ## The regression test
 
@@ -93,9 +105,29 @@ exactly as the CLI does, comparing **frame 0 to frame 0** with `==` on the float
 - The negative control is the same project at track volume 99 %: it must **not** null, or
   the equality above would be measuring nothing.
 
-The test file is 376 lines, under the 500-line limit, and no new function exceeds the
-complexity target (the WAV reader is split into `readFloatFormat` / `walkFloatChunks` /
-`parseFloatWav` / `decodeFloatFrames`).
+The file is 530 lines raw but **371 code lines**, under the gate's 500-code-line limit
+(comments and blank lines are not counted), and no new function exceeds the complexity
+target (the WAV reader is split into `walkFloatChunks` / `decodeFloatFrames` /
+`readFloatWav`, and the transition oracle into small steps).
+
+### Ratio transitions through unity
+
+`ratioTransitionsThroughUnityPreserveConverterStateAndCursor` pins the round-3 regression
+deterministically — no renderer, no timing. One `Sample` and one `PlaybackState` are
+driven in fixed 256-frame calls: four at ratio 0.5, three at 1.0, four at 0.5 again (the
+source is at the engine's rate, so a ratio argument of 1.0 is the real unity case and 0.5
+is a genuine 1:2 resample on either side). The oracle is an **independent reference**: a
+bare `AudioResampler` replayed with exactly the per-call input counts and ratios that
+`Sample::play` used, whose output during the unity span is what the fix discards. The
+post-unity 0.5 output must match that reference, and the cursor must stay within one
+staging block of the frames the converter consumed.
+
+The comparison is a state check, not a bit-identity check: the reference drives the
+converter once per call while `Sample::play` fills a whole block, so their frame partition
+differs slightly and they can differ by round-off in the converter's own interpolation
+(measured peak `1.4e-4`, bound `1e-3`). The reviewed bug is four orders of magnitude
+larger: with the skip-the-converter variant restored, the same case reports peak
+`0.355633` at frame 0.
 
 ## RED / GREEN proof
 
@@ -125,25 +157,43 @@ ctest -R '^AudioEngineNullRenderTest$'                               # EXIT=0  (
 100% tests passed out of 1
 ```
 
-The focused proof on this final tree, after the out-of-scope removals:
+The focused proof on the final tree (corrected fix + transition case):
 
 ```
-git diff 2a7fd9f9c7 -- src/core/Sample.cpp > $TMPDIR/logs-null-1/fix-final.patch  # 56 lines
-git apply -R $TMPDIR/logs-null-1/fix-final.patch      # EXIT=0
-/usr/bin/cmake --build build --target AudioEngineNullRenderTest -j4  # EXIT=0  (120-red-build.log)
-ctest -R '^AudioEngineNullRenderTest$'                # EXIT=8  (121-red-run.log)
+git diff 2a7fd9f9c7 -- src/core/Sample.cpp > $TMPDIR/logs-null-1/fix-r3.patch  # 79 lines
+git apply -R $TMPDIR/logs-null-1/fix-r3.patch         # EXIT=0
+/usr/bin/cmake --build build --target AudioEngineNullRenderTest -j4  # EXIT=0  (150-red-build.log)
+ctest -R '^AudioEngineNullRenderTest$'                # EXIT=8  (151-red-run.log)
 FAIL!  : unityClipAtPositionZeroRendersItsSourceBitExactly()
          the 48000 Hz unity render is not its source: 9598 mismatched samples,
          first at frame 1 (render 0.5/-0.25, source 0.278782/-0.399834),
          peak residual 0.221218
-Totals: 3 passed, 1 failed, 0 skipped, 0 blacklisted
+FAIL!  : ratioTransitionsThroughUnityPreserveConverterStateAndCursor()
+         the post-unity length changed (1024, reference 970)
+Totals: 3 passed, 2 failed, 0 skipped, 0 blacklisted
 
-git checkout -- src/core/Sample.cpp                  # EXIT=0
-/usr/bin/cmake --build build --target zene AudioEngineNullRenderTest -j4  # EXIT=0  (122-green-build.log)
-ctest -R '^AudioEngineNullRenderTest$'                # EXIT=0  (123-green-run.log)
-1/1 Test #14: AudioEngineNullRenderTest ........   Passed    0.54 sec
+git checkout -- src/core/Sample.cpp   (restores the committed fix)   # EXIT=0
+/usr/bin/cmake --build build --target zene AudioEngineNullRenderTest -j4  # EXIT=0  (152-green-build.log)
+ctest -R '^AudioEngineNullRenderTest$'                # EXIT=0  (153-green-run.log)
+1/1 Test #14: AudioEngineNullRenderTest ........   Passed    0.53 sec
 100% tests passed out of 1
 ```
+
+The transition case was also checked directly against the **buggy** skip-the-converter
+variant (the round-3 regression), which it must catch:
+
+```
+# buggy variant in place (converter skipped during unity)
+/usr/bin/cmake --build build --target AudioEngineNullRenderTest -j4  # EXIT=0  (147-buggy-build.log)
+./AudioEngineNullRenderTest ratioTransitionsThroughUnityPreserveConverterStateAndCursor
+FAIL! ... the non-unity output after a unity segment is not what the converter produces
+        for the same sequence: first difference at 0, peak 0.355633 (bound 0.001)
+```
+
+Affected family on the final tree (`159-family-run.log`, EXIT=0, **9/9**):
+`AudioEngineNullRenderTest`, `AudioResamplerRatioTest`, `ClipFadesRenderTest`,
+`SampleClipWindowTest`, `AudioEditingTest`, `AudioStretcherTest`, `AudioClipLoopTest`,
+`ClipOffsetFadePairTest`, `SampleClipWarpTest`.
 
 End-to-end, the original harness against the fixed binary:
 
@@ -238,7 +288,9 @@ was checked and stays consistent.**
 of the composed ratio goes through it: `SamplePlayHandle` (sample tracks and the pooled
 metronome/frozen-take voices), `SessionAudioCells`, `SessionAudioBake` and
 `SampleBufferResample`. None keeps a private converter, so a 1:1 read is now the source
-for all of them. Non-unity ratios — including `SrcQuality::Sinc*` and pitched or warped
+for all of them — and, because the unity branch still drives that converter, none of them
+can observe a converter left behind by a unity span either. A clip whose pitch or warp
+ratio moves through 1.0 is the case the round-3 transition regression pins. Non-unity ratios — including `SrcQuality::Sinc*` and pitched or warped
 clips — still take the converter path unchanged, which `AudioResamplerRatioTest` pins
 (`theConvertersProduceDifferentSamples`,
 `theExportQualityReachesTheResamplerThroughSamplePlay`,
@@ -258,6 +310,21 @@ except the one that was wrong: a unity clip at the source's rate now renders as 
 source, while the end-to-end harness keeps `determinism: True` and its −54.35 dBFS
 negative control. The unit adds **no limit or threshold at all** — there is nothing new
 that another caller could legitimately exceed.
+
+**Q: Does the unity branch leave the converter in step for a later non-unity call?**
+
+Yes — that was the round-3 finding, and it is fixed and pinned. The first version skipped
+the converter during unity and advanced `m_bufferView` directly, so the next `.5` call
+resumed from stale filter state and a stale input position; on the reviewer's probe a
+`.5 → 1.0 → .5` run gave checksum 33.13 where the base implementation gave 83.45. The
+unity branch now drives the converter over every frame it consumes (same staging, same
+call order) and replaces only its output, so the converter's history and the source cursor
+advance exactly as they would without the unity segment. The new
+`ratioTransitionsThroughUnityPreserveConverterStateAndCursor` case compares the post-unity
+output against a bare-converter replay of the same per-call counts and ratios (bound
+`1e-3`; this fix measures `1.4e-4`, the buggy variant `0.355633` at frame 0) and checks the
+cursor stays within one staging block of the frames consumed. That case is part of the
+RED proof above: it fails with the product change reversed and passes restored.
 
 **Q: If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or the
 intended contract that shows it.**
