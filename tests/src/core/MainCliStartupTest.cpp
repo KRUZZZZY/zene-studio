@@ -136,13 +136,16 @@ private slots:
 		QVERIFY(writeFile(sourcePath, source));
 		const CliRun compressed = runCli(home.path(), {QStringLiteral("--allowroot"), QStringLiteral("compress"), sourcePath});
 		QCOMPARE(compressed.status, QProcess::NormalExit);
-		QCOMPARE(compressed.exitCode, EXIT_SUCCESS);
+		QVERIFY2(compressed.exitCode == EXIT_SUCCESS, compressed.standardError.constData());
 		QVERIFY(!compressed.standardOutput.isEmpty());
 		const QString compressedPath = QDir(home.path()).filePath(QStringLiteral("valid.mmpz"));
 		QVERIFY(writeFile(compressedPath, compressed.standardOutput));
 		const CliRun dumped = runCli(home.path(), {QStringLiteral("--allowroot"), QStringLiteral("dump"), compressedPath});
 		QCOMPARE(dumped.status, QProcess::NormalExit);
-		QCOMPARE(dumped.exitCode, EXIT_SUCCESS);
+		// The same check as a comparison, carrying what the CLI said: msvc-x64 (run 40828420263)
+		// exits 1 here and the bare comparison left no reason to read.
+		QVERIFY2(dumped.exitCode == EXIT_SUCCESS, (dumped.standardError + "\n(" + QByteArray::number(compressed.standardOutput.size())
+			+ " compressed bytes)").constData());
 		QCOMPARE(dumped.standardOutput, source + '\n');
 	}
 
@@ -153,8 +156,10 @@ private slots:
 		const QString config = configForWorkingDirectory(home.path());
 		QVERIFY(!config.isEmpty());
 		const QString workingDirectory = QDir(home.path()).filePath(QStringLiteral("working"));
-		const QString socketName = QStringLiteral("zene-qwen-5110-")
-			+ QUuid::createUuid().toString(QUuid::WithoutBraces);
+		// Short: a plain name becomes a path under $TMPDIR, and macOS's /var/folders/... plus a full
+		// UUID passed the 104-byte socket path limit (listen: "Unknown error 12").
+		const QString socketName = QStringLiteral("zq5110-")
+			+ QUuid::createUuid().toString(QUuid::Id128).left(12);
 		QLocalServer occupyingServer;
 		QVERIFY2(occupyingServer.listen(socketName), qPrintable(occupyingServer.errorString()));
 

@@ -27,6 +27,7 @@
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QScopeGuard>
 #include <QTemporaryDir>
 
 #include "ConfigManager.h"
@@ -632,6 +633,13 @@ private slots:
 	//! be reported once at most.
 	void trackSetArmManyReportsOnlyTheTracksItChanged()
 	{
+		// Arming creates each route's default take in the working directory: keep it private (and
+		// existing - a runner has no ~/Documents/Zene Studio, so the take could not be created).
+		QTemporaryDir takes;
+		QVERIFY(takes.isValid());
+		const auto restoreDir = qScopeGuard([previous = ConfigManager::inst()->workingDir()] { ConfigManager::inst()->setWorkingDir(previous); });
+		ConfigManager::inst()->setWorkingDir(takes.path());
+
 		ControlRegistry* registry = ControlRegistry::instance();
 		const QString first = revtest::addTrack();
 		const QString second = revtest::addTrack();

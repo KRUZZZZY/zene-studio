@@ -84,6 +84,10 @@ private slots:
 		writeText(QDir(m_dir.path()).filePath(QStringLiteral("notes.txt")),
 			QStringLiteral("not audio"));
 		QVERIFY2(QFileInfo::exists(m_wave), "the fixture wave was not written");
+		// The tag store's default file is in the user's working directory: the cases below write
+		// tags and categories, so point it inside the temporary tree before the first write. (A
+		// runner has no working directory, and the save could not create the file there.)
+		QVERIFY(BrowserTagStore::instance().openAt(QDir(m_dir.path()).filePath(QStringLiteral("tags.json"))));
 	}
 
 	void cleanupTestCase()

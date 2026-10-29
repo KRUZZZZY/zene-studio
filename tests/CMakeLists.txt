@@ -7937,3 +7937,45 @@ if(TARGET nam_harness)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 60)
 endif()
+
+# Windows: a plug-in module imports the engine from "zene.exe" BY NAME (dumpbin /imports, msvc-x64 run
+# 40828420263), and the loader binds that import only to a loaded module of that base name. A test
+# executable has its own name, so every module it loads failed with "The specified module could not be
+# found" (44 tests on msvc-x64). These tests link lmmsobjs, which carries the same exports as zene.exe, so
+# on Windows each is built AS zene.exe in a directory of its own. The directory sits at the depth of
+# build/tests, so PLUGIN_DIR and every other path relative to the executable resolve as before; vcpkg
+# deploys each executable's DLLs beside it. PluginScanCacheTest is not here: it manages its own fixture
+# directory and already reports the Windows module half as unexercised.
+if(WIN32)
+	set(ZENE_WINDOWS_PLUGIN_HOST_TESTS
+		ArrangingCatchUpTest AudioFileProcessorPlayheadTest AutomationLaneChildGuiTest AutomationLaneChildrenTest
+		AutomationLanesTest AutomationWriteToEndTest ControlAutomationModesTest ControlAutomationScriptTest
+		ControlDeviceCatalogueTest ControlDeviceVendorTest ControlHostedBusLayoutTest
+		ControlHostedDeviceCatalogueTest ControlPluginBusesTest DeviceCopyTest DeviceDspTest DeviceMovesUndoTest
+		DevicePanelTest DrumRackPadsTest DrumRackPanelTest EffectRackAddTest GraphWaveformLoadTest
+		LadspaManagerTest LibraryBrowserTest MidiExportTest MissingDevicesPreserveTest NotePlaybackTest
+		PluginPortsMigrationTest RackDeferredLifetimeTest RackMenuTest ReceiverEffectTest
+		ReversibilityUndoDeviceTest SamplerEnvelopeTest SamplerTakeGuiTest SamplerTakeTest SamplerVoiceReuseTest
+		ScriptDawModelRegistrationTest ScriptDawRemovalUndoTest SessionPlaybackRenderTest SessionTransitionsTest
+		SfzPlayerRealtimeTest SfzPlayerTest SidInstrument TouchLayoutTest UndoHistoryPersistenceTest
+		WatsynSelectedGraphTest
+		# These two link vstbase, a shared library that imports the engine from zene.exe too.
+		VestigeMidiHandoffTest VstEffectControlsTest)
+	foreach(test IN LISTS ZENE_WINDOWS_PLUGIN_HOST_TESTS)
+		if(TARGET ${test})
+			set(host_dir "${CMAKE_BINARY_DIR}/test-host-${test}")
+			set_target_properties(${test} PROPERTIES
+				OUTPUT_NAME zene
+				RUNTIME_OUTPUT_DIRECTORY "${host_dir}"
+				ARCHIVE_OUTPUT_DIRECTORY "${host_dir}"
+				LIBRARY_OUTPUT_DIRECTORY "${host_dir}"
+				PDB_OUTPUT_DIRECTORY "${host_dir}")
+			# A linked plug-in library is loaded at start-up, and Windows looks for it beside the
+			# executable (0xc0000135, "not found", otherwise).
+			if(TARGET vstbase AND test MATCHES "^(VestigeMidiHandoffTest|VstEffectControlsTest)$")
+				add_custom_command(TARGET ${test} POST_BUILD
+					COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:vstbase> "${host_dir}")
+			endif()
+		endif()
+	endforeach()
+endif()

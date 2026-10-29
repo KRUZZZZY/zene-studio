@@ -294,8 +294,11 @@ class Instance:
         deadline = time.time() + timeout_s
         while time.time() < deadline:
             if self.process.poll() is not None:
-                raise Blocked("the instance exited (code %s) before its control socket was usable"
-                              % self.process.returncode)
+                # The app's own last words name why it exited; without them a start-up failure on a
+                # hosted runner (msvc-x64 run 40828420263: code 1 in 0.2 s) leaves nothing to read.
+                raise Blocked("the instance exited (code %s) before its control socket was usable; "
+                              "the end of its log:\n%s"
+                              % (self.process.returncode, self.read_log()[-2000:]))
             if self.socket_exists():
                 try:
                     probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
