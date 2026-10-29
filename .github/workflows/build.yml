@@ -1288,8 +1288,10 @@ jobs:
           key: ${{ steps.cache-deps.outputs.cache-primary-key }}
           path: build\vcpkg_installed
       - name: Build
+        id: build
         run: cmake --build build -- -k 0   # Ninja keeps going: one round reports every error (job still fails)
       - name: Run tests
+        id: ctest
         run: |
           cd build/tests
           ctest --output-on-failure --timeout 1500 -j2 || {
@@ -1356,6 +1358,13 @@ jobs:
           done < /tmp/crash-list.txt
           echo "=== end of crash reports ==="
       - name: Release-honesty guard (a documented feature must be in this build)
+        id: honesty
+        # A v*-test* tag is a demo build for a hand tester (owner decision 2026-10-29): its
+        # installer is packaged even when ctest is red. The red tests still fail this job, and
+        # the release gate still needs the whole matrix green, so a demo is never a release.
+        if: >-
+          ${{ !cancelled() && steps.build.outcome == 'success' && (steps.ctest.outcome == 'success'
+          || (startsWith(github.ref, 'refs/tags/v') && contains(github.ref, '-test'))) }}
         # Fails when a feature the release documents as present has been compiled
         # out. The list of documented features has ONE home --
         # tests/advertised-features.tsv -- which this gate reads; the build's own
@@ -1369,6 +1378,10 @@ jobs:
           RELEASE_HONESTY_PLATFORM: windows
         run: bash tests/release-honesty-gate.sh --header build/lmmsversion.h --artifacts build
       - name: Release version guard (the version, the documents and the tag must agree)
+        id: version
+        if: >-
+          ${{ !cancelled() && steps.build.outcome == 'success' && (steps.ctest.outcome == 'success'
+          || (startsWith(github.ref, 'refs/tags/v') && contains(github.ref, '-test'))) }}
         # The honesty guard above reads build OPTIONS; it cannot see what the release is CALLED.
         # This one fails when the version this tree declares disagrees with the release notes and
         # the README that name it, or when a tag build's ref is not v<version> — the two ways a
@@ -1376,6 +1389,14 @@ jobs:
         shell: bash
         run: bash tests/release-version-gate.sh
       - name: Package
+        id: package
+        # A release packages only past both guards; a demo tag (which the version guard refuses by
+        # design: it is not v<version>) packages whatever its guards and tests said, still red.
+        if: >-
+          ${{ !cancelled() && steps.build.outcome == 'success'
+          && ((startsWith(github.ref, 'refs/tags/v') && contains(github.ref, '-test'))
+          || (steps.ctest.outcome == 'success' && steps.honesty.outcome == 'success'
+          && steps.version.outcome == 'success')) }}
         run: cmake --build build --target package
       - name: NSIS compiler output (a packaging failure names its cause here)
         # CPack sends makensis' own stderr to NSISOutput.log and prints only that
@@ -1414,7 +1435,7 @@ jobs:
         # `staging-path` of tests/release-ref-fitness.sh), so it cannot come back
         # silently. Per-push uploads of ~700 MB are still excluded for the original
         # reason: they exhausted the artifact storage quota.
-        if: startsWith(github.ref, 'refs/tags/')
+        if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/') && steps.package.outcome == 'success' }}
         uses: actions/upload-artifact@v7
         with:
           archive: false
