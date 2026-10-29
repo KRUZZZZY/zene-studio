@@ -156,7 +156,8 @@ bool gainRefused(const QString& op, double db)
 {
 	// gain_db is 'gain's parameter: an op that applies no gain is not refused over it.
 	if (op != QLatin1String("gain")) { return false; }
-	return db < -60.0 || db > 24.0;  // the range sample.amplify and clip.set_gain declare; far beyond it the gain overflows
+	// isfinite FIRST: a NaN compares false against both bounds and would pass.
+	return !std::isfinite(db) || db < -60.0 || db > 24.0;  // the range sample.amplify and clip.set_gain declare; far beyond it the gain overflows
 }
 
 //! The clip and the clamped [from, to) a range edit addresses - the part every op shares.
