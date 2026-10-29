@@ -32,6 +32,8 @@
 namespace lmms
 {
 
+namespace gui { class AutomationTrackView; }
+
 class LMMS_EXPORT AutomationTrack : public Track
 {
 	Q_OBJECT
@@ -60,7 +62,7 @@ public:
 	void setFollowsTrack(int trackId) { m_followsTrack = trackId; }
 
 private:
-	friend class AutomationTrackView;
+	friend class gui::AutomationTrackView; // qualified: unqualified, MSVC declares a phantom lmms::AutomationTrackView
 	int m_followsTrack = -1;  // no track: ids start at 0, so 0 is a track (it made every lane follow track 0)
 
 } ;

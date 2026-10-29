@@ -108,24 +108,26 @@ public:
 	LogCapture() : m_previous(qInstallMessageHandler(&LogCapture::handler))
 	{
 		s_count = 0;
-		s_first.clear();
+		firstMessage().clear();
 	}
 	~LogCapture() { qInstallMessageHandler(m_previous); }
 	LogCapture(const LogCapture&) = delete;
 	LogCapture& operator=(const LogCapture&) = delete;
 
 	int count() const { return s_count; }
-	QString first() const { return s_first; }
+	QString first() const { return firstMessage(); }
 
 private:
 	static void handler(QtMsgType, const QMessageLogContext&, const QString& message)
 	{
 		++s_count;
-		if (s_first.isEmpty()) { s_first = message; }
+		if (firstMessage().isEmpty()) { firstMessage() = message; }
 	}
 
 	inline static thread_local int s_count = 0;
-	inline static thread_local QString s_first;
+	// Function-local, not an inline static member: MSVC warns (C5046, an error under /WX) about the
+	// thread-exit destructor of a non-trivial thread_local member of a type with internal linkage.
+	static QString& firstMessage() { thread_local QString s; return s; }
 	QtMessageHandler m_previous = nullptr;
 };
 

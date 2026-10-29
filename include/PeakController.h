@@ -34,6 +34,8 @@ class QWidget;
 namespace lmms
 {
 
+namespace gui { class PeakControllerDialog; }
+
 
 class PeakControllerEffect;
 
@@ -70,7 +72,7 @@ protected:
 
 	PeakControllerEffect * m_peakEffect;
 
-	friend class PeakControllerDialog;
+	friend class gui::PeakControllerDialog; // qualified: unqualified, MSVC declares a phantom lmms::PeakControllerDialog
 
 private:
 	float m_currentSample;

@@ -93,6 +93,9 @@ typedef struct gain_plugin
 	bool gui_scale_finite;
 } gain_plugin_t;
 
+/* A named array, not a compound literal: MSVC's C compiler rejects (type){...} (C4576 under /WX). */
+static const char* const s_gain_features[] = {CLAP_PLUGIN_FEATURE_AUDIO_EFFECT, CLAP_PLUGIN_FEATURE_UTILITY, NULL};
+
 static const clap_plugin_descriptor_t s_descriptor = {
 	.clap_version = CLAP_VERSION_INIT,
 	.id = TEST_PLUGIN_ID,
@@ -103,7 +106,7 @@ static const clap_plugin_descriptor_t s_descriptor = {
 	.support_url = "https://lmms.io",
 	.version = "1.0.0",
 	.description = "Stereo gain test plug-in for the LMMS native CLAP host",
-	.features = (const char* const[]){CLAP_PLUGIN_FEATURE_AUDIO_EFFECT, CLAP_PLUGIN_FEATURE_UTILITY, NULL},
+	.features = s_gain_features,
 };
 
 /* ---------------------------------------------------------------- params -- */

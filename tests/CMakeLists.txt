@@ -44,6 +44,30 @@ if(MSVC)
 	set(CMAKE_JOB_POOL_LINK zene_tests_link)
 endif()
 
+# Windows runners run out of disk on test debug info (ci/050-m0-train-21 rounds 10: msvc-x64 LNK1116/LNK1106
+# "disk full", windows-arm64 "No space left on device"). Test targets on Windows build without it; the product
+# and its plug-ins, configured outside this directory, keep their symbols. Linux and macOS are unchanged here.
+if(WIN32)
+	set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT "")
+	foreach(lang C CXX)
+		string(REGEX REPLACE "(^| )(/Zi|/Z7|/ZI|-g[0-9a-z]*)( |$)" " "
+			CMAKE_${lang}_FLAGS_RELWITHDEBINFO "${CMAKE_${lang}_FLAGS_RELWITHDEBINFO}")
+	endforeach()
+	if(MSVC)
+		foreach(kind EXE SHARED MODULE)
+			set(CMAKE_${kind}_LINKER_FLAGS_RELWITHDEBINFO "/INCREMENTAL:NO")
+		endforeach()
+		# exprtk (the Xpressive sources some tests compile) exceeds the default COFF section limit.
+		add_compile_options(/bigobj)
+	endif()
+	# The allocation-counting tests replace the global operator new/delete with malloc/free; MinGW's GCC 13
+	# inlines both into the same frame and reports a "mismatched" free (-Werror=mismatched-new-delete) that
+	# is not one. Tests only; the product keeps the warning.
+	if(MINGW AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+		add_compile_options(-Wno-mismatched-new-delete)
+	endif()
+endif()
+
 set(LMMS_TESTS
 	# The allocation probe's own proof, for tests/src/core/AllocationProbe.h: an operator new
 	# made inside lmmsobjs, the library every realtime test exists to check, is counted.
@@ -1968,8 +1992,14 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "FilterPoolTest")
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/external/abseil-cpp
 			${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/external/simde)
 		target_link_libraries(${LMMS_TEST_NAME} PRIVATE sfzplayer_sfizz)
+	endif()
+	# sfizz's headers negate unsigned values (Buffer.h); its own targets build with C4146 off on MSVC, and the
+	# tests that include those headers must too, or /WX stops them.
+	if(MSVC AND LMMS_TEST_NAME MATCHES "^(HistoricalBuffer(Resize|Empty)Test|SfzEQPoolExhaustionTest|FilterPoolTest|Sfz.*Test)$")
+		target_compile_options(${LMMS_TEST_NAME} PRIVATE /wd4146)
 	endif()
 	add_test(NAME ${LMMS_TEST_NAME} COMMAND ${LMMS_TEST_NAME})
 	if(LMMS_TEST_NAME STREQUAL "SfizzLeakDetectorTest")
@@ -2956,7 +2986,8 @@ target_sources(AudioFileProcessorWaveViewTest PRIVATE
 	${CMAKE_SOURCE_DIR}/plugins/AudioFileProcessor/AudioFileProcessorWaveView.h)
 target_include_directories(AudioFileProcessorWaveViewTest PRIVATE
 	${CMAKE_SOURCE_DIR}/plugins/AudioFileProcessor)
-if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+# Not on Windows: MinGW and the MSYS2 Clang toolchains ship no UBSan runtime (-lubsan not found).
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND NOT WIN32)
 	target_compile_options(AudioFileProcessorWaveViewTest PRIVATE
 		-fsanitize=float-cast-overflow -fno-sanitize-recover=float-cast-overflow)
 	target_link_options(AudioFileProcessorWaveViewTest PRIVATE -fsanitize=float-cast-overflow)

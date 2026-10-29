@@ -1360,7 +1360,7 @@ void Sf2Instrument::playImpl(std::span<SampleFrame> out)
 
 		// A teardown note-off has no live handle and runs at the end of the
 		// period, after any note-on queued for the same pitch.
-		const f_cnt_t eventOffset = std::min( currentEvent.offset, out.size() );
+		const f_cnt_t eventOffset = std::min<f_cnt_t>( currentEvent.offset, static_cast<f_cnt_t>( out.size() ) ); // one type: f_cnt_t is not size_t on macOS
 		if( eventOffset > currentFrame )
 		{
 			renderFrames(eventOffset - currentFrame, out.data() + currentFrame);

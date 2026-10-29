@@ -2578,6 +2578,9 @@ void PluginPortsMigrationTest::malletsVoiceLimitIsEnforcedPerInstrument()
 		QSKIP(PluginModuleHostSkipMessage);
 	}
 
+#ifndef PART_C_MIGRATED_malletsstk // no STK on this build (the Windows jobs): nothing to load
+	QSKIP("this build has no Mallets (STK) plug-in");
+#else
 	QLibrary library{QString::fromUtf8(PART_C_MIGRATED_malletsstk)};
 	library.setLoadHints(QLibrary::PreventUnloadHint);
 	QVERIFY2(library.load(), qPrintable(library.errorString()));
@@ -2732,6 +2735,7 @@ void PluginPortsMigrationTest::malletsVoiceLimitIsEnforcedPerInstrument()
 	{
 		delete inst;
 	}
+#endif // PART_C_MIGRATED_malletsstk
 }
 
 /*! A device change retires the pool of the old sample rate but keeps its
@@ -2747,6 +2751,9 @@ void PluginPortsMigrationTest::malletsVoiceLimitSurvivesDeviceChange()
 		QSKIP(PluginModuleHostSkipMessage);
 	}
 
+#ifndef PART_C_MIGRATED_malletsstk // no STK on this build (the Windows jobs): nothing to load
+	QSKIP("this build has no Mallets (STK) plug-in");
+#else
 	QLibrary library{QString::fromUtf8(PART_C_MIGRATED_malletsstk)};
 	library.setLoadHints(QLibrary::PreventUnloadHint);
 	QVERIFY2(library.load(), qPrintable(library.errorString()));
@@ -2931,6 +2938,7 @@ void PluginPortsMigrationTest::malletsVoiceLimitSurvivesDeviceChange()
 		lmms::NotePlayHandleManager::release(handle);
 	}
 	delete instrument;
+#endif // PART_C_MIGRATED_malletsstk
 }
 
 void PluginPortsMigrationTest::monstroLfoAttackRampsWithinPeriod()
@@ -3031,6 +3039,7 @@ void PluginPortsMigrationTest::gigplayerBidirectionalLoopReflectsAtExclusiveEnd(
 // ---------------------------------------------------------------------------
 namespace
 {
+#ifdef PART_C_MIGRATED_gigplayer // only the gig cases use it (MinGW -Werror=unused-function otherwise)
 
 //! Renders one new note per period and counts the heap traffic of the render.
 auto renderGigNotesCountingHeap(lmms::Instrument& instrument, int key, int notes)
@@ -3077,6 +3086,7 @@ auto renderGigNotesCountingHeap(lmms::Instrument& instrument, int key, int notes
 
 	return {HeapWatch::allocations, HeapWatch::deallocations};
 }
+#endif
 
 
 //! Starts the given number of notes in one period and renders them.
@@ -3120,6 +3130,7 @@ auto renderGigNotes(lmms::Instrument& instrument, int key, int notes) -> float
 
 	return peak;
 }
+#ifdef PART_C_MIGRATED_gigplayer // only the gig cases use it (MinGW -Werror=unused-function otherwise)
 
 
 //! Renders the given number of notes and reports the peak of the render.
@@ -3164,6 +3175,8 @@ auto renderGigNotesWithWatchdog(lmms::Instrument& instrument, int key, int notes
 	worker.join();
 	return true;
 }
+#endif
+#ifdef PART_C_MIGRATED_gigplayer // only the gig cases use it (MinGW -Werror=unused-function otherwise)
 
 
 //! The synchronisation between the test and the thread that opens a GIG file.
@@ -3194,6 +3207,7 @@ void pauseGigFileLoad(void* context)
 		sync->condition.wait(&sync->mutex, 100);
 	}
 }
+#endif
 
 
 } // namespace

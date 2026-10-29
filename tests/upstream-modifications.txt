@@ -5438,3 +5438,11 @@ tests/CMakeLists.txt	cluster new-p16-64: registers the DispersionNonFiniteTest e
 plugins/WaveShaper/WaveShaper.cpp	cluster new-p10-456: clamp the lookup position to the table end before the float-to-int conversion, so NaN and magnitudes past the int range no longer make the conversion undefined; regression slot waveshaperLookupHandlesSamplesPastTheTableEnd in tests/src/plugins/PluginPortsMigrationTest.cpp.
 tests/src/plugins/PluginPortsMigrationTest.cpp	cluster new-p10-456: add regression slot waveshaperLookupHandlesSamplesPastTheTableEnd (clip off, huge and finite out-of-table samples through the migrated waveshaper).
 src/core/AudioEngine.cpp	ci-train21 round 7: the model-registration test hook no longer calls std::atomic::notify_all (macOS 11 only; product floor 10.13); its one test polls instead. No product behaviour change.
+include/Clip.h	ci-train21 round 11: friend class gui::ClipView (was unqualified, which MSVC turns into a phantom lmms::ClipView that makes every test naming ClipView ambiguous). Access only widens to the intended class.
+include/PatternClip.h	ci-train21 round 11: friend class gui::PatternClipView, qualified for the same MSVC reason as Clip.h.
+include/AutomationTrack.h	ci-train21 round 11: friend class gui::AutomationTrackView, qualified for the same MSVC reason as Clip.h.
+include/PeakController.h	ci-train21 round 11: friend class gui::PeakControllerDialog, qualified for the same MSVC reason as Clip.h.
+include/AudioBusHandle.h	ci-train21 round 11: three private members are public under LMMS_TESTING only, so white-box tests (#define private public) link on MSVC, which mangles access into names. Non-test builds unchanged.
+include/InstrumentTrack.h	ci-train21 round 11: s_autoAssignedTrack public under LMMS_TESTING only, for the same MSVC mangling reason as AudioBusHandle.h.
+plugins/Sf2Player/Sf2Player.cpp	ci-train21 round 11: std::min<f_cnt_t> with an explicit cast (f_cnt_t is not size_t on macOS). Same value.
+plugins/FreeBoy/FreeBoy.cpp	ci-train21 round 11: the voice-pool reaper is std::thread + a stop flag joined in the destructor instead of std::jthread (absent from Apple libc++). Same lifetime.

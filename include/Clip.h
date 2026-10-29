@@ -400,7 +400,7 @@ private:
 	//! 0.5.0 Q050-040: the render thread's own memory of this clip's mute, one pass back.
 	bool m_playbackWasMuted = false;
 
-	friend class ClipView;
+	friend class gui::ClipView; // qualified: unqualified, MSVC declares a phantom lmms::ClipView
 
 } ;
 

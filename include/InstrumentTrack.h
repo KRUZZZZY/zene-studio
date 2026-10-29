@@ -490,7 +490,13 @@ private:
 	IntModel m_lastKeyModel;	//!< Last key the instrument reacts to
 
 	bool m_hasAutoMidiDev;
+#ifdef LMMS_TESTING // white-box tests reach this through `#define private public`; MSVC mangles the access
+public:            // level into the symbol, so it must match what lmmsobjs (built with LMMS_TESTING) defines
+#endif
 	static InstrumentTrack *s_autoAssignedTrack;
+#ifdef LMMS_TESTING
+private:
+#endif
 
 	//! The published piano-roll recording state (see setPianoRollRecording): the
 	//! GUI writes it, the render thread reads it, and nothing else touches it.

@@ -24,6 +24,11 @@
 
 #include "ConvolutionKernel.h"
 
+// MSVC: zene.exe exports std::vector<float> through ValueBuffer (an LMMS_EXPORT class deriving from it). A
+// translation unit that never sees that header instantiates the vector's members itself, and the plug-in's link
+// then finds them twice (LNK2005 against zene.lib). Seeing the header makes this unit import them like the rest.
+#include "ValueBuffer.h"
+
 #include <algorithm>
 #include <cstring>
 #include <new>

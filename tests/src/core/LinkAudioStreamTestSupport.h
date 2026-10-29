@@ -355,7 +355,7 @@ void checkRateChangeDropsTheOldRateRxFrames()
 void checkRateChangeDoesNotSendOldRateFramesAsNewRate()
 {
 	QUdpSocket peer;
-	QVERIFY(peer.bind(QHostAddress::LocalHost, 0));
+	QVERIFY(peer.bind(QHostAddress(QHostAddress::LocalHost), 0)); // a QHostAddress: Qt 5 has a second bind(quint16, BindMode) overload
 	peer.setSocketOption(QUdpSocket::ReceiveBufferSizeSocketOption, 4 * 1024 * 1024);
 	LinkAudioStream tx;
 	std::string why;

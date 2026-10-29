@@ -167,6 +167,10 @@ typedef struct instrument_plugin
 	uint32_t ring_pos;
 } instrument_plugin_t;
 
+/* A named array, not a compound literal: MSVC's C compiler rejects (type){...} (C4576 under /WX). */
+static const char* const s_instrument_features[] = {CLAP_PLUGIN_FEATURE_INSTRUMENT,
+	CLAP_PLUGIN_FEATURE_SYNTHESIZER, NULL};
+
 static const clap_plugin_descriptor_t s_descriptor = {
 	.clap_version = CLAP_VERSION_INIT,
 	.id = TEST_INSTRUMENT_ID,
@@ -177,8 +181,7 @@ static const clap_plugin_descriptor_t s_descriptor = {
 	.support_url = "https://lmms.io",
 	.version = "1.0.0",
 	.description = "Generator test plug-in for the LMMS native CLAP instrument host",
-	.features = (const char* const[]){CLAP_PLUGIN_FEATURE_INSTRUMENT,
-		CLAP_PLUGIN_FEATURE_SYNTHESIZER, NULL},
+	.features = s_instrument_features,
 };
 
 static const clap_plugin_descriptor_t s_descriptor_multiout = {
@@ -191,8 +194,7 @@ static const clap_plugin_descriptor_t s_descriptor_multiout = {
 	.support_url = "https://lmms.io",
 	.version = "1.0.0",
 	.description = "Multi-output generator test plug-in for the LMMS native CLAP instrument host",
-	.features = (const char* const[]){CLAP_PLUGIN_FEATURE_INSTRUMENT,
-		CLAP_PLUGIN_FEATURE_SYNTHESIZER, NULL},
+	.features = s_instrument_features,
 };
 
 /* ---------------------------------------------------------------- params -- */

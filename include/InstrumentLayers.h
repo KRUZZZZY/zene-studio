@@ -180,7 +180,13 @@ private:
 	auto liveLayersFor(const MidiEvent& event, const TimePos& time, f_cnt_t offset) -> std::uint32_t;
 	auto admitLiveNoteOn(int key, std::uint32_t layers, const MidiEvent& event, const TimePos& time, f_cnt_t offset) -> std::uint32_t;
 	auto rememberLiveLayers(int key, std::uint32_t layers) -> bool;
+#ifdef LMMS_TESTING // white-box tests reach this through `#define private public`; MSVC mangles the access
+public:            // level into the symbol, so it must match what lmmsobjs (built with LMMS_TESTING) defines
+#endif
 	auto takeOldestLiveLayers(int key) -> std::uint32_t;
+#ifdef LMMS_TESTING
+private:
+#endif
 	auto activeLiveLayers(int key) const -> std::uint32_t;
 	void insertLiveLayer(int index);
 	void dropLiveLayer(int index);

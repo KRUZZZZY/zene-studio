@@ -144,8 +144,14 @@ public:
 
 private:
 	friend class AudioEngine;
+#ifdef LMMS_TESTING // white-box tests reach this through `#define private public`; MSVC mangles the access
+public:            // level into the symbol, so it must match what lmmsobjs (built with LMMS_TESTING) defines
+#endif
 	//! AudioEngine calls this with rendering quiesced or from its owning render stage.
 	void removePlayHandleUnderEngineChangeLock(PlayHandle* handle);
+#ifdef LMMS_TESTING
+private:
+#endif
 	//! The track's volume and panning, applied to m_buffer in place
 	void applyVolumeAndPanning(f_cnt_t fpp);
 
@@ -178,10 +184,16 @@ private:
 	//! Routes one edit: owner-stage direct, worker-stage buffered, other off-stage queued.
 	void postPlayHandleEdit(PlayHandleEdit edit);
 	void applyPlayHandleEdit(const PlayHandleEdit& edit);
+#ifdef LMMS_TESTING // white-box tests reach this through `#define private public`; MSVC mangles the access
+public:            // level into the symbol, so it must match what lmmsobjs (built with LMMS_TESTING) defines
+#endif
 	//! Applies every queued edit in the order it was posted. The queue has ONE consumer at a time: the render
 	//! owner in doProcessing(), or - only when no render is draining the queue - a producer that holds the
 	//! engine change lock, which keeps the render out. Never a producer racing a live consumer.
 	void applyPlayHandleEdits();
+#ifdef LMMS_TESTING
+private:
+#endif
 	//! Pushes \a edit, waiting while the consumer is making progress. False when it is not (nothing is
 	//! rendering, or the render is blocked behind this thread's own change lock): then the caller drains the
 	//! queue itself under that lock instead of racing a consumer that is not there.
@@ -189,7 +201,13 @@ private:
 	//! Grow only from a control thread, after the render lock makes the QList quiescent.
 	void topUpPlayHandleCapacityOnControlThread();
 	void topUpPlayHandleCapacityUnderEngineChangeLock();
+#ifdef LMMS_TESTING // white-box tests reach this through `#define private public`; MSVC mangles the access
+public:            // level into the symbol, so it must match what lmmsobjs (built with LMMS_TESTING) defines
+#endif
 	bool appendPlayHandleWithoutGrowth(PlayHandle* handle) noexcept;
+#ifdef LMMS_TESTING
+private:
+#endif
 	//! Marks the render-stage owner, where no bus worker is reading this list.
 	class RenderStageScope
 	{

@@ -30,6 +30,8 @@
 namespace lmms
 {
 
+namespace gui { class PatternClipView; }
+
 /*! \brief Dummy clip for PatternTracks
  *
  *  Only used in the Song (Editor). See PatternStore.h for more info.
@@ -58,7 +60,7 @@ public:
 	}
 
 private:
-	friend class PatternClipView;
+	friend class gui::PatternClipView; // qualified: unqualified, MSVC declares a phantom lmms::PatternClipView
 } ;
 
 

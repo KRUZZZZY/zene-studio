@@ -24,9 +24,9 @@
 #include "SampleBuffer.h"
 #include "TempoSyncKnobModel.h"
 
-#define private public
+// No `#define private public`: LfoController befriends this test, and MSVC mangles the access level into
+// member names, so a redefined `private` links against symbols the product does not have.
 #include "LfoController.h"
-#undef private
 
 using namespace lmms;
 

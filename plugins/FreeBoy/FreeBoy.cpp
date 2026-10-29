@@ -138,11 +138,14 @@ struct FreeBoyVoicePoolRegistry
 	std::atomic<bool> reaperPausedForTesting{false};
 #endif
 	// Voice cleanup runs on the audio thread, so retired pools are reclaimed here.
-	std::jthread reaperThread{[this](std::stop_token stop) {
-		while (!stop.stop_requested())
+	// std::thread and a stop flag rather than std::jthread: Apple's libc++ (Xcode 16) has neither jthread nor
+	// stop_token. The destructor below does what jthread's did: request the stop, then join.
+	std::atomic<bool> reaperStopRequested{false};
+	std::thread reaperThread{[this] {
+		while (!reaperStopRequested.load(std::memory_order_relaxed))
 		{
 			std::this_thread::sleep_for(std::chrono::milliseconds{100});
-			if (stop.stop_requested()) { break; }
+			if (reaperStopRequested.load(std::memory_order_relaxed)) { break; }
 #ifdef LMMS_TESTING
 			if (reaperPausedForTesting.load(std::memory_order_relaxed)) { continue; }
 #endif
@@ -153,6 +156,12 @@ struct FreeBoyVoicePoolRegistry
 			collectRetiredFreeBoyVoicePoolsLocked(*this);
 		}
 	}};
+
+	~FreeBoyVoicePoolRegistry()
+	{
+		reaperStopRequested.store(true, std::memory_order_relaxed);
+		if (reaperThread.joinable()) { reaperThread.join(); }
+	}
 };
 
 auto freeBoyVoicePoolRegistry() -> FreeBoyVoicePoolRegistry&
