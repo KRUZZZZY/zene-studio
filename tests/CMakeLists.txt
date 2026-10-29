@@ -2215,7 +2215,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			PLUGIN_NAME=malletsstk
-			MALLETS_TEST_STK_DIR="${STK_RAWWAVE_ROOT}")
+			MALLETS_TEST_STK_DIR="${STK_RAWWAVE_ROOT}"
+			MALLETS_TEST_PLUGIN_DIR="${CMAKE_SOURCE_DIR}/plugins/Stk/Mallets")
 		target_link_libraries(${LMMS_TEST_NAME} PRIVATE unofficial::libstk::libstk)
 		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES
 			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
