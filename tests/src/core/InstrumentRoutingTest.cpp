@@ -55,6 +55,15 @@
 
 using namespace racktest;
 
+namespace lmms
+{
+
+LMMS_EXPORT void resetMixerIndexLookupCountsForTesting();
+LMMS_EXPORT auto mixerIndexCacheHitsForTesting() -> int;
+LMMS_EXPORT auto mixerIndexFallbacksForTesting() -> int;
+
+} // namespace lmms
+
 namespace
 {
 
@@ -356,6 +365,21 @@ private slots:
 		QCOMPARE(channel->m_buffer[frames - 1][0], 0.5f);
 		QCOMPARE(channel->m_buffer[frames - 1][1], -0.25f);
 		silenceChannel(target.index);
+	}
+
+	//! A master route (mixer index zero) is cached after its first lookup.
+	void outputBusMasterIndexIsCached()
+	{
+		InstrumentOutputBuses buses;
+		buses.setLayout({{QStringLiteral("Main"), 2, 0}, {QStringLiteral("Out"), 2, 2}});
+		const int masterId = Engine::mixer()->mixerChannel(0)->id();
+		QVERIFY(buses.route(1, masterId));
+		QCOMPARE(buses.routedIndex(1), 0); // prime the cache
+
+		resetMixerIndexLookupCountsForTesting();
+		QCOMPARE(buses.routedIndex(1), 0);
+		QCOMPARE(mixerIndexCacheHitsForTesting(), 1);
+		QCOMPARE(mixerIndexFallbacksForTesting(), 0);
 	}
 
 	//! A newly routed Slot must not become visible to the render worker before the model guard.
