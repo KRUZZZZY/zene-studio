@@ -1,8 +1,8 @@
 IMPLEMENTED
 
 Q050-273.1 stage 1 — save and reuse audio launcher cells in the shared library. Feature record:
-`docs/050-features/Q050-273.1.md`. Two commits on `feat/050-Q050-273.1-oc`: `e90f6eef40` (product + tests +
-manifests) and `5ee190e13f` (manual, feature record, live-regenerated snapshot, complexity splits).
+`docs/050-features/Q050-273.1.md`. Seven commits on `feat/050-Q050-273.1-oc`, from `e90f6eef40` (product + tests +
+manifests) through `ed7248882f` (the own-source refusal); the last is the final tip.
 
 Reviewer points from round 1 are addressed in this change rather than on top of the old draft, because the
 branch had no earlier Q050-273 commit: `git diff 64bd86ae94..HEAD` is the whole change.
@@ -27,6 +27,8 @@ ctest -R '^(LibraryBrowserTest|SessionGridViewTest|SessionAudioCellPlaybackTest|
                                                                                exit 0    (test-8.log, 7/7)
 ctest -R '^ControlCommandsSnapshot$'                                           exit 0    (test-snapshot.log)
 ctest -R '^ReversibilityContractTest$'                                         exit 0    (test-rev.log)
+ctest -R '^(ReversibilityContractTest|LibraryBrowserTest|SessionGridViewTest|SessionGridRecordTest|SessionCellPlaybackMenuTest|SessionLibrarySaveTest|SessionAudioCellPlaybackTest|ControlSessionLibrarySave|ControlCommandsSnapshot)$'
+                                                                               exit 0    (test-final-all.log, 9/9)
 bash tests/fork-sources-gate.sh                                                exit 0
 bash tests/all-sources-reproduce.sh                                            exit 0
 bash tests/no-upstream-regression-gate.sh                                      exit 0
