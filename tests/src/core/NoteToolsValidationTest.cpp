@@ -93,15 +93,33 @@ private slots:
 	//! length to play over is refused typed, before the clip is touched.
 	void arpeggiatingAChordWithNoPositiveLengthIsRefusedAndKeepsIt()
 	{
+		// Zero length (Note::setLength is the public writer; the saved-project
+		// loader clamps to >= 1, so this state arrives through the API, not a file).
 		MidiClip* clip = clipWith({{60, 0}, {64, 0}}, 0);  // a chord of zero-length notes
 		QCOMPARE(clip->notes().size(), std::size_t{2});
 		QJsonObject args = self(clip);
 		args.insert(QStringLiteral("rate"), 12);
 		const ControlResult refused = run(QStringLiteral("note.arpeggiate"), args);
+		QCOMPARE(clip->notes().size(), std::size_t{2});  // the chord was NOT deleted
 		QCOMPARE(refused.errorKind, ControlErrorKind::InvalidArgs);
 		QVERIFY2(refused.errorMessage.contains(QStringLiteral("length")),
 			"the refusal must say the chord has no length to play over");
-		QCOMPARE(clip->notes().size(), std::size_t{2});  // the chord was NOT deleted
+
+		// Negative lengths are the same non-span: the longest member is still <= 0.
+		MidiClip* negative = clipWith({{60, 0}, {64, 0}}, -24);
+		QJsonObject negativeArgs = self(negative);
+		negativeArgs.insert(QStringLiteral("rate"), 12);
+		QCOMPARE(run(QStringLiteral("note.arpeggiate"), negativeArgs).errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(negative->notes().size(), std::size_t{2});  // no note removed or added
+
+		// A nonpositive chord beside a playable one: nothing runs at all.
+		MidiClip* twoChords = clipWith({{60, 0}, {64, 0}}, 48);
+		twoChords->notes()[1]->setPos(TimePos(24));
+		twoChords->notes()[1]->setLength(TimePos(0));
+		QJsonObject twoArgs = self(twoChords);
+		twoArgs.insert(QStringLiteral("rate"), 12);
+		QCOMPARE(run(QStringLiteral("note.arpeggiate"), twoArgs).errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(twoChords->notes().size(), std::size_t{2});  // the playable chord is untouched too
 
 		// No collateral: a chord whose longest member is positive still becomes a run,
 		// even when another member of the same chord is zero-length.
