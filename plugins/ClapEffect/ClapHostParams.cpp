@@ -51,7 +51,10 @@ namespace
 //! CLAP wants a finite [min_value, max_value] with min <= max, and every host-side clamp/normalization
 //! depends on it (std::clamp is undefined behaviour with unordered bounds). A plug-in that reports
 //! anything else gets valid bounds here: non-finite ones become 0..1, a reversed pair is swapped, so the
-//! range stays as close to the plug-in's own as it can be validly expressed.
+//! range stays as close to the plug-in's own as it can be validly expressed. The SPAN must be finite too:
+//! -DBL_MAX..DBL_MAX has two finite endpoints but max - min overflows to +inf, and normalize() then divides
+//! by it (half-way normalizes to inf/inf = NaN, every ordinary value to 0), so such a range falls back to
+//! 0..1 like a non-finite endpoint does.
 void sanitizedRange(const clap_param_info_t& info, ParamDescriptor* descriptor)
 {
 	if (!std::isfinite(info.min_value) || !std::isfinite(info.max_value))
@@ -63,6 +66,13 @@ void sanitizedRange(const clap_param_info_t& info, ParamDescriptor* descriptor)
 	{
 		descriptor->minValue = std::min(info.min_value, info.max_value);
 		descriptor->maxValue = std::max(info.min_value, info.max_value);
+		// A span that overflows cannot be divided by. The pair is replaced by the same harmless 0..1 a
+		// non-finite bound gets; a finite span (0..DBL_MAX) is left exactly as the plug-in reported it.
+		if (!std::isfinite(descriptor->maxValue - descriptor->minValue))
+		{
+			descriptor->minValue = 0.0;
+			descriptor->maxValue = 1.0;
+		}
 	}
 	descriptor->defaultValue
 		= std::isfinite(info.default_value) ? info.default_value : descriptor->minValue;

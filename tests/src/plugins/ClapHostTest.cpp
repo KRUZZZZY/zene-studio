@@ -205,6 +205,7 @@ private slots:
 	void testParameterRescansRereadTheList();
 	void testARescanKeepsAHostValueNotYetDelivered();
 	void testAnInvalidParamRangeIsNormalized();
+	void testAFiniteRangeWithAnInfiniteSpanIsRejected();
 	void testAnActiveFlushRequestIsAnsweredWithoutAHostFlush();
 	void testAZeroChannelOutputKeepsTheIndexOfLaterPorts();
 	void testAnUnreadableInputPortKeepsItsNeighboursIndex();
@@ -249,6 +250,11 @@ void ClapHostTest::cleanup()
 	qunsetenv("CLAP_TEST_GAIN_GUI_API");
 	qunsetenv("CLAP_TEST_GAIN_REQUEST_RESIZE");
 	qunsetenv("CLAP_TEST_GAIN_EXPECT_SCALE");
+	// A failed QVERIFY2 skips the rest of a case, so every fixture switch is cleared here as well.
+	qunsetenv("CLAP_TEST_GAIN_BAD_RANGE");
+	qunsetenv("CLAP_TEST_GAIN_WIDE_RANGE");
+	qunsetenv("CLAP_TEST_GAIN_HUGE_RANGE");
+	qunsetenv("CLAP_TEST_GAIN_NAN_VALUE");
 	m_plugin.setEditorScale(1.0);
 	m_plugin.setEditorWindowSystem(currentPluginWindowSystem());
 }
@@ -1025,6 +1031,64 @@ void lmms::clap::ClapHostTest::testAnInvalidParamRangeIsNormalized()
 	plugin.setParamPlain(GainParamId, -5.0);
 	QVERIFY(plugin.paramPlain(GainParamId) >= gain.minValue);
 	qunsetenv("CLAP_TEST_GAIN_BAD_RANGE");
+}
+
+/*! Two FINITE endpoints whose difference overflows: min = -DBL_MAX, max = DBL_MAX. Each bound passes an
+ *  isfinite() check, so the descriptor was accepted with an infinite SPAN, and normalize() then divided by
+ *  it. Half-way was set as +inf, clamped to DBL_MAX, and normalized to inf/inf = NaN: the parameter read as
+ *  0 for every ordinary value. The host now rejects a range whose span is not finite, as it already does for
+ *  a non-finite endpoint; a genuinely finite span (0 .. DBL_MAX) is left exactly as the plug-in reported it. */
+void lmms::clap::ClapHostTest::testAFiniteRangeWithAnInfiniteSpanIsRejected()
+{
+	qputenv("CLAP_TEST_GAIN_WIDE_RANGE", "1");
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(QStringLiteral(CLAP_TEST_PLUGIN_PATH), QString::fromLatin1(TestPluginId), &error),
+		qPrintable(error));
+	QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+
+	const auto& gain = plugin.parameters()[0];
+	QCOMPARE(gain.id, GainParamId);
+	QVERIFY2(std::isfinite(gain.minValue) && std::isfinite(gain.maxValue),
+		qPrintable(QStringLiteral("the finite endpoints were not kept finite: %1 .. %2")
+			.arg(gain.minValue).arg(gain.maxValue)));
+	QVERIFY2(std::isfinite(gain.maxValue - gain.minValue),
+		qPrintable(QStringLiteral("the stored range still has an infinite span: %1 .. %2")
+			.arg(gain.minValue).arg(gain.maxValue)));
+	QVERIFY2(gain.defaultValue >= gain.minValue && gain.defaultValue <= gain.maxValue,
+		"the default value lies outside the sanitized range");
+
+	// the normalized round trip is what used to break: it divided by the infinite span
+	for (const float normalized : {0.0f, 0.25f, 0.5f, 1.0f})
+	{
+		plugin.setParamNormalized(GainParamId, normalized);
+		const auto plain = plugin.paramPlain(GainParamId);
+		QVERIFY2(std::isfinite(plain),
+			qPrintable(QStringLiteral("normalized %1 produced the non-finite plain value %2")
+				.arg(normalized).arg(plain)));
+		QVERIFY2(std::isfinite(plugin.paramNormalized(GainParamId)),
+			qPrintable(QStringLiteral("normalized %1 read back non-finite").arg(normalized)));
+		QVERIFY2(std::abs(plugin.paramNormalized(GainParamId) - normalized) < 1e-6f,
+			qPrintable(QStringLiteral("normalized %1 read back as %2 (range %3 .. %4)")
+				.arg(normalized).arg(plugin.paramNormalized(GainParamId))
+				.arg(gain.minValue).arg(gain.maxValue)));
+	}
+	qunsetenv("CLAP_TEST_GAIN_WIDE_RANGE");
+
+	// not over-broad: a finite 0 .. DBL_MAX span is a valid CLAP range and keeps the plug-in's endpoints
+	qputenv("CLAP_TEST_GAIN_HUGE_RANGE", "1");
+	HostedPlugin huge;
+	QVERIFY2(huge.load(QStringLiteral(CLAP_TEST_PLUGIN_PATH), QString::fromLatin1(TestPluginId), &error),
+		qPrintable(error));
+	QVERIFY2(huge.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+	const auto& hugeGain = huge.parameters()[0];
+	QCOMPARE(hugeGain.minValue, 0.0);
+	QCOMPARE(hugeGain.maxValue, std::numeric_limits<double>::max());
+	huge.setParamPlain(GainParamId, std::numeric_limits<double>::max());
+	QCOMPARE(huge.paramNormalized(GainParamId), 1.0f);
+	huge.setParamPlain(GainParamId, 0.0);
+	QCOMPARE(huge.paramNormalized(GainParamId), 0.0f);
+	qunsetenv("CLAP_TEST_GAIN_HUGE_RANGE");
 }
 
 /*! A plug-in that changes a value while it is ACTIVE (its own UI) and asks for a flush gets that value back
