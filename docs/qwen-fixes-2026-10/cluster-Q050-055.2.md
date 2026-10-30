@@ -33,6 +33,8 @@ Neighbours on the final tree, each exit 0: `PanelShortcutsTest`, `ShortcutsComma
 - `feature_check.py` writes logs to a sibling of the worktree, which the jail refuses (`PermissionError`). I ran its own gate
   definitions and cached base listing from a small driver with logs in the run folder; the tool itself did not run to completion
   here, and the check the loop runs after this session has not been seen.
+- `submit_check.py` here ends `RESULT: FAIL - 1 item`: its one FAIL is the `gates (feature_check.py)` row, because that tool cannot create
+  its log folder from inside the jail. Every other row passes. Expect that row to need re-reading if the loop runs it under the same jail.
 - One early `git add -A` was refused by the guard, so commit `ff80488771` holds only the new files (not yet wired into CMake, so it builds).
 
 ## Self-check
