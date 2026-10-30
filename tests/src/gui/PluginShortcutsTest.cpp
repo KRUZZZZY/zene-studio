@@ -395,6 +395,10 @@ private slots:
 		press(Qt::Key_A);
 		QCOMPARE(effectsOn(channel), 1);
 		QCOMPARE(effectsOn(firstId), firstBefore);
+		const ControlResult onChannel = run(QStringLiteral("plugin.selected_editor_open"));
+		QVERIFY2(onChannel.ok, qPrintable(onChannel.errorMessage));
+		QCOMPARE(onChannel.result.value(QStringLiteral("target")).toString(), channel);
+		for (QWidget* opened : effectDialogs()) { opened->hide(); }
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 
 		// An incompatible target: the key shows plugin.load's own refusal and nothing moves anywhere.
@@ -415,7 +419,13 @@ private slots:
 		QCOMPARE(effectsOn(firstId), firstBefore + 1);
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 
-		// Binding is one undo step of its own, and undoing it removes the row and the key's meaning.
+		// A shortcut set carries it: this build knows the id, so an import does not call it unknown.
+		const ControlResult imported = run(QStringLiteral("shortcuts.import"), {{QStringLiteral("overrides"), QJsonObject()},
+			{QStringLiteral("panels"), panelshortcuts::overrides()}});
+		QVERIFY2(imported.ok, qPrintable(imported.errorMessage));
+		QVERIFY(imported.result.value(QStringLiteral("unknown")).toArray().isEmpty());
+
+		// Removing the key is one undo step too, and takes the row and the key's meaning with it.
 		QVERIFY(run(QStringLiteral("shortcuts.set"), {{QStringLiteral("id"), id}, {QStringLiteral("scope"), Arranger}, {QStringLiteral("keys"), QString()}}).ok);
 		QVERIFY2(listed(id).isEmpty(), "an unbound plug-in action keeps a row");
 		press(Qt::Key_A);
