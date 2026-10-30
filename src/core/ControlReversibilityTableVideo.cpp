@@ -38,18 +38,26 @@ using RC = ReversibilityClass;
 	{ id, cls, reason, mechanism, fallback, rev, nullptr }
 
 const ReversibilityRow kVideoRows[] = {
-	R("video.attach", RC::TrueInverse, true, "it attaches a video to the project, replacing an attached one (<video>)",
-		"action checkpoint: the recorded undo step puts the previous attachment back (none, or the replaced video)", ""),
-	R("video.detach", RC::TrueInverse, true, "it takes the project's video off (the file is left alone)",
-		"action checkpoint: the recorded undo step attaches the same video at the same offset again", ""),
-	R("video.get_state", RC::NotMutating, false, "it reads the project's video. Nothing is written", "no write", ""),
-	R("video.set_offset", RC::TrueInverse, true, "it moves the song tick the video starts at",
+	R("video.attach", RC::TrueInverse, true, "it makes the project's video track one clip of the given file, replacing "
+		"every clip on it (<video>)",
+		"action checkpoint: the recorded undo step puts the previous clip list back (none, or every replaced clip, ids "
+		"included)", ""),
+	R("video.detach", RC::TrueInverse, true, "it takes every video clip off the project (the files are left alone)",
+		"action checkpoint: the recorded undo step puts the same clips back at the same offsets, ids included", ""),
+	R("video.clip_add", RC::TrueInverse, true, "it adds a video clip to the project's video track (<video>/<clip>)",
+		"action checkpoint: the recorded undo step puts the previous clip list back", ""),
+	R("video.clip_remove", RC::TrueInverse, true, "it removes one video clip from the project's video track",
+		"action checkpoint: the recorded undo step puts the previous clip list back, ids included", ""),
+	R("video.get_state", RC::NotMutating, false, "it reads the project's video track. Nothing is written", "no write", ""),
+	R("video.set_offset", RC::TrueInverse, true, "it moves the song tick the named video clip starts at",
 		"action checkpoint: the recorded undo step writes the previous offset back", ""),
 	R("video.extract_audio", RC::TrueInverse, true, "it writes the video's sound to a WAV and adds an audio track holding it at "
 		"the video's offset",
 		"action checkpoint: the recorded undo step removes the track (control::recordCreatedTrack); its redo builds it again. "
 		"The WAV stays on disk, as a bounce's render does. With 'background' the reply is an acknowledgement and the same "
 		"one step is recorded when the decode completes (none when it fails or is cancelled)", ""),
+	R("video.render_frames", RC::NotMutating, false, "it writes PNG images of the video track over a song range into a "
+		"folder; the project is not changed", "no project write, as render.render", ""),
 	R("video.window_show", RC::NotMutating, false, "it shows or hides the video window: interface state", "no write", ""),
 };
 

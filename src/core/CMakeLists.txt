@@ -939,6 +939,7 @@ set(LMMS_SRCS
 	core/VideoAudioExtract.cpp
 	core/VideoFramePump.cpp
 	core/ControlCommandsVideo.cpp
+	core/ControlCommandsVideoRender.cpp
 	core/ControlReversibilityTableVideo.cpp
 	# 0.5.0 theme 24: the background task area's reporting API and task.* commands.
 	core/TaskCenter.cpp

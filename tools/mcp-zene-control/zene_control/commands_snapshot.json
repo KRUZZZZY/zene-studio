@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-28T09:13:52Z",
+  "captured_at": "2026-10-30T03:46:50Z",
   "commands": [
     {
       "args_schema": {
@@ -34816,9 +34816,58 @@
         ],
         "type": "object"
       },
-      "description": "Attach the video file 'path' to the project (one video per project: an attached one is replaced), its first frame shown at song tick 'offset' (0 when left out). FFmpeg reads its frame rate, length, size and whether it has sound. The video window and the arranger's video lane follow it. Saved with the project (the path absolute); one undo step.",
+      "description": "Attach the video file 'path' to the project, replacing the whole video track with this one clip (the legacy one-video behaviour; use video.clip_add to add another clip), its first frame shown at song tick 'offset' (0 when left out). FFmpeg reads its frame rate, length, size and whether it has sound. The video window and the arranger's video lane follow it. Saved with the project (the path absolute); one undo step.",
       "group": "video",
       "id": "video.attach",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "offset": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Add a video clip to the project's one video track: file 'path', its first frame at song tick 'offset' (0 when left out). Every clip keeps its own stable 'id', so two files can be placed at different song ticks and addressed independently. The reply returns the new clip and the whole track state. One undo step.",
+      "group": "video",
+      "id": "video.clip_add",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "Remove the clip 'clip' from the project's video track (the file is left alone). One undo step.",
+      "group": "video",
+      "id": "video.clip_remove",
       "mutating": true,
       "requires": [],
       "result_schema": {
@@ -34832,7 +34881,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Take the video off the project (the file is left alone). One undo step.",
+      "description": "Take every video clip off the project (the files are left alone). One undo step.",
       "group": "video",
       "id": "video.detach",
       "mutating": true,
@@ -34848,6 +34897,9 @@
           "background": {
             "type": "boolean"
           },
+          "clip": {
+            "type": "string"
+          },
           "out": {
             "type": "string"
           }
@@ -34855,7 +34907,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Decode the video's sound to a 32-bit float stereo WAV - 'out', or '<video>-audio.wav' next to the project (next to the video while the project is unsaved), numbered when taken - and put it on a new audio track at the video's offset. Runs to the end before it answers - or, with 'background' true, decodes on a worker listed in the task area (task.list: its progress, and task.cancel stops it) and answers at once with the 'task' id; the track then lands when the decode completes. One undo step removes the track; the WAV stays on disk.",
+      "description": "Decode the sound of clip 'clip' (the first clip when left out) to a 32-bit float stereo WAV - 'out', or '<video>-audio.wav' next to the project (next to the video while the project is unsaved), numbered when taken - and put it on a new audio track at that clip's offset. Runs to the end before it answers - or, with 'background' true, decodes on a worker listed in the task area (task.list: its progress, and task.cancel stops it) and answers at once with the 'task' id; the track then lands when the decode completes. One undo step removes the track; the WAV stays on disk.",
       "group": "video",
       "id": "video.extract_audio",
       "mutating": true,
@@ -34871,7 +34923,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "The project's video: whether one is attached, its 'path' (and whether the file still 'exists'), the song tick it starts at ('offset', also in seconds) and ends at ('end'), its 'fps', 'duration' (seconds), 'width', 'height' and 'has_audio'.",
+      "description": "The project's video track: whether any clip is attached, 'clip_count', and 'clips' - each clip's stable 'id', 'path' (and whether the file still 'exists'), the song tick it starts at ('offset', also in seconds) and ends at ('end'), its 'fps', 'duration' (seconds), 'width', 'height' and 'has_audio'. The first clip's fields are also mirrored at the top level for the legacy single-video shape.",
       "group": "video",
       "id": "video.get_state",
       "mutating": false,
@@ -34884,6 +34936,52 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "fps": {
+            "type": "number"
+          },
+          "from": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "height": {
+            "type": "integer"
+          },
+          "out": {
+            "type": "string"
+          },
+          "to": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "width": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "out"
+        ],
+        "type": "object"
+      },
+      "description": "Render the project's video track over the song range 'from'..'to' (ticks, 'to' excluded) as PNG images 'frame-<n>.png' in the folder 'out': one image per 1/'fps' second of song time (25 when left out), so the sampled ticks follow the tempo map. Each image is the frame of the clip active at that tick, at that clip's own time from its offset, letterboxed into 'width' x 'height' (320 x 180); before, after and between clips it is black - never another clip's frame. The reply lists every frame: 'tick', song 'seconds', 'clip' id (empty outside every clip), 'clip_seconds', whether it 'decoded', and its 'file'. At most 10000 frames. Writes files only; the project is not changed.",
+      "group": "video",
+      "id": "video.render_frames",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
           "offset": {
             "maximum": 2147483647,
             "minimum": 0,
@@ -34895,7 +34993,7 @@
         ],
         "type": "object"
       },
-      "description": "Move the video to start at song tick 'offset'. Saved with the project; one undo step.",
+      "description": "Move the clip 'clip' (the first clip when left out) to start at song tick 'offset'. Saved with the project; one undo step.",
       "group": "video",
       "id": "video.set_offset",
       "mutating": true,
@@ -37464,23 +37562,23 @@
       }
     }
   ],
-  "count": 878,
+  "count": 881,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-integrate-Q050-180.1-4ee5321ffc/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-mvtw6ft4/zene.sock",
-    "version": "0.4.0-alpha.5690+d6c336f"
+    "source_socket": "/tmp/zctl-run-yu4po5_q/zene.sock",
+    "version": "0.4.0-alpha.5692+4ee5321"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 77,
-    "id_count": 878,
-    "ids_sha256": "60473c71cd63735b5af096bbd2cd1d9a5a096cf4b2fd8855d1333df124ea362a"
+    "id_count": 881,
+    "ids_sha256": "3acb59d3486ba794cc0a321e171031fe6f5b05a5efe511d5a97760e6270f2e2a"
   }
 }

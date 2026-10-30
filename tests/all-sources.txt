@@ -1825,6 +1825,7 @@ src/core/ControlCommandsVcaMix.cpp
 src/core/ControlCommandsVcaNest.cpp
 src/core/ControlCommandsVcaShared.h
 src/core/ControlCommandsVideo.cpp
+src/core/ControlCommandsVideoRender.cpp
 src/core/ControlCommandsW3Engine.cpp
 src/core/ControlCommandsWarp.cpp
 src/core/ControlCommandsWarpEdit.cpp
@@ -3110,6 +3111,7 @@ tests/src/core/UpnpMapperFakeRouterTest.cpp
 tests/src/core/VcaGroupTest.cpp
 tests/src/core/VcaRefreshAtomicityTest.cpp
 tests/src/core/VideoAudioNameTest.cpp
+tests/src/core/VideoClipsTest.cpp
 tests/src/core/VideoFfmpegTest.cpp
 tests/src/core/VideoTestClip.h
 tests/src/core/VideoTestClipTest.cpp
@@ -3282,6 +3284,7 @@ tests/src/gui/UndoHistoryPanelTest.cpp
 tests/src/gui/VcaStripLifetimeTest.cpp
 tests/src/gui/VcaStripViewTest.cpp
 tests/src/gui/VersionedSaveDialogTest.cpp
+tests/src/gui/VideoClipsGuiTest.cpp
 tests/src/gui/VisibilitySetMenuTest.cpp
 tests/src/gui/WcagContrastTest.cpp
 tests/src/gui/WindowSelectStartupTest.cpp

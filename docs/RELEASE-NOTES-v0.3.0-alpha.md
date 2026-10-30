@@ -1095,8 +1095,10 @@ config lists back) and one `not_mutating` (`session.command_bindings`, a read) -
 
 **M0 merge train 22** (`050/m0-train-22`, 2026-10-28, automatic): `ReversibilityContractTest` on the merged tree measures `rows=887 true_inverse=434 snapshot=42 irreversible=25 not_mutating=386`.
 
+**Q050-180.1** (multiple positioned video clips, integrated onto `050/m0-train-22`, 2026-10-30): `video.clip_add` and `video.clip_remove` add two `true_inverse` rows and `video.render_frames` one `not_mutating` row - `rows=890 true_inverse=436 snapshot=42 irreversible=25 not_mutating=387`.
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=887 true_inverse=434 snapshot=42 irreversible=25 not_mutating=386
+     measured: rows=890 true_inverse=436 snapshot=42 irreversible=25 not_mutating=387
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5

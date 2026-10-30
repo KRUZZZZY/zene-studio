@@ -38,6 +38,13 @@ constexpr int Frames = 2 * Fps;
 constexpr int Rate = 44100;
 constexpr int AudioChunk = 1024;
 
+//! The two colours of a clip: its first second, then its second (Q050-180.1 tells two clips apart by them).
+enum class Palette
+{
+	RedBlue,      //!< pure red, then pure blue - the clip every video test reads
+	GreenYellow,  //!< pure green, then pure yellow
+};
+
 } // namespace videotest
 
 #ifdef ZENE_HAVE_FFMPEG
@@ -122,12 +129,14 @@ inline bool addStream(AVFormatContext* out, Encoder& e, AVCodecID id, void (*set
 	return allocateFrame(e);
 }
 
-//! Frame @a index: red in the first second, blue in the second (BT.601 limited-range YUV).
-inline void fillVideo(AVFrame* f, int index)
+//! Frame @a index: the palette's first colour in the first second, its second after (BT.601 limited-range YUV).
+inline void fillVideo(AVFrame* f, int index, Palette palette)
 {
 	av_frame_make_writable(f);
-	const bool red = index < Fps;
-	const int values[3] = {red ? 81 : 41, red ? 90 : 240, red ? 240 : 110};
+	const bool first = index < Fps;
+	static const int RedBlue[2][3] = {{81, 90, 240}, {41, 240, 110}};
+	static const int GreenYellow[2][3] = {{145, 54, 34}, {210, 16, 146}};
+	const int* values = (palette == Palette::RedBlue ? RedBlue : GreenYellow)[first ? 0 : 1];
 	for (int plane = 0; plane < 3; ++plane)
 	{
 		const int rows = plane == 0 ? Height : Height / 2;
@@ -162,12 +171,12 @@ inline void send(AVFormatContext* out, Encoder& e, AVFrame* frame)
 	av_packet_free(&packet);
 }
 
-inline void writeAll(AVFormatContext* out, Encoder& video, Encoder& audio)
+inline void writeAll(AVFormatContext* out, Encoder& video, Encoder& audio, Palette palette)
 {
 	int64_t audioAt = 0;
 	for (int i = 0; i < Frames; ++i)
 	{
-		fillVideo(video.frame, i);
+		fillVideo(video.frame, i, palette);
 		send(out, video, video.frame);
 		for (; audioAt * Fps < static_cast<int64_t>(i + 1) * Rate; audioAt += AudioChunk)
 		{
@@ -179,7 +188,7 @@ inline void writeAll(AVFormatContext* out, Encoder& video, Encoder& audio)
 	send(out, audio, nullptr);
 }
 
-inline bool encodeWithLibavcodec(const QString& path)
+inline bool encodeWithLibavcodec(const QString& path, Palette palette = Palette::RedBlue)
 {
 	const QByteArray name = QFile::encodeName(path);
 	AVFormatContext* out = nullptr;
@@ -192,7 +201,7 @@ inline bool encodeWithLibavcodec(const QString& path)
 			&& avio_open(&out->pb, name.constData(), AVIO_FLAG_WRITE) >= 0 && avformat_write_header(out, nullptr) >= 0;
 		if (ok)
 		{
-			writeAll(out, video, audio);
+			writeAll(out, video, audio, palette);
 			ok = av_write_trailer(out) >= 0;
 		}
 	}
@@ -201,12 +210,13 @@ inline bool encodeWithLibavcodec(const QString& path)
 	return ok;
 }
 
-inline bool encodeWithProgram(const QString& program, const QString& path)
+inline bool encodeWithProgram(const QString& program, const QString& path, Palette palette = Palette::RedBlue)
 {
+	const bool redBlue = palette == Palette::RedBlue;
 	const QString seconds = QStringLiteral(":s=%1x%2:r=%3:d=1").arg(Width).arg(Height).arg(Fps);
 	const QStringList args{QStringLiteral("-v"), QStringLiteral("error"), QStringLiteral("-y"),
-		QStringLiteral("-f"), QStringLiteral("lavfi"), QStringLiteral("-i"), QStringLiteral("color=c=red") + seconds,
-		QStringLiteral("-f"), QStringLiteral("lavfi"), QStringLiteral("-i"), QStringLiteral("color=c=blue") + seconds,
+		QStringLiteral("-f"), QStringLiteral("lavfi"), QStringLiteral("-i"), (redBlue ? QStringLiteral("color=c=red") : QStringLiteral("color=c=lime")) + seconds,
+		QStringLiteral("-f"), QStringLiteral("lavfi"), QStringLiteral("-i"), (redBlue ? QStringLiteral("color=c=blue") : QStringLiteral("color=c=yellow")) + seconds,
 		QStringLiteral("-f"), QStringLiteral("lavfi"), QStringLiteral("-i"), QStringLiteral("sine=frequency=440:sample_rate=%1:duration=2").arg(Rate),
 		QStringLiteral("-filter_complex"), QStringLiteral("[0:v][1:v]concat=n=2:v=1:a=0[v]"), QStringLiteral("-map"), QStringLiteral("[v]"),
 		QStringLiteral("-map"), QStringLiteral("2:a"), QStringLiteral("-c:v"), QStringLiteral("mpeg4"), QStringLiteral("-g"), QStringLiteral("10"),
@@ -215,11 +225,11 @@ inline bool encodeWithProgram(const QString& program, const QString& path)
 }
 
 //! Write the clip to @a path (a .mkv): through the ffmpeg program when there is one, else with libavcodec.
-inline bool makeClip(const QString& path)
+inline bool makeClip(const QString& path, Palette palette = Palette::RedBlue)
 {
 	const QString program = QStandardPaths::findExecutable(QStringLiteral("ffmpeg"));
-	if (!program.isEmpty() && encodeWithProgram(program, path)) { return true; }
-	return encodeWithLibavcodec(path);
+	if (!program.isEmpty() && encodeWithProgram(program, path, palette)) { return true; }
+	return encodeWithLibavcodec(path, palette);
 }
 
 } // namespace videotest

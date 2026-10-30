@@ -5516,3 +5516,4 @@ src/core/MixHelpers.cpp	new-p9-283: isSilent(const SampleFrame*, int) returns tr
 tests/src/core/AudioBufferTest.cpp	new-p9-283: regressions for MixHelpers::isSilent on normal frames, zero-frame (null and loud pointer) and negative frame counts.
 tests/src/core/GrooveTemplateTest.cpp	# GrooveTemplate target tick arithmetic overflows before clamping
 tests/src/core/DawProjectInterchangeRoundTripTest.cpp	# Extreme tempo-map values are cast to `int` before validation
+src/gui/MainWindow.cpp	Q050-180.1 (2026-10-27, View > Add Video Clip...): updateViewMenu gains ONE declared item (video.clip_add) after Video Window that calls VideoLane::addClipFromDialog at the song play position, plus the #include "VideoLane.h"; no existing line changed. Regression test VideoClipsGuiTest::theMenusAndTheLaneAddAndMoveClips.

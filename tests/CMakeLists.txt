@@ -1105,6 +1105,10 @@ set(LMMS_TESTS
 	src/core/AafImportTest.cpp
 	# 0.5.0 F5 (ED-054): the video track; the FFmpeg cases skip without the library
 	src/core/VideoTrackTest.cpp
+	# 0.5.0 L04 (Q050-180.1, Q050-139 folded in): several positioned video clips on the one video track - ids,
+	# offsets and metadata across save/reopen, legacy one-<video> load, one undo step per edit, the window's frame
+	# during playback with no stale frame, and video.render_frames over a range spanning both clips.
+	src/core/VideoClipsTest.cpp
 	# cluster new-p8-242-port: the FFmpeg stream's refused seek (the video track's decoder behind it)
 	src/core/VideoFfmpegTest.cpp
 	# 0.5.0 L12 (Q050-042): old-version patterns keep their note and pattern lengths after upgrade and save/reopen.
@@ -1321,6 +1325,9 @@ set(LMMS_TESTS
 	src/gui/NoteBackgroundAudioTest.cpp
 	# M0 coverage: the arranger's range / audition / zoom tools and the video lane.
 	src/gui/ArrangerOverlaysVideoLaneTest.cpp
+	# 0.5.0 L04 (Q050-180.1): the video lane draws each clip over its own span; a click seeks and the video window
+	# follows; double-click / context menu / View menu add, a drag moves, the context menu renders the loop range.
+	src/gui/VideoClipsGuiTest.cpp
 	# The transport's Sync toggle (link.set_enabled) and its session read-out.
 	src/gui/SessionSyncActionTest.cpp
 	# The piano roll's Randomize / Humanize / Scale velocities items (note.randomize, note.velocity_scale).
@@ -3508,7 +3515,7 @@ if(TARGET aueffect AND TARGET auinstrument)
 	add_dependencies(AuHostingTest aueffect auinstrument)
 endif()
 set_tests_properties(ReferenceProjectPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-set_tests_properties(TelemetryConsentDialogTest AafImportMenuTest TrackIconsLevelBarTest ArrangerKeysNavigatorTest NoteBackgroundAudioTest ArrangerOverlaysVideoLaneTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(TelemetryConsentDialogTest AafImportMenuTest TrackIconsLevelBarTest ArrangerKeysNavigatorTest NoteBackgroundAudioTest ArrangerOverlaysVideoLaneTest VideoClipsGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(NoteTransformActionsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MpeInputActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TempoMapPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -7295,7 +7302,7 @@ set_tests_properties(DawProjectInterchangeRoundTripTest DawProjectDeflateImportT
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # 0.5.0 wave 2: AAF import, the video track and hardware I/O build a real Engine and drive the
 # registry (the video window and lane are widgets), so they need a Qt platform plugin.
-set_tests_properties(AafImportTest VideoTrackTest LegacyPatternUpgradeTest HardwareIoTest SurroundTest SurroundExportTest PROPERTIES
+set_tests_properties(AafImportTest VideoTrackTest VideoClipsTest LegacyPatternUpgradeTest HardwareIoTest SurroundTest SurroundExportTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # VideoTrackTest's Linux/macOS allocation-failure case interposes FFmpeg entry points from
 # the test executable, so its symbols must be exported - same reason plugin-loading tests carry ENABLE_EXPORTS.
@@ -7705,6 +7712,19 @@ if(PYTHON3_EXECUTABLE)
 	)
 else()
 	message(STATUS "python3 not found: ControlMcpGroupCoverage is not registered")
+endif()
+
+# Q050-180.1 (L04): several positioned video clips driven through a REAL MCP stdio session - add two
+# clips, move one by id, undo/redo, save/new/open readback, render a range spanning both. Skipped (77)
+# without the ffmpeg program, without an interpreter carrying `mcp`, or in a build without FFmpeg.
+if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
+	add_test(NAME ControlVideoClipsMcp
+		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/control-video-clips-mcp.py $<TARGET_FILE:zene>)
+	set_tests_properties(ControlVideoClipsMcp PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 600
+		SKIP_RETURN_CODE 77
+	)
 endif()
 
 # board card #708: the livecode.* transcript - the registered proof that a
