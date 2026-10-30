@@ -2,6 +2,76 @@ IMPLEMENTED
 
 # Q050-217.2 - MIDI bindings for saved workflows (stage 2/4)
 
+## Integration onto 050/m0-train-24 (round 2, 2026-10-30)
+
+Accepted patch `feat/050-Q050-217.2-oc @ 039b15c8ac` (source base `4ee5321ffc`) applied by the driver onto
+`050/m0-train-24 @ 2a7fd9f9c7` in `zene-integrate-Q050-217.2-2a7fd9f9c7`. Logs:
+`~/.local/share/zene-bunny-fix/qwen/runs/Q050-217.2.r2/logs/`.
+
+**Conflicts and how they were resolved**
+
+- `tests/upstream-modifications.txt` - both sides appended rows at the end of the file; kept both (the train's
+  rows, then this unit's three rows). `fork-sources` and `all-sources-reproduce` pass (below).
+- `tools/mcp-zene-control/zene_control/commands_snapshot.json` - only metadata conflicted (`captured_at`,
+  `source_socket`, `version`); the schema/description hunks merged cleanly. Regenerated from a live instance of
+  this build with `snapshot_live.py` (`snapshot-1.log`, EXIT=0): **878 ids / 77 groups**, unchanged, and the
+  regenerated file differs from the merged one only in those metadata lines.
+
+**The regression the bisect named (`agent_surface`) - cause and fix**
+
+`ctest -R '^agent_surface$'` on the merged tree: **exit 8** (`test-2.log`): `FAIL: NEW action without a registered
+command: 'menu:Launcher/Controller/Bind a Workflow/No Workflows Yet (Workflows > Record a Workflow...)'`. The
+gate's sweep runs `window.command_palette`, whose menu walk (`src/gui/CommandPalette.cpp:81`) fires `aboutToShow`
+on every menu. That fills the patch's lazily built **Bind a Workflow** submenu, and with no workflows in the
+fixture its only entry is the disabled placeholder, which declared no command. The fix
+(`src/gui/RecordLaunchMenus.cpp`, `fillWorkflowBinding`): the placeholder sets `controlCommand` to `workflow.list`,
+the command whose empty answer it reports. This is the same pattern `MacroMenu::addStatusLine`
+(`src/gui/MacroMenu.cpp:50-56`) uses for the Workflows menu's status lines. No baseline, allowlist or exempt entry
+was added, so the gate is not weakened. After the fix: `agent_surface` **exit 0** three runs in a row
+(`test-3-1..3.log`), and a verbose fourth run (`test-7.log`, exit 0) reports "388 reflected, 6 exempt;
+reflection: 382 registered, 0 unregistered (0 new); reverse: 878 commands, 876 swept, 2 allowlisted" (was 381
+registered, 1 unregistered).
+
+**Semantic difference from the accepted patch:** exactly those 4 added lines (one property call and its comment).
+Checked by comparing the `+/-` lines of `git diff 4ee5321ffc 039b15c8ac` with `git diff HEAD` over every
+non-generated file of the patch: the only extra lines are those 4. None of the four product files
+(`include/LaunchBindings.h`, `src/core/LaunchBindings.cpp`, `src/core/ControlCommandsLaunchBindings.cpp`,
+`src/gui/RecordLaunchMenus.cpp`) changed on the train between the source base and the target
+(`git diff 4ee5321ffc 2a7fd9f9c7 --quiet` exit 0 for each), so the accepted design runs unchanged.
+
+**Affected failure paths and platform hazards (together)**
+
+- The lazily built submenu shows either the placeholder or per-workflow entries. Both now declare a live command
+  (`workflow.list`; `session.bind_command`/`session.command_bindings` through `addCommandAction`), whichever walk
+  opens it first (the palette, the gate, or a user).
+- The placeholder is disabled, so the palette skips it (`!action->isEnabled()`), and the property cannot make it
+  run anything.
+- `QObject::setProperty(const char*, QVariant)` from a `QStringLiteral` works on Qt 5.15 and Qt 6.8, with no new
+  include, no OS API and no identifier hazard. MSVC, clang-arm64 and macOS < 10.15 are unaffected. Nothing touches
+  the audio or MIDI thread: menu building runs on the UI thread in `aboutToShow`.
+
+**Evidence on the integrated tree (commit `22032a4760` plus these docs)**
+
+| Run | Log | Exit |
+| --- | --- | --- |
+| `cmake --build build --target zene MidiWorkflowBindingsTest MidiWorkflowBindingsGuiTest ... -- -j4` | `build-2.log`, `build-3.log`, `build-7.log` | 0 |
+| Focused set, 16 tests: `MidiWorkflowBindingsTest`, `MidiWorkflowBindingsGuiTest`, `ControlWorkflowBindings`, `MidiCommandBindingsTest`, `MidiCommandBindingsGuiTest`, `ReversibilityContractTest`, `CollabPolicyTest`, `WorkflowFeedbackTest`, `ControlCommandsMacrosTest`, `RecordingPassTest`, `PerformViewTest`, `ControlSessionLaunch`, `ControlCustomisation`, `ControlCommandsSnapshot`, `ControlWorkflowModels`, `agent_surface` | `test-6.log` (100% of 16) | **0** |
+| Red proof: the four product files checked out from `HEAD~1` (the train), rebuilt (`build-red-1.log` EXIT=0), `ctest -R '^(MidiWorkflowBindingsTest\|MidiWorkflowBindingsGuiTest\|ControlWorkflowBindings)$'` | `test-red-1.log` (0 of 3, 13 `FAIL!` lines) | **8** |
+| Restored with `git checkout HEAD -- <files>`, rebuilt (`build-7.log` EXIT=0), the same three in the focused set | `test-6.log` | **0** |
+| `python3 tests/doc-figures-gate.py` | `docfig-1.log` | 0 |
+| `feature_check.py` (all eight gate rows PASS; complexity/file-length: no new item in this unit's files) | `feature-check-2.log` | 0 |
+
+**Pre-existing failures that are not this patch's.** `ReversibilityUndoDeviceTest` and
+`ControlReversibilityTranscript` fail on this box, and they fail **identically with the product change reverted**
+(`test-red-2.log`, exit 8: the first segfaults inside its LADSPA restore slot after
+`aRemovalWithAnUnusableDocumentIsNotRecorded`; the second reports "section E could not run: plugin.list offered
+no 'amplifier' device"). Before `ladspaeffect` was built (`build-6.log`) both failed with "the LADSPA host plugin
+'ladspaeffect' is not in this build" (`test-4.log`). Neither test, nor any code path they exercise, is touched by
+this unit. In the same reverted run, `agent_surface` passed. That confirms the train itself is green on that gate
+and the placeholder was the whole regression.
+
+The sections below are round 1's report for the accepted patch, kept as written.
+
 Cluster Q050-217, stage 2 of 4: "Bind MIDI notes and CCs to saved workflows and run each through the existing
 workflow command path." Built in
 `/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-217.2` on
@@ -89,6 +159,31 @@ unchanged at 878 ids / 77 groups, so `README.md`'s canary needs no new figure an
 unchanged (`rows=887 true_inverse=434 snapshot=42 irreversible=25 not_mutating=386`).
 
 ## Self-check
+
+**Round 2 (integration) answers first; round 1's follow each question.**
+
+- *Red/green:* train versions of the four product files → rebuild EXIT=0 → the three new tests **exit 8**
+  (`test-red-1.log`); restored → rebuild EXIT=0 → **exit 0** (`test-6.log`). `agent_surface` with the patch but
+  without the placeholder fix: **exit 8** (`test-2.log`); with it: **exit 0** (`test-3-*.log`, `test-6.log`).
+- *Criteria:* `MidiWorkflowBindingsTest` 0, `MidiWorkflowBindingsGuiTest` 0, `ControlWorkflowBindings` 0 on the
+  integrated tree (`test-6.log`).
+- *Undo/reversibility:* no command added or reclassified; `ReversibilityContractTest` 0 (`test-6.log`).
+- *Realtime:* the integration fix is one `setProperty` on a menu action, built on the UI thread in
+  `aboutToShow`. The audio and MIDI paths are untouched.
+- *Projects:* no format change. `MidiWorkflowBindingsTest::aProjectScopedWorkflowSurvivesTheProject` 0.
+- *Portability:* `QObject::setProperty` + `QStringLiteral` are Qt 5.15/6.8 API, with no new identifiers or
+  includes.
+- *Checker runs:* `submit_check.py` as installed reports one FAIL, the gates row, because `feature_check.py`
+  makes its log directory beside the worktree, and this sandbox refuses that (`PermissionError`,
+  `submit-check-1.log`, `feature-check-1.log`). Copies in `/tmp/q2172-fc/` that change only that log path (and
+  point `ROOT` at the real qwen directory, for the cached `gate-baselines/2a7fd9f9c7….json`) give
+  `feature_check` RESULT: PASS (`feature-check-2.log`) and `submit_check` RESULT: PASS - submit
+  (`submit-check-3.log`). The one remaining WARN, "canary figures - new command ids: control.quit, control.undo,
+  control.version, kept.mmp, plain.mmp", is a false positive. These are existing ids and file names quoted in the
+  tests. The live surface is 878 ids / 77 groups, unchanged, and `doc-figures-gate` passes.
+- *Build environment:* the ccache config's `temporary_dir` (under `dsh/home`) is not writable here, so builds
+  ran with `CCACHE_TEMPDIR=/tmp/ccache-tmp-q2172` (`build-1.log` shows the refused temp file; nothing else
+  changed).
 
 **? Each new test FAILS with your product change reverted (reverse the non-test hunks, rebuild, run: exit
 code?), then PASSES restored.**
