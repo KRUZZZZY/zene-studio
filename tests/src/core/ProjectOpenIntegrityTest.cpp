@@ -31,14 +31,19 @@
 #include <QDomDocument>
 #include <QDomElement>
 #include <QFile>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QStringList>
 #include <QTemporaryDir>
 
+#include "ControlRegistry.h"
 #include "DataFile.h"
 #include "Engine.h"
 #include "Mixer.h"
 #include "ModulationLayer.h"
 #include "ProjectJournal.h"
 #include "Song.h"
+#include "Track.h"
 
 using namespace lmms;
 
@@ -178,6 +183,68 @@ QString layerXml( const ModulationLayer& layer )
 	return document.toString();
 }
 
+ControlResult run( const QString& id, const QJsonObject& args = {} )
+{
+	return ControlRegistry::instance()->invoke( id, args );
+}
+
+//! What a project IS, for comparing two sessions: tempo, the mixer channel
+//! count, master volume, and each track's type, name and mute flag in order.
+//! Read off the live song, so it measures the loaded state.
+QStringList stateOf()
+{
+	Song* song = Engine::getSong();
+	QStringList state;
+	state << QStringLiteral( "tempo=%1" ).arg( song->getTempo() );
+	state << QStringLiteral( "mixer-channels=%1" ).arg( run( QStringLiteral( "mixer.get_state" ) ).result
+		.value( QStringLiteral( "channels" ) ).toArray().size() );
+	state << QStringLiteral( "master-volume=%1" ).arg( song->masterVolumeModel().value() );
+	for( const Track* track : song->tracks() )
+	{
+		state << QStringLiteral( "%1|%2|%3" ).arg( static_cast<int>( track->type() ) )
+			.arg( track->name() ).arg( track->isMuted() );
+	}
+	return state;
+}
+
+//! What the clips hold: each clip's name and, under it, its notes in the order
+//! the roll reports them. Clip ids are left out - a reopened project may number
+//! them differently.
+QStringList contentOf()
+{
+	QStringList content;
+	const QJsonArray clips = run( QStringLiteral( "clip.list" ) ).result.value( QStringLiteral( "clips" ) ).toArray();
+	for( const QJsonValue& value : clips )
+	{
+		const QJsonObject clip = value.toObject();
+		content << QStringLiteral( "clip|%1" ).arg( clip.value( QStringLiteral( "name" ) ).toString() );
+		const QJsonArray notes = run( QStringLiteral( "roll.get_state" ),
+			{{ QStringLiteral( "clip" ), clip.value( QStringLiteral( "clip" ) ).toString() }} ).result.value( QStringLiteral( "notes" ) ).toArray();
+		for( const QJsonValue& noteValue : notes )
+		{
+			const QJsonObject note = noteValue.toObject();
+			content << QStringLiteral( "note|%1|%2|%3|%4" ).arg( note.value( QStringLiteral( "key" ) ).toInt() )
+				.arg( note.value( QStringLiteral( "position" ) ).toInt() ).arg( note.value( QStringLiteral( "length" ) ).toInt() )
+				.arg( note.value( QStringLiteral( "velocity" ) ).toInt() );
+		}
+	}
+	return content;
+}
+
+//! A fresh session with a tempo and three named sample tracks.
+void buildSession()
+{
+	Song* song = Engine::getSong();
+	song->clearProject();
+	song->setLoadOnLaunch( false );
+	QVERIFY2( run( QStringLiteral( "transport.set_tempo" ), {{ QStringLiteral( "bpm" ), 133 }} ).ok, "set tempo" );
+	for( const char* name : { "Drums", "Loops", "Vox" } )
+	{
+		QVERIFY2( run( QStringLiteral( "track.add" ), {{ QStringLiteral( "type" ), QStringLiteral( "sample" ) },
+			{ QStringLiteral( "name" ), QString::fromLatin1( name ) }} ).ok, "add track" );
+	}
+}
+
 } // namespace
 
 
@@ -185,9 +252,17 @@ class ProjectOpenIntegrityTest : public QObject
 {
 	Q_OBJECT
 private slots:
-	void initTestCase() { Engine::init( true ); }
+	void initTestCase()
+	{
+		Engine::init( true );
+		ControlRegistry::setReady( true );
+	}
 
-	void cleanupTestCase() { Engine::destroy(); }
+	void cleanupTestCase()
+	{
+		ControlRegistry::setReady( false );
+		Engine::destroy();
+	}
 
 	//! The deliverable: a project carrying scene state must not lose it when a
 	//! build opens and re-saves it. The build UPCONVERTS the legacy
@@ -461,6 +536,54 @@ private slots:
 
 		song->loadProject( plain );
 		QCOMPARE( song->modulationLayer().layer().modulatorCount(), 0 );
+	}
+
+	//! The owner's workflow at the command level (gui-1030): save a session with
+	//! a tracked instrument, its clip and its notes; start a new project; reopen
+	//! the saved file. The reopened session has the same tracks, notes and clips,
+	//! in both the legacy blob and the v2 container, and the new project carries
+	//! none of the saved content.
+	void saveStartNewAndReopenKeepsTracksNotesAndClips()
+	{
+		for( const QString& format : { QStringLiteral( "legacy" ), QStringLiteral( "v2" ) } )
+		{
+			QTemporaryDir dir;
+			QVERIFY( dir.isValid() );
+			buildSession();
+			const ControlResult keys = run( QStringLiteral( "track.add" ),
+				{{ QStringLiteral( "type" ), QStringLiteral( "instrument" ) }, { QStringLiteral( "name" ), QStringLiteral( "Keys" ) }} );
+			QVERIFY2( keys.ok, qPrintable( keys.errorMessage ) );
+			const ControlResult clip = run( QStringLiteral( "clip.add" ),
+				{{ QStringLiteral( "track" ), keys.result.value( QStringLiteral( "track" ) ) }, { QStringLiteral( "position" ), 0 }} );
+			QVERIFY2( clip.ok, qPrintable( clip.errorMessage ) );
+			const QString clipId = clip.result.value( QStringLiteral( "clip" ) ).toString();
+			for( const int key : { 60, 64, 67 } )
+			{
+				QVERIFY2( run( QStringLiteral( "note.add" ), {{ QStringLiteral( "clip" ), clipId }, { QStringLiteral( "key" ), key },
+					{ QStringLiteral( "position" ), 0 }, { QStringLiteral( "length" ), 96 }, { QStringLiteral( "velocity" ), 100 } } ).ok,
+					"add note" );
+			}
+			const QStringList before = stateOf() + contentOf();
+			QVERIFY( contentOf().size() > 3 );
+
+			const QString path = dir.filePath( QStringLiteral( "terra-session.mmpz" ) );
+			QVERIFY2( run( QStringLiteral( "project.save" ),
+				{{ QStringLiteral( "path" ), path }, { QStringLiteral( "format" ), format }} ).ok, qPrintable( format ) );
+			QVERIFY( run( QStringLiteral( "project.new" ) ).ok );
+			// The new project is the default one: none of the saved tracks, clips or notes come along.
+			const QStringList savedTrackNames{ QStringLiteral( "Drums" ), QStringLiteral( "Loops" ), QStringLiteral( "Vox" ),
+				QStringLiteral( "Keys" ) };
+			for( const Track* track : Engine::getSong()->tracks() )
+			{
+				QVERIFY( !savedTrackNames.contains( track->name() ) );
+			}
+			QVERIFY( contentOf().isEmpty() );
+
+			const ControlResult reopened = run( QStringLiteral( "project.open" ), {{ QStringLiteral( "path" ), path }} );
+			QVERIFY2( reopened.ok, qPrintable( reopened.errorMessage ) );
+			const QStringList after = stateOf() + contentOf();
+			QVERIFY2( after == before, qPrintable( format + ": " + after.join( QLatin1Char( ';' ) ) ) );
+		}
 	}
 };
 
