@@ -48,7 +48,7 @@ The two ratchet gates list 7 (complexity) and 26 (file-length) tree-wide items. 
 
 ## Why the test moved
 
-A first version of the test went into `tests/src/core/ProjectContainerSaveTest.cpp`. That file is already over the 500-code-line limit, so the file-length ratchet flagged it. A new file would have been cleaner, but the lane cannot reconfigure the build tree to register it, so the test moved into `ProjectOpenIntegrityTest.cpp`, which is configured and well under the limit. `tests/CMakeLists.txt`, `tests/fork-sources.txt` and `tests/all-sources.txt` were restored to HEAD and are not part of this change.
+A first version of the test went into `tests/src/core/ProjectContainerSaveTest.cpp`. Once it was added, the file-length gate reported that file as "new file over 500 lines" (592 code lines, `gate-file-length.log`). A separate new file would have avoided that, but the lane cannot reconfigure the build tree to register it (see the blocked reconfigure above), so the test moved into `ProjectOpenIntegrityTest.cpp`. That file is configured and the file-length gate does not list it. `tests/CMakeLists.txt`, `tests/fork-sources.txt` and `tests/all-sources.txt` were restored to HEAD and are not part of this change.
 
 ## Files committed for this verdict
 
@@ -56,3 +56,28 @@ A first version of the test went into `tests/src/core/ProjectContainerSaveTest.c
 - `docs/qwen-fixes-2026-10/cluster-gui-1030-session-save-start-new-reopen.md` (this report)
 
 Environment notes: `CCACHE_DISABLE=1` was needed for every build because ccache could not create its temp files inside the sandbox. This changed no source or result.
+
+## Self-check
+
+The completion check (`submit_check.py`, log `submit-check-1.log`) reported two FAILs before this section existed: the missing Self-check section, and the gate wrapper. Each item is answered below.
+
+- **Regression test fails with the product change reverted and passes with it (exit codes).** Not applicable, and not met. There is no product change, so there is nothing to revert, and the test passes on the code as it stands (`ctest -R '^ProjectOpenIntegrityTest$'` EXIT 0, 9 passed). This is a coverage check for a not-real finding, not a regression proof.
+- **Deterministic (no wall-clock timing, sleeps or races).** The test has no clock, sleep or thread. It uses a fresh temporary directory, a fixed tempo (133), fixed note keys (60, 64, 67), a fixed velocity and length, and `Engine::getSong()` state read back after each step. The only environment dependence seen is the `Plugin not found` warnings (built-in plugins are not present in this build tree); those lines do not feed the comparison, and the comparison matched in this environment. I did not test it on a tree with plugins present.
+- **Fix at the cause, complete (every caller and sibling checked).** No product fix. The sibling paths were checked: `saveProject`, `saveProjectAs`, `saveProjectAsWithFormat`, `createNewProject` and `openProjectFile` in `src/gui/MainWindow.cpp` (`:960-1155`) and the command handlers `project.save`, `project.new` and `project.open` (`src/core/ControlCommandsProjectFiles.cpp:647`) reach the same loader. The test drives the command-level path for both formats. It does not drive the file dialog or the menu wiring; that remains unverified in this run.
+- **No collateral damage (old projects load as before).** No product file changed. The test file changes only add a helper set and a `ControlRegistry::setReady` call in `initTestCase`/`cleanupTestCase`. All 9 tests in `ProjectOpenIntegrityTest` pass, including the 8 that already existed. No saved data format was touched.
+- **FALSE-POSITIVE evidence (file:line or contract).** The save, new and reopen code is at `src/gui/MainWindow.cpp:960-982` and `:1041-1168`, with the loader reached through `ControlCommandsProjectFiles.cpp:647`. The patrol's own record shows the save step was skipped, not failed (`terra-pilot/session/runs/m0-train-24/final.md`, `save-reopen` verdict `UNSURE`, no Zene error logged).
+
+**Gate wrapper (`feature_check.py`) FAIL.** The wrapper cannot run from this lane: it creates `<worktree>-feature-check/` as a sibling of the worktree, which is outside the write area, so `mkdir` fails with `PermissionError` (`feature-check-2.log`, exit 1). I did not work around that. I reran each gate command it runs directly, from the worktree, on the committed final tree (`gate3-*.log`):
+
+| Gate | Command | EXIT |
+| --- | --- | --- |
+| fork-sources | `bash tests/fork-sources-gate.sh` | 0 |
+| all-sources-reproduce | `bash tests/all-sources-reproduce.sh` | 0 |
+| no-upstream-regression | `bash tests/no-upstream-regression-gate.sh` | 0 |
+| check-namespace | `tests/scripted/check-namespace` | 0 |
+| no-tautology | `bash tests/no-tautology-gate.sh` | 0 |
+| doc-figures | `python3 tests/doc-figures-gate.py` | 0 |
+| complexity (ratchet) | `bash tests/complexity-gate.sh --check` | 1 (7 tree-wide items; none names a file this change touches) |
+| file-length (ratchet) | `bash tests/file-length-gate.sh --check` | 1 (26 tree-wide items; none names `ProjectOpenIntegrityTest.cpp`) |
+
+The two ratchets are red on the train on purpose. By the wrapper's rule (fail only on a new item in a file this change touches), they pass for this change: `grep` over `gate3-complexity.log` and `gate3-file-length.log` finds 0 items naming my file. The wrapper's base-listing comparison itself was not computed, because its cache is outside the write area.
