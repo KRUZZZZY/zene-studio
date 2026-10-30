@@ -138,6 +138,38 @@ the test itself selects such an interpreter (`bridge_python()`, see the round-4 
 
 ## Self-check
 
+**Round 4 (integration onto `050/m0-train-22`, commit `4ed1f762ff`; logs `runs/Q050-180.1.r4/logs/`):**
+
+- `submit_check.py` after the commit (`submit-check-22.log`, exit 1): every row PASS except "gates (feature_check.py)".
+  That row fails because the script makes its log folder next to the worktree, outside this lane's write-jail
+  (`PermissionError`, `feature-check-19.log`, exit 1). A copy in `/tmp` that changes only `ROOT` (pinned to the
+  original directory) and the log folder gives **8/8 PASS, exit 0** at the tip (`feature-check-23.log`; before the
+  commit, `feature-check-20.log`): fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace,
+  no-tautology, doc-figures, complexity (no new item), file-length (no new item). `diff` shows those two lines as the
+  only changes.
+- **Each new test fails with the product change reverted and passes restored.** Repeated on this integrated tree.
+  Reverted: `VideoClipsTest` exit 10, `VideoClipsGuiTest` exit 3, `control-video-clips-mcp.py` exit 1
+  (`test-14/15/16-negctl-*.log`, build `build-13-negctl.log` exit 0). Restored: 11/11, exit 0 (`test-18-restored.log`).
+- **Every acceptance criterion was proven by a test run this round:** rows 1-5 of the Acceptance table. All their
+  tests (`VideoClipsTest`, `VideoClipsGuiTest`, `ControlVideoClipsMcp`, `VideoTrackTest`,
+  `ArrangerOverlaysVideoLaneTest`) are in `test-18-restored.log`, exit 0. `ControlVideoClipsMcp` ran all 17 checks
+  with no override (`test-7.log`, exit 0).
+- **One undo step per edit; reversibility classes.** Product code is unchanged from the accepted patch, so the
+  round-0 answer below still holds. `ReversibilityContractTest` passes on the re-taken block (`rows=890
+  true_inverse=436 snapshot=42 irreversible=25 not_mutating=387`).
+- **Realtime.** No product code changed in this integration; the round-0 design reading below applies. The only new
+  code is in the Python test. TSan does not run on this box.
+- **Old projects; round trip.** Unchanged from the accepted patch. `VideoTrackTest` (legacy single-video round trip)
+  and `VideoClipsTest::anOldSingleVideoProjectLoadsAsOneClip` / `anEmptyProjectResetsTheVideoTrack` pass
+  (`test-18-restored.log`).
+- **Portability.** No C++ changed in this integration. The Python edit uses `str | None` under the file's existing
+  `from __future__ import annotations` and runs only on the host.
+- **Not run:** the full `ctest` suite and `run-all-gates.sh` (targeted tests only, per the brief).
+  `ControlMcpGroupCoverage` (shared, not in this patch) still fails on this box for the interpreter reason
+  (`test-5.log`, exit 8). I did not change it.
+
+**Earlier rounds:**
+
 **Round 3 (integration onto `050/m0-train-20`, commit `ecbd179ece`):** `submit_check.py` (`r3/logs/submit-check-11.log`):
 every row PASS except "gates (feature_check.py)". That row fails because the script creates its log folder beside the
 worktree, outside this lane's write-jail (`PermissionError`, `r3/logs/feature-check-12.log`, exit 1). I ran a copy in
