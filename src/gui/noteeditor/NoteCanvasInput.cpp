@@ -32,12 +32,16 @@
 #include <QStyleHints>
 
 #include "ControlVocabulary.h"
+#include "Engine.h"
+#include "InstrumentTrack.h"
 #include "DesignTokens.h"
 #include "MidiClip.h"
 #include "Note.h"
 #include "NoteCanvas.h"
 #include "NoteEditor.h"
 #include "NoteProperties.h"
+#include "ShellSelection.h"
+#include "Song.h"
 
 namespace lmms::gui
 {
@@ -50,6 +54,30 @@ QJsonArray idsOf(const std::vector<Note*>& notes)
 	QJsonArray ids;
 	for (const Note* note : notes) { ids.append(control::noteIdOf(note)); }
 	return ids;
+}
+
+//! The MIDI clip a click in an empty note editor writes to: on the selected instrument track (else the song's first
+//! one), the clip already under the play position's bar, else a new one-bar clip there. Null with no instrument track.
+MidiClip* clipForEmptyEditor()
+{
+	Song* song = Engine::getSong();
+	auto* track = dynamic_cast<InstrumentTrack*>(ShellSelection::instance()->track());
+	for (Track* t : song->tracks())
+	{
+		if (track != nullptr) { break; }
+		track = dynamic_cast<InstrumentTrack*>(t);
+	}
+	if (track == nullptr) { return nullptr; }
+	const TimePos bar(song->getPlayPos(Song::PlayMode::Song).getBar() * TimePos::ticksPerBar());
+	for (Clip* clip : track->getClips())
+	{
+		auto* midi = dynamic_cast<MidiClip*>(clip);
+		if (midi != nullptr && clip->startPosition() <= bar && bar < clip->endPosition()) { return midi; }
+	}
+	track->addJournalCheckPoint();  // undo removes the clip, as for a click in the arranger
+	auto* clip = dynamic_cast<MidiClip*>(track->createClip(bar));
+	if (clip != nullptr) { clip->changeLength(TimePos(TimePos::ticksPerBar())); }
+	return clip;
 }
 
 } // namespace
@@ -123,7 +151,20 @@ int NoteCanvas::keyMovedBy(int key, int rows) const
 
 void NoteCanvas::mousePressEvent(QMouseEvent* event)
 {
-	if (m_state.clip == nullptr) { return; }
+	if (m_state.clip == nullptr)
+	{
+		// Owner 2026-10-29 (a Windows tester could not place a note): an empty editor is no dead end. A left click
+		// opens a clip on the selected instrument (clipForEmptyEditor) and goes on to place its note there.
+		auto* editor = qobject_cast<NoteEditor*>(parentWidget());
+		for (QWidget* w = parentWidget(); editor == nullptr && w != nullptr; w = w->parentWidget())
+		{
+			editor = qobject_cast<NoteEditor*>(w);
+		}
+		MidiClip* clip = event->button() == Qt::LeftButton && editor != nullptr ? clipForEmptyEditor() : nullptr;
+		if (clip == nullptr) { return; }
+		editor->setClip(clip);
+		if (m_state.clip == nullptr) { return; }
+	}
 	setFocus(Qt::MouseFocusReason);
 	m_pressPos = m_currentPos = event->pos();
 	m_pressTick = static_cast<int>(m_state.grid.tickAtX(event->pos().x()));

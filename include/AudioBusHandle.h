@@ -137,6 +137,16 @@ public:
 	//! @returns true if the processing outputted corrupted audio (infs/nans).
 	bool isCorrupted() const { return m_corrupted.load(std::memory_order_relaxed); }
 
+	//! The track's own output level, for its header meter: the loudest sample this bus has sent to its mixer
+	//! channel since the last takePeak(). The channel's level is no use there - every new track feeds Master, so
+	//! one playing track lit every track's meter. recordPeak() is the audio thread's side (lock-free).
+	void recordPeak(float peak)
+	{
+		float held = m_peak.load(std::memory_order_relaxed);
+		while (peak > held && !m_peak.compare_exchange_weak(held, peak, std::memory_order_relaxed)) {}
+	}
+	float takePeak() { return m_peak.exchange(0.f, std::memory_order_relaxed); }
+
 	//! 0.5.0 F2 (an instrument layer's mute, solo and level, InstrumentLayers::setMix): a gain applied with the
 	//! volume and panning, 1 = unchanged (bit-identical). Any thread; the audio thread reads it once a period.
 	void setGain(float gain) { m_gain.store(gain, std::memory_order_relaxed); }
@@ -226,6 +236,7 @@ private:
 	LatencyCompensation m_compensation;
 
 	std::atomic<bool> m_corrupted = false;
+	std::atomic<float> m_peak = 0.f;
 	std::atomic<float> m_gain = 1.0f;
 
 	//! MX-157: see setSourceLatencyFrames().

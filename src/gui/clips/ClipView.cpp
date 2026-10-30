@@ -764,7 +764,11 @@ void ClipView::mousePressEvent( QMouseEvent * me )
 				if ( m_action != Action::Split) { s_textFloat->show(); }
 			}
 
+			// Null it at once: showing a top-level float can deliver the matching release before this press
+			// returns (a platform flushes its window events when a window appears), and that release deletes
+			// m_hint again - a double free that corrupted the heap on a click in the Terra harness.
 			delete m_hint;
+			m_hint = nullptr;
 			QString hint;
 			if (m_action == Action::Move || m_action == Action::MoveSelection)
 			{

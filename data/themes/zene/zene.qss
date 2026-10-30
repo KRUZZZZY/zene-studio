@@ -577,6 +577,10 @@ lmms--gui--TimeLineWidget {
 	background-color: @raised;
 	color: @textMuted;
 	font-size: 11px;
+	/* the ruler has no height of its own: without these the arranger's layout squeezes it to nothing, and the
+	   bar numbers, the draggable playhead and the loop handles go with it (the default theme sets 1.5em) */
+	min-height: 2em;
+	max-height: 2em;
 	qproperty-inactiveLoopColor: @control;
 	qproperty-inactiveLoopBrush: @control;
 	qproperty-inactiveLoopInnerColor: @control;
