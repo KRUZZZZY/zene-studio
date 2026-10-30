@@ -46,6 +46,7 @@
 #include "Clip.h"
 #include "CommandForm.h"
 #include "CommandMetadata.h"
+#include "ControlDeviceSupport.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "Mixer.h"
@@ -139,6 +140,18 @@ QList<Reference> mixerChannels()
 	for (int i = 0; i < mixer->numChannels(); ++i)
 	{
 		out.append({control::channelIdOf(mixer->mixerChannel(i)), mixer->mixerChannel(i)->m_name});
+	}
+	return out;
+}
+
+//! Q050-055.2: `format: device` - the catalogue's loadable devices, by name, so nobody has to know a dev-<n>.
+QList<Reference> loadableDevices()
+{
+	QList<Reference> out;
+	const QList<ControlDeviceEntry> catalogue = controlDeviceCatalogue();
+	for (int i = 0; i < catalogue.size(); ++i)
+	{
+		if (catalogue[i].loadable) { out.append({control::deviceId(i), catalogue[i].displayName}); }
 	}
 	return out;
 }
@@ -510,6 +523,7 @@ Editor makeEditor(QWidget* parent, const QString& id, const QString& key, const 
 	{
 		return single(withKind(new QKeySequenceEdit(parent), Kind::Keys));
 	}
+	if (spec.value(QStringLiteral("format")).toString() == QStringLiteral("device")) { return single(pickEditor(parent, loadableDevices())); }
 	if (const QList<Reference> references = referencesFor(key, spec); !references.isEmpty())
 	{
 		return single(pickEditor(parent, references));

@@ -56,6 +56,7 @@ SET(LMMS_SRCS
 	gui/ControlCommandsSelection.cpp
 	# M3.2: the main window's own verbs (fullscreen, dialogs, save as new version).
 	gui/ControlCommandsShell.cpp
+	gui/ControlCommandsPluginActions.cpp
 	gui/ControlCommandsShortcuts.cpp
 	# Q050-055.1 x Q050-202: the shortcuts.* registration table, split from the handlers above.
 	gui/ControlCommandsShortcutsRegister.cpp

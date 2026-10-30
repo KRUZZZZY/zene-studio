@@ -3221,6 +3221,9 @@ src/gui/PanelShortcuts.cpp
 src/gui/ControlCommandsAutomationMode.cpp
 tests/src/gui/PanelShortcutsTest.cpp
 tests/control-panel-shortcuts.py
+src/gui/ControlCommandsPluginActions.cpp
+tests/src/gui/PluginShortcutsTest.cpp
+tests/control-plugin-shortcuts.py
 # Q050-055.1 integration onto train 17 (2026-10-27): the shortcuts.* registration table split from
 # ControlCommandsShortcuts.cpp once the panel scopes and the Q050-202 presets both landed in it.
 src/gui/ControlCommandsShortcutsRegister.cpp

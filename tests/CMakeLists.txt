@@ -1468,6 +1468,7 @@ set(LMMS_TESTS
 	# in the arranger, the note editor, the automation editor and Perform, only the focused panel's
 	# action firing; and a same-context clash resolved in the shortcuts page, surviving a restart.
 	src/gui/PanelShortcutsTest.cpp
+	src/gui/PluginShortcutsTest.cpp
 	# 0.5.0 wave 3 theme 19: the workflow recording indicator and the run report
 	src/gui/WorkflowFeedbackTest.cpp
 	# Clusters new-p23-4/new-p22-32/new-p23-5: workflow command names, saved step validation and recording filters.
@@ -2374,6 +2375,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "Lv2StateTest"
 		# The rack menu binds a macro to a parameter of one real effect.
 		OR LMMS_TEST_NAME STREQUAL "RackMenuTest"
+		# Q050-055.2: the keys load a real effect and a real instrument.
+		OR LMMS_TEST_NAME STREQUAL "PluginShortcutsTest"
 		# The effect Hosting submenu reads a real effect's oop.get_state entry.
 		OR LMMS_TEST_NAME STREQUAL "EffectHostingMenuTest"
 		# Board card #712: SessionTuningTest's proof slot needs tracks with a
@@ -2699,6 +2702,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# loadable effect and both cases skip with "this host loads no effect module".
 	if(LMMS_TEST_NAME STREQUAL "RackMenuTest")
 		add_dependencies(${LMMS_TEST_NAME} amplifier)
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "PluginShortcutsTest")
+		add_dependencies(${LMMS_TEST_NAME} amplifier kicker tripleoscillator)
 	endif()
 	# OutOfProcessHostTest drives the whole out-of-process loop on a REAL client
 	# when this build has both halves of it: the ZynAddSubFx module (the only
@@ -3470,6 +3476,7 @@ set_tests_properties(ShortcutsPageTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=o
 set_tests_properties(ShortcutsCommandsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ControlCommandsMacrosTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PanelShortcutsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(PluginShortcutsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(StartHubTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(HelpAccessTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(AgentSurfaceReportTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -6265,6 +6272,15 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	# a mixer channel; the reply is what the two panels draw - the track's devices in chain order,
 	# a channel's inserts with the modulator beside the one it drives - and the panel follows a
 	# device removed and restored over the socket (docs/UI-SHELL.md §8).
+	# Q050-055.2: the keyboard's plug-in actions over the socket, across a real restart.
+	add_test(NAME ControlPluginShortcuts
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-plugin-shortcuts.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlPluginShortcuts PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
 	add_test(NAME ControlDevices
 		COMMAND ${PYTHON3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/control-devices.py

@@ -5550,3 +5550,9 @@ tests/src/core/ClipConsolidateTest.cpp	# Consolidation can overflow while adding
 include/OutputSettings.h	cluster new-p23-190: setCompressionLevel clamps to the documented 0.0-1.0 range (NaN keeps the current level); the only caller (ExportProjectDialog) passes in-range values, so renders are unchanged. Held by tests/src/gui/ExportQualityControlsTest.cpp::compressionLevelStaysInItsLegalRange
 tests/src/gui/ExportQualityControlsTest.cpp	# OutputSettings compression level is not range-checked
 tests/src/core/ProjectRecoveryTest.cpp	# Autosave identity sidecars are read without a size limit
+tests/CMakeLists.txt	Q050-055.2 (0.5.0 L13): registers src/gui/PluginShortcutsTest.cpp and the ControlPluginShortcuts transcript, with the amplifier, kicker and tripleoscillator modules the keys load.
+src/gui/CMakeLists.txt	Q050-055.2 (0.5.0 L13): builds gui/ControlCommandsPluginActions.cpp, the keyboard's plug-in actions (plugin.selected_editor_open, plugin.selected_load, shortcuts.bind_plugin).
+include/ControlWindowCommands.h	Q050-055.2 (0.5.0 L13): declares registerPluginActionCommands.
+src/gui/ControlCommandsWindow.cpp	Q050-055.2 (0.5.0 L13): registers the keyboard's plug-in actions beside the shortcuts.* commands.
+src/gui/CommandLists.cpp	Q050-055.2 (0.5.0 L13): the shortcuts page gains Bind a Plug-in..., which opens shortcuts.bind_plugin's form.
+src/gui/shell/ShellCommandMenus.cpp	Q050-055.2 (0.5.0 L13): Project tools gains a Selected Track submenu (Open Editor, Open First Effect, Load a Plug-in...), each a registered command.

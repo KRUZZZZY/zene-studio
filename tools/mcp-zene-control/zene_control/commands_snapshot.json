@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-29T15:55:04Z",
+  "captured_at": "2026-10-30T08:46:06Z",
   "commands": [
     {
       "args_schema": {
@@ -20778,6 +20778,105 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "device": {
+            "enum": [
+              "main",
+              "effect"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Open the editor of the selected track's device: its instrument, or on a track with none (and a selected mixer channel) its first effect; 'device': effect asks for the first effect. A plug-in's own window when it can open one (plugin.editor_open), else the host's view - 'surface' says which: native or generic. Refused, typed, with nothing selected or no such device on the selection; it never goes to another track. Needs a display. Interface state: nothing is saved or journalled.",
+      "group": "plugin",
+      "id": "plugin.selected_editor_open",
+      "mutating": false,
+      "requires": [
+        "display"
+      ],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "open": {
+            "type": "boolean"
+          },
+          "plugin": {
+            "type": "string"
+          },
+          "surface": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "device": {
+            "format": "device",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device"
+        ],
+        "type": "object"
+      },
+      "description": "Load a device onto what is selected: plugin.load with the selected track or mixer channel as its 'target', so the reply, the refusals (an instrument onto a target with no instrument, a track with no chain) and the undo are plugin.load's - an effect is one undo step, replacing an instrument reports reversible:false. 'device' is a dev-<n> or the stable key a binding stores. Needs an interface: the selection is one.",
+      "group": "plugin",
+      "id": "plugin.selected_load",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "chain": {
+            "type": "integer"
+          },
+          "device": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "index": {
+            "type": "number"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "plugin": {
+            "type": "string"
+          },
+          "previous_plugin": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "path": {
             "type": "string"
           },
@@ -29512,6 +29611,72 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "device": {
+            "format": "device",
+            "type": "string"
+          },
+          "force": {
+            "type": "boolean"
+          },
+          "keys": {
+            "format": "keys",
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "arranger",
+              "note_editor",
+              "automation_editor",
+              "perform"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope",
+          "device",
+          "keys"
+        ],
+        "type": "object"
+      },
+      "description": "Give a chosen loadable plug-in ('device', dev-<n>) a key in one panel scope: pressing it there runs plugin.selected_load on it. The binding appears in shortcuts.list as '<Panel> \u25b8 Load Plug-in \u25b8 <stable key>', and behaves as any panel binding: shortcuts.set changes it (empty keys remove it), a same-scope clash is refused unless 'force', export and import carry it, one undo step. A rescan does not break it.",
+      "group": "shortcuts",
+      "id": "shortcuts.bind_plugin",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "cleared": {
+            "type": "array"
+          },
+          "device": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "keys": {
+            "type": "string"
+          },
+          "previous": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "file": {
             "type": "string"
           }
@@ -37464,23 +37629,23 @@
       }
     }
   ],
-  "count": 878,
+  "count": 881,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-055.2/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-k4l1reh3/zene.sock",
-    "version": "0.4.0-alpha.5942+68bed50"
+    "source_socket": "/tmp/zctl-run-hvi6a8le/zene.sock",
+    "version": "0.4.0-alpha.5943+2a7fd9f"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 77,
-    "id_count": 878,
-    "ids_sha256": "60473c71cd63735b5af096bbd2cd1d9a5a096cf4b2fd8855d1333df124ea362a"
+    "id_count": 881,
+    "ids_sha256": "db23b4eb3c157ac6d5ab2de55606bbc82a36da38a6ca29f9bee1d13428646ae9"
   }
 }

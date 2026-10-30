@@ -209,7 +209,9 @@ ListSpec shortcuts()
 		{{QStringLiteral("keys"), QString()}}), act("Reset", "shortcuts.reset", id)};
 	ListExtra resetAll = extra("Reset All", "shortcuts.reset", {}, false);
 	resetAll.confirm = true;
-	out.extras = {extra("Export...", "shortcuts.export"), extra("Import...", "shortcuts.import"), resetAll};
+	// Q050-055.2: a chosen plug-in gets a row of its own once it has a key.
+	out.extras = {extra("Bind a Plug-in...", "shortcuts.bind_plugin"), extra("Export...", "shortcuts.export"),
+		extra("Import...", "shortcuts.import"), resetAll};
 	return out;
 }
 
