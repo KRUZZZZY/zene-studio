@@ -68,10 +68,26 @@ reverted every behavioural hunk; that is recorded below.
   write jail (`feature-check-1.log`). I ran a copy that changes only `ROOT` (to the original's directory) and the
   log directory (`/tmp/q162-fc/logs`): all 8 gates PASS, exit 0 (`feature-check-2.log`). For the same reason,
   `submit_check.py`'s own gates row may FAIL when run from this lane.
-- **Realtime:** the integration adds nothing to the audio thread. The analysis from round 2 still holds: transient
-  analysis runs on the control thread, and the render reads a fixed-size snapshot. TSan does not run on this box.
+- **Realtime:** the integration adds nothing to the audio thread. These audio-thread functions are the accepted
+  patch's, unchanged:
+  - `SamplePlayHandle` construction calls `snapshotTransientRepeat`. It reads one fixed 256-entry table through
+    `PublishedTransients::read` (at most 4 atomic pin attempts, never waiting) plus an atomic rate word, then does
+    arithmetic over the fixed-capacity warp map.
+  - `SamplePlayHandle::play` calls `renderTransientRepeat` / `TransientRepeatRenderer::render`, which is per-frame
+    arithmetic and buffer reads.
+
+  Neither allocates, frees, locks, waits, does I/O or emits a signal. The conflict-side changes (copy constructor,
+  `prepareWarpStretchMode`) run on the control thread. Transient analysis (`clipTransientFrames`, which allocates)
+  runs only there. The clip effects that now follow the transient render are Q050-111's own lock-free path. TSan does
+  not run on this box; the race reasoning is in round 2 below.
 - **Old projects:** unchanged from round 2. `repeat_rate` is written only when it is not the default.
   `ClipWarpPersistenceTest` and `SampleClipWarpModesTest` pass.
+- **Portability:** the resolution adds no API. Both sides' code is already in the accepted patch or the train: C++20
+  as used elsewhere, `std::atomic`, Qt 5.10+ QString API. There is no Qt-6-only call, no `std::filesystem`, no
+  windows.h macro names, and no `min`/`max`/`small`/`near`/`far`/`interface` identifiers. It was not compiled on
+  MSVC, macOS or Qt 5 here.
+- **Canary WARN from submit_check:** the warning lists `control.*` strings and `gate.wav` from the transcript, which
+  are not new command ids. The live snapshot count is unchanged (878 / 77), and `doc-figures-gate.py` passes.
 - **Not run:** the whole ctest suite (per the rules), MSVC/macOS/Qt 5 builds (hosted CI only), and
   `ControlSocketIntegration` (it has a known plugin-module failure unrelated to this unit, see round 2).
 
