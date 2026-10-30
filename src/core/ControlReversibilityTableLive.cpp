@@ -280,7 +280,8 @@ const ReversibilityRow kRows[] = {
 		"ProjectJournal (Clip checkpoint): SampleClip::saveSettings writes the "
 		"attribute and SampleClip::loadSettings re-reads it, so one undo "
 		"restores the previous mode. The recorded inverse is warp.stretch "
-		"re-issued with the before-state's own mode",
+		"re-issued with the before-state's own mode and (Q050-162) its "
+		"repeat rate - the 'repeat_rate' attribute of the same element",
 		""),
 	R("plugin.bypass", RC::TrueInverse, true,
 		"the On/Off control is the Effect's enabled model",

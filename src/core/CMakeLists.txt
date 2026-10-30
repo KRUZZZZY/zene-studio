@@ -1271,6 +1271,7 @@ set(LMMS_SRCS
 	core/UnclaimedElements.cpp
 	core/Clip.cpp
 	core/ClipTransients.cpp
+	core/TransientRepeat.cpp
 	core/ValueBuffer.cpp
 	core/VstSyncController.cpp
 	core/StepRecorder.cpp

@@ -5516,3 +5516,13 @@ src/core/MixHelpers.cpp	new-p9-283: isSilent(const SampleFrame*, int) returns tr
 tests/src/core/AudioBufferTest.cpp	new-p9-283: regressions for MixHelpers::isSilent on normal frames, zero-frame (null and loud pointer) and negative frame counts.
 tests/src/core/GrooveTemplateTest.cpp	# GrooveTemplate target tick arithmetic overflows before clamping
 tests/src/core/DawProjectInterchangeRoundTripTest.cpp	# Extreme tempo-map values are cast to `int` before validation
+include/Clip.h	Q050-162: the base clip's warp state carries the Repeat / Gate interval (one atomic word, TransientRepeatRate).
+src/core/Clip.cpp	Q050-162: copy, save (repeat_rate attribute only when non-default) and reset-on-absence load of the Repeat / Gate interval in the <warp> element.
+include/SampleClip.h	Q050-162: Repeat / Gate rate accessors and the double-buffered transient table analysed on the control thread.
+src/core/SampleClip.cpp	Q050-162: analyse transients when a clip enters Repeat / Gate (and when its audio or window changes) before the mode is published; rate setter.
+include/SamplePlayHandle.h	Q050-162: fixed-size transient-repeat render state snapshotted at handle construction.
+src/core/SamplePlayHandle.cpp	Q050-162: route warped Repeat / Gate clips through the transient renderer instead of a stretcher.
+src/core/CMakeLists.txt	Q050-162: build core/TransientRepeat.cpp.
+tests/CMakeLists.txt	Q050-162: register SampleClipTransientRepeatTest and ControlTransientRepeatTranscript.
+data/manual/index.html	Q050-162: document the Repeat / Gate warp modes and their repeat rate.
+src/gui/clips/SampleClipView.cpp	Q050-162: Reverse announces the direction change through the clip's existing wasReversed signal, so a Repeat / Gate clip re-reads its transients.

@@ -28,6 +28,7 @@
 #include <algorithm>
 #include <array>
 #include <span>
+#include <utility>
 
 #include <QString>
 
@@ -126,12 +127,19 @@ enum class WarpStretchMode
 	Beats = 2,
 	Tones = 3,
 	Texture = 4,
-	Complex = 5
+	Complex = 5,
+	//! Q050-162: transient repeat - each transient segment plays at its own
+	//! rate from its transient and is RETRIGGERED at every repeat interval
+	//! (TransientRepeatRate) until the next transient's slot begins.
+	Repeat = 6,
+	//! Q050-162: transient gate - each segment plays once from its transient
+	//! and its tail is CUT at the first repeat interval.
+	Gate = 7
 };
 
 //! The mode's canonical name — the one clip state reports, the agent command
 //! takes and the project file writes: `re_pitch`, `preserve_pitch`, `beats`,
-//! `tones`, `texture`, `complex`. (Q050-036: the five spec names are the
+//! `tones`, `texture`, `complex`, and (Q050-162) `repeat`, `gate`. (Q050-036: the five spec names are the
 //! canonical vocabulary; `preserve_pitch` names the WSOLA engine.)
 QString warpStretchModeName(WarpStretchMode mode);
 
@@ -141,6 +149,13 @@ QString warpStretchModeName(WarpStretchMode mode);
  *  Complex, the same R3 settings under theirs). False for a name the engine
  *  does not know. */
 bool warpStretchModeFromName(const QString& name, WarpStretchMode* mode);
+
+//! Q050-162: the two modes that fill a warped slot by repeating or gating the
+//! clip's transient segments (include/TransientRepeat.h) instead of stretching.
+constexpr bool warpModeRepeatsTransients(WarpStretchMode mode)
+{
+	return mode == WarpStretchMode::Repeat || mode == WarpStretchMode::Gate;
+}
 
 //! True for every mode that renders a rate change through a pitch-keeping
 //! stretcher — everything but Re-Pitch, whose whole point is that the pitch
@@ -185,6 +200,8 @@ inline QString warpStretchModeName(WarpStretchMode mode)
 	case WarpStretchMode::Texture: return QStringLiteral("texture");
 	case WarpStretchMode::Complex: return QStringLiteral("complex");
 	case WarpStretchMode::PreservePitch: return QStringLiteral("preserve_pitch");
+	case WarpStretchMode::Repeat: return QStringLiteral("repeat");
+	case WarpStretchMode::Gate: return QStringLiteral("gate");
 	case WarpStretchMode::Resample: break;
 	}
 	// The varispeed default under the spec's name; "resample" remains the
@@ -194,23 +211,22 @@ inline QString warpStretchModeName(WarpStretchMode mode)
 
 inline bool warpStretchModeFromName(const QString& name, WarpStretchMode* mode)
 {
-	if (name == QLatin1String("re_pitch") || name == QLatin1String("resample"))
+	// The canonical names, then the legacy aliases every older file may carry:
+	// `resample` (Re-Pitch), `wsola` (PreservePitch) and `rubberband` (Complex).
+	static const std::pair<const char*, WarpStretchMode> names[] = {
+		{"re_pitch", WarpStretchMode::Resample}, {"preserve_pitch", WarpStretchMode::PreservePitch},
+		{"beats", WarpStretchMode::Beats}, {"tones", WarpStretchMode::Tones},
+		{"texture", WarpStretchMode::Texture}, {"complex", WarpStretchMode::Complex},
+		{"repeat", WarpStretchMode::Repeat}, {"gate", WarpStretchMode::Gate},
+		{"resample", WarpStretchMode::Resample}, {"wsola", WarpStretchMode::PreservePitch},
+		{"rubberband", WarpStretchMode::Complex}};
+	for (const auto& [text, value] : names)
 	{
-		*mode = WarpStretchMode::Resample;
-		return true;
-	}
-	if (name == QLatin1String("preserve_pitch") || name == QLatin1String("wsola"))
-	{
-		*mode = WarpStretchMode::PreservePitch;
-		return true;
-	}
-	if (name == QLatin1String("beats")) { *mode = WarpStretchMode::Beats; return true; }
-	if (name == QLatin1String("tones")) { *mode = WarpStretchMode::Tones; return true; }
-	if (name == QLatin1String("texture")) { *mode = WarpStretchMode::Texture; return true; }
-	if (name == QLatin1String("complex") || name == QLatin1String("rubberband"))
-	{
-		*mode = WarpStretchMode::Complex;
-		return true;
+		if (name == QLatin1String(text))
+		{
+			*mode = value;
+			return true;
+		}
 	}
 	return false;
 }

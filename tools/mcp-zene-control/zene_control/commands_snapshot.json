@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-28T09:13:52Z",
+  "captured_at": "2026-10-30T01:59:49Z",
   "commands": [
     {
       "args_schema": {
@@ -35026,6 +35026,9 @@
           "renders_linearly": {
             "type": "boolean"
           },
+          "repeat_rate": {
+            "type": "object"
+          },
           "source_tempo": {
             "type": "number"
           },
@@ -35040,6 +35043,11 @@
           },
           "track": {
             "type": "string"
+          },
+          "transient_count": {
+            "maximum": 256,
+            "minimum": 0,
+            "type": "integer"
           },
           "warped": {
             "type": "boolean"
@@ -35089,6 +35097,9 @@
           "renders_linearly": {
             "type": "boolean"
           },
+          "repeat_rate": {
+            "type": "object"
+          },
           "source_tempo": {
             "type": "number"
           },
@@ -35103,6 +35114,11 @@
           },
           "track": {
             "type": "string"
+          },
+          "transient_count": {
+            "maximum": 256,
+            "minimum": 0,
+            "type": "integer"
           },
           "warped": {
             "type": "boolean"
@@ -35167,6 +35183,9 @@
           "renders_linearly": {
             "type": "boolean"
           },
+          "repeat_rate": {
+            "type": "object"
+          },
           "source_tempo": {
             "type": "number"
           },
@@ -35181,6 +35200,11 @@
           },
           "track": {
             "type": "string"
+          },
+          "transient_count": {
+            "maximum": 256,
+            "minimum": 0,
+            "type": "integer"
           },
           "warped": {
             "type": "boolean"
@@ -35269,6 +35293,9 @@
           "renders_linearly": {
             "type": "boolean"
           },
+          "repeat_rate": {
+            "type": "object"
+          },
           "source_tempo": {
             "type": "number"
           },
@@ -35283,6 +35310,11 @@
           },
           "track": {
             "type": "string"
+          },
+          "transient_count": {
+            "maximum": 256,
+            "minimum": 0,
+            "type": "integer"
           },
           "warped": {
             "type": "boolean"
@@ -35351,6 +35383,9 @@
           "renders_linearly": {
             "type": "boolean"
           },
+          "repeat_rate": {
+            "type": "object"
+          },
           "source_tempo": {
             "type": "number"
           },
@@ -35365,6 +35400,11 @@
           },
           "track": {
             "type": "string"
+          },
+          "transient_count": {
+            "maximum": 256,
+            "minimum": 0,
+            "type": "integer"
           },
           "warped": {
             "type": "boolean"
@@ -35389,10 +35429,26 @@
               "texture",
               "complex",
               "preserve_pitch",
+              "repeat",
+              "gate",
               "resample",
               "rubberband"
             ],
             "type": "string"
+          },
+          "rate_division": {
+            "enum": [
+              "1/1",
+              "1/2",
+              "1/4",
+              "1/8",
+              "1/16",
+              "1/32"
+            ],
+            "type": "string"
+          },
+          "rate_ms": {
+            "type": "number"
           }
         },
         "required": [
@@ -35401,7 +35457,7 @@
         ],
         "type": "object"
       },
-      "description": "Choose how a warped sample clip renders its rate change: 're_pitch' (the default, and what the engine has always done - the rate goes to the resampler and the pitch moves with it, so a 2x warp is an octave up; the old name 'resample' is accepted), 'preserve_pitch' (the same rate is rendered by the WSOLA stretcher, AudioStretcher, at its default parameters: the clip lasts as long as the mapping says and keeps its own pitch), 'tones' (the same WSOLA stretch with its alignment reach doubled to \u00b1256 frames, for monophonic and tonal material), 'texture' (the same stretch with half the grain, for polyphonic and ambient material), or one of the two Rubber Band-backed modes (Q050-036): 'beats' (R3 restricted to its single short window - the crispest timing at some spectral cost) and 'complex' (R3's full multi-resolution settings, the quality the old name 'rubberband' - also accepted - has always rendered). A build without librubberband refuses those two, and a file that asks for one still loads and renders through WSOLA for the pass in which both of the clip's voices are busy. Refused for a clip that renders linearly - with no marker and no source tempo there is no rate change to render. Reversible through the ProjectJournal (Clip checkpoint).",
+      "description": "Choose how a warped sample clip renders its rate change: 're_pitch' (the default, and what the engine has always done - the rate goes to the resampler and the pitch moves with it, so a 2x warp is an octave up; the old name 'resample' is accepted), 'preserve_pitch' (the same rate is rendered by the WSOLA stretcher, AudioStretcher, at its default parameters: the clip lasts as long as the mapping says and keeps its own pitch), 'tones' (the same WSOLA stretch with its alignment reach doubled to \u00b1256 frames, for monophonic and tonal material), 'texture' (the same stretch with half the grain, for polyphonic and ambient material), or one of the two Rubber Band-backed modes (Q050-036): 'beats' (R3 restricted to its single short window - the crispest timing at some spectral cost) and 'complex' (R3's full multi-resolution settings, the quality the old name 'rubberband' - also accepted - has always rendered), or one of the two transient modes (Q050-162): 'repeat' (each transient segment plays at its own pitch and speed from its transient and restarts at every repeat interval until the next transient's slot) and 'gate' (each segment plays once and is cut at the first interval) - both fill the warped span exactly. The interval is 'rate_division' (1/1 .. 1/32 of a whole note, following the project tempo; 1/16 by default) or 'rate_ms' (a free interval, 5 to 2000 ms, that does not follow it); it is kept across mode switches and may be changed with the mode or on its own. A build without librubberband refuses 'beats' and 'complex', and a file that asks for one still loads and renders through WSOLA for the pass in which both of the clip's voices are busy. Refused for a clip that renders linearly - with no marker and no source tempo there is no rate change to render. Reversible through the ProjectJournal (Clip checkpoint).",
       "group": "warp",
       "id": "warp.stretch",
       "mutating": true,
@@ -35431,8 +35487,14 @@
           "previous_mode": {
             "type": "string"
           },
+          "previous_repeat_rate": {
+            "type": "string"
+          },
           "renders_linearly": {
             "type": "boolean"
+          },
+          "repeat_rate": {
+            "type": "object"
           },
           "source_tempo": {
             "type": "number"
@@ -35448,6 +35510,11 @@
           },
           "track": {
             "type": "string"
+          },
+          "transient_count": {
+            "maximum": 256,
+            "minimum": 0,
+            "type": "integer"
           },
           "warped": {
             "type": "boolean"
@@ -37469,11 +37536,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-integrate-Q050-162-4ee5321ffc/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-mvtw6ft4/zene.sock",
-    "version": "0.4.0-alpha.5690+d6c336f"
+    "source_socket": "/tmp/zctl-run-vw89emft/zene.sock",
+    "version": "0.4.0-alpha.5692+4ee5321"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
