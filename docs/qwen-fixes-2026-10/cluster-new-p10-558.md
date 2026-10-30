@@ -28,9 +28,9 @@ constructor), and the callback still returned the original `size`. Measured on t
 | `SIZE_MAX - 8` | 5 (`strlen`) | -9 | true |
 
 So the project stores a truncated state blob while `saveState()` reports a complete save. Fix
-(`ClapHostParams.cpp:249-317` on HEAD): a `StateStream` sink remembers a refused write; the callback checks the
-requested size against what the blob can still hold (`QByteArray::maxSize()` on Qt 6, `INT_MAX` on Qt 5,
-whose `append()` takes an `int`), refuses with `-1` when it does not fit (or when a non-empty write has a null
+(`ClapHostParams.cpp:249-320` on HEAD): a `StateStream` sink remembers a refused write; the callback checks the
+requested size against what the blob can still hold (`QByteArray::maxSize()` on Qt 6.8+, the `qsizetype` maximum
+on earlier Qt 6, and `INT_MAX` on Qt 5, whose `append()` takes an `int`), refuses with `-1` when it does not fit (or when a non-empty write has a null
 buffer), rolls the blob back if `append()` throws `std::bad_alloc`, and `saveState()` returns false and clears
 the blob when a write was refused - a plug-in may ignore the stream answer and return true anyway
 (`clap/stream.h`: `-1` on write error). This is the only caller of the stream; the sibling VST3 state path

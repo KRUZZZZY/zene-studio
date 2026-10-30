@@ -254,13 +254,16 @@ struct StateStream
 	bool failed = false;
 };
 
-//! Largest length QByteArray::append() can be handed on this Qt. Qt 6 has QByteArray::maxSize() (its
-//! qsizetype is 64-bit); Qt 5's append() takes an int, so the bound is the int itself. Both stay inside
-//! what a qsizetype can represent, and neither is a limit a legitimate plug-in state reaches.
+//! Largest length QByteArray::append() can be handed on this Qt. Qt 6.8 added QByteArray::maxSize(); on
+//! earlier Qt 6 releases, bound it by qsizetype's signed maximum. Qt 5's append() takes an int, so the bound
+//! is the int maximum. These bounds stay inside the append length type; append() can still reject a lower
+//! allocation limit, which is handled below.
 constexpr auto maxStateWrite() -> std::uint64_t
 {
-#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
 	return static_cast<std::uint64_t>(QByteArray::maxSize());
+#elif QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+	return static_cast<std::uint64_t>(std::numeric_limits<qsizetype>::max());
 #else
 	return static_cast<std::uint64_t>(std::numeric_limits<int>::max());
 #endif
