@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-29T15:55:04Z",
+  "captured_at": "2026-10-30T03:57:40Z",
   "commands": [
     {
       "args_schema": {
@@ -27794,15 +27794,17 @@
               "cc"
             ],
             "type": "string"
+          },
+          "workflow": {
+            "type": "string"
           }
         },
         "required": [
-          "trigger",
-          "command"
+          "trigger"
         ],
         "type": "object"
       },
-      "description": "Bind a MIDI NOTE or CONTROL CHANGE to a built-in command that needs no arguments, and run it through the registry once per activation. 'trigger' is note (with 'key' 0..127) or cc (with 'controller' 0..127); 'channel' is 0..15 or -1 for any; 'command' is a registered command id whose schema requires no arguments (the control change's value is NOT passed on as one). A note fires on its press and rearms on its release; a control change fires when it leaves zero and rearms at zero, so a sweep is one activation. Replaces a binding on the same control, and a note still bound to the launcher is taken away from it by the same edit (one undo step). Kept in the config file.",
+      "description": "Bind a MIDI NOTE or CONTROL CHANGE to a target that needs no arguments, and run it once per activation: 'command' is a registered command id whose schema requires none, or 'workflow' is the name of a workflow saved in the library in use (shared or with the project - workflow.save), run through workflow.run. 'trigger' is note (with 'key' 0..127) or cc (with 'controller' 0..127); 'channel' is 0..15 or -1 for any. The control change's value is NOT passed on as an argument. A note fires on its press and rearms on its release; a control change fires when it leaves zero and rearms at zero, so a sweep is one activation. A workflow is resolved from the library in use when it fires, so editing it, or keeping workflows with the project, is followed; a name that library no longer holds does nothing. Replaces a binding on the same control, and a note still bound to the launcher is taken away from it by the same edit (one undo step). Kept in the config file.",
       "group": "session",
       "id": "session.bind_command",
       "mutating": true,
@@ -28014,7 +28016,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "The controller's command bindings (what session.bind_command made), and whether a controller is connected.",
+      "description": "The controller's bindings to commands and workflows (what session.bind_command made), each with its target ('command' or 'workflow'), and whether a controller is connected.",
       "group": "session",
       "id": "session.command_bindings",
       "mutating": false,
@@ -29266,6 +29268,9 @@
               "cc"
             ],
             "type": "string"
+          },
+          "workflow": {
+            "type": "string"
           }
         },
         "required": [
@@ -29273,7 +29278,7 @@
         ],
         "type": "object"
       },
-      "description": "Remove the command binding on a note ('trigger' note, 'key', 'channel') or a control change ('trigger' cc, 'controller', 'channel'). One undo step.",
+      "description": "Remove the binding on a note ('trigger' note, 'key', 'channel') or a control change ('trigger' cc, 'controller', 'channel'), whichever target it names - a command or a workflow. One undo step.",
       "group": "session",
       "id": "session.unbind_command",
       "mutating": true,
@@ -37469,11 +37474,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-integrate-Q050-217.2-2a7fd9f9c7/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-k4l1reh3/zene.sock",
-    "version": "0.4.0-alpha.5942+68bed50"
+    "source_socket": "/tmp/zctl-run-5xnysi8k/zene.sock",
+    "version": "0.4.0-alpha.5943+2a7fd9f"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

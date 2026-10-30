@@ -831,6 +831,9 @@ set(LMMS_TESTS
 	# Q050-217.1: a MIDI note or control-change bound to an argument-free built-in command - one
 	# dispatch per activation through the registry, read back, replaced, and undone as one step.
 	src/core/MidiCommandBindingsTest.cpp
+	# Q050-217.2: the same bindings targeting a SAVED WORKFLOW - a note and a CC each run it once
+	# through workflow.run, read back, surviving a config reload and resolving the library in use.
+	src/core/MidiWorkflowBindingsTest.cpp
 	# 0.5.0 L11 / L12: search expressions, collections, track presets, importing tracks, the hand-off folder.
 	src/core/LibraryProjectsTest.cpp
 	# cluster new-p17-271: a collection store write the kernel cuts short is refused, and the store keeps what it had.
@@ -1450,6 +1453,9 @@ set(LMMS_TESTS
 	# Q050-217.1: the Launcher > Controller entries that bind a MIDI control to a built-in command,
 	# driven over the real application (the menu action, the command's own form, Edit > Undo).
 	src/gui/MidiCommandBindingsGuiTest.cpp
+	# Q050-217.2: Launcher > Controller > Bind a Workflow - one entry per saved workflow, its form,
+	# and a live note/CC each running the selected workflow over the real application.
+	src/gui/MidiWorkflowBindingsGuiTest.cpp
 	# 0.5.0 L02 (WF-064): sub-scenes from the grid - select cells, make one, launch it - over the real application.
 	src/gui/SessionSubSceneGridTest.cpp
 	# 0.5.0 L14 (Q050-235): the touch workspace read once at start, and its launcher cells, scene and stop
@@ -3462,6 +3468,7 @@ set_tests_properties(SessionCellPlaybackMenuTest PROPERTIES ENVIRONMENT "QT_QPA_
 set_tests_properties(SessionTransportBarTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PerformViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MidiCommandBindingsGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(MidiWorkflowBindingsGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SessionSubSceneGridTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TouchWorkspaceTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TakeLanesPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -6175,6 +6182,17 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/control-touch-workspace.py
 			$<TARGET_FILE:zene>)
 	set_tests_properties(ControlTouchWorkspace PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
+	# Q050-217.2: a MIDI binding that targets a SAVED WORKFLOW, driven over the socket - the target
+	# stored and read back with whether it resolves, the library in use (shared vs project) followed,
+	# and the binding surviving a real restart of the binary.
+	add_test(NAME ControlWorkflowBindings
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-workflow-bindings.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlWorkflowBindings PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)

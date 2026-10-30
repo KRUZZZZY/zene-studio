@@ -33,6 +33,7 @@
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
+#include "LayoutMenu.h"
 #include "MenuBarExtras.h"
 #include "RecordOptions.h"
 #include "SampleTrack.h"
@@ -145,6 +146,48 @@ void fillRecord(QMenu* menu)
 	cycleEntry(menu, QObject::tr("Previous Take Here"), QStringLiteral("previous"));
 }
 
+//! Q050-217.2: one "Bind the Note..."/"Bind the Control Change..." pair per saved workflow, plus the
+//! list of what is bound. The target's name is fixed, so the form asks only for the note or CC.
+void fillWorkflowBinding(QMenu* menu)
+{
+	clearRebuiltMenu(menu);
+	QStringList names;
+	for (const QJsonValue& value : ControlRegistry::instance()->invoke(QStringLiteral("workflow.list"))
+		.result.value(QStringLiteral("workflows")).toArray())
+	{
+		names.append(value.toObject().value(QStringLiteral("name")).toString());
+	}
+	names.sort();
+	if (names.isEmpty())
+	{
+		QAction* none = menu->addAction(QObject::tr("No Workflows Yet (Workflows > Record a Workflow...)"));
+		none->setEnabled(false);
+		// a line that reports workflow.list's empty answer, like MacroMenu's status lines: it declares
+		// that command so the agent_surface reflection (which sees it once a walk has opened the menu)
+		// resolves it
+		none->setProperty("controlCommand", QStringLiteral("workflow.list"));
+		return;
+	}
+	for (const QString& name : names)
+	{
+		const QString label = QString(name).replace(QLatin1Char('&'), QStringLiteral("&&"));
+		QMenu* one = menu->addMenu(label);
+		// The target AND the trigger kind are fixed, so the form asks only for the number she plays
+		// (and the channel): the same session.bind_command the agent surface and the socket take.
+		const auto bind = [name](const QString& trigger) {
+			return CommandCall{QStringLiteral("session.bind_command"), {{QStringLiteral("workflow"), name},
+				{QStringLiteral("trigger"), trigger}}, {}};
+		};
+		addCommandAction(one, QObject::tr("Bind a Note..."), QStringLiteral("session.bind_command"),
+			[bind] { return bind(QStringLiteral("note")); });
+		addCommandAction(one, QObject::tr("Bind a Control Change..."), QStringLiteral("session.bind_command"),
+			[bind] { return bind(QStringLiteral("cc")); });
+	}
+	menu->addSeparator();
+	addCommandAction(menu, QObject::tr("Workflow and Command Bindings"), QStringLiteral("session.command_bindings"),
+		[] { return CommandCall{QStringLiteral("session.command_bindings"), {}, {}, QString(), false, true}; });
+}
+
 void fillLauncher(QMenu* menu)
 {
 	QList<QAction*> scenes;
@@ -171,6 +214,13 @@ void fillLauncher(QMenu* menu)
 	run(controller, QObject::tr("Unbind a Command..."), QStringLiteral("session.unbind_command"), {}, true);
 	addCommandAction(controller, QObject::tr("Command Bindings"), QStringLiteral("session.command_bindings"),
 		[] { return CommandCall{QStringLiteral("session.command_bindings"), {}, {}, QString(), false, true}; });
+	// Q050-217.2: the same two bind verbs also take a SAVED WORKFLOW as their target. One entry per
+	// workflow in the library in use, each fixing the name the form would otherwise ask for (the same
+	// one-command path the Command entries take), rebuilt as the menu opens so a workflow saved,
+	// renamed or kept with the project is offered as the library is now.
+	QMenu* workflows = controller->addMenu(QObject::tr("Bind a Workflow"));
+	workflows->setObjectName(QStringLiteral("bindWorkflowMenu"));
+	QObject::connect(workflows, &QMenu::aboutToShow, workflows, [workflows] { fillWorkflowBinding(workflows); });
 }
 
 QMenu* install(QMenuBar* bar, const QString& title, const QString& name, void (*fill)(QMenu*))

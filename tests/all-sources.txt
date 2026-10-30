@@ -2895,6 +2895,7 @@ tests/src/core/MidiReconnectTest.cpp
 tests/src/core/MidiRetroCaptureTest.cpp
 tests/src/core/MidiSndioTest.cpp
 tests/src/core/MidiSurfaceInputTest.cpp
+tests/src/core/MidiWorkflowBindingsTest.cpp
 tests/src/core/MissingDevicesPreserveTest.cpp
 tests/src/core/MissingDevicesRound2Test.cpp
 tests/src/core/MixerAbRegressionTest.cpp
@@ -3212,6 +3213,7 @@ tests/src/gui/MidiCommandBindingsGuiTest.cpp
 tests/src/gui/MidiControllerMenuTest.cpp
 tests/src/gui/MidiLearnGuiTest.cpp
 tests/src/gui/MidiReconnectActionTest.cpp
+tests/src/gui/MidiWorkflowBindingsGuiTest.cpp
 tests/src/gui/MixerInsertLatencyTest.cpp
 tests/src/gui/MixerLatencyTextTest.cpp
 tests/src/gui/MixerMeteringTest.cpp

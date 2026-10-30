@@ -457,7 +457,13 @@ row. Launcher &gt; Launch Scene 1-8 can be given keys (Project tools &gt; Custom
 of a MIDI controller to cells and scenes, and binds a note or a control change to a built-in command that needs no
 arguments (Bind a Command to a Note or Control Change..., Unbind a Command... and Command Bindings list them): a
 note runs its command on the press and is ready again when you let go, and a control change runs it once as the
-knob leaves zero and is ready again at zero, so a sweep is one action rather than 127. Launcher &gt; Record What I Played Into a Cell puts what you just played (with Keep Listening on) into a
+knob leaves zero and is ready again at zero, so a sweep is one action rather than 127. Launcher &gt; Controller &gt;
+Bind a Workflow lists every workflow in the library in use; pick one and Bind a Note... or Bind a Control Change...
+to play that workflow from the controller, with the same press/release and sweep rules, so a saved run of commands
+- shared, or kept with the project - is one pad or one knob away. The workflow is looked up when the control is
+moved, so editing it, or switching between the shared and per-project libraries (Workflows &gt; Keep Workflows),
+is followed; if that library no longer has a workflow of that name the binding simply does nothing until it comes
+back, and Workflow and Command Bindings says so. Launcher &gt; Record What I Played Into a Cell puts what you just played (with Keep Listening on) into a
 cell as a new pattern. A Gate cell plays while you hold it. Right-click a cell for its Follow Action Chain (the
 action after it, its chance and timing) and Jump To (move a playing cell inside its clip); right-click a scene to play
 scenes in order or launch a folder's cells together; the grid's menu captures the playing cells as a new scene and keeps
