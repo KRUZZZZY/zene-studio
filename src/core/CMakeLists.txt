@@ -1170,6 +1170,7 @@ set(LMMS_SRCS
 	core/ControlCommandsAudioAnalysis.cpp
 	core/SmfNoteRead.cpp
 	core/ControlCommandsClipImportFile.cpp
+	core/LoopImportWarp.cpp
 	# 0.5.0 W3 L13 / L14: customisation and access.
 	core/JsonFile.cpp
 	core/TrackLooks.cpp

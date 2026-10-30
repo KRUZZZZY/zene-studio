@@ -554,14 +554,14 @@ bool TrackContentWidget::pasteSelection( TimePos clipPos, const QMimeData * md, 
  *
  * \param de the Drop Event to respond to
  */
-bool TrackContentWidget::dropFile( const QMimeData * mime, int laneX )
+bool TrackContentWidget::dropFile( const QMimeData * mime, int laneX, Qt::KeyboardModifiers modifiers )
 {
 	if (!arrangerdrop::carriesFile(mime)) { return false; }
 	const float snapSize = getGUI()->songEditor()->m_editor->getSnapSize();
 	const TimePos tick = m_trackView->trackContainerView()->fixedClips()
 		? TimePos(0)
 		: TimePos(getPosition(laneX)).quantize(snapSize, true);
-	return arrangerdrop::dropFileAndReport(mime, getTrack(), tick);
+	return arrangerdrop::dropFileAndReport(mime, getTrack(), tick, modifiers);
 }
 
 
@@ -573,7 +573,7 @@ void TrackContentWidget::dropEvent( QDropEvent * de )
 
 	if (arrangerdrop::carriesFile(de->mimeData()))
 	{
-		if (dropFile(de->mimeData(), pos.x())) { de->acceptProposedAction(); }
+		if (dropFile(de->mimeData(), pos.x(), arrangerdrop::dropModifiers(de))) { de->acceptProposedAction(); }
 		else { de->ignore(); }
 		return;
 	}

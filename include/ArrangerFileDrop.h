@@ -30,11 +30,15 @@
 #ifndef LMMS_ARRANGER_FILE_DROP_H
 #define LMMS_ARRANGER_FILE_DROP_H
 
+#include <Qt>
 #include <QString>
 
 #include "TimePos.h"
 #include "lmms_export.h"
 
+class QAction;
+class QDropEvent;
+class QMenu;
 class QMimeData;
 
 namespace lmms
@@ -59,11 +63,25 @@ LMMS_EXPORT TimePos tickAtContainerX(const TrackContainerView* view, int x);
 
 /*! Makes a clip of the first local file \a mime carries, at \a tick, on \a track - or on a new track when \a track
  *  is null. Returns whether a clip was made; \a message is what to tell the user either way (empty when the drag held
- *  no local file at all). Any further files in the drag are not imported and the message says so. */
-LMMS_EXPORT bool importDroppedFile(const QMimeData* mime, Track* track, TimePos tick, QString* message = nullptr);
+ *  no local file at all). Any further files in the drag are not imported and the message says so.
+ *  Q050-093: an audio file takes the remembered loop mode (import/loopwarp); Alt held on the drop (\a modifiers)
+ *  takes the other one, for this drop only. The message names the detected tempo and key and what was applied. */
+LMMS_EXPORT bool importDroppedFile(const QMimeData* mime, Track* track, TimePos tick, QString* message = nullptr,
+	Qt::KeyboardModifiers modifiers = Qt::NoModifier);
 
 //! importDroppedFile(), and the answer shown to the user: the status bar and a notice.
-LMMS_EXPORT bool dropFileAndReport(const QMimeData* mime, Track* track, TimePos tick);
+LMMS_EXPORT bool dropFileAndReport(const QMimeData* mime, Track* track, TimePos tick,
+	Qt::KeyboardModifiers modifiers = Qt::NoModifier);
+
+//! Q050-093: one file (a browser's sample drag) imported through clip.import_file the same way, and reported.
+LMMS_EXPORT bool importFileAndReport(const QString& path, Track* track, TimePos tick, Qt::KeyboardModifiers modifiers);
+
+//! The keyboard modifiers a drop was made with (Qt 5 and Qt 6 name the accessor differently).
+LMMS_EXPORT Qt::KeyboardModifiers dropModifiers(const QDropEvent* event);
+
+/*! Q050-093: Edit > Auto-Warp Dropped Loops - the remembered loop mode, checked when dropped loops follow the project
+ *  tempo and key. Toggling it runs settings.set on import/loopwarp, the command an agent sets the preference with. */
+LMMS_EXPORT QAction* addLoopWarpAction(QMenu* menu);
 
 } // namespace arrangerdrop
 
