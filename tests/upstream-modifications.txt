@@ -5555,4 +5555,3 @@ src/gui/CMakeLists.txt	Q050-055.2 (0.5.0 L13): builds gui/ControlCommandsPluginA
 include/ControlWindowCommands.h	Q050-055.2 (0.5.0 L13): declares registerPluginActionCommands.
 src/gui/ControlCommandsWindow.cpp	Q050-055.2 (0.5.0 L13): registers the keyboard's plug-in actions beside the shortcuts.* commands.
 src/gui/CommandLists.cpp	Q050-055.2 (0.5.0 L13): the shortcuts page gains Bind a Plug-in..., which opens shortcuts.bind_plugin's form.
-src/gui/shell/ShellCommandMenus.cpp	Q050-055.2 (0.5.0 L13): Project tools gains a Selected Track submenu (Open Editor, Open First Effect, Load a Plug-in...), each a registered command.

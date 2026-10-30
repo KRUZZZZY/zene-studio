@@ -536,11 +536,6 @@ void populateProject(QMenu* menu)
 	menu->addSeparator();
 	list(menu, "Safe Start...", [] { return CommandLists::safeStart(); });
 	LibraryCommandMenus::populateProject(menu);  // L11 / L12 (W3)
-	// Q050-055.2: what follows the selection, as menu actions - so a key can also be given to them for the whole window.
-	QMenu* selected = menu->addMenu(tr("Selected Track"));
-	add(selected, "Open Editor", "plugin.selected_editor_open", {}, false);
-	add(selected, "Open First Effect", "plugin.selected_editor_open", {{QStringLiteral("device"), QStringLiteral("effect")}}, false);
-	add(selected, "Load a Plug-in...", "plugin.selected_load", {}, true);
 	populateCustomise(menu->addMenu(tr("Customise")));
 }
 
