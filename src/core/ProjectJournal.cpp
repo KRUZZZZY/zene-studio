@@ -111,6 +111,7 @@ bool ProjectJournal::restoreStep( CheckPoint & step, CheckPoint * redo )
 
 void ProjectJournal::undo()
 {
+	const StackChangeNotice stackNotice( this );
 	while( !m_undoCheckPoints.isEmpty() )
 	{
 		CheckPoint c = m_undoCheckPoints.pop();
@@ -154,6 +155,7 @@ void ProjectJournal::undo()
 
 void ProjectJournal::redo()
 {
+	const StackChangeNotice stackNotice( this );
 	m_redoDecline.clear();
 	while( !m_redoCheckPoints.isEmpty() )
 	{
@@ -222,10 +224,16 @@ bool ProjectJournal::canRedo() const
 	return !m_redoCheckPoints.isEmpty();
 }
 
+void ProjectJournal::setStackObserver( std::function<void()> observer )
+{
+	m_stackObserver = std::move( observer );
+}
+
 
 
 void ProjectJournal::addJournalCheckPoint( JournallingObject *jo )
 {
+	const StackChangeNotice stackNotice( this );
 	if( !isJournalling() ) { return; }
 
 	// WF-033: taken before the object's own capture - both are pre-change.
@@ -247,6 +255,7 @@ void ProjectJournal::addJournalCheckPoint( JournallingObject *jo )
 
 void ProjectJournal::addJournalCheckPoint( const QVector<JournallingObject *> &objects )
 {
+	const StackChangeNotice stackNotice( this );
 	if( !isJournalling() ) { return; }
 
 	// One checkpoint, N objects: undo() pops it once and restores all of them,
@@ -276,6 +285,7 @@ void ProjectJournal::addJournalCheckPoint( const QVector<JournallingObject *> &o
 
 void ProjectJournal::addJournalAction( std::function<void()> undoAction, std::function<void()> redoAction )
 {
+	const StackChangeNotice stackNotice( this );
 	if( !isJournalling() || !undoAction ) { return; }
 
 	m_redoCheckPoints.clear();
@@ -327,6 +337,7 @@ jo_id_t ProjectJournal::idFromSave( jo_id_t id )
 
 void ProjectJournal::mergeCheckpointsFrom( int depth )
 {
+	const StackChangeNotice stackNotice( this );
 	if( depth < 0 || depth > m_undoCheckPoints.size() ) { return; }
 	const int excess = m_undoCheckPoints.size() - depth;
 	if( excess <= 1 ) { return; }
@@ -398,6 +409,7 @@ void ProjectJournal::mergeCheckpointsSince( quint64 serial )
 
 void ProjectJournal::clearJournal()
 {
+	const StackChangeNotice stackNotice( this );
 	m_undoCheckPoints.clear();
 	m_redoCheckPoints.clear();
 	// A fresh document starts with a fresh accounting. m_stepSerial is NOT

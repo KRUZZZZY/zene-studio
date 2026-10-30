@@ -40,6 +40,7 @@
 #include <QShortcut>
 #include <QSplitter>
 #include <QStatusBar>
+#include <QThread>
 
 #include "Accessibility.h"
 #include "MenuBarExtras.h"
@@ -282,6 +283,8 @@ MainWindow::~MainWindow()
 	delete getGUI()->noteEditor();
 	delete getGUI()->pianoRoll();
 	delete getGUI()->songEditor();
+	// the journal may outlive this window until Engine::destroy(), so it must not call back into it
+	if( ProjectJournal* journal = Engine::projectJournal() ) { journal->setStackObserver( {} ); }
 	// destroy engine which will do further cleanups etc.
 	Engine::destroy();
 }
@@ -480,6 +483,19 @@ void MainWindow::finalize()
 	applyPersistedRetroCaptureArm();
 
 	connect(edit_menu, SIGNAL(aboutToShow()), this, SLOT(updateUndoRedoButtons()));
+
+	// The stacks also move while the menu is closed: an edit pushes a step, and control.undo or
+	// control.redo unwinds one. A disabled QAction does not fire its shortcut, so Undo and Redo follow
+	// the journal rather than waiting for the menu to open. The journal is GUI-thread only; a change made
+	// on another thread is queued to this one, so the actions are only ever touched here.
+	if( ProjectJournal* journal = Engine::projectJournal() )
+	{
+		journal->setStackObserver( [this]()
+		{
+			if( QThread::currentThread() == thread() ) { updateUndoRedoButtons(); }
+			else { QMetaObject::invokeMethod( this, &MainWindow::updateUndoRedoButtons, Qt::QueuedConnection ); }
+		} );
+	}
 
 	m_viewMenu = new QMenu( this );
 	a11y::announce(m_viewMenu, tr("View"),
@@ -1518,8 +1534,8 @@ void MainWindow::updatePlayPauseIcons()
 
 void MainWindow::updateUndoRedoButtons()
 {
-	// when the edit menu is shown, grey out the undo/redo buttons if there's nothing to undo/redo
-	// else, un-grey them
+	// when the edit menu is shown, and whenever the journal's stacks move (see finalize()), grey out the
+	// undo/redo buttons if there's nothing to undo/redo; else, un-grey them
 	m_undoAction->setEnabled(Engine::projectJournal()->canUndo());
 	m_redoAction->setEnabled(Engine::projectJournal()->canRedo());
 }
