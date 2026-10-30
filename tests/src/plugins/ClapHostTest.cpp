@@ -188,6 +188,7 @@ private slots:
 	void testParameters();
 	void testParameterSetGet();
 	void testStateRoundTrip();
+	void testAnUnrepresentableStateWriteIsAFailedSave();
 	void testFrameCountValidation();
 	void testAudioGain();
 	void testAudioSilenceWhenGainIsZero();
@@ -254,6 +255,7 @@ void ClapHostTest::cleanup()
 	qunsetenv("CLAP_TEST_GAIN_BAD_RANGE");
 	qunsetenv("CLAP_TEST_GAIN_WIDE_RANGE");
 	qunsetenv("CLAP_TEST_GAIN_HUGE_RANGE");
+	qunsetenv("CLAP_TEST_GAIN_HUGE_STATE");
 	qunsetenv("CLAP_TEST_GAIN_NAN_VALUE");
 	m_plugin.setEditorScale(1.0);
 	m_plugin.setEditorWindowSystem(currentPluginWindowSystem());
@@ -338,6 +340,38 @@ void ClapHostTest::testParameterSetGet()
 	QCOMPARE(m_plugin.paramPlain(0xdeadbeefu), 0.0);
 
 	m_plugin.setParamPlain(GainParamId, 1.0);
+}
+
+/*! A plug-in asks clap.state save() for more bytes than a QByteArray can ever hold (SIZE_MAX - 8), and then
+ *  ignores the stream's answer. The host narrowed the uint64 size to qsizetype - which is NEGATIVE for such a
+ *  count - and QByteArray::append() then copied strlen(buffer) bytes, after which the callback reported the
+ *  original size. save() returned true over a blob that was 4 bytes long: a project saved from that state
+ *  silently loses the parameter/state data. The host now refuses a write it cannot represent, and remembers
+ *  the refusal so saveState() fails even though the plug-in lies about success. */
+void lmms::clap::ClapHostTest::testAnUnrepresentableStateWriteIsAFailedSave()
+{
+	qputenv("CLAP_TEST_GAIN_HUGE_STATE", "1");
+	HostedPlugin plugin;
+	QString error;
+	QVERIFY2(plugin.load(QStringLiteral(CLAP_TEST_PLUGIN_PATH), QString::fromLatin1(TestPluginId), &error),
+		qPrintable(error));
+	QVERIFY2(plugin.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+
+	QByteArray state("previous project data");
+	// A save that cannot represent the write reports failure; the blob is observed FIRST, because a
+	// half-written one is the part a caller would otherwise store (saveSettings() keeps any non-empty
+	// QByteArray) - the old host left 4 bytes of truncated state and reported success.
+	const bool saved = plugin.saveState(&state);
+	QVERIFY2(state.isEmpty(),
+		qPrintable(QStringLiteral("a failed save left a %1-byte blob behind").arg(state.size())));
+	QVERIFY2(!saved, "a write too large to represent was reported as a complete save");
+
+	// the same plug-in still saves for real when it asks for a size it can have: the guard is not over-broad
+	qunsetenv("CLAP_TEST_GAIN_HUGE_STATE");
+	QByteArray good;
+	QVERIFY2(plugin.saveState(&good), "a representable write was refused");
+	// Qt 5's qCompare needs one type: compare the length through int, which it and Qt 6 both have.
+	QCOMPARE(static_cast<int>(good.size()), static_cast<int>(sizeof(PluginState)));
 }
 
 void ClapHostTest::testStateRoundTrip()

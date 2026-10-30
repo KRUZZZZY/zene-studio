@@ -357,6 +357,15 @@ static bool gain_state_save(const clap_plugin_t* plugin, const clap_ostream_t* s
 	state.bypass = self->bypass;
 	state.frames_processed = self->frames_processed;
 	state.host_flushes = self->host_flushes;
+	/* CLAP_TEST_GAIN_HUGE_STATE: the plug-in asks the host to write more bytes than any blob can hold
+	   (SIZE_MAX - 8) and then IGNORES the answer, reporting success anyway - exactly the plug-in the host
+	   must not believe. A host that casts the uint64 size to a signed qsizetype appends strlen() of the
+	   buffer instead and still returns "success": the saved project gets a truncated blob. */
+	if (getenv("CLAP_TEST_GAIN_HUGE_STATE") != NULL)
+	{
+		(void)stream->write(stream, &state, (uint64_t)-1 - 8);
+		return true;
+	}
 	return stream->write(stream, &state, sizeof(state)) == (int64_t)sizeof(state);
 }
 
