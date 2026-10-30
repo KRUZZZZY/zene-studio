@@ -35,6 +35,7 @@
 #include <QMenu>
 
 #include "Accessibility.h"
+#include "ControlRegistry.h"
 #include "ControlScaleShared.h"
 #include "DesignTokens.h"
 #include "ItemList.h"
@@ -353,6 +354,14 @@ void NoteEditor::fillScaleMenu(QMenu* menu)
 
 void NoteEditor::readScale()
 {
+	// scale.get_state is refused until the engine is ready, and an editor built at startup asks before
+	// then: leave the query to followScale(), which asks on a later playhead tick once the engine answers.
+	if (!ControlRegistry::isEngineReady())
+	{
+		m_scaleDeferred = true;
+		return;
+	}
+	m_scaleDeferred = false;
 	// The scale context (scale.get_state): the mask both highlights and folds.
 	m_scaleRoot = control::scaleContext().root;  // what followScale() compares against
 	m_scaleSeen = control::scaleContext().scale;

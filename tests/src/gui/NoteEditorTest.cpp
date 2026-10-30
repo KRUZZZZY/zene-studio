@@ -28,6 +28,7 @@
 #include <QImage>
 #include <QJsonArray>
 #include <QPainter>
+#include <QTimer>
 #include <QToolButton>
 #include <QWheelEvent>
 
@@ -674,6 +675,30 @@ private slots:
 		m_editor->setKeepInScale(false);
 		QTest::mouseClick(m_editor->canvas(), Qt::LeftButton, Qt::NoModifier, point(148, 61));
 		QVERIFY(noteAt(m_clip, 144, 61) != nullptr);
+		QVERIFY(invoke(QStringLiteral("scale.set"), {{QStringLiteral("scale"), QString()}}).ok);
+	}
+
+	//! An editor built while the engine is still starting cannot ask for the scale yet (the query is refused);
+	//! it asks on the playhead tick once the engine is ready, so the scale it shows is the context's scale.
+	void scaleIsReadWhenTheEngineIsReadyAfterStartup()
+	{
+		QVERIFY(invoke(QStringLiteral("scale.root_set"), {{QStringLiteral("root"), 0}}).ok);
+		QVERIFY(invoke(QStringLiteral("scale.set"), {{QStringLiteral("scale"), QStringLiteral("Major")}}).ok);
+		const QJsonObject context = invoke(QStringLiteral("scale.get_state")).result;
+		QVERIFY(context.value(QStringLiteral("scale_set")).toBool());
+		const QString expected = context.value(QStringLiteral("root_name")).toString() + QLatin1Char(' ')
+			+ context.value(QStringLiteral("scale")).toString();
+
+		ControlRegistry::setReady(false);
+		auto* starting = new NoteEditor;  // the engine is still starting while the editor is built
+		ControlRegistry::setReady(true);
+		// The editor's playhead timer (33 ms) is where the scale is followed: fire it once, without waiting.
+		QTimer* tick = nullptr;
+		for (QTimer* timer : starting->findChildren<QTimer*>()) { if (timer->interval() == 33) { tick = timer; } }
+		QVERIFY(tick != nullptr);
+		QMetaObject::invokeMethod(tick, "timeout");
+		QCOMPARE(starting->state().scaleName, expected);
+		delete starting;
 		QVERIFY(invoke(QStringLiteral("scale.set"), {{QStringLiteral("scale"), QString()}}).ok);
 	}
 
