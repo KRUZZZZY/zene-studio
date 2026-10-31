@@ -139,8 +139,11 @@ public:
 	//! Stops delivering input to the ports (Q050-488). When it returns, no input
 	//! dispatch is in flight and none can start, so the ports may be destroyed.
 	//! Idempotent. Engine::destroy() calls it before the project's tracks - the
-	//! owners of the ports - are cleared. The base does nothing: a client without
-	//! an input thread of its own has nothing to stop.
+	//! owners of the ports - are cleared. Output keeps working. The base does
+	//! nothing: a client with no input has nothing to stop. Clients with a worker
+	//! join it (MidiAlsaRaw, MidiAlsaSeq); clients called back on a foreign thread
+	//! close a MidiInputGate (MidiJack, MidiWinMM, MidiApple). MidiOss and MidiSndio
+	//! are being retired (Q050-479) and still stop only in their destructors.
 	virtual void stopInput()
 	{
 	}

@@ -498,6 +498,7 @@ set(LMMS_TESTS
 	src/core/MidiLearnThreadTest.cpp
 	src/core/MidiRetroCaptureTest.cpp
 	src/core/MidiOutQueueTest.cpp
+	src/core/MidiInputGateTest.cpp
 	src/core/FrozenTakeHandoffTest.cpp
 	src/core/FrozenTakeRoundTwoTest.cpp
 	src/core/FreezeRegionRepairTest.cpp
@@ -1564,6 +1565,8 @@ if(LMMS_HAVE_ALSA)
 	list(APPEND LMMS_TESTS src/core/AudioAlsaCaptureErrorTest.cpp)
 	# Q050-488: the ALSA raw-MIDI worker is woken and joined on close, never terminated.
 	list(APPEND LMMS_TESTS src/core/MidiAlsaRawShutdownTest.cpp)
+	# Q050-488: the sequencer worker is joined before the project's ports are destroyed.
+	list(APPEND LMMS_TESTS src/core/MidiAlsaSeqShutdownTest.cpp)
 endif()
 
 # The OSS MIDI output guard needs the optional backend and its API.

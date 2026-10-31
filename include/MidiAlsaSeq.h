@@ -76,6 +76,13 @@ public:
 
 	static QString probeDevice();
 
+	//! Joins the sequencer worker. Output queued from then on is sent by removePort()
+	//! and the destructor, on the stopping thread (Q050-488).
+	void stopInput() override
+	{
+		stopWorker();
+	}
+
 
 	inline static QString name()
 	{
@@ -158,6 +165,10 @@ private slots:
 private:
 	void run() override;
 	void processQueuedOutEvent(const MidiOutQueue::Command& command);
+	//! Asks the worker to stop, wakes it out of its poll and joins it. Idempotent.
+	void stopWorker();
+	//! Sends what the output queue holds. Only with no worker left to consume it.
+	void drainOutQueue();
 
 #ifdef LMMS_HAVE_ALSA
 	QMutex m_seqMutex;
@@ -175,7 +186,9 @@ private:
 	int m_queueID;
 	MidiOutQueue m_outQueue;
 
-	volatile bool m_quit;
+	std::atomic_bool m_quit;
+	//! Set after the join: the stopping thread is the output queue's consumer from then on.
+	std::atomic_bool m_workerStopped{false};
 
 	QTimer m_portListUpdateTimer;
 	QStringList m_readablePorts;

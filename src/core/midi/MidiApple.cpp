@@ -233,7 +233,8 @@ void MidiApple::ReadCallback( const MIDIPacketList *pktlist, void *readProcRefCo
 		qDebug("Error: !caller: MidiApple::ReadCallback");
 		return;
 	}
-	caller->HandleReadCallback(pktlist,srcConnRefCon);
+	const MidiInputGate::Scope dispatch(caller->m_inputGate);
+	if (dispatch) { caller->HandleReadCallback(pktlist,srcConnRefCon); }
 }
 
 

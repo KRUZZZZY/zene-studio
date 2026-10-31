@@ -31,6 +31,7 @@
 #ifdef LMMS_BUILD_APPLE
 
 #include "MidiClient.h"
+#include "MidiInputGate.h"
 #include "MidiPort.h"
 #include <CoreMIDI/CoreMIDI.h>
 
@@ -48,6 +49,12 @@ class MidiApple : public QObject, public MidiClient
 public:
 	MidiApple();
 	virtual ~MidiApple();
+
+	//! Refuses later input and waits out a callback in flight (Q050-488).
+	void stopInput() override
+	{
+		m_inputGate.close();
+	}
 
 	inline static QString probeDevice()
 	{
@@ -137,6 +144,7 @@ private:
 	MIDIPacketList createMidiPacketList( const MidiEvent& event );
 
 	MIDIClientRef mClient = 0;
+	MidiInputGate m_inputGate;
 	QMap<QString, MIDIEndpointRef> m_inputDevices;
 	QMap<QString, MIDIEndpointRef> m_outputDevices;
 	QMap<MIDIEndpointRef, MIDIPortRef> m_sourcePortRef;

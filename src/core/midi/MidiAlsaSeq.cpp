@@ -229,24 +229,8 @@ MidiAlsaSeq::MidiAlsaSeq(PipeOnlyForTesting) :
 
 MidiAlsaSeq::~MidiAlsaSeq()
 {
-	if( isRunning() )
-	{
-		m_quit = true;
-		// Join without a deadline. The budget here was EventPollTimeOut*2 (500 ms)
-		// and it is the same defect the engine's own workers had: when the budget
-		// expired the thread was still running, and this object IS a QThread - so
-		// ~QThread destroyed it while its thread ran and Qt answered with
-		//   qFatal("QThread: Destroyed while thread is still running")
-		// i.e. an unconditional SIGABRT during shutdown, blamed on whatever was
-		// closing. Measured: 1 abort in a 3-run suite sweep from
-		// tests/control-shutdown.py under load, with the QFATAL stack naming
-		// Engine::destroy -> ~AudioEngine -> delete m_midiClient -> ~MidiAlsaSeq.
-		// run() leaves its loop within one poll interval of m_quit being set, so
-		// wait() terminates; the trade is the engine workers' trade - a thread
-		// that never returns now blocks the shutdown instead of aborting it.
-		wait();
-
-	}
+	stopWorker();
+	drainOutQueue();
 	if( m_seqHandle != nullptr )
 	{
 		QMutexLocker locker( &m_seqMutex );
@@ -272,6 +256,48 @@ MidiAlsaSeq::~MidiAlsaSeq()
 			close( fd );
 			fd = -1;
 		}
+	}
+}
+
+
+
+
+void MidiAlsaSeq::stopWorker()
+{
+	m_quit = true;
+	if( m_pipe[1] >= 0 )
+	{
+		// The poll set's first entry: the worker returns at once instead of after EventPollTimeOut.
+		// Non-blocking; a full pipe already holds a wake.
+		const char wake = 0;
+		const ssize_t written = ::write( m_pipe[1], &wake, 1 );
+		static_cast<void>( written );
+	}
+	// Join without a deadline. The budget here was EventPollTimeOut*2 (500 ms)
+	// and it is the same defect the engine's own workers had: when the budget
+	// expired the thread was still running, and this object IS a QThread - so
+	// ~QThread destroyed it while its thread ran and Qt answered with
+	//   qFatal("QThread: Destroyed while thread is still running")
+	// i.e. an unconditional SIGABRT during shutdown, blamed on whatever was
+	// closing. Measured: 1 abort in a 3-run suite sweep from
+	// tests/control-shutdown.py under load, with the QFATAL stack naming
+	// Engine::destroy -> ~AudioEngine -> delete m_midiClient -> ~MidiAlsaSeq.
+	// run() leaves its loop within one dispatch of m_quit being set, so
+	// wait() terminates; the trade is the engine workers' trade - a thread
+	// that never returns now blocks the shutdown instead of aborting it.
+	wait();
+	m_workerStopped = true;
+}
+
+
+
+
+void MidiAlsaSeq::drainOutQueue()
+{
+	MidiOutQueue::Command command;
+	while( m_outQueue.pop( command ) )
+	{
+		processQueuedOutEvent( command );
 	}
 }
 
@@ -455,6 +481,11 @@ void MidiAlsaSeq::processQueuedOutEvent(const MidiOutQueue::Command& command)
 
 void MidiAlsaSeq::applyPortMode( MidiPort * _port )
 {
+	// After stopInput() nothing else sends the queue, and a queued event of a port whose
+	// sequencer port is gone is dropped: ~MidiPort disables the port's modes before it
+	// removes it, so here and in removePort() a track's last note-offs still leave first.
+	if( m_workerStopped ) { drainOutQueue(); }
+
 	m_seqMutex.lock();
 
 	// determine port-capabilities
@@ -574,6 +605,8 @@ void MidiAlsaSeq::applyPortName( MidiPort * _port )
 
 void MidiAlsaSeq::removePort( MidiPort * _port )
 {
+	if( m_workerStopped ) { drainOutQueue(); }
+
 	QMutexLocker locker( &m_seqMutex );
 	const auto it = m_portIDs.find( _port );
 	if( it != m_portIDs.end() )
@@ -816,8 +849,9 @@ void MidiAlsaSeq::run()
 
 		// Process one input operation per lock scope. Dispatching below may
 		// re-enter port management, and every path (including continue/error)
-		// must release exactly the lock it acquired.
-		while( true )
+		// must release exactly the lock it acquired. A stop ends the batch, so a
+		// device that never stops sending cannot hold the join back (Q050-488).
+		while( !m_quit )
 		{
 			snd_seq_event_t * ev = nullptr;
 			int pending = 0;

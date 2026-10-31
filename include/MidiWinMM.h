@@ -32,6 +32,7 @@
 #include <mmsystem.h>
 
 #include "MidiClient.h"
+#include "MidiInputGate.h"
 #include "MidiPort.h"
 
 
@@ -48,6 +49,12 @@ class MidiWinMM : public QObject, public MidiClient
 public:
 	MidiWinMM();
 	virtual ~MidiWinMM();
+
+	//! Refuses later input and waits out a callback in flight (Q050-488).
+	void stopInput() override
+	{
+		m_inputGate.close();
+	}
 
 	inline static QString probeDevice()
 	{
@@ -130,6 +137,7 @@ private:
 							DWORD_PTR _param2 );
 	void handleInputEvent( HMIDIIN _hm, DWORD _ev );
 
+	MidiInputGate m_inputGate;
 	QMap<HMIDIIN, QString> m_inputDevices;
 	QMap<HMIDIOUT, QString> m_outputDevices;
 
