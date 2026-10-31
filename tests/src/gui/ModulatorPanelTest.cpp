@@ -334,6 +334,42 @@ private slots:
 		QCOMPARE(panel.removeSelected(), QString());
 	}
 
+	void aStalePerSampleSwitchCannotHitTheNextRoute()
+	{
+		QStringList channels;
+		for (int i = 0; i < 3; ++i)
+		{
+			const int index = Engine::mixer()->createChannel();
+			MixerChannel* channel = Engine::mixer()->mixerChannel(index);
+			channel->m_fxChain.appendEffect(new PickerTestEffect(&channel->m_fxChain));
+			channels.append(control::channelIdOf(channel));
+		}
+
+		ModulatorPanel panel;
+		QCOMPARE(panel.addModulator(QStringLiteral("sine"), 2.0), QString());
+		for (const QString& channel : channels)
+		{
+			QCOMPARE(panel.bind(channel, 0, QStringLiteral("Gain"), 0.25), QString());
+		}
+		panel.selectModulator(panel.modulatorCount() - 1);
+		auto* table = panel.findChild<QTableWidget*>();
+		QVERIFY(table != nullptr);
+		auto* stale = qobject_cast<QCheckBox*>(table->cellWidget(1, 4));
+		QVERIFY(stale != nullptr);
+		const QString id = modulators().last().toObject().value(QStringLiteral("id")).toString();
+		QVERIFY(run(QStringLiteral("modulator.target_remove"),
+			{{QStringLiteral("modulator"), id}, {QStringLiteral("target"), 0}}).ok);
+
+		// Row 1 now belongs to the former third route; the displayed second route must not edit it.
+		stale->click();
+		QVERIFY(!stale->isChecked());
+		const QJsonArray targets = modulators().last().toObject().value(QStringLiteral("targets")).toArray();
+		QCOMPARE(targets.size(), 2);
+		QVERIFY(!targets.at(0).toObject().value(QStringLiteral("per_sample")).toBool());
+		QVERIFY(!targets.at(1).toObject().value(QStringLiteral("per_sample")).toBool());
+		QCOMPARE(panel.removeSelected(), QString());
+	}
+
 	void theWindowCommandOpensIt()
 	{
 		QVERIFY(ControlRegistry::instance()->hasCommand(QStringLiteral("window.modulators")));

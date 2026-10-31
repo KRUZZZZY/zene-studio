@@ -63,7 +63,7 @@ public:
 	QString bind(const QString& channel, int effect, const QString& parameter, double depth);
 	QString unbindRow(int row);
 	//! Does not rebuild the table: the switch that calls this lives in it.
-	QString setRowPerSample(int row, bool perSample);
+	QString setRowPerSample(int row, bool perSample, const QString& modulator, const QJsonObject& expectedRoute);
 	void selectModulator(int row);
 
 private:
@@ -71,7 +71,7 @@ private:
 	//! Show a command's refusal in the status label (and speak it). An empty message clears the label.
 	void say(const QString& message);
 	void showSelected();
-	QWidget* perSampleSwitch(int row, const QString& parameter, bool perSample);
+	QWidget* perSampleSwitch(int row, const QString& modulator, const QJsonObject& route);
 	void fillChannels();
 	void fillEffects();
 	void fillParameters();

@@ -76,6 +76,15 @@ ControlResult run(const char* command, const QJsonObject& args = {})
 
 QString refusal(const ControlResult& result) { return result.ok ? QString() : result.errorMessage; }
 
+bool sameRouteAddress(const QJsonObject& left, const QJsonObject& right)
+{
+	return left.value(QStringLiteral("channel")) == right.value(QStringLiteral("channel"))
+		&& left.value(QStringLiteral("chain")) == right.value(QStringLiteral("chain"))
+		&& left.value(QStringLiteral("effect")) == right.value(QStringLiteral("effect"))
+		&& left.value(QStringLiteral("parameter")) == right.value(QStringLiteral("parameter"))
+		&& left.value(QStringLiteral("track")) == right.value(QStringLiteral("track"));
+}
+
 QPushButton* commandButton(const QString& label, const char* command, QWidget* parent)
 {
 	auto* button = new QPushButton(label, parent);
@@ -309,21 +318,20 @@ void ModulatorPanel::showSelected()
 			{
 				m_targets->setItem(row, column, new QTableWidgetItem(cells.at(column)));
 			}
-			m_targets->setCellWidget(row, PerSampleColumn, perSampleSwitch(row,
-				target.value(QStringLiteral("parameter")).toString(), target.value(QStringLiteral("per_sample")).toBool()));
+			m_targets->setCellWidget(row, PerSampleColumn, perSampleSwitch(row, id, target));
 		}
 	}
 }
 
-QWidget* ModulatorPanel::perSampleSwitch(int row, const QString& parameter, bool perSample)
+QWidget* ModulatorPanel::perSampleSwitch(int row, const QString& modulator, const QJsonObject& route)
 {
 	auto* box = new QCheckBox(m_targets);
-	box->setChecked(perSample);
+	box->setChecked(route.value(QStringLiteral("per_sample")).toBool());
 	box->setProperty("controlCommand", QStringLiteral("modulator.per_sample_set"));
-	box->setAccessibleName(tr("Evaluate %1 per sample").arg(parameter));
+	box->setAccessibleName(tr("Evaluate %1 per sample").arg(route.value(QStringLiteral("parameter")).toString()));
 	box->setToolTip(tr("On: this parameter moves smoothly inside each audio block. Off: it moves once per block."));
-	connect(box, &QCheckBox::clicked, this, [this, box, row](bool checked) {
-		const QString why = setRowPerSample(row, checked);
+	connect(box, &QCheckBox::clicked, this, [this, box, row, modulator, route](bool checked) {
+		const QString why = setRowPerSample(row, checked, modulator, route);
 		say(why);
 		// A refused click must not leave the box showing a value the route does not have.
 		if (!why.isEmpty()) { box->setChecked(!checked); }
@@ -458,10 +466,16 @@ QString ModulatorPanel::unbindRow(int row)
 	return result;
 }
 
-QString ModulatorPanel::setRowPerSample(int row, bool perSample)
+QString ModulatorPanel::setRowPerSample(int row, bool perSample, const QString& modulator,
+	const QJsonObject& expectedRoute)
 {
-	if (selectedId().isEmpty() || row < 0) { return tr("no target is selected"); }
-	return refusal(run("modulator.per_sample_set", {{QStringLiteral("modulator"), selectedId()},
+	if (modulator.isEmpty() || selectedId() != modulator || row < 0) { return tr("no target is selected"); }
+	const QJsonArray targets = modulatorById(modulator).value(QStringLiteral("targets")).toArray();
+	if (row >= targets.size() || !sameRouteAddress(targets.at(row).toObject(), expectedRoute))
+	{
+		return tr("modulation routes changed; refresh the panel and try again");
+	}
+	return refusal(run("modulator.per_sample_set", {{QStringLiteral("modulator"), modulator},
 		{QStringLiteral("target"), row}, {QStringLiteral("per_sample"), perSample}}));
 }
 
