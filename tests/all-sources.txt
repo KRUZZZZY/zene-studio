@@ -3289,6 +3289,7 @@ tests/src/gui/TrackAddRoutingTest.cpp
 tests/src/gui/TrackFolderMenuTest.cpp
 tests/src/gui/TrackIconsLevelBarTest.cpp
 tests/src/gui/TrackRenderMenuTest.cpp
+tests/src/gui/TrackRouteDropTest.cpp
 tests/src/gui/TrackViewDeferredLifetimeTest.cpp
 tests/src/gui/UndoHistoryPanelTest.cpp
 tests/src/gui/VcaStripLifetimeTest.cpp

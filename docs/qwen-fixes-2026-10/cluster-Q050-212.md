@@ -30,14 +30,14 @@ only: the local build is Qt 6.
 
 Logs: `~/.local/share/zene-bunny-fix/qwen/runs/Q050-212.r2/logs`.
 
-| Review point | Test (`TrackAddRoutingTest::`) | Exit (reversed) | Exit (restored) |
+| Review point | Test | Exit (reversed) | Exit (restored) |
 |---|---|---|---|
-| File and preset drops on the arranger assign a channel | `droppingAFileOrPresetOnTheArrangerFollowsThePreference` (real drag-enter and drop events, on and off) | 8 (`test-5-reverted`) | 0 (`test-6-restored`) |
-| Send to new SlicerT instance assigns, in the song only | `sendingASampleToSlicerTFollowsThePreferenceInTheSongOnly` (real browser context menu, both entries) | 8 | 0 |
-| Route away, rename, route back: names meet in one undo step | `routedBackAfterARenameTheChannelTakesTheNameInTheRoutingStep` (command and model write, depth +1, undo, redo, reopen) | 8 | 0 |
+| File and preset drops on the arranger assign a channel | `TrackRouteDropTest::droppingAFileOrPresetOnTheArrangerFollowsThePreference` (real drag-enter and drop events, on and off) | 8 (`test-11-reverted`) | 0 (`test-12-restored`) |
+| Send to new SlicerT instance assigns, in the song only | `TrackRouteDropTest::sendingASampleToSlicerTFollowsThePreferenceInTheSongOnly` (real browser context menu, both entries) | 8 | 0 |
+| Route away, rename, route back: names meet in one undo step | `TrackRouteDropTest::routedBackAfterARenameTheChannelTakesTheNameInTheRoutingStep` (command and model write, depth +1, undo, redo, reopen) | 8 | 0 |
 
 The reversal removed this round's hunks in `FileBrowser.cpp`, `TrackContainerView.cpp`, `InstrumentTrack.cpp` and `SampleTrack.cpp`;
-exactly those 3 of 19 cases failed. The reconcile is called from each track type's route change, so the header number and
+exactly the 3 data cases of `TrackRouteDropTest` failed; `TrackAddRoutingTest` stayed green on the same reversal (`test-5-reverted` had the cases in one file: 3 of 19 failed). The reconcile is called from each track type's route change, so the header number and
 track menu are covered as well as `track.set_mixer_channel`. Only the command and a model write were driven, not those widgets.
 
 Neighbours (`test-7-neighbours`, `test-8`): `ControlCommandsSnapshot`, `ReversibilityContractTest`, `ReversibilityUndoTest`, `TrackFolderMenuTest`,
@@ -53,6 +53,17 @@ Build note: the session's ccache temp directory is outside the write jail, so bu
 Commit trailers name Claude Sonnet 5.5 because the brief requires that line; this round was run by Claude Opus 5.5.
 
 ## Self-check
+
+Round 2 answers. The round 1 answers below stand for the rest of the unit.
+
+- **Completion check:** the unmodified scripts cannot write `zene-feat-q050-212-feature-check` beside the worktree in this write jail
+  (`PermissionError`, `feature-check-1`). They were run from `/tmp` copies differing only in that log path; results are in the final logs named below.
+- **Fails reversed, passes restored?** Yes: `TrackRouteDropTest` build 0, exit 8 reversed (`test-11-reverted`); build 0, exit 0 restored with `TrackAddRoutingTest` (`test-12-restored`).
+- **One undo step?** Yes: `undo_depth` rises by 1 on route-back through the command and through a model write, and undo and redo restore the route and the
+  channel's name together. The drop and SlicerT paths have no undo step, like the other Browser opens (Known limits). No command class changed: `track.set_mixer_channel` stays `true_inverse`, and its reply names `control.undo` when a name was reconciled.
+- **Audio thread?** The new call sits in the route-change slot. It returns at once off the track's own thread, so a change on the render thread touches nothing. Reasoned: TSan does not run here.
+- **Old projects?** A load runs with journalling off and `isLoadingProject` set, so the reconcile does nothing; no format change this round; `MixerRoutingBackwardCompatTest` exit 0.
+- **Portability?** Reasoned, not built: local build is Qt 6. The new test uses only `QDropEvent(QPointF, ...)`, `QDragEnterEvent(QPoint, ...)` and `QMimeData::removeFormat`, all in Qt 5.15; no forbidden identifiers added.
 
 Completion check: `submit_check.py` and `feature_check.py` write a log folder beside the worktree, which this session's write
 jail refuses (`PermissionError`, `feature-check-1`). They were run from `/tmp` copies differing only in that log path:
