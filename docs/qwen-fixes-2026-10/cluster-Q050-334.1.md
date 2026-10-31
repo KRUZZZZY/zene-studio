@@ -5,6 +5,26 @@ IMPLEMENTED
 Logs: `~/.local/share/zene-bunny-fix/qwen/runs/Q050-334.1.r1/logs`, and `.r2/logs` for round 2. Design, wire contract and
 limits: `docs/050-features/Q050-334.1.md`.
 
+## Round 3
+
+Logs: `~/.local/share/zene-bunny-fix/qwen/runs/Q050-334.1.r3/logs`.
+
+- **The blocking review point is fixed.** Skipped event lines now share one monotonic reply deadline
+  (`tools/mcp-zene-control/zene_control/protocol.py`, `_read_reply`). This is the round 2 QA fix `a0d29643ed`, re-applied.
+  `test_event_lines_do_not_reset_the_reply_deadline` uses a fake clock. It exits 1 with the old `protocol.py`
+  (`py-rev.log`) and passes with the fix. `test_wire_client` runs 16 tests, exit 0 (`py-1.log`).
+- **Why the QA fix was dropped: not the fix.** `ControlSocketIntegration` failed with
+  `plugin.list is not broken down by format: {'ladspa': 10}`. The test needs native plug-in modules, and this tree had none
+  built. I reproduced the same failure here with only `zene` built (exit 8, `test-1.log`). After building `tripleoscillator`,
+  `amplifier`, `ladspaeffect`, `lv2effect` and `lv2instrument`, it exits 0 with no source change (`test-4.log`). The test
+  has no build dependency on those modules, so a tree with only `zene` built will fail it the same way. This unit leaves
+  that as it is.
+- **Focused tests:** all 12 from the review pass, exit 0 (`test-5.log`).
+- **Limits of this sandbox.** `ccache-bunny` points at a temp directory this run cannot write, so builds used
+  `CCACHE_TEMPDIR=/tmp/q334-ccache-tmp`. `feature_check.py` cannot write its logs to the sibling `-feature-check` directory
+  here, and `submit_check.py` reports its gates row as FAIL for that reason (`gates-1.log` has the `PermissionError`). I ran
+  an unedited-logic copy with only the log path changed, in `/tmp`: every gate PASS, exit 0 (`gates-2.log`).
+
 ## Round 2
 
 The pre-review check failed on complexity: two new test functions in `tests/control-project-events.py` were over target
@@ -21,6 +41,9 @@ PASS (`r2/gates-2.log`).
 | Delivery is bounded; overflow and disconnect are detectable; clients reread and resume without claiming missed events | same test (`check_overflow_and_recovery`, `check_disconnect_and_recovery`) and `ctest -R '^ControlEventHubTest$'` (queue count and byte bounds, overflow notice, seq counting with no subscribers) | `test-rest.log` | 0 |
 
 ## Self-check
+
+- **Round 3 reversal:** the new client test exits 1 on the old `protocol.py` and 0 on the fix (see Round 3). Only
+  Python changed this round, so the C++ reversal below was not repeated.
 
 - **Each new test fails with the product change reverted, passes restored.** `git diff HEAD~1 HEAD -- src include` reversed,
   rebuilt: `zene` built (exit 0), `ControlProjectEvents` exit 8 (`no command 'events.subscribe'`, `test-rev-sock.log`),
