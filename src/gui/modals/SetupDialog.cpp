@@ -1000,9 +1000,12 @@ void SetupDialog::accept()
 	QDialog::accept();
 
 	// Q050-212: the one setting of this dialog an agent's own settings.set is the path for, so the two cannot differ.
-	ControlRegistry::instance()->invoke(QStringLiteral("settings.set"),
-		{{QStringLiteral("key"), QStringLiteral("app/autotrackchannel")},
-			{QStringLiteral("value"), QString::number(m_autoTrackChannel)}});
+	if (m_autoTrackChannel != (ConfigManager::inst()->value("app", "autotrackchannel", "0").toInt() != 0))
+	{
+		ControlRegistry::instance()->invoke(QStringLiteral("settings.set"),
+			{{QStringLiteral("key"), QStringLiteral("app/autotrackchannel")},
+				{QStringLiteral("value"), QString::number(m_autoTrackChannel)}});
+	}
 	ConfigManager::inst()->setValue("tooltips", "disabled",
 					QString::number(!m_tooltips));
 	ConfigManager::inst()->setValue("ui", "displaywaveform",

@@ -33,7 +33,7 @@ namespace lmms::gui
 
 /*! Rebuilds @a menu: Instrument Track and Sample Track, each listing where the new track plays (the mixer's regular
  *  channels as they are now, and the default), and Add Tracks to New Bus... Every entry dispatches track.add or
- *  track.add_to_new_bus. Exposed for the test. */
+ *  track.add_to_new_bus. */
 void populateAddTrackMenu(QMenu* menu);
 
 //! The toolbar button holding that menu, rebuilt each time it opens.

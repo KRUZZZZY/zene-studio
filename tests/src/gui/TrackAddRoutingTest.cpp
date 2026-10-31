@@ -36,7 +36,6 @@
 #include <QToolBar>
 #include <QToolButton>
 
-#include "AddTrackMenu.h"
 #include "ConfigManager.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
