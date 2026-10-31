@@ -575,6 +575,21 @@ by you alone); anything connected to it can do whatever the menus can - save, re
 you trust. A controller can drive the remote-control pages (eight knobs following the selected device), a Mackie
 Control surface, or any parameter through MIDI learn. window.note_editor_set opens a clip in the note editor and sets its tool and view; window.get_state's note_editor reports the active tool and the same zoom, row height and visible top and bottom key.</p>
 
+<p id="project-events"><b>Following project changes from another program.</b> A program connected to the control
+socket can keep its own view of the open project current without polling. <code>events.subscribe</code> makes that
+connection receive one line for each change to the project, whoever made it: another program, a script, or you in the
+interface, including undo, redo and opening or starting a project. Each line says what changed (the command and its
+arguments when a command made it) and carries a number, <code>seq</code>, that rises by one with every change;
+<code>events.unsubscribe</code> stops the lines. Zene never waits for a slow program and never stores more than a limited
+number of lines for it (256 by default, at most 4096 and 1 MiB): a program that falls behind gets the lines already held,
+then one <code>events_overflow</code> line saying which changes it did not receive, and its subscription ends. After
+that, or after losing the connection, it should subscribe again and then read the project again
+(<code>project.get_state</code> and the other read commands); missed changes are never sent later. The <code>seq</code> a new subscription reports
+tells it whether it missed anything while away. Subscribing changes nothing in the project, is not an undo step and is
+not saved. An interface edit is reported when it leaves an undo step; the few interface settings that leave none (such
+as a window's position) are not project changes and make no line. The commands are for programs on the socket: over the
+MCP bridge the lines are skipped, because a tool call cannot receive them.</p>
+
 <p id="controller-scripts"><b>Controller scripts (Customise &gt; Controller Scripts).</b> A control-surface script is a
 Lua file that stays loaded and answers a MIDI controller: Start Script... (<code>controller.script_start</code>) takes a
 name, the file, and the MIDI input and output to bind; every event from the input calls the script's
