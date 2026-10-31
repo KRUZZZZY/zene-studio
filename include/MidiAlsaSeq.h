@@ -57,6 +57,12 @@ class MidiAlsaSeq : public QThread, public MidiClient
 public:
 	MidiAlsaSeq();
 	~MidiAlsaSeq() override;
+	//! Joins the sequencer worker. Output queued from then on is sent by applyPortMode(),
+	//! removePort() and the destructor, on the stopping thread (Q050-488).
+	void stopInput() override
+	{
+		stopWorker();
+	}
 #ifdef LMMS_TESTING
 	struct PipeOnlyForTesting {};
 	explicit MidiAlsaSeq(PipeOnlyForTesting);
@@ -75,13 +81,6 @@ public:
 #endif // LMMS_TESTING
 
 	static QString probeDevice();
-
-	//! Joins the sequencer worker. Output queued from then on is sent by removePort()
-	//! and the destructor, on the stopping thread (Q050-488).
-	void stopInput() override
-	{
-		stopWorker();
-	}
 
 
 	inline static QString name()

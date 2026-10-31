@@ -495,10 +495,10 @@ set(LMMS_TESTS
 	# unnamed raw-client stream is still followed while no source is chosen, and a
 	# name the follower cannot hold is refused invalid_args.
 	src/core/MidiClockSourceTest.cpp
+	src/core/MidiInputGateTest.cpp
 	src/core/MidiLearnThreadTest.cpp
 	src/core/MidiRetroCaptureTest.cpp
 	src/core/MidiOutQueueTest.cpp
-	src/core/MidiInputGateTest.cpp
 	src/core/FrozenTakeHandoffTest.cpp
 	src/core/FrozenTakeRoundTwoTest.cpp
 	src/core/FreezeRegionRepairTest.cpp
