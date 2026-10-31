@@ -122,7 +122,8 @@ private slots:
 		const QStringList mutating = {
 			QStringLiteral("modulator.create"), QStringLiteral("modulator.remove"),
 			QStringLiteral("modulator.rate_set"), QStringLiteral("modulator.target_set"),
-			QStringLiteral("modulator.depth_set"), QStringLiteral("modulator.target_remove"),
+			QStringLiteral("modulator.depth_set"), QStringLiteral("modulator.per_sample_set"),
+			QStringLiteral("modulator.target_remove"),
 			QStringLiteral("note.expression_set"), QStringLiteral("note.expression_clear")};
 		const QStringList all = mutating
 			+ QStringList{QStringLiteral("modulator.get_state"),
@@ -242,6 +243,62 @@ private slots:
 		QCOMPARE(valueOf(pan), 40.0f);
 		evidence("set-of-parameters",
 			QStringLiteral("one depth 0.2 moved 0..100 by 20 and -100..100 by 40"));
+	}
+
+	//! Q050-164: per_sample_set changes how the route is evaluated, right away, keeps its depth and
+	//! base, is one undo step each way, and a repeated value records nothing.
+	void perSampleSetSwitchesEvaluationAndIsOneUndoStep()
+	{
+		FloatModel* const gain = gainModel();
+		QVERIFY(gain != nullptr);
+		gain->setValue(30.0f, false);
+		QVERIFY(run(QStringLiteral("modulator.create"),
+			{{QStringLiteral("name"), QStringLiteral("Fast")}, {QStringLiteral("rate"), 20.0}}).ok);
+		QVERIFY(run(QStringLiteral("modulator.target_set"),
+			targetArgs(QStringLiteral("modulator-0"), "Gain", 0.1)).ok);
+		const float base = runtime().entries[0].base;
+		const auto setSwitch = [](const QJsonValue& value) {
+			return run(QStringLiteral("modulator.per_sample_set"),
+				{{QStringLiteral("modulator"), QStringLiteral("modulator-0")},
+					{QStringLiteral("target"), 0}, {QStringLiteral("per_sample"), value}});
+		};
+		const auto reported = [] {
+			return run(QStringLiteral("modulator.get_state")).result.value(QStringLiteral("modulators")).toArray()
+				.at(0).toObject().value(QStringLiteral("targets")).toArray()
+				.at(0).toObject().value(QStringLiteral("per_sample")).toBool();
+		};
+		const auto rendersARamp = [gain] {
+			AutomatableModel::incrementPeriodCounter();
+			applyModulationBlock(runtime(), 0.013, ModulationBlock{256, 44100});
+			return gain->automationRamp() != nullptr;
+		};
+		QVERIFY(!reported());
+		QVERIFY(!rendersARamp());
+
+		const ControlResult on = setSwitch(true);
+		QVERIFY2(on.ok, qPrintable(on.errorMessage));
+		QVERIFY(reported());
+		QVERIFY(rendersARamp());
+		QCOMPARE(runtime().entries[0].depth, 0.1f);
+		QCOMPARE(runtime().entries[0].base, base);
+
+		// Asking for what it already is changes nothing and adds no undo step.
+		QVERIFY(setSwitch(true).ok);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(!reported());
+		QVERIFY(!rendersARamp());
+		QVERIFY(run(QStringLiteral("control.redo")).ok);
+		QVERIFY(reported());
+		QVERIFY(rendersARamp());
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(layer().modulator(0)->routeCount(), 1);  // the undo took the switch, not the bind
+
+		QVERIFY(!setSwitch(QStringLiteral("yes")).ok);
+		QCOMPARE(run(QStringLiteral("modulator.per_sample_set"),
+			{{QStringLiteral("modulator"), QStringLiteral("modulator-0")},
+				{QStringLiteral("target"), 7}, {QStringLiteral("per_sample"), true}}).errorKind,
+			ControlErrorKind::NotFound);
+		QVERIFY(!reported());
 	}
 
 	//! depth_set changes the amount and KEEPS the base; rate_set switching the
@@ -504,7 +561,8 @@ private slots:
 		const QStringList action = {
 			QStringLiteral("modulator.create"), QStringLiteral("modulator.remove"),
 			QStringLiteral("modulator.rate_set"), QStringLiteral("modulator.target_set"),
-			QStringLiteral("modulator.depth_set"), QStringLiteral("modulator.target_remove")};
+			QStringLiteral("modulator.depth_set"), QStringLiteral("modulator.per_sample_set"),
+			QStringLiteral("modulator.target_remove")};
 		for (const QString& id : action)
 		{
 			const control::ReversibilityEntry* row = contractRow(id);

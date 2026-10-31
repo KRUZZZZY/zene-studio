@@ -1095,8 +1095,10 @@ config lists back) and one `not_mutating` (`session.command_bindings`, a read) -
 
 **M0 merge train 22** (`050/m0-train-22`, 2026-10-28, automatic): `ReversibilityContractTest` on the merged tree measures `rows=887 true_inverse=434 snapshot=42 irreversible=25 not_mutating=386`.
 
+**Q050-164** (per-sample switch in the Modulators panel, 2026-10-31): `modulator.per_sample_set` adds one `true_inverse` row - `rows=888 true_inverse=435 snapshot=42 irreversible=25 not_mutating=386`.
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=887 true_inverse=434 snapshot=42 irreversible=25 not_mutating=386
+     measured: rows=888 true_inverse=435 snapshot=42 irreversible=25 not_mutating=386
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5

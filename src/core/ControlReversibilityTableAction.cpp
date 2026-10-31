@@ -414,6 +414,13 @@ const ReversibilityRow kActionRows[] = {
 		"back through ModulationLayer::setDepth. The transaction's before-state "
 		"holds the previous depth",
 		""),
+	R("modulator.per_sample_set", RC::TrueInverse, true,
+		"the switch is a flag in the layer, not a model value: nothing the journal "
+		"could checkpoint changes, and the route's depth and captured base are kept",
+		"action checkpoint: the recorded undo step writes the previous switch back "
+		"through ModulationLayer::setPerSample and republishes the route. The "
+		"transaction's before-state holds the previous switch",
+		""),
 	R("modulator.target_remove", RC::TrueInverse, true,
 		"a removed route has no live object behind it",
 		"action checkpoint: the recorded undo step re-inserts the captured "

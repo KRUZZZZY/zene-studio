@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-29T15:55:04Z",
+  "captured_at": "2026-10-31T09:22:24Z",
   "commands": [
     {
       "args_schema": {
@@ -15177,6 +15177,70 @@
           },
           "per_note": {
             "type": "boolean"
+          },
+          "target_count": {
+            "type": "integer"
+          },
+          "target_index": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "modulator": {
+            "type": "string"
+          },
+          "per_sample": {
+            "type": "boolean"
+          },
+          "target": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "modulator",
+          "target",
+          "per_sample"
+        ],
+        "type": "object"
+      },
+      "description": "Switch one bound route's per-sample evaluation. True evaluates it INSIDE each block (a ramp read per sample, so a fast LFO does not zipper); false moves it once per block. The route's depth and base are kept; modulator.get_state reports the value as the target's 'per_sample'. Reversible through the ProjectJournal.",
+      "group": "modulator",
+      "id": "modulator.per_sample_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "driving": {
+            "type": "integer"
+          },
+          "engine_active": {
+            "type": "boolean"
+          },
+          "max_modulators": {
+            "type": "integer"
+          },
+          "max_targets_per_modulator": {
+            "type": "integer"
+          },
+          "modulator": {
+            "type": "string"
+          },
+          "modulator_count": {
+            "type": "integer"
+          },
+          "modulators": {
+            "type": "array"
+          },
+          "removed": {
+            "type": "object"
           },
           "target_count": {
             "type": "integer"
@@ -37464,23 +37528,23 @@
       }
     }
   ],
-  "count": 878,
+  "count": 879,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-164/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-k4l1reh3/zene.sock",
-    "version": "0.4.0-alpha.5942+68bed50"
+    "source_socket": "/tmp/zctl-run-8oz18zvf/zene.sock",
+    "version": "0.4.0-alpha.5943+2a7fd9f"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 77,
-    "id_count": 878,
-    "ids_sha256": "60473c71cd63735b5af096bbd2cd1d9a5a096cf4b2fd8855d1333df124ea362a"
+    "id_count": 879,
+    "ids_sha256": "e2d62efc036a780a8177b361ae6b51ad3e340b212c40e0d3ad36a8878dc3cca9"
   }
 }

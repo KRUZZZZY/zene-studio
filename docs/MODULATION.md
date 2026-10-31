@@ -182,6 +182,7 @@ parameter= depth=/>` per route.
 | `modulator.rate_set` | `true_inverse` (action checkpoint) | the source (shape/rate/phase/unipolar/active) as one object; `active:false` hands the targets back |
 | `modulator.target_set` | `true_inverse` (action checkpoint) | binds one parameter; refused at bind time if it does not resolve or is already driven |
 | `modulator.depth_set` | `true_inverse` (action checkpoint) | the amount only; the base is deliberately not re-read |
+| `modulator.per_sample_set` | `true_inverse` (action checkpoint) | one route's per-sample switch (Modulators panel, **Per sample**); depth and base are kept |
 | `modulator.target_remove` | `true_inverse` (action checkpoint) | unbinds and hands the parameter back |
 | `note.expression_set` | `true_inverse` (MidiClip checkpoint) | pitch/pressure/timbre; an axis the call omits keeps its value |
 | `note.expression_get` | `not_mutating` | one note, or every note of a clip that carries expression |
@@ -204,7 +205,7 @@ can each leave the source in a state no caller asked for.
 | `include/ModulationLayer.h`, `src/core/ModulationLayer.cpp` | the layer, the LFO arithmetic, the runtime and its publisher, the persistence, the per-block application |
 | `include/ControlModulationSupport.h`, `src/core/ControlModulationSupport.cpp` | the target resolver, the ids and the JSON shapes the group shares |
 | `src/core/ControlCommandsModulator.cpp` | `get_state` / `create` / `remove` / `rate_set` |
-| `src/core/ControlCommandsModulatorRoutes.cpp` | `target_set` / `depth_set` / `target_remove` |
+| `src/core/ControlCommandsModulatorRoutes.cpp` | `target_set` / `depth_set` / `per_sample_set` / `target_remove` |
 | `src/core/ControlCommandsNoteExpression.cpp` | the three `note.expression.*` ids |
 | `tests/src/core/ModulationTestSupport.h` | the helpers the four test files share (one definition, the `RackTestSupport.h` rule) |
 | `tests/src/core/ModulationLayerValueTest.cpp` | the pure half: the LFO arithmetic, the source validation, the layer's bounds - no Engine at all |
