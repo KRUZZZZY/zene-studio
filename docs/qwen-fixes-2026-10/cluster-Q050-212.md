@@ -26,6 +26,32 @@ Not run: the whole ctest suite and `run-all-gates.sh` (the brief forbids the sui
 Not tested: the `src/core/main.cpp` readiness fix (see the feature doc). Hosted CI not run, so Qt 5.15 and MSVC are reasoned
 only: the local build is Qt 6.
 
+## Round 2 (review round 1 asked for two changes)
+
+Logs: `~/.local/share/zene-bunny-fix/qwen/runs/Q050-212.r2/logs`.
+
+| Review point | Test (`TrackAddRoutingTest::`) | Exit (reversed) | Exit (restored) |
+|---|---|---|---|
+| File and preset drops on the arranger assign a channel | `droppingAFileOrPresetOnTheArrangerFollowsThePreference` (real drag-enter and drop events, on and off) | 8 (`test-5-reverted`) | 0 (`test-6-restored`) |
+| Send to new SlicerT instance assigns, in the song only | `sendingASampleToSlicerTFollowsThePreferenceInTheSongOnly` (real browser context menu, both entries) | 8 | 0 |
+| Route away, rename, route back: names meet in one undo step | `routedBackAfterARenameTheChannelTakesTheNameInTheRoutingStep` (command and model write, depth +1, undo, redo, reopen) | 8 | 0 |
+
+The reversal removed this round's hunks in `FileBrowser.cpp`, `TrackContainerView.cpp`, `InstrumentTrack.cpp` and `SampleTrack.cpp`;
+exactly those 3 of 19 cases failed. The reconcile is called from each track type's route change, so the header number and
+track menu are covered as well as `track.set_mixer_channel`. Only the command and a model write were driven, not those widgets.
+
+Neighbours (`test-7-neighbours`, `test-8`): `ControlCommandsSnapshot`, `ReversibilityContractTest`, `ReversibilityUndoTest`, `TrackFolderMenuTest`,
+`StableTrackIdsTest`, `MixerRoutingBackwardCompatTest`, `ControlRoutingCommands`, `ArrangerFileDropTest`, `BrowserDragUrlTest` passed.
+`ControlEditCommandsTest` exit 8 on `trackSetArmManyReportsOnlyTheTracksItChanged` only: its take file under `~/Documents` is
+refused by this session's write jail, the same failure as round 1. Not re-run outside the jail.
+
+Found, not fixed: a browser drag carries a URL, so a preset drag on the empty arranger goes to `clip.import_file` and is
+probably refused (read, not run; feature doc, Known limits). It predates this unit. The container's preset branch is reached
+in the test by the StringPair payload alone.
+
+Build note: the session's ccache temp directory is outside the write jail, so builds used `CCACHE_TEMPDIR=/tmp/ccache-q212`.
+Commit trailers name Claude Sonnet 5.5 because the brief requires that line; this round was run by Claude Opus 5.5.
+
 ## Self-check
 
 Completion check: `submit_check.py` and `feature_check.py` write a log folder beside the worktree, which this session's write
