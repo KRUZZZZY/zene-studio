@@ -16,6 +16,8 @@
 
 #include <clap/clap.h>
 
+#include "clap-test-gesture.h"
+
 #define TEST_PLUGIN_ID "org.lmms.test.clap-gain"
 #define TEST_PLUGIN_MAGIC 0x4C4D4741u /* "LMGA" */
 /* Bump when the state layout below changes; the host stores the bytes opaquely. */
@@ -58,6 +60,7 @@ typedef struct gain_plugin
 	clap_plugin_t plugin;
 	uint32_t host_flushes;
 	int in_process;         /* set for the duration of process(), so flush() can tell the two apart */
+	long gesture_seen;      /* clap-test-gesture.h: the last sequence this instance reported */
 	int return_pending;     /* CLAP_TEST_GAIN_REQUEST_FLUSH: the next process() returns the changed value */
 	const clap_host_t* host;
 	const clap_plugin_params_t* params;
@@ -677,6 +680,7 @@ static clap_process_status gain_process(const clap_plugin_t* plugin, const clap_
 
 	/* The host delivers parameter changes through the event list. */
 	self->params->flush(plugin, process->in_events, process->out_events);
+	clap_test_report_gesture(process->out_events, PARAM_GAIN, &self->gain, &self->gesture_seen);
 
 	/* CLAP_TEST_GAIN_REQUEST_FLUSH: the value the plug-in changed on the main thread goes back to the host
 	   through this process() call's output events - the plug-in's own update, not a flush the host makes. */

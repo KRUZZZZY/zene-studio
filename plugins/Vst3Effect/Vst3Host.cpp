@@ -337,6 +337,7 @@ auto HostedPlugin::load(const QString& modulePath, const QString& classId, QStri
 		}
 		std::sort(d.indexById.begin(), d.indexById.end());
 		d.paramValues = std::make_unique<std::atomic<float>[]>(d.params.size());
+		d.paramGestures = std::make_unique<PluginParamGesture[]>(d.params.size());
 		for (std::size_t i = 0; i < d.params.size(); ++i)
 		{
 			d.paramValues[i].store(d.params[i].defaultNormalized, std::memory_order_relaxed);
@@ -354,7 +355,7 @@ auto HostedPlugin::load(const QString& modulePath, const QString& classId, QStri
 	}
 
 	if (d.handlerImpl != nullptr) { d.handlerImpl->detach(); }
-	auto* handler = new Vst3ComponentHandler(d.paramValues.get(), &d.indexById);
+	auto* handler = new Vst3ComponentHandler(d.paramValues.get(), &d.indexById, d.paramGestures.get());
 	handler->setOnLatencyChanged(d.onLatencyChanged);
 	d.handlerImpl = handler;
 	d.handler = owned(handler);
@@ -445,6 +446,13 @@ void HostedPlugin::notifyController(std::uint32_t id, float normalized)
 		d.controller->setParamNormalized(static_cast<ParamID>(id),
 			sanitizedNormalized(normalized, keep));
 	}
+}
+
+auto HostedPlugin::readParamEdit(std::uint32_t id, float* normalized) const -> PluginParamGesture::Marks
+{
+	const auto index = paramIndex(id);
+	if (index < 0) { *normalized = 0.f; return {}; }
+	return m_impl->paramGestures[index].read(m_impl->paramValues[index], normalized);
 }
 
 auto HostedPlugin::paramNormalized(std::uint32_t id) const -> float

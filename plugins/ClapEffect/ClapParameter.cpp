@@ -153,8 +153,10 @@ void ClapParamModelList::pullValues(float tolerance)
 	{
 		const auto& descriptor = model->descriptor();
 		const auto range = std::max(1e-12, descriptor.maxValue - descriptor.minValue);
-		const auto value = static_cast<float>(m_plugin->paramPlain(model->paramId()));
-		if (std::abs(model->value() - value) > range * tolerance) { model->setValue(value); }
+		double plain = 0.0;
+		const auto marks = m_plugin->readParamEdit(model->paramId(), &plain);
+		const auto value = static_cast<float>(plain);
+		model->pullFromPlugin(value, std::abs(model->value() - value) > range * tolerance, marks);
 	}
 	m_syncing = false;
 }

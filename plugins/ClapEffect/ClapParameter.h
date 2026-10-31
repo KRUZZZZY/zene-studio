@@ -35,6 +35,7 @@
 
 #include "AutomatableModel.h"
 #include "ClapParamDescriptor.h"
+#include "PluginGestureHistory.h"
 
 namespace lmms
 {
@@ -73,9 +74,16 @@ public:
 
 	QString displayValue(const float value) const override;
 
+	//! GUI thread, each poll: the plug-in's value, one undo step for the gesture it belongs to (Q050-214).
+	void pullFromPlugin(float value, bool differs, PluginParamGesture::Marks marks)
+	{
+		m_gestureHistory.pull(*this, value, differs, marks);
+	}
+
 private:
 	ClapParamDescriptor m_descriptor;
 	DisplayFormatter m_formatter;
+	PluginGestureHistory m_gestureHistory;
 };
 
 /**

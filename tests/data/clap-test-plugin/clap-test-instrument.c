@@ -49,6 +49,8 @@
 
 #include <clap/clap.h>
 
+#include "clap-test-gesture.h"
+
 #define TEST_INSTRUMENT_ID "org.lmms.test.clap-instrument"
 #define TEST_INSTRUMENT_NAME "LMMS CLAP Test Instrument"
 #define TEST_INSTRUMENT_MAGIC 0x4C4D494Eu /* "LMIN" */
@@ -128,6 +130,7 @@ typedef struct instrument_plugin
 	clap_plugin_t plugin;
 	const clap_host_t* host;
 	const clap_plugin_params_t* params;
+	long gesture_seen;     /* clap-test-gesture.h: the last sequence this instance reported */
 	double gain;
 	double frames_processed;
 	uint32_t declared_max_frames;
@@ -616,6 +619,8 @@ static clap_process_status instrument_process(const clap_plugin_t* plugin,
 		}
 	}
 	self->active_voices = (self->sounding || self->release_left > 0) ? 1u : 0u;
+
+	clap_test_report_gesture(process->out_events, PARAM_GAIN, &self->gain, &self->gesture_seen);
 
 	/* --- a latent instance asks for a restart when its count changes ----- */
 	instrument_follow_latency(self);

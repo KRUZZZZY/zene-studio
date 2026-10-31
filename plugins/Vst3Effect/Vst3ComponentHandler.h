@@ -33,6 +33,7 @@
 #include <utility>
 #include <vector>
 
+#include "PluginParamGesture.h"
 #include "Vst3ParamDescriptor.h"
 #include "pluginterfaces/vst/ivsteditcontroller.h"
 
@@ -52,6 +53,7 @@ using namespace Steinberg::Vst;
  * Minimal IComponentHandler. performEdit() only mirrors the plug-in's own
  * parameter changes into the lock free parameter array of the host, using a
  * binary search over the pre-sorted parameter index: no allocation, no lock.
+ * beginEdit() and endEdit() mark the gesture the same way (Q050-214).
  */
 class Vst3ComponentHandler : public IComponentHandler
 {
@@ -61,13 +63,19 @@ public:
 	virtual ~Vst3ComponentHandler() = default;
 
 	Vst3ComponentHandler(std::atomic<float>* values,
-			const std::vector<std::pair<std::uint32_t, std::size_t>>* indexById) :
+			const std::vector<std::pair<std::uint32_t, std::size_t>>* indexById,
+			PluginParamGesture* gestures = nullptr) :
 		m_values{values},
-		m_indexById{indexById}
+		m_indexById{indexById},
+		m_gestures{gestures}
 	{
 	}
 
-	tresult PLUGIN_API beginEdit(ParamID) SMTG_OVERRIDE { return kResultOk; }
+	tresult PLUGIN_API beginEdit(ParamID id) SMTG_OVERRIDE
+	{
+		if (auto* gesture = gestureOf(id)) { gesture->begin(); }
+		return kResultOk;
+	}
 
 	tresult PLUGIN_API performEdit(ParamID id, ParamValue valueNormalized) SMTG_OVERRIDE
 	{
@@ -86,7 +94,11 @@ public:
 		return kResultOk;
 	}
 
-	tresult PLUGIN_API endEdit(ParamID) SMTG_OVERRIDE { return kResultOk; }
+	tresult PLUGIN_API endEdit(ParamID id) SMTG_OVERRIDE
+	{
+		if (auto* gesture = gestureOf(id)) { gesture->end(); }
+		return kResultOk;
+	}
 
 	//! BUGS 11.34: a plug-in whose latency changed says so here (UI thread, per the VST3 SDK);
 	//! the host re-reads it and the owning chain re-aligns its paths.
@@ -106,6 +118,7 @@ public:
 	{
 		m_values = nullptr;
 		m_indexById = nullptr;
+		m_gestures = nullptr;
 		m_onLatencyChanged = nullptr;
 	}
 
@@ -136,8 +149,18 @@ public:
 	}
 
 private:
+	auto gestureOf(ParamID id) -> PluginParamGesture*
+	{
+		if (m_gestures == nullptr || m_indexById == nullptr) { return nullptr; }
+		const auto it = std::lower_bound(m_indexById->begin(), m_indexById->end(),
+			std::make_pair(static_cast<std::uint32_t>(id), std::size_t{0}));
+		const bool found = it != m_indexById->end() && it->first == static_cast<std::uint32_t>(id);
+		return found ? &m_gestures[it->second] : nullptr;
+	}
+
 	std::atomic<float>* m_values;
 	const std::vector<std::pair<std::uint32_t, std::size_t>>* m_indexById;
+	PluginParamGesture* m_gestures;
 	std::function<void()> m_onLatencyChanged;
 	std::atomic<uint32> m_refCount{1};
 };

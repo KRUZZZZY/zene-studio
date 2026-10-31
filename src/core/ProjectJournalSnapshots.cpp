@@ -199,6 +199,7 @@ ProjectJournal::DetachedHistory ProjectJournal::detachHistory()
 	history.redo = std::move( m_redoCheckPoints );
 	history.retainedBytes = m_retainedBytes;
 	history.evicted = m_evicted;
+	history.newestEvictedSerial = m_newestEvictedSerial;
 	history.coalesced = m_coalesced;
 	m_undoCheckPoints.clear();
 	m_redoCheckPoints.clear();
@@ -214,6 +215,7 @@ void ProjectJournal::reattachHistory( DetachedHistory && history )
 	m_redoCheckPoints = std::move( history.redo );
 	m_retainedBytes = history.retainedBytes;
 	m_evicted = history.evicted;
+	m_newestEvictedSerial = history.newestEvictedSerial;
 	m_coalesced = history.coalesced;
 }
 

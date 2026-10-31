@@ -85,11 +85,9 @@ void Vst3EffectControls::poll()
 	for (auto* model : m_paramModels)
 	{
 		const auto id = model->paramId();
-		const auto value = plugin->paramNormalized(id);
-		if (std::abs(model->value() - value) > 1e-4f)
-		{
-			model->setValue(value);
-		}
+		float value = 0.f;
+		const auto marks = plugin->readParamEdit(id, &value);
+		model->pullFromPlugin(value, std::abs(model->value() - value) > 1e-4f, marks);
 		// keep the edit controller's GUI-side mirror in sync (GUI thread only)
 		plugin->notifyController(id, model->value());
 	}

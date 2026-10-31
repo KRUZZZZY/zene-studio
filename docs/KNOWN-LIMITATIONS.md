@@ -3254,3 +3254,19 @@ that restores the whole project (`docs/A16-REVERSIBILITY.md` §1.2; `SessionChec
   builds before 0.5.0 refuse; ordinary saves stay legacy. The asset verbs (`project.missing_assets`,
   `project.hash_assets`, `project.relink`) and the revision compare do not read containers yet. See
   `docs/PROJECT-CONTAINER-V2.md`.
+
+## Plug-in editor gesture undo (Q050-214, 2026-10-31)
+
+A VST3 or CLAP editor gesture is one journal step per parameter, read from the 100 ms GUI poll.
+
+- **The poll is the resolution.** Two complete gestures on one parameter inside one poll are one step, and a gesture
+  that ends and a new one that begins inside one poll give the new step the first's last polled value as its undo value.
+- **One step per parameter.** An XY pad reporting two parameters is two steps; the journal has no group for them.
+- **Only reported changes.** Changes a plug-in reports with no gesture keep one step per polled change, as before; a change
+  it does not report as a parameter (its own preset browser's internal state) is not in the history.
+- **A plug-in that never ends a gesture** merges its later changes into that step until its next begin.
+- **The model's step applies.** A CLAP model rounds to 1 % of the range, as it always did, so an undo restores the model's
+  value rather than a finer value the plug-in held.
+- **The Undo History panel's list** still shows command steps only: a gesture is undoable from its buttons and has no row.
+- **`control.undo` after an undone agent edit** reports the newer edit as `unrecorded edit` (with its `step_serial`), the existing
+  label for a journal top the record does not match.

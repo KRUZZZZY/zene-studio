@@ -250,6 +250,9 @@ public:
 	/*! The serial of the OLDEST retained step; the next serial to be issued when
 	 *  the stack is empty, so `record.step < oldestStepSerial()` means evicted. */
 	quint64 oldestStepSerial() const;
+	/*! The newest serial a bound evicted, 0 when none (Q050-214). A step older than the stack's oldest may
+	 *  also just have been undone - by Ctrl+Z, say - and only this one tells the two apart. */
+	quint64 newestEvictedSerial() const { return m_newestEvictedSerial; }
 	/*! The serial of the step DIRECTLY BELOW the newest one, 0 when there is
 	 *  none. The coalescing rule uses it to recognise "the step below the one
 	 *  this call just pushed is the run I am still in" without holding an index:
@@ -502,6 +505,7 @@ private:
 	//! Steps a bound has evicted, and steps coalescing has merged away.
 	int m_evicted = 0;
 	int m_coalesced = 0;
+	quint64 m_newestEvictedSerial = 0;
 	//! The last serial handed to a step; 0 means "no step has been pushed yet".
 	quint64 m_stepSerial = 0;
 	//! Set by declineRedo() during a redo, read and cleared by redo() and takeRedoDecline().
@@ -527,6 +531,7 @@ public:
 		qint64 retainedBytes = 0;
 		int evicted = 0;
 		int coalesced = 0;
+		quint64 newestEvictedSerial = 0;
 	};
 	DetachedHistory detachHistory();
 	void reattachHistory( DetachedHistory && history );

@@ -469,9 +469,11 @@ ControlResult undoLastCommand(ControlRegistry& registry)
 	// than the one asked about - the exact pretending SPEC A16 exists to remove -
 	// so this REFUSES, typed, and names the bound that did it. `step == 0` is a
 	// record whose inverse is a command rather than a step (a file revision):
-	// it has no step to have lost.
+	// it has no step to have lost. A step that was only undone (Ctrl+Z took it, then
+	// an editor gesture became the newest edit: Q050-214) is not evicted, and the
+	// journal's own top is what the caller gets back.
 	ProjectJournal* journal = Engine::projectJournal();
-	if (top->step != 0 && journal != nullptr && top->step < journal->oldestStepSerial())
+	if (top->step != 0 && journal != nullptr && top->step <= journal->newestEvictedSerial())
 	{
 		return ControlResult::failure(ControlErrorKind::Irreversible,
 			QStringLiteral("cannot undo '%1': the undo step this record describes was EVICTED by the "

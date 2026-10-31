@@ -532,11 +532,9 @@ void Vst3Instrument::poll()
 	for (auto* model : m_paramModels)
 	{
 		const auto id = model->paramId();
-		const auto value = m_plugin.paramNormalized(id);
-		if (std::abs(model->value() - value) > 1e-4f)
-		{
-			model->setValue(value);
-		}
+		float value = 0.f;
+		const auto marks = m_plugin.readParamEdit(id, &value);
+		model->pullFromPlugin(value, std::abs(model->value() - value) > 1e-4f, marks);
 		// keep the edit controller's GUI-side mirror in sync (GUI thread only)
 		m_plugin.notifyController(id, model->value());
 	}
