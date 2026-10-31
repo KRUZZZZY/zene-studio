@@ -37,7 +37,7 @@ Logs: `~/.local/share/zene-bunny-fix/qwen/runs/Q050-212.r2/logs`.
 | Route away, rename, route back: names meet in one undo step | `TrackRouteDropTest::routedBackAfterARenameTheChannelTakesTheNameInTheRoutingStep` (command and model write, depth +1, undo, redo, reopen) | 8 | 0 |
 
 The reversal removed this round's hunks in `FileBrowser.cpp`, `TrackContainerView.cpp`, `InstrumentTrack.cpp` and `SampleTrack.cpp`;
-exactly the 3 data cases of `TrackRouteDropTest` failed; `TrackAddRoutingTest` stayed green on the same reversal (`test-5-reverted` had the cases in one file: 3 of 19 failed). The reconcile is called from each track type's route change, so the header number and
+the 3 cases of `TrackRouteDropTest` failed (`test-11-reverted`). Before the split, with all cases in one file, the same reversal failed those 3 and passed the other 16 (`test-5-reverted`). The reconcile is called from each track type's route change, so the header number and
 track menu are covered as well as `track.set_mixer_channel`. Only the command and a model write were driven, not those widgets.
 
 Neighbours (`test-7-neighbours`, `test-8`): `ControlCommandsSnapshot`, `ReversibilityContractTest`, `ReversibilityUndoTest`, `TrackFolderMenuTest`,
@@ -57,7 +57,7 @@ Commit trailers name Claude Sonnet 5.5 because the brief requires that line; thi
 Round 2 answers. The round 1 answers below stand for the rest of the unit.
 
 - **Completion check:** the unmodified scripts cannot write `zene-feat-q050-212-feature-check` beside the worktree in this write jail
-  (`PermissionError`, `feature-check-1`). They were run from `/tmp` copies differing only in that log path; results are in the final logs named below.
+  (`PermissionError`, `feature-check-1`). They were run from `/tmp` copies differing only in that log path; `feature-check-4` exit 0, every gate PASS; `submit-3` exit 0, RESULT: PASS.
 - **Fails reversed, passes restored?** Yes: `TrackRouteDropTest` build 0, exit 8 reversed (`test-11-reverted`); build 0, exit 0 restored with `TrackAddRoutingTest` (`test-12-restored`).
 - **One undo step?** Yes: `undo_depth` rises by 1 on route-back through the command and through a model write, and undo and redo restore the route and the
   channel's name together. The drop and SlicerT paths have no undo step, like the other Browser opens (Known limits). No command class changed: `track.set_mixer_channel` stays `true_inverse`, and its reply names `control.undo` when a name was reconciled.
