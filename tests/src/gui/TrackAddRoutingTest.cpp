@@ -225,6 +225,7 @@ private slots:
 		QVERIFY(run(QStringLiteral("track.add"), {{QStringLiteral("name"), QStringLiteral("t")}, {QStringLiteral("output"), bus}}).ok);
 		QCOMPARE(channels(), 2);
 		QCOMPARE(trackNamed(QStringLiteral("t"))->linkedChannelId(), -1);
+		QCOMPARE(control::channelIdOf(channelOf(trackNamed(QStringLiteral("t")))), bus);
 	}
 
 	void aDestinationThatCouldNotPlayIsRefusedAndChangesNothing()
@@ -253,6 +254,15 @@ private slots:
 		QCOMPARE(trackNamed(QStringLiteral("off"))->mixerChannelModel()->value(), 0);
 		QCOMPARE(trackNamed(QStringLiteral("off2"))->mixerChannelModel()->value(), 0);
 		QCOMPARE(trackNamed(QStringLiteral("off"))->linkedChannelId(), -1);
+		// The same call with the preference on differs, so the default above is the preference's doing.
+		setAuto(true);
+		QVERIFY(run(QStringLiteral("track.add"), {{QStringLiteral("name"), QStringLiteral("on")}}).ok);
+		QCOMPARE(channels(), before + 1);
+		// Turned back off, the channel made while it was on stays and the next track has none.
+		setAuto(false);
+		QVERIFY(run(QStringLiteral("track.add"), {{QStringLiteral("name"), QStringLiteral("off3")}}).ok);
+		QCOMPARE(channels(), before + 1);
+		QCOMPARE(trackNamed(QStringLiteral("off3"))->mixerChannelModel()->value(), 0);
 	}
 
 	void autoAssignmentNamesEachChannelAndRenameKeepsThemInStep()
@@ -379,6 +389,10 @@ private slots:
 		clearSong();
 		QVERIFY(run(QStringLiteral("project.open"), {{QStringLiteral("path"), path}}).ok);
 		QCOMPARE(channels(), 1);
+		QCOMPARE(trackNamed(QStringLiteral("old"))->mixerChannelModel()->value(), 0);
+		// The preference was on all along: it is the open that assigned nothing, and a track added now is assigned.
+		QVERIFY(run(QStringLiteral("track.add"), {{QStringLiteral("name"), QStringLiteral("new")}}).ok);
+		QCOMPARE(channels(), 2);
 		QCOMPARE(trackNamed(QStringLiteral("old"))->mixerChannelModel()->value(), 0);
 	}
 
