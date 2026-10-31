@@ -524,7 +524,8 @@ void registerUndoCommand(ControlRegistry& registry)
 		"window - reads in between do not break it - is one step, so the reply's "
 		"'undone_commands' is 1 normally and more for a merged span. Set the window to 0 "
 		"(control.set_undo_coalescing) for strict one-command-per-call granularity. If the journal's "
-		"top step has no matching transaction record, the reply identifies it as 'unrecorded edit' "
+		"top step has no matching transaction record - an editor edit, or a plug-in editor gesture, made after "
+		"the record's own step was undone - the reply identifies it as 'unrecorded edit' "
 		"and includes its step_serial; transaction history is left intact.");
 	cmd.argsSchema = objectSchema();
 	cmd.resultSchema = objectSchema({

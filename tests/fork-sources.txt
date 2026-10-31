@@ -3306,3 +3306,4 @@ include/PluginGestureHistory.h
 include/PluginParamGesture.h
 tests/data/clap-test-plugin/clap-test-gesture.h
 tests/src/gui/PluginGestureUndoTest.cpp
+docs/qwen-fixes-2026-10/cluster-Q050-214.md

@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-29T15:55:04Z",
+  "captured_at": "2026-10-31T04:40:09Z",
   "commands": [
     {
       "args_schema": {
@@ -7935,7 +7935,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Undo the last agent command: the engine's own ProjectJournal step it recorded (the same stack the GUI's Ctrl+Z unwinds), or the recorded inverse command when the change is file-level. If the last recorded command has no inverse, this FAILS with the typed 'irreversible' error and names the documented fallback instead of undoing an older command. One call unwinds ONE undo STEP, and one step is one command EXCEPT under the coalescing rule (docs/UNDO-BOUNDS.md): a run of the same command on the same target inside the window - reads in between do not break it - is one step, so the reply's 'undone_commands' is 1 normally and more for a merged span. Set the window to 0 (control.set_undo_coalescing) for strict one-command-per-call granularity. If the journal's top step has no matching transaction record, the reply identifies it as 'unrecorded edit' and includes its step_serial; transaction history is left intact.",
+      "description": "Undo the last agent command: the engine's own ProjectJournal step it recorded (the same stack the GUI's Ctrl+Z unwinds), or the recorded inverse command when the change is file-level. If the last recorded command has no inverse, this FAILS with the typed 'irreversible' error and names the documented fallback instead of undoing an older command. One call unwinds ONE undo STEP, and one step is one command EXCEPT under the coalescing rule (docs/UNDO-BOUNDS.md): a run of the same command on the same target inside the window - reads in between do not break it - is one step, so the reply's 'undone_commands' is 1 normally and more for a merged span. Set the window to 0 (control.set_undo_coalescing) for strict one-command-per-call granularity. If the journal's top step has no matching transaction record - an editor edit, or a plug-in editor gesture, made after the record's own step was undone - the reply identifies it as 'unrecorded edit' and includes its step_serial; transaction history is left intact.",
       "group": "control",
       "id": "control.undo",
       "mutating": false,
@@ -37469,11 +37469,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-214/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-k4l1reh3/zene.sock",
-    "version": "0.4.0-alpha.5942+68bed50"
+    "source_socket": "/tmp/zctl-run-ouxd3yj8/zene.sock",
+    "version": "0.4.0-alpha.5943+2a7fd9f"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
