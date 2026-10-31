@@ -27,3 +27,24 @@ Not tested: the `src/core/main.cpp` readiness fix (see the feature doc). Hosted 
 only: the local build is Qt 6.
 
 ## Self-check
+
+Completion check: `submit_check.py` and `feature_check.py` write a log folder beside the worktree, which this session's write
+jail refuses (`PermissionError`, `feature-check-1`). They were run from `/tmp` copies differing only in that log path:
+`submit-1` RESULT: PASS, `feature-check-2` exit 0, every gate PASS. The unmodified scripts did not complete here.
+
+- **Fails reverted, passes restored?** Yes. Disabled: build exit 0, `TrackAddRoutingTest` exit 8, 14 of 14 cases fail
+  (`build-10-reverted`, `test-8-reverted`). Restored: build exit 0, test exit 0 (`build-11-restored`, `test-9-restored`).
+- **Every criterion proven by a test I ran?** Yes, all by `TrackAddRoutingTest`, exit 0; case per criterion in
+  `docs/050-features/Q050-212.md`. Final tree: `test-10-final`, exit 0, 6 of 6 with `ControlCommandsSnapshot`, `ControlShutdown`,
+  `MainCliStartupTest`, `AppearanceStartupTest`, `ControlRoutingCommands`.
+- **One undo step, honest classes?** Yes. `undo_depth` rises by exactly 1 for `track.add` with a plug-in and a new channel, and
+  the bus command undoes in one call. `track.add` and `track.add_to_new_bus` are `true_inverse` (`ReversibilityContractTest`
+  exit 0, histogram rows=888). Exception: a track opened from the Browser has no undo step, as before this change (feature doc).
+- **Audio thread?** Nothing added runs there. Channel creation takes the existing change lock on the UI thread; the link and
+  name work runs on the UI thread, a rename from the loader thread being queued to it. Reasoned: TSan does not run here.
+- **Old projects?** `mixlink` is written only for a linked track (`openingAProjectAssignsNothing` checks the file has none) and
+  absence means no link; opening assigns nothing; `MixerRoutingBackwardCompatTest` exit 0. New data round-trips through
+  `project.save`/`project.open` in the test. No render comparison was run; no render path changed.
+- **Portability?** Reasoned, not built: local build is Qt 6 and hosted CI was not run. No `QT_VERSION`-gated API, `std::filesystem`
+  or `windows.h` use, and a grep of the new files for the forbidden identifiers finds none. `QMenu::addAction(text)` plus
+  `QObject::connect` avoids the Qt 6.3 deprecated overload. New API used by the test or across libraries is `LMMS_EXPORT`.
