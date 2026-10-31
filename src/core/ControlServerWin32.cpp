@@ -485,7 +485,7 @@ void ControlServer::win32ClientLoop(void* hPipe)
 	// This thread's own I/O event: one at a time, because a client thread issues
 	// one pipe operation at a time (read, then reply, then read again), which is
 	// also what keeps a reply line whole and in order on the wire.
-	const WorkerEvents events;
+	WorkerEvents events;
 	if (!events.created())
 	{
 		DisconnectNamedPipe(pipe);
