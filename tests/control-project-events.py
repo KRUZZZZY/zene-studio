@@ -91,15 +91,15 @@ def check(condition, text):
     H.ok(text)
 
 
-def check_order_and_unsubscribe(path, editor):
-    first, second = Conn(path), Conn(path)
-    a = first.ok("events.subscribe")
-    b = second.ok("events.subscribe")
+def check_subscribe_replies(a, b, first, editor):
     check(a["queue_limit"] == 256 and a["session"] == b["session"] and a["seq"] == b["seq"],
           "subscribe reports the default bound, the session and the current seq")
     first.error("events.subscribe", {}, "busy")
     editor.error("events.subscribe", {"queue_limit": 0}, "invalid_args")
 
+
+def make_ordered_changes(first, editor):
+    """Five successful changes, with a refused edit and a read between them. Returns the track they used."""
     added = add_track(editor, "event one")
     editor.ok("track.rename", {"track": added["track"], "name": "event two"})
     # A refused edit and a read change nothing, so neither is an event.
@@ -112,7 +112,11 @@ def check_order_and_unsubscribe(path, editor):
     first.wait_events(3)
     editor.ok("control.undo")
     editor.ok("control.redo")
+    return added["track"]
 
+
+def check_event_sequence(first, second, start_seq):
+    """The five changes arrived at both subscribers in order. Returns their seqs."""
     first.wait_events(5)
     second.wait_events(5)
     drain_barrier(first)
@@ -123,40 +127,49 @@ def check_order_and_unsubscribe(path, editor):
     check([event["kind"] for event in first.events] == ["edit", "edit", "edit", "undo", "redo"],
           "edit, undo and redo are told apart")
     seqs = [event["seq"] for event in first.events]
-    check(seqs == list(range(a["seq"] + 1, a["seq"] + 6)), "seq is strictly increasing with no gap: %s" % seqs)
+    check(seqs == list(range(start_seq + 1, start_seq + 6)), "seq is strictly increasing with no gap: %s" % seqs)
     check([event["seq"] for event in second.events] == seqs and
           [event["command"] for event in second.events] == commands, "a second subscriber sees the same sequence")
     check(first.events[1]["args"]["name"] == "event two", "an event identifies the change (its args)")
+    return seqs
 
-    done = first.ok("events.unsubscribe", {"subscription": a["subscription"]})
-    check(done["unsubscribed"] and done["last_delivered_seq"] == seqs[-1] and done["discarded"] == 0,
+
+def check_unsubscribe(first, second, editor, subscription, track, last_seq):
+    done = first.ok("events.unsubscribe", {"subscription": subscription})
+    check(done["unsubscribed"] and done["last_delivered_seq"] == last_seq and done["discarded"] == 0,
           "unsubscribe reports the last delivered seq")
-    first.error("events.unsubscribe", {"subscription": a["subscription"]}, "not_found")
-    second.error("events.unsubscribe", {"subscription": a["subscription"]}, "not_found")
+    first.error("events.unsubscribe", {"subscription": subscription}, "not_found")
+    second.error("events.unsubscribe", {"subscription": subscription}, "not_found")
     first.events = []
-    editor.ok("track.rename", {"track": added["track"], "name": "event four"})
+    editor.ok("track.rename", {"track": track, "name": "event four"})
     second.wait_events(6)
     drain_barrier(first)
     check(first.events == [], "after unsubscribe no further event arrives, while the other subscriber gets it")
-    check(second.events[5]["seq"] == seqs[-1] + 1, "the other subscriber continues in order")
+    check(second.events[5]["seq"] == last_seq + 1, "the other subscriber continues in order")
     # And the connection can subscribe again.
     again = first.ok("events.subscribe")
-    check(again["seq"] == seqs[-1] + 1, "unsubscribing does not stop the sequence: resubscribe reports its position")
+    check(again["seq"] == last_seq + 1, "unsubscribing does not stop the sequence: resubscribe reports its position")
+
+
+def check_order_and_unsubscribe(path, editor):
+    first, second = Conn(path), Conn(path)
+    a = first.ok("events.subscribe")
+    b = second.ok("events.subscribe")
+    check_subscribe_replies(a, b, first, editor)
+    track = make_ordered_changes(first, editor)
+    seqs = check_event_sequence(first, second, a["seq"])
+    check_unsubscribe(first, second, editor, a["subscription"], track, seqs[-1])
     first.close()
     second.close()
 
 
-def check_overflow_and_recovery(path, editor):
-    slow = Conn(path)
-    sub = slow.ok("events.subscribe", {"queue_limit": 4})
-    check(sub["queue_limit"] == 4, "a smaller bound can be asked for")
-    # Stop reading with the socket buffer full: replies far larger than the buffer are queued unread, so the event
-    # path has to wait and each edit below lands in the bounded queue. Deterministic, no timing involved.
+def overflow_while_not_reading(slow, editor, sub, edits):
+    """Stops reading with the socket buffer full, then makes `edits` changes. Returns the unread request ids and the overflow count."""
+    # Replies far larger than the buffer are queued unread, so the event path has to wait and each edit below lands
+    # in the bounded queue. Deterministic, no timing involved.
     requests = [slow.send("control.commands_list") for _ in range(2)]
     barrier = editor.ok("control.commands_list")
     check(len(json.dumps(barrier)) > 256 * 1024, "the unread replies exceed the socket buffer")
-    before = track_count(editor)
-    edits = 10
     for index in range(edits):
         add_track(editor, "overflow %d" % index)
     state = editor.ok("events.get_state")
@@ -164,9 +177,11 @@ def check_overflow_and_recovery(path, editor):
     check(entry["queued"] == 4 and entry["overflowed"] is True and entry["delivered"] == 0,
           "a client that stops reading holds exactly its bound in the instance: %s" % entry)
     check(state["queue_byte_limit"] == 1024 * 1024, "the byte bound is reported")
-    overflows = state["overflows"]
+    return requests, state["overflows"]
 
-    # Now it reads again: the replies, the four queued events in order, then the notice.
+
+def check_overflow_notice(slow, sub, requests, edits):
+    """It reads again: the replies, the four queued events in order, then the notice. Returns the notice."""
     for request in requests:
         check(slow.reply(request).get("ok") is True, "the queued reply is whole (%d)" % request)
     slow.wait_events(5)
@@ -180,22 +195,36 @@ def check_overflow_and_recovery(path, editor):
           "the notice names what never arrived and the current position")
     check(all(event["seq"] < notice["first_missed_seq"] for event in delivered),
           "no missed event is claimed as received")
+    return notice
 
-    state = editor.ok("events.get_state")
-    check(state["overflows"] == overflows + 1 and
-          sub["subscription"] not in [row["subscription"] for row in state["subscriptions"]],
-          "the overflow ended the subscription and was counted")
-    slow.error("events.unsubscribe", {"subscription": sub["subscription"]}, "not_found")
 
-    # The defined recovery: subscribe again, reread the current state, carry on from there.
+def check_recovery_after_overflow(slow, editor, sub, notice, expected_tracks):
+    """The defined recovery: subscribe again, reread the current state, carry on from there."""
     resumed = slow.ok("events.subscribe")
-    check(track_count(slow) == before + edits, "rereading shows the missed edits too")
+    check(track_count(slow) == expected_tracks, "rereading shows the missed edits too")
     check(resumed["seq"] == notice["seq"] and resumed["subscription"] != sub["subscription"],
           "a new subscription starts at the current position")
     slow.events = []
     add_track(editor, "after overflow")
     slow.wait_events(1)
     check(slow.events[0]["seq"] == resumed["seq"] + 1, "the resumed subscription receives the next change")
+
+
+def check_overflow_and_recovery(path, editor):
+    edits = 10
+    slow = Conn(path)
+    sub = slow.ok("events.subscribe", {"queue_limit": 4})
+    check(sub["queue_limit"] == 4, "a smaller bound can be asked for")
+    before = track_count(editor)
+    requests, overflows = overflow_while_not_reading(slow, editor, sub, edits)
+    notice = check_overflow_notice(slow, sub, requests, edits)
+
+    state = editor.ok("events.get_state")
+    check(state["overflows"] == overflows + 1 and
+          sub["subscription"] not in [row["subscription"] for row in state["subscriptions"]],
+          "the overflow ended the subscription and was counted")
+    slow.error("events.unsubscribe", {"subscription": sub["subscription"]}, "not_found")
+    check_recovery_after_overflow(slow, editor, sub, notice, before + edits)
     slow.close()
 
 

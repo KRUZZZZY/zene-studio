@@ -2,8 +2,16 @@ IMPLEMENTED
 
 # Q050-334.1 - Ordered, bounded local project-change events
 
-Logs: `~/.local/share/zene-bunny-fix/qwen/runs/Q050-334.1.r1/logs`. Design, wire contract and limits:
-`docs/050-features/Q050-334.1.md`.
+Logs: `~/.local/share/zene-bunny-fix/qwen/runs/Q050-334.1.r1/logs`, and `.r2/logs` for round 2. Design, wire contract and
+limits: `docs/050-features/Q050-334.1.md`.
+
+## Round 2
+
+The pre-review check failed on complexity: two new test functions in `tests/control-project-events.py` were over target
+(`check_overflow_and_recovery` CCN 17, `check_order_and_unsubscribe` CCN 11). They are split into smaller functions with
+every assertion kept; no product code changed. `ControlProjectEvents` and `ControlEventHubTest` exit 0 on the split test
+(`r2/test-1.log`), `ControlProjectEvents` exit 0 again after the last edit (`r2/test-2.log`), and `feature_check.py` is all
+PASS (`r2/gates-2.log`).
 
 ## Acceptance
 
@@ -17,7 +25,10 @@ Logs: `~/.local/share/zene-bunny-fix/qwen/runs/Q050-334.1.r1/logs`. Design, wire
 - **Each new test fails with the product change reverted, passes restored.** `git diff HEAD~1 HEAD -- src include` reversed,
   rebuilt: `zene` built (exit 0), `ControlProjectEvents` exit 8 (`no command 'events.subscribe'`, `test-rev-sock.log`),
   `ControlEventHubTest` does not build (exit 2, `build-rev-2.log`: the header is gone, so the test cannot pass without the
-  change). Restored and rebuilt: both pass, exit 0 (`test-rest.log`).
+  change). Restored and rebuilt: both pass, exit 0 (`test-rest.log`). That reversal ran in round 1, on the test before its
+  split. Round 2 did not repeat the reverse-and-rebuild: the split test ran against `zene-cachyos/build/zene`, a build whose
+  HEAD (`14a7b62cd9`) does not contain the feature commit, and exited 1 with `no command 'events.subscribe'`
+  (`r2/test-rev-1.log`); on this branch's binary it exits 0.
 - **Every criterion proven by a test I ran:** the table above.
 - **One undo step per edit, honest class:** no edit command changed. `events.subscribe`, `events.unsubscribe` and
   `events.get_state` are `not_mutating`; `ControlEventHubTest::subscribingIsNotAnEdit` shows no transaction, journal
@@ -42,8 +53,8 @@ Logs: `~/.local/share/zene-bunny-fix/qwen/runs/Q050-334.1.r1/logs`. Design, wire
 - `ControlSocketIntegration`: exit 0 with `LMMS_PLUGIN_DIR` set for that run alone to `zene-cachyos/build/plugins`
   (`test-integ-3.log`). Without it, it fails with `plugin.list is not broken down by format`, because this tree builds no plug-in modules.
 - `tools/mcp-zene-control/tests/test_wire_client.py`: exit 0, including the new event-line case (`test-wire-1.log`).
-- Gates: all PASS (`gates-3.log`). `feature_check.py` could not write its log directory beside the worktree (the run's
-  write jail), so a copy with only the log directory changed ran it.
+- Gates: all PASS (`r2/gates-2.log`). `feature_check.py` could not write its log directory beside the worktree (the run's
+  write jail; `PermissionError`), so a copy in `/tmp` with only its log directory and script root changed ran it.
 
 ## Failures seen, not caused by this change
 
