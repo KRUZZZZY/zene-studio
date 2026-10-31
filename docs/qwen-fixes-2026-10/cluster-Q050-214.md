@@ -4,31 +4,28 @@ IMPLEMENTED
 
 Details and design: `docs/050-features/Q050-214.md`. Limits: `docs/KNOWN-LIMITATIONS.md`, "Plug-in editor gesture undo".
 
+## Round 2: the review's blocking point
+
+Two complete gestures on one parameter between GUI polls were one step, because aggregate counters and one sampled value were all the poll saw.
+Now each mark crosses to the GUI on a bounded, preallocated, lock-free per-parameter queue (`include/PluginParamGesture.h`) with the value it was made at, and
+`PluginGestureHistory::pull` (`include/PluginGestureHistory.h`) replays the marks in order, one journal step per nonempty gesture.
+
 ## Acceptance
 
-Command for both rows: `cd build/tests && ctest -R '^PluginGestureUndoTest$' --output-on-failure`. Four subjects: CLAP effect, CLAP instrument,
-VST3 effect, VST3 instrument, on the real main window and the product's hosting modules.
+Command: `cd build/tests && ctest -R '^PluginGestureUndoTest$' --output-on-failure`. Four subjects: CLAP effect, CLAP instrument,
+VST3 effect, VST3 instrument, on the real main window and the product's hosting modules. All logs are in `runs/Q050-214.r2/logs/`.
 
 | Criterion | Proof | Green | Red |
 | --- | --- | --- | --- |
-| Change a plug-in value with begin/end gesture events; one undo restores it and redo reapplies it | `checkOneGestureOneStep`, `checkWhatMakesAStep` | exit 0 | exit 8, all product hunks reversed: 4 of 4 subjects fail on the step count ("Compared values are not the same") |
-| GUI and agent history against the same journal checkpoint | `checkOneGestureOneStep` (Edit menu action, `control.undo`/`redo`, panel buttons clicked, on one step), `checkTheAgentsEdits`, `checkAnUndoInTheMiddleOfADrag` | exit 0 | exit 8, only the `control.undo` hunk reversed: 4 of 4 subjects fail with "EVICTED" |
+| Change a plug-in value with begin/end gesture events; one undo restores it and redo reapplies it | `checkOneGestureOneStep`, `checkWhatMakesAStep` | exit 0 | exit 8, all product hunks reversed: 4 of 4 subjects fail (`test-red-b2.log`) |
+| Two complete gestures before one poll are two steps; two undos restore the intermediate value then the initial one, two redos reapply them in order (review round 1) | `checkTwoGesturesBeforeOnePoll`, `checkMarksAroundAPoll`, `checkMoreGesturesThanTheQueueHolds` | exit 0 | exit 8, product files back at round 1 (`8acc9aeb25`), so the gestures merge: 4 of 4 subjects fail (`test-red-a.log`) |
+| GUI and agent history against the same journal checkpoint | `checkOneGestureOneStep` (Edit menu action, `control.undo`/`redo`, panel buttons clicked, on one step), `checkTheAgentsEdits`, `checkAnUndoInTheMiddleOfADrag`, `checkTwoGesturesBeforeOnePoll` (menu and agent) | exit 0 | exit 8, all product hunks reversed (`test-red-b2.log`). Only the `control.undo` hunk reversed: round 1's `RED2_EXIT=8`, not repeated in round 2, and that hunk did not change |
+| The handoff keeps order and values, and says when it dropped | `PluginParamGestureTest`: single-thread order, full queue, position wrap, one and two threads reporting while a reader drains | exit 0; 30 repeats exit 0 (`test-repeat.log`) | exit 8, reports mutated to always drop: 5 of 5 cases fail (`test-red-c.log`). This test cannot compile without the header, so a plain reversal is not a red for it |
 
-Full-reversal red and the green were run on the committed tree: `test-red3.log` (RED_EXIT=8, 4 of 4 subjects) and `test-final.log` (FINAL_EXIT=0).
-The `control.undo`-only red (`test-red2.log`, RED2_EXIT=8) was run before the test was split into smaller functions, with the same assertions, and not repeated
-after. Logs are in `runs/Q050-214.r1/logs/`.
+The full reversal kept the two new headers on disk, unused: the build globs headers for autogen and stops when they are missing (`build-red-b.log`, whose run did not rebuild and is discarded).
 
-`test-final.log`: 23 of 23 passed, FINAL_EXIT=0 - the new test and the neighbours listed in the feature doc. An earlier run (`test-8.log`, exit 8) failed three of them because
-the modules they load were not built; after building the modules they pass. The whole suite was not run (the brief forbids it).
+`test-final.log`: 24 of 24 passed, FINAL_EXIT=0: both tests above and the review's list of neighbours (gesture, shared-history and journal-bound tests among them). The whole suite was not run (the brief forbids it).
 
 ## Self-check
 
-- **Each new test fails with the product change reverted, then passes restored.** Yes. `git apply -R` of the product diff, rebuild, `ctest`: RED_EXIT=8 (`test-red3.log`); restored, rebuilt: FINAL_EXIT=0 (`test-final.log`). Only the `control.undo` hunk: RED2_EXIT=8; restored: GREEN2_EXIT=0.
-- **Every acceptance criterion is proven by a test I ran.** Yes: `PluginGestureUndoTest`, exit 0, both rows above.
-- **Each edit is one undo step; reversibility classes are honest.** Yes: the test asserts `undoDepth()` after every step. No new command and no class changed. `control.undo` changed its description and one refusal; snapshot regenerated live (SNAP exit 0), `doc-figures` exit 0, `ControlCommandsSnapshot` and `ReversibilityContractTest` pass.
-- **Nothing added on the audio thread allocates, frees, locks, waits, does I/O or emits a signal.** `HostedPlugin::Impl::outEventsTryPush` and `markGesture` (CLAP, from `process()`): `indexOfParam`, the same lookup the value path there already did, and `PluginParamGesture::begin()`/`end()`, an atomic increment and a fence. VST3 `beginEdit`/`endEdit` run on the UI thread per the SDK, and do the same two things in any case. Journal and model work is only in `PluginGestureHistory::pull`, on the GUI poll. No allocation-counter test was added. Local TSan does not run here; the ordering is reasoned in the feature doc.
-- **Old projects load and render exactly as before; new data round-trips.** No format change and no new data: nothing is saved. No render path changed. `Vst3EffectIntegrationTest`, `ClapEffectIntegrationTest`, `Vst3InstrumentIntegrationTest` and `ClapInstrumentViewTest` (state round trips, renders) pass; no separate render comparison was run. `poll()`'s value path differs only in the journal flag during a gesture.
-- **Portability.** No Qt-6-only API added; no `small`/`near`/`far`/`interface`/`min`/`max` identifiers; no `std::filesystem`; no POSIX call. Built only on this Linux box with this Qt: hosted CI was not run. The fixtures' scripted gesture reads the environment, as the fixtures already do.
-- **GUI path WARN ("no GUI file changed").** The GUI entry points already exist and are unchanged: the plug-in's own editor is where the gesture happens, and Edit > Undo/Redo and the Undo History panel take it back. The test triggers the menu's actions and clicks the panel's buttons.
-- **`feature_check.py` FAIL in `submit_check.py`.** It stops with PermissionError before running a gate: it writes logs to `../zene-feat-q050-214-feature-check`, outside this session's write-jail. I ran the same gates through its own functions with logs in the run folder (`logs/gates3`, after the code's last commit): fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures exit 0; complexity and file-length exit 1 as on the train, with no new item in my files.
-- **Build note.** ccache's configured temp dir refused writes here, so builds ran with `CCACHE_TEMPDIR=/tmp/q214-ccache-tmp`.
+SELF_CHECK_PLACEHOLDER
