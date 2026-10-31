@@ -24,6 +24,9 @@ Logs: `~/.local/share/zene-bunny-fix/qwen/runs/Q050-334.1.r3/logs`.
   `CCACHE_TEMPDIR=/tmp/q334-ccache-tmp`. `feature_check.py` cannot write its logs to the sibling `-feature-check` directory
   here, and `submit_check.py` reports its gates row as FAIL for that reason (`gates-1.log` has the `PermissionError`). I ran
   an unedited-logic copy with only the log path changed, in `/tmp`: every gate PASS, exit 0 (`gates-2.log`).
+  A `/tmp` copy of `submit_check.py` pointing at that gate runner: no FAIL, exit 0 (`submit-3.log`), with two WARNs for the GUI
+  path, which the brief puts out of scope. The real `submit_check.py` still fails its gates row inside this sandbox
+  (`submit-1.log`).
 
 ## Round 2
 
