@@ -60,6 +60,7 @@
 #include "ControlRegistryGroups.h"
 #include "ControlScaleShared.h"
 #include "ControlTrackCreation.h"
+#include "ControlTrackRouting.h"
 #include "ControlVocabulary.h"
 #include "DataFile.h"
 #include "Engine.h"
@@ -327,7 +328,7 @@ ControlResult load(const QJsonObject& args)
 	error = ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("no track could be made"));  // loadAsInstrument may say why
 	Track* track = sampleTrack ? loadAsSampleTrack(path) : loadAsInstrument(path, &error);
 	if (track == nullptr) { return error; }
-	recordCreatedTrack(track);  // one undo step removes the track; redo builds it again (ControlTrackCreation.h)
+	recordCreatedRoutedTrack(track);  // one undo step removes the track and any channel made for it; redo builds them
 	Engine::getSong()->setModified();
 	QJsonObject result{{QStringLiteral("path"), path}, {QStringLiteral("kind"), browserKindName(kind)}, {QStringLiteral("track"), trackIdOf(track)},
 		{QStringLiteral("as"), sampleTrack ? QStringLiteral("sample_track") : QStringLiteral("instrument")}};

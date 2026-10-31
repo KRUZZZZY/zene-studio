@@ -33,6 +33,7 @@
 #include <QScrollArea>
 
 #include "AudioEngine.h"
+#include "ControlRegistry.h"
 #include "embed.h"
 #include "Engine.h"
 #include "FileDialog.h"
@@ -92,6 +93,8 @@ inline void labelWidget(QWidget * w, const QString & txt)
 
 
 SetupDialog::SetupDialog(ConfigTab tab_to_open) :
+	m_autoTrackChannel(ConfigManager::inst()->value(
+			"app", "autotrackchannel", "0").toInt()),
 	m_tooltips(!ConfigManager::inst()->value(
 			"tooltips", "disabled").toInt()),
 	m_displayWaveform(ConfigManager::inst()->value(
@@ -238,6 +241,8 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open) :
 	QGroupBox * guiGroupBox = new QGroupBox(tr("Graphical user interface (GUI)"), generalControls);
 	QVBoxLayout * guiGroupLayout = new QVBoxLayout(guiGroupBox);
 
+	addCheckBox(tr("Give each new instrument or sample track its own named mixer channel"), guiGroupBox, guiGroupLayout,
+		m_autoTrackChannel, SLOT(toggleAutoTrackChannel(bool)), false);
 	addCheckBox(tr("Enable tooltips"), guiGroupBox, guiGroupLayout,
 		m_tooltips, SLOT(toggleTooltips(bool)), true);
 	addCheckBox(tr("Enable master oscilloscope by default"), guiGroupBox, guiGroupLayout,
@@ -979,6 +984,14 @@ SetupDialog::~SetupDialog()
 
 
 
+void SetupDialog::toggleAutoTrackChannel(bool enabled)
+{
+	m_autoTrackChannel = enabled;
+}
+
+
+
+
 void SetupDialog::accept()
 {
 	/* Hide dialog before setting values. This prevents an obscure bug
@@ -986,6 +999,10 @@ void SetupDialog::accept()
 	from taking mouse input, rendering the application unusable. */
 	QDialog::accept();
 
+	// Q050-212: the one setting of this dialog an agent's own settings.set is the path for, so the two cannot differ.
+	ControlRegistry::instance()->invoke(QStringLiteral("settings.set"),
+		{{QStringLiteral("key"), QStringLiteral("app/autotrackchannel")},
+			{QStringLiteral("value"), QString::number(m_autoTrackChannel)}});
 	ConfigManager::inst()->setValue("tooltips", "disabled",
 					QString::number(!m_tooltips));
 	ConfigManager::inst()->setValue("ui", "displaywaveform",

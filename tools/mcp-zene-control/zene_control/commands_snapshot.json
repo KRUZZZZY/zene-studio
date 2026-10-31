@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-29T15:55:04Z",
+  "captured_at": "2026-10-31T16:04:42Z",
   "commands": [
     {
       "args_schema": {
@@ -30763,7 +30763,13 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "instrument": {
+            "type": "string"
+          },
           "name": {
+            "type": "string"
+          },
+          "output": {
             "type": "string"
           },
           "type": {
@@ -30780,7 +30786,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Append a track of the given type (default instrument) and return its stable trk-<n> id. Undo removes the track; redo recreates it with a fresh stable trk-<n> id.",
+      "description": "Append a track of the given type (default instrument) and return its stable trk-<n> id. An instrument or sample track can name its destination: `output` is a ch-<n> id (mixer.get_state lists them; a parallel bus takes no track input and is refused). Without `output`, the preference app/autotrackchannel (settings.set, \"1\" on) gives the track its own mixer channel, named after it and kept in step when either is renamed; off, the track plays into the master as before. `instrument` loads that plug-in. Undo removes the track and any channel made for it; redo recreates both, the track with a fresh stable trk-<n> id.",
       "group": "track",
       "id": "track.add",
       "mutating": true,
@@ -30788,6 +30794,15 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "channel_linked": {
+            "type": "boolean"
+          },
+          "channel_name": {
+            "type": "string"
+          },
           "child_count": {
             "type": "number"
           },
@@ -30834,6 +30849,62 @@
           },
           "visible": {
             "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bus_name": {
+            "type": "string"
+          },
+          "count": {
+            "maximum": 64,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "instrument": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "instrument",
+              "sample"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "count"
+        ],
+        "type": "object"
+      },
+      "description": "Add `count` (1..64) instrument or sample tracks (`type`, default instrument) all playing into one new mixer channel, the bus they share: a regular channel, since a parallel bus (bus.create) takes no track input. `bus_name` names it (default Bus <n>). `name` names the tracks, numbered when there are several. `instrument` loads that plug-in on each. One undo step removes the tracks and the channel; redo makes them again, the channel under the same ch-<n> and the tracks with fresh trk-<n> ids.",
+      "group": "track",
+      "id": "track.add_to_new_bus",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bus_name": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "track_count": {
+            "type": "integer"
+          },
+          "tracks": {
+            "type": "array"
           }
         },
         "required": [],
@@ -37464,23 +37535,23 @@
       }
     }
   ],
-  "count": 878,
+  "count": 879,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-212/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-k4l1reh3/zene.sock",
-    "version": "0.4.0-alpha.5942+68bed50"
+    "source_socket": "/tmp/zctl-run-x7x3bz99/zene.sock",
+    "version": "0.4.0-alpha.5943+2a7fd9f"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 77,
-    "id_count": 878,
-    "ids_sha256": "60473c71cd63735b5af096bbd2cd1d9a5a096cf4b2fd8855d1333df124ea362a"
+    "id_count": 879,
+    "ids_sha256": "a96d05a11ce490c6913f92bcfaf76db602745190840d0536b3dbee63b6d93dc0"
   }
 }

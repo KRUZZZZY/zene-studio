@@ -83,7 +83,18 @@ const ReversibilityRow kStructureRows[] = {
 		"instrument track carries only defaults, so removing it restores the "
 		"container exactly. The project-scoped next-id counter is monotonic and "
 		"is NOT rewound: a re-add gets a fresh trk-<n>, which is the documented "
-		"limit of this inverse",
+		"limit of this inverse. An `output` destination is the new track's own "
+		"model, and a channel made for it (app/autotrackchannel) goes in the same "
+		"step: undo deletes it through Mixer::deleteChannel, redo makes it again "
+		"under the same ch-<n>",
+		""),
+	R("track.add_to_new_bus", RC::TrueInverse, true,
+		"created tracks and a created channel have no before-state, so the inverse "
+		"is the operation, the track.add shape",
+		"action checkpoint: ONE recorded undo step removes every created track "
+		"through control::removeTrack and deletes the created channel through "
+		"Mixer::deleteChannel; the redo makes the channel again under the same "
+		"ch-<n> and fresh tracks routed to it",
 		""),
 	R("track.move", RC::TrueInverse, true,
 		"a container's ORDER is not a serialized property of any track, so no "

@@ -22,11 +22,13 @@
  *
  */
 
+#include "AddTrackMenu.h"
 #include "SongEditor.h"
 #include "ArrangerClipKeys.h"
 
 #include <QSignalBlocker>
 #include "Timeline.h"
+#include "AddTrackMenu.h"
 #include "ControlRegistry.h"
 #include "SessionSyncAction.h"
 #include "VisibilitySetMenu.h"
@@ -956,7 +958,11 @@ SongEditorWindow::SongEditorWindow(Song* song) :
 											 tr("Add automation-track"), this);
 
 	connect(m_addPatternTrackAction, SIGNAL(triggered()), m_editor->m_song, SLOT(addPatternTrack()));
-	connect(m_addSampleTrackAction, SIGNAL(triggered()), m_editor->m_song, SLOT(addSampleTrack()));
+	// Q050-212: through track.add like an agent's, so the auto-channel preference and one undo step apply here too.
+	m_addSampleTrackAction->setData(QStringLiteral("track.add"));
+	connect(m_addSampleTrackAction, &QAction::triggered, this, [] {
+		ControlRegistry::instance()->invoke(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("sample")}});
+	});
 	connect(m_addAutomationTrackAction, SIGNAL(triggered()), m_editor->m_song, SLOT(addAutomationTrack()));
 
 	trackActionsToolBar->addAction( m_addPatternTrackAction );
@@ -971,6 +977,8 @@ SongEditorWindow::SongEditorWindow(Song* song) :
 			{{QStringLiteral("type"), QStringLiteral("folder")}, {QStringLiteral("name"), tr("New folder")}});
 	});
 	trackActionsToolBar->addAction(addFolderTrackAction);
+	// Q050-212: an instrument or sample track with its destination chosen, or several on a new bus.
+	trackActionsToolBar->addWidget(makeAddTrackButton(trackActionsToolBar));
 
 
 	// Edit actions

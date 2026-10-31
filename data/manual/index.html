@@ -45,7 +45,7 @@ area reference below, and points at the command an agent sends for the same job.
 
 <h3 id="task-first-beat">Make a first beat</h3>
 <ol>
-<li>Open the Browser and drag an instrument onto the arrangement, or choose Track &gt; Add Instrument Track (<code>track.add</code>).</li>
+<li>Open the Browser and drag an instrument onto the arrangement, or use the <b>Add track to</b> button on the Song Editor's track toolbar (<code>track.add</code>).</li>
 <li>Double-click the track at bar 1 to make a MIDI clip, then double-click the clip to open the note editor (<code>note.add</code>).</li>
 <li>Draw a kick and a snare with the pencil; Space plays and stops.</li>
 <li>Take the tour: Help &gt; Tours &gt; Your first beat (<code>app.tour</code>, tour <code>first-beat</code>).</li>
@@ -536,6 +536,24 @@ the hardware output. An agent reads the same assignment with <code>track.overvie
 <code>channel</code> is a <code>ch-&lt;n&gt;</code> id, and the matching entry in <code>mixer.get_state</code>
 has that <code>id</code> and its <code>name</code>. <code>track.set_mixer_channel</code> changes the assignment,
 exactly as the Inspector's menu does, as one undo step.</p>
+<p><b>Choosing where a new track plays.</b> The <b>Add track to</b> button on the Song Editor's track toolbar lists
+<b>Instrument track to</b> and <b>Sample track to</b>, each with the mixer's regular channels, and adds the track playing into the one
+you pick. <b>Add tracks to new bus...</b> asks for a number, a track type and a name, then makes that many tracks and one new channel
+they all play into. One undo removes everything the action made. Here a bus is a regular mixer channel: a parallel bus
+(Mixer View's return bus, <code>bus.create</code>) takes no direct track input, so it is not offered, and <code>track.add</code>
+refuses it rather than leave the track silent. An agent uses <code>track.add</code> with <code>output</code> (a <code>ch-&lt;n&gt;</code> id)
+and, optionally, <code>instrument</code>, and <code>track.add_to_new_bus</code> with <code>count</code>, <code>type</code>,
+<code>bus_name</code> and <code>name</code>.</p>
+<p><b>A mixer channel for every new track.</b> Settings &gt; General has <b>Give each new instrument or sample track its own named
+mixer channel</b> (off by default; an agent sets <code>app/autotrackchannel</code> to <code>1</code> with <code>settings.set</code>). While it
+is on, a new instrument or sample track with no destination chosen gets a channel named after it: from the toolbar, from
+the Browser (a double-click or a drop on the arrangement), from <code>browser.load</code> and from <code>clip.import_file</code>. Renaming the track
+renames the channel and renaming the channel renames the track, also after you reopen the project. A track routed elsewhere
+stops renaming that channel until it is routed back. Turning the setting off affects only tracks added later; opening a
+project never assigns anything. Removing a track leaves its channel in place. Tracks made from other material
+(bounce, freeze, stems, slices, recording) and tracks in the Pattern Editor keep their existing routing. With the
+setting off, nothing changes: a new track plays into the master. A track opened from the Browser has no undo step, with or
+without its channel.</p>
 <p>A PatternTrack placeholder never appears as a channel owner: <code>track.overview</code> and
 <code>track.set_mixer_channel</code> address the song's own instrument and sample tracks. The PatternStore's
 instrument tracks make the pattern's sound, each with its own mixer channel set in the Pattern Editor, and a MIDI

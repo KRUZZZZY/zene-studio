@@ -38,6 +38,7 @@
 #include "AudioEngine.h"
 #include "AutomationTrack.h"
 #include "ControlTrackCreation.h"
+#include "ControlTrackRouting.h"
 #include "DataFile.h"
 #include "DpiHelper.h"
 #include "MainWindow.h"
@@ -576,6 +577,7 @@ void TrackContainerView::dropEvent( QDropEvent * _de )
 	if( type == "instrument" )
 	{
 		auto it = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, m_tc));
+		control::assignNewTrackChannel(it);
 		auto ilt = new InstrumentLoaderThread(this, it, value);
 		ilt->start();
 		//it->toggledInstrumentTrackButton( true );

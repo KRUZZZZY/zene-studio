@@ -46,6 +46,7 @@ namespace lmms
 {
 
 class TimePos;
+class MixerChannel;
 class TrackContainer;
 class TrackFolder;
 class Clip;
@@ -479,6 +480,15 @@ public:
 public slots:
 	virtual void setName(const QString& newName);
 
+	/*! Q050-212: the stable id (MixerChannel::id) of the mixer channel that was made for this track, or -1. While the
+	 *  track plays into that channel the two share a name; a track routed elsewhere keeps the id but renames nothing,
+	 *  so taking its reroute back restores the link. Saved as `mixlink` on the track's element, never in a preset or a
+	 *  copy of the track: a duplicate does not own the channel. */
+	int linkedChannelId() const { return m_linkedChannelId; }
+	void setLinkedChannelId(int id) { m_linkedChannelId = id; }
+	//! The channel the link names, while this track plays into it; nullptr otherwise.
+	MixerChannel* linkedChannel();
+
 	void setMutedBeforeSolo(const bool muted)
 	{
 		m_mutedBeforeSolo = muted;
@@ -606,6 +616,9 @@ private:
 	//! automation lanes; false unless the file says otherwise (reset on absence
 	//! in loadTrack, the same rule m_visible follows).
 	bool m_automationLanesCollapsed{false};
+	//! Q050-212: the stable id of the mixer channel made for this track, or -1 (see linkedChannelId()).
+	int m_linkedChannelId{-1};
+	void syncLinkedChannelName();
 
 	friend class gui::TrackView;
 	friend class TrackFolder;

@@ -5550,3 +5550,15 @@ tests/src/core/ClipConsolidateTest.cpp	# Consolidation can overflow while adding
 include/OutputSettings.h	cluster new-p23-190: setCompressionLevel clamps to the documented 0.0-1.0 range (NaN keeps the current level); the only caller (ExportProjectDialog) passes in-range values, so renders are unchanged. Held by tests/src/gui/ExportQualityControlsTest.cpp::compressionLevelStaysInItsLegalRange
 tests/src/gui/ExportQualityControlsTest.cpp	# OutputSettings compression level is not range-checked
 tests/src/core/ProjectRecoveryTest.cpp	# Autosave identity sidecars are read without a size limit
+include/Track.h	Q050-212: linkedChannelId()/setLinkedChannelId()/linkedChannel() and syncLinkedChannelName(): the mixer channel made for a track, which keeps its name in step.
+src/core/Track.cpp	Q050-212: saves and loads `mixlink` (written only for a linked track, reset on absence, never read from a copy or a preset) and follows nameChanged to rename the linked channel (TrackAddRoutingTest).
+src/core/main.cpp	Q050-212: ControlRegistry::setReady(true) also without a control socket: the interface dispatches registered commands, and in a plain interactive run every one needing the engine answered Busy, which would now include the Add sample-track action.
+src/core/CMakeLists.txt	Q050-212: lists core/ControlCommandsTrackRouting.cpp and core/ControlTrackRouting.cpp.
+src/gui/CMakeLists.txt	Q050-212: lists gui/editors/AddTrackMenu.cpp.
+src/gui/editors/SongEditor.cpp	Q050-212: Add sample-track dispatches track.add (auto-channel preference and one undo step), and the track toolbar gains the add-track destination button (AddTrackMenu.cpp, TrackAddRoutingTest).
+src/gui/editors/TrackContainerView.cpp	Q050-212: an instrument dropped on the arranger takes its own channel when app/autotrackchannel is on.
+src/gui/FileBrowser.cpp	Q050-212: a file opened in a new instrument or sample track takes its own channel when app/autotrackchannel is on.
+src/gui/PluginBrowser.cpp	Q050-212: a plug-in opened in a new track takes its own channel when app/autotrackchannel is on.
+src/gui/modals/SetupDialog.cpp	Q050-212: a General checkbox for app/autotrackchannel, written on OK through settings.set.
+include/SetupDialog.h	Q050-212: the toggleAutoTrackChannel slot and its member for the app/autotrackchannel checkbox.
+tests/CMakeLists.txt	Q050-212: registers TrackAddRoutingTest.

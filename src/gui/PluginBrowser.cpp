@@ -40,6 +40,7 @@
 #include <QTimer>
 #include <QTreeWidget>
 
+#include "ControlTrackRouting.h"
 #include "DesignTokens.h"
 #include "DevicePicker.h"
 #include "EffectPickerOrganiser.h"
@@ -463,6 +464,7 @@ void PluginDescWidget::openInNewInstrumentTrack(QString value)
 {
 	TrackContainer* tc = Engine::getSong();
 	auto it = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, tc));
+	control::assignNewTrackChannel(it);
 	auto ilt = new InstrumentLoaderThread(this, it, value);
 	ilt->start();
 }

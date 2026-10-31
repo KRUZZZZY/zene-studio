@@ -59,6 +59,9 @@ ControlResult setMixerChannel(const QJsonObject& args)
 	// The track's channel is an IntModel - a JournallingObject - so the checkpoint is an exact
 	// inverse of the one value this changes, as track.set_mute's is.
 	model->addJournalCheckPoint();
+	// The range is the channel count when the track was built, and only an open mixer window widens it after that:
+	// a channel added since would be clamped away while this reply named it.
+	model->setRange(0, static_cast<float>(Engine::mixer()->numChannels() - 1));
 	model->setValue(static_cast<float>(channel->index()));
 
 	const QString previousId = channelIdOf(Engine::mixer()->mixerChannel(previous));
