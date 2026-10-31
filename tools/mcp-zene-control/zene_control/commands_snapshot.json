@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-29T15:55:04Z",
+  "captured_at": "2026-10-31T10:34:46Z",
   "commands": [
     {
       "args_schema": {
@@ -9402,6 +9402,124 @@
           },
           "device_count": {
             "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {},
+      "description": "The event stream as this instance sees it: 'session', the current 'seq', every live subscription with its queue depth against its bound, how many overflows and subscriber disconnects have happened, and the limits. Reads only.",
+      "group": "events",
+      "id": "events.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "default_queue_limit": {
+            "type": "integer"
+          },
+          "disconnects": {
+            "type": "integer"
+          },
+          "max_queue_limit": {
+            "type": "integer"
+          },
+          "overflows": {
+            "type": "integer"
+          },
+          "queue_byte_limit": {
+            "type": "integer"
+          },
+          "seq": {
+            "type": "integer"
+          },
+          "session": {
+            "type": "string"
+          },
+          "subscriptions": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "queue_limit": {
+            "maximum": 4096,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Subscribe THIS connection to the instance's ordered project-change events. After the reply, every project change from any client, a script or the interface arrives on this connection as an unsolicited line {\"event\":\"project_changed\",\"subscription\",\"session\",\"seq\",\"source\":\"command\"|\"journal\",\"kind\":\"edit\"|\"undo\"|\"redo\"|\"project_replaced\",\"command\",\"args\"} with no 'id', seq strictly increasing. 'seq' in this reply is the current position: compare it with the last seq you saw (and 'session' with the last session) to learn whether you missed anything while away; events are not replayed, so after any gap reread the project, after subscribing so no change falls between. Delivery is bounded by 'queue_limit' events (default 256, at most 4096) and 1 MiB per subscriber: a client that falls behind gets what was queued, then one {\"event\":\"events_overflow\",...} line naming first_missed_seq, and the subscription ends - subscribe again, then reread the project. A connection holds one subscription; a second is refused 'busy'. A subscribed idle connection is not retired by the idle timeout. Runtime state only: never saved in a project. Over the MCP bridge the lines are skipped, because a bridge call has no way to receive them.",
+      "group": "events",
+      "id": "events.subscribe",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "queue_byte_limit": {
+            "type": "integer"
+          },
+          "queue_limit": {
+            "type": "integer"
+          },
+          "seq": {
+            "type": "integer"
+          },
+          "session": {
+            "type": "string"
+          },
+          "subscription": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "subscription": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "subscription"
+        ],
+        "type": "object"
+      },
+      "description": "End this connection's subscription: no event follows this reply. 'last_delivered_seq' is the last event sent before it; 'discarded' counts queued events dropped unsent. Typed not_found for a subscription this connection does not hold.",
+      "group": "events",
+      "id": "events.unsubscribe",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "discarded": {
+            "type": "integer"
+          },
+          "last_delivered_seq": {
+            "type": "integer"
+          },
+          "subscription": {
+            "type": "string"
+          },
+          "unsubscribed": {
+            "type": "boolean"
           }
         },
         "required": [],
@@ -37464,23 +37582,23 @@
       }
     }
   ],
-  "count": 878,
+  "count": 881,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-334.1/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-k4l1reh3/zene.sock",
-    "version": "0.4.0-alpha.5942+68bed50"
+    "source_socket": "/tmp/zctl-run-hqjxd1z7/zene.sock",
+    "version": "0.4.0-alpha.5943+2a7fd9f"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
-    "group_count": 77,
-    "id_count": 878,
-    "ids_sha256": "60473c71cd63735b5af096bbd2cd1d9a5a096cf4b2fd8855d1333df124ea362a"
+    "group_count": 78,
+    "id_count": 881,
+    "ids_sha256": "c4fae37c3f7ff61bd814377c0504912673a234c358d94ab4f7aa089b37dfe99f"
   }
 }

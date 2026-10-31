@@ -155,6 +155,10 @@ public:
 	static QString aggregateClassOf(const QStringList& childClasses);
 
 	//! Queue \p fn onto the UI thread and wait for its result.
+	//! How many handlers are running right now (0 with no registry): tells an edit a command makes from one the
+	//! interface makes directly (Q050-334.1).
+	static int runningHandlers() { return s_instance != nullptr ? s_instance->m_depth : 0; }
+
 	static ControlResult runOnUiThread(const std::function<ControlResult()>& fn);
 
 	//! Empty string when \p args satisfies \p schema, else a human-readable reason.

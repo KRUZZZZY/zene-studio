@@ -80,6 +80,7 @@ void ProjectJournal::addJournalStructure( std::function<void()> undoAction,
 	m_undoCheckPoints.push( step );
 	m_retainedBytes += step.bytes;
 	trimUndoStack();
+	notifyChange( Change::Step );
 }
 
 int ProjectJournal::discardTopSteps( int count )

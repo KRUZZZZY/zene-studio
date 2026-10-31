@@ -184,17 +184,21 @@ class ControlClient:
 
     def _read_reply(self, cmd: str, request_id: int, budget: float) -> dict:
         """The reply addressed to `request_id`, parsed; anything else is typed."""
-        line = self._read_line(budget)
-        try:
-            reply = json.loads(line.decode("utf-8", "replace"))
-        except ValueError as exc:
-            raise ZeneControlError(
-                ErrorKind.BRIDGE_ERROR,
-                "the instance sent a reply that is not JSON",
-                detail={"line": line[:400].decode("utf-8", "replace")},
-            ) from exc
-        if not isinstance(reply, dict):
-            raise ZeneControlError(ErrorKind.BRIDGE_ERROR, "the instance's reply was not an object")
+        while True:
+            line = self._read_line(budget)
+            try:
+                reply = json.loads(line.decode("utf-8", "replace"))
+            except ValueError as exc:
+                raise ZeneControlError(
+                    ErrorKind.BRIDGE_ERROR,
+                    "the instance sent a reply that is not JSON",
+                    detail={"line": line[:400].decode("utf-8", "replace")},
+                ) from exc
+            if not isinstance(reply, dict):
+                raise ZeneControlError(ErrorKind.BRIDGE_ERROR, "the instance's reply was not an object")
+            # An unsolicited event line of events.subscribe (no "id"): a tool call has nowhere to deliver it.
+            if "event" not in reply or "id" in reply:
+                break
         if reply.get("id") != request_id:
             raise ZeneControlError(
                 ErrorKind.BRIDGE_ERROR,

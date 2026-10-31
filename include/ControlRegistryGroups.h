@@ -959,6 +959,8 @@ LMMS_EXPORT void registerW3EngineCommands(ControlRegistry& registry);
 //! command too, so GUI and agents share one implementation (ControlCommandsClipMute.cpp;
 //! its own unit because the clip group's file ratchet is not moved for a new feature).
 LMMS_EXPORT void registerClipMuteCommands(ControlRegistry& registry);
+//! events.subscribe / unsubscribe / get_state: ordered, bounded project-change events (Q050-334.1).
+LMMS_EXPORT void registerEventsCommands(ControlRegistry& registry);
 } // namespace lmms
 
 #endif // LMMS_CONTROL_REGISTRY_GROUPS_H

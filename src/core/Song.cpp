@@ -1904,6 +1904,7 @@ void Song::createNewProject()
 
 	setModified(false);
 	m_loadOnLaunch = false;
+	ProjectJournal::notifyChange( ProjectJournal::Change::ProjectReplaced );
 }
 
 
@@ -2289,6 +2290,7 @@ void Song::loadProject( const QString & fileName, const QStringList & skipSectio
 	if( !m_restoringSnapshot ) { ConfigManager::inst()->addRecentlyOpenedProject( fileName ); }
 
 	Engine::projectJournal()->setJournalling( true );
+	ProjectJournal::notifyChange( ProjectJournal::Change::ProjectReplaced );
 
 	emit projectLoaded();
 

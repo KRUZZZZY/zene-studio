@@ -15,10 +15,12 @@ surfaces (no socket involved) are `tests/test_units.py`.
 """
 from __future__ import annotations
 
+import json
 import os
 import socket
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -162,6 +164,29 @@ class TestWireClient(unittest.TestCase):
                 with self.assertRaises(C.ZeneControlError) as ctx:
                     client.request("mixer.get_state")
             self.assertEqual(ctx.exception.kind, C.ErrorKind.BRIDGE_ERROR)
+
+    def test_event_lines_are_skipped_while_waiting_for_a_reply(self):
+        """Q050-334.1: events.subscribe adds unsolicited lines with "event" and no "id"; a call has no way to deliver
+        them, so they must not be taken for its reply."""
+        tmp = tempfile.mkdtemp(prefix="zene-unit-", dir="/tmp")
+        path = os.path.join(tmp, "events.sock")
+        listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        listener.bind(path)
+        listener.listen(1)
+
+        def serve():
+            peer, _ = listener.accept()
+            request = json.loads(peer.makefile().readline())
+            peer.sendall(b'{"event":"project_changed","seq":7}\n')
+            peer.sendall(json.dumps({"id": request["id"], "ok": True, "result": {"pong": True}}).encode() + b"\n")
+            peer.close()
+
+        server = threading.Thread(target=serve)
+        server.start()
+        with ControlClient(path, 5.0) as client:
+            self.assertEqual(client.request("control.ping"), {"pong": True})
+        server.join()
+        listener.close()
 
 
 if __name__ == "__main__":

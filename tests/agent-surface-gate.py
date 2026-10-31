@@ -175,9 +175,14 @@ class Client:
         raw = json.dumps(request, separators=(",", ":"))
         record("->", raw)
         self.sock.sendall(raw.encode("utf-8") + b"\n")
-        reply = self._read_line()
-        record("<-", reply.decode("utf-8", "replace"))
-        return json.loads(reply)
+        while True:
+            reply = self._read_line()
+            record("<-", reply.decode("utf-8", "replace"))
+            answer = json.loads(reply)
+            # The sweep runs events.subscribe too, so this connection also carries that command's own unsolicited
+            # lines (they have "event" and no "id"), which are not a reply to anything.
+            if "event" not in answer or "id" in answer:
+                return answer
 
     def _read_line(self):
         while b"\n" not in self.buffer:

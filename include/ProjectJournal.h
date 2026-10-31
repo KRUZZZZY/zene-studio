@@ -85,6 +85,20 @@ class ProjectJournal
 public:
 	static const int MAX_UNDO_STATES;
 
+	/*! What a change listener hears (Q050-334.1): a step was pushed, undone or redone, or the project was replaced.
+	 *  A listener is told after the fact and must only record or post. A process-wide hook, so it needs no journal
+	 *  to exist yet; the cost with none installed is one test of an empty function. */
+	enum class Change
+	{
+		Step,
+		Undo,
+		Redo,
+		ProjectReplaced,
+	};
+	using ChangeListener = std::function<void( Change )>;
+	static void setChangeListener( ChangeListener listener );
+	static void notifyChange( Change change );
+
 	//! The hard ceiling a client may raise the count cap to. A "bound" that can
 	//! be set to a billion is not a bound; measured against the byte budget,
 	//! 10000 steps of full-Song XML is already far past what an undo stack may

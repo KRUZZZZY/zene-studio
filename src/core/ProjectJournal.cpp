@@ -109,6 +109,21 @@ bool ProjectJournal::restoreStep( CheckPoint & step, CheckPoint * redo )
 	return restoredAny;
 }
 
+namespace
+{
+ProjectJournal::ChangeListener s_changeListener;
+}
+
+void ProjectJournal::setChangeListener( ChangeListener listener )
+{
+	s_changeListener = std::move( listener );
+}
+
+void ProjectJournal::notifyChange( Change change )
+{
+	if( s_changeListener ) { s_changeListener( change ); }
+}
+
 void ProjectJournal::undo()
 {
 	while( !m_undoCheckPoints.isEmpty() )
@@ -146,6 +161,7 @@ void ProjectJournal::undo()
 		if( redoable ) { m_redoCheckPoints.push( redo ); }
 		else { m_redoCheckPoints.clear(); }
 		Engine::getSong()->setModified();
+		notifyChange( Change::Undo );
 		break;
 	}
 }
@@ -196,6 +212,7 @@ void ProjectJournal::redo()
 		m_retainedBytes += undoState.bytes;
 		trimUndoStack();
 		Engine::getSong()->setModified();
+		notifyChange( Change::Redo );
 		break;
 	}
 }
@@ -241,6 +258,7 @@ void ProjectJournal::addJournalCheckPoint( JournallingObject *jo )
 	m_undoCheckPoints.push( step );
 	m_retainedBytes += bytes;
 	trimUndoStack();
+	notifyChange( Change::Step );
 }
 
 
@@ -270,6 +288,7 @@ void ProjectJournal::addJournalCheckPoint( const QVector<JournallingObject *> &o
 	m_undoCheckPoints.push( step );
 	m_retainedBytes += bytes;
 	trimUndoStack();
+	notifyChange( Change::Step );
 }
 
 
@@ -287,6 +306,7 @@ void ProjectJournal::addJournalAction( std::function<void()> undoAction, std::fu
 	step.serial = ++m_stepSerial;
 	m_undoCheckPoints.push( step );
 	trimUndoStack();
+	notifyChange( Change::Step );
 }
 
 
@@ -406,6 +426,7 @@ void ProjectJournal::clearJournal()
 	m_retainedBytes = 0;
 	m_evicted = 0;
 	m_coalesced = 0;
+	notifyChange( Change::ProjectReplaced );
 
 	for( JoIdMap::Iterator it = m_joIDs.begin(); it != m_joIDs.end(); )
 	{
