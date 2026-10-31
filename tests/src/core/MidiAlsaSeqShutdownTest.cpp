@@ -262,9 +262,13 @@ private slots:
 		QTest::qWait(50);
 		std::atomic<bool> stopped{false};
 		std::thread stopper([&] { client.stopInput(); stopped = true; });
-		QTRY_VERIFY_WITH_TIMEOUT(stopped.load(), 2000);
+		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+		while (!stopped.load() && std::chrono::steady_clock::now() < deadline)
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(5));
+		}
 		const bool stoppedInTime = stopped.load();
-		g_endlessInput = false; // lets the old loop end, so a failure here fails and does not hang
+		g_endlessInput = false; // lets a loop that ignores the stop end, so a failure fails and does not hang
 		stopper.join();
 		QVERIFY(stoppedInTime);
 	}

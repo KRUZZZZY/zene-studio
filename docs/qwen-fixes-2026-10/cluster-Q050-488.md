@@ -2,10 +2,10 @@ IMPLEMENTED
 
 # Q050-488 - Cooperative worker shutdown and explicit callback ownership
 
-Branch `feat/050-Q050-488-oc`, cut from `050/m0-train-17` (`639e1d23e`). Design, inventory and limits:
+Branch `feat/050-Q050-488-oc`, cut from `050/m0-train-17` (`639e1d23e`); **not merged with `050/m0-train-24`, see round 2 below**. Design, inventory and limits:
 `docs/050-features/Q050-488.md`. Logs: `~/.local/share/zene-bunny-fix/qwen/runs/Q050-488.r1/logs/`.
 
-**What changed.** Only the ALSA raw-MIDI client (`include/MidiAlsaRaw.h`, `src/core/midi/MidiAlsaRaw.cpp`).
+**What changed first.** The ALSA raw-MIDI client (`include/MidiAlsaRaw.h`, `src/core/midi/MidiAlsaRaw.cpp`); the later rounds below cover the other clients.
 Its worker polled the device with a 10 s timeout while the destructor waited 1 s and then called
 `QThread::terminate()`, so every close of an idle device took 1000 ms and killed the thread. The worker now
 also polls a wake self-pipe (the MidiAlsaSeq pattern). `stopWorker()` is idempotent: it sets an atomic flag,
@@ -13,6 +13,53 @@ wakes the worker and joins it. Device handles, the poll array and the pipe are r
 A startup failure after open releases everything and starts no worker. `sendByte` ignores a device that
 never opened. The new test is `tests/src/core/MidiAlsaRawShutdownTest.cpp`, which fakes libasound's rawmidi
 entry points with a pipe.
+
+## Review round 2 (REWORK) - what was done
+
+**Merge of `050/m0-train-24`: NOT done; the branch is still based on `050/m0-train-17`.** The brief asked for it
+first. The lane guard refused it: `bunny-guard: 'git merge 050/m0-train-24' is not allowed in a Bunny lane`, exit 97.
+The same guard denies `cherry-pick` and `update-ref`. I did not call `/usr/bin/git` directly or build a merge commit
+from plumbing, because that would defeat the guard. Instead, ordinary commits moved this branch's lines away from the
+train's changes, so the merge is now clean for whoever may run it:
+- `git merge-tree --write-tree HEAD 050/m0-train-24` -> `0`, no conflicts (it was `1`, with conflicts in
+  `tests/fork-sources.txt` and `tests/upstream-modifications.txt`).
+- The merged tree's `MidiAlsaSeq.cpp` compiles (`-fsyntax-only` -> `0`, `merged-seq.log`). **That is all that was
+  checked on the merged tree: nothing was built, linked or run on it.** All test results below are on this branch.
+
+`cmake build` was also refused by the guard (`configuring is the parent's job`). `cmake --build` regenerated the
+build files itself when `tests/CMakeLists.txt` changed, which is how the two new targets appeared.
+
+**The blocking finding is fixed.** `MidiAlsaSeq` inherited the no-op `stopInput()`, so its worker could dispatch through
+a stale `MidiPort*` during `clearProject()`. Details are in `docs/050-features/Q050-488.md`, "Every surviving input client".
+- `MidiAlsaSeq::stopInput()` wakes and joins the worker, and is idempotent.
+- Found while testing: the input batch loop ignored a stop while input was pending, so endless input could hold the join forever. It now ends on a stop.
+- Found while testing: with the worker joined, a track's last note-offs would be dropped. `applyPortMode`, `removePort` and the destructor now send the queue first.
+- `MidiJack`, `MidiWinMM` and `MidiApple` run input on threads they cannot join, so they dispatch inside the new wait-free `MidiInputGate`, which `stopInput()` closes and waits on.
+- `MidiOss` and `MidiSndio` are retiring (Q050-479), were not changed, and keep the no-op.
+
+**Round-3 negative controls** (each patch built `0`, run directly, restored with `git checkout HEAD -- <paths>`; logs `neg-*`):
+
+| Reverted | `MidiAlsaSeqShutdownTest` | `MidiInputGateTest` |
+| --- | --- | --- |
+| `MidiAlsaSeq::stopInput` override | `4` (incl. the engine test: "clearProject() destroyed a port while the sequencer worker was dispatching") | `0` |
+| Batch loop ends on stop | `134`: the assertion failed and then the test aborted on its joinable thread; that test now reports a plain failure, but this control was not re-run after the change | `0` |
+| Drain in `applyPortMode`/`removePort` | `1` | `0` |
+| Gate: `close()` waits | `0` | `2` |
+| Gate: `enter()` refuses | `0` | `3` |
+| `JackMidiRead` honours the gate | `0` | `1` |
+
+Restored: build `0`; `ctest -R "^(MidiAlsaSeqShutdownTest|MidiInputGateTest|MidiAlsaRawShutdownTest|MidiOutQueueTest)$"` -> `0`, 3 runs out of 3 (`test-5-restored-run*.log`, before the one-test wait-loop change). Final tree: see Self-check, round 3.
+
+**Sanitizers.** ASan+UBSan on `MidiAlsaSeq.cpp`, `MidiAlsaRaw.cpp`, `MidiJack.cpp`, `MidiClient.cpp`, `MidiPort.cpp`,
+`Engine.cpp` and the three test TUs, linked against the existing objects, `detect_leaks=1:halt_on_error=1:use_sigaltstack=0`,
+no suppressions: `MidiAlsaSeqShutdownTest` `0`, `MidiInputGateTest` `0`, `MidiAlsaRawShutdownTest` `0` (`test-7-asan-*.log`).
+**TSan was not run** (it does not run on this box). The ALSA-disabled configuration from the checkpoint's test matrix was
+**not built**: the lane may not configure. The generic parts sit behind `LMMS_HAVE_ALSA`/`LMMS_HAVE_JACK` as their neighbours do.
+
+**Not covered.**
+- WinMM and CoreMIDI: changed, but no test drives their callbacks. `MidiWinMM.cpp` passed a syntax check against stub headers
+  only; `MidiApple.cpp` was **not compiled**. The gate they use is what `MidiInputGateTest` proves.
+- JACK: no live server; the in-flight case is proven on the gate, not on a real process callback.
 
 ## Review round 1 (Luna REWORK) - what was done
 
@@ -81,6 +128,7 @@ stage-4 callback-ownership work, recorded in the feature doc.
 | # | Criterion | Evidence (command -> exit code) |
 | --- | --- | --- |
 | 1 | Deterministic reproduction; repeated close of a blocked worker within a justified bound | `MidiAlsaRawShutdownTest::closingAWorkerBlockedOnInputIsBounded` (5 rounds, < 500 ms each; the bound is justified in the test and the feature doc). Fixed: `ctest -R "MidiAlsaRawShutdownTest\|MidiOutQueueTest" --output-on-failure` -> `0`, 3 runs out of 3. Old behaviour: `./MidiAlsaRawShutdownTest closingAWorkerBlockedOnInputIsBounded` -> `1` (`close took 1000 ms`). |
+| 2-5 | Sequencer and callback clients (round 3) | `MidiAlsaSeqShutdownTest` 9/9 and `MidiInputGateTest` 7/7 -> `0`; negative controls and ASan+UBSan -> see "Review round 2" above. WinMM/CoreMIDI callbacks are not driven; reported there. |
 | 2 | Release after the worker stops; duplicate stop; partial startup failure | Round 2: `stopInputWaitsForAnInFlightDispatch` and `engineShutdownStopsRawInputBeforePortsAreDestroyed` (the callback targets, the ports, are released only after the worker can no longer dispatch) -> `0`; old order -> `1`, `1`. Round 1: `duplicateStopIsHarmless`, `partialStartupFailureReleasesOnce` (3 rows) and `failedOpenStartsNothingAndDropsOutput`. Each checks that the worker was not running at `snd_rawmidi_close` and that no closed handle was used. Fixed `0`. Old behaviour: `1`; `1` / `134` / `1`; `1`. |
 | 3 | TSan/ASan, no added suppressions | ASan+UBSan build of the test TU and `MidiAlsaRaw.cpp` (`-fsanitize=address,undefined`), linked against the existing objects. Run with `ASAN_OPTIONS=detect_leaks=1:halt_on_error=1 UBSAN_OPTIONS=halt_on_error=1` -> `0`, 10/10, no suppressions (round 1, `test-5-asan.log`). Round 2, now also instrumenting `Engine.cpp`, with `use_sigaltstack=0` -> `0`, 12/12 (`r2/logs/test-8-asan.log`). **TSan not run**: it does not run on this box. The race reasoning is in the feature doc, row 3. |
 | 4 | Audio-thread entry allocation/lock free; delivery and timeouts preserved | `sendByteStaysAllocationFree` (allocation probe: 0 allocations, 0 frees, direct write) and `inputStillReachesTheParser` -> `0`. `MidiOutQueueTest` (incl. `AlsaRaw_ClosesHandlesAfterWorkerExitsOnPollError`) -> `0`. The 10 s poll timeout is unchanged. |
