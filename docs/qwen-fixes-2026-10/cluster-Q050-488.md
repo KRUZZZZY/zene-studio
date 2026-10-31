@@ -42,13 +42,13 @@ a stale `MidiPort*` during `clearProject()`. Details are in `docs/050-features/Q
 | Reverted | `MidiAlsaSeqShutdownTest` | `MidiInputGateTest` |
 | --- | --- | --- |
 | `MidiAlsaSeq::stopInput` override | `4` (incl. the engine test: "clearProject() destroyed a port while the sequencer worker was dispatching") | `0` |
-| Batch loop ends on stop | `134`: the assertion failed and then the test aborted on its joinable thread; that test now reports a plain failure, but this control was not re-run after the change | `0` |
+| Batch loop ends on stop | `3` (`neg-endless-rerun.log`; the first run was `134`, an abort on the test's joinable thread, since fixed in the test) | `0` |
 | Drain in `applyPortMode`/`removePort` | `1` | `0` |
 | Gate: `close()` waits | `0` | `2` |
 | Gate: `enter()` refuses | `0` | `3` |
 | `JackMidiRead` honours the gate | `0` | `1` |
 
-Restored: build `0`; `ctest -R "^(MidiAlsaSeqShutdownTest|MidiInputGateTest|MidiAlsaRawShutdownTest|MidiOutQueueTest)$"` -> `0`, 3 runs out of 3 (`test-5-restored-run*.log`, before the one-test wait-loop change). Final tree: see Self-check, round 3.
+Restored: build `0`; final-tree results are in "Self-check, round 3".
 
 **Sanitizers.** ASan+UBSan on `MidiAlsaSeq.cpp`, `MidiAlsaRaw.cpp`, `MidiJack.cpp`, `MidiClient.cpp`, `MidiPort.cpp`,
 `Engine.cpp` and the three test TUs, linked against the existing objects, `detect_leaks=1:halt_on_error=1:use_sigaltstack=0`,
@@ -228,3 +228,26 @@ Logs for this round are in `~/.local/share/zene-bunny-fix/qwen/runs/Q050-488.r2/
   - the `050/m0-train-18` merge (refused by the lane guard, see above);
   - TSan;
   - runtime track-deletion synchronisation (stage 4).
+
+### Self-check, round 3
+
+Logs for this round are in `~/.local/share/zene-bunny-fix/qwen/runs/Q050-488.r3/logs/`. All results are on this branch, based on `050/m0-train-17`.
+
+- **Build:** `cmake --build build --target zene MidiAlsaSeqShutdownTest MidiInputGateTest MidiAlsaRawShutdownTest MidiOutQueueTest MidiReconnectTest MidiLearnTest AudioAlsaPollDescriptorTest ArrangeToolsTest -- -j4` -> `0` (`build-9-final.log`).
+- **Focused tests:** `ctest -R "^(MidiAlsaSeqShutdownTest|MidiInputGateTest|MidiAlsaRawShutdownTest|MidiOutQueueTest)$" --output-on-failure` -> `0`, 4/4, 3 runs out of 3 (`test-9-final-run*.log`).
+- **Neighbours:** `MidiReconnectTest`, `MidiLearnTest`, `AudioAlsaPollDescriptorTest`, `ArrangeToolsTest` -> `0`, 4/4 (`test-10-neighbours.log`).
+- **Full suite: not run**, as the brief requires. The loop or merge train runs it.
+- **Gates:** the original `feature_check.py` -> `1`, `PermissionError` on its log directory beside the worktree (write-jail; `gates-1.log`). A `/tmp` copy with only `ROOT` and the log path changed -> `0`, all 8 PASS (`gates-2.log`). `submit_check.py` -> `1`; its only FAIL is that same gates row (`submit-1.log`).
+- **The three WARNs (GUI path, GUI test, agent command):** no user-facing action is added. The change is reached through File > Quit and `control.quit`, both unchanged.
+
+**The "?" items:**
+
+- **Fails reverted, passes restored.** Yes: the round-3 negative-controls table above and the earlier rounds' controls. Restored -> `0`.
+- **Each criterion proven by a test I ran.** Yes, in the acceptance table, except: TSan not run; ALSA-disabled configuration not built; WinMM and CoreMIDI callbacks not driven.
+- **One undo step / reversibility.** Not applicable: no edit, command or journal step is added or changed.
+- **Audio thread.**
+  - `MidiJack::JackMidiRead` runs on JACK's realtime thread and gains `MidiInputGate::Scope`: two atomic operations and a load, with no allocation, lock or wait (`enterAndLeaveDoNotAllocate`). The `LMMS_TESTING` counter is one atomic add and is not in shipping builds.
+  - `MidiAlsaSeq::processOutEvent` is unchanged (`MidiOutQueueTest` -> `0`).
+  - `close()`, `stopWorker()` and `drainOutQueue()` wait or do ALSA I/O, on the main thread only, after `stopProcessing()`: from `Engine::destroy()` and from `applyPortMode`/`removePort`. Those two call `drainOutQueue()` only once `m_workerStopped` is set; before that they cost one atomic load.
+- **Projects/render.** No load, save or render code was touched.
+- **Portability.** `std::atomic`, and `QThread::msleep`, which is public in Qt 5.15 and 6. No `std::filesystem`, no windows.h macro names as identifiers. The new tests use POSIX calls but are inside the ALSA block; `MidiInputGateTest` uses only `std::thread` and Qt, with JACK behind `LMMS_HAVE_JACK`. `MidiWinMM.cpp` passed a syntax check against stub headers (`stub-winmm.log` -> `0`), which is weak evidence. **`MidiApple.cpp` was not compiled here.**
