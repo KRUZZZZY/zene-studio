@@ -395,6 +395,7 @@ void SampleTrack::setPlayingClips( bool isPlaying )
 void SampleTrack::updateMixerChannel()
 {
 	m_audioBusHandle.setNextMixerChannel(m_mixerChannelModel.value());
+	reconcileLinkedChannelName();  // Q050-212
 }
 
 

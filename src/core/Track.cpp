@@ -31,6 +31,7 @@
 
 #include <QDomElement>
 #include <QFileInfo>
+#include <QThread>
 #include <QVariant>
 
 #include <limits>
@@ -48,6 +49,7 @@
 #include "PatternStore.h"
 #include "PatternTrack.h"
 #include "ProjectIds.h"
+#include "ProjectJournal.h"
 #include "Sample.h"
 #include "SampleBuffer.h"
 #include "SampleClip.h"
@@ -1653,6 +1655,34 @@ void Track::syncLinkedChannelName()
 	if (channel == nullptr || channel->m_name == m_name) { return; }
 	channel->m_name = m_name;
 	emit Engine::mixer()->dataChanged();
+}
+
+void Track::reconcileLinkedChannelName()
+{
+	if (m_linkedChannelId < 0 || QThread::currentThread() != thread()) { return; }
+	const Song* song = Engine::getSong();
+	ProjectJournal* journal = Engine::projectJournal();
+	if (song == nullptr || song->isLoadingProject() || journal == nullptr || !journal->isJournalling()) { return; }
+	MixerChannel* channel = linkedChannel();
+	if (channel == nullptr || channel->m_name == m_name) { return; }
+
+	const auto nameChannel = [id = m_linkedChannelId](const QString& name) {
+		Mixer* mixer = Engine::mixer();
+		for (int i = static_cast<int>(mixer->numChannels()) - 1; i > 0; --i)
+		{
+			if (mixer->mixerChannel(i)->id() != id) { continue; }
+			mixer->mixerChannel(i)->m_name = name;
+			emit mixer->dataChanged();
+			return;
+		}
+	};
+	const QString before = channel->m_name;
+	const QString after = m_name;
+	// The route's own checkpoint went on the stack just before this signal, unless the writer asked for none.
+	const bool routeStepOnTop = journal->topStepCaptures(mixerChannelModel()->id());
+	journal->addJournalAction([nameChannel, before] { nameChannel(before); }, [nameChannel, after] { nameChannel(after); });
+	if (routeStepOnTop) { journal->coalesceTopStepIntoPrevious(); }
+	nameChannel(after);
 }
 
 void Track::setName(const QString& newName)

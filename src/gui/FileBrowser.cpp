@@ -726,6 +726,7 @@ void FileBrowserTreeWidget::openInSlicerT(FileItem* item, bool songEditor)
 
 	track->loadInstrument("slicert");
 	track->instrument()->loadFile(item->fullName());
+	control::assignNewTrackChannel(track);
 }
 
 QList<QAction*> FileBrowserTreeWidget::getContextActions(FileItem* file, bool songEditor)

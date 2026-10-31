@@ -56,6 +56,7 @@ ControlResult setMixerChannel(const QJsonObject& args)
 	MixerChannel* channel = resolveMixerChannel(args.value(QStringLiteral("channel")).toString(), &error);
 	if (channel == nullptr) { return error; }
 	const int previous = model->value();
+	const QString channelNameBefore = channel->m_name;
 	// The track's channel is an IntModel - a JournallingObject - so the checkpoint is an exact
 	// inverse of the one value this changes, as track.set_mute's is.
 	model->addJournalCheckPoint();
@@ -67,6 +68,15 @@ ControlResult setMixerChannel(const QJsonObject& args)
 	const QString previousId = channelIdOf(Engine::mixer()->mixerChannel(previous));
 	QJsonObject result{{QStringLiteral("track"), trackId}, {QStringLiteral("channel"), channelIdOf(channel)},
 		{QStringLiteral("index"), channel->index()}, {QStringLiteral("previous"), previousId}};
+	// Q050-212: routing back to the channel made for this track gave it the track's name (Track::
+	// reconcileLinkedChannelName), which routing away again would not take back: only the recorded step does.
+	if (channel->m_name != channelNameBefore)
+	{
+		result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("track"), trackId},
+			{QStringLiteral("channel"), previousId}}, QStringLiteral("control.undo"), {}, true,
+			QStringLiteral("action checkpoint: the recorded undo step puts the route and the channel's name back")));
+		return ControlResult::success(result);
+	}
 	result.insert(QStringLiteral("__transaction"),
 		transactionPayload(QJsonObject{{QStringLiteral("track"), trackId}, {QStringLiteral("channel"), previousId}},
 			QStringLiteral("track.set_mixer_channel"),

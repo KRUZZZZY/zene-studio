@@ -2554,7 +2554,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 
 	# Q050-212: track.add's `instrument` loads a real plug-in.
 	if(LMMS_TEST_NAME STREQUAL "TrackAddRoutingTest")
-		add_dependencies(${LMMS_TEST_NAME} tripleoscillator)
+		add_dependencies(${LMMS_TEST_NAME} tripleoscillator audiofileprocessor slicert)
 	endif()
 
 	# Q050-040: the unmute-chase tests play a real instrument (tripleoscillator) on their tracks,

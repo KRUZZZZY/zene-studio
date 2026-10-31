@@ -243,6 +243,9 @@ public:
 	 */
 	bool coalesceTopStepIntoPrevious();
 
+	//! Whether the newest step holds a capture of the object @a id: a change just made to it has its step on top.
+	bool topStepCaptures( jo_id_t id ) const;
+
 	/*! The serial of the newest step, 0 when the stack is empty. A transaction
 	 *  record holds it so control.undo can tell "this step is still on the
 	 *  stack" from "a bound evicted it". */

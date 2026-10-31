@@ -549,7 +549,7 @@ mixer channel</b> (off by default; an agent sets <code>app/autotrackchannel</cod
 is on, a new instrument or sample track with no destination chosen gets a channel named after it: from the toolbar, from
 the Browser (a double-click or a drop on the arrangement), from <code>browser.load</code> and from <code>clip.import_file</code>. Renaming the track
 renames the channel and renaming the channel renames the track, also after you reopen the project. A track routed elsewhere
-stops renaming that channel until it is routed back. Turning the setting off affects only tracks added later; opening a
+stops renaming that channel; routing it back gives the channel the track's current name, and one undo of that routing puts both back. Turning the setting off affects only tracks added later; opening a
 project never assigns anything. Removing a track leaves its channel in place. Tracks made from other material
 (bounce, freeze, stems, slices, recording) and tracks in the Pattern Editor keep their existing routing. With the
 setting off, nothing changes: a new track plays into the master. A track opened from the Browser has no undo step, with or
