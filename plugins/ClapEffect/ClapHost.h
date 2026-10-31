@@ -140,8 +140,8 @@ public:
 	auto paramsRevision() const -> std::uint32_t;
 	auto paramIndex(std::uint32_t id) const -> int;
 	auto paramPlain(std::uint32_t id) const -> double;
-	//! Lock free, any thread: the value as paramPlain(), and the plug-in's gesture marks with it (Q050-214)
-	auto readParamEdit(std::uint32_t id, double* plain) const -> PluginParamGesture::Marks;
+	//! Lock free, GUI thread only: the plug-in's gesture reports since the last call, and the value (Q050-214)
+	void readParamEdits(std::uint32_t id, PluginParamGesture::Edits* edits);
 	auto paramNormalized(std::uint32_t id) const -> float;
 	auto paramDisplayValue(std::uint32_t id, double plainValue) const -> QString;
 

@@ -189,13 +189,13 @@ auto HostedPlugin::paramPlain(std::uint32_t id) const -> double
 	return index >= 0 ? impl.paramSlots[index].value.load(std::memory_order_relaxed) : 0.0;
 }
 
-auto HostedPlugin::readParamEdit(std::uint32_t id, double* plain) const -> PluginParamGesture::Marks
+void HostedPlugin::readParamEdits(std::uint32_t id, PluginParamGesture::Edits* edits)
 {
-	const auto& impl = *m_impl;
+	auto& impl = *m_impl;
 	const auto index = impl.indexOfParam(id);
-	if (index < 0) { *plain = 0.0; return {}; }
-	const auto& slot = impl.paramSlots[index];
-	return slot.gesture.read(slot.value, plain);
+	if (index < 0) { *edits = {}; return; }
+	auto& slot = impl.paramSlots[index];
+	slot.gesture.read(slot.value, edits);
 }
 
 auto HostedPlugin::paramNormalized(std::uint32_t id) const -> float

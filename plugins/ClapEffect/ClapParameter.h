@@ -74,10 +74,10 @@ public:
 
 	QString displayValue(const float value) const override;
 
-	//! GUI thread, each poll: the plug-in's value, one undo step for the gesture it belongs to (Q050-214).
-	void pullFromPlugin(float value, bool differs, PluginParamGesture::Marks marks)
+	//! GUI thread, each poll: what the plug-in reported, one undo step per gesture (Q050-214).
+	void pullFromPlugin(const PluginParamGesture::Edits& edits, float tolerance)
 	{
-		m_gestureHistory.pull(*this, value, differs, marks);
+		m_gestureHistory.pull(*this, edits, tolerance);
 	}
 
 private:

@@ -354,7 +354,7 @@ one Edit &gt; Undo puts the value back where it was before the drag, and one Edi
 took. It shares the project's history with everything else, so an agent's <code>control.undo</code> takes back a drag and Edit &gt; Undo takes back
 an agent's <code>plugin.param_set</code>. This covers parameter changes the plug-in reports with a start and an end. A change the plug-in reports
 with neither - a preset loaded in its own browser, say - is a step per change that Zene sees, and a change it does not report as a parameter is not
-in the history at all. Two drags finished within a tenth of a second become one step, and dragging two controls at once is one step per control.</p>
+in the history at all. Two drags finished within a tenth of a second are still two steps. Dragging two controls at once is one step per control.</p>
 
 <p><b>Plug-in windows on a Wayland desktop (KDE, GNOME).</b> On Linux a VST3 or CLAP plug-in's own editor can only be placed inside an X11
 window. So on a Wayland desktop Zene Studio runs through XWayland, the X11 layer KDE and GNOME provide, and editors open

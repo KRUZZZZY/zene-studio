@@ -2957,6 +2957,7 @@ tests/src/core/PluginAudioPortsTest.cpp
 tests/src/core/PluginEditorHostTest.cpp
 tests/src/core/PluginHostMetadataTest.cpp
 tests/src/core/PluginLogoResourceTest.cpp
+tests/src/core/PluginParamGestureTest.cpp
 tests/src/core/PluginScanCacheTest.cpp
 tests/src/core/PluginWindowPlatformTest.cpp
 tests/src/core/PortMappingCodecTest.cpp

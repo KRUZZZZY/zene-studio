@@ -130,7 +130,7 @@ struct HostedPlugin::Impl
 		//! The revision process() last handed the plug-in (stress-4): while it is behind `revision` the
 		//! host's own change has not reached the plug-in yet, and a rescan's read-back must not replace it.
 		std::atomic<std::uint32_t> delivered{0};
-		//! The begin and end marks the plug-in reported (Q050-214), read with the value on the GUI poll.
+		//! The begin and end marks the plug-in reported (Q050-214), drained by the GUI poll.
 		PluginParamGesture gesture;
 	};
 
@@ -512,14 +512,15 @@ struct HostedPlugin::Impl
 		return &state->notes[index].header;
 	}
 
-	//! The audio thread (a plug-in reports these from process()): atomic increments only (Q050-214).
+	//! The audio thread (a plug-in reports these from process()): preallocated atomics only (Q050-214).
 	void markGesture(const clap_event_header_t* event)
 	{
 		if (event->size < sizeof(clap_event_param_gesture_t)) { return; }
 		const auto index = indexOfParam(reinterpret_cast<const clap_event_param_gesture_t*>(event)->param_id);
 		if (index < 0) { return; }
-		if (event->type == CLAP_EVENT_PARAM_GESTURE_BEGIN) { paramSlots[index].gesture.begin(); }
-		else { paramSlots[index].gesture.end(); }
+		auto& slot = paramSlots[index];
+		if (event->type == CLAP_EVENT_PARAM_GESTURE_BEGIN) { slot.gesture.begin(slot.value); }
+		else { slot.gesture.end(slot.value); }
 	}
 
 	static auto CLAP_ABI outEventsTryPush(const clap_output_events_t* list,

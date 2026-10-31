@@ -25,8 +25,8 @@
 /*! Q050-214, over the real main window and the product's hosting modules. The fixtures report a scripted begin, value,
  *  end sequence the way a dragged editor knob does: the CLAP ones from process() through their output events, the VST3
  *  one on the UI thread through the IComponentHandler the host gave it. One gesture spread over several 100 ms polls
- *  must be one journal step, which Edit > Undo, the Undo History panel and control.undo all take back and which
- *  plugin.param_get then reads. An agent's plugin.param_set on the same parameter sits on the same stack. */
+ *  must be one journal step, and each of two gestures inside one poll its own, which Edit > Undo, the Undo History panel
+ *  and control.undo all take back and which plugin.param_get then reads. An agent's plugin.param_set on the same parameter sits on the same stack. */
 
 #include <QtTest>
 
@@ -177,7 +177,9 @@ private:
 		const int depth = Engine::projectJournal()->undoDepth();
 		using Check = void (PluginGestureUndoTest::*)(const Subject&, float, int);
 		for (Check check : {&PluginGestureUndoTest::checkOneGestureOneStep, &PluginGestureUndoTest::checkTheAgentsEdits,
-			&PluginGestureUndoTest::checkWhatMakesAStep, &PluginGestureUndoTest::checkAnUndoInTheMiddleOfADrag})
+			&PluginGestureUndoTest::checkWhatMakesAStep, &PluginGestureUndoTest::checkAnUndoInTheMiddleOfADrag,
+			&PluginGestureUndoTest::checkTwoGesturesBeforeOnePoll, &PluginGestureUndoTest::checkMarksAroundAPoll,
+			&PluginGestureUndoTest::checkMoreGesturesThanTheQueueHolds})
 		{
 			(this->*check)(subject, start, depth);
 			if (QTest::currentTestFailed()) { return; }
@@ -241,7 +243,7 @@ private:
 
 	void checkWhatMakesAStep(const Subject& subject, float start, int depth)
 	{
-		// A gesture wholly inside one poll is one step too, and the next gesture is a step of its own.
+		// A gesture wholly inside one poll is one step too, and a later poll's gesture is a step of its own.
 		report(subject, "b 0.25 0.5 e");
 		expectValue(subject, 0.5f, depth + 1);
 		report(subject, "b 0.25");
@@ -272,6 +274,70 @@ private:
 		report(subject, "0.5 e");
 		expectValue(subject, 0.5f, depth + 1);
 		menuTriggers("control.undo");
+		expectValue(subject, start, depth);
+	}
+
+	//! Two complete gestures reach one poll: a step each, undone and redone in order, whoever asks.
+	void checkTwoGesturesBeforeOnePoll(const Subject& subject, float start, int depth)
+	{
+		report(subject, "b 0.25 e b 0.3 0.5 e");
+		expectValue(subject, 0.5f, depth + 2);
+		menuTriggers("control.undo");
+		expectValue(subject, 0.25f, depth + 1);
+		menuTriggers("control.undo");
+		expectValue(subject, start, depth);
+		menuTriggers("control.redo");
+		expectValue(subject, 0.25f, depth + 1);
+		menuTriggers("control.redo");
+		expectValue(subject, 0.5f, depth + 2);
+
+		agentInvokes("control.undo");
+		expectValue(subject, 0.25f, depth + 1);
+		agentInvokes("control.undo");
+		expectValue(subject, start, depth);
+		agentInvokes("control.redo");
+		expectValue(subject, 0.25f, depth + 1);
+		agentInvokes("control.redo");
+		expectValue(subject, 0.5f, depth + 2);
+		menuTriggers("control.undo");
+		menuTriggers("control.undo");
+		expectValue(subject, start, depth);
+	}
+
+	//! A gesture that ends and the next that begins in one poll, and a change with no gesture just before a gesture.
+	void checkMarksAroundAPoll(const Subject& subject, float start, int depth)
+	{
+		report(subject, "b 0.25 e b 0.5");
+		QCOMPARE(Engine::projectJournal()->undoDepth(), depth + 2);
+		report(subject, "0.75 e");
+		expectValue(subject, 0.75f, depth + 2);
+		menuTriggers("control.undo");
+		expectValue(subject, 0.25f, depth + 1);
+		menuTriggers("control.undo");
+		expectValue(subject, start, depth);
+
+		report(subject, "0.25 b 0.5 e");
+		expectValue(subject, 0.5f, depth + 2);
+		menuTriggers("control.undo");
+		expectValue(subject, 0.25f, depth + 1);
+		menuTriggers("control.undo");
+		expectValue(subject, start, depth);
+	}
+
+	//! The queue holds 16 gestures. The rest merge into one step, and the plug-in's last value still arrives.
+	void checkMoreGesturesThanTheQueueHolds(const Subject& subject, float start, int depth)
+	{
+		const auto valueOf = [](int gesture) { return 0.05f + 0.04f * gesture; };
+		QByteArray tokens;
+		for (int gesture = 0; gesture < 20; ++gesture)
+		{
+			tokens += "b " + QByteArray::number(valueOf(gesture), 'f', 2) + " e ";
+		}
+		report(subject, tokens.constData());
+		expectValue(subject, valueOf(19), depth + 17);
+		menuTriggers("control.undo");
+		expectValue(subject, valueOf(15), depth + 16);
+		for (int step = 0; step < 16; ++step) { menuTriggers("control.undo"); }
 		expectValue(subject, start, depth);
 	}
 

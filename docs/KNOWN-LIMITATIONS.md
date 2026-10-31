@@ -3257,10 +3257,12 @@ that restores the whole project (`docs/A16-REVERSIBILITY.md` §1.2; `SessionChec
 
 ## Plug-in editor gesture undo (Q050-214, 2026-10-31)
 
-A VST3 or CLAP editor gesture is one journal step per parameter, read from the 100 ms GUI poll.
+A VST3 or CLAP editor gesture is one journal step per parameter, drained from a per-parameter queue by the 100 ms GUI poll.
 
-- **The poll is the resolution.** Two complete gestures on one parameter inside one poll are one step, and a gesture
-  that ends and a new one that begins inside one poll give the new step the first's last polled value as its undo value.
+- **The queue is bounded.** It holds 32 marks, so 16 complete gestures on one parameter between two polls keep a step each. Marks
+  after that are dropped, not waited for: those gestures merge into one step and the plug-in's last value still arrives.
+- **A change in the same poll as a host edit.** A gesture still in the queue when a knob or an undo moves the model lands after
+  that edit, though the plug-in made it up to 100 ms before.
 - **One step per parameter.** An XY pad reporting two parameters is two steps; the journal has no group for them.
 - **Only reported changes.** Changes a plug-in reports with no gesture keep one step per polled change, as before; a change
   it does not report as a parameter (its own preset browser's internal state) is not in the history.

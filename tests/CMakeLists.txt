@@ -198,6 +198,8 @@ set(LMMS_TESTS
 	src/core/ControllerScriptTest.cpp
 	# Q050-331: controller bindings saved with track and chain presets, on real devices.
 	src/core/PresetBindingsTest.cpp
+	# Q050-214: the queue that carries a plug-in's gesture marks from its thread to the GUI poll.
+	src/core/PluginParamGestureTest.cpp
 	# Out-of-process plugin hosting BEYOND ZynAddSubFx (feature row 80 of
 	# docs/FEATURE-LIST-0.3.0.md, board card #670): the family table
 	# (include/OutOfProcessHosting.h), the client-process record it keys the

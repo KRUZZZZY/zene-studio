@@ -111,7 +111,7 @@ struct HostedPlugin::Impl
 	std::vector<Vst3ParamDescriptor> params;
 	std::vector<std::pair<std::uint32_t, std::size_t>> indexById; // sorted by id
 	std::unique_ptr<std::atomic<float>[]> paramValues;
-	//! The editor's begin and end marks of each parameter (Q050-214), same order as paramValues.
+	//! The editor's gesture reports of each parameter (Q050-214), same order as paramValues.
 	std::unique_ptr<PluginParamGesture[]> paramGestures;
 	std::vector<float> lastParamValues;
 

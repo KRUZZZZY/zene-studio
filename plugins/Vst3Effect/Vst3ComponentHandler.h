@@ -53,7 +53,7 @@ using namespace Steinberg::Vst;
  * Minimal IComponentHandler. performEdit() only mirrors the plug-in's own
  * parameter changes into the lock free parameter array of the host, using a
  * binary search over the pre-sorted parameter index: no allocation, no lock.
- * beginEdit() and endEdit() mark the gesture the same way (Q050-214).
+ * beginEdit() and endEdit() report the gesture the same way (Q050-214).
  */
 class Vst3ComponentHandler : public IComponentHandler
 {
@@ -73,7 +73,7 @@ public:
 
 	tresult PLUGIN_API beginEdit(ParamID id) SMTG_OVERRIDE
 	{
-		if (auto* gesture = gestureOf(id)) { gesture->begin(); }
+		if (const auto index = gestureIndexOf(id); index >= 0) { m_gestures[index].begin(m_values[index]); }
 		return kResultOk;
 	}
 
@@ -96,7 +96,7 @@ public:
 
 	tresult PLUGIN_API endEdit(ParamID id) SMTG_OVERRIDE
 	{
-		if (auto* gesture = gestureOf(id)) { gesture->end(); }
+		if (const auto index = gestureIndexOf(id); index >= 0) { m_gestures[index].end(m_values[index]); }
 		return kResultOk;
 	}
 
@@ -149,13 +149,13 @@ public:
 	}
 
 private:
-	auto gestureOf(ParamID id) -> PluginParamGesture*
+	auto gestureIndexOf(ParamID id) const -> std::ptrdiff_t
 	{
-		if (m_gestures == nullptr || m_indexById == nullptr) { return nullptr; }
+		if (m_gestures == nullptr || m_values == nullptr || m_indexById == nullptr) { return -1; }
 		const auto it = std::lower_bound(m_indexById->begin(), m_indexById->end(),
 			std::make_pair(static_cast<std::uint32_t>(id), std::size_t{0}));
 		const bool found = it != m_indexById->end() && it->first == static_cast<std::uint32_t>(id);
-		return found ? &m_gestures[it->second] : nullptr;
+		return found ? static_cast<std::ptrdiff_t>(it->second) : -1;
 	}
 
 	std::atomic<float>* m_values;

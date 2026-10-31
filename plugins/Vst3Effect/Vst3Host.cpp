@@ -448,11 +448,11 @@ void HostedPlugin::notifyController(std::uint32_t id, float normalized)
 	}
 }
 
-auto HostedPlugin::readParamEdit(std::uint32_t id, float* normalized) const -> PluginParamGesture::Marks
+void HostedPlugin::readParamEdits(std::uint32_t id, PluginParamGesture::Edits* edits)
 {
 	const auto index = paramIndex(id);
-	if (index < 0) { *normalized = 0.f; return {}; }
-	return m_impl->paramGestures[index].read(m_impl->paramValues[index], normalized);
+	if (index < 0) { *edits = {}; return; }
+	m_impl->paramGestures[index].read(m_impl->paramValues[index], edits);
 }
 
 auto HostedPlugin::paramNormalized(std::uint32_t id) const -> float

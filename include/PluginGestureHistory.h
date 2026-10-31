@@ -25,6 +25,8 @@
 #ifndef LMMS_PLUGIN_GESTURE_HISTORY_H
 #define LMMS_PLUGIN_GESTURE_HISTORY_H
 
+#include <cmath>
+
 #include "AutomatableModel.h"
 #include "PluginParamGesture.h"
 
@@ -32,26 +34,41 @@ namespace lmms
 {
 
 /**
- * What a parameter model remembers between polls: the one journal checkpoint of the gesture under way. The
- * first change a gesture makes takes the checkpoint, while the model still holds the value from before it; the
- * later ones write the model without one. A change outside a gesture takes its own checkpoint, as it always did.
- * GUI thread.
+ * What a parameter model remembers between polls: the gesture under way and its one journal checkpoint. Each poll
+ * replays the plug-in's reports in order, so every gesture that finished since the last poll gets its own step, whose
+ * undo value is the last gesture's final value. A gesture's first change takes the checkpoint, while the model still
+ * holds the value from before it; its later ones write the model without one. A change outside a gesture takes its
+ * own checkpoint, as it always did. GUI thread.
  */
 class PluginGestureHistory
 {
 public:
-	//! @a value is what the plug-in reports now, @a differs whether that is a change worth writing to @a model.
-	void pull(FloatModel& model, float value, bool differs, PluginParamGesture::Marks marks)
+	//! @a edits as PluginParamGesture::read() found them; a value within @a tolerance of the model is no change.
+	void pull(FloatModel& model, const PluginParamGesture::Edits& edits, float tolerance)
 	{
-		const bool sameGesture = marks.begins == m_marks.begins && m_marks.begins != m_marks.ends;
-		if (marks.begins != m_marks.begins) { m_checkpointed = false; }
-		m_marks = marks;
-		if (!differs) { return; }
+		for (std::uint32_t i = 0; i < edits.count; ++i)
+		{
+			// What the plug-in changed since its last mark goes where the mark's value says, before the mark counts.
+			write(model, static_cast<float>(edits.reports[i].value), tolerance);
+			m_open = edits.reports[i].mark == PluginParamGesture::Mark::Begin;
+			m_checkpointed = false;
+		}
+		if (edits.lost)
+		{
+			m_open = edits.open;
+			m_checkpointed = false;
+		}
+		if (edits.settled) { write(model, static_cast<float>(edits.value), tolerance); }
+	}
 
+private:
+	void write(FloatModel& model, float value, float tolerance)
+	{
 		const float before = model.value();
+		if (std::abs(before - value) <= tolerance) { return; }
 		// An undo or a knob during the gesture moved the model off the value written here: the plug-in's next
 		// value is a new edit, and the history needs a step for it.
-		const bool covered = sameGesture && m_checkpointed && before == m_written;
+		const bool covered = m_open && m_checkpointed && before == m_written;
 		model.setValue(value, false, !covered);
 		if (model.value() != before)
 		{
@@ -60,8 +77,7 @@ public:
 		}
 	}
 
-private:
-	PluginParamGesture::Marks m_marks;
+	bool m_open = false;
 	bool m_checkpointed = false;
 	float m_written = 0.f;
 };
