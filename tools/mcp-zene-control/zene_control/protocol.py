@@ -184,8 +184,17 @@ class ControlClient:
 
     def _read_reply(self, cmd: str, request_id: int, budget: float) -> dict:
         """The reply addressed to `request_id`, parsed; anything else is typed."""
+        deadline = time.monotonic() + budget
         while True:
-            line = self._read_line(budget)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise self._timeout_error(budget)
+            try:
+                line = self._read_line(remaining)
+            except ZeneControlError as exc:
+                if exc.kind == ErrorKind.TIMEOUT:
+                    raise self._timeout_error(budget) from exc
+                raise
             try:
                 reply = json.loads(line.decode("utf-8", "replace"))
             except ValueError as exc:

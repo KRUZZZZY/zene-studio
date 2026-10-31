@@ -22,7 +22,9 @@ import sys
 import tempfile
 import threading
 import unittest
+from types import SimpleNamespace
 from pathlib import Path
+from unittest.mock import patch
 
 HERE = Path(__file__).resolve().parent
 BRIDGE_DIR = HERE.parent
@@ -34,6 +36,7 @@ except ImportError:
     import harness as H  # type: ignore[no-redef]
 
 import zene_control.config as C  # noqa: E402
+import zene_control.protocol as protocol  # noqa: E402
 from zene_control.protocol import ControlClient  # noqa: E402
 
 
@@ -187,6 +190,31 @@ class TestWireClient(unittest.TestCase):
             self.assertEqual(client.request("control.ping"), {"pong": True})
         server.join()
         listener.close()
+
+    def test_event_lines_do_not_reset_the_reply_deadline(self):
+        """Skipped notifications still consume the one request's bounded reply budget."""
+        client = ControlClient("/tmp/events.sock", 0.2)
+        clock = [0.0]
+        lines = iter((
+            b'{"event":"project_changed","seq":7}',
+            b'{"event":"project_changed","seq":8}',
+            b'{"id":1,"ok":true,"result":{"pong":true}}',
+        ))
+
+        def read_line(timeout):
+            delay = 0.11
+            if timeout < delay:
+                clock[0] += timeout
+                raise client._timeout_error(timeout)
+            clock[0] += delay
+            return next(lines)
+
+        client._read_line = read_line
+        fake_time = SimpleNamespace(monotonic=lambda: clock[0])
+        with patch.object(protocol, "time", fake_time):
+            with self.assertRaises(C.ZeneControlError) as ctx:
+                client._read_reply("control.ping", 1, 0.2)
+        self.assertEqual(ctx.exception.kind, C.ErrorKind.TIMEOUT)
 
 
 if __name__ == "__main__":
