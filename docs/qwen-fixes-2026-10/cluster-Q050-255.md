@@ -24,8 +24,8 @@ Branch `feat/050-Q050-255-oc`, base `2a7fd9f9c7` (`050/m0-train-24`). Logs: `~/.
 | Test | Exit | Note |
 |---|---|---|
 | `ArrangerKeysNavigatorTest`, `ArrangeToolsTest`, `RangeEditsTest`, `ReversibilityContractTest`, `ControlCommandsSnapshot`, `AgentSurfaceReportTest` | 0 each | |
-| `ControlMcpGroupCoverage` | 8 (FAILED) | The bridge server dies at start: `TypeError: Server.__init__() got an unexpected keyword argument 'on_list_tools'` at `tools/mcp-zene-control/zene_control/server.py:181`. This branch does not touch that directory. So the seven new commands were NOT driven through a real MCP session here. I did not run this test on the base. |
-| `ControlTrackFolderTranscript` | Skipped | ctest reported Skipped; the test did not exercise this change. |
+| `ControlMcpGroupCoverage` | 8 (FAILED) | The bridge server dies at start: `TypeError: Server.__init__() got an unexpected keyword argument 'on_list_tools'` at `tools/mcp-zene-control/zene_control/server.py:181`. In that directory this branch changes only the regenerated `commands_snapshot.json`, not the server. So the seven new commands were NOT driven through a real MCP session here. I did not run this test on the base. |
+| `ControlTrackFolderTranscript` | Skipped | Its own reason: no audible instrument in this build. It did not exercise this change. |
 
 The full ctest suite and `tests/run-all-gates.sh` were not run: the job allows targeted tests only.
 
