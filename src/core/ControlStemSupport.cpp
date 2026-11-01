@@ -24,6 +24,7 @@
  */
 
 #include "ControlStemSupport.h"
+#include "ControlStemSource.h"
 #include "SampleBufferResample.h"
 
 #include <algorithm>
@@ -60,14 +61,6 @@ namespace control
 
 namespace
 {
-
-//! Whether @a mix at the model's rate is at least one frame and still fits a job's int frame count - checked
-//! before the resampler allocates for it, so a pathological source rate cannot ask for billions of frames.
-bool fitsAtModelRate(const SampleBuffer& mix)
-{
-	const double frames = static_cast<double>(mix.size()) * StemModelSampleRate / std::max(1, static_cast<int>(mix.sampleRate()));
-	return frames >= 1.0 && frames <= static_cast<double>(std::numeric_limits<int>::max());
-}
 
 //! The fixed stem order of the model contract, as wire names
 //! (include/StemSeparation/StemTypes.h:35-46).
@@ -227,30 +220,20 @@ public:
 			*error = QStringLiteral("there is no source file at '%1'").arg(source);
 			return false;
 		}
-		auto mix = SampleBuffer::fromFile(source);
-		if (!mix || mix->empty())
-		{
-			*error = QStringLiteral("could not decode '%1' as stereo audio (the decoders this "
-				"build carries are the browser's own; a mono or unsupported file cannot be split)")
-				.arg(source);
-			return false;
-		}
-		// 0.5.0 (engine audit E27): a source at another rate is resampled to the model's own,
-		// offline, instead of refused (SPEC-stem-split.md OQ-1 is answered by this).
-		if (!fitsAtModelRate(*mix))
-		{
-			*error = QStringLiteral("'%1' is too long or too short to split at the model's %2 Hz").arg(source).arg(StemModelSampleRate);
-			return false;
-		}
-		mix = resampleBuffer(mix, StemModelSampleRate);
+		// Q050-010: only the source's length is read here, for the refusals and the reply; the worker decodes and resamples.
+		qint64 sourceFrames = 0;
+		int sourceRate = StemModelSampleRate;
+		if (!stemSourceLength(source, &sourceFrames, &sourceRate, error)) { return false; }
 		JobRecord record;
 		record.source = source;
 		record.sampleRate = StemModelSampleRate;
-		record.frames = static_cast<int>(mix->size());
+		record.frames = stemFramesAtModelRate(sourceFrames, sourceRate);
 		record.segmentFrames = segmentFrames > 0 ? segmentFrames : HTDemucsSegmentFrames;
 		record.submittedMs = QDateTime::currentMSecsSinceEpoch();
 
-		const int id = m_manager.submit(std::move(mix), record.sampleRate, record.segmentFrames, quality);
+		const int id = m_manager.submitFrom([source](const std::atomic<bool>& cancel, QString* why) {
+			return stemDecodeAtModelRate(source, cancel, why);
+		}, record.sampleRate, record.segmentFrames, quality);
 		if (id < 0)
 		{
 			*error = QStringLiteral("the stem engine refused the job");
@@ -463,6 +446,7 @@ private:
 	{
 		QJsonObject out;
 		out.insert(QStringLiteral("job_id"), jobId);
+		out.insert(QStringLiteral("task"), QStringLiteral("stem-%1").arg(jobId));
 		out.insert(QStringLiteral("state"), stateName(state));
 		out.insert(QStringLiteral("progress"), static_cast<double>(m_manager.progress(jobId)));
 		out.insert(QStringLiteral("source"), record.source);

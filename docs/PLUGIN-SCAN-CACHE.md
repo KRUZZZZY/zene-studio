@@ -210,10 +210,13 @@ Every line of the new code runs on the thread that calls `PluginFactory::discove
 
 `plugin.scan_start` runs the same scan without blocking the window: the run marks itself active, shows
 itself in the task area and returns BEFORE touching a directory or a library - the first turn plans the
-candidate files, each following pre-load turn loads ONE library, and each scan turn scans ONE file
-(`PluginFactoryBackgroundScan.cpp`), committing the staged catalogue only when the last file is done.
-The chunks and every control handler run on the same main thread (§2.5), so there is no worker thread, no
-mutex and nothing for the audio thread to meet - the realtime argument above holds unchanged, and the
+candidate files, each following pre-load turn hands ONE library's load to a pool worker, and each scan turn
+scans ONE file (`PluginFactoryBackgroundScan.cpp`), committing the staged catalogue only when the last file is done.
+The chunks and every control handler run on the same main thread (§2.5). The worker (Q050-010) gets the path and
+nothing of the factory: it calls `QLibrary::load()` and reports with a queued call that names its run, so no member
+needs a lock, a cancel during a load ends the run at once, and the report of an ended run is dropped. A static
+initialiser in a plug-in therefore runs on that worker when the background run is the first to load the library.
+Nothing here meets the audio thread - the realtime argument above holds unchanged, and the
 task, the active status and `plugin.scan_cancel` exist before the first potentially slow plug-in load.
 Three deliberate differences from the synchronous run: the quarantine list is snapshotted when the run
 plans (its first turn, after the start returns - an edit made before that takes effect, one made later

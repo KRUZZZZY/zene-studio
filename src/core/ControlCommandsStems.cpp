@@ -20,7 +20,7 @@
  *                                                   343980-frame (7.8 s) segment
  *
  * WHERE THE JOBS RUN, and why this group does NOT carry the render-bound defect:
- * `stem.job_start` decodes the source, hands the mix to StemJobManager and
+ * `stem.job_start` reads the source's header, hands the decode to StemJobManager and
  * returns the id; the separation runs on the manager's own worker thread and is
  * polled with `stem.job_status` (atomics behind the manager's mutex,
  * src/core/StemJobManager.cpp:167-204). The application thread - the thread
@@ -112,9 +112,9 @@ ControlResult stemGetState(const QJsonObject& args)
  *  GUI's own route is a SampleClip the agent does not have; what an agent can
  *  name is a path. So the source is an absolute path to a stereo file at the
  *  model's own 44.1 kHz - `render.render`'s output is exactly that, which makes
- *  "bounce the session, then split the bounce" the composable flow. The mix is
- *  decoded here, on the application thread, and the separation runs on the
- *  manager's worker.
+ *  "bounce the session, then split the bounce" the composable flow. Only the
+ *  header is read here (Q050-010); decoding, resampling and the separation all
+ *  run on the manager's worker.
  */
 ControlResult stemJobStart(const QJsonObject& args)
 {
@@ -349,8 +349,9 @@ void registerStemJobStart(ControlRegistry& registry)
 	cmd.verb = QStringLiteral("job_start");
 	cmd.description = QStringLiteral("Queue one offline 4-stem separation of an absolute audio "
 		"FILE (drums, bass, other, vocals) and return its job id immediately - the engine runs on "
-		"its own worker thread, so the control surface keeps answering while the job runs. The "
-		"source must be stereo; a rate other than the model's own 44100 Hz is resampled to it "
+		"its own worker thread, which also decodes and resamples the source, so the control surface keeps answering "
+		"while the job runs; app.tasks lists it as 'task' and app.task_cancel stops it. `frames` is the length its header "
+		"promises at the model's rate. The source must be stereo; a rate other than the model's own 44100 Hz is resampled to it "
 		"first (offline, the engine's best sinc converter), so the stems come back at 44100 Hz. "
 		"Refused, typed, when the file is missing or undecodable, or when the engine cannot run at all (no "
 		"python onnxruntime, or the model absent and not fetchable). An absent model that IS "
@@ -370,6 +371,7 @@ void registerStemJobStart(ControlRegistry& registry)
 	}, {QStringLiteral("source")});
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("job_id"), integerProperty()},
+		{QStringLiteral("task"), stringProperty()},
 		{QStringLiteral("state"), enumProperty({QStringLiteral("queued"),
 			QStringLiteral("running"), QStringLiteral("cancel_requested"),
 			QStringLiteral("completed"), QStringLiteral("cancelled"), QStringLiteral("failed")})},
@@ -468,6 +470,7 @@ void registerStemJobCancel(ControlRegistry& registry)
 	}, {QStringLiteral("job_id")});
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("job_id"), integerProperty()},
+		{QStringLiteral("task"), stringProperty()},
 		{QStringLiteral("state"), enumProperty({QStringLiteral("queued"),
 			QStringLiteral("running"), QStringLiteral("cancel_requested"),
 			QStringLiteral("completed"), QStringLiteral("cancelled"), QStringLiteral("failed")})},

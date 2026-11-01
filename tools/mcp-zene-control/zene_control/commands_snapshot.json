@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-29T15:55:04Z",
+  "captured_at": "2026-11-01T17:26:56Z",
   "commands": [
     {
       "args_schema": {
@@ -127,7 +127,7 @@
         ],
         "type": "object"
       },
-      "description": "Cancel background task 'id' (as app.tasks lists it): a render-queue job, the library scan or a stem separation job.",
+      "description": "Cancel background task 'id' (as app.tasks lists it): a render-queue job, the library scan, a stem separation job, a plug-in scan or a browser peak read.",
       "group": "app",
       "id": "app.task_cancel",
       "mutating": false,
@@ -147,7 +147,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Every background task in one list - render-queue jobs, the library scan, stem separation jobs and auto-mastering - each with an id, kind, state, label and progress (0..1 where it is known); 'active_only' keeps the queued and running ones.",
+      "description": "Every background task in one list - render-queue jobs, the library scan, stem separation jobs, plug-in scans, browser peak reads and auto-mastering - each with an id, kind, state, label and progress (0..1 where it is known); 'active_only' keeps the queued and running ones.",
       "group": "app",
       "id": "app.tasks",
       "mutating": false,
@@ -2394,7 +2394,7 @@
         ],
         "type": "object"
       },
-      "description": "The waveform peaks of an audio file: 'buckets' min/max pairs over the interleaved samples, the frames each bucket covers, the file's rate, channels and length, and whether the answer came out of the cache ('cached') or off the disk. The cache is bounded (capacity entries, base_buckets per file) and its hit and miss counts are reported. Read-only: it writes no project state and nothing at all on disk.",
+      "description": "The waveform peaks of an audio file: 'buckets' min/max pairs over the interleaved samples, the frames each bucket covers, the file's rate, channels and length, and whether the answer came out of the cache ('cached') or off the disk. The cache is bounded (capacity entries, base_buckets per file) and its hit and miss counts are reported. An uncached file is read before this answers, holding the interface for a long one: browser.peaks_start reads it in the background. Read-only: it writes no project state and nothing at all on disk.",
       "group": "browser",
       "id": "browser.peaks",
       "mutating": false,
@@ -2436,6 +2436,44 @@
           "sample_rate": {
             "maximum": 4294967,
             "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Read an audio file's waveform peaks on a background worker, so the window keeps working during a long file. Returns at once with 'task', the id app.tasks lists it under (kind browser_peak, with progress) and app.task_cancel stops it by; a cancelled job leaves the cache as it was. When the task is done, browser.peaks answers from the cache ('cached' true). Read-only: it writes no project state and nothing at all on disk.",
+      "group": "browser",
+      "id": "browser.peaks_start",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "cached": {
+            "type": "boolean"
+          },
+          "path": {
+            "type": "string"
+          },
+          "task": {
+            "type": "string"
+          },
+          "task_id": {
             "type": "integer"
           }
         },
@@ -20690,7 +20728,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Start a background plug-in rescan: the same scan plugin.rescan runs, one file per event-loop turn, so the window stays usable - plugin.list keeps serving the previous catalogue until the run commits. Follow it with plugin.scan_status, stop it with plugin.scan_cancel; the task list (task.list) shows it with its progress and Cancel. 'pace_ms' (0..1000, default 0) is the delay between two files, so a progress display or a test can watch the run. Not reversible: a finished run re-measures the files and refreshes the cache, like plugin.rescan.",
+      "description": "Start a background plug-in rescan: the same scan plugin.rescan runs, its libraries loaded on a worker thread and one file per event-loop turn, so the window stays usable - plugin.list keeps serving the previous catalogue until the run commits. Follow it with plugin.scan_status, stop it with plugin.scan_cancel; the task list (task.list) shows it with its progress and Cancel. 'pace_ms' (0..1000, default 0) is the delay between two files, so a progress display or a test can watch the run. Not reversible: a finished run re-measures the files and refreshes the cache, like plugin.rescan.",
       "group": "plugin",
       "id": "plugin.scan_start",
       "mutating": true,
@@ -20706,6 +20744,9 @@
           },
           "pace_ms": {
             "type": "integer"
+          },
+          "task": {
+            "type": "string"
           },
           "task_id": {
             "type": "integer"
@@ -25449,6 +25490,9 @@
           },
           "state": {
             "type": "string"
+          },
+          "task": {
+            "type": "string"
           }
         },
         "required": [],
@@ -29954,6 +29998,9 @@
               "failed"
             ],
             "type": "string"
+          },
+          "task": {
+            "type": "string"
           }
         },
         "required": [],
@@ -30048,7 +30095,7 @@
         ],
         "type": "object"
       },
-      "description": "Queue one offline 4-stem separation of an absolute audio FILE (drums, bass, other, vocals) and return its job id immediately - the engine runs on its own worker thread, so the control surface keeps answering while the job runs. The source must be stereo; a rate other than the model's own 44100 Hz is resampled to it first (offline, the engine's best sinc converter), so the stems come back at 44100 Hz. Refused, typed, when the file is missing or undecodable, or when the engine cannot run at all (no python onnxruntime, or the model absent and not fetchable). An absent model that IS fetchable (see `stem.get_state` `fetch_on_first_use`) does not refuse: the job fetches the pinned 166 MB file on its own worker first (`fetching_model`, `download_progress`), then separates. `quality` picks how much consecutive model segments overlap: `fast` 25% (about 2/3 of the inference passes), `standard` 50% (the default, and the only behaviour before the setting existed) or `high` 75% (about twice the passes, each frame averaged over more predictions); the job reports the effective `quality`, `overlap` and `hop_frames`, and `inference_quality` (the setting its worker handed the backend; empty until inference starts). NOT realtime, by nature: HTDemucs needs a 7.8 s lookahead. Follow with `stem.job_status`, then `stem.job_result`.",
+      "description": "Queue one offline 4-stem separation of an absolute audio FILE (drums, bass, other, vocals) and return its job id immediately - the engine runs on its own worker thread, which also decodes and resamples the source, so the control surface keeps answering while the job runs; app.tasks lists it as 'task' and app.task_cancel stops it. `frames` is the length its header promises at the model's rate. The source must be stereo; a rate other than the model's own 44100 Hz is resampled to it first (offline, the engine's best sinc converter), so the stems come back at 44100 Hz. Refused, typed, when the file is missing or undecodable, or when the engine cannot run at all (no python onnxruntime, or the model absent and not fetchable). An absent model that IS fetchable (see `stem.get_state` `fetch_on_first_use`) does not refuse: the job fetches the pinned 166 MB file on its own worker first (`fetching_model`, `download_progress`), then separates. `quality` picks how much consecutive model segments overlap: `fast` 25% (about 2/3 of the inference passes), `standard` 50% (the default, and the only behaviour before the setting existed) or `high` 75% (about twice the passes, each frame averaged over more predictions); the job reports the effective `quality`, `overlap` and `hop_frames`, and `inference_quality` (the setting its worker handed the backend; empty until inference starts). NOT realtime, by nature: HTDemucs needs a 7.8 s lookahead. Follow with `stem.job_status`, then `stem.job_result`.",
       "group": "stem",
       "id": "stem.job_start",
       "mutating": false,
@@ -30113,6 +30160,9 @@
               "cancelled",
               "failed"
             ],
+            "type": "string"
+          },
+          "task": {
             "type": "string"
           }
         },
@@ -37464,23 +37514,23 @@
       }
     }
   ],
-  "count": 878,
+  "count": 879,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-010/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-k4l1reh3/zene.sock",
-    "version": "0.4.0-alpha.5942+68bed50"
+    "source_socket": "/tmp/zctl-run-e1erd9r5/zene.sock",
+    "version": "0.4.0-alpha.5943+2a7fd9f"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 77,
-    "id_count": 878,
-    "ids_sha256": "60473c71cd63735b5af096bbd2cd1d9a5a096cf4b2fd8855d1333df124ea362a"
+    "id_count": 879,
+    "ids_sha256": "b0dc8a0a367a40b1499324229ff6ecf692e6cdfea729f16022f2a6f66af81cae"
   }
 }

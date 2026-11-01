@@ -28,7 +28,8 @@
  * Thread affinity: the control registry runs handlers on the UI thread and
  * nothing on the audio thread may allocate or lock, so this cache is
  * UI-thread-only by construction. It is not thread-safe and does not pretend
- * to be.
+ * to be. Only computeFor() runs elsewhere: it reads a file into a private Entry
+ * and touches no cache state, and the UI thread adopts the result (PeakJobs.h).
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -52,6 +53,8 @@
 
 #ifndef LMMS_BROWSER_PEAK_CACHE_H
 #define LMMS_BROWSER_PEAK_CACHE_H
+
+#include <atomic>
 
 #include <QHash>
 #include <QList>
@@ -123,6 +126,16 @@ public:
 	 */
 	bool peaksFor(const QString& path, int buckets, Answer* answer, QString* error);
 
+	/*! Q050-010: reads \a path into \a entry without touching the cache, so any thread may
+	 *  call it. It stops between read blocks once \a cancel is true (false, with \a error
+	 *  naming the cancel), and keeps \a progress at the fraction read. Either may be null. */
+	static bool computeFor(const QString& path, const std::atomic<bool>* cancel,
+		std::atomic<double>* progress, Entry* entry, QString* error);
+	//! Q050-010: takes a computeFor() result into the cache; UI thread only.
+	void adopt(Entry entry);
+	//! Q050-010: whether peaksFor(\a path) would answer from the cache right now. No statistic moves.
+	bool isCurrent(const QString& path) const;
+
 	//! How many files are held.
 	int entryCount() const;
 	//! Requests answered from the cache, and requests that had to open the file.
@@ -138,8 +151,6 @@ private:
 
 	//! The cache entry for \a path, reading the file when it is absent or stale.
 	bool entryFor(const QString& path, Entry* entry, bool* cached, QString* error);
-	//! Streams \a path and fills \a entry's peaks.
-	bool compute(const QString& path, Entry* entry, QString* error);
 	//! Drops the least recently used entry when the cache is full.
 	void evictIfFull();
 	//! Marks \a path as most recently used.

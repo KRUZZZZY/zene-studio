@@ -58,6 +58,8 @@
 #include <algorithm>
 
 #include <QDebug>
+#include <QMetaObject>
+#include <QThreadPool>
 #include <QTimer>
 
 #include "ControlDeviceSupport.h"
@@ -116,6 +118,8 @@ bool PluginFactory::startBackgroundScan(int paceMs, QString* error)
 	m_backgroundStore = std::make_unique<CachedDescriptorStore>();
 	m_backgroundPaceMs = clampPaceMs(paceMs);
 	m_backgroundPrepared = false;
+	m_backgroundLoadPending = false;
+	++m_backgroundRun;
 
 	m_background = BackgroundScanStatus{};
 	m_background.active = true;
@@ -147,6 +151,9 @@ bool PluginFactory::requestBackgroundScanCancel(QString* error)
 		return false;
 	}
 	m_background.cancelRequested = true;
+	// No turn is coming while a worker loads, and a load cannot be interrupted: end
+	// the run now rather than wait on a library that may never return.
+	if (m_backgroundLoadPending) { endBackgroundScan(true); }
 	return true;
 }
 
@@ -177,8 +184,9 @@ void PluginFactory::stepBackgroundScan()
 		return;
 	}
 	// A finished run deactivates itself (see scanNextBackgroundFile); only a
-	// run that still has turns left schedules the next one.
-	if (m_background.active) { scheduleBackgroundScanStep(); }
+	// run that still has turns left schedules the next one - and a worker's
+	// load schedules it itself when it reports.
+	if (m_background.active && !m_backgroundLoadPending) { scheduleBackgroundScanStep(); }
 }
 
 
@@ -229,18 +237,45 @@ void PluginFactory::prepareBackgroundScan()
 }
 
 
-//! One library of the dependency pre-load: exactly one dlopen (see
-//! preloadPluginLibraries - zynaddsubfx's helper is loaded before any
-//! resolve needs it), then the next turn. One load bounds the turn, so a
-//! cancel between two loads stops the run before the next one.
+//! One library of the dependency pre-load (see preloadPluginLibraries -
+//! zynaddsubfx's helper is loaded before any resolve needs it). Its dlopen, the
+//! part of a scan that can take seconds, runs on a pool worker that is handed
+//! the path and nothing of this object; the scan turn after it finds the library
+//! already loaded. The report comes back through the TaskCenter (a QObject that
+//! outlives the factory) and is dropped if this run has ended by then.
 void PluginFactory::preloadBackgroundLibrary()
 {
 	const QFileInfo file = m_backgroundPreloadRemaining.takeFirst();
-	QLibrary(file.absoluteFilePath()).load();
 	m_background.currentFile = file.absoluteFilePath();
 	TaskCenter::instance().progress(m_backgroundTaskToken,
 		backgroundScanFraction(m_background.doneFiles, m_background.totalFiles),
 		file.fileName());
+	m_backgroundLoadPending = true;
+	QThreadPool::globalInstance()->start([factory = this, run = m_backgroundRun, hook = m_backgroundLoadHook,
+		path = file.absoluteFilePath()] {
+		if (hook) { hook(); }
+		{
+			const lmms::safestart::ActivePluginScope activePlugin("scan", std::string(), path.toStdString(), "lmms-module");
+			QLibrary(path).load();
+		}
+		QMetaObject::invokeMethod(&TaskCenter::instance(), [factory, run] {
+			if (s_instance.get() == factory) { factory->backgroundLibraryLoaded(run); }
+		}, Qt::QueuedConnection);
+	});
+}
+
+
+void PluginFactory::backgroundLibraryLoaded(quint64 run)
+{
+	if (run != m_backgroundRun || !m_background.active) { return; }
+	m_backgroundLoadPending = false;
+	scheduleBackgroundScanStep();
+}
+
+
+void PluginFactory::setBackgroundLoadHookForTesting(std::function<void()> hook)
+{
+	m_backgroundLoadHook = std::move(hook);
 }
 
 
@@ -335,6 +370,8 @@ void PluginFactory::discardBackgroundStaging()
 void PluginFactory::endBackgroundScan(bool cancelled)
 {
 	if (!m_background.active) { return; }
+	m_backgroundLoadPending = false;
+	++m_backgroundRun;
 	const int done = m_background.doneFiles;
 	const int total = m_background.totalFiles;
 

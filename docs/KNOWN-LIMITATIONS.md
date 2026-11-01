@@ -966,8 +966,8 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   `LibraryMenusTest`). The whole-library index takes no `probe` (it stores no embedded
   metadata), so the toggle is disabled while **Whole library** is on. `browser.query` re-reads
   the tag store file before matching, so a `tag:` search reflects tags written by another
-  instance or earlier in the session. The waveform peak cache and peak drawing stay socket-only
-  (`browser.peaks`): the Search view draws no waveforms. The bullets below are the earlier
+  instance or earlier in the session. The Search view draws no waveforms (the
+  browser's waveform view reads the peak cache since WF-010, in the background since Q050-010). The bullets below are the earlier
   records.
 - *(Updated 2026-09-30.)* **A file's context menu in the browser now has a Tags submenu**: every tag the
   library knows, the file's own checked - check to add (`browser.tag.add`), uncheck to remove
@@ -2941,11 +2941,20 @@ Fleshed out, because both halves of that sentence hide something real:
 
 **Themes, shared controls and background tasks (themes 20, 23, 24).**
 - Theme changes apply at the next start, and every reply and the window say so.
-- *(Partly resolved 2026-10-16, Q050-090.)* The plug-in scan runs in the background on request
-  (`plugin.scan_start`, one file per event-loop turn) with progress and cancellation
-  (`plugin.scan_status`, `plugin.scan_cancel`) and appears in the task area; the synchronous
-  `plugin.rescan` stays for scripts. `render.render`, `render.stems` and `browser.peaks` stay
-  synchronous and are not in the task area.
+- **Long jobs and what still runs on the interface thread (Q050-010).** Plug-in scans (`plugin.scan_start`: library
+  loads on a worker, the rest one file per event-loop turn), renders (`render.queue_add`, `render.queue_bounce`), stem
+  separation (`stem.job_start`: decode, resample and separation on the worker) and waveform reads
+  (`browser.peaks_start`, the browser's waveform view) run in the background, and all four are listed and stopped
+  through `app.tasks` / `app.task_cancel` and the Tasks list. Compatibility routes that still answer only when done, so
+  they hold the interface for as long as the job takes: `plugin.rescan`, `browser.peaks` on an uncached file,
+  `render.render`, `render.stems`, `bounce.in_place`, `freeze.*`, `bounce.land`, `track.flatten` and `range.bounce`.
+  A scan resolves each descriptor on the interface thread, one per turn; a library that hangs in its load keeps its
+  worker but cannot hold the cancel. `stem.job_start` still decodes a source libsndfile cannot open (a `.ds` drum
+  sample, or a file none of the decoders reads) on the caller, so such a file is still refused typed, and the
+  Split to Stems action writes an in-memory clip's temporary WAV before the job starts.
+- *(Resolved for the interface, Q050-010; see "Long jobs and what still runs on the interface thread".)* Plug-in
+  scans, render-queue jobs, stem separation and waveform reads run in the background and are in the task area; the
+  synchronous `plugin.rescan`, `render.render`, `render.stems` and `browser.peaks` stay for scripts.
 - Accessible mode's larger targets are not re-applied if a knob later resets its own fixed size.
 
 ## 0.5.0 L08 metering — ballistics, the Selected filter, live input meters, the phase view (050/feat-meters, 2026-10-06)

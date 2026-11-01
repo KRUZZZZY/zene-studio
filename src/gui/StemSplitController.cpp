@@ -279,7 +279,7 @@ bool StemSplitController::resolveSourceFile(const ClipSnapshot& snapshot, QStrin
 		return false;
 	}
 	// The common case: the clip was loaded from a file, and the engine decodes
-	// that same file (and resamples it to the model's rate on its own worker).
+	// that same file and resamples it to the model's rate, both on its own worker.
 	const QString stored = buffer->audioFile();
 	if (!stored.isEmpty())
 	{

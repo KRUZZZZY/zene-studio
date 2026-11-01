@@ -518,7 +518,7 @@ ControlResult queueBounceImpl(const QJsonObject& args, bool allowOutputOnly, boo
 	}
 	if (startImmediately) { queue.start(); }
 	const RenderJob* accepted = queue.job(id);
-	return ControlResult::success({{QStringLiteral("job"), id}, {QStringLiteral("kind"), QStringLiteral("bounce")},
+	return ControlResult::success({{QStringLiteral("job"), id}, {QStringLiteral("task"), QStringLiteral("render-%1").arg(id)}, {QStringLiteral("kind"), QStringLiteral("bounce")},
 		{QStringLiteral("operation"), operation}, {QStringLiteral("state"), accepted != nullptr ? RenderQueue::stateName(accepted->state) : QStringLiteral("queued")},
 		{QStringLiteral("out"), outPath}});
 }

@@ -188,6 +188,11 @@ clip's Speed menu ramps its speed (the pitch going with it) or adds a tape start
 <p>Splits and trims can land on an exact sample, and with Navigate &gt; Snap Cuts to Zero Crossings on, the knife and an edge drag move to the
 nearest zero crossing so the cut does not click. A track's menu adds a spacer below it (Add Spacer Below): an empty band
 that separates groups of tracks and moves with the track.</p>
+<p>Long jobs run in the background so the window stays usable: plug-in scans, renders in the render queue, stem splits
+(the source is decoded and resampled in the background too) and the waveform of a sample selected in the browser. Each
+appears in the Tasks list in the status bar with its progress and Cancel; selecting another sample stops the waveform
+read in progress, and a cancelled job leaves the project and your files as they were. Agents follow the same jobs with
+<code>app.tasks</code> and stop them with <code>app.task_cancel</code>; <code>browser.peaks_start</code> starts a waveform read.</p>
 <p>Sample Editor (a clip's menu, Sample Editor...): drag across the waveform to select a range, or drag the [ and ] handles at its edges. Start, End and Length show the range in the unit Units picks - time from the source's start, bars and beats at the song's tempo from the clip's start, or samples - and can be typed into (Enter applies; a suffix such as s, smp or bars overrides the unit) or stepped with Up and Down. End is the first frame after the range. Ctrl+wheel zooms the waveform around the pointer, the wheel scrolls it, and Zoom In, Zoom Out, Zoom to Selection and Show All do the same from the keyboard. Each range operation edits only the range the fields show, as one undo step; the line under the buttons says what was done, or why it was refused. The range buttons are <b>-3 dB</b>, <b>+3 dB</b>, <b>Silence</b>, <b>Delete</b>, <b>Reverse</b>, <b>Fade In</b>, <b>Fade Out</b> and <b>Crop</b>: Silence keeps the range's length, Delete closes the gap so what followed the range moves earlier, and Crop keeps only the range. Range gain applies no limiter and the two fades are linear; there is no noise reduction among these range tools. To Mono and Split Stereo... act on the whole source instead: the first bakes the documented (L + R) / 2 downmix, the second asks for two destinations and writes the left and right channels as mono WAV files. The Process menu's Normalize..., Amplify..., Reverse and Fade are separate whole-source bakes, and Crop the Sample discards the audio outside the clip's play window.</p>
 <p>Edit &gt; Tempo Map... lists the song's tempo and metre changes: add, remove and ramp them, or import and export them as a
 Standard MIDI File.</p>
@@ -293,8 +298,9 @@ windows have a header with presets, and an effect's also has bypass and A/B. Fav
 picker or the plug-in manager (Project &gt; Plug-in Manager); Preferred Plug-in Format lists a plug-in installed in
 several formats once. <i>Project tools &gt; Plug-in Modules...</i> lists every file the scan found with its path, its
 per-file status and the error it failed with, and quarantines or releases one from its row (Edit &gt; Plugin Quarantine
-adds and releases entries too). Its Rescan and Rescan in Background (agent: <code>plugin.rescan</code>,
-<code>plugin.scan_start</code>) are safe with plug-ins loaded: devices already in the project keep working and save as
+adds and releases entries too). Its Rescan and Edit &gt; Plugin Quarantine &gt; Rescan Plugins (agent: <code>plugin.scan_start</code>)
+scan in the background: the window stays usable, the Tasks list in the status bar shows the progress and Cancel, and a cancelled scan
+keeps the plug-ins you had. Scans are safe with plug-ins loaded: devices already in the project keep working and save as
 before, and the new scan applies to devices you add or reload afterwards. A device card's dot lights while the device processes audio. The rack menu bypasses every device,
 switches them all back on, removes the bypassed ones and opens an XY pad that plays two macros at once. Modulators can
 be random, smooth random, a step sequence or a retriggered envelope as well as an LFO; a modulator can run a formula of

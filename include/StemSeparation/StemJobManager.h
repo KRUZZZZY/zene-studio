@@ -71,6 +71,11 @@ public:
 	};
 	Q_ENUM(State)
 
+	/*! Q050-010: makes a job's mix ON THE WORKER, so decoding and resampling never run on the caller's
+	 *  thread. It returns the mix, or null with the reason in its second argument, and should give up
+	 *  early once its first argument turns true. */
+	using MixLoader = std::function<std::shared_ptr<const SampleBuffer>(const std::atomic<bool>& cancel, QString* error)>;
+
 	// One separation job. Progress and cancellation are atomics so that the
 	// worker thread can update them without locking; everything else is only
 	// touched by the worker thread and the owning thread after completion.
@@ -79,6 +84,8 @@ public:
 		int id = -1;
 		TaskToken taskToken;
 		std::shared_ptr<const SampleBuffer> mix;
+		//! Q050-010: a job from submitFrom() has no mix yet; the worker makes it with this first.
+		MixLoader loader;
 		int sampleRate = StemModelSampleRate;
 		int segmentFrames = HTDemucsSegmentFrames;
 		//! Q050-062.1: the segment overlap the backend runs at; set once at submit.
@@ -137,6 +144,13 @@ public:
 		int segmentFrames = HTDemucsSegmentFrames,
 		StemQuality quality = DefaultStemQuality);
 
+	// Q050-010: as submit(), for a mix the worker makes with @a loader (MixLoader) before separating.
+	// A null mix fails the job with the loader's reason; a cancel while it ran ends the job cancelled.
+	int submitFrom(MixLoader loader,
+		int sampleRate,
+		int segmentFrames = HTDemucsSegmentFrames,
+		StemQuality quality = DefaultStemQuality);
+
 	void cancel(int jobId);
 	void cancelAll();
 
@@ -167,6 +181,13 @@ private:
 	//! The provisioner step of runJob: false when it ended the job (the
 	//! terminal state and its signal are already published).
 	static bool provisionModel(const std::shared_ptr<SharedState>& state, const std::shared_ptr<Job>& job);
+	//! Everything a job needs before separating: its mix, then its model. False when it ended the job.
+	static bool prepareJob(const std::shared_ptr<SharedState>& state, const std::shared_ptr<Job>& job);
+	//! The loader step of runJob (submitFrom): false when it ended the job.
+	static bool loadMix(const std::shared_ptr<SharedState>& state, const std::shared_ptr<Job>& job);
+	//! Ends @a job as failed with @a error, on the worker.
+	static void failJob(const std::shared_ptr<SharedState>& state, const std::shared_ptr<Job>& job, const QString& error);
+	int enqueue(std::shared_ptr<Job> job);
 	//! The worker's signals: queued to this manager, dropped once it is destroyed.
 	static void emitJobStarted(const std::shared_ptr<SharedState>& state, int jobId);
 	static void emitJobProgress(const std::shared_ptr<SharedState>& state, int jobId, float fraction);

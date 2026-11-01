@@ -30,6 +30,8 @@
  *    library scan, stem separation and auto-mastering - and cancelling one from it.
  *  Output artefacts and session state, not project state: nothing is journalled. */
 
+#include <algorithm>
+
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
@@ -49,6 +51,7 @@
 #include "Engine.h"
 #include "RenderQueue.h"
 #include "Song.h"
+#include "TaskCenter.h"
 
 namespace lmms
 {
@@ -68,7 +71,7 @@ QJsonObject jobJson(const RenderJob& job)
 {
 	QJsonArray targetIds;
 	for (const int id : job.targetIds) { targetIds.append(id); }
-	return {{QStringLiteral("job"), job.id}, {QStringLiteral("kind"), RenderQueue::kindName(job.kind)},
+	return {{QStringLiteral("job"), job.id}, {QStringLiteral("task"), QStringLiteral("render-%1").arg(job.id)}, {QStringLiteral("kind"), RenderQueue::kindName(job.kind)},
 		{QStringLiteral("state"), RenderQueue::stateName(job.state)}, {QStringLiteral("source"), job.source}, {QStringLiteral("out"), job.out},
 		{QStringLiteral("operation"), job.operation}, {QStringLiteral("target_ids"), targetIds},
 		{QStringLiteral("phase"), job.phase}, {QStringLiteral("progress"), job.progress},
@@ -293,6 +296,51 @@ void addStemTasks(QJsonArray* tasks)
 	}
 }
 
+//! The app.tasks id of a job only the task area knows: its prefix plus the TaskCenter id, or empty for other kinds.
+QString taskAreaId(const TaskInfo& info)
+{
+	if (info.kind == QLatin1String("plugin_scan")) { return QStringLiteral("plugin-scan-%1").arg(info.id); }
+	if (info.kind == QLatin1String("browser_peak")) { return QStringLiteral("peak-%1").arg(info.id); }
+	return QString();
+}
+
+/*! Q050-010: plug-in scans and browser peak reads keep their lifecycle in the task area, so their rows, ended ones
+ *  included, are read from it, and the row's id carries the same number task_id reports at the start. */
+void addTaskAreaTasks(QJsonArray* tasks)
+{
+	for (const TaskInfo& info : TaskCenter::instance().tasks())
+	{
+		const QString id = taskAreaId(info);
+		if (id.isEmpty()) { continue; }
+		QJsonObject row = task(id, info.kind, TaskCenter::stateName(info.state), info.title, std::max(info.progress, 0.0));
+		row.insert(QStringLiteral("status"), info.status);
+		tasks->append(row);
+	}
+}
+
+//! Whether a stem job was ever started: reading stem.job_status wakes the stem engine, far too much for listing nothing.
+bool anyStemTask()
+{
+	const std::vector<TaskInfo> all = TaskCenter::instance().tasks();
+	return std::any_of(all.begin(), all.end(), [](const TaskInfo& info) { return info.kind == QLatin1String("stem_split"); });
+}
+
+//! Cancels the plug-in scan or peak job @a id names, through the task area, which holds its one cancel function.
+ControlResult cancelTaskAreaTask(const QString& id)
+{
+	const QString number = id.mid(id.lastIndexOf(QLatin1Char('-')) + 1);
+	for (const TaskInfo& info : TaskCenter::instance().tasks())
+	{
+		if (taskAreaId(info) != id || QString::number(info.id) != number) { continue; }
+		if (!TaskCenter::instance().cancel(info.id))
+		{
+			return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("task '%1' already ended (%2)").arg(id, TaskCenter::stateName(info.state)));
+		}
+		return ControlResult::success({{QStringLiteral("cancelled"), id}});
+	}
+	return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no task '%1'").arg(id));
+}
+
 double renderTaskProgress(const RenderJob& job)
 {
 	if (job.state == RenderJob::State::Done) { return 1.0; }
@@ -312,7 +360,8 @@ ControlResult tasks(const QJsonObject& args)
 	const BrowserIndex::Status scan = BrowserIndex::instance().status();
 	if (scan.running) { all.append(task(QStringLiteral("library-scan"), QStringLiteral("library_scan"), QStringLiteral("running"),
 		QStringLiteral("%1 files scanned").arg(scan.scanned), 0.0)); }
-	addStemTasks(&all);
+	if (anyStemTask()) { addStemTasks(&all); }
+	addTaskAreaTasks(&all);
 	const QString mastering = ControlRegistry::instance()->invoke(QStringLiteral("mastering.get_state")).result.value(QStringLiteral("state")).toString();
 	if (mastering == QLatin1String("running")) { all.append(task(QStringLiteral("mastering"), QStringLiteral("mastering"), mastering, QStringLiteral("auto-master"), 0.0)); }
 	QJsonArray out;
@@ -341,6 +390,7 @@ ControlResult taskCancel(const QJsonObject& args)
 	{
 		return ControlRegistry::instance()->invoke(QStringLiteral("stem.job_cancel"), {{QStringLiteral("job_id"), id.mid(5).toInt()}});
 	}
+	if (id.startsWith(QStringLiteral("plugin-scan-")) || id.startsWith(QStringLiteral("peak-"))) { return cancelTaskAreaTask(id); }
 	return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("'%1' cannot be cancelled from here").arg(id));
 }
 
@@ -383,10 +433,10 @@ void registerRenderQueueCommands(ControlRegistry& registry)
 		"report: bytes, sha256, seconds taken and the loudness meter's reading of the file (meter.measure_file's payload)."),
 		{{QStringLiteral("job"), integerProperty()}}, {QStringLiteral("job")}, queueReport);
 	add(registry, "app.tasks", QStringLiteral("Every background task in one list - render-queue jobs, the library scan, stem "
-		"separation jobs and auto-mastering - each with an id, kind, state, label and progress (0..1 where it is known); "
+		"separation jobs, plug-in scans, browser peak reads and auto-mastering - each with an id, kind, state, label and progress (0..1 where it is known); "
 		"'active_only' keeps the queued and running ones."), {{QStringLiteral("active_only"), booleanProperty()}}, {}, tasks);
 	add(registry, "app.task_cancel", QStringLiteral("Cancel background task 'id' (as app.tasks lists it): a render-queue job, the "
-		"library scan or a stem separation job."), {{QStringLiteral("id"), stringProperty()}}, {QStringLiteral("id")}, taskCancel);
+		"library scan, a stem separation job, a plug-in scan or a browser peak read."), {{QStringLiteral("id"), stringProperty()}}, {QStringLiteral("id")}, taskCancel);
 	registerRenderBounceCommand(registry);
 }
 
@@ -402,7 +452,7 @@ void registerRenderBounceCommand(ControlRegistry& registry)
 		{QStringLiteral("track"), stringProperty()}, {QStringLiteral("out"), stringProperty()},
 		{QStringLiteral("start"), integerProperty()}, {QStringLiteral("end"), integerProperty()},
 		{QStringLiteral("mute_sources"), booleanProperty()}}, {QStringLiteral("operation")});
-	cmd.resultSchema = objectSchema({{QStringLiteral("job"), integerProperty()}, {QStringLiteral("kind"), stringProperty()},
+	cmd.resultSchema = objectSchema({{QStringLiteral("job"), integerProperty()}, {QStringLiteral("task"), stringProperty()}, {QStringLiteral("kind"), stringProperty()},
 		{QStringLiteral("operation"), stringProperty()}, {QStringLiteral("state"), stringProperty()}, {QStringLiteral("out"), stringProperty()}});
 	cmd.mutating = true;
 	cmd.handler = queueRenderBounce;
