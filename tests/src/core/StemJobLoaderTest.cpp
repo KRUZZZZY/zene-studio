@@ -46,11 +46,15 @@ std::shared_ptr<const SampleBuffer> makeMix()
 	return std::make_shared<const SampleBuffer>(std::vector<SampleFrame>(256, SampleFrame(0.5f, -0.5f)), StemModelSampleRate);
 }
 
+//! How many times any FakeSeparator was asked to separate: a cancelled loader must leave it at zero.
+std::atomic<int> s_separations{0};
+
 class FakeSeparator : public StemSeparator
 {
 public:
 	Status separate(const SampleBuffer& mix, int sampleRate, int, StemQuality, const ProgressFn& progress, StemSet& out, QString&) override
 	{
+		++s_separations;
 		if (!progress(1.0f)) { return Status::Cancelled; }
 		for (int s = 0; s < NumStems; ++s)
 		{
@@ -120,6 +124,7 @@ private slots:
 	{
 		StemJobManager manager;
 		manager.setSeparator(std::make_unique<FakeSeparator>());
+		s_separations.store(0);
 		std::atomic<bool> inLoader{false};
 		QSignalSpy cancelledSpy(&manager, &StemJobManager::jobCancelled);
 		QSignalSpy progressSpy(&manager, &StemJobManager::jobProgress);
@@ -134,6 +139,7 @@ private slots:
 		QTRY_VERIFY_WITH_TIMEOUT(cancelledSpy.count() == 1, 5000);
 		QCOMPARE(static_cast<int>(manager.state(id)), static_cast<int>(StemJobManager::State::Cancelled));
 		QCOMPARE(progressSpy.count(), 0);
+		QCOMPARE(s_separations.load(), 0);
 		QVERIFY(manager.result(id)[0] == nullptr);
 	}
 

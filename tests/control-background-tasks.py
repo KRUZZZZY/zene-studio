@@ -159,8 +159,13 @@ def main(argv):
             client = H.connect(instance)
             H.wait_ready(instance, client, transcript)
             session = Session(client, transcript)
+            # Everything below runs with the transport playing: no job may stall or stop the audio side.
+            session.result(problems, "transport.play")
             check_plugin_scan(session, problems)
             check_peaks(session, problems, workdir)
+            state = session.result(problems, "transport.get_state")
+            problems.require(state.get("playing") is True, "the transport stopped during the jobs: %r" % (state,))
+            session.result(problems, "transport.stop")
             check_render(session, problems, workdir)
     finally:
         shutil.rmtree(workdir, ignore_errors=True)

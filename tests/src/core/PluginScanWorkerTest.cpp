@@ -23,6 +23,7 @@
 
 #include <QtTest>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <thread>
@@ -210,26 +211,37 @@ private slots:
 		QCOMPARE(stateOf(id), QStringLiteral("cancelled"));
 	}
 
-	void aReportFromAnEndedRunDoesNotTouchTheNextOne()
+	//! An old worker's report must not release a newer run that is waiting on a load of its own.
+	void aReportFromAnEndedRunDoesNotReleaseTheNextOne()
 	{
+		QThreadPool::globalInstance()->setMaxThreadCount(std::max(QThreadPool::globalInstance()->maxThreadCount(), 4));
+		std::atomic<int> loads{0};
+		std::atomic<bool> releaseFirst{false};
+		std::atomic<bool> releaseSecond{false};
+		PluginFactory::instance()->setBackgroundLoadHookForTesting([&] {
+			std::atomic<bool>& gate = ++loads == 1 ? releaseFirst : releaseSecond;
+			QElapsedTimer bound;
+			bound.start();
+			while (!gate.load() && bound.elapsed() < 20000) { std::this_thread::sleep_for(std::chrono::milliseconds(2)); }
+		});
 		makeModuleStale();
-		holdTheLoads();
 		const QString first = run(QStringLiteral("plugin.scan_start")).result.value(QStringLiteral("task")).toString();
-		QTRY_VERIFY_WITH_TIMEOUT(m_entered.load(), 5000);
+		QTRY_COMPARE_WITH_TIMEOUT(loads.load(), 1, 5000);
 		QVERIFY(run(QStringLiteral("app.task_cancel"), {{QStringLiteral("id"), first}}).ok);
-		PluginFactory::instance()->setBackgroundLoadHookForTesting({});
 
-		// The first worker is still held; a paced second run is on its way when that worker reports.
-		const ControlResult second = run(QStringLiteral("plugin.scan_start"), {{QStringLiteral("pace_ms"), 200}});
-		QVERIFY2(second.ok, qPrintable(second.errorMessage));
-		const QString id = second.result.value(QStringLiteral("task")).toString();
-		QVERIFY(id != first);
-		m_release.store(true);
-		QThreadPool::globalInstance()->waitForDone(30000);
-		QCoreApplication::processEvents();
-		QCOMPARE(stateOf(id), QStringLiteral("running"));
-		QTRY_COMPARE_WITH_TIMEOUT(stateOf(id), QStringLiteral("done"), 30000);
+		makeModuleStale();
+		const QString second = run(QStringLiteral("plugin.scan_start")).result.value(QStringLiteral("task")).toString();
+		QVERIFY(second != first);
+		QTRY_COMPARE_WITH_TIMEOUT(loads.load(), 2, 5000);  // the second run is now waiting on its own load
+
+		releaseFirst.store(true);
+		QTest::qWait(300);  // time for the old report to arrive and, if it were believed, for the run to finish
+		QCOMPARE(stateOf(second), QStringLiteral("running"));
+
+		releaseSecond.store(true);
+		QTRY_COMPARE_WITH_TIMEOUT(stateOf(second), QStringLiteral("done"), 30000);
 		QCOMPARE(stateOf(first), QStringLiteral("cancelled"));
+		QVERIFY(QThreadPool::globalInstance()->waitForDone(30000));
 	}
 };
 
