@@ -1095,8 +1095,10 @@ config lists back) and one `not_mutating` (`session.command_bindings`, a read) -
 
 **M0 merge train 22** (`050/m0-train-22`, 2026-10-28, automatic): `ReversibilityContractTest` on the merged tree measures `rows=887 true_inverse=434 snapshot=42 irreversible=25 not_mutating=386`.
 
+**Q050-255 and Q050-219** (`feat/050-Q050-255-oc`, 2026-11-01): `track.folder_span_resize`, `track.folder_span_split`, `track.folder_span_move`, `track.folder_span_delete` and `section.move` add five `true_inverse` rows; `track.folder_spans` and `track.folder_span_select` add two `not_mutating` rows - `rows=894 true_inverse=439 snapshot=42 irreversible=25 not_mutating=388`.
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=887 true_inverse=434 snapshot=42 irreversible=25 not_mutating=386
+     measured: rows=894 true_inverse=439 snapshot=42 irreversible=25 not_mutating=388
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5
