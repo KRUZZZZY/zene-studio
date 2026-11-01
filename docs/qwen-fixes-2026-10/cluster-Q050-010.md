@@ -30,8 +30,7 @@ Neighbours, EXIT=0 in the same run: `ControlRenderJobTest`, `StemJobManagerTest`
 | m4 | stem loader's cancel check off | EXIT=8: `testCancelDuringTheLoaderCancelsTheJobWithoutSeparating` (this test passed before being sharpened; it now asserts `separate` never ran) |
 | m5 | run-generation check off | EXIT=8: `aReportFromAnEndedRunDoesNotReleaseTheNextOne` (also rewritten after an earlier form passed) |
 
-Not separately mutated: `testALoaderThatFailsFailsTheJobWithItsReason`, `aFileThatCannotBeRead...` and `aSmallFileIsDrawnAtOnceWithoutATask`
-as single faults (the last was added after the broad mutant; its failure without the change was not run).
+| m6 | small-file read off; peak failure reported as done; loader's reason dropped | EXIT=8: `aSmallFileIsDrawnAtOnceWithoutATask`, `aFileThatCannotBeReadFailsItsTaskWithTheReason`, `testALoaderThatFailsFailsTheJobWithItsReason`. Restored: `q1-test-restored.log`, EXIT=0 |
 
 **Every criterion proven by a test I ran:** see the table above, with exit codes from the final run.
 
