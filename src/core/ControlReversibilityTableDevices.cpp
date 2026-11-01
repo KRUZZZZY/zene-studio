@@ -212,6 +212,8 @@ const ReversibilityRow kDeviceRows[] = {
 	R("section.add", RC::TrueInverse, true, "it adds a section", "action checkpoint: the recorded undo step puts the previous list back", ""),
 	R("section.set", RC::TrueInverse, true, "it changes a section", "action checkpoint: the recorded undo step puts the previous list back", ""),
 	R("section.remove", RC::TrueInverse, true, "it removes a section", "action checkpoint: the recorded undo step puts the previous list back", ""),
+	R("section.move", RC::TrueInverse, true, "it moves a section and the material inside it on every track, with ripple the material it passes too",
+		"journal checkpoints of every track and an action checkpoint for the section list, merged into one step", ""),
 	R("section.select", RC::NotMutating, false, "it selects the section's span through range.set: interface state", "no write", ""),
 	R("comp.move_edge", RC::TrueInverse, true, "it moves a boundary of the composite", "Track checkpoint", ""),
 	R("comp.split_passes", RC::TrueInverse, true, "it cuts a looped take into passes on their own lanes", "Track checkpoint", ""),

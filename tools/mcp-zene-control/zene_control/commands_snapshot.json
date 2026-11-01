@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-29T15:55:04Z",
+  "captured_at": "2026-11-01T12:11:41Z",
   "commands": [
     {
       "args_schema": {
@@ -27391,6 +27391,41 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "mode": {
+            "enum": [
+              "gap",
+              "ripple"
+            ],
+            "type": "string"
+          },
+          "section": {
+            "type": "string"
+          },
+          "start": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "section",
+          "start"
+        ],
+        "type": "object"
+      },
+      "description": "Move section 'section' to a new 'start' tick with the material inside it, on every track: clips crossing its edges are cut there, the section keeps its length and name. 'mode' gap leaves everything else where it is (a gap at the source; what lies at the destination stays and may overlap); ripple reorders the song - what the section passes moves the other way by its length, closing the gap, and other sections wholly inside that stretch go with it. Without 'mode', arrangement.modes' ripple decides. Markers, tempo and loop bounds stay. Refused while a clip it would touch is locked. One undo step.",
+      "group": "section",
+      "id": "section.move",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "section": {
             "type": "string"
           }
@@ -31185,6 +31220,180 @@
           }
         },
         "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clips": {
+            "type": "array"
+          },
+          "spans": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Delete every clip of summary clips. Later clips stay where they are. Aimed at 'spans' ([{folder, start, end}], as track.folder_spans lists them) or, without it, the selected summary clips, and at 'clips' (ordinary clip ids) edited with them; a clip reached twice changes once. One undo step.",
+      "group": "track",
+      "id": "track.folder_span_delete",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clips": {
+            "type": "array"
+          },
+          "delta": {
+            "maximum": 1919808,
+            "minimum": -1919808,
+            "type": "integer"
+          },
+          "spans": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "delta"
+        ],
+        "type": "object"
+      },
+      "description": "Move every clip of summary clips by 'delta' ticks, together; what they land on stays. Aimed at 'spans' ([{folder, start, end}], as track.folder_spans lists them) or, without it, the selected summary clips, and at 'clips' (ordinary clip ids) edited with them; a clip reached twice changes once. One undo step.",
+      "group": "track",
+      "id": "track.folder_span_move",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clips": {
+            "type": "array"
+          },
+          "delta": {
+            "maximum": 1919808,
+            "minimum": -1919808,
+            "type": "integer"
+          },
+          "edge": {
+            "enum": [
+              "start",
+              "end"
+            ],
+            "type": "string"
+          },
+          "spans": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "edge",
+          "delta"
+        ],
+        "type": "object"
+      },
+      "description": "Move the 'start' or 'end' 'edge' of summary clips by 'delta' ticks, over their child clips: lengthening takes the clips at that edge out to it, shortening cuts the clips crossing the new edge and removes those wholly past it. An edge cannot pass the neighbouring summary clip; an ordinary clip's own edge moves by the same delta. Aimed at 'spans' ([{folder, start, end}], as track.folder_spans lists them) or, without it, the selected summary clips, and at 'clips' (ordinary clip ids) edited with them; a clip reached twice changes once. One undo step.",
+      "group": "track",
+      "id": "track.folder_span_resize",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "add": {
+            "type": "boolean"
+          },
+          "at": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "folder": {
+            "type": "string"
+          },
+          "selected": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Select the summary clip of 'folder' holding tick 'at', replacing the selection or with 'add' adding to it; 'selected' false takes it out again; no 'folder' clears the selection. Interface state, not saved.",
+      "group": "track",
+      "id": "track.folder_span_select",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "maximum": 1919808,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "clips": {
+            "type": "array"
+          },
+          "spans": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "at"
+        ],
+        "type": "object"
+      },
+      "description": "Cut every child clip of summary clips that crosses tick 'at' there, nested tracks too. Touching clips still draw as one summary clip. Aimed at 'spans' ([{folder, start, end}], as track.folder_spans lists them) or, without it, the selected summary clips, and at 'clips' (ordinary clip ids) edited with them; a clip reached twice changes once. One undo step.",
+      "group": "track",
+      "id": "track.folder_span_split",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "folder": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "folder"
+        ],
+        "type": "object"
+      },
+      "description": "Folder track 'folder''s summary clips - the stretches its row draws, derived from its children's clips: start, end, how many clips, on which tracks, whether selected - and every selected summary clip.",
+      "group": "track",
+      "id": "track.folder_spans",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
         "type": "object"
       }
     },
@@ -37464,23 +37673,23 @@
       }
     }
   ],
-  "count": 878,
+  "count": 885,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-255/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-k4l1reh3/zene.sock",
-    "version": "0.4.0-alpha.5942+68bed50"
+    "source_socket": "/tmp/zctl-run-_7j_kop1/zene.sock",
+    "version": "0.4.0-alpha.5943+2a7fd9f"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 77,
-    "id_count": 878,
-    "ids_sha256": "60473c71cd63735b5af096bbd2cd1d9a5a096cf4b2fd8855d1333df124ea362a"
+    "id_count": 885,
+    "ids_sha256": "ef18f75d217a71d6672e94317393f213d08fe42cc52a39dc56165e7e4d998c5f"
   }
 }

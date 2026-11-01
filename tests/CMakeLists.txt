@@ -6188,6 +6188,16 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)
+	# Q050-255 and Q050-219 over the socket: a folder's summary clips resized, split, selected and edited
+	# together, a section moved with its material in both modes, each read back and undone in one step.
+	add_test(NAME ControlArrangementGroupEdits
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-arrangement-group-edits.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlArrangementGroupEdits PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
 	# The 0.5.0 L05 audio edits over the socket: range fades, automatic fades and transient marks,
 	# splits at beats, a fade shape, transients, and slicing to a SlicerT track.
 	add_test(NAME ControlAudioEditing

@@ -267,6 +267,7 @@ include/ClipConsolidate.h
 include/ClipEdits.h
 include/ClipEditsMenu.h
 include/ClipEffectsDialog.h
+include/ClipGroupEdits.h
 include/ClipLinks.h
 include/ClipLockFeedback.h
 include/ClipPreFades.h
@@ -1551,6 +1552,7 @@ src/core/Clip.cpp
 src/core/ClipAudioLoop.cpp
 src/core/ClipConsolidate.cpp
 src/core/ClipEdits.cpp
+src/core/ClipGroupEdits.cpp
 src/core/ClipLinks.cpp
 src/core/ClipPreFades.cpp
 src/core/ClipTransients.cpp
@@ -1643,6 +1645,7 @@ src/core/ControlCommandsDsp.cpp
 src/core/ControlCommandsExport.cpp
 src/core/ControlCommandsExportPresets.cpp
 src/core/ControlCommandsFeedback.cpp
+src/core/ControlCommandsFolderSpans.cpp
 src/core/ControlCommandsFreeze.cpp
 src/core/ControlCommandsGroove.cpp
 src/core/ControlCommandsGrooveEdit.cpp

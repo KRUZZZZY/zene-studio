@@ -26,12 +26,15 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdlib>
 
 #include <QContextMenuEvent>
 #include <QHelpEvent>
 #include <QJsonObject>
+#include <QActionGroup>
 #include <QMenu>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
 #include <QScrollBar>
@@ -39,6 +42,8 @@
 #include <QToolTip>
 #include <QVBoxLayout>
 
+#include "AccessibleWidgets.h"
+#include "ArrangementEdits.h"
 #include "ArrangementSections.h"
 #include "ArrangerLandmarks.h"
 #include "ChordTrack.h"
@@ -66,6 +71,7 @@ constexpr int ClosedHeight = 8;  //!< the ruler's height with no lane drawn: a s
 constexpr int ChordPollMs = 250;  //!< how often the chord lane looks at the chord track's revision
 constexpr int MarkerHit = 6;     //!< pixels either side of a marker's line a click still takes
 constexpr int LabelGap = 4;      //!< pixels kept between a label and the next object
+constexpr int DragDeadZone = 4;  //!< pixels a press on a section may wander and still be a click
 constexpr int MinLabel = 14;     //!< narrower than this, a label is left out (its tooltip still has it)
 
 const QString& preferenceName()
@@ -125,7 +131,7 @@ ArrangerRulerLanes::ArrangerRulerLanes(SongEditor* editor) :
 {
 	setObjectName(QStringLiteral("arrangerRulerLanes"));
 	setAccessibleName(tr("Ruler lanes"));
-	setAccessibleDescription(tr("Sections, markers and tempo along the song; click a section to select it, a marker to jump there; double-click either to zoom to it"));
+	setAccessibleDescription(tr("Sections, markers and tempo along the song; click a section to select it, drag it to move its material on every track, click a marker to jump there; double-click either to zoom to it"));
 	setFocusPolicy(Qt::NoFocus);
 	setMouseTracking(true);
 	if (auto* box = qobject_cast<QVBoxLayout*>(editor->layout())) { box->insertWidget(box->indexOf(editor->timeLine()) + 1, this); }
@@ -239,6 +245,30 @@ void ArrangerRulerLanes::paintSections(QPainter& p, const QRect& lane) const
 	}
 }
 
+void ArrangerRulerLanes::paintSectionDrop(QPainter& p, const QRect& lane) const
+{
+	if (m_heldSection < 0 || !m_heldMoved) { return; }
+	const QRect area(xOf(m_dropTick), lane.top() + 1, std::max(2, xOf(m_dropTick + m_heldLength) - xOf(m_dropTick) - 1), lane.height() - 2);
+	QColor shade = tokens::palette().accent;
+	shade.setAlpha(90);
+	p.fillRect(area, shade);
+	p.setPen(QPen(tokens::palette().accent, 1, Qt::DashLine));
+	p.drawRect(area);
+}
+
+const ArrangementSection* ArrangerRulerLanes::sectionAt(const QPoint& pos) const
+{
+	if (pos.x() < contentLeft() || !laneRect(Lane::Sections).contains(pos)) { return nullptr; }
+	return ArrangementSections::instance().at(tickAt(pos.x()));
+}
+
+tick_t ArrangerRulerLanes::sectionDropTick(const QPoint& pos, bool free) const
+{
+	const double ticks = m_heldStart + static_cast<double>(pos.x() - m_heldX) * TimePos::ticksPerBar() / std::max(1.f, m_editor->pixelsPerBar());
+	const double snap = free ? 1.0 : std::max(1.0, std::round(static_cast<double>(m_editor->getSnapSize()) * TimePos::ticksPerBar()));
+	return std::max<tick_t>(0, static_cast<tick_t>(std::lround(ticks / snap) * snap));
+}
+
 void ArrangerRulerLanes::paintMarkers(QPainter& p, const QRect& lane)
 {
 	const tokens::Palette& pal = tokens::palette();
@@ -319,7 +349,11 @@ void ArrangerRulerLanes::paintEvent(QPaintEvent*)
 		p.drawText(title, Qt::AlignVCenter | Qt::AlignRight, p.fontMetrics().elidedText(laneTitle(i), Qt::ElideRight, title.width()));
 		p.save();
 		p.setClipRect(QRect(contentLeft(), lane.top(), width() - contentLeft(), lane.height()));
-		if (i == 0) { paintSections(p, lane); }
+		if (i == 0)
+		{
+			paintSections(p, lane);
+			paintSectionDrop(p, lane);
+		}
 		else if (i == 1) { paintMarkers(p, lane); }
 		else if (i == 2) { paintTempo(p, lane); }
 		else { paintChords(p, lane); }
@@ -390,7 +424,68 @@ void ArrangerRulerLanes::mousePressEvent(QMouseEvent* event)
 	QJsonObject args;
 	QString name;
 	if (event->button() != Qt::LeftButton || !itemAt(event->pos(), &command, &args, &name)) { return QWidget::mousePressEvent(event); }
+	if (const ArrangementSection* section = sectionAt(event->pos()))
+	{
+		// Q050-219: held until the release says whether this was a click or a drag.
+		m_heldSection = section->id;
+		m_heldStart = m_dropTick = section->start;
+		m_heldLength = section->end - section->start;
+		m_heldX = event->pos().x();
+		m_heldMoved = false;
+		return;
+	}
 	ControlRegistry::instance()->invoke(command, args);
+}
+
+void ArrangerRulerLanes::mouseMoveEvent(QMouseEvent* event)
+{
+	if (m_heldSection < 0)
+	{
+		if (sectionAt(event->pos()) != nullptr) { setCursor(Qt::OpenHandCursor); }
+		else { unsetCursor(); }
+		return QWidget::mouseMoveEvent(event);
+	}
+	if (!(event->buttons() & Qt::LeftButton))  // the release went elsewhere (a grab the window system took away): no drag
+	{
+		m_heldSection = -1;
+		unsetCursor();
+		return update();
+	}
+	m_heldMoved = m_heldMoved || std::abs(event->pos().x() - m_heldX) >= DragDeadZone;
+	if (!m_heldMoved) { return; }
+	setCursor(Qt::ClosedHandCursor);
+	m_dropTick = sectionDropTick(event->pos(), (event->modifiers() & Qt::AltModifier) != 0);
+	update();
+}
+
+void ArrangerRulerLanes::mouseReleaseEvent(QMouseEvent* event)
+{
+	if (m_heldSection < 0 || event->button() != Qt::LeftButton) { return QWidget::mouseReleaseEvent(event); }
+	finishSectionPress(event);
+	m_heldSection = -1;
+	unsetCursor();
+	update();
+}
+
+void ArrangerRulerLanes::finishSectionPress(const QMouseEvent* event)
+{
+	const QString id = QStringLiteral("sec-%1").arg(m_heldSection);
+	if (!m_heldMoved)
+	{
+		ControlRegistry::instance()->invoke(QStringLiteral("section.select"), {{QStringLiteral("section"), id}});
+		return;
+	}
+	const tick_t target = sectionDropTick(event->pos(), (event->modifiers() & Qt::AltModifier) != 0);
+	if (target == m_heldStart) { return; }
+	const bool rippleMode = arrangement::modes().ripple != arrangement::Ripple::Off;
+	const bool ripple = rippleMode != ((event->modifiers() & Qt::ShiftModifier) != 0);
+	const ControlResult result = ControlRegistry::instance()->invoke(QStringLiteral("section.move"), {{QStringLiteral("section"), id},
+		{QStringLiteral("start"), static_cast<int>(target)}, {QStringLiteral("mode"), ripple ? QStringLiteral("ripple") : QStringLiteral("gap")}});
+	if (!result.ok)
+	{
+		a11y::announceTransition(this, a11y::Transition::Refused, result.errorMessage);
+		QToolTip::showText(mapToGlobal(event->pos()), result.errorMessage, this);
+	}
 }
 
 void ArrangerRulerLanes::mouseDoubleClickEvent(QMouseEvent* event)
@@ -422,6 +517,22 @@ void ArrangerRulerLanes::contextMenuEvent(QContextMenuEvent* event)
 		const QString lane = laneNames().at(i);
 		connect(action, &QAction::toggled, this, [lane](bool on) {
 			ControlRegistry::instance()->invoke(QStringLiteral("arrangement.ruler_lanes"), {{lane, on}});
+		});
+	}
+	// Q050-219: what dragging a section does to the rest of the song - the arranger's ripple mode.
+	menu.addSection(tr("Moving a section"));
+	auto* moving = new QActionGroup(&menu);
+	const bool rippling = arrangement::modes().ripple != arrangement::Ripple::Off;
+	for (const bool ripple : {false, true})
+	{
+		QAction* action = menu.addAction(ripple ? tr("Ripple: reorder the song") : tr("Gap: leave the rest in place"));
+		action->setCheckable(true);
+		action->setChecked(ripple == rippling);
+		action->setActionGroup(moving);
+		action->setProperty("controlCommand", QStringLiteral("arrangement.modes"));
+		connect(action, &QAction::triggered, this, [ripple] {
+			ControlRegistry::instance()->invoke(QStringLiteral("arrangement.modes"),
+				{{QStringLiteral("ripple"), ripple ? QStringLiteral("all") : QStringLiteral("off")}});
 		});
 	}
 	menu.exec(event->globalPos());
