@@ -31,6 +31,7 @@
 #include <QJsonObject>
 #include <QPainter>
 
+#include "BrowserPeakCache.h"
 #include "ControlRegistry.h"
 #include "DesignTokens.h"
 #include "PeakJobs.h"
@@ -44,6 +45,8 @@ namespace
 //! How many buckets one preview asks for: enough for a wide panel, a fraction of the cache's base.
 constexpr int PreviewBuckets = 512;
 constexpr int PreviewHeight = 56;
+//! At or below this a file is read where it was selected: milliseconds, like the read of a small sample always was.
+constexpr qint64 SynchronousReadBytes = 1024 * 1024;
 
 QString taskName(int id)
 {
@@ -88,6 +91,9 @@ bool WaveformPreview::setPath(const QString& path)
 	setAccessibleDescription(QString());  // never the previous sample's name and length (review r4 L20 #5)
 	setVisible(!path.isEmpty());
 	if (path.isEmpty()) { return false; }
+	// A short operation does not report (TaskCenter.h): a click through small samples must not fill the Tasks list.
+	const QFileInfo file(path);
+	if (BrowserPeakCache::instance().isCurrent(path) || (file.isFile() && file.size() <= SynchronousReadBytes)) { return readPeaks(); }
 	const ControlResult started = ControlRegistry::instance()->invoke(QStringLiteral("browser.peaks_start"), {{QStringLiteral("path"), path}});
 	if (!started.ok)
 	{

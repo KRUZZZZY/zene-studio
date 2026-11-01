@@ -59,12 +59,12 @@ class BackgroundTasksGuiTest : public QObject
 	std::atomic<bool> m_release{false};
 	std::atomic<bool> m_entered{false};
 
-	QString wave(const QString& name)
+	QString wave(const QString& name, int frames = 48000 * 30)
 	{
 		const QString path = m_dir.filePath(name);
 		browserfixture::WaveSpec spec;
-		spec.frames = 4096;
-		spec.burstStartFrame = 2048;
+		spec.frames = frames;
+		spec.burstStartFrame = frames / 2;
 		return browserfixture::writeWave(path, spec) ? path : QString();
 	}
 
@@ -104,6 +104,18 @@ private slots:
 		PeakJobs::instance().setBeforeComputeHookForTesting({});
 		BrowserPeakCache::instance().clear();
 		TaskCenter::instance().clearFinished();
+	}
+
+	//! A short operation stays out of the Tasks list: clicking through small samples adds no rows.
+	void aSmallFileIsDrawnAtOnceWithoutATask()
+	{
+		const QString path = wave(QStringLiteral("small.wav"), 4096);
+		WaveformPreview preview;
+		holdTheWorker();
+		const std::size_t before = TaskCenter::instance().tasks().size();
+		QVERIFY(preview.setPath(path));
+		QVERIFY(!preview.peaks().isEmpty());
+		QCOMPARE(TaskCenter::instance().tasks().size(), before);
 	}
 
 	void selectingALongFileReturnsAtOnceAndTheWaveformFollows()

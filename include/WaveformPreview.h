@@ -43,7 +43,7 @@ class LMMS_EXPORT WaveformPreview : public QWidget
 public:
 	explicit WaveformPreview(QWidget* parent = nullptr);
 
-	/*! Show @a path's waveform (empty clears it). A file not in the peak cache is analysed in the background
+	/*! Show @a path's waveform (empty clears it). A long file not in the peak cache is analysed in the background
 	 *  (browser.peaks_start, Q050-010): this returns false at once and the waveform appears when the job ends.
 	 *  Selecting something else cancels the job. Returns whether peaks were read now. */
 	bool setPath(const QString& path);
