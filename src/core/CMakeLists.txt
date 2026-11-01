@@ -1162,6 +1162,8 @@ set(LMMS_SRCS
 	core/MetronomeOptions.cpp
 	core/ControlCommandsArrangeTools.cpp
 	core/FolderSummary.cpp
+	core/ClipGroupEdits.cpp
+	core/ControlCommandsFolderSpans.cpp
 	core/ControlCommandsSections.cpp
 	core/ArrangementSections.cpp
 	core/ControlCommandsSampleTools.cpp

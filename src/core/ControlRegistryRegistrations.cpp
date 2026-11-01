@@ -145,6 +145,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerRecordToolCommands(registry);
 	registerArrangeToolCommands(registry);
 	registerSectionCommands(registry);
+	registerFolderSpanCommands(registry);
 	registerSampleToolCommands(registry);
 	registerAutomationToolCommands(registry);
 	registerAudioAnalysisCommands(registry);
