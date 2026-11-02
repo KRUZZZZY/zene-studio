@@ -1621,6 +1621,8 @@ IF(ZENE_HAVE_COLLAB)
 		src/core/UpnpMapperFakeRouterTest.cpp
 		# collab.show_panel (requires: display) over the real main window.
 		src/gui/CollabPanelTest.cpp
+		# Edit > Collaborate... refused by the registry (unattended): the reason reaches the status bar.
+		src/gui/MenuRefusalNoticeTest.cpp
 		# Q050-205: the opt-in OSC control server over real UDP loopback, and its Customise menu entries.
 		src/core/ControlOscServerTest.cpp
 		src/gui/OscServerMenuTest.cpp
@@ -3477,6 +3479,7 @@ set_tests_properties(WindowSelectStartupTest PROPERTIES ENVIRONMENT "QT_QPA_PLAT
 set_tests_properties(OnlineHelpNoticeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 if(ZENE_HAVE_COLLAB)
 	set_tests_properties(CollabPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	set_tests_properties(MenuRefusalNoticeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	set_tests_properties(ControlOscServerTest OscServerMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
 set_tests_properties(WorkspaceAccessTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
