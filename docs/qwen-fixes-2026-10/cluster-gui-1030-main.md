@@ -95,3 +95,4 @@ unchanged. No product file changed.
 | --- | --- | --- |
 | build | `CCACHE_TEMPDIR=$TMPDIR/ccache-tmp-gui1030 cmake --build build --target zene TrackFolderMenuTest -j4 > r2/logs/build-1.log 2>&1` | 0 |
 | test | `cd build/tests && ctest -R '^TrackFolderMenuTest$' --output-on-failure > r2/logs/test-1.log 2>&1` | 0 (1/1 passed, new slot included) |
+| gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > r2/logs/gates-1.log` | 1 - NOT RUN from this session: `PermissionError` writing `.../zene-qwen-gui-1030-main-feature-check/fork-sources.log` (the sibling log directory exists but is not writable from the write jail). Luna reports the gate passed on her side; the round-1 change is one test-line edit. |
