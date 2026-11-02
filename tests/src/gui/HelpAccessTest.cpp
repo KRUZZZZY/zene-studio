@@ -37,6 +37,8 @@
 #include <QFile>
 #include <QFrame>
 #include <QJsonArray>
+#include <QMenu>
+#include <QMenuBar>
 #include <QRegularExpression>
 #include <QScrollArea>
 #include <QScrollBar>
@@ -56,6 +58,7 @@
 #include "HelpCenter.h"
 #include "HelpTasks.h"
 #include "MainWindow.h"
+#include "MenuTestSupport.h"
 #include "Shell.h"
 
 using namespace lmms;
@@ -424,6 +427,27 @@ private slots:
 		QCOMPARE(shown->step(), 0);
 		delete shown;
 		QCOMPARE(missing.errorKind, ControlErrorKind::NotFound);
+	}
+
+	//! gui-1030-menu-help-command-reference: app.help declares requires: display, so an unattended session (here the
+	//! offscreen platform) refuses it - by contract, and no Help window opens. The menu used to close without a
+	//! word and leave nothing in the log; the refusal is now logged, as the other menus' refusals are.
+	void aRefusedHelpMenuItemSaysSoInTheLog()
+	{
+		MainWindow* shellWindow = getGUI()->mainWindow();
+		ControlRegistry* registry = ControlRegistry::instance();
+		const bool headless = registry->isHeadless();
+		registry->setHeadless(true);
+		QMenuBar bar;  // the main window installs these entries from a timer once it is shown; install them here directly
+		bar.addMenu(QStringLiteral("Help"));
+		installHelpEntries(&bar);
+		QAction* reference = lmms::test::menuAction(bar.actions().last()->menu(), {QStringLiteral("Command Reference")});
+		QVERIFY(reference != nullptr && reference->isEnabled());
+		delete shellWindow->findChild<HelpCenter*>();
+		QTest::ignoreMessage(QtWarningMsg, QRegularExpression(QStringLiteral("app\\.help refused: .*requires a display")));
+		reference->trigger();
+		registry->setHeadless(headless);
+		QVERIFY2(shellWindow->findChild<HelpCenter*>() == nullptr, "the refused command opened a Help window anyway");
 	}
 
 	void appearanceIsStoredWhereMainReadsIt()
