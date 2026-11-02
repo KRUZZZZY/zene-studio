@@ -43,6 +43,8 @@
 #include <QHash>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QMenu>
+#include <QMenuBar>
 
 #include "CompSwipeStrip.h"
 #include "ControlRegistry.h"
@@ -113,6 +115,27 @@ bool hasWaveformInk(const QImage& image, const QRect& rect)
 	return total - mostCommon > 0;
 }
 
+//! The Record menu's entry named @a label, found the way a click finds it.
+QAction* recordMenuItem(const QString& label)
+{
+	for (QAction* top : getGUI()->mainWindow()->menuBar()->actions())
+	{
+		if (top->menu() == nullptr) { continue; }
+		for (QAction* action : top->menu()->actions())
+		{
+			if (action->text() == label && action->property("controlCommand").toString() == QLatin1String("transport.punch_here")) { return action; }
+		}
+	}
+	return nullptr;
+}
+
+//! True when @a image holds the punch band's red at @a at: red clearly above green and blue.
+bool isPunchRed(const QImage& image, const QPoint& at)
+{
+	const QColor c = image.pixelColor(at);
+	return c.red() > c.green() + 40 && c.red() > c.blue() + 40;
+}
+
 } // namespace
 
 class ArrangerTakePunchTest : public QObject
@@ -145,6 +168,42 @@ private slots:
 			{QStringLiteral("anchor"), QStringLiteral("start")}}).ok);
 		QVERIFY(run(QStringLiteral("arrangement.scroll"), {{QStringLiteral("position"), 0}}).ok);
 		QCoreApplication::processEvents();
+	}
+
+	//! gui-1030 (menu-record Punch In Here): the Record menu's item sets a range that starts at the play
+	//! position, arms it, and the ruler shows it - a band in its own row with the in handle on the play
+	//! position - without anything but the menu click. The sweep's screenshot was taken with the previous
+	//! control's command dialog open over the ruler; this is the click with nothing in the way.
+	void punchInHereFromTheRecordMenuShowsTheBand()
+	{
+		Song* song = Engine::getSong();
+		Timeline& timeline = song->getTimeline(Song::PlayMode::Song);
+		timeline.clearPunch();
+		const tick_t here = 3 * Bar + 48;
+		// The play head as a user or agent moves it: a stopped seek moves the transport readout's head and the arranger's.
+		QVERIFY(run(QStringLiteral("transport.seek"), {{QStringLiteral("ticks"), static_cast<int>(here)}}).ok);
+		QCOMPARE(song->getPlayPos().getTicks(), here);
+
+		QAction* item = recordMenuItem(QStringLiteral("Punch In Here"));
+		QVERIFY2(item != nullptr, "the Record menu has no Punch In Here item");
+		QVERIFY(item->isEnabled());
+		item->trigger();
+		QCoreApplication::processEvents();
+
+		QCOMPARE(timeline.punchBegin(), here);
+		QVERIFY2(timeline.punchEnd() > here, "Punch In Here left an empty range");
+		QVERIFY(timeline.punchArmed());
+
+		TimeLineWidget* ruler = m_editor->timeLine();
+		ruler->resize(std::max(1200, ruler->width()), 32);
+		QVERIFY(ruler->hasPunchRange());
+		const QRect band = ruler->punchBandRect();
+		QVERIFY2(!band.isEmpty(), "the ruler did not reserve a band for the punch range");
+		QCOMPARE(ruler->punchBeginHandleRect().center().x(), ruler->markerX(TimePos(here)));
+		const QImage painted = ruler->grab().toImage();
+		QVERIFY2(isPunchRed(painted, QPoint(band.right() - 6, band.center().y())), "the painted ruler shows no punch band");
+		auto* arm = getGUI()->songEditor()->findChild<QAction*>(QStringLiteral("punchAction"));
+		QVERIFY(arm != nullptr && arm->isChecked());
 	}
 
 	//! 0.5.0 L03 (Q050-147): the punch range has its own band and handles under the loop brace,
