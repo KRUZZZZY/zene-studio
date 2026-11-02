@@ -5550,3 +5550,14 @@ tests/src/core/ClipConsolidateTest.cpp	# Consolidation can overflow while adding
 include/OutputSettings.h	cluster new-p23-190: setCompressionLevel clamps to the documented 0.0-1.0 range (NaN keeps the current level); the only caller (ExportProjectDialog) passes in-range values, so renders are unchanged. Held by tests/src/gui/ExportQualityControlsTest.cpp::compressionLevelStaysInItsLegalRange
 tests/src/gui/ExportQualityControlsTest.cpp	# OutputSettings compression level is not range-checked
 tests/src/core/ProjectRecoveryTest.cpp	# Autosave identity sidecars are read without a size limit
+plugins/SlicerT/SlicerT.cpp	Q050-263: per-slice gain, pan, filter and random amount: lock-free per-slice storage, the audio-thread applySliceControls (neutral = early return, so old projects render as before), additive save/load attributes, and the Q_INVOKABLE accessors plugin.slice_get/slice_set reach through the meta-object.
+plugins/SlicerT/SlicerT.h	Q050-263: declares the per-slice control storage, SliceVoice (per-note random draws and filter state), applySliceControls and the Q_INVOKABLE accessors.
+plugins/SlicerT/SlicerTView.cpp	Q050-263: the per-slice panel (slice select, gain, pan, filter, random) whose edits invoke the registered plugin.slice_set; clearSlices resets the per-slice controls; the waveform gets one row less.
+plugins/SlicerT/SlicerTView.h	Q050-263: declares the per-slice panel widgets, refreshSlicePanel and editSliceValue.
+plugins/SlicerT/SlicerTWaveform.cpp	Q050-263: shades the selected slice, and keeps the per-slice controls with their slices when a slice point is deleted or added.
+plugins/SlicerT/SlicerTWaveform.h	Q050-263: declares setSelectedSlice.
+src/core/ControlRegistryRegistrations.cpp	Q050-263: registers the plugin.slice_get / plugin.slice_set commands (one call).
+src/core/CMakeLists.txt	Q050-263: builds ControlCommandsSlicerSlices.cpp.
+include/ControlRegistryGroups.h	Q050-263: declares registerSlicerSliceCommands (plugin.slice_get / slice_set). One declaration and its comment.
+src/core/ControlReversibilityTableDevices.cpp	Q050-263: the two A16 rows for plugin.slice_get (not_mutating) and plugin.slice_set (true_inverse).
+tests/CMakeLists.txt	Q050-263: registers SlicerTSliceControlsTest and its slicert module dependency.

@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-29T15:55:04Z",
+  "captured_at": "2026-11-02T23:02:41Z",
   "commands": [
     {
       "args_schema": {
@@ -20778,6 +20778,110 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "slice": {
+            "type": "integer"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "type": "object"
+      },
+      "description": "Read the per-slice controls of the SlicerT on instrument track 'target': for one 'slice' (numbered from 0; slice i plays on MIDI key base_key + 1 + i) or, with 'slice' left out, every slice. Each slice reports its key, its start and end as a fraction of the sample, and its gain (dB), pan (-1..1), filter (-1 low-pass .. +1 high-pass, 0 off) and random (0..1) - the neutral values are 0. 'controls' lists each control's range. Read-only.",
+      "group": "plugin",
+      "id": "plugin.slice_get",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "base_key": {
+            "type": "integer"
+          },
+          "controls": {
+            "type": "array"
+          },
+          "device_plugin": {
+            "type": "string"
+          },
+          "slice_count": {
+            "type": "integer"
+          },
+          "slices": {
+            "type": "array"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "filter": {
+            "type": "number"
+          },
+          "gain": {
+            "type": "number"
+          },
+          "pan": {
+            "type": "number"
+          },
+          "random": {
+            "type": "number"
+          },
+          "slice": {
+            "type": "integer"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "slice"
+        ],
+        "type": "object"
+      },
+      "description": "Set any of 'gain' (dB, -48..12), 'pan' (-1..1, a balance), 'filter' (-1 low-pass .. +1 high-pass, 0 off) and 'random' (0..1: each trigger varies gain by up to 6 dB and pan by up to 0.5 times this) on one slice of the SlicerT on instrument track 'target'. 'slice' counts from 0; slice i plays on MIDI key base_key + 1 + i (plugin.slice_get). Values outside a range are refused with invalid_args and nothing is written. Saved with the project. One undo step per call.",
+      "group": "plugin",
+      "id": "plugin.slice_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "current": {
+            "type": "object"
+          },
+          "device_plugin": {
+            "type": "string"
+          },
+          "previous": {
+            "type": "object"
+          },
+          "slice": {
+            "type": "integer"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "path": {
             "type": "string"
           },
@@ -37464,23 +37568,23 @@
       }
     }
   ],
-  "count": 878,
+  "count": 880,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-263/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-k4l1reh3/zene.sock",
-    "version": "0.4.0-alpha.5942+68bed50"
+    "source_socket": "/tmp/zctl-run-dyv70k4x/zene.sock",
+    "version": "0.4.0-alpha.5943+2a7fd9f"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 77,
-    "id_count": 878,
-    "ids_sha256": "60473c71cd63735b5af096bbd2cd1d9a5a096cf4b2fd8855d1333df124ea362a"
+    "id_count": 880,
+    "ids_sha256": "b074f42e9415cce0056faafdce0f88ded726f9ca913eb7b04f0a3fdcf6f62900"
   }
 }
