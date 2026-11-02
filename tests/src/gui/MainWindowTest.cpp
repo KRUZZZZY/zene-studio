@@ -28,6 +28,7 @@
 
 #include <QtTest>
 
+#include <QTabBar>
 #include <QWidget>
 
 #include "ConfigManager.h"
@@ -37,6 +38,8 @@
 #include "GuiApplication.h"
 #include "GuiTestApplication.h"
 #include "MainWindow.h"
+#include "Shell.h"
+#include "ShellRegionTabs.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -47,6 +50,33 @@ namespace
 ControlResult run(const QString& id, const QJsonObject& args = {})
 {
 	return ControlRegistry::instance()->invoke(id, args);
+}
+
+//! gui-1030: a real left click on the bottom region's tab for `id`, in the live window, from a fresh Arrange view
+//! with the Note Editor open below - the state the GUI sweep clicked from.
+void clickBottomTab(const QString& id, const QString& expectedPanel)
+{
+	Shell* shell = getGUI()->mainWindow()->shell();
+	shell->setView(ShellView::Arrange);
+	if (!shell->model().isVisible(QStringLiteral("detail")))
+	{
+		QVERIFY(run(QStringLiteral("window.toggle"), {{QStringLiteral("editor"), QStringLiteral("detail")}}).ok);
+	}
+	ShellRegionTabs* tabs = shell->regionTabs(ShellRegion::Bottom);
+	QVERIFY(tabs != nullptr);
+	QTRY_VERIFY(tabs->isVisible());
+	QCOMPARE(tabs->currentId(), QStringLiteral("detail"));
+	const int index = static_cast<int>(tabs->tabIds().indexOf(id));
+	QVERIFY(index >= 0);
+	QTabBar* bar = tabs->bar();
+	QVERIFY(bar->isVisible());
+	const QRect rect = bar->tabRect(index);
+	QVERIFY(bar->rect().contains(rect.center()));
+	QTest::mouseClick(bar, Qt::LeftButton, Qt::NoModifier, rect.center());
+	QCOMPARE(shell->model().openIn(ShellRegion::Bottom), expectedPanel);
+	QVERIFY(shell->model().isVisible(expectedPanel));
+	QCOMPARE(tabs->currentId(), expectedPanel);
+	QVERIFY(!shell->model().isVisible(QStringLiteral("detail")));
 }
 
 } // namespace
@@ -100,6 +130,43 @@ private slots:
 		// user: the next interactive launch must still be offered the dialog.
 		QCOMPARE(ConfigManager::inst()->value(QStringLiteral("app"), QStringLiteral("configured")).toInt(), 0);
 	}
+
+	// gui-1030-main-mixer / -devices / -automation / -pattern-editor: each bottom tab, clicked.
+	// gui-1030 (all four): the sweep clicked these tabs right after popping the Inspector out. The floated Inspector
+	// then sits over the left of the window and the freed column moves the tab strip left under it, so those clicks
+	// landed on the floating window, not on a tab. The tabs themselves answer a click (the four tests below).
+	void aFloatedInspectorCoversTheFirstBottomTabsInTheLiveWindow()
+	{
+		MainWindow* window = getGUI()->mainWindow();
+		window->resize(1600, 1000);
+		Shell* shell = window->shell();
+		shell->setView(ShellView::Arrange);
+		QVERIFY(shell->detachPanel(QStringLiteral("inspector")));
+		QWidget* floating = shell->floatingWindow(QStringLiteral("inspector"));
+		QVERIFY(floating != nullptr);
+		ShellRegionTabs* tabs = shell->regionTabs(ShellRegion::Bottom);
+		QTRY_VERIFY(tabs->bar()->isVisible());
+		QTRY_VERIFY(floating->isVisible());
+		const auto covered = [&] {
+			int count = 0;
+			for (const QString& id : {QStringLiteral("mixer"), QStringLiteral("devices"), QStringLiteral("automation"),
+					 QStringLiteral("pattern")})
+			{
+				const int index = static_cast<int>(tabs->tabIds().indexOf(id));
+				const QPoint centre = tabs->bar()->mapToGlobal(tabs->bar()->tabRect(index).center());
+				count += index >= 0 && floating->frameGeometry().contains(centre) ? 1 : 0;
+			}
+			return count;
+		};
+		QTRY_COMPARE(covered(), 4);  // every one of the four sits under the floated Inspector window
+		QVERIFY(shell->attachPanel(QStringLiteral("inspector")));
+		QTRY_VERIFY(shell->floatingWindow(QStringLiteral("inspector")) == nullptr);
+	}
+
+	void clickingTheMixerTabOpensTheMixer() { clickBottomTab(QStringLiteral("mixer"), QStringLiteral("mixer")); }
+	void clickingTheDevicesTabOpensTheDevices() { clickBottomTab(QStringLiteral("devices"), QStringLiteral("devices")); }
+	void clickingTheAutomationTabOpensTheAutomation() { clickBottomTab(QStringLiteral("automation"), QStringLiteral("automation")); }
+	void clickingThePatternEditorTabOpensThePatternEditor() { clickBottomTab(QStringLiteral("pattern"), QStringLiteral("pattern")); }
 
 private:
 	QTemporaryDir m_home;
