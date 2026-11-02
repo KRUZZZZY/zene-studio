@@ -850,6 +850,7 @@ include/SideBar.h
 include/SideBarWidget.h
 include/SidechainInputs.h
 include/SimpleTextFloat.h
+include/SlicerSliceControls.h
 include/SmfInterchange.h
 include/SmfNoteRead.h
 include/Song.h
@@ -1794,6 +1795,7 @@ src/core/ControlCommandsSessionShared.h
 src/core/ControlCommandsSessionSubScenes.cpp
 src/core/ControlCommandsSettings.cpp
 src/core/ControlCommandsSettingsPresets.cpp
+src/core/ControlCommandsSlicerSlices.cpp
 src/core/ControlCommandsStemModel.cpp
 src/core/ControlCommandsStems.cpp
 src/core/ControlCommandsStructure.cpp
@@ -3269,6 +3271,7 @@ tests/src/gui/ShellLayoutTest.cpp
 tests/src/gui/ShellTest.cpp
 tests/src/gui/ShortcutsCommandsTest.cpp
 tests/src/gui/ShortcutsPageTest.cpp
+tests/src/gui/SlicerTSliceControlsTest.cpp
 tests/src/gui/StartHubTest.cpp
 tests/src/gui/StemSplitMenuTest.cpp
 tests/src/gui/StepRecorderWidgetTest.cpp
