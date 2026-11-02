@@ -456,6 +456,36 @@ private slots:
 		centre->close();
 	}
 
+	//! The rule under it: `requires: display` asks for a display, not for a person. An agent instance (headless) on a
+	//! real display runs a display command, one with no display is refused (typed), and `human` is refused either way.
+	void theDisplayRequirementFollowsTheDisplayNotTheAgent()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		for (const char* id : {"split_display_only", "split_display_and_human"})
+		{
+			ControlCommand cmd;
+			cmd.id = QStringLiteral("test.") + QLatin1String(id);
+			cmd.group = QStringLiteral("test");
+			cmd.verb = QLatin1String(id);
+			cmd.requiresDecl = QStringList{QStringLiteral("display")};
+			if (cmd.verb == QStringLiteral("split_display_and_human")) { cmd.requiresDecl.append(QStringLiteral("human")); }
+			cmd.handler = [](const QJsonObject&) { return ControlResult::success(); };
+			if (!registry->hasCommand(cmd.id)) { registry->registerCommand(cmd); }
+		}
+		const bool headless = registry->isHeadless();
+		const bool display = registry->isDisplayAvailable();
+
+		registry->setHeadless(true);
+		registry->setDisplayAvailable(true);  // an agent instance on a real display
+		QVERIFY(registry->invoke(QStringLiteral("test.split_display_only")).ok);
+		QCOMPARE(registry->invoke(QStringLiteral("test.split_display_and_human")).errorKind, ControlErrorKind::Requires);
+		registry->setDisplayAvailable(false);  // no display at all
+		QCOMPARE(registry->invoke(QStringLiteral("test.split_display_only")).errorKind, ControlErrorKind::Requires);
+
+		registry->setHeadless(headless);
+		registry->setDisplayAvailable(display);
+	}
+
 	//! ... and with no display at all (offscreen) the command is still refused, typed, and the menu says so in the
 	//! log as the other menus' refusals do; no Help window opens.
 	void aRefusedHelpMenuItemSaysSoInTheLog()
