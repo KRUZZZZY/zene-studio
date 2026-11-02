@@ -270,6 +270,7 @@ private slots:
 		qputenv("WINEDLLOVERRIDES", "mscoree,mshtml=");
 		qputenv("WINEDEBUG", "-all");
 		bootWinePrefix();
+		keepWineServer();
 		Engine::init(true);
 		Engine::audioEngine()->audioDev()->stopProcessing();  // the cases render periods themselves
 		NotePlayHandleManager::init();
@@ -485,7 +486,7 @@ private slots:
 	void theWindowsFixtureRunsThroughTheWineBridge()
 	{
 		if (const QString why = missingRuntime(); !why.isEmpty()) { QSKIP(qPrintable(why)); }
-		if (!wineAvailable()) { QSKIP("no Wine, no Windows fixture or no Carla Wine bridge: the bridged path cannot run here"); }
+		if (!wineAvailable()) { QSKIP("no Wine, no Windows PE fixture or no Carla Wine bridge in the runtime: the bridged path cannot run here"); }
 		InstrumentTrack* track = loadOnNewTrack(WineFile);
 		QVERIFY(track != nullptr);
 		QCOMPARE(track->instrument()->parameterName(0), QStringLiteral("Level"));
@@ -518,6 +519,15 @@ private:
 		if (!boot.waitForFinished(600000)) { boot.kill(); }
 	}
 
+	//! A wineserver that outlives each bridge by a minute, so a bridge's start-up does not include starting
+	//! the server too (measured: on a loaded machine that start can outlast Carla's first exchange).
+	static void keepWineServer()
+	{
+		const QString wineserver = QStandardPaths::findExecutable(QStringLiteral("wineserver"));
+		if (wineserver.isEmpty() || !QFileInfo::exists(wineFixture())) { return; }
+		QProcess::execute(wineserver, {QStringLiteral("-p60")});
+	}
+
 	//! Why the hosted cases cannot run here, or empty when they can: only what the PRODUCT does not provide - a
 	//! Carla runtime and the fixture. A build that has both but no working VST2 host fails the cases instead.
 	static QString missingRuntime()
@@ -542,10 +552,14 @@ private:
 		return writable;
 	}
 
-	bool wineAvailable()
+	//! Whether this machine can run the bridged path at all: Wine, the PE fixture and Carla's Wine bridge in the
+	//! runtime. Only the environment - whether the PRODUCT lists and loads it is what the case checks.
+	static bool wineAvailable()
 	{
+		const QDir runtime(QStringLiteral(ZENE_CARLA_RUNTIME_DIR));
 		return QFileInfo::exists(wineFixture()) && !QStandardPaths::findExecutable(QStringLiteral("wine")).isEmpty()
-			&& !vst2Device(WineFile).isEmpty();
+			&& QFileInfo::exists(runtime.filePath(QStringLiteral("carla-bridge-win64.exe")))
+			&& QFileInfo::exists(runtime.filePath(QStringLiteral("carla-discovery-win64.exe")));
 	}
 
 	InstrumentTrack* loadOnNewTrack(const QString& fileName)
