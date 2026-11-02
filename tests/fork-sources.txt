@@ -861,6 +861,7 @@ include/ControlRoom.h
 include/ControlSampleArray.h
 include/ControlScaleShared.h
 include/ControlServer.h
+include/ControlStemSource.h
 include/ControlStemSupport.h
 include/ControlStructuralSupport.h
 include/ControlTrackCreation.h
@@ -1757,7 +1758,6 @@ src/core/ControlServerWin32.cpp
 src/core/ControlSession.cpp
 src/core/ControlStemModel.cpp
 src/core/ControlStemSource.cpp
-src/core/ControlStemSource.h
 src/core/ControlStemSupport.cpp
 src/core/ControlStemWav.cpp
 src/core/ControlStructuralSupport.cpp
@@ -2717,6 +2717,7 @@ tests/src/plugins/ClapInstrumentViewTest.cpp
 tests/src/plugins/ClapTestInstrumentUnitTest.cpp
 tests/src/gui/DelayControlsDialog.h
 tests/src/gui/EqFader.h
+tests/src/gui/StemSplitBackgroundTest.cpp
 tests/src/gui/XyPadPairTest.cpp
 tests/src/plugins/HydrogenImportLocalFileMngTest.cpp
 tests/src/plugins/ZynNoteOffTest.cpp

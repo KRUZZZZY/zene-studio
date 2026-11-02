@@ -28,6 +28,7 @@
 #include <limits>
 
 #include <QFile>
+#include <QFileInfo>
 
 #include <sndfile.h>
 
@@ -72,20 +73,31 @@ bool probeHeader(const QString& path, qint64* frames, int* rate)
 	return true;
 }
 
+//! A format the browser's decoders read without libsndfile, whose header gives no length: DrumSynth (.ds) synthesises
+//! the whole sample (SampleDecoder.cpp decodeSampleDS; its parser state is thread local), and Ogg Vorbis where
+//! libsndfile was built without it.
+bool decodedOnlyByTheWorker(const QString& source)
+{
+	const QString suffix = QFileInfo(source).suffix().toLower();
+	return suffix == QLatin1String("ds") || suffix == QLatin1String("ogg") || suffix == QLatin1String("oga");
+}
+
 } // namespace
 
 bool stemSourceLength(const QString& source, qint64* frames, int* rate, QString* error)
 {
 	if (!probeHeader(source, frames, rate))
 	{
-		const auto decoded = SampleBuffer::fromFile(source);
-		if (!decoded || decoded->empty())
+		// Nothing is decoded here: a format with a decoder of its own is the worker's to decode, and its length is
+		// unknown until then; anything else libsndfile cannot open is refused now.
+		if (!decodedOnlyByTheWorker(source))
 		{
 			*error = undecodableMessage(source);
 			return false;
 		}
-		*frames = static_cast<qint64>(decoded->size());
-		*rate = static_cast<int>(decoded->sampleRate());
+		*frames = 0;
+		*rate = StemModelSampleRate;
+		return true;
 	}
 	if (!fitsAtModelRate(*frames, *rate))
 	{

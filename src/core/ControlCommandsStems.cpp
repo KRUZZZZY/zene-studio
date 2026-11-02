@@ -351,7 +351,7 @@ void registerStemJobStart(ControlRegistry& registry)
 		"FILE (drums, bass, other, vocals) and return its job id immediately - the engine runs on "
 		"its own worker thread, which also decodes and resamples the source, so the control surface keeps answering "
 		"while the job runs; app.tasks lists it as 'task' and app.task_cancel stops it. `frames` is the length its header "
-		"promises at the model's rate. The source must be stereo; a rate other than the model's own 44100 Hz is resampled to it "
+		"promises at the model's rate (0 for a source with no such header, a .ds or .ogg, until the worker decoded it). The source must be stereo; a rate other than the model's own 44100 Hz is resampled to it "
 		"first (offline, the engine's best sinc converter), so the stems come back at 44100 Hz. "
 		"Refused, typed, when the file is missing or undecodable, or when the engine cannot run at all (no "
 		"python onnxruntime, or the model absent and not fetchable). An absent model that IS "

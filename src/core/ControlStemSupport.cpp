@@ -451,8 +451,10 @@ private:
 		out.insert(QStringLiteral("progress"), static_cast<double>(m_manager.progress(jobId)));
 		out.insert(QStringLiteral("source"), record.source);
 		out.insert(QStringLiteral("sample_rate"), record.sampleRate);
-		out.insert(QStringLiteral("frames"), record.frames);
-		out.insert(QStringLiteral("seconds"), static_cast<double>(record.frames) / record.sampleRate);
+		// A source whose header gave no length (.ds, .ogg) has one once the worker decoded it.
+		const int frames = record.frames > 0 ? record.frames : m_manager.loadedFrames(jobId);
+		out.insert(QStringLiteral("frames"), frames);
+		out.insert(QStringLiteral("seconds"), static_cast<double>(frames) / record.sampleRate);
 		out.insert(QStringLiteral("segment_frames"), record.segmentFrames);
 		// Q050-062.1: the setting the backend was handed, and the overlap and hop
 		// it derives from it (the one formula every backend uses, StemTypes.h).

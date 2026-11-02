@@ -214,6 +214,16 @@ int StemJobManager::enqueue(std::shared_ptr<Job> job)
 
 
 
+int StemJobManager::loadedFrames(int jobId) const
+{
+	QMutexLocker locker(&m_state->mutex);
+	auto it = m_state->jobs.find(jobId);
+	return it == m_state->jobs.end() ? 0 : (*it)->loadedFrames.load();
+}
+
+
+
+
 void StemJobManager::cancel(int jobId)
 {
 	bool cancelledImmediately = false;
@@ -554,6 +564,7 @@ bool StemJobManager::loadMix(const std::shared_ptr<SharedState>& state, const st
 		failJob(state, job, loadError.isEmpty() ? QStringLiteral("the source could not be read") : loadError);
 		return false;
 	}
+	job->loadedFrames.store(static_cast<int>(mix->size()));
 	QMutexLocker locker(&state->mutex);
 	job->mix = std::move(mix);
 	return true;

@@ -86,6 +86,8 @@ public:
 		std::shared_ptr<const SampleBuffer> mix;
 		//! Q050-010: a job from submitFrom() has no mix yet; the worker makes it with this first.
 		MixLoader loader;
+		//! The length of the mix the loader made, 0 before: written by the worker, read by the owner.
+		std::atomic<int> loadedFrames{0};
 		int sampleRate = StemModelSampleRate;
 		int segmentFrames = HTDemucsSegmentFrames;
 		//! Q050-062.1: the segment overlap the backend runs at; set once at submit.
@@ -150,6 +152,9 @@ public:
 		int sampleRate,
 		int segmentFrames = HTDemucsSegmentFrames,
 		StemQuality quality = DefaultStemQuality);
+
+	//! Q050-010: the length of the mix a submitFrom() job's loader made; 0 until it has (or for an unknown id).
+	int loadedFrames(int jobId) const;
 
 	void cancel(int jobId);
 	void cancelAll();

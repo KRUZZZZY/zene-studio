@@ -31,7 +31,11 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QProgressDialog>
+#include <QCoreApplication>
+#include <QFile>
+#include <QMetaObject>
 #include <QTemporaryFile>
+#include <QThreadPool>
 #include <QTimer>
 
 #include "ControlRegistry.h"
@@ -59,6 +63,8 @@ constexpr int PollIntervalMs = 150;
 //! Where pollJob reads a job's status from. Empty means stem.job_status through
 //! the registry; the pipeline test replaces it with a scripted reader.
 StemSplitController::StatusReader s_statusReader;
+//! Runs on the worker before an in-memory clip's WAV is written; a test holds the write there.
+std::function<void()> s_preparationHook;
 } // namespace
 
 StemSplitController::StemSplitController(QWidget* parent) :
@@ -71,7 +77,12 @@ StemSplitController::StemSplitController(QWidget* parent) :
 
 
 
-StemSplitController::~StemSplitController() = default;
+StemSplitController::~StemSplitController()
+{
+	if (m_preparation) { m_preparation->cancel.store(true); }  // its worker, or its report, removes the file
+	TaskCenter::instance().forget(this);
+	releaseTemp();
+}
 
 
 
@@ -211,7 +222,7 @@ void StemSplitController::splitClipToStems(SampleClip* clip, const QString& qual
 	{
 		return;
 	}
-	if (m_jobId >= 0)
+	if (m_jobId >= 0 || m_preparation)
 	{
 		QMessageBox::information(m_parent, tr("Split to stems"),
 			tr("A stem separation job is already running."));
@@ -234,6 +245,11 @@ void StemSplitController::splitClipToStems(SampleClip* clip, const QString& qual
 	if (!resolveSourceFile(snapshot, &source, &error))
 	{
 		QMessageBox::warning(m_parent, tr("Split to stems"), error);
+		return;
+	}
+	if (source.isEmpty())
+	{
+		beginPreparation(snapshot, quality);
 		return;
 	}
 	startJob(snapshot, source, quality);
@@ -291,27 +307,116 @@ bool StemSplitController::resolveSourceFile(const ClipSnapshot& snapshot, QStrin
 			return true;
 		}
 	}
-	// An in-memory clip (recorded, pasted, generated) has no file. Write the
-	// clip's own audio to a temporary WAV so the job still travels through the
-	// same registered command; the file is removed when the controller resets.
-	releaseTemp();
-	m_temp = new QTemporaryFile(QDir(QDir::tempPath()).filePath(
-		QStringLiteral("zene-stem-XXXXXX.wav")), this);
-	if (!m_temp->open())
-	{
-		*error = tr("Could not create a temporary file for this clip.");
-		releaseTemp();
-		return false;
-	}
-	*path = m_temp->fileName();
-	m_temp->close();
-	if (!control::stemWriteWavFile(*path, *buffer, buffer->sampleRate(), error))
-	{
-		releaseTemp();
-		*path = QString();
-		return false;
-	}
+	// An in-memory clip (recorded, pasted, generated) has no file: an empty path sends it to beginPreparation().
+	path->clear();
 	return true;
+}
+
+
+
+
+/*! Q050-010: an in-memory clip's WAV is written on a pool worker, so a long clip cannot hold the window before its job
+ *  exists; the job then travels through the same registered stem.job_start. The writing is listed in the task area
+ *  (stem_prepare) and in the split's progress dialog, and either Cancel stops it and removes the file. */
+void StemSplitController::beginPreparation(const ClipSnapshot& snapshot, const QString& quality)
+{
+	QTemporaryFile temp(QDir(QDir::tempPath()).filePath(QStringLiteral("zene-stem-XXXXXX.wav")));
+	temp.setAutoRemove(false);
+	if (!temp.open())
+	{
+		QMessageBox::warning(m_parent, tr("Split to stems"), tr("Could not create a temporary file for this clip."));
+		return;
+	}
+	auto preparation = std::make_shared<Preparation>();
+	preparation->path = temp.fileName();
+	preparation->quality = quality;
+	preparation->snapshot = snapshot;
+	temp.close();
+	m_preparation = preparation;
+
+	preparation->token = TaskCenter::instance().begin(this, ++m_preparationLocal, {QStringLiteral("stem_prepare"),
+		tr("Prepare %1 for stems").arg(snapshot.name), [this, preparation] { cancelPreparation(preparation); }, {}, false});
+	showProgress(tr("Preparing the clip's audio..."), 0);
+	connect(m_dialog, &QProgressDialog::canceled, this, [this, preparation] { cancelPreparation(preparation); });
+
+	// The worker holds the buffer by shared_ptr and the path by value; only its report touches this object.
+	QThreadPool::globalInstance()->start([controller = QPointer<StemSplitController>(this), preparation, hook = s_preparationHook] {
+		if (hook) { hook(); }
+		QString error;
+		const SampleBuffer& buffer = *preparation->snapshot.source;
+		const bool ok = !preparation->cancel.load()
+			&& control::stemWriteWavFile(preparation->path, buffer, buffer.sampleRate(), &error);
+		if (preparation->cancel.load()) { QFile::remove(preparation->path); }
+		QMetaObject::invokeMethod(QCoreApplication::instance(), [controller, preparation, ok, error] {
+			if (controller == nullptr) { QFile::remove(preparation->path); return; }  // nobody left to use it
+			controller->preparationEnded(preparation, ok, error);
+		}, Qt::QueuedConnection);
+	});
+}
+
+
+
+
+void StemSplitController::cancelPreparation(const std::shared_ptr<Preparation>& preparation)
+{
+	if (m_preparation != preparation) { return; }
+	preparation->cancel.store(true);
+	m_preparation.reset();
+	TaskCenter::instance().finish(preparation->token, TaskState::Cancelled);
+	closeDialog();
+}
+
+
+
+
+void StemSplitController::preparationEnded(const std::shared_ptr<Preparation>& preparation, bool ok, const QString& error)
+{
+	if (m_preparation != preparation)  // cancelled: whatever the worker wrote goes
+	{
+		QFile::remove(preparation->path);
+		return;
+	}
+	m_preparation.reset();
+	if (!ok || !targetStillAvailable(preparation->snapshot))
+	{
+		closeDialog();
+		QFile::remove(preparation->path);
+		TaskCenter::instance().finish(preparation->token, ok ? TaskState::Cancelled : TaskState::Failed, error);
+		if (!ok) { QMessageBox::warning(m_parent, tr("Split to stems"), error); }
+		return;
+	}
+	TaskCenter::instance().finish(preparation->token, TaskState::Done);
+	m_tempPath = preparation->path;
+	startJob(preparation->snapshot, m_tempPath, preparation->quality);
+}
+
+
+
+
+void StemSplitController::setPreparationHookForTest(std::function<void()> hook)
+{
+	s_preparationHook = std::move(hook);
+}
+
+
+
+
+//! The one progress dialog of a split: its preparation, then its job, so the window does not flash between them.
+void StemSplitController::showProgress(const QString& label, int maximum)
+{
+	if (m_dialog == nullptr)
+	{
+		m_dialog = new QProgressDialog(label, tr("Cancel"), 0, maximum, m_parent);
+		m_dialog->setWindowTitle(tr("Split to stems"));
+		m_dialog->setWindowModality(Qt::WindowModal);
+		m_dialog->setMinimumDuration(0);
+		m_dialog->setAutoClose(false);
+		m_dialog->setAutoReset(false);
+	}
+	disconnect(m_dialog, &QProgressDialog::canceled, this, nullptr);
+	m_dialog->setLabelText(label);
+	m_dialog->setRange(0, maximum);
+	m_dialog->show();
 }
 
 
@@ -324,6 +429,7 @@ bool StemSplitController::startJob(const ClipSnapshot& snapshot, const QString& 
 	const ControlResult started = ControlRegistry::instance()->invoke(QStringLiteral("stem.job_start"), args);
 	if (!started.ok)
 	{
+		closeDialog();
 		releaseTemp();
 		QMessageBox::warning(m_parent, tr("Split to stems"),
 			tr("Stem separation could not start:\n\n%1").arg(started.errorMessage));
@@ -339,12 +445,7 @@ bool StemSplitController::startJob(const ClipSnapshot& snapshot, const QString& 
 	m_clipPosition = snapshot.position;
 	m_clipName = snapshot.name;
 
-	m_dialog = new QProgressDialog(progressLabel(started.result), tr("Cancel"), 0, 100, m_parent);
-	m_dialog->setWindowTitle(tr("Split to stems"));
-	m_dialog->setWindowModality(Qt::WindowModal);
-	m_dialog->setMinimumDuration(0);
-	m_dialog->setAutoClose(false);
-	m_dialog->setAutoReset(false);
+	showProgress(progressLabel(started.result), 100);
 	connect(m_dialog, &QProgressDialog::canceled, this, [this] {
 		if (m_jobId >= 0)
 		{
@@ -515,11 +616,10 @@ void StemSplitController::resetJob()
 
 void StemSplitController::releaseTemp()
 {
-	if (m_temp != nullptr)
+	if (!m_tempPath.isEmpty())
 	{
-		m_temp->remove();
-		delete m_temp;
-		m_temp = nullptr;
+		QFile::remove(m_tempPath);
+		m_tempPath.clear();
 	}
 }
 

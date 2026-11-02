@@ -301,6 +301,7 @@ QString taskAreaId(const TaskInfo& info)
 {
 	if (info.kind == QLatin1String("plugin_scan")) { return QStringLiteral("plugin-scan-%1").arg(info.id); }
 	if (info.kind == QLatin1String("browser_peak")) { return QStringLiteral("peak-%1").arg(info.id); }
+	if (info.kind == QLatin1String("stem_prepare")) { return QStringLiteral("stem-prepare-%1").arg(info.id); }
 	return QString();
 }
 
@@ -386,11 +387,11 @@ ControlResult taskCancel(const QJsonObject& args)
 		BrowserIndex::instance().cancel();
 		return ControlResult::success({{QStringLiteral("cancelled"), id}});
 	}
-	if (id.startsWith(QStringLiteral("stem-")))
+	if (id.startsWith(QStringLiteral("stem-")) && !id.startsWith(QStringLiteral("stem-prepare-")))
 	{
 		return ControlRegistry::instance()->invoke(QStringLiteral("stem.job_cancel"), {{QStringLiteral("job_id"), id.mid(5).toInt()}});
 	}
-	if (id.startsWith(QStringLiteral("plugin-scan-")) || id.startsWith(QStringLiteral("peak-"))) { return cancelTaskAreaTask(id); }
+	if (id.startsWith(QStringLiteral("plugin-scan-")) || id.startsWith(QStringLiteral("peak-")) || id.startsWith(QStringLiteral("stem-prepare-"))) { return cancelTaskAreaTask(id); }
 	return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("'%1' cannot be cancelled from here").arg(id));
 }
 

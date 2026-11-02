@@ -1587,6 +1587,8 @@ IF(LMMS_HAVE_STEM_SPLIT)
 		src/core/StemSplitPipelineTest.cpp
 		# Q050-062.2: the sample clip's Split to stems submenu picks the job's quality.
 		src/gui/StemSplitMenuTest.cpp
+		# Q050-010: a .ds source and a long in-memory clip reach their job without holding the interface.
+		src/gui/StemSplitBackgroundTest.cpp
 		# new-p21-107: the stem WAV writer's header arithmetic and its refusals (ControlStemWav.cpp).
 		src/core/ControlStemWavTest.cpp
 	)
@@ -7393,6 +7395,10 @@ IF(LMMS_HAVE_STEM_SPLIT)
 	# The controller regression exercises its progress and completion dialogs.
 	set_tests_properties(StemSplitPipelineTest PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	# Q050-010: the long-source regressions read the task list and the split's dialog.
+	set_tests_properties(StemSplitBackgroundTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 300)
+	target_compile_definitions(StemSplitBackgroundTest PRIVATE
+		LMMS_TEST_DS_FILE="${CMAKE_SOURCE_DIR}/data/samples/drumsynth/misc/verylong.ds")
 	# Q050-062.2: the menu test triggers the submenu and reads the job dialogs.
 	set_tests_properties(StemSplitMenuTest PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

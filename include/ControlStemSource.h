@@ -29,6 +29,8 @@
 
 #include <QString>
 
+#include "lmms_export.h"
+
 namespace lmms
 {
 
@@ -37,10 +39,10 @@ class SampleBuffer;
 namespace control
 {
 
-/*! The length and rate of @a source, from its header where libsndfile can open it, so the caller decodes nothing.
- *  A file it cannot open (a .ds drum sample, garbage) gets the decoders' verdict here instead, so an undecodable
- *  file is still refused typed; such a file is tiny or fails fast. False with @a error for a refusal. */
-bool stemSourceLength(const QString& source, qint64* frames, int* rate, QString* error);
+/*! The length and rate of @a source from its header; nothing is decoded on the caller. A file libsndfile cannot open
+ *  is refused typed (false, @a error set) unless its suffix names a decoder of its own (.ds, .ogg): that one is
+ *  accepted with @a frames 0, its length unknown until the job's worker decoded it, and a broken one fails the job. */
+LMMS_EXPORT bool stemSourceLength(const QString& source, qint64* frames, int* rate, QString* error);
 //! @a frames at @a rate, in frames at the model's rate.
 int stemFramesAtModelRate(qint64 frames, int rate);
 //! All a job does to its source before separating, for the worker: decode it, then resample it to the model's rate.
