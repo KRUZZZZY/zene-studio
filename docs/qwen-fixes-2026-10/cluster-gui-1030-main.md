@@ -82,3 +82,16 @@ unjailed run of the gate is the authoritative one. Answers to the questions:
 - FALSE-POSITIVE contract: `qaction.h:225` `void triggered(bool checked = false);` (moc clones default-argument
   signals, so `triggered()` exists) plus the runtime proof above; code at `SongEditor.cpp:387-393`,
   `:1034-1044`, `:1058-1069`.
+
+## Round 1 (Luna: REWORK - Qt 5.15 compile break in the test)
+
+Blocking item: the test called `label->pixmap().isNull()` (`TrackFolderMenuTest.cpp:237`); on Qt 5.15 (the
+project minimum, `CMakeLists.txt:364`) the no-argument `QLabel::pixmap()` returns a pointer, so it does not
+compile. Fixed: the lookup is now `label->pixmap(Qt::ReturnByValue).isNull()`, which returns a `QPixmap` on both
+Qt 5.15 and Qt 6 (`qlabel.h` has the `ReturnByValueConstant` overload). The appearance and clearing assertions are
+unchanged. No product file changed.
+
+| step | command | EXIT |
+| --- | --- | --- |
+| build | `CCACHE_TEMPDIR=$TMPDIR/ccache-tmp-gui1030 cmake --build build --target zene TrackFolderMenuTest -j4 > r2/logs/build-1.log 2>&1` | 0 |
+| test | `cd build/tests && ctest -R '^TrackFolderMenuTest$' --output-on-failure > r2/logs/test-1.log 2>&1` | 0 (1/1 passed, new slot included) |

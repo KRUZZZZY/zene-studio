@@ -227,14 +227,14 @@ private slots:
 		QVERIFY(snap->isCheckable());
 		QVERIFY(!snap->isChecked());
 
-		// The readout is the pixmap-less label in the same toolbar as the snap action.
+		// The readout is the pixmap-less label in the same toolbar as the snap action (pixmap(Qt::ReturnByValue) builds on Qt 5.15 and Qt 6).
 		QLabel* readout = nullptr;
 		for (QToolBar* bar : window->findChildren<QToolBar*>())
 		{
 			if (!bar->actions().contains(snap)) { continue; }
 			for (QLabel* label : bar->findChildren<QLabel*>())
 			{
-				if (label->pixmap().isNull()) { readout = label; }
+				if (label->pixmap(Qt::ReturnByValue).isNull()) { readout = label; }
 			}
 		}
 		QVERIFY2(readout != nullptr, "no Snap readout label in the snap toolbar");
