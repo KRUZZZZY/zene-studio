@@ -98,3 +98,28 @@ that no listed item names my changed file. Please run `feature_check.py` outside
 
 `tests/src/gui/PanelShortcutsTest.cpp` (new slot + includes; the file is already in `tests/fork-sources.txt`, so no
 registration change), `docs/qwen-fixes-2026-10/cluster-gui-1030-main-hide-the-bottom-panels.md`.
+
+## Self-check
+
+- **Fails with the change reverted, passes with it.** Verdict is FALSE-POSITIVE, so there is no product change to
+  revert. The equivalent proof is the mutation of the Hide handler (`ShellRegionTabs.cpp:123` no-op): FAIL, exit 1
+  (`test-6-mutant.log`, `PanelShortcutsTest.cpp(438)`). On the original code it PASSES, exit 0 (`test-1-red.log`,
+  `test-5.log`, `test-7-green.log`).
+- **Deterministic.** No sleeps, timers or `qWait` in the slot. It calls `Shell::setView` / `revealPanel`
+  synchronously and delivers `QTest::mouseClick` on the button object; `window.toggle` runs synchronously through
+  `ControlRegistry::invoke` on the GUI thread (`ControlCommandsWindow.cpp:198-202`). Every assertion reads layout
+  state, not timing. (An earlier debug version that called `qWait(100)` was removed before commit.)
+- **Fix complete / siblings.** Nothing changed in product code. Siblings that go through the same
+  `ShellRegionTabs::toggle` branch: the tab click (`choose`, `ShellRegionTabs.cpp:205-211`) and the list menu
+  (`fillList`, `:219-239`); all use `window.toggle` on the main window's shell. The left/right strips use the same
+  Hide handler; they show no strip while they hold one panel (`:191`), and `ShellHomesTest` covers that.
+- **No collateral damage.** No product, saved-data, limit or check change; the only edits are one test slot (+3
+  includes) and this report.
+- **FALSE-POSITIVE evidence.** Code path and `file:line` in "Code path" above; contract is the button's own tooltip
+  ("Closes this area; its switch in the footer opens it again.", `ShellRegionTabs.cpp:121`) and
+  `window.toggle`'s description (`ControlCommandsWindow.cpp:208-219`: "a view's main panel cannot be hidden" - the
+  Note Editor is only the main panel in the Edit view, where it has no strip tab). Runtime proof in the new slot.
+  Sweep click position (1582,684) vs the button (1300,684): `results.jsonl`, `inv-main.jsonl`,
+  `shots/0018-pair.png`. Why the sweep's live inventory reported x=1582 is unverified (see above).
+- **Gates.** `feature_check.py` and therefore the `submit_check.py` "gates" row cannot pass in this jail
+  (`mkdir <worktree>-feature-check` is refused, `gates-1.log`); the individual gate scripts were run directly (table above).
