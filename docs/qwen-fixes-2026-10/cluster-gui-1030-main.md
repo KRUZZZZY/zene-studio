@@ -62,4 +62,23 @@ an audio path touched.
 
 ## Self-check
 
-(see below, filled after `submit_check.py`)
+`submit_check.py` result (`submit-1.log`, exit 1): PASS commits, clean tree, report, tests changed; FAIL gates -
+`feature_check.py` could not run in this write-jail (`PermissionError: mkdir .../zene-qwen-gui-1030-main-feature-check`,
+a sibling directory of the worktree). Nothing in the change can move a gate: no product file, header, command or
+audio path changed; the only code edit is one test slot (CCN ~6, file now ~320 lines, below 500). The loop's own
+unjailed run of the gate is the authoritative one. Answers to the questions:
+
+- RED/GREEN with the product change reverted: there is no product change (FALSE-POSITIVE). The equivalent proof
+  is the mutation: connection broken -> `ctest -R '^TrackFolderMenuTest$'` EXIT=8, new slot FAIL at
+  `TrackFolderMenuTest.cpp:244` (`test-4-mutant.log`); original code -> EXIT=0, 1/1 (`test-2.log`, `test-5.log`).
+- Deterministic: the test drives `QAction::trigger()` synchronously on the live song editor and reads
+  `QSignalSpy` counts, `isChecked()` and `QLabel::text()` - no timers, sleeps, `QTRY_*`, or event-loop races
+  (all of `toggleProportionalSnap`/`updateSnapLabel` run in the direct call).
+- Fix at the cause / siblings: nothing was changed. Siblings checked: the other `SIGNAL(triggered())` connects in
+  `SongEditor.cpp:958-960,985-987,1001-1002` and `Editor.cpp:124-128` use the same valid idiom; the proportional
+  action's second consumer `TrackContentWidget.cpp:93` connects `SongEditor::proportionalSnapChanged`, which the
+  test also asserts fires exactly once per click.
+- Collateral damage: none - no product, project-format, or saved-data code touched.
+- FALSE-POSITIVE contract: `qaction.h:225` `void triggered(bool checked = false);` (moc clones default-argument
+  signals, so `triggered()` exists) plus the runtime proof above; code at `SongEditor.cpp:387-393`,
+  `:1034-1044`, `:1058-1069`.
