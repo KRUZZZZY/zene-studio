@@ -32,6 +32,7 @@
 #include "Knob.h"
 #include "MidiEventToByteSeq.h"
 #include "MainWindow.h"
+#include "PluginNativeEditor.h"
 #include "FontHelper.h"
 #include "Song.h"
 
@@ -149,8 +150,9 @@ static const char* host_ui_save_file(NativeHostHandle, bool isDir, const char* t
 // -----------------------------------------------------------------------
 
 
-CarlaInstrument::CarlaInstrument(InstrumentTrack* const instrumentTrack, const Descriptor* const descriptor, const bool isPatchbay)
-    : Instrument(instrumentTrack, descriptor, nullptr, Flag::IsSingleStreamed | Flag::IsMidiBased | Flag::IsNotBendable),
+CarlaInstrument::CarlaInstrument(InstrumentTrack* const instrumentTrack, const Descriptor* const descriptor, const bool isPatchbay,
+    const Descriptor::SubPluginFeatures::Key* key)
+    : Instrument(instrumentTrack, descriptor, key, Flag::IsSingleStreamed | Flag::IsMidiBased | Flag::IsNotBendable),
       kIsPatchbay(isPatchbay),
       fHandle(nullptr),
       fDescriptor(isPatchbay ? carla_get_native_patchbay_plugin() : carla_get_native_rack_plugin()),
@@ -417,7 +419,10 @@ void CarlaInstrument::refreshParams(bool init)
 
 			completerData.push_back(name);
 
-			m_paramModels[i]->setDisplayName(name);
+			// Q050-481.1: a single-plug-in host shows only its plug-in's parameters (an empty
+			// display name is what Instrument::parameterCount() leaves out).
+			const bool hidden = m_hideUnusedParams && !m_paramModels[i]->enabled();
+			m_paramModels[i]->setDisplayName(hidden ? QString() : name);
 			m_paramModels[i]->setRange(paramInfo->ranges.min,
 										paramInfo->ranges.max,
 										paramInfo->ranges.step);
@@ -637,6 +642,14 @@ CarlaInstrumentView::CarlaInstrumentView(CarlaInstrument* const instrument, QWid
     // Add widgets to layout
     l->addWidget( m_toggleUIButton );
     l->addWidget(m_toggleParamsWindowButton);
+
+    // Q050-481.1: a single hosted plug-in (plugins/CarlaVst2) opens ITS editor, through the same
+    // plugin.editor_open command an agent sends, instead of Carla's own window.
+    if (instrument->hostsSinglePlugin())
+    {
+        m_toggleUIButton->setVisible(false);
+        l->addWidget(makeNativeEditorButton(instrument, this));
+    }
 
     // Connect signals
     connect(m_toggleUIButton, SIGNAL(clicked(bool)), this, SLOT(toggleUI(bool)));

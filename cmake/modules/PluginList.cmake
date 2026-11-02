@@ -32,6 +32,7 @@ SET(LMMS_PLUGIN_LIST
 	CarlaBase
 	CarlaPatchbay
 	CarlaRack
+	CarlaVst2
 	ClapEffect
 	ClapInstrument
 	Compressor

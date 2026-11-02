@@ -178,6 +178,11 @@ bool controlDeviceModule(const ControlDeviceEntry& entry, QString* pluginName,
 		// Q050-491: the Audio Unit half (ControlDeviceAu.cpp) - refused, typed, off macOS.
 		return controlAuDeviceModule(entry, pluginName, key, useKey, error);
 	}
+	if (entry.format == QLatin1String("vst2"))
+	{
+		// Q050-481.1: VST2 through Carla (ControlDeviceVst2.cpp).
+		return controlVst2DeviceModule(entry, pluginName, key, useKey, error);
+	}
 	return true; // a built-in module is addressed by its plugin name alone
 }
 

@@ -382,6 +382,24 @@ editor for a unit that has none. Each Audio Unit is listed under Project tools &
 the reason the system gave (for example <em>AudioUnitInitialize failed (status -10875, kAudioUnitErr_FailedInitialization)</em>).
 Windows and Linux builds have no Audio Unit format. Audio Unit v3 extensions are not hosted.</p>
 
+<p><strong>VST2 instruments through Carla.</strong> When a <a href="https://kx.studio/Applications:Carla">Carla</a> runtime is
+installed, Zene hosts VST2 instruments through it: native Linux plug-ins (<code>.so</code>) in Carla itself, and 64-bit Windows plug-ins
+(<code>.dll</code>) through Carla's Wine bridge (32-bit ones too where Carla's 32-bit bridge is installed). Zene looks for them in the folders named by
+<code>VST_PATH</code>, the VST folder in Settings, <code>~/.vst</code>, <code>~/.lxvst</code>, <code>/usr/lib/vst</code>,
+<code>/usr/local/lib/vst</code> and <code>/usr/lib/lxvst</code>; setting <code>ZENE_VST2_PATH</code> replaces that whole list. Each
+binary is opened only by Carla's own discovery tool, in a separate process, so a plug-in that crashes while it is being listed
+cannot take Zene down. The instruments appear in the device picker and the instrument browser with the format <em>VST2</em>
+(<code>plugin.list</code> format <code>vst2</code>; each entry carries its <code>file</code>, VST2 <code>unique_id</code>,
+<code>binary</code> - <code>native</code>, <code>win64</code> or <code>win32</code> - and <code>bridged</code>), and load with
+Replace Instrument... in the device card's Actions menu or <code>plugin.load</code>. Each one is a Carla Rack holding that plug-in: its
+parameters are knobs in the Params window, <code>plugin.param_get</code> / <code>plugin.param_set</code> parameters and automation
+targets; Show plugin editor (or <code>plugin.editor_open</code>) opens the plug-in's own editor - inside a Zene window for a native
+plug-in, in a window of its own from Wine for a Windows one. The plug-in's settings, including its private state (its chunk), are
+saved with the project, in presets (<code>plugin.preset_save</code> / <code>plugin.preset_load</code>) and with
+<code>plugin.state_save</code>, and come back when they are loaded. Without a Carla runtime no VST2 instrument is listed, and a
+project that used one keeps it as a placeholder until Carla is installed. VST2 effects through Carla, and opening projects saved with
+the older VeSTige and VST effect hosts as Carla devices, come in later releases; until then those older hosts are unchanged.</p>
+
 <p>Each device card has an Actions button (⋯), and the same menu opens on a right-click: Bypass, Open Editor, Presets, A/B, Replace With…, Move Left, Move Right and Remove, then Insert, Copy, Parameters and Hosting. Under the card's header a line says the device's state in words: Bypassed, which A/B setting you hear, the delay it adds, whether its plug-in host crashed or was quarantined, and the preset it last loaded or saved. When the chain changes, the cards that did not change stay where they are. Add device, Insert and Replace open the device picker. With a mixer channel selected, Add device fills the channel's selected parallel chain (Rack &gt; Route to); an empty parallel chain has its own Add device... button under its heading. Start typing to filter it by name, vendor, format or type. The arrow keys move through the list, Enter adds the highlighted device and Escape cancels. Each row shows the device's type, format, vendor and state; favourites come first.</p>
 <p>The Inspector keeps its place as you move through a project: a section that still shows the same track, clip or channel is left as it is, and a changed section keeps your keyboard focus and scroll position. When the selected notes differ, a field says 'Multiple values', and a key, velocity or length you type there is given to every selected note; a typed start moves the first note there and keeps the spacing. Volumes read in dB, velocities and pan in %, and times in the time format. Rename a track or a mixer channel by typing in its name field.</p>
 

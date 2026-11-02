@@ -59,6 +59,7 @@ bool moduleOf(const ControlDeviceEntry& device, QString* pluginName, Plugin::Des
 	if (device.format == QLatin1String("vst3")) { return controlVst3DeviceModule(device, pluginName, key, useKey, &ignored); }
 	if (device.format == QLatin1String("clap")) { return controlClapDeviceModule(device, pluginName, key, useKey, &ignored); }
 	if (device.format == QLatin1String("au")) { return controlAuDeviceModule(device, pluginName, key, useKey, &ignored); }
+	if (device.format == QLatin1String("vst2")) { return controlVst2DeviceModule(device, pluginName, key, useKey, &ignored); }
 	return controlDeviceModule(device, pluginName, key, useKey, &ignored);
 }
 
