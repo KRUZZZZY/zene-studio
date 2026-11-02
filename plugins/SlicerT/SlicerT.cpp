@@ -389,7 +389,7 @@ bool SlicerT::setSliceControl(int slice, const QString& name, double value)
 	const auto& spec = slicer::SliceControlSpecs[static_cast<std::size_t>(control)];
 	// Compared as it is stored, a float: the range's own ends are accepted.
 	const auto stored = static_cast<float>(value);
-	if (!std::isfinite(value) || stored < static_cast<float>(spec.min) || stored > static_cast<float>(spec.max))
+	if (!std::isfinite(value) || stored < static_cast<float>(spec.lowest) || stored > static_cast<float>(spec.highest))
 	{
 		return false;
 	}
@@ -681,7 +681,7 @@ void SlicerT::loadSettings(const QDomElement& element)
 			const float value = element.attribute(name).toFloat();
 			if (!std::isfinite(value)) { continue; }
 			m_sliceControls[slice][c].store(
-				std::clamp(value, static_cast<float>(spec.min), static_cast<float>(spec.max)),
+				std::clamp(value, static_cast<float>(spec.lowest), static_cast<float>(spec.highest)),
 				std::memory_order_relaxed);
 		}
 	}

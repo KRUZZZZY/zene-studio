@@ -158,7 +158,7 @@ SlicerTView::SlicerTView(SlicerT* instrument, QWidget* parent)
 		const auto& spec = slicer::SliceControlSpecs[i];
 		auto* box = new QDoubleSpinBox(m_sliceBar);
 		box->setObjectName(QString::fromLatin1(panel[i].objectName));
-		box->setRange(spec.min, spec.max);
+		box->setRange(spec.lowest, spec.highest);
 		box->setDecimals(panel[i].decimals);
 		box->setSingleStep(panel[i].step);
 		box->setPrefix(panel[i].prefix);

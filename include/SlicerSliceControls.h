@@ -49,8 +49,8 @@ inline constexpr std::size_t MaxSlices = 130;
 struct SliceControlSpec
 {
 	const char* name;
-	double min;
-	double max;
+	double lowest;
+	double highest;
 	double neutral;
 	const char* unit;
 };

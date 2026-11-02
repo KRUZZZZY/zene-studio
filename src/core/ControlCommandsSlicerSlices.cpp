@@ -124,7 +124,7 @@ QJsonArray controlSpecsJson()
 	for (const auto& spec : slicer::SliceControlSpecs)
 	{
 		specs.append(QJsonObject{{QStringLiteral("name"), QString::fromLatin1(spec.name)},
-			{QStringLiteral("min"), spec.min}, {QStringLiteral("max"), spec.max},
+			{QStringLiteral("min"), spec.lowest}, {QStringLiteral("max"), spec.highest},
 			{QStringLiteral("neutral"), spec.neutral}, {QStringLiteral("unit"), QString::fromLatin1(spec.unit)}});
 	}
 	return specs;
@@ -185,11 +185,11 @@ bool givenControls(const QJsonObject& args, QVector<const slicer::SliceControlSp
 			*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'%1' must be a number").arg(name));
 			return false;
 		}
-		if (static_cast<float>(value) < static_cast<float>(spec.min) || static_cast<float>(value) > static_cast<float>(spec.max))
+		if (static_cast<float>(value) < static_cast<float>(spec.lowest) || static_cast<float>(value) > static_cast<float>(spec.highest))
 		{
 			*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
 				QStringLiteral("%1 %2 is outside the range %3..%4 of slice control '%1'")
-					.arg(name).arg(value).arg(spec.min).arg(spec.max));
+					.arg(name).arg(value).arg(spec.lowest).arg(spec.highest));
 			return false;
 		}
 		given->append(&spec);
