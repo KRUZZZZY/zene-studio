@@ -57,3 +57,12 @@ Files committed: `include/NStateButton.h`, `src/gui/widgets/NStateButton.cpp`, `
 - `feature_check.py` creates `<worktree>-feature-check` beside the worktree, outside the write jail
   (PermissionError, `gates-1.log`, exit 1). I ran a copy with only `ROOT` pinned and the log directory redirected into
   the log folder (`feature_check_redirected.py`, diff is those three lines); the gate logic and baselines are the original's.
+
+## Self-check
+
+- **Reverted -> FAIL, fixed -> PASS:** reverted build 0, `ctest -R NStateButtonActivationTest` exit 8 (4 failed); reapplied build 0, ctest exit 0 (table above).
+- **Deterministic:** no timers, sleeps or event-loop waits. Activation is synchronous (`QAbstractButton::click()`, `QTest::keyClick`, `QTest::mouseClick`), and the state is read straight after each call; `Timeline::setLoopEnabled` and the `changedState` connections are direct. `animateClick()` (the timer-based variant) is deliberately not used. The fixture state is reset in `init()` (`setLoopEnabled(false)`, a fresh toolbar).
+- **Cause and siblings:** the cause is the press-only handler, fixed in the one class. `rg NStateButton src include` shows only `TimeLineWidget::addToolButtons` constructs it (auto-scroll, loop points, stop behaviour); all three go through the same override and the three-state case is tested. Programmatic `changeState()` is unchanged, so `Timeline::loopEnabledChanged -> changeState` and the initial `changeState(...)` calls behave as before, with no feedback loop (changeState ignores an unchanged state).
+- **Collateral:** no saved data or project format involved (the button only reflects `Timeline`'s loop flag, set the same way). No limit or check added. Behaviour change is only: mouse activation fires on release rather than press (standard button semantics), and keyboard/accessible activation now works. No audio-thread code, no new command, no undo step change.
+- **Verdict is FIXED** (not ALREADY-FIXED/FALSE-POSITIVE); evidence is the RED run on unfixed code above.
+- **Gates:** 8/8 PASS via the redirected copy (`gates-2.log`). `submit_check.py`'s own gate item FAILS in this sandbox only because the stock `feature_check.py` cannot create `<worktree>-feature-check` outside the write jail (`gates-1.log`, PermissionError); that is an environment limit, not a gate result on the code.
