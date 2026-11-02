@@ -37,6 +37,7 @@
 #include <QJsonObject>
 #include <QMessageBox>
 #include <QProgressDialog>
+#include <QPushButton>
 #include <QTemporaryDir>
 #include <QThreadPool>
 #include <QTimer>
@@ -90,6 +91,15 @@ QProgressDialog* progressDialog()
 		if (dialog != nullptr && dialog->isVisible()) { return dialog; }
 	}
 	return nullptr;
+}
+
+//! What a person does: click the progress dialog's own Cancel button.
+bool clickCancel(QProgressDialog* dialog)
+{
+	const auto buttons = dialog->findChildren<QPushButton*>();
+	if (buttons.isEmpty()) { return false; }
+	buttons.first()->click();
+	return true;
 }
 
 //! Accepts any message box (a modal one would hang the test) and records what it said.
@@ -257,12 +267,11 @@ private slots:
 		QTRY_COMPARE_WITH_TIMEOUT(newestRow(id).value(QStringLiteral("state")).toString(), QStringLiteral("done"), 60000);
 		QTRY_COMPARE_WITH_TIMEOUT(run(QStringLiteral("stem.job_status")).result.value(QStringLiteral("count")).toInt(), jobsBefore + 1, 10000);
 
-		// The job went through the registered command with the written file; its Cancel removes that file.
-		QCOMPARE(tempWavs().size(), 1);
-		QProgressDialog* dialog = progressDialog();
-		QVERIFY(dialog != nullptr);
-		dialog->cancel();
-		QTRY_VERIFY_WITH_TIMEOUT(tempWavs().isEmpty(), 60000);
+		// The job ran through the registered command on the written file and made the stems; when it ended the
+		// file went with it.
+		QTRY_VERIFY_WITH_TIMEOUT(s_messages.join(QString()).contains(QStringLiteral("Created 4 stem tracks")), 60000);
+		s_messages.clear();
+		QTRY_VERIFY_WITH_TIMEOUT(tempWavs().isEmpty(), 10000);
 		settle();
 	}
 
@@ -288,11 +297,16 @@ private slots:
 		QVERIFY(clip != nullptr);
 		holdTheWrite();
 		gui::StemSplitController::instance()->splitClipToStems(clip);
+		const int jobsBefore = run(QStringLiteral("stem.job_status")).result.value(QStringLiteral("count")).toInt();
+		QTRY_VERIFY_WITH_TIMEOUT(m_entered.load(), 5000);
 		QProgressDialog* dialog = progressDialog();
 		QVERIFY(dialog != nullptr);
-		dialog->cancel();
+		QVERIFY(clickCancel(dialog));
+		const QString id = newestRow(QStringLiteral("stem-prepare-")).value(QStringLiteral("id")).toString();
+		QCOMPARE(newestRow(id).value(QStringLiteral("state")).toString(), QStringLiteral("cancelled"));
 		settle();
 		QTRY_VERIFY_WITH_TIMEOUT(tempWavs().isEmpty(), 5000);
+		QCOMPARE(run(QStringLiteral("stem.job_status")).result.value(QStringLiteral("count")).toInt(), jobsBefore);
 	}
 };
 
