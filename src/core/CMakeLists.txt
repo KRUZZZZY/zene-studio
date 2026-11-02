@@ -301,6 +301,8 @@ set(LMMS_SRCS
 	core/ControlCommandsSessionAudioRecord.cpp
 	# 0.5.0 L10 (Q050-156): record.sampler_capture / _stop / _status / _land - an input take into a sampler.
 	core/ControlCommandsSamplerTake.cpp
+	# 0.5.0 L10 (Q050-263): plugin.slice_get / plugin.slice_set - the per-slice SlicerT controls.
+	core/ControlCommandsSlicerSlices.cpp
 	core/ControlCommandsTrackPresets.cpp
 	core/ControlCommandsRemote.cpp
 	core/ControlDeviceMoves.cpp

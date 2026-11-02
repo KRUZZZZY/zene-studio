@@ -51,6 +51,22 @@ void setThreeSlices(SlicerT& instrument)
 	instrument.loadSettings(settings);
 }
 
+//! Four slice points (0, 1/3, 2/3, 1): three slices whose gains are -1, -2 and -3 dB (Q050-263).
+void setThreeSlicesWithGains(SlicerT& instrument)
+{
+	QDomDocument doc;
+	QDomElement settings = doc.createElement(QStringLiteral("slicert"));
+	const SampleBuffer buffer(std::vector<SampleFrame>(64), Engine::audioEngine()->outputSampleRate());
+	settings.setAttribute(QStringLiteral("sampledata"), buffer.toBase64());
+	settings.setAttribute(QStringLiteral("totalSlices"), 4);
+	for (int i = 0; i < 4; ++i) { settings.setAttribute(QStringLiteral("slice_%1").arg(i), i / 3.0); }
+	instrument.loadSettings(settings);
+	for (int slice = 0; slice < 3; ++slice)
+	{
+		QVERIFY(instrument.setSliceControl(slice, QStringLiteral("gain"), -1.0 - slice));
+	}
+}
+
 QDomElement savedSettings(SlicerT& instrument)
 {
 	QDomDocument doc;
@@ -151,6 +167,47 @@ private slots:
 		dragEndpoint(waveform, true);
 
 		QCOMPARE(savedSettings(instrument).attribute(QStringLiteral("slice_2")).toFloat(), 1.0f);
+	}
+
+	// Q050-263: deleting a slice point merges two slices; the per-slice controls follow their slices.
+	void deletingASlicePointKeepsTheControlsWithTheirSlices()
+	{
+		SlicerT instrument(nullptr);
+		setThreeSlicesWithGains(instrument);
+		SlicerTWaveform waveform(248, 128, &instrument, nullptr);
+		waveform.resize(248, 128);
+		waveform.show();
+		QCoreApplication::processEvents();
+
+		const QPoint point(waveform.width() / 3, 60);
+		sendMouse(waveform, QEvent::MouseMove, point, Qt::NoButton, Qt::NoButton);
+		sendMouse(waveform, QEvent::MouseButtonPress, point, Qt::RightButton, Qt::RightButton);
+
+		QCOMPARE(instrument.sliceCount(), 2);
+		QCOMPARE(instrument.sliceControl(0, QStringLiteral("gain")), -1.0);  // the merged slice keeps the earlier one's
+		QCOMPARE(instrument.sliceControl(1, QStringLiteral("gain")), -3.0);  // the last slice is still the last slice
+	}
+
+	// Q050-263: a slice point added by a double click splits a slice; both halves keep its controls.
+	void addingASlicePointGivesBothHalvesTheControls()
+	{
+		SlicerT instrument(nullptr);
+		setThreeSlicesWithGains(instrument);
+		SlicerTWaveform waveform(248, 128, &instrument, nullptr);
+		waveform.resize(248, 128);
+		waveform.show();
+		QCoreApplication::processEvents();
+
+		const QPoint point(waveform.width() / 6, 60);  // inside the first slice
+		QMouseEvent event(QEvent::MouseButtonDblClick, QPointF(point), QPointF(waveform.mapToGlobal(point)),
+			Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+		QApplication::sendEvent(&waveform, &event);
+
+		QCOMPARE(instrument.sliceCount(), 4);
+		QCOMPARE(instrument.sliceControl(0, QStringLiteral("gain")), -1.0);
+		QCOMPARE(instrument.sliceControl(1, QStringLiteral("gain")), -1.0);
+		QCOMPARE(instrument.sliceControl(2, QStringLiteral("gain")), -2.0);
+		QCOMPARE(instrument.sliceControl(3, QStringLiteral("gain")), -3.0);
 	}
 
 	void interiorSliceRemainsMovable()

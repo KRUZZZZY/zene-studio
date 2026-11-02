@@ -995,6 +995,8 @@ set(LMMS_TESTS
 	src/plugins/SfzEffectBusViewTest.cpp
 	# 0.5.0 W3 L13 / L14: the light palette, theme editing, density and the other interface commands.
 	src/gui/SamplerTakeGuiTest.cpp
+	# Q050-263: per-slice SlicerT controls: the view's panel, plugin.slice_get / plugin.slice_set, a rendered slice sequence.
+	src/gui/SlicerTSliceControlsTest.cpp
 	src/gui/WorkspaceAccessTest.cpp
 	# Qt reads the startup scale before QApplication; the selected config must win over its fallback file.
 	src/core/AppearanceStartupTest.cpp
@@ -2431,6 +2433,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		# Q050-156: the sampler-take tests load the real AudioFileProcessor and SlicerT modules.
 		OR LMMS_TEST_NAME STREQUAL "SamplerTakeTest"
 		OR LMMS_TEST_NAME STREQUAL "SamplerTakeGuiTest"
+		# Q050-263: the per-slice test loads the real SlicerT module.
+		OR LMMS_TEST_NAME STREQUAL "SlicerTSliceControlsTest"
 		# Cluster new-p12-315: the playhead regression loads the audiofileprocessor module to render a note.
 		OR LMMS_TEST_NAME STREQUAL "AudioFileProcessorPlayheadTest"
 		OR LMMS_TEST_NAME STREQUAL "SamplerEnvelopeTest"
@@ -2541,6 +2545,11 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		add_dependencies(${LMMS_TEST_NAME} audiofileprocessor slicert)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "SamplerTakeGuiTest")
+		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	endif()
+	# Q050-263: the per-slice controls test drives the SlicerT view and renders through the SlicerT module.
+	if(LMMS_TEST_NAME STREQUAL "SlicerTSliceControlsTest")
+		add_dependencies(${LMMS_TEST_NAME} slicert)
 		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	endif()
 
