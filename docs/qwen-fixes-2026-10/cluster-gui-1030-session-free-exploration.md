@@ -44,3 +44,20 @@ The RED/GREEN counts: before the new case 31 passed; with the unfixed logic `Tot
 ## Not covered
 No real crashing client was driven (no deterministic way to crash one here); the crash-loop path is covered through the JSON seam only.
 The "JO-ID ... already in use by midiclip!" log line in the finding is a separate matter and not addressed by this cluster.
+
+## Self-check
+
+- **RED without the fix, GREEN with it:** reverting only the one-line `refused-no-client` return (`logs/fix.patch`) and rebuilding gives
+  `ctest -R '^DevicePanelTest$'` exit 8 (`Actual "quarantined", Expected ""`); re-applying it gives exit 0 (table above).
+- **Deterministic:** no timers or sleeps. The mapping is a pure function of a JSON object (the `hostingProblemOf` seam, fed literal
+  `state`/`refused` values); the real-path half reads `oop.get_state` and builds the panel synchronously (`panel.rebuild()`), no polling wait.
+- **Complete, siblings checked:** the only consumer of the mapping is `hostingProblems()` → `DevicePanel::pollHosting` (`DevicePanel.cpp:481`) →
+  `DeviceCard::refreshState` (the single card state line); `rg` finds no other reader of `hosting.refused` in `src/gui`
+  (`EffectHostingMenu.cpp` and `CommandLists.cpp` do not read it; `CommandLists.cpp:110` only shows the `refused_count` summary, which is
+  oop.get_state's own count and unchanged). `PluginQuarantineMenu` is the plug-in scan quarantine, a different feature.
+- **No collateral damage:** nothing saved or loaded is touched (GUI display mapping only); `refused-crash-loop`, `refused` with any state other than
+  `refused-no-client`, and `client-exited` map exactly as before; no control command, schema or snapshot changed; nothing on the audio thread.
+- **Gates:** `feature_check.py` as run from the worktree fails before running a single gate in this write-jail (`PermissionError` creating
+  `../zene-qwen-gui-1030-session-free-exploration-feature-check`, outside the jail), so `submit_check.py`'s own gate row cannot pass here.
+  I ran an unmodified copy with only the log directory redirected into the run's logs folder (`logs/feature_check_local.py`, `logs/gates-1.log`): all 8 rows PASS, exit 0.
+- Verdict is FIXED (not ALREADY-FIXED / FALSE-POSITIVE).
