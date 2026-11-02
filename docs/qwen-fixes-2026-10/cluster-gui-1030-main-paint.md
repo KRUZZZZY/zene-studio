@@ -74,4 +74,21 @@ Files committed: `tests/src/gui/NoteEditorTest.cpp`, `tests/upstream-modificatio
 
 ## Self-check
 
-(filled in after `submit_check.py`, below)
+`submit_check.py gui-1030-main-paint` (`logs/submit-1.log`, EXIT=1): commits, clean tree, report and tests rows PASS. The one FAIL is
+`gates (feature_check.py)`, and it is environmental, not a gate result: the stock script raises `PermissionError` creating
+`../zene-qwen-gui-1030-main-paint-feature-check/` (`logs/gates-1.log`), a directory outside this run's write-jail. The identical gate
+logic run through the two-line copy passes all 8 rows, EXIT=0 (`logs/gates-2.log`; complexity and file-length: "no new item in your files").
+That row will stay FAIL in any run confined to this jail; I did not edit the shared script.
+
+- **Test fails with the product change reverted, passes with it.** There is no product change (FALSE-POSITIVE), so there is nothing to revert.
+  The equivalent proof is the mutation: with line 175 made a no-op the five new tests fail (`logs/test-5-mutant.log`, EXIT=5, 5 failed); restored, they
+  pass (`logs/test-6-restored.log`, EXIT=0, 46 passed). I did not get a RED against unmodified production code, because the behaviour is correct there.
+- **Deterministic.** No sleeps or timing. Clicks are `QTest::mouseClick` delivered synchronously to the button; the overlap test reads widget and window
+  geometry after `detachPanel` (one `qWait(0)` only flushes the reflow event, it waits on no condition). The Shell is a fixed 1600x1000 in the offscreen platform.
+- **Fix at the cause and complete.** The cause is outside the toolbar: the sweep's click points sat under the Inspector's own floating window
+  (`ShellFloating.cpp:193-196, 248, 260`). Siblings checked: the other tools go through the same loop at `NoteEditorToolbar.cpp:165-177` and the key path
+  (`keyPressEvent`, `toolForKey`) calls the same `setTool`; nothing differs per tool, so there is no per-tool defect to fix.
+- **No collateral damage.** No product, saved-data or limit change; test-only plus one registration reason line.
+- **FALSE-POSITIVE contract and code.** `NoteEditorToolbar.cpp:165-177` (checkable exclusive actions, `triggered` -> `setTool`), `NoteEditor.cpp:278-286`
+  (`setTool` checks the action), `ShellFloating.cpp:193-196` (480x320 minimum float size), `ShellFloating.cpp:248,260` (opens at the panel's old position),
+  pilot `results.jsonl` lines 12-13 (the pop-out) and `shots/0022..0025-pair.png`. Unverified: why the sweep's Select/Play x differ (see above); not in this batch.
