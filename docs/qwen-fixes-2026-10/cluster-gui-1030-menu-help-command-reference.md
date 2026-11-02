@@ -60,7 +60,7 @@ All builds use `CCACHE_DISABLE=1` (ccache cannot write its temp dir under the wr
 | 4b rebuild + run (GREEN) | `cmake --build build --target zene HelpAccessTest` (`build-6.log`) then `ctest -R '^HelpAccessTest$'` (`test-6-reapply-GREEN.log`, 1 test passed) | 0 / 0 |
 | family, final tree | the 10-test ctest above (`test-7-family-final.log`, 100% passed) | 0 |
 | gates, first run | `python3 logs/feature_check_local.py <worktree>` (`gates-1.log`): file-length FAIL, `ControlRegistryTest.cpp` grew past 500 lines (524) - the registry test was moved into `HelpAccessTest.cpp` (already over 500 on the base) and `ControlRegistryTest.cpp` restored | 1 |
-| gates, final | see Self-check (`gates-2.log`) | |
+| gates, final (committed tree, 8 changed files) | `python3 logs/feature_check_local.py <worktree>` (`gates-2.log`): 8/8 PASS, RESULT PASS | 0 |
 
 Round-1 evidence (logging only; superseded for behaviour, still valid for the no-display log): RED `ctest` EXIT=8, GREEN EXIT=0,
 logs in `.../runs/gui-1030-menu-help-command-reference.r1/logs/`.
@@ -74,4 +74,10 @@ Files committed: `include/UnattendedRun.h`, `src/core/UnattendedRun.cpp`, `inclu
 `HelpAccessTest.cpp` reason lines; the others are in `tests/fork-sources.txt`), this report.
 
 ## Self-check
-(below)
+
+- **RED/GREEN with the product change reverted:** yes. `ControlRegistry.cpp` reverted: ctest EXIT=8, both new behaviour tests fail (`test-5-revert-RED.log`); reapplied: EXIT=0 (`test-6-reapply-GREEN.log`). Only the behavioural file was reverted because reverting the header's new accessors would be a compile error, not a behavioural RED.
+- **Deterministic:** no timers, sleeps or clocks; seams are `ControlRegistry::setHeadless` / `setDisplayAvailable` (restored) and `QTest::ignoreMessage`. Menu entries installed synchronously on a local `QMenuBar`.
+- **Cause and callers:** the cause is the registry conflating "agent instance" with "no display" in `checkRequires`. All `requires: display` declarers checked: `app.help`, `app.tour` (`ControlCommandsHelp.cpp`), `collab.show_panel` (own `isUnattendedRun()` guard for consent), `plugin.editor_open`, `telemetry.consent` (also `human`). Every other `isHeadless()` reader (`announce`, `WorkflowRun`, `ControlCommandsTheme`, `ControlCommandsArrangerView`, `CommandMetadata`) keeps `m_headless` unchanged. 10-test family passes.
+- **Collateral damage:** no project or config format touched; `setHeadless` keeps all existing tests' meaning (sets both flags); offscreen/CI still refuses display commands as before. Only change: an agent instance on a real display may run non-modal display commands. No new limit, command or audio-thread code.
+- **Not a not-real verdict:** n/a (verdict FIXED).
+- **Stock `submit_check.py` gates row is FAIL only because `feature_check.py` cannot create its sibling log dir under the write-jail; the equivalent redirected run is PASS (`gates-2.log`).**
