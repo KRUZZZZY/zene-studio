@@ -101,6 +101,7 @@ private:
 	bool isBridged() const;
 	bool openHostApi(QString* error);
 	bool loadPlugin(QString* error);
+	bool addToRack(const QString& file, CarlaBackend::BinaryType type, QString* error);
 	void idle();
 
 	Descriptor::SubPluginFeatures::Key m_pluginKey;

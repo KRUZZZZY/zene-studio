@@ -92,22 +92,29 @@ quint32 readLe32(const QByteArray& bytes, int offset)
 	return quint32(p[0]) | (quint32(p[1]) << 8) | (quint32(p[2]) << 16) | (quint32(p[3]) << 24);
 }
 
+constexpr quint16 PeMachineAmd64 = 0x8664;
+constexpr quint16 PeMachineI386 = 0x14c;
+
+//! How Carla runs a PE of @a machine on this host: in process on Windows when it is the host's own
+//! architecture, through the matching Wine bridge everywhere else.
+Binary binaryOfPeMachine(quint16 machine)
+{
+	const bool is64 = machine == PeMachineAmd64;
+	if (!is64 && machine != PeMachineI386) { return Binary::Unknown; }
+#ifdef _WIN32
+	return is64 == (sizeof(void*) == 8) ? Binary::Native : Binary::Unknown;
+#else
+	return is64 ? Binary::Win64 : Binary::Win32;
+#endif
+}
+
 Binary peBinary(QFile& file, const QByteArray& head)
 {
 	const quint32 peOffset = readLe32(head, 0x3c);
 	if (peOffset == 0 || !file.seek(peOffset)) { return Binary::Unknown; }
 	const QByteArray pe = file.read(6);
 	if (pe.size() < 6 || !pe.startsWith(QByteArray("PE\0\0", 4))) { return Binary::Unknown; }
-	const auto machine = quint16(quint8(pe[4]) | (quint16(quint8(pe[5])) << 8));
-#ifdef _WIN32
-	// On Windows a PE of the host's own architecture loads in process.
-	if ((machine == 0x8664 && sizeof(void*) == 8) || (machine == 0x14c && sizeof(void*) == 4)) { return Binary::Native; }
-	return Binary::Unknown;
-#else
-	if (machine == 0x8664) { return Binary::Win64; }
-	if (machine == 0x14c) { return Binary::Win32; }
-	return Binary::Unknown;
-#endif
+	return binaryOfPeMachine(quint16(quint8(pe[4]) | (quint16(quint8(pe[5])) << 8)));
 }
 
 QString discoveryTool(Binary binary)

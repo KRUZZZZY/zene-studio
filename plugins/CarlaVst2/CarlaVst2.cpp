@@ -208,6 +208,25 @@ bool CarlaVst2Instrument::isBridged() const
 		!= carlavst2::Binary::Native;
 }
 
+namespace
+{
+
+//! Carla's binary type for @a binary (BINARY_NONE for one this host cannot run).
+CarlaBackend::BinaryType carlaBinaryType(carlavst2::Binary binary)
+{
+	using namespace CarlaBackend;  // BINARY_NATIVE is a macro naming one of its enumerators
+	switch (binary)
+	{
+	case carlavst2::Binary::Native: return BINARY_NATIVE;
+	case carlavst2::Binary::Win64: return BINARY_WIN64;
+	case carlavst2::Binary::Win32: return BINARY_WIN32;
+	case carlavst2::Binary::Unknown: break;
+	}
+	return BINARY_NONE;
+}
+
+} // namespace
+
 bool CarlaVst2Instrument::loadPlugin(QString* error)
 {
 	if (nativeHandle() == nullptr)
@@ -224,20 +243,17 @@ bool CarlaVst2Instrument::loadPlugin(QString* error)
 	if (!openHostApi(error)) { return false; }
 	carlavst2::Binary binary = carlavst2::binaryFromName(m_pluginKey.attributes.value(carlavst2::binaryAttribute()));
 	if (binary == carlavst2::Binary::Unknown) { binary = carlavst2::binaryOf(file); }
-	CarlaBackend::BinaryType type = CarlaBackend::BINARY_NONE;
-	switch (binary)
+	const CarlaBackend::BinaryType type = carlaBinaryType(binary);
+	if (type == CarlaBackend::BINARY_NONE)
 	{
-	case carlavst2::Binary::Native: {
-		using namespace CarlaBackend;  // BINARY_NATIVE is a macro naming one of its enumerators
-		type = BINARY_NATIVE;
-		break;
-	}
-	case carlavst2::Binary::Win64: type = CarlaBackend::BINARY_WIN64; break;
-	case carlavst2::Binary::Win32: type = CarlaBackend::BINARY_WIN32; break;
-	case carlavst2::Binary::Unknown:
 		*error = QStringLiteral("'%1' is not a VST2 binary this host can run").arg(file);
 		return false;
 	}
+	return addToRack(file, type, error);
+}
+
+bool CarlaVst2Instrument::addToRack(const QString& file, CarlaBackend::BinaryType type, QString* error)
+{
 	const qint64 uniqueId = m_pluginKey.attributes.value(carlavst2::uniqueIdAttribute()).toLongLong();
 	const QByteArray path = file.toLocal8Bit();
 	// PLUGIN_OPTIONS_NULL: Carla's defaults for the plug-in, which include saving its chunk.

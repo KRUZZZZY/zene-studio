@@ -141,6 +141,7 @@ static float ZENE_VST_CALL getParameter(ZvAEffect* effect, int32_t index)
 //! plug-in's own editor.
 static intptr_t writeChunk(Instance* self, void** data)
 {
+	if (data == NULL) { return 0; }
 	snprintf(self->chunk, sizeof(self->chunk), "ZNV2 level=%ld tone=%ld noteons=%d editor=%d",
 		(long)(self->params[ParamLevel] * 1000000.0f + 0.5f), (long)(self->params[ParamTone] * 1000000.0f + 0.5f),
 		self->noteOns, self->editorParent != NULL ? 1 : 0);
@@ -166,51 +167,50 @@ static intptr_t readChunk(Instance* self, const void* data, intptr_t size)
 
 static const char* const ParamNames[ParamCount] = {"Level", "Tone"};
 
-static intptr_t describe(Instance* self, int32_t opcode, int32_t index, void* ptr)
+//! The parameter strings: 1 when @a opcode was one of them.
+static int describeParameter(Instance* self, int32_t opcode, int32_t index, void* ptr)
 {
+	const int valid = index >= 0 && index < ParamCount;
 	switch (opcode)
 	{
 	case zvGetParamName:
-		if (index >= 0 && index < ParamCount) { copyText(ptr, ParamNames[index], 8); }
-		return 0;
-	case zvGetParamLabel: copyText(ptr, "", 8); return 0;
+		if (valid) { copyText(ptr, ParamNames[index], 8); }
+		return 1;
+	case zvGetParamLabel: copyText(ptr, "", 8); return 1;
 	case zvGetParamDisplay:
-		if (index >= 0 && index < ParamCount) { snprintf((char*)ptr, 8, "%.3f", (double)self->params[index]); }
-		return 0;
+		if (valid) { snprintf((char*)ptr, 8, "%.3f", (double)self->params[index]); }
+		return 1;
+	default: return 0;
+	}
+}
+
+static intptr_t canDo(const char* what)
+{
+	if (what == NULL) { return 0; }
+	return strcmp(what, "receiveVstEvents") == 0 || strcmp(what, "receiveVstMidiEvent") == 0 ? 1 : 0;
+}
+
+//! Who the plug-in is, what it is and what it can do.
+static intptr_t describe(int32_t opcode, void* ptr)
+{
+	switch (opcode)
+	{
 	case zvGetEffectName: copyText(ptr, "Zene VST2 Test Instrument", 32); return 1;
 	case zvGetProductString: copyText(ptr, "Zene VST2 Test Instrument", 64); return 1;
 	case zvGetVendorString: copyText(ptr, "Zene Studio Tests", 64); return 1;
 	case zvGetVendorVersion: return 1000;
 	case zvGetVstVersion: return 2400;
 	case zvGetPlugCategory: return zvPlugCategorySynth;
-	case zvCanDo:
-		return ptr != NULL && (strcmp((const char*)ptr, "receiveVstEvents") == 0
-			|| strcmp((const char*)ptr, "receiveVstMidiEvent") == 0) ? 1 : 0;
+	case zvCanDo: return canDo((const char*)ptr);
 	default: return 0;
 	}
 }
 
-static intptr_t ZENE_VST_CALL dispatcher(ZvAEffect* effect, int32_t opcode, int32_t index, intptr_t value, void* ptr,
-	float opt)
+//! The editor: it records the parent window it was handed and reports a fixed rectangle.
+static intptr_t editor(Instance* self, int32_t opcode, void* ptr)
 {
-	Instance* self = instanceOf(effect);
-	(void)opt;
 	switch (opcode)
 	{
-	case zvClose:
-		free(self);
-		return 1;
-	case zvProcessEvents:
-	{
-		const ZvEvents* events = (const ZvEvents*)ptr;
-		for (int32_t i = 0; events != NULL && i < events->numEvents; ++i)
-		{
-			if (events->events[i] != NULL && events->events[i]->type == zvMidiType) { queueMidi(self, events->events[i]); }
-		}
-		return 1;
-	}
-	case zvGetChunk: return ptr != NULL ? writeChunk(self, (void**)ptr) : 0;
-	case zvSetChunk: return readChunk(self, ptr, value);
 	case zvEditGetRect:
 		self->rect.top = 0;
 		self->rect.left = 0;
@@ -224,10 +224,52 @@ static intptr_t ZENE_VST_CALL dispatcher(ZvAEffect* effect, int32_t opcode, int3
 	case zvEditClose:
 		self->editorParent = NULL;
 		return 1;
-	case zvMainsChanged:
-		if (value == 0) { self->heldKeys = 0; self->pendingCount = 0; }
-		return 0;
-	default: return describe(self, opcode, index, ptr);
+	default: return 0;
+	}
+}
+
+static intptr_t processEvents(Instance* self, const ZvEvents* events)
+{
+	for (int32_t i = 0; events != NULL && i < events->numEvents; ++i)
+	{
+		if (events->events[i] != NULL && events->events[i]->type == zvMidiType) { queueMidi(self, events->events[i]); }
+	}
+	return 1;
+}
+
+static int isEditorOpcode(int32_t opcode)
+{
+	return opcode == zvEditGetRect || opcode == zvEditOpen || opcode == zvEditClose;
+}
+
+static intptr_t mainsChanged(Instance* self, intptr_t on)
+{
+	if (on == 0)
+	{
+		self->heldKeys = 0;
+		self->pendingCount = 0;
+	}
+	return 0;
+}
+
+static intptr_t ZENE_VST_CALL dispatcher(ZvAEffect* effect, int32_t opcode, int32_t index, intptr_t value, void* ptr,
+	float opt)
+{
+	Instance* self = instanceOf(effect);
+	(void)opt;
+	if (opcode == zvClose)
+	{
+		free(self);
+		return 1;
+	}
+	if (isEditorOpcode(opcode)) { return editor(self, opcode, ptr); }
+	switch (opcode)
+	{
+	case zvProcessEvents: return processEvents(self, (const ZvEvents*)ptr);
+	case zvGetChunk: return writeChunk(self, (void**)ptr);
+	case zvSetChunk: return readChunk(self, ptr, value);
+	case zvMainsChanged: return mainsChanged(self, value);
+	default: return describeParameter(self, opcode, index, ptr) ? 0 : describe(opcode, ptr);
 	}
 }
 
