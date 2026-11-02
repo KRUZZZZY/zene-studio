@@ -3300,3 +3300,6 @@ tests/src/core/MidiOutTimingTest.cpp
 tests/src/gui/SessionCellPlaybackMenuTest.cpp
 # cluster new-p10-290 (2026-10): fix and verification report for pitchAt's window bound (fork-NEW).
 docs/qwen-fixes-2026-10/cluster-new-p10-290.md
+# cluster gui-1030-main-loop-points (2026-11): NStateButton activation regression test and its report (fork-NEW).
+tests/src/gui/NStateButtonActivationTest.cpp
+docs/qwen-fixes-2026-10/cluster-gui-1030-main-loop-points.md

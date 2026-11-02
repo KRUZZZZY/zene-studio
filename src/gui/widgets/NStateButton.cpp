@@ -23,8 +23,6 @@
  */
  
 
-#include <QMouseEvent>
-
 #include "NStateButton.h"
 
 
@@ -82,13 +80,14 @@ void NStateButton::changeState(int state)
 	}
 }
 
-void NStateButton::mousePressEvent(QMouseEvent* me)
+// QAbstractButton::click() runs this for every activation - the mouse release, the keyboard's Space,
+// the accessible button action - so the state advances however the button is activated, once per click.
+void NStateButton::nextCheckState()
 {
-	if (me->button() == Qt::LeftButton && !m_states.empty())
+	if (!m_states.empty())
 	{
 		changeState((m_curState + 1) % m_states.size());
 	}
-	ToolButton::mousePressEvent(me);
 }
 
 } // namespace lmms::gui
