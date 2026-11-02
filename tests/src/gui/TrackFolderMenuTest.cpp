@@ -33,6 +33,7 @@
 #include <QtTest>
 
 #include <QKeyEvent>
+#include <QLabel>
 #include <QLayout>
 #include <QMenu>
 #include <QScrollArea>
@@ -206,6 +207,49 @@ private slots:
 		QCOMPARE(rows->itemAt(index)->widget(), view);
 		QVERIFY(!strip->pinnedViews().contains(view));
 		QVERIFY(view->isVisible());
+	}
+
+	//! gui-1030-main: the song editor's proportional-snap toolbar action turns proportional snap on
+	//! (SongEditor::toggleProportionalSnap), checks itself and shows the "Snap: ..." readout; a second
+	//! click undoes all three.
+	void proportionalSnapActionTogglesSnapAndReadout()
+	{
+		SongEditorWindow* window = getGUI()->songEditor();
+		QAction* snap = nullptr;
+		for (QToolBar* bar : window->findChildren<QToolBar*>())
+		{
+			for (QAction* action : bar->actions())
+			{
+				if (action->text() == SongEditorWindow::tr("Toggle proportional snap on/off")) { snap = action; }
+			}
+		}
+		QVERIFY2(snap != nullptr, "no proportional snap action on the song editor");
+		QVERIFY(snap->isCheckable());
+		QVERIFY(!snap->isChecked());
+
+		// The readout is the pixmap-less label in the same toolbar as the snap action.
+		QLabel* readout = nullptr;
+		for (QToolBar* bar : window->findChildren<QToolBar*>())
+		{
+			if (!bar->actions().contains(snap)) { continue; }
+			for (QLabel* label : bar->findChildren<QLabel*>())
+			{
+				if (label->pixmap().isNull()) { readout = label; }
+			}
+		}
+		QVERIFY2(readout != nullptr, "no Snap readout label in the snap toolbar");
+
+		QSignalSpy changed(window->m_editor, &SongEditor::proportionalSnapChanged);
+		snap->trigger();
+		QCOMPARE(changed.count(), 1);
+		QVERIFY(snap->isChecked());
+		QVERIFY2(readout->text().startsWith(QStringLiteral("Snap: ")), qPrintable(readout->text()));
+		QCOMPARE(readout->text(), QStringLiteral("Snap: ") + window->m_editor->getSnapSizeString());
+
+		snap->trigger();
+		QCOMPARE(changed.count(), 2);
+		QVERIFY(!snap->isChecked());
+		QVERIFY(readout->text().isEmpty());
 	}
 
 	void autoRepeatSpaceDoesNotRetogglePlayback()

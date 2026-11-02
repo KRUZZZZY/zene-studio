@@ -2452,7 +2452,7 @@ src/core/PathUtil.cpp	new-p12-174: treat only parent-directory paths as outside 
 tests/src/core/RelativePathsTest.cpp	new-p12-174: regress a valid factory-sample filename beginning with two dots through relativeOrAbsolute and toShortestRelative.
 src/gui/editors/Editor.cpp	new-p12-179: ignores auto-repeat Space keydowns so editor windows do not toggle play or pause repeatedly.
 tests/src/gui/SessionGridViewTest.cpp	new-p12-179: covers one Enter launch per physical press and confirms repeated arrow navigation still moves selection.
-tests/src/gui/TrackFolderMenuTest.cpp	new-p12-179: covers MainWindow and SongEditorWindow transport remaining active on auto-repeat Space keydowns.
+tests/src/gui/TrackFolderMenuTest.cpp	new-p12-179: covers MainWindow and SongEditorWindow transport remaining active on auto-repeat Space keydowns. gui-1030-main: also covers the song editor proportional-snap toolbar action (check state, proportionalSnapChanged, Snap readout).
 docs/COMPING.md	decisions-r3-takes (2026-10-09 owner ruling): documents newest-active take selection, remembered user choice, Play all takes, persistence and controls. Round 2 review: records non-reused lane identities and their serialized high-water mark. Round 2 review: defines paste copies as independent ungrouped lane-0 clips.
 tests/rt-safety-scope.txt	decisions-r3-takes (2026-10-09 owner ruling): records the active-take render gate lock-free/no-allocation scope. Round 2 review ACCEPT-NOTE: declares the extracted active-take scheduler predicate for the static realtime sweep.
 tests/src/core/RecordingRealtimeTest.cpp	decisions-r3-takes (2026-10-09 owner ruling): covers newest pass, remembered user choice, and all-takes render summing.
