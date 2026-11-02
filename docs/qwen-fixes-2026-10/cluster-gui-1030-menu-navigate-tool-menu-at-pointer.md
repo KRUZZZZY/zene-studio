@@ -54,7 +54,10 @@ A bare-Qt check supports the same conclusion. A small scratch program, run on re
 
 The first `gui.py start` attempts failed with `ModuleNotFoundError: vncdotool` because they used the system Python; the sweep's `venv/bin/python` works (`gui-start-1.log`, `gui-start-2.log`, `gui-start-3.log`).
 
-Not run: `ctest`, because no C++ changed. Gates: see the Self-check.
+| Gates | `python3 .../qwen/feature_check.py <worktree>` as shipped | 1 - `PermissionError`: it creates `<worktree>-feature-check/` beside the worktree, outside this lane's write area (`gates-1.log`); no gate ran |
+| Gates | the same script, copied to the log folder with only two path lines changed (the log directory, and `ROOT` pointing at the real `qwen/` folder); gate commands and baselines unchanged | 0 (`gates-2.log`): fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length all PASS; `RESULT: PASS` |
+
+Not run: `ctest`, because no C++ changed.
 
 ## Self-check
 
