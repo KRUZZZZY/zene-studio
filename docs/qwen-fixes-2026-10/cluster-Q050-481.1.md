@@ -75,6 +75,11 @@ complexity and file-length PASS (no new item in my files) - `RESULT: PASS`, exit
   the CRT deprecation warnings); the test's plug-in-directory symlinks are POSIX-only (Windows uses the build
   directory; every case skips there for want of a runtime); the PE fixture build is best effort and never fails the
   build.
+- **submit_check result (`89-submit-check.log`)**: every mechanical item PASS except `gates (feature_check.py)` FAIL,
+  which is the jailed `mkdir` above (its own gates pass, `88-feature-check.log`, exit 0), and one WARN "canary figures
+  (README) updated - new command ids: automation.add_point, control.undo, embed.h, ...": a false positive of its regex
+  (quoted strings in the new test and `#include` lines); no command id was added, and the README canary still reads
+  878 ids / 77 groups, which `tests/doc-figures-gate.py` confirms (PASS).
 - **Commands snapshot / canary?** Regenerated live with `snapshot_live.py` (878 ids / 77 groups, `55-snapshot.log`);
   `tests/doc-figures-gate.py` PASS; `ControlCommandsSnapshot` passes.
 - **GUI and agent through the same command?** Loading: device card Replace Instrument... -> device picker ->
