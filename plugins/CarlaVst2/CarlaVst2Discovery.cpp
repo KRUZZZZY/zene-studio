@@ -285,8 +285,9 @@ QString runtimeFolder()
 	return folder != nullptr ? QString::fromLocal8Bit(folder) : QString();
 #else
 	// The folder of the libcarla_native-plugin this process actually bound, read from the loader.
-	// Not carla_get_library_folder(): measured 2026-11-02, the optimised build of the bundled
-	// Carla snapshot corrupts the heap inside it (water's File code) on GCC 16.
+	// Not carla_get_library_folder(): it normalises the path with water's removeEllipsis(), which
+	// writes out of bounds when the path contains ".." (measured 2026-11-02: SIGSEGV under glibc's
+	// malloc checker with such a path, clean without). CarlaInstrument still calls it once per Rack.
 	Dl_info info{};
 	if (dladdr(reinterpret_cast<void*>(&carla_get_native_rack_plugin), &info) == 0 || info.dli_fname == nullptr)
 	{

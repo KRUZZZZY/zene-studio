@@ -22,12 +22,12 @@
 # Sources are copied to <out-dir>/src-native and <out-dir>/src-win (the submodule
 # is never built in place), so a second run is incremental.
 #
-# -fno-strict-aliasing -fno-lifetime-dse: measured on GCC 16.2 (2026-11-02) - the
-# optimised build of this Carla snapshot corrupts the heap inside
-# carla_get_library_folder() (water's String/File code), which the product calls
-# whenever it creates a Carla Rack; glibc's malloc checker aborts on it at once,
-# and the product test crashed in 2 of 3 runs. The DEBUG build and the optimised
-# build with these two flags are clean.
+# -fno-strict-aliasing -fno-lifetime-dse are conservative, not required: the
+# heap corruption first blamed on the optimiser (2026-11-02) was traced to
+# water's removeEllipsis() writing out of bounds when the path the loader used
+# for libcarla_native-plugin contains "..". Keep that path free of ".." (put an
+# absolute, normalised directory on LD_LIBRARY_PATH, as tests/CMakeLists.txt
+# does): Carla resolves its own folder from it every time a Rack is created.
 set -euo pipefail
 
 out="${1:?usage: $0 <out-dir> [<windows-toolchain-bin-dir>]}"
