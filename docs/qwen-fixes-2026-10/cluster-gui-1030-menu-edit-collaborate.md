@@ -33,6 +33,8 @@ Not a realtime path (UI thread only).
 
 - `src/gui/ControlCommandsShell.cpp` (fix; fork-NEW file, no upstream-modifications entry needed)
 - `tests/src/gui/MenuRefusalNoticeTest.cpp` (new regression), `tests/CMakeLists.txt` (registered in the `ZENE_HAVE_COLLAB` block next to `CollabPanelTest`)
+- `tests/fork-sources.txt`, `tests/all-sources.txt` (registration of the new test, added in a second commit after the
+  gates failed on the committed tree: `fork-sources` and `all-sources-reproduce` exit 1 in `gates-3.log`)
 - this report
 
 ## Test matrix (`MenuRefusalNoticeTest`)
@@ -74,6 +76,31 @@ picked up with `cmake --build . --target cmake_check_build_system` (EXIT=0). The
 (`logs/feature_check_copy.py`) that differs from it by exactly two lines - `ROOT` pinned to the real script directory and
 the log directory moved into the LOG FOLDER (`diff` is in the session transcript).
 
-`python3 logs/feature_check_copy.py <worktree>` -> EXIT=0, `RESULT: PASS`:
+`python3 logs/feature_check_copy.py <worktree>` on the final committed tree (`gates-4.log`) -> EXIT=0, `RESULT: PASS`:
 fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures,
 complexity (no new item in your files), file-length (no new item in your files) - all PASS.
+
+## Self-check
+
+- **Test fails reverted / passes fixed:** yes - RED `ctest -R MenuRefusalNoticeTest` EXIT=8 (reverted, two assertions fail),
+  GREEN EXIT=0 (1 test run each time); logs `test-red.log`, `test-4b-red.log`, `test-green.log`, `test-4b-green.log`.
+- **Deterministic:** no timers, sleeps or threads. The seams are `ControlRegistry::setHeadless()` (existing, restored
+  after each slot, the same one `CollabPanelTest` uses) and the synchronous `QAction::trigger()`; the status message
+  is read straight after, and the 8 s message timeout is never waited on.
+- **Cause and completeness:** the cause is the dropped result in the single shared dispatch (`ControlCommandsShell.cpp:504`),
+  not the Collaborate item alone, so the fix is there. Callers checked: `MainWindow.cpp` (lines 256, 324, 405-416, 526,
+  965, 1213, 1223, 1231, 1395-1404, 1449, 1460, 1470, 1917), `Shell.cpp:252`, `ShellChrome.cpp:277`,
+  `ControlCommandsLayouts.cpp:259` (comment only) - all take the void return unchanged; the signature is the same.
+  `openOnlineHelp` (own status-bar notice, called directly because `app.online_help` requires a human) does not go
+  through dispatch and is not affected.
+- **Collateral:** no saved data or project format is touched; nothing is limited or newly refused - a command that was
+  refused before is still refused, it is now also reported. Successful commands stay silent (test slot 2). A non-GUI
+  process has no main window, so nothing is shown there.
+  Related tests run (9/9): ArrangerFileDropTest, ShortcutsCommandsTest, StartHubTest, HelpAccessTest,
+  AgentSurfaceReportTest, OnlineHelpNoticeTest, CollabPanelTest, MenuRefusalNoticeTest, OscServerMenuTest.
+- **Verdict is FIXED**, so no ALREADY-FIXED/FALSE-POSITIVE evidence is needed.
+- **Sibling commands in `ControlCommandsShell.cpp`** (app.about, app.ask, app.help, app.online_help, app.task_cancel,
+  app.tasks, app.tour, app.tours, app.version, app.whats_new): their handlers and results are unchanged by this fix,
+  which only adds a reader of the failure result in `dispatchShellCommand`. A menu click on any of them that is refused
+  now shows the registry's reason in the status bar; the socket and Lua callers see exactly the same replies as before.
+  `app.online_help` stays refused for every caller (`requires: human`); its menu entry calls `openOnlineHelp` directly.
