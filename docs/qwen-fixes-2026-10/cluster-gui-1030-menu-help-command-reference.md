@@ -56,7 +56,7 @@ build used `CCACHE_DISABLE=1`.
 | gates, working tree (inline version) | `python3 logs/feature_check_local.py <worktree>` (`gates-2.log`): 8/8 PASS | 0 |
 | gates, after commit (inline version) | same (`gates-3.log`): complexity FAIL `announce` CCN 11 - fixed by extracting `logHeadlessRefusal` | 1 |
 | rebuild + family after extraction | `CCACHE_DISABLE=1 cmake --build build --target HelpAccessTest CommandFormTest RecordModeMenuTest GrooveMenuTest -j4` (`build-8.log`) then the family ctest (`test-7-family-final.log`, 4 tests, 100% passed) | 0 / 0 |
-| gates, final | see Self-check (`gates-4.log`) | |
+| gates, final (committed tree, 4 changed files) | `python3 logs/feature_check_local.py <worktree>` (`gates-4.log`): 8/8 PASS, RESULT PASS | 0 |
 
 Gate note: the stock `feature_check.py` exits 1 here (`gates-1.log`) because it tries to create
 `<worktree>-feature-check/` next to the worktree, which the write-jail forbids. I ran a copy (`logs/feature_check_local.py`) that
