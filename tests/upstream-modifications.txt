@@ -5551,3 +5551,5 @@ include/OutputSettings.h	cluster new-p23-190: setCompressionLevel clamps to the 
 tests/src/gui/ExportQualityControlsTest.cpp	# OutputSettings compression level is not range-checked
 tests/src/core/ProjectRecoveryTest.cpp	# Autosave identity sidecars are read without a size limit
 tests/src/gui/HelpAccessTest.cpp	# A refused Help menu command is logged in an unattended session
+include/ControlRegistry.h	# requires: display follows the display, not the agent instance (m_displayAvailable)
+tests/src/core/ControlRegistryTest.cpp	# requires: display follows the display, not the agent instance

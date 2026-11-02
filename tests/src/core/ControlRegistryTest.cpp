@@ -314,6 +314,37 @@ private slots:
 		QVERIFY(onDisplay.result.value(QStringLiteral("ran")).toBool());
 	}
 
+	//! `requires: display` asks for a display, not for a person: an agent instance (headless) on a real display
+	//! runs a display command, one with no display is refused, and `human` is refused either way.
+	void displayRequirementFollowsTheDisplayNotTheAgent()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		ControlCommand cmd;
+		cmd.id = QStringLiteral("test.needs_display_and_human");
+		cmd.group = QStringLiteral("test");
+		cmd.verb = QStringLiteral("needs_display_and_human");
+		cmd.requiresDecl = QStringList{QStringLiteral("display"), QStringLiteral("human")};
+		cmd.handler = [](const QJsonObject&) { return ControlResult::success(); };
+		registry->registerCommand(cmd);
+		cmd.id = QStringLiteral("test.split_display_only");
+		cmd.verb = QStringLiteral("split_display_only");
+		cmd.requiresDecl = QStringList{QStringLiteral("display")};
+		registry->registerCommand(cmd);
+		const bool headless = registry->isHeadless();
+		const bool display = registry->isDisplayAvailable();
+
+		registry->setHeadless(true);
+		registry->setDisplayAvailable(true);  // an agent instance on a real display
+		QVERIFY(registry->invoke(QStringLiteral("test.split_display_only")).ok);
+		QCOMPARE(registry->invoke(QStringLiteral("test.needs_display_and_human")).errorKind, ControlErrorKind::Requires);
+
+		registry->setDisplayAvailable(false);  // no display at all
+		QCOMPARE(registry->invoke(QStringLiteral("test.split_display_only")).errorKind, ControlErrorKind::Requires);
+
+		registry->setHeadless(headless);
+		registry->setDisplayAvailable(display);
+	}
+
 	//! A schema-valid command runs its handler and returns the handler's result.
 	void validCommandRunsHandler()
 	{
