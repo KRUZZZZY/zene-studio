@@ -170,27 +170,10 @@ ControlResult sliceGet(const QJsonObject& args)
 		{QStringLiteral("controls"), controlSpecsJson()}, {QStringLiteral("slices"), slices}});
 }
 
-ControlResult sliceSet(const QJsonObject& args)
+//! The controls @a args gives, each checked against its range, in @a given; false with @a error set when one is
+//! not a number, one is out of range, or none is given. Nothing is written here.
+bool givenControls(const QJsonObject& args, QVector<const slicer::SliceControlSpec*>* given, ControlResult* error)
 {
-	ControlTarget target;
-	Instrument* device = nullptr;
-	int count = 0;
-	ControlResult error;
-	if (!slicerOf(args, &target, &device, &count, &error)) { return error; }
-
-	if (!args.contains(QStringLiteral("slice")) || !args.value(QStringLiteral("slice")).isDouble())
-	{
-		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'slice' (a slice number) is required"));
-	}
-	const int slice = args.value(QStringLiteral("slice")).toInt(-1);
-	if (slice < 0 || slice >= count)
-	{
-		return ControlResult::failure(ControlErrorKind::NotFound,
-			QStringLiteral("no slice %1 on %2 (it has %3 slices, numbered from 0)").arg(slice).arg(target.id).arg(count));
-	}
-
-	// Validate everything first: a refusal writes nothing.
-	QVector<const slicer::SliceControlSpec*> given;
 	for (const auto& spec : slicer::SliceControlSpecs)
 	{
 		const QString name = QString::fromLatin1(spec.name);
@@ -199,23 +182,57 @@ ControlResult sliceSet(const QJsonObject& args)
 		const double value = raw.toDouble(std::nan(""));
 		if (!raw.isDouble() || !std::isfinite(value))
 		{
-			return ControlResult::failure(ControlErrorKind::InvalidArgs,
-				QStringLiteral("'%1' must be a number").arg(name));
+			*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'%1' must be a number").arg(name));
+			return false;
 		}
-		if (static_cast<float>(value) < static_cast<float>(spec.min)
-			|| static_cast<float>(value) > static_cast<float>(spec.max))
+		if (static_cast<float>(value) < static_cast<float>(spec.min) || static_cast<float>(value) > static_cast<float>(spec.max))
 		{
-			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
 				QStringLiteral("%1 %2 is outside the range %3..%4 of slice control '%1'")
 					.arg(name).arg(value).arg(spec.min).arg(spec.max));
+			return false;
 		}
-		given.append(&spec);
+		given->append(&spec);
 	}
-	if (given.isEmpty())
+	if (given->isEmpty())
 	{
-		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("give at least one of gain, pan, filter, random"));
+		return false;
 	}
+	return true;
+}
+
+//! The slice @a args names, checked against @a count; -1 with @a error set otherwise.
+int sliceArgument(const QJsonObject& args, const QString& targetId, int count, ControlResult* error)
+{
+	if (!args.contains(QStringLiteral("slice")) || !args.value(QStringLiteral("slice")).isDouble())
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'slice' (a slice number) is required"));
+		return -1;
+	}
+	const int slice = args.value(QStringLiteral("slice")).toInt(-1);
+	if (slice < 0 || slice >= count)
+	{
+		*error = ControlResult::failure(ControlErrorKind::NotFound,
+			QStringLiteral("no slice %1 on %2 (it has %3 slices, numbered from 0)").arg(slice).arg(targetId).arg(count));
+		return -1;
+	}
+	return slice;
+}
+
+ControlResult sliceSet(const QJsonObject& args)
+{
+	ControlTarget target;
+	Instrument* device = nullptr;
+	int count = 0;
+	ControlResult error;
+	if (!slicerOf(args, &target, &device, &count, &error)) { return error; }
+	const int slice = sliceArgument(args, target.id, count, &error);
+	if (slice < 0) { return error; }
+	// Validate everything first: a refusal writes nothing.
+	QVector<const slicer::SliceControlSpec*> given;
+	if (!givenControls(args, &given, &error)) { return error; }
 
 	const QJsonObject before = sliceJson(target, device, slice);
 	// One undo step for the call: the track's checkpoint, whose settings carry the slice values.
@@ -235,8 +252,8 @@ ControlResult sliceSet(const QJsonObject& args)
 	Engine::getSong()->setModified();
 
 	QJsonObject result{{QStringLiteral("target"), target.id}, {QStringLiteral("device_plugin"), device->nodeName()},
-		{QStringLiteral("slice"), slice},
-		{QStringLiteral("previous"), before}, {QStringLiteral("current"), sliceJson(target, device, slice)}};
+		{QStringLiteral("slice"), slice}, {QStringLiteral("previous"), before},
+		{QStringLiteral("current"), sliceJson(target, device, slice)}};
 	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("slice"), before}},
 		QStringLiteral("control.undo"), {}, true, QStringLiteral("ProjectJournal (Track checkpoint): undo restores "
 		"the SlicerT's saved state, which carries every slice's gain, pan, filter and random amount")));
