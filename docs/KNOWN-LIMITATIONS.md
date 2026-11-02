@@ -2949,9 +2949,9 @@ Fleshed out, because both halves of that sentence hide something real:
   they hold the interface for as long as the job takes: `plugin.rescan`, `browser.peaks` on an uncached file,
   `render.render`, `render.stems`, `bounce.in_place`, `freeze.*`, `bounce.land`, `track.flatten` and `range.bounce`.
   A scan resolves each descriptor on the interface thread, one per turn; a library that hangs in its load keeps its
-  worker but cannot hold the cancel. `stem.job_start` still decodes a source libsndfile cannot open (a `.ds` drum
-  sample, or a file none of the decoders reads) on the caller, so such a file is still refused typed, and the
-  Split to Stems action writes an in-memory clip's temporary WAV before the job starts.
+  worker but cannot hold the cancel. `stem.job_start` decodes nothing on the caller: a `.ds` or `.ogg` source is decoded by the job's worker (its
+  reply's `frames` is 0 until then), and any other file libsndfile cannot open is refused typed. Split to Stems writes
+  an in-memory clip's temporary WAV on a worker too, listed in the Tasks list as `stem_prepare` with Cancel.
 - *(Resolved for the interface, Q050-010; see "Long jobs and what still runs on the interface thread".)* Plug-in
   scans, render-queue jobs, stem separation and waveform reads run in the background and are in the task area; the
   synchronous `plugin.rescan`, `render.render`, `render.stems` and `browser.peaks` stay for scripts.
