@@ -3264,6 +3264,7 @@ tests/src/gui/SessionSubSceneGridTest.cpp
 tests/src/gui/SessionSyncActionTest.cpp
 tests/src/gui/SessionTransportBarTest.cpp
 tests/src/gui/SessionTuningMenuTest.cpp
+tests/src/gui/ShellFloatButtonTest.cpp
 tests/src/gui/ShellHomesTest.cpp
 tests/src/gui/ShellLayoutTest.cpp
 tests/src/gui/ShellTest.cpp

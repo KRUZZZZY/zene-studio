@@ -3300,3 +3300,7 @@ tests/src/core/MidiOutTimingTest.cpp
 tests/src/gui/SessionCellPlaybackMenuTest.cpp
 # cluster new-p10-290 (2026-10): fix and verification report for pitchAt's window bound (fork-NEW).
 docs/qwen-fixes-2026-10/cluster-new-p10-290.md
+# cluster gui-1030-main-pop-out-the-note-editor-panel (2026-11): what a click on a panel's Pop out button and the View > Float or Dock Panel action do (fork-NEW).
+tests/src/gui/ShellFloatButtonTest.cpp
+# cluster gui-1030-main-pop-out-the-note-editor-panel (2026-11): report for the five GUI-sweep pop-out reports (fork-NEW).
+docs/qwen-fixes-2026-10/cluster-gui-1030-main-pop-out-the-note-editor-panel.md
