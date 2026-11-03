@@ -463,26 +463,32 @@ private slots:
 		PeriodHarness harness(Engine::mixer());
 		harness.render();  // first touch outside the probe
 
-		test::resetAllocationCount();
-		test::tlCountAllocations = true;
-		busfreeze::setPeriod(true, 0);
-		const bool substituted = busfreeze::substitute(*bus, harness.fpp());
-		test::tlCountAllocations = false;
-		QVERIFY(substituted);
-		QCOMPARE(static_cast<unsigned long long>(test::tlAllocationCount), 0ULL);
-
 		std::uint64_t allocations = 0;
+		float heard = 0.0f;
 		for (int p = 0; p < Periods; ++p)
 		{
 			busfreeze::setPeriod(true, static_cast<f_cnt_t>(p) * harness.fpp());
 			test::resetAllocationCount();
 			test::tlCountAllocations = true;
-			harness.render();  // deterministic processing: every mixer job runs on this thread
+			const std::vector<SampleFrame>& out = harness.render();  // deterministic: every mixer job runs here
 			test::tlCountAllocations = false;
 			allocations += test::tlAllocationCount + test::tlFreeCount;
+			heard = std::max(heard, peak(out));
 		}
 		busfreeze::setPeriod(false, 0);
 		QCOMPARE(static_cast<unsigned long long>(allocations), 0ULL);
+		// Nothing was fed: only the take can have sounded, so the probed periods did run the playback path.
+		QVERIFY2(heard > 0.05f, "the probed periods must have played the take");
+
+		// The substitution itself, called directly (after the renders, so it cannot feed them).
+		test::resetAllocationCount();
+		test::tlCountAllocations = true;
+		busfreeze::setPeriod(true, 0);
+		const bool substituted = busfreeze::substitute(*bus, harness.fpp());
+		test::tlCountAllocations = false;
+		busfreeze::setPeriod(false, 0);
+		QVERIFY(substituted);
+		QCOMPARE(static_cast<unsigned long long>(test::tlAllocationCount + test::tlFreeCount), 0ULL);
 		busfreeze::clear(*bus);
 	}
 
