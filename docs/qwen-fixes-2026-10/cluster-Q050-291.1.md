@@ -18,10 +18,10 @@ All commands from `build/tests`, `QT_QPA_PLATFORM=offscreen`, `LMMS_PLUGIN_DIR` 
 
 | # | Criterion | Test | Exit |
 | --- | --- | --- | --- |
-| 1 | Schema-backed commands convert both ways, require an explicit target when ambiguous, keep point timing and value correspondence, refuse unsupported mappings without partial edits | `ControllerConversionTest` (8 cases: to / from automation, clip position + start offset + moved automation clip, refusals, non-linear clip, round trip); `ControlNoteEditor` (`check_controller_conversion`, real socket); `ControlCommandsSnapshot` (schemas) | `ctest -R ^ControllerConversionTest$` 0 [test-2]; final batch of 12 tests 0 [test-12-final] |
-| 2 | Existing CC and automation reads expose the converted points; one undo restores the prior state; save/load keeps the data and the parameter link | same test: `aCcLane...OneUndoTakesItBack` (undo depth +1, `control.undo` once removes the track), `aNonLinearClip...UndoPutsItBack`, `automationBecomesALane...` (undo restores the old lane), `convertedDataAndTheParameterLinkSurviveASaveAndLoad` (file text holds both lanes, `clearProject` + `loadProject`, lanes + points + `existingAutomationClip` link back) | 0 [test-12-final] |
+| 1 | Schema-backed commands convert both ways, require an explicit target when ambiguous, keep point timing and value correspondence, refuse unsupported mappings without partial edits | `ControllerConversionTest` (9 cases: to / from automation, MIDI and automation clip offsets, moved automation clip, refusals, non-linear clip, round trip); `ControlNoteEditor` (`check_controller_conversion`, real socket); `ControlCommandsSnapshot` (schemas) | `ctest -R ^ControllerConversionTest$` 0 [test-18-offset-fix]; final batch of 12 tests 0 [test-20-verifier-final] |
+| 2 | Existing CC and automation reads expose the converted points; one undo restores the prior state; save/load keeps the data and the parameter link | same test: `aCcLane...OneUndoTakesItBack` (undo depth +1, `control.undo` once removes the track), `aNonLinearClip...UndoPutsItBack`, `automationBecomesALane...` (undo restores the old lane), `convertedDataAndTheParameterLinkSurviveASaveAndLoad` (file text holds both lanes, `clearProject` + `loadProject`, lanes + points + `existingAutomationClip` link back) | 0 [test-20-verifier-final] |
 
-Other runs, all in `test-12-final` (exit 0, 12/12): `ClipSerialisationTest`, `DataFileFormatTest`,
+Other runs, all in `test-20-verifier-final` (exit 0, 12/12): `ClipSerialisationTest`, `DataFileFormatTest`,
 `DataFileSaveIntegrityTest`, `UndoHistoryPersistenceTest`, `MidiClipControllersLoadTest`, `AutomationLanesTest`,
 `NoteEditingCommandsTest`, `ReversibilityContractTest` (A16 line now 889 / 436 true_inverse), `DocFiguresGate`
 (snapshot regenerated live: 880 ids / 77 groups).
@@ -38,6 +38,10 @@ write area (`PermissionError`). The gate commands themselves are unchanged.
   test-8-datafile-reverted]. Restored: all pass, exit 0 [build-11-restored, test-9-restored; after a refactor to small
   functions, test-12-final, exit 0]. `ControlNoteEditor` was not run reverted; its new checks need the new commands, so
   it fails without them (not measured).
+- **Verifier offset regression.** Reversing the automation-origin translations makes the target and source offset
+  assertions fail in `ControllerConversionTest` (build exit 0 [build-19-offset-reverted], CTest exit 8
+  [test-19-offset-reverted]); restoring them passes the final focused batch (build exit 0 [build-20-restored-final],
+  CTest exit 0 [test-20-verifier-final]).
 - **Every criterion proven by a test I ran:** table above, exit codes as shown.
 - **One undo step per edit; honest class.** Both commands are `true_inverse` (`ControlReversibilityTableArranger.cpp`,
   `ReversibilityContractTest` exit 0). The tests assert `control.undo_depth` rises by exactly one per call and that

@@ -181,6 +181,12 @@ qint64 songTickOfLane(const MidiClip* clip, qint64 tick)
 	return static_cast<qint64>(clip->startPosition().getTicks()) + clip->startTimeOffset().getTicks() + tick;
 }
 
+//! Song tick of local tick 0 of an automation clip, including its left trim.
+qint64 automationTickZeroOnSong(const AutomationClip* clip)
+{
+	return static_cast<qint64>(clip->startPosition().getTicks()) + clip->startTimeOffset().getTicks();
+}
+
 //! One converted breakpoint of to_automation, before it is written: the automation-clip tick and the model's value.
 struct Node
 {
@@ -259,7 +265,7 @@ bool planNodes(const MidiClip* clip, const ControllerLane& lane, const Automatio
 		return false;
 	}
 	if (static_cast<int>(lane.points.size()) > MaxPoints) { *error = refuse(ControlErrorKind::Refused, QStringLiteral("at most %1 points").arg(MaxPoints)); return false; }
-	if (!placeNodes(clip, lane, parameter, existing != nullptr ? existing->startPosition().getTicks() : 0, nodes, error)) { return false; }
+	if (!placeNodes(clip, lane, parameter, existing != nullptr ? automationTickZeroOnSong(existing) : 0, nodes, error)) { return false; }
 	return existing == nullptr || linearisingKeepsOthers(*existing, nodes->front().tick, nodes->back().tick, parameter, error);
 }
 
@@ -316,7 +322,7 @@ struct LaneWindow
 LaneWindow windowOf(const MidiClip* clip, const AutomationClip* source)
 {
 	const qint64 offset = clip->startTimeOffset().getTicks();
-	return {static_cast<qint64>(clip->startPosition().getTicks()) + offset, source->startPosition().getTicks(),
+	return {static_cast<qint64>(clip->startPosition().getTicks()) + offset, automationTickZeroOnSong(source),
 		std::max<qint64>(0, -offset), -offset + clip->length().getTicks()};
 }
 

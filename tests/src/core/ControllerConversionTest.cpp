@@ -240,12 +240,13 @@ private slots:
 		AutomationClip* target = control::existingAutomationClip(modelOf(m_parameter));
 		QVERIFY(target != nullptr);
 		target->movePosition(TimePos(96));
+		target->setStartTimeOffset(TimePos(-24));
 		target->getTimeMap().clear();
 		target->setProgressionType(AutomationClip::ProgressionType::Linear);
 		const float high = modelOf(m_parameter)->inverseScaledValue(static_cast<float>(m_high));
-		target->putValue(TimePos(0), high, false, true);    // song 96: before the span, kept
-		target->putValue(TimePos(150), high, false, true);  // song 246: inside the converted span (song 192..288), replaced
-		target->putValue(TimePos(900), high, false, true);  // song 996: after the span, kept
+		target->putValue(TimePos(0), high, false, true);    // song 72: before the span, kept
+		target->putValue(TimePos(150), high, false, true);  // song 222: inside the converted span (song 192..288), replaced
+		target->putValue(TimePos(900), high, false, true);  // song 972: after the span, kept
 		m_clip->setStartTimeOffset(TimePos(-24));  // lane tick 24 is the clip's own start, song tick 192
 		m_clip->setControllerPoints(ControllerKind::ControlChange, 7, {{24, 127}, {120, 0}});
 		const int depthBefore = depth();
@@ -253,9 +254,9 @@ private slots:
 		const QJsonObject done = ok(QStringLiteral("clip.controllers_to_automation"), args(QStringLiteral("cc:7"), m_parameter));
 		QVERIFY(!done.value(QStringLiteral("created_automation_track")).toBool());
 		QCOMPARE(trackCount(), tracksBefore);
-		// song 192 and 288, minus the automation clip's start (96).
-		QCOMPARE(autoLane(automated(m_parameter)), (QStringList{QStringLiteral("0:127"), QStringLiteral("96:127"),
-			QStringLiteral("192:0"), QStringLiteral("900:127")}));
+		// song 192 and 288, minus the automation clip's effective start (96 - 24 = 72).
+		QCOMPARE(autoLane(automated(m_parameter)), (QStringList{QStringLiteral("0:127"), QStringLiteral("120:127"),
+			QStringLiteral("216:0"), QStringLiteral("900:127")}));
 		QCOMPARE(depth(), depthBefore + 1);
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(autoLane(automated(m_parameter)), (QStringList{QStringLiteral("0:127"), QStringLiteral("150:127"),
@@ -392,6 +393,27 @@ private slots:
 		ok(QStringLiteral("clip.controllers_to_automation"), args(QStringLiteral("cc:74"), m_parameter));
 		ok(QStringLiteral("clip.controllers_from_automation"), args(QStringLiteral("cc:75"), m_parameter));
 		QCOMPARE(cc(75), points);  // CC -> automation -> CC lands on the same CC values and ticks
+	}
+
+	void automationStartTimeOffsetShiftsTheSourceIntoLaneTime()
+	{
+		ok(QStringLiteral("automation.lane_add"), {{QStringLiteral("track"), track()}, {QStringLiteral("parameter"), m_parameter}});
+		AutomationClip* source = control::existingAutomationClip(modelOf(m_parameter));
+		QVERIFY(source != nullptr);
+		source->setStartTimeOffset(TimePos(-24));
+		source->getTimeMap().clear();
+		source->setProgressionType(AutomationClip::ProgressionType::Linear);
+		const AutomatableModel* model = modelOf(m_parameter);
+		const auto raw = [&](double fraction) { return model->inverseScaledValue(static_cast<float>(m_low + (m_high - m_low) * fraction)); };
+		source->putValue(TimePos(0), raw(0.0), false, true);
+		source->putValue(TimePos(288), raw(0.5), false, true);
+		source->putValue(TimePos(384), raw(1.0), false, true);
+		source->putValue(TimePos(800), raw(0.0), false, true);
+
+		const QJsonObject done = ok(QStringLiteral("clip.controllers_from_automation"), args(QStringLiteral("cc:76"), m_parameter));
+		QCOMPARE(done.value(QStringLiteral("converted")).toInt(), 4);
+		QCOMPARE(lane(cc(76)), (QStringList{QStringLiteral("0:48000"), QStringLiteral("72:64000"),
+			QStringLiteral("168:127000"), QStringLiteral("384:61000")}));
 	}
 
 	void convertedDataAndTheParameterLinkSurviveASaveAndLoad()
