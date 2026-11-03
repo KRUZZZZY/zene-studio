@@ -4084,6 +4084,10 @@ add_dependencies(PluginPortsMigrationReference ${PART_C_REFERENCE_TARGETS})
 add_executable(PluginPortsMigrationTest
 	src/plugins/PluginPortsMigrationTest.cpp
 	src/plugins/PluginPortsHarness.h
+	# Cluster new-p21-207: the regression constructs the plain LADSPA control
+	# dialog (createView returns the matrix dialog), so compile it in.
+	${CMAKE_SOURCE_DIR}/plugins/LadspaEffect/LadspaControlDialog.cpp
+	${CMAKE_SOURCE_DIR}/plugins/LadspaEffect/LadspaControlDialog.h
 )
 add_test(NAME PluginPortsMigrationTest COMMAND PluginPortsMigrationTest)
 # FreeBoy's focused voice-pool regressions share the migration harness because
@@ -4109,6 +4113,7 @@ add_test(NAME OpulenZZeroFrameCount COMMAND PluginPortsMigrationTest opulenzZero
 set_tests_properties(OpulenZZeroFrameCount PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 target_include_directories(PluginPortsMigrationTest PRIVATE
 	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+	${CMAKE_SOURCE_DIR}/plugins/LadspaEffect
 )
 target_static_libraries(PluginPortsMigrationTest PRIVATE lmmsobjs)
 # Cluster new-p17-172: the SID scheduler test drives the real reSID chip.
