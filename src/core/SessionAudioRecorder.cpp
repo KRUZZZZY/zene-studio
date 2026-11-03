@@ -62,6 +62,7 @@ bool SessionAudioRecorder::arm(int track, int scene, tick_t lengthTicks, sample_
 	m_sampleRate = sampleRate;
 	m_latency = latencyFrames;
 	m_syncClock = syncClock;
+	if (syncClock) { MidiClock::instance()->captureArm(); }  // control thread: starts the sender that delivers the span's messages
 	m_recorded.store(0, std::memory_order_relaxed);
 	m_targetReading.store(0, std::memory_order_relaxed);
 	m_startTick.store(-1, std::memory_order_relaxed);
@@ -72,7 +73,7 @@ bool SessionAudioRecorder::arm(int track, int scene, tick_t lengthTicks, sample_
 void SessionAudioRecorder::cancel()
 {
 	// A take dropped mid-span ends the external device's run too (the caller holds the engine: no period renders).
-	if (m_syncClock && (state() == State::Recording || state() == State::Finishing)) { MidiClock::instance()->captureAbort(); }
+	if (m_syncClock) { MidiClock::instance()->captureAbort(); }
 	m_syncClock = false;
 	setState(State::Idle);
 	m_accum.reset();  // joins the drain thread; the caller made sure no period renders

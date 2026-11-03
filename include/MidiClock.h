@@ -27,7 +27,10 @@
 
 #include <array>
 #include <atomic>
+#include <condition_variable>
 #include <cstdint>
+#include <mutex>
+#include <thread>
 
 #include <QJsonObject>
 #include <QObject>
@@ -258,6 +261,11 @@ class LMMS_EXPORT MidiClock
 public:
 	//! How many emitted messages the monitor keeps.
 	static constexpr int MonitorCapacity = 32;
+	//! The capture handoff ring (a power of two), the slots a clock pulse leaves free for START/STOP, and the most pulses
+	//! a stop may queue to catch up the period it falls in (Q050-277).
+	static constexpr quint32 RingCapacity = 512;
+	static constexpr quint32 ReservedSlots = 8;
+	static constexpr quint32 MaxTopUpPulses = 64;
 	//! The tempo dead band of the follower, in BPM: a measured tempo within this
 	//! of the song's own is not written. A follower that chased every last digit
 	//! would rewrite the project's tempo on every window.
@@ -332,16 +340,29 @@ public:
 		quint32 starts = 0;        //!< spans started since the process began
 		quint32 stops = 0;         //!< spans stopped since the process began
 	};
-	/*! The capture began on tick @a startTick and will run @a lengthTicks (0: until captureStopped). Sends START
-	 *  now when the master is on; with it off nothing is sent and no span opens. While a span is open the clock
-	 *  pulses on its own time - the song's transport may be stopped - and ignores the transport's edges. Audio thread. */
+	/*! A capture is armed and will start soon: starts the sender thread if it is not running (control thread; the
+	 *  thread that delivers the span's messages to the MIDI client - the audio thread never does, see captureStarted). */
+	void captureArm();
+	/*! The capture began on tick @a startTick and will run @a lengthTicks (0: until captureStopped). With the master
+	 *  on, queues START now and opens a span; with it off nothing is sent. While a span is open the clock pulses on its
+	 *  own time (the song's transport may be stopped) and ignores the transport's edges. AUDIO THREAD: it only fills a
+	 *  fixed lock-free ring (RingCapacity records, no allocation, no I/O, no logging, no wait); the sender thread
+	 *  hands the records to the MIDI client in order, within about a millisecond. */
 	void captureStarted(qint64 startTick, qint64 lengthTicks) noexcept;
-	/*! The capture ended on tick @a stopTick: tops the pulses up to the span's whole count, sends STOP and
-	 *  closes the span; the transport's own state is picked up again from the next period. Audio thread. */
+	/*! The capture ended on tick @a stopTick: queues the pulses the periods have not yet (at most MaxTopUpPulses - a
+	 *  bounded catch-up for the period the stop falls in; never a backlog that scales with the capture's length), then
+	 *  STOP, and closes the span. The transport's own state is picked up again once the ring has drained. Audio thread. */
 	void captureStopped(qint64 stopTick) noexcept;
-	/*! A capture dropped before its end: STOP at the last tick it reached, span closed. The caller holds the
-	 *  engine (no period renders), as SessionAudioRecorder::cancel() does. */
+	/*! The span ends where it is: STOP at the last pulse's tick and no catch-up. Called when the master is turned off
+	 *  mid-capture (from processAudioPeriod, so the take goes on and the device is stopped) and by a cancel, which holds
+	 *  the engine so no period renders. Also forgets an armed capture that never started. */
 	void captureAbort() noexcept;
+	//! Records queued for the MIDI client and not yet delivered (control thread / tests wait for 0 before reading counters).
+	bool captureOutputPending() const noexcept { return m_outHead.load() != m_outTail.load(); }
+	//! Records the ring had no room for (0 in practice; a START/STOP has the whole ring, a pulse leaves ReservedSlots free).
+	quint32 captureOutputDropped() const noexcept { return m_outDropped.load(); }
+	//! Test seam: while held the sender delivers nothing, so a test can see what the audio thread queued and that it delivered none itself.
+	void holdCaptureOutput(bool hold) noexcept { m_outHold.store(hold); }
 	CaptureReport captureReport() const noexcept;
 
 	// ----------------------------------------------------------------- slave
@@ -441,11 +462,16 @@ private:
 	//! (only off the top) plus CONTINUE or a START on the rise.
 	void transportEdge(bool running, qint64 playPosTicks) noexcept;
 	void emitPulses(int frames) noexcept;
-	//! One period of an open capture span: pulses for the frames it renders, never past the span's count.
+	//! One period of an open capture span: pulses for the frames it renders, never past the span's count. Audio thread; queues only.
 	void emitCapturePulses(int frames) noexcept;
 	//! Pulses the span owes for @a ticks (whole pulses).
 	static quint32 pulsesOfTicks(qint64 ticks) noexcept { return ticks <= 0 ? 0u : static_cast<quint32>(ticks / TicksPerMidiClockPulse); }
-	void emitCapturePulse() noexcept;
+	//! Queues one record for the sender thread; false (and counted) when the ring has no room. @a reserve: leave ReservedSlots free.
+	bool queueOut(MidiClockMessage message, qint64 tick, bool reserve) noexcept;
+	void queueCapturePulse() noexcept;
+	void senderMain();
+	void deliverQueued() noexcept;
+	bool senderBusy() const noexcept;
 	//! Sends STOP at @a stopTick and closes the span.
 	void closeCapture(qint64 stopTick) noexcept;
 
@@ -472,6 +498,22 @@ private:
 	std::atomic<bool> m_positionKnown{false};
 	// The capture span (Q050-277): written by the audio thread (and captureAbort with the engine held), read as a diagnostic.
 	std::atomic<bool> m_captureActive{false};
+	std::atomic<bool> m_captureAwaiting{false};  //!< armed, span not opened yet: keeps the sender polling
+	//! The bounded handoff from the audio thread to the sender thread: a single-producer / single-consumer ring of
+	//! plain records (head written by the producer, tail by the consumer, release/acquire between them).
+	struct OutRecord
+	{
+		quint32 message = 0;
+		qint64 tick = 0;
+	};
+	std::array<OutRecord, RingCapacity> m_outRing;
+	std::atomic<quint32> m_outHead{0};
+	std::atomic<quint32> m_outTail{0};
+	std::atomic<quint32> m_outDropped{0};
+	std::atomic<bool> m_outHold{false};
+	std::thread m_sender;
+	std::mutex m_senderMutex;
+	std::condition_variable m_senderWake;
 	std::atomic<qint64> m_captureStart{-1};
 	std::atomic<qint64> m_captureStop{-1};
 	std::atomic<qint64> m_captureLength{0};

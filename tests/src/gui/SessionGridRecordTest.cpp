@@ -192,6 +192,8 @@ private slots:
 		closeForms();
 		for (int i = 0; i < 400 && takeState() != QStringLiteral("done"); ++i) { period(); }
 		QCOMPARE(takeState(), QStringLiteral("done"));
+		for (int i = 0; i < 3000 && MidiClock::instance()->captureOutputPending(); ++i) { QTest::qWait(1); }  // the sender thread delivers
+		QVERIFY(!MidiClock::instance()->captureOutputPending());
 		const QJsonObject status = run(QStringLiteral("session.record_slot_status")).result;
 		QVERIFY(status.value(QStringLiteral("clock_sync")).toBool());
 		const auto frames = static_cast<std::uint64_t>(std::llround(4 * TicksPerMidiBeat * static_cast<double>(Engine::framesPerTick())));

@@ -1829,6 +1829,7 @@ src/core/McuSurface.cpp
 src/core/MetronomeOptions.cpp
 src/core/MidiClipControllers.cpp
 src/core/MidiClock.cpp
+src/core/MidiClockCapture.cpp
 src/core/MidiClockState.cpp
 src/core/MidiClockTracker.cpp
 src/core/MidiInputTransform.cpp

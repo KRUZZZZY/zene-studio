@@ -2026,6 +2026,7 @@ src/core/MicroTimer.cpp
 src/core/Microtuner.cpp
 src/core/MidiClipControllers.cpp
 src/core/MidiClock.cpp
+src/core/MidiClockCapture.cpp
 src/core/MidiClockState.cpp
 src/core/MidiClockTracker.cpp
 src/core/MidiInputTransform.cpp

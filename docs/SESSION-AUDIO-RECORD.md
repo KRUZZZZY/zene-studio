@@ -110,10 +110,20 @@ Proof: `tests/src/gui/SessionGridRecordTest.cpp` (ctest `SessionGridRecordTest`)
 ## External-synth capture (Q050-277)
 
 A clock-synced take (`clock_sync: true`) opens a *capture span* on the MIDI clock master (`MidiClock::captureStarted`),
-from the scheduler's launch event: START goes out carrying the take's start tick and the master pulses on its own time
-(the song's transport may be stopped, and its edges are not sent while the span is open); the cell's stop (`bars`/`steps`
-length, `session.stop_slot`, another cell taking the column, a reset) ends it (`captureStopped`): the pulses owed by the
-span (`length / 2` ticks per pulse) are topped up, STOP goes out carrying the stop tick, and the transport is reported
-afresh from the next period (a running transport then sends its own SPP/CONTINUE). A cancel mid-span sends STOP
-(`captureAbort`). Proof: `SessionAudioRecordTest` (START/STOP ticks, pulse count, message order, nothing after STOP, a
-cancel, the refusals, save and reload), `SessionGridRecordTest` (the menu entry) and `ControlClockCommands`.
+from the scheduler's launch event: START carries the take's start tick and the master pulses on its own time (the song's
+transport may be stopped, and its edges are not sent while the span is open); the cell's stop (`bars`/`steps` length,
+`session.stop_slot`, another cell taking the column, a reset) ends it (`captureStopped`): the few pulses the periods have not
+queued yet (at most `MaxTopUpPulses` = 64) go out, then STOP carrying the stop tick, and the transport is reported afresh once
+the capture's messages are delivered (a running transport then sends its own SPP/CONTINUE). A cancel mid-span sends STOP
+(`captureAbort`); so does turning the master off mid-capture (STOP at the last pulse's tick, no catch-up, the take continues).
+
+**Threads** (`src/core/MidiClockCapture.cpp`): the audio thread never calls the MIDI client. START, the pulses and STOP are
+plain records appended to a fixed single-producer/single-consumer ring (`RingCapacity` = 512, `ReservedSlots` = 8 kept free
+of pulses so START/STOP always fit; a full ring refuses and counts pulses). The sender thread - created by `captureArm()` on
+the control thread when a synced capture is armed - delivers them in order through `emitMessage` (which counts, records in the
+monitor and hands each to the client); it polls every millisecond while a capture is armed, open or undelivered and waits on a
+condition variable otherwise. `MidiClock::captureOutputPending()` says whether anything is still queued.
+
+Proof: `SessionAudioRecordTest` (START/STOP ticks, pulse count, message order, nothing after STOP, a cancel, the refusals,
+save and reload; with the sender held the audio thread delivers nothing; a full ring still delivers START and STOP; master off
+mid-capture ends the span without catch-up), `SessionGridRecordTest` (the menu entry) and `ControlClockCommands`.
