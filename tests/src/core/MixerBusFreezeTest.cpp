@@ -41,7 +41,9 @@
 #include <QJsonObject>
 #include <QTemporaryDir>
 
+#include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <memory>
 #include <vector>
 

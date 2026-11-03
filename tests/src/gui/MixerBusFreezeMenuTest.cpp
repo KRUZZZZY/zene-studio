@@ -31,6 +31,7 @@
 
 #include <QApplication>
 #include <QContextMenuEvent>
+#include <QFile>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QMenu>

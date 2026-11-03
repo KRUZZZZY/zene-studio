@@ -3309,3 +3309,5 @@ src/gui/MixerBusFreezeMenu.cpp
 tests/src/core/MixerBusFreezeTest.cpp
 tests/src/gui/MixerBusFreezeMenuTest.cpp
 tests/control-bus-freeze-transcript.py
+docs/050-features/Q050-124.md
+docs/qwen-fixes-2026-10/cluster-Q050-124.md
