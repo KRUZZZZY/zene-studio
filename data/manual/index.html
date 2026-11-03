@@ -512,6 +512,18 @@ step. Send MIDI Clock... beside it opens the master's form. An agent sets the sa
 socket or MCP and reads them back with clock.get_state, so the menu, the forms and a script all drive one
 implementation. The clock's own limits are in Known Limitations: a client with one unnamed input can only
 follow any input, and an incoming start, stop or song position is counted but does not move the transport.</p>
+<p><b>Capturing an external synth for an exact length.</b> Set Edit &gt; MIDI Clock &gt; Send Clock to the synth's port
+(Send MIDI Clock... names it), connect the synth's audio output to an input, then right-click an empty cell of a sample
+track in the Clip Launcher and choose <b>Record Bars with MIDI Clock Start/Stop...</b> or <b>Record Steps with MIDI Clock
+Start/Stop...</b> (a step is a sixteenth note, the grid MIDI Clock counts in). The form asks for the number of bars or steps -
+one of the two - and Run arms the cell. On the cell's launch line the clock sends START; when the chosen length is up it
+sends STOP, with exactly that span's clock pulses between, and the take is that many bars or steps of audio, landed in the
+cell when it finishes (the same landing as Record Audio for Bars...). While the capture runs the clock follows the
+capture, not the song's transport; with Send Clock off the entry is refused and tells you to turn it on. Saving the
+project keeps the cell pointing at the take's WAV file, which keeps its length. An agent does the same with
+session.record_slot (<code>bars</code> or <code>steps</code>, and <code>clock_sync: true</code>), reads
+session.record_slot_status (<code>clock</code> shows the START and STOP ticks and the pulses sent) and lands with
+session.record_slot_land.</p>
 
 <h2 id="workflows">Patterns, clips and cells</h2>
 <p>Zene has three ways to place music, and they store different things. A <b>pattern</b> is a reusable grid of

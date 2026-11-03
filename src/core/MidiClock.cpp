@@ -573,6 +573,87 @@ void MidiClock::emitPulses(int frames) noexcept
 	m_tickRemainder.store(carry);
 }
 
+void MidiClock::emitCapturePulse() noexcept
+{
+	const quint32 sent = m_capturePulses.load();
+	emitMessage(MidiClockMessage::Clock,
+		m_captureStart.load() + static_cast<qint64>(sent) * TicksPerMidiClockPulse);
+	m_capturePulses.store(sent + 1);
+}
+
+void MidiClock::emitCapturePulses(int frames) noexcept
+{
+	const float framesPerTick = Engine::framesPerTick();
+	if (framesPerTick <= 0.0f || frames <= 0) { return; }
+	const double advance = static_cast<double>(frames) / static_cast<double>(framesPerTick);
+	double carry = 0.0;
+	int pulses = pulsesForPeriod(m_tickRemainder.load(), advance, &carry);
+	const qint64 length = m_captureLength.load();
+	if (length > 0)
+	{
+		// A span of known length owes exactly this many pulses, so the last period cannot overshoot it.
+		const quint32 owed = pulsesOfTicks(length);
+		const quint32 sent = m_capturePulses.load();
+		pulses = static_cast<int>(std::min<quint32>(static_cast<quint32>(pulses), owed > sent ? owed - sent : 0u));
+	}
+	for (int i = 0; i < pulses; ++i) { emitCapturePulse(); }
+	m_tickRemainder.store(carry);
+}
+
+void MidiClock::captureStarted(qint64 startTick, qint64 lengthTicks) noexcept
+{
+	if (!m_masterEnabled.load()) { return; }
+	m_captureStart.store(startTick);
+	m_captureStop.store(-1);
+	m_captureLength.store(std::max<qint64>(0, lengthTicks));
+	m_capturePulses.store(0);
+	m_tickRemainder.store(0.0);
+	m_captureStarts.fetch_add(1);
+	m_captureActive.store(true);
+	emitMessage(MidiClockMessage::Start, startTick);
+}
+
+void MidiClock::closeCapture(qint64 stopTick) noexcept
+{
+	emitMessage(MidiClockMessage::Stop, stopTick);
+	m_captureStop.store(stopTick);
+	m_captureStops.fetch_add(1);
+	m_captureActive.store(false);
+	m_tickRemainder.store(0.0);
+	// The transport may be running (or not): forget what it was, so the next period reports it afresh.
+	m_transportWasRunning.store(false);
+	m_positionKnown.store(false);
+}
+
+void MidiClock::captureStopped(qint64 stopTick) noexcept
+{
+	if (!m_captureActive.load()) { return; }
+	// The span's whole pulse count: what the periods did not send yet goes out before STOP, so the device
+	// counts the same length the take has whatever the period size.
+	const quint32 owed = pulsesOfTicks(stopTick - m_captureStart.load());
+	while (m_capturePulses.load() < owed) { emitCapturePulse(); }
+	closeCapture(stopTick);
+}
+
+void MidiClock::captureAbort() noexcept
+{
+	if (!m_captureActive.load()) { return; }
+	closeCapture(m_captureStart.load() + static_cast<qint64>(m_capturePulses.load()) * TicksPerMidiClockPulse);
+}
+
+MidiClock::CaptureReport MidiClock::captureReport() const noexcept
+{
+	CaptureReport report;
+	report.active = m_captureActive.load();
+	report.startTick = m_captureStart.load();
+	report.stopTick = m_captureStop.load();
+	report.lengthTicks = m_captureLength.load();
+	report.pulses = m_capturePulses.load();
+	report.starts = m_captureStarts.load();
+	report.stops = m_captureStops.load();
+	return report;
+}
+
 void MidiClock::processAudioPeriod(int frames, bool transportRunning, qint64 playPosTicks,
 	quint64 timestampNs) noexcept
 {
@@ -585,6 +666,13 @@ void MidiClock::processAudioPeriod(int frames, bool transportRunning, qint64 pla
 	const qint64 expected = framesPerTick > 0.0f
 		? static_cast<qint64>(static_cast<double>(frames) / static_cast<double>(framesPerTick))
 		: 0;
+	if (m_captureActive.load())
+	{
+		// An open capture span owns the clock (Q050-277): it pulses on its own time whatever the transport does,
+		// and the transport's edges are not sent - START and STOP belong to the capture's boundaries.
+		emitCapturePulses(frames);
+		return;
+	}
 	trackTransport(transportRunning, playPosTicks, expected);
 	if (transportRunning) { emitPulses(frames); }
 }

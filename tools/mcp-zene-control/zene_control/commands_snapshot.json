@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-29T15:55:04Z",
+  "captured_at": "2026-11-03T02:16:41Z",
   "commands": [
     {
       "args_schema": {
@@ -28484,6 +28484,9 @@
           "cancel": {
             "type": "boolean"
           },
+          "clock_sync": {
+            "type": "boolean"
+          },
           "quantisation": {
             "enum": [
               "global",
@@ -28504,6 +28507,11 @@
             "minimum": 0,
             "type": "integer"
           },
+          "steps": {
+            "maximum": 1024,
+            "minimum": 1,
+            "type": "integer"
+          },
           "track": {
             "maximum": 255,
             "minimum": 0,
@@ -28516,7 +28524,7 @@
         ],
         "type": "object"
       },
-      "description": "Record audio into an empty launcher cell ('track', 'scene') of an audio (sample) track's column: the cell is armed and launched, so the take starts on the launch quantisation's grid line ('quantisation', else the cell's own, else the session's). It takes the engine's stereo input, shifted by the recording round trip, until the cell stops - session.stop_slot's quantised stop, another cell on the column, session.stop_all - or for 'bars' bars. session.record_slot_status follows it; session.record_slot_land makes it the cell's clip. 'cancel': true drops the take in hand (whichever cell it is for) and stops its cell. Not a project edit: no transaction is recorded.",
+      "description": "Record audio into an empty launcher cell ('track', 'scene') of an audio (sample) track's column: the cell is armed and launched, so the take starts on the launch quantisation's grid line ('quantisation', else the cell's own, else the session's). It takes the engine's stereo input, shifted by the recording round trip, until the cell stops - session.stop_slot's quantised stop, another cell on the column, session.stop_all - or for 'bars' bars or 'steps' steps (sixteenth notes; give one of the two). 'clock_sync': true makes the MIDI clock master (set up with clock.master_set) send START when the take starts and STOP at its end - with exactly the span's clock pulses between - so an external synth plays exactly the take's length; refused while the master is off. session.record_slot_status follows it; session.record_slot_land makes it the cell's clip. 'cancel': true drops the take in hand (whichever cell it is for) and stops its cell. Not a project edit: no transaction is recorded.",
       "group": "session",
       "id": "session.record_slot",
       "mutating": false,
@@ -28555,7 +28563,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Read the launcher cell's audio recording back: 'state' (idle, armed - waiting for its launch, recording, finishing - stopped and running on to its length, done - ready for session.record_slot_land), the cell, the grid line it started on, the frames taken and the length it will have, the frames a starved writer dropped, the sample rate and the round trip it was shifted by. Read-only.",
+      "description": "Read the launcher cell's audio recording back: 'state' (idle, armed - waiting for its launch, recording, finishing - stopped and running on to its length, done - ready for session.record_slot_land), the cell, the grid line it started on, the frames taken and the length it will have, the frames a starved writer dropped, the sample rate and the round trip it was shifted by, whether the take drives the MIDI clock ('clock_sync') and what 'clock' sent for it (the START and STOP ticks and the pulses between). Read-only.",
       "group": "session",
       "id": "session.record_slot_status",
       "mutating": false,
@@ -37469,11 +37477,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-277/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-k4l1reh3/zene.sock",
-    "version": "0.4.0-alpha.5942+68bed50"
+    "source_socket": "/tmp/zctl-run-qnns4v_2/zene.sock",
+    "version": "0.4.0-alpha.5943+2a7fd9f"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

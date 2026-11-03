@@ -104,13 +104,22 @@ void addRecordEntries(QMenu* menu, const QJsonObject& where, const QString& titl
 		.value(QStringLiteral("state")).toString() == QLatin1String("idle");
 	QAction* record = addCommandAction(menu, QObject::tr("Record Audio Into Cell"), QStringLiteral("session.record_slot"),
 		[where, title] { return call(QStringLiteral("session.record_slot"), where, title, false); });
-	QAction* bars = addCommandAction(menu, QObject::tr("Record Audio for Bars..."), QStringLiteral("session.record_slot"),
-		[where, title] {
-			CommandCall timed = call(QStringLiteral("session.record_slot"), where, title);
-			timed.defaults.insert(QStringLiteral("bars"), 1);
-			return timed;
+	//! One timed entry: a form for session.record_slot with @a defaults filled (the length, and the MIDI clock when synced).
+	const auto timed = [&](const QString& label, const QJsonObject& defaults) {
+		return addCommandAction(menu, label, QStringLiteral("session.record_slot"), [where, title, defaults] {
+			CommandCall form = call(QStringLiteral("session.record_slot"), where, title);
+			form.defaults = defaults;
+			return form;
 		});
-	for (QAction* action : {record, bars})
+	};
+	QAction* bars = timed(QObject::tr("Record Audio for Bars..."), {{QStringLiteral("bars"), 1}});
+	QAction* steps = timed(QObject::tr("Record Audio for Steps..."), {{QStringLiteral("steps"), 16}});
+	// Q050-277: the MIDI clock master starts and stops an external synth at the take's own boundaries.
+	QAction* clockBars = timed(QObject::tr("Record Bars with MIDI Clock Start/Stop..."),
+		{{QStringLiteral("bars"), 1}, {QStringLiteral("clock_sync"), true}});
+	QAction* clockSteps = timed(QObject::tr("Record Steps with MIDI Clock Start/Stop..."),
+		{{QStringLiteral("steps"), 16}, {QStringLiteral("clock_sync"), true}});
+	for (QAction* action : {record, bars, steps, clockBars, clockSteps})
 	{
 		action->setProperty("recordTake", true);
 		action->setEnabled(action->isEnabled() && empty && idle);

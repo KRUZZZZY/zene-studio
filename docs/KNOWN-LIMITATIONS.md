@@ -3064,6 +3064,13 @@ into an empty launcher cell: it starts on the launch quantisation, stops on the 
   quantised stop, and the grid lands the take it started into the user's `samples/Recordings` folder. There is no
   record BUTTON on the cell itself, no keyboard shortcut for it, no count-in, and the grid does not land a take it
   did not start (an agent's take is left for the agent).
+- **Clock-synced capture (Q050-277)** (`session.record_slot` `clock_sync: true`, `bars` or `steps`): the MIDI clock master
+  sends START when the take starts and STOP at its end with exactly the span's pulses between. The bound is the master's
+  own: the messages are what the engine handed its MIDI client (a bar and a step are counted in ticks; START is sent from the
+  period in which the cell starts, so it is period-granular like the take, and the pulses of the last period are topped up
+  just before STOP rather than spread), not bytes a device received - the test fixture reads the emission monitor. The
+  external synth's own latency is not compensated beyond the recording round trip the take already drops. While the span is open the
+  song transport's own START/STOP/CONTINUE are not sent. One take, one cell, empty cells only, as above.
 - *(Updated 2026-10-28, Q050-493.)* Since Q050-013 a launched audio cell also plays on an instrument track's column
   and its gain, loop region, transpose, detune and tempo warp ARE applied (`docs/050-features/Q050-013.md`); the
   sentences below about them are the earlier record. These settings are no longer socket-only: the cell's

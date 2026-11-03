@@ -27,6 +27,7 @@
 #include <cmath>
 #include <vector>
 
+#include "MidiClock.h"
 #include "SampleBuffer.h"
 #include "SampleRecordAccumulator.h"
 
@@ -49,7 +50,8 @@ SessionAudioRecorder::SessionAudioRecorder() = default;
 
 SessionAudioRecorder::~SessionAudioRecorder() = default;
 
-bool SessionAudioRecorder::arm(int track, int scene, tick_t lengthTicks, sample_rate_t sampleRate, f_cnt_t latencyFrames)
+bool SessionAudioRecorder::arm(int track, int scene, tick_t lengthTicks, sample_rate_t sampleRate, f_cnt_t latencyFrames,
+	bool syncClock)
 {
 	if (state() != State::Idle) { return false; }
 	// The ring and its drain thread are made here, on the control thread: the audio thread only writes.
@@ -59,6 +61,7 @@ bool SessionAudioRecorder::arm(int track, int scene, tick_t lengthTicks, sample_
 	m_lengthTicks = std::max<tick_t>(0, lengthTicks);
 	m_sampleRate = sampleRate;
 	m_latency = latencyFrames;
+	m_syncClock = syncClock;
 	m_recorded.store(0, std::memory_order_relaxed);
 	m_targetReading.store(0, std::memory_order_relaxed);
 	m_startTick.store(-1, std::memory_order_relaxed);
@@ -68,6 +71,9 @@ bool SessionAudioRecorder::arm(int track, int scene, tick_t lengthTicks, sample_
 
 void SessionAudioRecorder::cancel()
 {
+	// A take dropped mid-span ends the external device's run too (the caller holds the engine: no period renders).
+	if (m_syncClock && (state() == State::Recording || state() == State::Finishing)) { MidiClock::instance()->captureAbort(); }
+	m_syncClock = false;
 	setState(State::Idle);
 	m_accum.reset();  // joins the drain thread; the caller made sure no period renders
 	m_track.store(-1, std::memory_order_relaxed);
@@ -114,6 +120,7 @@ tick_t SessionAudioRecorder::slotStarted(int track, int scene, tick_t startedTic
 	m_targetReading.store(m_target, std::memory_order_relaxed);
 	m_startTick.store(startedTick, std::memory_order_relaxed);
 	setState(State::Recording);
+	if (m_syncClock) { MidiClock::instance()->captureStarted(startedTick, m_lengthTicks); }
 	return m_lengthTicks;
 }
 
@@ -126,6 +133,7 @@ void SessionAudioRecorder::slotStopped(int track, int scene, tick_t stopTick) no
 	}
 	// The span the cell played, in frames; a stop before a fixed length ends the take there.
 	const std::uint64_t span = framesOfTicks(stopTick - m_startTick.load(std::memory_order_relaxed), m_framesPerTick);
+	if (m_syncClock) { MidiClock::instance()->captureStopped(stopTick); }
 	m_target = m_target == 0 ? span : std::min(m_target, span);
 	m_targetReading.store(m_target, std::memory_order_relaxed);
 	setState(m_taken >= m_target ? State::Done : State::Finishing);

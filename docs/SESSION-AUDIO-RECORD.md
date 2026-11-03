@@ -9,8 +9,8 @@ quantised stop or after a length, and the take becomes the cell's clip.
 
 | id | what it does | A16 class |
 |---|---|---|
-| `session.record_slot` | arms an EMPTY cell of a sample track's column and launches it (`quantisation`, else the cell's own, else the session's). `bars` (1-64) fixes the length; without it the take runs until the cell stops. `cancel: true` drops the take in hand and stops its cell. | not_mutating (a launch) |
-| `session.record_slot_status` | `state` (`idle`, `armed`, `recording`, `finishing`, `done`), the cell, `start_tick`, `frames`, `target_frames`, `seconds`, `dropped`, `sample_rate`, `latency_frames` | not_mutating |
+| `session.record_slot` | arms an EMPTY cell of a sample track's column and launches it (`quantisation`, else the cell's own, else the session's). `bars` (1-64) or `steps` (1-1024, a sixteenth note - MIDI Clock's own beat; one of the two, not both) fixes the length; without either the take runs until the cell stops. `clock_sync: true` (Q050-277) makes the MIDI clock master send START at the take's start tick and STOP at its end, with exactly the span's pulses between (refused with `refused` while `clock.master_set` has not enabled the master and a destination). `cancel: true` drops the take in hand and stops its cell. | not_mutating (a launch) |
+| `session.record_slot_status` | `state` (`idle`, `armed`, `recording`, `finishing`, `done`), the cell, `start_tick`, `frames`, `target_frames`, `seconds`, `dropped`, `sample_rate`, `latency_frames`, `clock_sync` and `clock` (`active`, `start_tick`, `stop_tick`, `length_ticks`, `pulses`, `starts`, `stops`: what the clock master sent for the take) | not_mutating |
 | `session.record_slot_land` | writes the finished take as a 24-bit WAV (`file`, absolute; a new take in the user's `Recordings` folder when left out) and makes it the cell's audio clip (`name`, else the file's name). Refused until the state is `done`. | true_inverse: one undo step restores the `<session>` block; the WAV stays on disk |
 
 A cell stops recording on whatever stops the cell: `session.stop_slot` (quantised by the cell's own, else
@@ -83,7 +83,7 @@ render silence. Its third case is the allocation probe on `SessionCellPlayHandle
 ## Interface - the launcher grid (`src/gui/SessionGridMenus.cpp`, `src/gui/SessionGridView.cpp`)
 
 An empty cell's right-click menu offers **Record Audio Into Cell** (until the cell stops), **Record Audio for
-Bars...** (a form with `bars`) and **Cancel Recording** - each declares `controlCommand` `session.record_slot`.
+Bars...** (a form with `bars`), **Record Audio for Steps...**, **Record Bars with MIDI Clock Start/Stop...**, **Record Steps with MIDI Clock Start/Stop...** (the same forms with `clock_sync` on) and **Cancel Recording** - each declares `controlCommand` `session.record_slot`.
 While a take is in hand the cell reads `● Rec` (recording or running on to its length) or `○ Rec` (armed, waiting
 for its launch), and its accessible name ends ", recording" / ", armed to record". The column's stop button ends
 it (`session.stop_slot`, quantised). The grid polls `session.record_slot_status` with its own refresh, and when a
@@ -106,3 +106,14 @@ Proof: `tests/src/gui/SessionGridRecordTest.cpp` (ctest `SessionGridRecordTest`)
   engine - the round trip, the run-on to the span, a fixed length and an earlier stop, events for another
   cell, the pre-capture period, the cut to the span - and **the allocation probe**: `push()`,
   `slotStarted()` and `slotStopped()` allocate nothing in any state.
+
+## External-synth capture (Q050-277)
+
+A clock-synced take (`clock_sync: true`) opens a *capture span* on the MIDI clock master (`MidiClock::captureStarted`),
+from the scheduler's launch event: START goes out carrying the take's start tick and the master pulses on its own time
+(the song's transport may be stopped, and its edges are not sent while the span is open); the cell's stop (`bars`/`steps`
+length, `session.stop_slot`, another cell taking the column, a reset) ends it (`captureStopped`): the pulses owed by the
+span (`length / 2` ticks per pulse) are topped up, STOP goes out carrying the stop tick, and the transport is reported
+afresh from the next period (a running transport then sends its own SPP/CONTINUE). A cancel mid-span sends STOP
+(`captureAbort`). Proof: `SessionAudioRecordTest` (START/STOP ticks, pulse count, message order, nothing after STOP, a
+cancel, the refusals, save and reload), `SessionGridRecordTest` (the menu entry) and `ControlClockCommands`.

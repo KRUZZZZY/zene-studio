@@ -46,6 +46,7 @@
 #include "ControlReversibility.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
+#include "MidiClock.h"
 #include "RetroAudioCapture.h"
 #include "SampleBuffer.h"
 #include "SampleTrack.h"
@@ -86,6 +87,16 @@ void withEngineHeld(Body body)
 	if (engine != nullptr) { engine->doneChangeInModel(); }
 }
 
+//! What the MIDI clock master has told the external device for the capture span (Q050-277).
+QJsonObject clockSpanState()
+{
+	const MidiClock::CaptureReport span = MidiClock::instance()->captureReport();
+	return {{QStringLiteral("active"), span.active}, {QStringLiteral("start_tick"), static_cast<double>(span.startTick)},
+		{QStringLiteral("stop_tick"), static_cast<double>(span.stopTick)}, {QStringLiteral("length_ticks"), static_cast<double>(span.lengthTicks)},
+		{QStringLiteral("pulses"), static_cast<double>(span.pulses)}, {QStringLiteral("starts"), static_cast<double>(span.starts)},
+		{QStringLiteral("stops"), static_cast<double>(span.stops)}};
+}
+
 QJsonObject recorderState(const SessionAudioRecorder& recorder)
 {
 	const double rate = recorder.sampleRate() > 0 ? static_cast<double>(recorder.sampleRate()) : 1.0;
@@ -96,7 +107,8 @@ QJsonObject recorderState(const SessionAudioRecorder& recorder)
 		{QStringLiteral("seconds"), static_cast<double>(recorder.framesRecorded()) / rate},
 		{QStringLiteral("dropped"), static_cast<double>(recorder.framesDropped())},
 		{QStringLiteral("sample_rate"), static_cast<int>(recorder.sampleRate())},
-		{QStringLiteral("latency_frames"), static_cast<int>(recorder.latencyFrames())}};
+		{QStringLiteral("latency_frames"), static_cast<int>(recorder.latencyFrames())},
+		{QStringLiteral("clock_sync"), recorder.syncsClock()}, {QStringLiteral("clock"), clockSpanState()}};
 }
 
 //! Why cell (@a track, @a scene) cannot take a recording, or an empty string.
@@ -137,6 +149,41 @@ ControlResult cancelRecording(Song& song)
 	return ControlResult::success(result);
 }
 
+//! The take's length from 'bars' or 'steps' (a sixteenth note: MIDI Clock's own beat), in ticks; 0 with neither.
+//! Fills @a unit with "bars", "steps" or "none". Both at once is a refusal (@a error).
+tick_t lengthTicksOf(const Song& song, const QJsonObject& args, QString* unit, ControlResult* error)
+{
+	const bool hasBars = args.contains(QStringLiteral("bars"));
+	const bool hasSteps = args.contains(QStringLiteral("steps"));
+	if (hasBars && hasSteps)
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("give the take's length as 'bars' or as 'steps' (sixteenth notes), not both"));
+		return 0;
+	}
+	*unit = hasBars ? QStringLiteral("bars") : hasSteps ? QStringLiteral("steps") : QStringLiteral("none");
+	if (hasBars) { return static_cast<tick_t>(args.value(QStringLiteral("bars")).toInt(0)) * song.ticksPerBar(); }
+	if (hasSteps) { return static_cast<tick_t>(args.value(QStringLiteral("steps")).toInt(0)) * TicksPerMidiBeat; }
+	return 0;
+}
+
+//! Why the MIDI clock cannot start and stop an external device for a take, or an empty string.
+QString clockSyncProblem()
+{
+	MidiClock* clock = MidiClock::instance();
+	if (!clock->masterEnabled())
+	{
+		return QStringLiteral("'clock_sync' needs the MIDI clock master on: set it with clock.master_set (enabled: true, and the "
+			"'port' of the external synth), then record again");
+	}
+	if (!clock->masterPortReady())
+	{
+		return QStringLiteral("'clock_sync': the MIDI clock master has no destination subscribed, so START and STOP would reach "
+			"nobody: name the external synth's port with clock.master_set 'port'");
+	}
+	return QString();
+}
+
 ControlResult armAndLaunch(SessionModel& model, Song& song, int track, int scene, const QJsonObject& args)
 {
 	SessionScheduler& scheduler = song.sessionScheduler();
@@ -147,9 +194,18 @@ ControlResult armAndLaunch(SessionModel& model, Song& song, int track, int scene
 			"%3): land it (session.record_slot_land) or cancel it (session.record_slot cancel:true)")
 			.arg(stateName(recorder.state())).arg(recorder.track()).arg(recorder.scene()));
 	}
+	ControlResult error;
+	QString unit;
+	const tick_t length = lengthTicksOf(song, args, &unit, &error);
+	if (!error.ok) { return error; }
+	const bool syncClock = args.value(QStringLiteral("clock_sync")).toBool();
+	if (syncClock)
+	{
+		const QString problem = clockSyncProblem();
+		if (!problem.isEmpty()) { return ControlResult::failure(ControlErrorKind::Refused, problem); }
+	}
 	AudioEngine* engine = Engine::audioEngine();
-	const tick_t length = static_cast<tick_t>(args.value(QStringLiteral("bars")).toInt(0)) * song.ticksPerBar();
-	recorder.arm(track, scene, length, engine->inputSampleRate(), engine->recordingLatencyFrames());
+	recorder.arm(track, scene, length, engine->inputSampleRate(), engine->recordingLatencyFrames(), syncClock);
 	const LaunchRequest request = launchRequestOf(model, model.slot(track, scene), args);
 	const SessionClockContext ctx = clockOf(song);
 	publishSessionSlotContent(scheduler, model);  // what launch_slot does first: a cleared cell renders nothing stale
@@ -162,6 +218,7 @@ ControlResult armAndLaunch(SessionModel& model, Song& song, int track, int scene
 	result.insert(QStringLiteral("quantisation"), quantisationName(request.quantisation));
 	result.insert(QStringLiteral("scheduled_tick"), static_cast<int>(launchTickAt(request.quantisation, ctx)));
 	result.insert(QStringLiteral("length_ticks"), static_cast<int>(length));
+	result.insert(QStringLiteral("length_unit"), unit);
 	return ControlResult::success(result);
 }
 
@@ -288,10 +345,13 @@ void registerRecordSlot(ControlRegistry& registry)
 		"column: the cell is armed and launched, so the take starts on the launch quantisation's grid line ('quantisation', "
 		"else the cell's own, else the session's). It takes the engine's stereo input, shifted by the recording round trip, "
 		"until the cell stops - session.stop_slot's quantised stop, another cell on the column, session.stop_all - or for "
-		"'bars' bars. session.record_slot_status follows it; session.record_slot_land makes it the cell's clip. "
+		"'bars' bars or 'steps' steps (sixteenth notes; give one of the two). 'clock_sync': true makes the MIDI clock master (set up with "
+		"clock.master_set) send START when the take starts and STOP at its end - with exactly the span's clock pulses between - "
+		"so an external synth plays exactly the take's length; refused while the master is off. session.record_slot_status follows it; session.record_slot_land makes it the cell's clip. "
 		"'cancel': true drops the take in hand (whichever cell it is for) and stops its cell. Not a project edit: no transaction is recorded.");
 	cmd.argsSchema = objectSchema({{QStringLiteral("track"), integerProperty(0, 255)}, {QStringLiteral("scene"), integerProperty(0, 511)},
-		{QStringLiteral("bars"), integerProperty(1, 64)}, {QStringLiteral("quantisation"), enumProperty(perClipQuantisationNames())},
+		{QStringLiteral("bars"), integerProperty(1, 64)}, {QStringLiteral("steps"), integerProperty(1, 1024)},
+		{QStringLiteral("clock_sync"), booleanProperty()}, {QStringLiteral("quantisation"), enumProperty(perClipQuantisationNames())},
 		{QStringLiteral("cancel"), booleanProperty()}}, {QStringLiteral("track"), QStringLiteral("scene")});
 	cmd.resultSchema = objectProperty();
 	cmd.mutating = false;
@@ -308,7 +368,8 @@ void registerRecordSlotStatus(ControlRegistry& registry)
 	cmd.description = QStringLiteral("Read the launcher cell's audio recording back: 'state' (idle, armed - waiting for its "
 		"launch, recording, finishing - stopped and running on to its length, done - ready for session.record_slot_land), "
 		"the cell, the grid line it started on, the frames taken and the length it will have, the frames a starved writer "
-		"dropped, the sample rate and the round trip it was shifted by. Read-only.");
+		"dropped, the sample rate and the round trip it was shifted by, whether the take drives the MIDI clock ('clock_sync') and what "
+		"'clock' sent for it (the START and STOP ticks and the pulses between). Read-only.");
 	cmd.argsSchema = objectSchema();
 	cmd.resultSchema = objectProperty();
 	cmd.mutating = false;

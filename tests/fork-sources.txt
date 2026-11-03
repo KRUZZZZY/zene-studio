@@ -2281,6 +2281,7 @@ tests/control_detect_fixtures.py
 tests/control_instance_diagnosis.py
 tests/control_pipe_client.py
 tests/control_socket_flows.py
+tests/control_clock_capture_checks.py
 tests/control_socket_harness.py
 tests/control_vendor_libs.py
 # Q050-145: product-new static documentation gate - re-verifies the README's

@@ -318,6 +318,32 @@ public:
 	//! and the number the bound in KNOWN-LIMITATIONS quotes.
 	double periodMs() const;
 
+	// ------------------------------------------------- capture span (Q050-277)
+	/*! What one clock-synced capture has told the external device so far. The span is the capture's own:
+	 *  START goes out when the capture starts, STOP at its end, and exactly (length / TicksPerMidiClockPulse)
+	 *  pulses in between when the length is known up front. */
+	struct CaptureReport
+	{
+		bool active = false;       //!< START sent, STOP not yet
+		qint64 startTick = -1;     //!< the tick START carried (-1: no span yet)
+		qint64 stopTick = -1;      //!< the tick STOP carried (-1: not stopped)
+		qint64 lengthTicks = 0;    //!< the length asked for (0: until the cell stops)
+		quint32 pulses = 0;        //!< clock pulses sent inside the span
+		quint32 starts = 0;        //!< spans started since the process began
+		quint32 stops = 0;         //!< spans stopped since the process began
+	};
+	/*! The capture began on tick @a startTick and will run @a lengthTicks (0: until captureStopped). Sends START
+	 *  now when the master is on; with it off nothing is sent and no span opens. While a span is open the clock
+	 *  pulses on its own time - the song's transport may be stopped - and ignores the transport's edges. Audio thread. */
+	void captureStarted(qint64 startTick, qint64 lengthTicks) noexcept;
+	/*! The capture ended on tick @a stopTick: tops the pulses up to the span's whole count, sends STOP and
+	 *  closes the span; the transport's own state is picked up again from the next period. Audio thread. */
+	void captureStopped(qint64 stopTick) noexcept;
+	/*! A capture dropped before its end: STOP at the last tick it reached, span closed. The caller holds the
+	 *  engine (no period renders), as SessionAudioRecorder::cancel() does. */
+	void captureAbort() noexcept;
+	CaptureReport captureReport() const noexcept;
+
 	// ----------------------------------------------------------------- slave
 	bool slaveEnabled() const noexcept { return m_slaveEnabled.load(); }
 	void setSlaveEnabled(bool enabled) noexcept;
@@ -415,6 +441,13 @@ private:
 	//! (only off the top) plus CONTINUE or a START on the rise.
 	void transportEdge(bool running, qint64 playPosTicks) noexcept;
 	void emitPulses(int frames) noexcept;
+	//! One period of an open capture span: pulses for the frames it renders, never past the span's count.
+	void emitCapturePulses(int frames) noexcept;
+	//! Pulses the span owes for @a ticks (whole pulses).
+	static quint32 pulsesOfTicks(qint64 ticks) noexcept { return ticks <= 0 ? 0u : static_cast<quint32>(ticks / TicksPerMidiClockPulse); }
+	void emitCapturePulse() noexcept;
+	//! Sends STOP at @a stopTick and closes the span.
+	void closeCapture(qint64 stopTick) noexcept;
 
 	MidiClient* client() const;
 
@@ -437,6 +470,14 @@ private:
 	std::atomic<qint64> m_lastPlayPosTicks{0};
 	std::atomic<bool> m_transportWasRunning{false};
 	std::atomic<bool> m_positionKnown{false};
+	// The capture span (Q050-277): written by the audio thread (and captureAbort with the engine held), read as a diagnostic.
+	std::atomic<bool> m_captureActive{false};
+	std::atomic<qint64> m_captureStart{-1};
+	std::atomic<qint64> m_captureStop{-1};
+	std::atomic<qint64> m_captureLength{0};
+	std::atomic<quint32> m_capturePulses{0};
+	std::atomic<quint32> m_captureStarts{0};
+	std::atomic<quint32> m_captureStops{0};
 	std::atomic<quint32> m_emittedTotal{0};
 	std::atomic<quint32> m_monitorWrite{0};
 	std::array<std::atomic<quint32>, 7> m_emittedCounts{};
