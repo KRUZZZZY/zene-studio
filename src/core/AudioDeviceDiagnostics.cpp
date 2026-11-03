@@ -69,6 +69,19 @@ QJsonObject engineTiming(const AudioEngine* engine)
 		{QStringLiteral("buffer_frames"), static_cast<double>(engine->framesPerAudioBuffer())}};
 }
 
+bool reportsTiming(const AudioDevice::DeviceTiming& timing)
+{
+	return timing.sampleRate.has_value() || timing.periodFrames.has_value() || timing.bufferFrames.has_value()
+		|| timing.inputLatencyFrames.has_value() || timing.outputLatencyFrames.has_value();
+}
+
+//! The device's own xrun count, or nothing when its backend does not count them.
+std::optional<double> xrunCount(const AudioDevice* device, const AudioDevice::DeviceTiming& timing)
+{
+	if (device == nullptr || !timing.countsXruns) { return std::nullopt; }
+	return static_cast<double>(device->backendXruns());
+}
+
 } // namespace
 
 QJsonObject audioDeviceReport(AudioEngine* engine)
@@ -77,21 +90,17 @@ QJsonObject audioDeviceReport(AudioEngine* engine)
 	const AudioDevice::DeviceTiming timing = device != nullptr ? device->deviceTiming() : AudioDevice::DeviceTiming{};
 	const double rate = timing.sampleRate.has_value() ? static_cast<double>(*timing.sampleRate)
 		: static_cast<double>(engine->outputSampleRate());
-	const bool reportsTiming = timing.sampleRate.has_value() || timing.periodFrames.has_value()
-		|| timing.bufferFrames.has_value() || timing.inputLatencyFrames.has_value() || timing.outputLatencyFrames.has_value();
-	const std::optional<double> xruns = device != nullptr && timing.countsXruns
-		? std::optional<double>(static_cast<double>(device->backendXruns())) : std::nullopt;
 	return QJsonObject{
 		{QStringLiteral("backend"), timing.backend.isEmpty() ? engine->audioDevName() : timing.backend},
 		{QStringLiteral("running"), device != nullptr && device->isRunning()},
-		{QStringLiteral("reports_timing"), reportsTiming},
+		{QStringLiteral("reports_timing"), reportsTiming(timing)},
 		{QStringLiteral("engine"), engineTiming(engine)},
 		{QStringLiteral("sample_rate"), reading(asDouble(timing.sampleRate), QStringLiteral("Hz"))},
 		{QStringLiteral("period_frames"), reading(asDouble(timing.periodFrames), QStringLiteral("frames"))},
 		{QStringLiteral("buffer_frames"), reading(asDouble(timing.bufferFrames), QStringLiteral("frames"))},
 		{QStringLiteral("input_latency"), latency(timing.inputLatencyFrames, timing.inputLatencyBasis, rate)},
 		{QStringLiteral("output_latency"), latency(timing.outputLatencyFrames, timing.outputLatencyBasis, rate)},
-		{QStringLiteral("xruns"), reading(xruns, QStringLiteral("count"))}};
+		{QStringLiteral("xruns"), reading(xrunCount(device, timing), QStringLiteral("count"))}};
 }
 
 } // namespace lmms

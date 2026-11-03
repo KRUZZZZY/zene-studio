@@ -136,6 +136,17 @@ def check_late_periods(session, problems):
 DEVICE_READINGS = ("sample_rate", "period_frames", "buffer_frames", "input_latency", "output_latency", "xruns")
 
 
+def check_device_readings(device, problems):
+    engine = device.get("engine") or {}
+    for key in ("sample_rate_hz", "output_sample_rate_hz", "period_frames", "buffer_frames"):
+        problems.require(isinstance(engine.get(key), (int, float)) and engine.get(key) > 0,
+                         "engine.%s is a number: %r" % (key, engine))
+    for key in DEVICE_READINGS:
+        reading = device.get(key)
+        problems.require(isinstance(reading, dict) and reading.get("available") is False and "value" not in reading
+                         and reading.get("unit"), "%s is unavailable, not zero: %r" % (key, reading))
+
+
 def check_no_device(session, problems):
     load = session.ok("mixer.cpu_load")
     problems.require("engine_percent" in load and isinstance(load.get("tracks"), list)
@@ -147,14 +158,7 @@ def check_no_device(session, problems):
         return
     problems.require(str(device.get("backend", "")).startswith("Dummy"), "the backend is the Dummy: %r" % device.get("backend"))
     problems.require(device.get("reports_timing") is False, "the Dummy reports no device timing: %r" % device)
-    engine = device.get("engine") or {}
-    for key in ("sample_rate_hz", "output_sample_rate_hz", "period_frames", "buffer_frames"):
-        problems.require(isinstance(engine.get(key), (int, float)) and engine.get(key) > 0,
-                         "engine.%s is a number: %r" % (key, engine))
-    for key in DEVICE_READINGS:
-        reading = device.get(key)
-        problems.require(isinstance(reading, dict) and reading.get("available") is False and "value" not in reading
-                         and reading.get("unit"), "%s is unavailable, not zero: %r" % (key, reading))
+    check_device_readings(device, problems)
     print("audio_device without a device: %r" % device)
 
 
