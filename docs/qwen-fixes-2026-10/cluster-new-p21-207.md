@@ -49,7 +49,9 @@ No product header changed, so no dependent target needed a rebuild beyond \`zene
 
 ## Self-check
 
-- Regression fails without the fix and passes with it: red-1.log / red-2.log (EXIT 8, SIGSEGV) vs green-2.log / green-3.log (EXIT 0, 1/1 passed).
-- Test is deterministic: no sleeps, no wall-clock, no races; the failure is injected synchronously through \`LadspaInstantiationFailure\` inside \`sampleRateChanged()\` with \`Qt::DirectConnection\`.
-- Fix is at the cause, complete and behaviour-preserving elsewhere: only \`updateEffectView\` changed; both callers accounted for; sibling matrix dialog already null-safe; gates pass.
-- Not push/fetch/pull/merge/rebase/stash/reset; committed on \`bugs/qwen-new-p21-207\` with explicit paths only.
+- The regression test FAILS with the product change reverted and PASSES with it: red-1.log (EXIT 8, SIGSEGV before the fix) and red-2.log (EXIT 8, SIGSEGV with `git apply -R fix.patch`) vs green-2.log and green-3.log (EXIT 0, 1/1 passed).
+- The test is deterministic: no wall-clock timing, sleeps or races. The failure is injected synchronously through the test's `LadspaInstantiationFailure` seam inside `Engine::audioEngine()->sampleRateChanged()`; the dialog's `Qt::DirectConnection` delivers `effectModelChanged(nullptr)` inside the emit, so the crash point is fixed and reproducible.
+- The fix is at the cause and complete: only `updateEffectView` changed. Every caller was checked — the constructor (passes a live, non-null controls pointer, `LadspaControlDialog.cpp:54`) and the DirectConnection slot (`LadspaControlDialog.cpp:143-145`, now null-safe). The sibling `LadspaMatrixControlDialog::updateEffectView` already has the same null guard (`LadspaMatrixControlDialog.cpp:187`) and is untouched. Header declarations are unchanged.
+- No collateral damage: no limit or check was added that other callers can exceed; the null path only detaches views and unsets/hides the stereo-link checkbox, mirroring the matrix dialog. Old projects and saved data load exactly as before (no serialization, port, ID or undo path is touched); behaviour outside the bug is unchanged (the non-null path is byte-identical). The audio thread does no new work.
+- Verdict is FIXED, not ALREADY-FIXED / FALSE-POSITIVE, so no such evidence is claimed; the finding's crash path is cited above (`LadspaEffect.cpp:138` -> `LadspaControlDialog.cpp` null deref, proven by the SIGSEGV in red-1.log/red-2.log).
+- Not push/fetch/pull/merge/rebase/stash/reset; committed on `bugs/qwen-new-p21-207` with explicit paths only.
