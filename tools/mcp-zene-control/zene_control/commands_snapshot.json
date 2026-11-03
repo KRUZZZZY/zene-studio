@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-29T15:55:04Z",
+  "captured_at": "2026-11-03T20:12:51Z",
   "commands": [
     {
       "args_schema": {
@@ -4666,6 +4666,35 @@
         "properties": {
           "clip": {
             "type": "string"
+          },
+          "lane": {
+            "type": "string"
+          },
+          "parameter": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip",
+          "lane"
+        ],
+        "type": "object"
+      },
+      "description": "Copy the automation of one of a MIDI clip's track's device parameters into a CC lane of that clip, replacing the lane: the nodes that fall inside the clip become points (rounded to the nearest CC step), and where the clip cuts through the curve its value at the cut is added. The lane is linear between points whatever the clip's progression ('source_progression' reports it). Returns the lane's points. 'clip' is a MIDI clip, 'lane' its cc:<0..127> lane (pitch bend, aftertouch and program lanes are refused), 'parameter' an id automation.get_state lists for the clip's OWNING track ('<plugin>/<index>'); left out it must name exactly one candidate, otherwise the call is refused and lists them. A switch or a list of choices is refused (the CC range maps linearly onto min..max). Refused calls change nothing. One undo step. Ticks keep their song time: lane tick t is song tick clip start + start offset + t.",
+      "group": "clip",
+      "id": "clip.controllers_from_automation",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
           }
         },
         "required": [
@@ -4706,6 +4735,35 @@
       "description": "Replace one controller lane of a MIDI clip: 'lane' is cc:<0..127>, pitchbend (0..16383, 8192 centre), aftertouch or program (a program change, held from each point to the next); 'points' [{tick (clip time), value}] - linear between points, held before the first and after the last; no points removes the lane. Played to the instrument (and the track's MIDI out) as the clip plays. One undo step (MidiClip checkpoint).",
       "group": "clip",
       "id": "clip.controllers_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "lane": {
+            "type": "string"
+          },
+          "parameter": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip",
+          "lane"
+        ],
+        "type": "object"
+      },
+      "description": "Copy a MIDI clip's CC lane to the automation of one of its track's device parameters: CC 0..127 spans the parameter's range, the target clip's nodes between the first and last converted tick are replaced and the clip is made linear (refused when that would change other nodes of a non-linear clip). Creates the parameter's automation track if it has none. Returns the automation as automation.get_state shows it. 'clip' is a MIDI clip, 'lane' its cc:<0..127> lane (pitch bend, aftertouch and program lanes are refused), 'parameter' an id automation.get_state lists for the clip's OWNING track ('<plugin>/<index>'); left out it must name exactly one candidate, otherwise the call is refused and lists them. A switch or a list of choices is refused (the CC range maps linearly onto min..max). Refused calls change nothing. One undo step. Ticks keep their song time: lane tick t is song tick clip start + start offset + t.",
+      "group": "clip",
+      "id": "clip.controllers_to_automation",
       "mutating": true,
       "requires": [],
       "result_schema": {
@@ -37464,23 +37522,23 @@
       }
     }
   ],
-  "count": 878,
+  "count": 880,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-291.1/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-k4l1reh3/zene.sock",
-    "version": "0.4.0-alpha.5942+68bed50"
+    "source_socket": "/tmp/zctl-run-9apxgdyl/zene.sock",
+    "version": "0.4.0-alpha.5943+2a7fd9f"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 77,
-    "id_count": 878,
-    "ids_sha256": "60473c71cd63735b5af096bbd2cd1d9a5a096cf4b2fd8855d1333df124ea362a"
+    "id_count": 880,
+    "ids_sha256": "a48279efff47f70ab0cb13461a343ae5b374f846313c898a97fdcb61f5772317"
   }
 }

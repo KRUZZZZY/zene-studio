@@ -1095,8 +1095,10 @@ config lists back) and one `not_mutating` (`session.command_bindings`, a read) -
 
 **M0 merge train 22** (`050/m0-train-22`, 2026-10-28, automatic): `ReversibilityContractTest` on the merged tree measures `rows=887 true_inverse=434 snapshot=42 irreversible=25 not_mutating=386`.
 
+**Q050-291.1** (CC lane <-> device automation, stage 1, 2026-11-03): `clip.controllers_to_automation` and `clip.controllers_from_automation` add two `true_inverse` rows - `rows=889 true_inverse=436 snapshot=42 irreversible=25 not_mutating=386`. Project files now keep a MIDI clip's `<controllers metadata="1">` lanes (`DataFile::cleanMetaNodes` used to delete them on save).
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=887 true_inverse=434 snapshot=42 irreversible=25 not_mutating=386
+     measured: rows=889 true_inverse=436 snapshot=42 irreversible=25 not_mutating=386
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5
