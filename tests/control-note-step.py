@@ -54,76 +54,130 @@ def by_key(st):
     return {n["key"]: n for n in st.get("notes") or []}
 
 
+def is_default_note(note, velocity=100):
+    """The old-note defaults: on the grid, chance 1, ratchet 1."""
+    return note["velocity"] == velocity and note["chance"] == 1.0 and note["ratchet"] == 1 and note["offset"] == 0
+
+
+def reads_every_field(st, notes):
+    steps = [notes[k]["step"] for k in (60, 64, 67, 61)]
+    return st.get("count") == 4 and st.get("step_ticks") == 12 and steps == [0, 1, 2, 3]
+
+
+def scale_applied(st, notes):
+    in_out = notes[60]["in_scale"] is True and notes[61]["in_scale"] is False
+    return in_out and notes[67]["scale_degree"] == 5 and (st.get("scale") or {}).get("mask") == MAJOR_MASK
+
+
+def columns_of(st):
+    return [(c["step"], c["pitches"]) for c in st.get("columns") or []]
+
+
+def folds_to_fewer_columns(coarse):
+    steps = [n["step"] for n in sorted(coarse["notes"], key=lambda n: n["position"])]
+    return steps == [0, 0, 1, 1] and len(coarse["columns"]) == 2
+
+
+def roll_matches(roll, notes):
+    return sorted(roll) == [60, 61, 64, 67] and all(roll[k].get("velocity") == notes[k]["velocity"] for k in roll)
+
+
+def named_scale_applied(named):
+    notes = by_key(named)
+    return (named.get("scale") or {}).get("scale") == "Minor" and notes[60]["in_scale"] is True \
+        and notes[61]["in_scale"] is False
+
+
 def check_read(session, recorder, clip):
     st = state(session, clip)
     notes = by_key(st)
     recorder.check("step_get_state reports step, key, velocity, chance and ratchet of every note",
-                   st.get("count") == 4 and st.get("step_ticks") == 12
-                   and [notes[k]["step"] for k in (60, 64, 67, 61)] == [0, 1, 2, 3]
-                   and all(n["velocity"] == 100 and n["chance"] == 1.0 and n["ratchet"] == 1 for n in notes.values()),
-                   "state=%r" % st)
+                   reads_every_field(st, notes), "state=%r" % st)
     recorder.check("notes made the ordinary way read the old defaults: chance 1, ratchet 1, on the grid",
-                   all(n["chance"] == 1.0 and n["ratchet"] == 1 and n["offset"] == 0 for n in notes.values()), "notes=%r" % notes)
+                   all(is_default_note(n) for n in notes.values()), "notes=%r" % notes)
     recorder.check("the scale is applied to the read: C C# in/out of Major, degrees, mask",
-                   notes[60]["in_scale"] is True and notes[61]["in_scale"] is False and notes[67]["scale_degree"] == 5
-                   and (st.get("scale") or {}).get("mask") == MAJOR_MASK, "scale=%r" % st.get("scale"))
+                   scale_applied(st, notes), "scale=%r" % st.get("scale"))
     recorder.check("the occupied columns list each step's pitches",
-                   [(c["step"], c["pitches"]) for c in st.get("columns") or []] == [(0, [60]), (1, [64]), (2, [67]), (3, [61])],
-                   "columns=%r" % st.get("columns"))
+                   columns_of(st) == [(0, [60]), (1, [64]), (2, [67]), (3, [61])], "columns=%r" % st.get("columns"))
     coarse = state(session, clip, step_ticks=24)
     recorder.check("a coarser grid folds the same notes into fewer columns",
-                   [n["step"] for n in sorted(coarse["notes"], key=lambda n: n["position"])] == [0, 0, 1, 1]
-                   and len(coarse["columns"]) == 2, "coarse=%r" % coarse.get("columns"))
+                   folds_to_fewer_columns(coarse), "coarse=%r" % coarse.get("columns"))
     roll = {n.get("key"): n for n in session.result("roll.get_state", {"clip": clip}).get("notes") or []}
-    recorder.check("roll.get_state (the piano roll's read) shows the same notes",
-                   sorted(roll) == [60, 61, 64, 67] and all(roll[k].get("velocity") == notes[k]["velocity"] for k in roll),
+    recorder.check("roll.get_state (the piano roll's read) shows the same notes", roll_matches(roll, notes),
                    "roll=%r" % roll)
     named = state(session, clip, scale="Minor", root="A")
-    recorder.check("a scale named on the call overrides the context for that read",
-                   (named.get("scale") or {}).get("scale") == "Minor" and by_key(named)[60]["in_scale"] is True
-                   and by_key(named)[61]["in_scale"] is False, "scale=%r" % named.get("scale"))
+    recorder.check("a scale named on the call overrides the context for that read", named_scale_applied(named),
+                   "scale=%r" % named.get("scale"))
+
+
+def step_batch(n):
+    return [{"note": n[60], "velocity": 150, "chance": 0.5, "ratchet": 3},
+            {"step": 4, "key": 61, "velocity": 90},          # new cell, C# is out of Major: snapped down to C
+            {"step": 2, "key": 72, "chance": 0.25},           # a second pitch in step 2
+            {"note": n[61], "velocity": 70},                  # out-of-scale note stays editable
+            {"note": n[64], "remove": True},
+            {"note": n[67], "key": 66}]                       # a pitch change: F# is out of Major, snaps down to F
+
+
+def fields_written(first, note_id):
+    written = first.get("velocity") == 150 and first.get("chance") == 0.5 and first.get("ratchet") == 3
+    return written and first.get("note") == note_id
+
+
+def new_cell_ok(cells):
+    if len(cells) != 1:
+        return False
+    cell = cells[0]
+    return cell["key"] == 60 and cell["velocity"] == 90 and cell["length"] == 12 and cell["position"] == 48 \
+        and cell["chance"] == 1.0 and cell["ratchet"] == 1
+
+
+def column_ok(column, notes):
+    return len(column) == 1 and column[0]["pitches"] == [65, 72] and notes[72]["chance"] == 0.25
+
+
+def out_of_scale_edited(note):
+    return note["key"] == 61 and note["velocity"] == 70 and note["in_scale"] is False
+
+
+def piano_roll_agrees(roll, rows, n):
+    edited = (roll.get(n[60]) or {}).get("velocity") == 150 and (rows.get(n[60]) or {}).get("probability") == 0.5
+    return edited and n[64] not in roll and sorted(roll) == sorted(rows)
+
+
+def check_cells(recorder, after, n):
+    notes = by_key(after)
+    by_id = {x["note"]: x for x in after["notes"]}
+    recorder.check("velocity, chance and ratchet are written on the note",
+                   fields_written(by_id.get(n[60]) or {}, n[60]), "first=%r" % by_id.get(n[60]))
+    new_cells = [x for x in after["notes"] if x["step"] == 4]
+    recorder.check("a new cell lands on the grid with the defaults, its pitch snapped into the scale",
+                   new_cell_ok(new_cells), "new=%r" % new_cells)
+    column = [c for c in after["columns"] if c["step"] == 2]
+    recorder.check("a column holds several pitch cells", column_ok(column, notes), "column=%r" % column)
+    recorder.check("an out-of-scale note keeps its key and takes the edit",
+                   out_of_scale_edited(by_id[n[61]]), "c#=%r" % by_id.get(n[61]))
+    recorder.check("a removed cell is gone", n[64] not in by_id, "notes=%r" % after["notes"])
+    recorder.check("a changed pitch is snapped into the scale (F# -> F), the note keeping its id",
+                   by_id[n[67]]["key"] == 65 and 66 not in notes, "keys=%r" % sorted(notes))
+
+
+def check_applied(session, recorder, clip, n, reply):
+    recorder.check("note.step_set answers what it did",
+                   reply.get("edited") == 6 and reply.get("added") == 2 and reply.get("removed") == 1, "reply=%r" % reply)
+    check_cells(recorder, state(session, clip), n)
+    roll = {x.get("id"): x for x in session.result("roll.get_state", {"clip": clip}).get("notes") or []}
+    rows = {x.get("note"): x for x in listed(session, clip)}
+    recorder.check("roll.get_state and note.list (the piano roll's reads) show the edited clip",
+                   piano_roll_agrees(roll, rows, n), "roll=%r rows=%r" % (roll, rows))
 
 
 def check_edit_and_undo(session, recorder, clip):
     before_list = listed(session, clip)
     before_state = state(session, clip)
     n = {k: v["note"] for k, v in by_key(before_state).items()}
-    edits = [{"note": n[60], "velocity": 150, "chance": 0.5, "ratchet": 3},
-             {"step": 4, "key": 61, "velocity": 90},          # new cell, C# is out of Major: snapped down to C
-             {"step": 2, "key": 72, "chance": 0.25},           # a second pitch in step 2
-             {"note": n[61], "velocity": 70},                  # out-of-scale note stays editable
-             {"note": n[64], "remove": True},
-             {"note": n[67], "key": 66}]                       # a pitch change: F# is out of Major, snaps down to F
-    reply = session.result("note.step_set", {"clip": clip, "edits": edits})
-    recorder.check("note.step_set answers what it did",
-                   reply.get("edited") == 6 and reply.get("added") == 2 and reply.get("removed") == 1, "reply=%r" % reply)
-    after = state(session, clip)
-    notes = by_key(after)
-    by_id = {x["note"]: x for x in after["notes"]}
-    first = by_id.get(n[60]) or {}
-    recorder.check("velocity, chance and ratchet are written on the note",
-                   first.get("velocity") == 150 and first.get("chance") == 0.5 and first.get("ratchet") == 3
-                   and first.get("note") == n[60], "first=%r" % first)
-    new_cells = [x for x in after["notes"] if x["step"] == 4]
-    recorder.check("a new cell lands on the grid with the defaults, its pitch snapped into the scale",
-                   len(new_cells) == 1 and new_cells[0]["key"] == 60 and new_cells[0]["velocity"] == 90
-                   and new_cells[0]["chance"] == 1.0 and new_cells[0]["ratchet"] == 1
-                   and new_cells[0]["length"] == 12 and new_cells[0]["position"] == 48, "new=%r" % new_cells)
-    column = [c for c in after["columns"] if c["step"] == 2]
-    recorder.check("a column holds several pitch cells",
-                   len(column) == 1 and column[0]["pitches"] == [65, 72] and notes[72]["chance"] == 0.25,
-                   "column=%r" % column)
-    recorder.check("an out-of-scale note keeps its key and takes the edit",
-                   by_id[n[61]]["key"] == 61 and by_id[n[61]]["velocity"] == 70 and by_id[n[61]]["in_scale"] is False,
-                   "c#=%r" % by_id.get(n[61]))
-    recorder.check("a removed cell is gone", n[64] not in [x["note"] for x in after["notes"]], "notes=%r" % after["notes"])
-    recorder.check("a changed pitch is snapped into the scale (F# -> F), the note keeping its id",
-                   by_id[n[67]]["key"] == 65 and 66 not in notes, "keys=%r" % sorted(notes))
-    roll = {x.get("id"): x for x in session.result("roll.get_state", {"clip": clip}).get("notes") or []}
-    rows = {x.get("note"): x for x in listed(session, clip)}
-    recorder.check("roll.get_state and note.list (the piano roll's reads) show the edited clip",
-                   (roll.get(n[60]) or {}).get("velocity") == 150 and (rows.get(n[60]) or {}).get("probability") == 0.5
-                   and n[64] not in roll and sorted(roll) == sorted(rows), "roll=%r rows=%r" % (roll, rows))
+    reply = session.result("note.step_set", {"clip": clip, "edits": step_batch(n)})
+    check_applied(session, recorder, clip, n, reply)
     session.result("control.undo")
     recorder.check("ONE control.undo restores the exact note list (note.list, ids and all)",
                    listed(session, clip) == before_list, "after undo=%r before=%r" % (listed(session, clip), before_list))

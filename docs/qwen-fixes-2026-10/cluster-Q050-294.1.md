@@ -43,6 +43,17 @@ Also green: `ReversibilityContractTest`, `ControlRegistryTest`, `ControlCommands
   check-namespace, no-tautology, doc-figures all exit 0. complexity: after splitting `setSteps` (CCN 12 -> under 10) no item lists my
   files. file-length: `NotePlaybackTest.cpp` is listed but was already 1146 lines at the base (pre-existing).
 
+## Round 2 (pre-review check)
+
+- **Complexity:** `check_read` (CCN 26) and `check_edit_and_undo` (CCN 33) in `tests/control-note-step.py` were over the target of 10.
+  Their compound conditions are now small named predicates and `check_edit_and_undo` is split into `check_cells` / `check_applied`; every
+  assertion is the same. `bash tests/complexity-gate.sh --check` lists no item in `tests/control-note-step.py`,
+  `ControlCommandsNoteStep.cpp` or `NoteTransform.*`.
+- **Red/green re-proved on the rewritten driver:** with the one registration line (`registerNoteStepCommands(registry);` in
+  `ControlRegistryRegistrations.cpp`) removed, `zene` rebuilt, `ctest -R ControlNoteStep` -> `RED_EXIT=8`; line restored
+  (`git checkout HEAD --`, grep count 1), rebuilt, `ctest -R "ControlNoteStep|NotePlaybackTest"` -> `GREEN_EXIT=0` (both Passed).
+  The full seven-file reversal of round 1 (exit 8 / 0) still stands for `NotePlaybackTest`, whose test is unchanged.
+
 ## Honest limits / not done
 
 - **No GUI in this stage** (the submit check WARNs on it): the unit is the scriptable state; the grid editor is stage 2 and is meant to
