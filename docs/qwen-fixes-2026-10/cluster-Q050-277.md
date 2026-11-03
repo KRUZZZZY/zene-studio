@@ -1,6 +1,54 @@
 IMPLEMENTED
 
-# Q050-277 - Capture an exact number of externally clocked bars (round 3)
+# Q050-277 - Capture an exact number of externally clocked bars (round 4)
+
+Branch `feat/050-Q050-277-oc` (base train 24, `2a7fd9f9c7`). Round-4 logs: `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/Q050-277.r4/logs/`. Rounds 1-3 below, unchanged.
+
+## Round 4: the review's one blocker
+
+**The persistent sender could call a destroyed MIDI client** (it retried pending output while `~AudioEngine` deleted the client).
+Fix (`src/core/MidiClockCapture.cpp`, `include/MidiClock.h`, `src/core/AudioEngine.cpp`):
+- The sender holds `m_deliverMutex` around every delivery (never taken by the audio thread).
+- `MidiClock::detachClient(client)`: raises `m_detaching` (the sender stops after the send in flight instead of draining
+  on), takes the mutex (so an in-flight send has returned), clears `m_client` (sender and transport clock then send to
+  nobody), retires the undelivered records (`captureOutputRetired()`), drops the flag.
+- `~AudioEngine` calls it immediately before `delete m_midiClient` (registered in `tests/upstream-modifications.txt`).
+
+| What | Test | Exit |
+|---|---|---|
+| In-flight send: `detachClient()` waits for it, retires the 5 records behind it, the client is never called again, the clock holds no client | `MidiClockCaptureOutputTest::detachWaitsForTheSendInFlightAndRetiresTheRest` (gated fake client) | 0 (test-4-final.log) |
+| Real `Engine::destroy()` with capture START/STOP pending (sender held): nothing pending afterwards, 2 retired, no client held; releasing the sender reaches nothing | `::engineShutdownWithCaptureOutputPendingLeavesNothingForTheSender` | 0 |
+| Red/green: `detachClient()` made a no-op and the `~AudioEngine` call removed | `ctest -R '^MidiClockCaptureOutputTest$'` | **8** (both new cases fail: "returned while a send ... was still in flight", "output for the destroyed MIDI client is still waiting"; test-7-revert.log); restored: 0, 10/10 repeats (test-8.log) |
+| Focused suite: SessionAudioRecordTest, SessionGridRecordTest, ControlClockCommands, MidiClockTest, MidiClockSourceTest, MidiClockCaptureOutputTest, MidiOutQueueTest, MidiOutTimingTest, SessionAudioRecorderTest, SessionAudioCellPlaybackTest, ReversibilityContractTest, AgentSurfaceReportTest, ControlCommandsSnapshot | `ctest -R ...` | 0, 13/13 (test-4-final.log) |
+
+Acceptance criteria (unchanged and re-run this round, test-4-final.log, exit 0): START/STOP at the chosen boundaries
+(`SessionAudioRecordTest` bar/step cases, `SessionGridRecordTest` GUI entry, `ControlClockCommands` agent socket); take
+length and alignment after save + reload (`SessionAudioRecordTest::aSyncedTakeKeepsItsLengthAndAlignmentAfterSaveAndReload`).
+
+## Self-check (round 4)
+
+- **Fails reverted / passes restored:** see the table (exit 8 -> 0). Round-3 tests' red/green below.
+- **Every criterion proven by a test run this round:** 13/13, exit 0 (test-4-final.log).
+- **Undo / reversibility:** no command or schema change this round; classes unchanged (`not_mutating` arm/status,
+  `true_inverse` land); `ReversibilityContractTest` 0; snapshot unchanged since round 3 (`ControlCommandsSnapshot` 0).
+- **Realtime:** nothing new on the audio thread. The new mutex is taken by the sender thread and by `detachClient()` (engine
+  destructor, control thread) only; the audio path's `processOutEvent()` and the capture ring's producer side are unchanged.
+  TSan does not run here; reasoned: the ring's consumer side (tail) is written only by the mutex holder; `detachClient()`
+  runs after the engine's workers are joined.
+- **Old projects / format:** nothing persisted changed.
+- **Portability:** `std::mutex`/`std::atomic<bool>` only; no new platform calls. Not compiled for Qt 5.15 / MSVC / macOS /
+  Windows ARM (no toolchain here).
+- **Gates:** `feature_check.py` exits 1 with a PermissionError (it writes `<worktree>-feature-check/` beside the worktree,
+  outside this lane's write-jail; feature-check-1.log). Its gates run individually (gate-*.log): fork-sources 0,
+  all-sources-reproduce 0, no-upstream-regression 0, check-namespace 0, no-tautology 0, doc-figures 0; complexity 1 and
+  file-length 1 (red on the train by design) with no REGRESSION item in any file this branch changed. `git diff --check` 0.
+- **Seen, not mine:** under `--repeat until-fail:40` at load average ~54, the pre-existing
+  `MidiOutQueueTest::ProducerConsumer_PreservesOrder` failed once (99999 of 100000: its consumer can read `done` before
+  popping the last event). It tests `include/MidiOutQueue.h` alone, which this branch does not touch (test-6-repeat.log); left as is.
+- **Not checked:** hosted CI matrix; macOS/Windows MIDI backends; hardware bytes.
+
+## Round 3 (previous)
+
 
 Branch `feat/050-Q050-277-oc` (base train 24, `2a7fd9f9c7`). Design, limits and the per-criterion table also in
 `docs/050-features/Q050-277.md`. Round-3 logs: `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/Q050-277.r3/logs/`.

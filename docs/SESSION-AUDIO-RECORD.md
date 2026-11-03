@@ -126,6 +126,9 @@ created by `captureArm()` on the control thread when a synced capture is armed -
 its single producer; ALSA gives the off-audio path a second queue its sequencer thread also drains). A message the client
 refuses stays at the ring's tail and is retried. It polls every millisecond while a capture is armed, open or undelivered and
 waits on a condition variable otherwise. `MidiClock::captureOutputPending()` says whether anything is still queued.
+SHUTDOWN: `~AudioEngine` calls `MidiClock::detachClient()` before deleting the MIDI client; it stops the sender after the
+send in flight, waits for it (the sender holds a delivery mutex around each send), forgets the client and retires what was
+not delivered, so the sender never calls a client that is being or has been destroyed.
 
 Proof: `SessionAudioRecordTest` (START/STOP ticks, pulse count, message order, nothing after STOP, a cancel, the refusals,
 save and reload; with the sender held the audio thread delivers nothing; a full ring still delivers START and STOP; master off

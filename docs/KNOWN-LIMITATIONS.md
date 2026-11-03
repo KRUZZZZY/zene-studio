@@ -3081,7 +3081,9 @@ into an empty launcher cell: it starts on the launch quantisation, stops on the 
   `MidiClient::sendFromNonAudioThread()`, serialized by a mutex the audio thread never takes. ALSA's sequencer client gives it
   its own queue that the sequencer thread drains beside the audio one; raw clients (OSS, sndio, ALSA raw, JACK) carry only the
   one-byte real-time messages from it, which MIDI lets stand anywhere in a stream; Core MIDI and WinMM send through their
-  thread-safe system calls. The macOS and Windows paths were not run on this host. One take, one cell, empty cells only, as above.
+  thread-safe system calls. The macOS and Windows paths were not run on this host. At engine shutdown the clock lets go of
+  the MIDI client first (`MidiClock::detachClient`): a send in flight finishes, capture output not yet sent is dropped
+  (counted), so a synth started by a capture the engine is torn down under gets no STOP from Zene. One take, one cell, empty cells only, as above.
 - *(Updated 2026-10-28, Q050-493.)* Since Q050-013 a launched audio cell also plays on an instrument track's column
   and its gain, loop region, transpose, detune and tempo warp ARE applied (`docs/050-features/Q050-013.md`); the
   sentences below about them are the earlier record. These settings are no longer socket-only: the cell's
