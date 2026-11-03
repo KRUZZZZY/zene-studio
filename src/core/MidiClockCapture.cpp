@@ -27,9 +27,21 @@
  *  (a raw client writes a device, Core MIDI is called synchronously and logs), so none of these touch the client: each only
  *  appends a plain record to a fixed single-producer/single-consumer ring (queueOut: two atomic loads, one store, no
  *  allocation, no lock, no I/O). The SENDER thread - made by captureArm() on the control thread - empties the ring in order
- *  into emitMessage(), which counts, records and hands each message to the client. It polls every millisecond while a capture
- *  is armed, open or undelivered, and sleeps on a condition variable otherwise, so a session that never captures runs no
- *  thread at all.
+ *  into deliverOffAudio(), which hands each message to MidiClient::sendFromNonAudioThread() and then counts and records it.
+ *  It polls every millisecond while a capture is armed, open or undelivered, and sleeps on a condition variable otherwise,
+ *  so a session that never captures runs no thread at all.
+ *
+ *  ONE PRODUCER PER QUEUE (review round 2). The sender never calls processOutEvent(): on ALSA that pushes into a
+ *  single-producer queue whose producer is the audio thread (ordinary track MIDI, the transport clock). The client's
+ *  off-audio path is serialized by its own mutex and, on ALSA, feeds a second queue the sequencer thread drains beside
+ *  the first - one consumer merges both. A message the client refuses (that queue full) stays at the ring's tail and is
+ *  retried a millisecond later, so nothing is lost or reordered downstream of the ring.
+ *
+ *  BOUNDARIES ARE ADMITTED, NOT HOPED FOR (review round 2). Earlier output may still fill the ring (a stalled sender).
+ *  captureStarted() opens a span only when START and its STOP both fit; every pulse leaves ReservedSlots (one) free, and
+ *  only this span's STOP may take it. The ring has one producer, so from START to STOP that slot cannot be taken: every
+ *  START queued has its STOP queued, and a span with no room for both is refused before START (counted, the device is
+ *  never started, the take records unclocked).
  *
  *  BOUNDED WORK. A period queues at most the pulses its frames cross; a stop queues at most MaxTopUpPulses to catch up the
  *  period it falls in, then STOP. Nothing scales with the length of the capture, so a long or open-ended capture, or a master
@@ -45,11 +57,15 @@
 namespace lmms
 {
 
-bool MidiClock::queueOut(MidiClockMessage message, qint64 tick, bool reserve) noexcept
+quint32 MidiClock::ringFree() const noexcept
+{
+	return RingCapacity - (m_outHead.load(std::memory_order_relaxed) - m_outTail.load(std::memory_order_acquire));
+}
+
+bool MidiClock::queueOut(MidiClockMessage message, qint64 tick, quint32 keepFree) noexcept
 {
 	const quint32 head = m_outHead.load(std::memory_order_relaxed);
-	const quint32 tail = m_outTail.load(std::memory_order_acquire);
-	if (head - tail >= (reserve ? RingCapacity - ReservedSlots : RingCapacity))
+	if (ringFree() < 1 + keepFree)
 	{
 		m_outDropped.fetch_add(1, std::memory_order_relaxed);
 		return false;
@@ -63,7 +79,8 @@ void MidiClock::queueCapturePulse() noexcept
 {
 	const quint32 sent = m_capturePulses.load();
 	const qint64 tick = m_captureStart.load() + static_cast<qint64>(sent) * TicksPerMidiClockPulse;
-	if (queueOut(MidiClockMessage::Clock, tick, true)) { m_capturePulses.store(sent + 1); }
+	// Leaves the open span's STOP its slot.
+	if (queueOut(MidiClockMessage::Clock, tick, ReservedSlots)) { m_capturePulses.store(sent + 1); }
 }
 
 void MidiClock::emitCapturePulses(int frames) noexcept
@@ -92,6 +109,13 @@ void MidiClock::captureStarted(qint64 startTick, qint64 lengthTicks) noexcept
 		m_captureAwaiting.store(false);
 		return;
 	}
+	// Admission: START and its STOP must both fit, or no span opens at all (nothing queued, the device not started).
+	if (ringFree() < 2)
+	{
+		m_captureRefused.fetch_add(1);
+		m_captureAwaiting.store(false);
+		return;
+	}
 	m_captureStart.store(startTick);
 	m_captureStop.store(-1);
 	m_captureLength.store(std::max<qint64>(0, lengthTicks));
@@ -100,12 +124,12 @@ void MidiClock::captureStarted(qint64 startTick, qint64 lengthTicks) noexcept
 	m_captureStarts.fetch_add(1);
 	m_captureActive.store(true);  // before the awaiting flag drops: the sender never sees the capture as idle in between
 	m_captureAwaiting.store(false);
-	queueOut(MidiClockMessage::Start, startTick, false);
+	queueOut(MidiClockMessage::Start, startTick, ReservedSlots);  // admitted above: leaves the STOP's slot
 }
 
 void MidiClock::closeCapture(qint64 stopTick) noexcept
 {
-	queueOut(MidiClockMessage::Stop, stopTick, false);
+	queueOut(MidiClockMessage::Stop, stopTick, 0);  // the slot every record of the span left free for it
 	m_captureStop.store(stopTick);
 	m_captureStops.fetch_add(1);
 	m_captureActive.store(false);
@@ -143,6 +167,7 @@ MidiClock::CaptureReport MidiClock::captureReport() const noexcept
 	report.pulses = m_capturePulses.load();
 	report.starts = m_captureStarts.load();
 	report.stops = m_captureStops.load();
+	report.refused = m_captureRefused.load();
 	return report;
 }
 
@@ -170,7 +195,8 @@ void MidiClock::deliverQueued() noexcept
 	while (tail != m_outHead.load(std::memory_order_acquire))
 	{
 		const OutRecord record = m_outRing[tail % RingCapacity];
-		emitMessage(static_cast<MidiClockMessage>(record.message), record.tick);
+		// Refused by the client (its off-audio queue full): left at the tail, retried on the next poll, in order.
+		if (!deliverOffAudio(static_cast<MidiClockMessage>(record.message), record.tick)) { return; }
 		m_outTail.store(++tail, std::memory_order_release);  // after the client has it: "pending" means undelivered
 	}
 }

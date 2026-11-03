@@ -468,32 +468,48 @@ void MidiClock::record(MidiClockMessage message, qint64 positionTicks) noexcept
 	m_monitor[slot].ticks.store(positionTicks);
 }
 
-void MidiClock::emitMessage(MidiClockMessage message, qint64 positionTicks, quint32 payload) noexcept
+namespace
 {
-	record(message, positionTicks);
-	MidiClient* midi = m_client.load();
-	MidiPort* port = m_outputPort.load();
-	if (midi == nullptr || port == nullptr) { return; }
 
+//! The MidiEvent a clock message is on the wire.
+MidiEvent clockEventOf(MidiClockMessage message, quint32 payload) noexcept
+{
 	const MidiEventTypes type = midiClockEventType(message);
-	MidiEvent event;
 	switch (message)
 	{
 		// The two messages with a payload: a Song Position Pointer carries the
 		// position as two 7-bit bytes (LSB first), and a quarter-frame carries
 		// one 7-bit nibble.
 		case MidiClockMessage::SongPosition:
-			event = MidiEvent(type, 0, static_cast<int16_t>(payload & 0x7F),
+			return MidiEvent(type, 0, static_cast<int16_t>(payload & 0x7F),
 				static_cast<int16_t>((payload >> 7) & 0x7F));
-			break;
 		case MidiClockMessage::TimeCode:
-			event = MidiEvent(type, 0, static_cast<int16_t>(payload & 0x7F));
-			break;
+			return MidiEvent(type, 0, static_cast<int16_t>(payload & 0x7F));
 		default:
-			event = MidiEvent(type);
-			break;
+			return MidiEvent(type);
 	}
-	midi->processOutEvent(event, TimePos(), port);
+}
+
+} // namespace
+
+void MidiClock::emitMessage(MidiClockMessage message, qint64 positionTicks, quint32 payload) noexcept
+{
+	record(message, positionTicks);
+	MidiClient* midi = m_client.load();
+	MidiPort* port = m_outputPort.load();
+	if (midi == nullptr || port == nullptr) { return; }
+	midi->processOutEvent(clockEventOf(message, payload), TimePos(), port);
+}
+
+bool MidiClock::deliverOffAudio(MidiClockMessage message, qint64 tick) noexcept
+{
+	MidiClient* midi = m_client.load();
+	MidiPort* port = m_outputPort.load();
+	// Q050-277: the client's off-audio path (serialized, its own queue where the audio path has a single-producer one),
+	// so the sender never becomes a second producer of what processOutEvent() feeds from the audio thread.
+	if (midi != nullptr && port != nullptr && !midi->sendFromNonAudioThread(clockEventOf(message, 0), port)) { return false; }
+	record(message, tick);
+	return true;
 }
 
 void MidiClock::transportEdge(bool running, qint64 playPosTicks) noexcept

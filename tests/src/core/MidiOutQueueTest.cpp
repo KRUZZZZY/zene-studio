@@ -10,6 +10,7 @@
 #include "lmmsconfig.h"
 
 #include <QtTest>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -373,6 +374,63 @@ private slots:
 		caller.join();
 		QVERIFY2(finished,
 			"the audio-thread MIDI output path took the sequencer mutex and can stall an audio period");
+	}
+
+	//! Q050-277 (review round 2): the MIDI clock's capture sender sends from a second thread. It must not become a
+	//! second producer of m_outQueue, which is single-producer (the audio thread's). One thread plays the audio thread
+	//! (processOutEvent, channel 0) while TWO off-audio senders (sendFromNonAudioThread, channels 1 and 2 - the
+	//! client's mutex serializes them) and this thread, the consumer, drain both queues concurrently. Every event must
+	//! arrive exactly once, in its producer's order, and an off-audio event only ever through the off-audio queue.
+	void offAudioOutputNeverSharesTheAudioThreadsQueue()
+	{
+		lmms::MidiAlsaSeq sequencer{lmms::MidiAlsaSeq::PipeOnlyForTesting{}};
+		constexpr int perProducer = 60000;
+		const auto tagged = [](int channel, int seq) {
+			return MidiEvent(lmms::MidiNoteOn, static_cast<int8_t>(channel), static_cast<int16_t>(seq & 0x7f),
+				static_cast<int16_t>((seq >> 7) & 0x7f));
+		};
+		std::atomic<int> producersDone{0};
+		std::thread audio([&] {
+			for (int i = 0; i < perProducer;)
+			{
+				const auto before = sequencer.outputQueueOverflowCount();
+				sequencer.processOutEvent(tagged(0, i), TimePos(), nullptr);
+				if (sequencer.outputQueueOverflowCount() == before) { ++i; } else { std::this_thread::yield(); }
+			}
+			producersDone.fetch_add(1);
+		});
+		const auto offAudio = [&](int channel) {
+			for (int i = 0; i < perProducer;)
+			{
+				if (sequencer.sendFromNonAudioThread(tagged(channel, i), nullptr)) { ++i; } else { std::this_thread::yield(); }
+			}
+			producersDone.fetch_add(1);
+		};
+		std::thread senderA(offAudio, 1);
+		std::thread senderB(offAudio, 2);
+
+		std::array<int, 3> next{0, 0, 0};
+		int misrouted = 0;
+		int disordered = 0;
+		const auto sink = [&](const MidiOutQueue::Command& command, bool viaOffAudioQueue) {
+			const int channel = command.event.channel();
+			if (channel < 0 || channel > 2) { ++disordered; return; }
+			if (viaOffAudioQueue != (channel != 0)) { ++misrouted; }
+			const int seq = (command.event.key() & 0x7f) | ((command.event.velocity() & 0x7f) << 7);
+			if (seq != (next[static_cast<std::size_t>(channel)] & 0x3fff)) { ++disordered; }
+			++next[static_cast<std::size_t>(channel)];
+		};
+		while (producersDone.load() < 3) { sequencer.drainOutputForTesting(sink); }
+		audio.join();
+		senderA.join();
+		senderB.join();
+		sequencer.drainOutputForTesting(sink);
+
+		QCOMPARE(misrouted, 0);   // the off-audio senders never touched the audio thread's queue
+		QCOMPARE(disordered, 0);  // no slot overwritten, duplicated or skipped
+		QCOMPARE(next[0], perProducer);
+		QCOMPARE(next[1], perProducer);
+		QCOMPARE(next[2], perProducer);
 	}
 #endif
 

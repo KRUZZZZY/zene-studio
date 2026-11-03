@@ -94,7 +94,7 @@ QJsonObject clockSpanState()
 	return {{QStringLiteral("active"), span.active}, {QStringLiteral("start_tick"), static_cast<double>(span.startTick)},
 		{QStringLiteral("stop_tick"), static_cast<double>(span.stopTick)}, {QStringLiteral("length_ticks"), static_cast<double>(span.lengthTicks)},
 		{QStringLiteral("pulses"), static_cast<double>(span.pulses)}, {QStringLiteral("starts"), static_cast<double>(span.starts)},
-		{QStringLiteral("stops"), static_cast<double>(span.stops)}};
+		{QStringLiteral("stops"), static_cast<double>(span.stops)}, {QStringLiteral("refused"), static_cast<double>(span.refused)}};
 }
 
 QJsonObject recorderState(const SessionAudioRecorder& recorder)
@@ -369,7 +369,8 @@ void registerRecordSlotStatus(ControlRegistry& registry)
 		"launch, recording, finishing - stopped and running on to its length, done - ready for session.record_slot_land), "
 		"the cell, the grid line it started on, the frames taken and the length it will have, the frames a starved writer "
 		"dropped, the sample rate and the round trip it was shifted by, whether the take drives the MIDI clock ('clock_sync') and what "
-		"'clock' sent for it (the START and STOP ticks and the pulses between). Read-only.");
+		"'clock' sent for it (the START and STOP ticks and the pulses between; 'refused' counts spans refused before START because "
+		"earlier clock output had not yet left - such a take records unclocked). Read-only.");
 	cmd.argsSchema = objectSchema();
 	cmd.resultSchema = objectProperty();
 	cmd.mutating = false;

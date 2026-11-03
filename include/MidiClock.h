@@ -261,10 +261,11 @@ class LMMS_EXPORT MidiClock
 public:
 	//! How many emitted messages the monitor keeps.
 	static constexpr int MonitorCapacity = 32;
-	//! The capture handoff ring (a power of two), the slots a clock pulse leaves free for START/STOP, and the most pulses
-	//! a stop may queue to catch up the period it falls in (Q050-277).
+	//! The capture handoff ring (a power of two), the slot a clock pulse leaves free for the open span's STOP, and the
+	//! most pulses a stop may queue to catch up the period it falls in (Q050-277). A span is admitted only when START
+	//! and its STOP both fit; from then on the ring always keeps ReservedSlots free for that STOP.
 	static constexpr quint32 RingCapacity = 512;
-	static constexpr quint32 ReservedSlots = 8;
+	static constexpr quint32 ReservedSlots = 1;
 	static constexpr quint32 MaxTopUpPulses = 64;
 	//! The tempo dead band of the follower, in BPM: a measured tempo within this
 	//! of the song's own is not written. A follower that chased every last digit
@@ -339,12 +340,16 @@ public:
 		quint32 pulses = 0;        //!< clock pulses sent inside the span
 		quint32 starts = 0;        //!< spans started since the process began
 		quint32 stops = 0;         //!< spans stopped since the process began
+		quint32 refused = 0;       //!< captures refused a span (no room for START and STOP) since the process began
 	};
 	/*! A capture is armed and will start soon: starts the sender thread if it is not running (control thread; the
 	 *  thread that delivers the span's messages to the MIDI client - the audio thread never does, see captureStarted). */
 	void captureArm();
 	/*! The capture began on tick @a startTick and will run @a lengthTicks (0: until captureStopped). With the master
-	 *  on, queues START now and opens a span; with it off nothing is sent. While a span is open the clock pulses on its
+	 *  on, queues START now and opens a span; with it off nothing is sent. ADMISSION: the span opens only when the ring
+	 *  has room for START and its STOP (earlier output still undelivered may fill it); otherwise it is refused BEFORE
+	 *  START - nothing is queued, the device is never started, CaptureReport::refused counts it and the take records
+	 *  unclocked. So every START queued has its STOP's slot held for it. While a span is open the clock pulses on its
 	 *  own time (the song's transport may be stopped) and ignores the transport's edges. AUDIO THREAD: it only fills a
 	 *  fixed lock-free ring (RingCapacity records, no allocation, no I/O, no logging, no wait); the sender thread
 	 *  hands the records to the MIDI client in order, within about a millisecond. */
@@ -359,10 +364,14 @@ public:
 	void captureAbort() noexcept;
 	//! Records queued for the MIDI client and not yet delivered (control thread / tests wait for 0 before reading counters).
 	bool captureOutputPending() const noexcept { return m_outHead.load() != m_outTail.load(); }
-	//! Records the ring had no room for (0 in practice; a START/STOP has the whole ring, a pulse leaves ReservedSlots free).
+	//! Records the ring had no room for: pulses only (a pulse leaves ReservedSlots free for the open span's STOP; a span
+	//! with no room for both START and STOP is refused whole, see captureStarted).
 	quint32 captureOutputDropped() const noexcept { return m_outDropped.load(); }
 	//! Test seam: while held the sender delivers nothing, so a test can see what the audio thread queued and that it delivered none itself.
 	void holdCaptureOutput(bool hold) noexcept { m_outHold.store(hold); }
+	//! Test seam: the client the clock sends through, swapped (returns the previous one) so a test can watch which thread
+	//! hands it what. The output port is kept. Not for production use.
+	MidiClient* swapClientForTesting(MidiClient* client) noexcept { return m_client.exchange(client); }
 	CaptureReport captureReport() const noexcept;
 
 	// ----------------------------------------------------------------- slave
@@ -466,8 +475,13 @@ private:
 	void emitCapturePulses(int frames) noexcept;
 	//! Pulses the span owes for @a ticks (whole pulses).
 	static quint32 pulsesOfTicks(qint64 ticks) noexcept { return ticks <= 0 ? 0u : static_cast<quint32>(ticks / TicksPerMidiClockPulse); }
-	//! Queues one record for the sender thread; false (and counted) when the ring has no room. @a reserve: leave ReservedSlots free.
-	bool queueOut(MidiClockMessage message, qint64 tick, bool reserve) noexcept;
+	//! Free slots in the capture ring (producer side).
+	quint32 ringFree() const noexcept;
+	//! Queues one record for the sender thread; false (and counted) when it would leave fewer than @a keepFree slots.
+	bool queueOut(MidiClockMessage message, qint64 tick, quint32 keepFree) noexcept;
+	//! The sender's delivery of one record: through MidiClient::sendFromNonAudioThread, never processOutEvent (whose
+	//! queue the audio thread produces into). False: the client refused it for now; the sender retries it in order.
+	bool deliverOffAudio(MidiClockMessage message, qint64 tick) noexcept;
 	void queueCapturePulse() noexcept;
 	void senderMain();
 	void deliverQueued() noexcept;
@@ -520,6 +534,7 @@ private:
 	std::atomic<quint32> m_capturePulses{0};
 	std::atomic<quint32> m_captureStarts{0};
 	std::atomic<quint32> m_captureStops{0};
+	std::atomic<quint32> m_captureRefused{0};
 	std::atomic<quint32> m_emittedTotal{0};
 	std::atomic<quint32> m_monitorWrite{0};
 	std::array<std::atomic<quint32>, 7> m_emittedCounts{};
