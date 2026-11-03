@@ -6,6 +6,46 @@ Branch `feat/050-Q050-074.2-oc`, cut from `050/m0-train-24` (`2a7fd9f9c7`). Stag
 merged into the base, so this stage builds on its `mixer.cpu_load` and CPU diagnostics window. Feature record:
 `docs/050-features/Q050-074.2.md`. Logs: `~/.local/share/zene-bunny-fix/qwen/runs/Q050-074.2.r1/logs/`.
 
+## Review round 1 (REWORK) - what was fixed
+
+Blocking: a separately selected ALSA capture PCM can negotiate its own rate, but the report took the input
+latency's milliseconds at playback's rate and did not expose the capture rate. Fixed in `f2f0830c30`:
+
+- `DeviceTiming::inputSampleRate` (`include/AudioDevice.h`): the input's own rate. ALSA reports the capture
+  PCM's granted rate: `m_captureGrantedRate` is set in `openCapture()`, cleared in `closeCapture()`, and only
+  published while capture is open. JACK reports the server rate, the one clock for every port.
+- `mixer.cpu_load.audio_device.input_sample_rate` (`{available, value, unit: "Hz"}`). `input_latency.ms` is
+  now converted at the input rate and `output_latency.ms` at the output rate (`src/core/AudioDeviceDiagnostics.cpp`).
+- The CPU diagnostics window has an **Input sample rate** row, read from the same reply.
+- Regressions:
+  - `AudioDeviceDiagnosticsTest::alsaCaptureAtItsOwnRateReportsInputLatencyAtThatRate` uses a real ALSA `null`
+    capture PCM. The test interposes `snd_pcm_hw_params_set_rate_near` (the poll-descriptor test's technique;
+    only the capture path calls it) and forwards to ALSA, so the capture is really granted 48 kHz, or 96 kHz
+    when playback runs at 48. The slot checks:
+    - the input rate equals the capture's granted rate and differs from `sample_rate`;
+    - input ms equals the capture period divided by the capture rate, and does not equal it divided by the playback rate;
+    - output ms is taken at playback's rate;
+    - both input readings become unavailable after `closeCapture()`.
+  - `CpuDiagnosticsDialogTest::theDeviceTableShowsInputAndOutputAtTheirOwnRates` uses a stub device (output
+    44.1 kHz, input 48 kHz). The window shows "48000 Hz" and "480 frames (10.00 ms, ...)", which are the
+    command's values.
+- The existing slots and socket tests also check `input_sample_rate`: unavailable without a device or
+  capture, 48000 on JACK.
+
+Round-1 runs (logs in `~/.local/share/zene-bunny-fix/qwen/runs/Q050-074.2.r2/logs/`):
+
+| Step | Result |
+|---|---|
+| Build `zene`, both QtTests, `tripleoscillator` | EXIT=0 (build-1.log) |
+| `./AudioDeviceDiagnosticsTest` | EXIT=0, 6 passed, 0 skipped (test-1.log) |
+| `./CpuDiagnosticsDialogTest` | EXIT=0, 5 passed, 0 skipped (test-2.log) |
+| ctest, the 4 focused tests | EXIT=0, 4/4 (test-3.log) |
+| Snapshot regenerated live | EXIT=0, 878 ids / 77 groups; `doc-figures-gate.py` EXIT=0 |
+| Gates (`feature_check.py` copy, see Gates) | 8/8 PASS, EXIT=0 |
+| **Revert A**: the 8 product hunks of `f2f0830c30` reversed | `zene` EXIT=0. QtTests do not build: EXIT=2, no `inputSampleRate` / `m_captureGrantedRate` (build-3/4-revert). Socket ctest EXIT=8: `ControlCpuDiagnostics` "input_sample_rate is unavailable, not zero: None"; `ControlDeviceDiagnostics` "the input rate is the server's 48000 Hz: {}" (test-4-revert.log) |
+| **Revert B** (behavioural): only the input-latency conversion put back to the output rate, APIs kept | build EXIT=0 (build-8-msrevert.log). `AudioDeviceDiagnosticsTest` EXIT=1: the new ALSA slot fails, input ms 5.80 instead of capture period / capture rate (test-8). `CpuDiagnosticsDialogTest` EXIT=1: the new window slot fails, 10.884 ms instead of 10.0 (test-9). A first attempt at Revert B did not build (unused-variable `-Werror`), so its runs used stale binaries and were discarded |
+| Restored (`git checkout HEAD`), rebuilt | build EXIT=0; ctest 4/4, EXIT=0 (test-10-final.log) |
+
 ## What changed
 
 - `AudioDevice::DeviceTiming` + virtual `deviceTiming()` (empty by default) + `backendXruns()` /
@@ -13,8 +53,9 @@ merged into the base, so this stage builds on its `mixer.cpu_load` and CPU diagn
 - JACK: `jack_set_xrun_callback` -> `AudioJack::xrunCallback`; `deviceTiming()` = server rate, period
   (`jack_get_buffer_size`), first ports' latency ranges; buffer unavailable - `src/core/audio/AudioJack.cpp`.
 - ALSA: playback underrun (`-EPIPE` in `handleError`) counted; granted rate read back after
-  `snd_pcm_hw_params`; `deviceTiming()` = rate, period, buffer, output latency = playback buffer, input latency
-  = one capture period while capture is open - `src/core/audio/AudioAlsa.cpp`.
+  `snd_pcm_hw_params`; `deviceTiming()` = rate, period, buffer, output latency = playback buffer, and while
+  capture is open the capture PCM's own granted rate plus one capture period as input latency (round 1) -
+  `src/core/audio/AudioAlsa.cpp`.
 - `audioDeviceReport()` (new `src/core/AudioDeviceDiagnostics.cpp`) -> `mixer.cpu_load.audio_device`; each
   reading `{available, value, unit}`, unavailable readings carry no value.
 - CPU diagnostics window: **Audio device** table filled from the same `mixer.cpu_load` reply
@@ -60,12 +101,15 @@ QtTests fail by not compiling (they use the API this change adds); the two socke
 
 ## Self-check
 
-- **Each new test fails with the product change reverted and passes restored:** yes, see the revert table.
+- **Each new test fails with the product change reverted and passes restored:** yes. See the round-0 revert
+  table below and the round-1 Reverts A and B above. In Revert B the two new input-rate slots fail at
+  runtime, EXIT=1 each.
   Reverted: QtTest builds EXIT=2, socket ctest EXIT=8 (both failed). Restored: EXIT=0, 4/4.
 - **Every acceptance criterion is proven by a test I ran:** criterion 1 is covered by AudioDeviceDiagnosticsTest
   (ALSA and JACK slots), ControlDeviceDiagnostics and CpuDiagnosticsDialogTest. Criterion 2 is covered by
   AudioDeviceDiagnosticsTest (no-device slot), ControlCpuDiagnostics and CpuDiagnosticsDialogTest. All EXIT=0
-  (test-9.log). Nothing was skipped on this box: jackd 1.9.22 and the ALSA null PCM are both present.
+  (round 0: test-9.log; round 1: r2/test-3.log and test-10-final.log, 4/4). The round-1 input-rate fix is
+  proven by the two new slots. Nothing was skipped on this box: jackd 1.9.22 and the ALSA null PCM are both present.
 - **One undo step per edit / honest reversibility:** there is no edit and no new command. `mixer.cpu_load` stays
   `mutating: false`, keeps its `not_mutating` row, and keeps an empty argument schema; only its description and
   reply grew. No undo step is needed, and the A16 histogram is unchanged because no command was added and no class changed.

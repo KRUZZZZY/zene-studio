@@ -105,8 +105,9 @@ first. A late period is the engine missing its deadline, not the audio device re
 twice a second and shows exactly what agents read from <code>mixer.cpu_load</code> (its <code>tracks</code> and
 <code>late_periods</code>); <code>track.overview</code> gives each instrument track's <code>synthesis_cpu_percent</code>
 beside its channel's <code>cpu_percent</code>. Below them, <b>Audio device</b> shows whether the device's timing
-plays a part: the backend, the engine's own sample rate and period, and what the device negotiated - its sample rate,
-period and buffer in frames, its input and output latency (frames, milliseconds and what the figure is read from:
+plays a part: the backend, the engine's own sample rate and period, and what the device negotiated - its output sample rate, the
+input's own sample rate (a separately chosen ALSA capture interface can run at a different rate; input latency is
+timed at it), period and buffer in frames, its input and output latency (frames, milliseconds and what the figure is read from:
 JACK's port latency ranges, or ALSA's playback buffer and, while capture is open, one capture period) - and the
 device's own <i>xruns</i> (JACK's xrun notifications, ALSA's playback underruns), counted apart from the engine's
 late periods. A reading the backend does not report says <b>unavailable</b>, never 0: JACK does not say how many
