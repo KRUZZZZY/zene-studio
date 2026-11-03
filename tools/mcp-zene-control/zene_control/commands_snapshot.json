@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-11-03T02:16:41Z",
+  "captured_at": "2026-11-03T04:31:12Z",
   "commands": [
     {
       "args_schema": {
@@ -28563,7 +28563,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Read the launcher cell's audio recording back: 'state' (idle, armed - waiting for its launch, recording, finishing - stopped and running on to its length, done - ready for session.record_slot_land), the cell, the grid line it started on, the frames taken and the length it will have, the frames a starved writer dropped, the sample rate and the round trip it was shifted by, whether the take drives the MIDI clock ('clock_sync') and what 'clock' sent for it (the START and STOP ticks and the pulses between). Read-only.",
+      "description": "Read the launcher cell's audio recording back: 'state' (idle, armed - waiting for its launch, recording, finishing - stopped and running on to its length, done - ready for session.record_slot_land), the cell, the grid line it started on, the frames taken and the length it will have, the frames a starved writer dropped, the sample rate and the round trip it was shifted by, whether the take drives the MIDI clock ('clock_sync') and what 'clock' sent for it (the START and STOP ticks and the pulses between; 'refused' counts spans refused before START because earlier clock output had not yet left - such a take records unclocked). Read-only.",
       "group": "session",
       "id": "session.record_slot_status",
       "mutating": false,
@@ -37480,8 +37480,8 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-277/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-qnns4v_2/zene.sock",
-    "version": "0.4.0-alpha.5943+2a7fd9f"
+    "source_socket": "/tmp/zctl-run-gvg4_y2l/zene.sock",
+    "version": "0.4.0-alpha.5946+54c50ce"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

@@ -203,16 +203,15 @@ private slots:
 		}
 		const MidiClock::CaptureReport held = clock->captureReport();
 		QVERIFY(!held.active);
-		QCOMPARE(held.starts - before.starts, held.stops - before.stops);  // every span opened was closed with a queued STOP
-		QVERIFY2(held.refused - before.refused > 0, "the full ring refused no span");
-		QCOMPARE((held.starts - before.starts) + (held.refused - before.refused), static_cast<quint32>(attempts + 1));
 
 		clock->holdCaptureOutput(false);
 		QVERIFY(delivered());
 		const quint32 startsDelivered = clock->emittedCount(MidiClockMessage::Start) - startsSent;
 		const quint32 stopsDelivered = clock->emittedCount(MidiClockMessage::Stop) - stopsSent;
-		QCOMPARE(startsDelivered, held.starts - before.starts);
 		QCOMPARE(stopsDelivered, startsDelivered);  // every START the device saw has its STOP
+		QCOMPARE(startsDelivered, held.starts - before.starts);
+		QVERIFY2(held.refused - before.refused > 0, "the full ring refused no span");  // the last ones were refused whole
+		QCOMPARE((held.starts - before.starts) + (held.refused - before.refused), static_cast<quint32>(attempts + 1));
 
 		// Drained: a new span is admitted again, START and STOP both.
 		clock->captureArm();

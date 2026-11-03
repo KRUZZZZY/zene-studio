@@ -390,8 +390,9 @@ private slots:
 				static_cast<int16_t>((seq >> 7) & 0x7f));
 		};
 		std::atomic<int> producersDone{0};
+		std::atomic<bool> giveUp{false};  // a corrupted queue can refuse forever: fail, never hang
 		std::thread audio([&] {
-			for (int i = 0; i < perProducer;)
+			for (int i = 0; i < perProducer && !giveUp.load();)
 			{
 				const auto before = sequencer.outputQueueOverflowCount();
 				sequencer.processOutEvent(tagged(0, i), TimePos(), nullptr);
@@ -400,7 +401,7 @@ private slots:
 			producersDone.fetch_add(1);
 		});
 		const auto offAudio = [&](int channel) {
-			for (int i = 0; i < perProducer;)
+			for (int i = 0; i < perProducer && !giveUp.load();)
 			{
 				if (sequencer.sendFromNonAudioThread(tagged(channel, i), nullptr)) { ++i; } else { std::this_thread::yield(); }
 			}
@@ -420,13 +421,19 @@ private slots:
 			if (seq != (next[static_cast<std::size_t>(channel)] & 0x3fff)) { ++disordered; }
 			++next[static_cast<std::size_t>(channel)];
 		};
-		while (producersDone.load() < 3) { sequencer.drainOutputForTesting(sink); }
+		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+		while (producersDone.load() < 3)
+		{
+			sequencer.drainOutputForTesting(sink);
+			if (std::chrono::steady_clock::now() > deadline) { giveUp.store(true); }
+		}
 		audio.join();
 		senderA.join();
 		senderB.join();
-		sequencer.drainOutputForTesting(sink);
+		while (!giveUp.load() && sequencer.drainOutputForTesting(sink) > 0) {}
 
 		QCOMPARE(misrouted, 0);   // the off-audio senders never touched the audio thread's queue
+		QVERIFY2(!giveUp.load(), "the producers never finished: the queue refused or lost events for 20 s");
 		QCOMPARE(disordered, 0);  // no slot overwritten, duplicated or skipped
 		QCOMPARE(next[0], perProducer);
 		QCOMPARE(next[1], perProducer);

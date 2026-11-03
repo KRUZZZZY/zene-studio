@@ -74,14 +74,15 @@ public:
 #endif
 	/*! Q050-277: the sequencer thread's drain, for a PipeOnlyForTesting client (whose thread does not run): pops what
 	 *  both output queues hold, the audio thread's first, and hands each command to @a sink with whether it came
-	 *  through sendFromNonAudioThread(). Returns how many it popped. */
+	 *  through sendFromNonAudioThread(). At most @a limit per queue per call, so a test of a corrupted queue fails
+	 *  instead of spinning. Returns how many it popped. */
 	template <typename Sink>
-	std::size_t drainOutputForTesting(Sink&& sink)
+	std::size_t drainOutputForTesting(Sink&& sink, std::size_t limit = MidiOutQueue::Capacity)
 	{
 		std::size_t popped = 0;
 		MidiOutQueue::Command command;
-		while (m_outQueue.pop(command)) { sink(command, false); ++popped; }
-		while (m_nonAudioQueue.pop(command)) { sink(command, true); ++popped; }
+		for (std::size_t i = 0; i < limit && m_outQueue.pop(command); ++i) { sink(command, false); ++popped; }
+		for (std::size_t i = 0; i < limit && m_nonAudioQueue.pop(command); ++i) { sink(command, true); ++popped; }
 		return popped;
 	}
 #endif // LMMS_TESTING
