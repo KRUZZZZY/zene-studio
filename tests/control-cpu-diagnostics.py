@@ -16,7 +16,12 @@ Drives the REAL binary the way an agent does and prints every request and reply:
      serial / tick / position / playing / took_us > period_us - the engine's
      deadline misses as recorded, oldest first (a forced late period is proven
      in-process by TrackSynthesisLoadTest and CpuDiagnosticsDialogTest);
-  5. `control.commands_list`: both commands stay not_mutating with empty schemas.
+  5. `control.commands_list`: both commands stay not_mutating with empty schemas;
+  6. (Q050-074.2) `audio_device` on this device-less instance: the backend is the Dummy, the
+     engine's own rate and period are numbers, and every device reading (sample_rate,
+     period_frames, buffer_frames, input/output latency, xruns) is available:false with no
+     value - never a zero - in the same reply that carries the CPU and late-period state.
+     The JACK case is control-device-diagnostics.py.
 
 No timing value is asserted beyond "above zero" (the machine's speed is not the test's).
 
@@ -128,6 +133,31 @@ def check_late_periods(session, problems):
     print("late periods on this host: %r (%d held)" % (count, len(marks)))
 
 
+DEVICE_READINGS = ("sample_rate", "period_frames", "buffer_frames", "input_latency", "output_latency", "xruns")
+
+
+def check_no_device(session, problems):
+    load = session.ok("mixer.cpu_load")
+    problems.require("engine_percent" in load and isinstance(load.get("tracks"), list)
+                     and isinstance((load.get("late_periods") or {}).get("count"), (int, float)),
+                     "the CPU and late-period state is there without a device: %r" % sorted(load))
+    device = load.get("audio_device")
+    if not isinstance(device, dict):
+        problems.add("mixer.cpu_load has no audio_device: %r" % sorted(load))
+        return
+    problems.require(str(device.get("backend", "")).startswith("Dummy"), "the backend is the Dummy: %r" % device.get("backend"))
+    problems.require(device.get("reports_timing") is False, "the Dummy reports no device timing: %r" % device)
+    engine = device.get("engine") or {}
+    for key in ("sample_rate_hz", "output_sample_rate_hz", "period_frames", "buffer_frames"):
+        problems.require(isinstance(engine.get(key), (int, float)) and engine.get(key) > 0,
+                         "engine.%s is a number: %r" % (key, engine))
+    for key in DEVICE_READINGS:
+        reading = device.get(key)
+        problems.require(isinstance(reading, dict) and reading.get("available") is False and "value" not in reading
+                         and reading.get("unit"), "%s is unavailable, not zero: %r" % (key, reading))
+    print("audio_device without a device: %r" % device)
+
+
 def check_commands(session, problems):
     listed = session.ok("control.commands_list").get("commands") or []
     for name in ("mixer.cpu_load", "track.overview"):
@@ -160,6 +190,7 @@ def run(binary, problems):
         check_overview(session, loud, silent, sample, problems)
         session.ok("transport.stop")
         check_late_periods(session, problems)
+        check_no_device(session, problems)
         check_commands(session, problems)
     transcript.dump()
 

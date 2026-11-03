@@ -952,6 +952,9 @@ set(LMMS_TESTS
 	src/core/ArticulationPlaybackTest.cpp
 	# Q050-074.1: each instrument track's synthesis load by track id, and a late period at its song position.
 	src/core/TrackSynthesisLoadTest.cpp
+	# Q050-074.2: mixer.cpu_load's audio_device - unavailable without a device, the ALSA null PCM's granted
+	# timing and underruns, a private jackd's rate/period/latency and xruns apart from late periods.
+	src/core/AudioDeviceDiagnosticsTest.cpp
 	# 0.5.0 L08 (W3): pan law, swap, sends switched off, returns, find, gang, order, group colours.
 	src/core/MixerToolsTest.cpp
 	# cluster new-p14-29 (BUG 14): order_by_tracks refuses an index that names no channel, observed before the read.
@@ -3443,6 +3446,7 @@ set_tests_properties(LaneReadoutTest SampleEditorDialogTest SampleEditorDocsTest
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MixerSelectionIdentityTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TrackSynthesisLoadTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(AudioDeviceDiagnosticsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" RUN_SERIAL TRUE)
 set_tests_properties(MixerInsertLatencyTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(RealtimeExportMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 300)
 set_tests_properties(MixerStripFeaturesTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -6531,6 +6535,19 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	set_tests_properties(ControlCpuDiagnostics PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
+	)
+	# Q050-074.2: mixer.cpu_load's audio_device on JACK - the real binary against a private
+	# `jackd -d dummy` (48 kHz, 256 frames): negotiated rate and period, latencies with their basis,
+	# an unavailable buffer, xruns apart from late periods. Exit 77 = skipped (no jackd here).
+	add_test(NAME ControlDeviceDiagnostics
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-device-diagnostics.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlDeviceDiagnostics PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		SKIP_RETURN_CODE 77
+		TIMEOUT 300
+		RUN_SERIAL TRUE
 	)
 	# JACK into the capture path (relief plan R2.3, owner decision 16): the real binary on the
 	# JACK backend against a private `jackd -d dummy`; the capture must report open, its frame

@@ -30,7 +30,8 @@
  *  - mixer.cpu_load (WF-104): every mixer channel's share of the period, and each device's, measured on the
  *    audio thread with relaxed atomics (DspLoadProbe.h). An instrument's own synthesis runs before the mixer and is
  *    not in a channel's figure: Q050-074.1 reports it per instrument track (SynthesisLoad, RenderDiagnostics.h),
- *    beside the engine's late periods at their song positions (LatePeriodLog). Each edit is one undo step whose
+ *    beside the engine's late periods at their song positions (LatePeriodLog); Q050-074.2 adds the audio device's
+ *    negotiated timing and its own xruns (AudioDeviceDiagnostics.h). Each edit is one undo step whose
  *    closures name the track by id. */
 
 #include <optional>
@@ -38,6 +39,7 @@
 #include <QColor>
 #include <QJsonArray>
 
+#include "AudioDeviceDiagnostics.h"
 #include "AudioEngine.h"
 #include "ControlCommandDef.h"
 #include "ControlEdit.h"
@@ -249,7 +251,7 @@ ControlResult cpuLoad(const QJsonObject&)
 	return ControlResult::success({{QStringLiteral("channels"), channels}, {QStringLiteral("total_percent"), total},
 		{QStringLiteral("engine_percent"), static_cast<double>(Engine::audioEngine()->cpuLoad())},
 		{QStringLiteral("tracks"), tracks}, {QStringLiteral("synthesis_total_percent"), synthesisTotal},
-		{QStringLiteral("late_periods"), latePeriods()}});
+		{QStringLiteral("late_periods"), latePeriods()}, {QStringLiteral("audio_device"), audioDeviceReport(Engine::audioEngine())}});
 }
 
 void add(ControlRegistry& registry, const char* id, const QString& description, const QJsonObject& args, bool mutating,
@@ -286,7 +288,11 @@ void registerTrackLookCommands(ControlRegistry& registry)
 		"the mixer and is not in its channel's figure: 'tracks' gives each instrument track's own synthesis share (track id, "
 		"name, instrument, synthesis_percent; CPU time, so several cores can pass 100) and synthesis_total_percent their sum. "
 		"'late_periods' counts the render periods that took longer than they last - the engine's deadline misses, not the "
-		"audio device's xruns - and lists the newest (serial, tick, position, playing, took_us, period_us, percent). Read-only."),
+		"audio device's xruns - and lists the newest (serial, tick, position, playing, took_us, period_us, percent). "
+		"'audio_device' gives the backend, the engine's own rate and period ('engine') and what the device negotiated: "
+		"sample_rate, period_frames, buffer_frames, input_latency and output_latency (frames, ms and the basis they are "
+		"measured from) and xruns, the device's own underruns / xrun notifications; each is {available, value, unit} and a "
+		"value the backend does not report (or no audio device) is available:false, never 0. Read-only."),
 		objectSchema({}), false, cpuLoad);
 }
 

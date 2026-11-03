@@ -216,6 +216,9 @@ bool AudioJack::initJackClient()
 	// set shutdown-callback
 	jack_on_shutdown(m_client, shutdownCallback, this);
 
+	// Q050-074.2: the server's xruns, counted for the diagnostics
+	jack_set_xrun_callback(m_client, xrunCallback, this);
+
 	if (jack_get_sample_rate(m_client) != sampleRate()) { setSampleRate(jack_get_sample_rate(m_client)); }
 
 	for (ch_cnt_t ch = 0; ch < channels(); ++ch)
@@ -496,6 +499,15 @@ int AudioJack::staticProcessCallback(jack_nframes_t nframes, void* udata)
 
 
 
+int AudioJack::xrunCallback(void* udata)
+{
+	static_cast<AudioJack*>(udata)->countBackendXrun();
+	return 0;
+}
+
+
+
+
 void AudioJack::shutdownCallback(void* udata)
 {
 	auto thisClass = static_cast<AudioJack*>(udata);
@@ -719,6 +731,28 @@ f_cnt_t AudioJack::outputLatencyFrames() const
 	jack_latency_range_t range{};
 	jack_port_get_latency_range(m_outputPorts[0], JackPlaybackLatency, &range);
 	return static_cast<f_cnt_t>(range.max);
+}
+
+
+AudioDevice::DeviceTiming AudioJack::deviceTiming() const
+{
+	DeviceTiming timing;
+	timing.backend = name();
+	if (m_client == nullptr) { return timing; }
+	timing.sampleRate = static_cast<sample_rate_t>(jack_get_sample_rate(m_client));
+	timing.periodFrames = static_cast<f_cnt_t>(jack_get_buffer_size(m_client));
+	if (!m_inputPorts.empty() && m_inputPorts[0] != nullptr)
+	{
+		timing.inputLatencyFrames = inputLatencyFrames();
+		timing.inputLatencyBasis = QStringLiteral("jack_capture_latency_range");
+	}
+	if (!m_outputPorts.empty() && m_outputPorts[0] != nullptr)
+	{
+		timing.outputLatencyFrames = outputLatencyFrames();
+		timing.outputLatencyBasis = QStringLiteral("jack_playback_latency_range");
+	}
+	timing.countsXruns = true;
+	return timing;
 }
 
 

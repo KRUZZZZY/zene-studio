@@ -25,9 +25,13 @@
 #ifndef LMMS_AUDIO_DEVICE_H
 #define LMMS_AUDIO_DEVICE_H
 
+#include <atomic>
+#include <cstdint>
+#include <optional>
 #include <vector>
 
 #include <QMutex>
+#include <QString>
 #include <samplerate.h>
 
 #include "LmmsTypes.h"
@@ -95,6 +99,27 @@ public:
 	 *  engine period per render. */
 	virtual f_cnt_t captureBlockFrames() const;
 
+	/*! Q050-074.2: what the backend negotiated with its device, for the CPU diagnostics
+	 *  (mixer.cpu_load's audio_device). An empty optional is a value this backend does not
+	 *  report - never shown as a zero. Read off the audio thread. */
+	struct DeviceTiming
+	{
+		QString backend;                          //!< the backend's name; empty: the engine's device name
+		std::optional<sample_rate_t> sampleRate;  //!< the rate the device runs at
+		std::optional<f_cnt_t> periodFrames;      //!< frames per device period (one callback / write)
+		std::optional<f_cnt_t> bufferFrames;      //!< frames the device queues in all
+		std::optional<f_cnt_t> inputLatencyFrames;
+		QString inputLatencyBasis;                //!< what the input figure is measured from
+		std::optional<f_cnt_t> outputLatencyFrames;
+		QString outputLatencyBasis;
+		bool countsXruns = false;                 //!< backendXruns() is this backend's count
+	};
+	//! Nothing by default: a backend reports what its device negotiated by overriding this.
+	virtual DeviceTiming deviceTiming() const { return {}; }
+	//! Q050-074.2: the device's own xruns (playback underruns / JACK xrun notifications) since it
+	//! opened - not the engine's late periods. Meaningful only when deviceTiming().countsXruns.
+	std::uint64_t backendXruns() const noexcept { return m_backendXruns.load(std::memory_order_relaxed); }
+
 	void startProcessing();
 
 	void stopProcessing();
@@ -119,6 +144,9 @@ protected:
 	void setChannels(const ch_cnt_t channels) { m_channels = channels; }
 
 	static void stopProcessingThread( QThread * thread );
+
+	//! Q050-074.2: counts one backend xrun. Any thread, the audio thread included: one relaxed add.
+	void countBackendXrun() noexcept { m_backendXruns.fetch_add(1, std::memory_order_relaxed); }
 
 	/*! R2.3: sizes the stereo scratch bus for pushes of up to @a maxFrames and selects the
 	 *  captured pair (@a left, @a right) that bus carries. Off the audio thread - at open, or
@@ -182,6 +210,7 @@ private:
 	std::atomic_flag m_running = ATOMIC_FLAG_INIT;
 	//! Open CallbackScopes. Dekker pair with m_running: see waitForOpenCallbacks().
 	std::atomic<int> m_openCallbacks{0};
+	std::atomic<std::uint64_t> m_backendXruns{0};
 };
 
 } // namespace lmms

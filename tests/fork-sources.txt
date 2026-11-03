@@ -3300,3 +3300,7 @@ tests/src/core/MidiOutTimingTest.cpp
 tests/src/gui/SessionCellPlaybackMenuTest.cpp
 # cluster new-p10-290 (2026-10): fix and verification report for pitchAt's window bound (fork-NEW).
 docs/qwen-fixes-2026-10/cluster-new-p10-290.md
+include/AudioDeviceDiagnostics.h
+src/core/AudioDeviceDiagnostics.cpp
+tests/src/core/AudioDeviceDiagnosticsTest.cpp
+tests/control-device-diagnostics.py

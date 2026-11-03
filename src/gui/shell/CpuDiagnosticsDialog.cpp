@@ -33,6 +33,8 @@
 #include <QTimer>
 #include <QVBoxLayout>
 
+#include <utility>
+
 #include "ControlRegistry.h"
 
 namespace lmms::gui
@@ -73,6 +75,27 @@ QString millisecondsText(double micros)
 	return QObject::tr("%1 ms").arg(micros / 1000.0, 0, 'f', 2);
 }
 
+//! Q050-074.2: one device reading as text - its value and unit, or "unavailable".
+QString readingText(const QJsonObject& reading)
+{
+	if (!reading.value(QStringLiteral("available")).toBool()) { return QObject::tr("unavailable"); }
+	const QString unit = reading.value(QStringLiteral("unit")).toString();
+	const double value = reading.value(QStringLiteral("value")).toDouble();
+	if (unit == QStringLiteral("count")) { return QString::number(value, 'f', 0); }
+	QString text = QStringLiteral("%1 %2").arg(QString::number(value, 'f', 0), unit);
+	if (reading.contains(QStringLiteral("ms")))
+	{
+		text += QStringLiteral(" (%1, %2)").arg(millisecondsText(1000.0 * reading.value(QStringLiteral("ms")).toDouble()),
+			reading.value(QStringLiteral("basis")).toString());
+	}
+	return text;
+}
+
+QString framesText(double frames)
+{
+	return QObject::tr("%1 frames").arg(QString::number(frames, 'f', 0));
+}
+
 } // namespace
 
 CpuDiagnosticsDialog::CpuDiagnosticsDialog(QWidget* parent) :
@@ -81,6 +104,7 @@ CpuDiagnosticsDialog::CpuDiagnosticsDialog(QWidget* parent) :
 	m_tracks(makeTable({tr("Track"), tr("Instrument"), tr("Synthesis")}, QStringLiteral("cpuSynthesisTable"), this)),
 	m_late(makeTable({tr("#"), tr("Position"), tr("Took"), tr("Period"), tr("Load"), tr("Transport")},
 		QStringLiteral("cpuLatePeriodTable"), this)),
+	m_device(makeTable({tr("Reading"), tr("Value")}, QStringLiteral("cpuAudioDeviceTable"), this)),
 	m_timer(new QTimer(this))
 {
 	setObjectName(QStringLiteral("cpuDiagnosticsDialog"));
@@ -98,9 +122,14 @@ CpuDiagnosticsDialog::CpuDiagnosticsDialog(QWidget* parent) :
 	late->setWordWrap(true);
 	layout->addWidget(late);
 	layout->addWidget(m_late);
+	auto* device = new QLabel(tr("Audio device - what the backend negotiated and the device's own xruns (it ran dry), "
+		"apart from the engine's late periods; 'unavailable' where the backend reports nothing"), this);
+	device->setWordWrap(true);
+	layout->addWidget(device);
+	layout->addWidget(m_device);
 	m_timer->setInterval(RefreshMilliseconds);
 	connect(m_timer, &QTimer::timeout, this, &CpuDiagnosticsDialog::refresh);
-	resize(560, 480);
+	resize(560, 680);
 }
 
 void CpuDiagnosticsDialog::refresh()
@@ -141,6 +170,31 @@ void CpuDiagnosticsDialog::refresh()
 			mark.value(QStringLiteral("playing")).toBool() ? tr("playing") : tr("stopped")});
 		m_late->item(i, 1)->setData(Qt::UserRole, mark.value(QStringLiteral("tick")).toInt());
 	}
+	showAudioDevice(state.result.value(QStringLiteral("audio_device")).toObject(),
+		late.value(QStringLiteral("count")).toDouble());
+}
+
+void CpuDiagnosticsDialog::showAudioDevice(const QJsonObject& device, double latePeriods)
+{
+	const QJsonObject engine = device.value(QStringLiteral("engine")).toObject();
+	const QList<std::pair<QString, QStringList>> rows = {
+		{QStringLiteral("backend"), {tr("Backend"), device.value(QStringLiteral("backend")).toString()}},
+		{QStringLiteral("engine_sample_rate"), {tr("Engine sample rate"),
+			QStringLiteral("%1 Hz").arg(engine.value(QStringLiteral("sample_rate_hz")).toDouble(), 0, 'f', 0)}},
+		{QStringLiteral("sample_rate"), {tr("Device sample rate"), readingText(device.value(QStringLiteral("sample_rate")).toObject())}},
+		{QStringLiteral("engine_period"), {tr("Engine period"), framesText(engine.value(QStringLiteral("period_frames")).toDouble())}},
+		{QStringLiteral("period_frames"), {tr("Device period"), readingText(device.value(QStringLiteral("period_frames")).toObject())}},
+		{QStringLiteral("buffer_frames"), {tr("Device buffer"), readingText(device.value(QStringLiteral("buffer_frames")).toObject())}},
+		{QStringLiteral("input_latency"), {tr("Input latency"), readingText(device.value(QStringLiteral("input_latency")).toObject())}},
+		{QStringLiteral("output_latency"), {tr("Output latency"), readingText(device.value(QStringLiteral("output_latency")).toObject())}},
+		{QStringLiteral("xruns"), {tr("Device xruns"), readingText(device.value(QStringLiteral("xruns")).toObject())}},
+		{QStringLiteral("late_periods"), {tr("Engine late periods"), QString::number(latePeriods, 'f', 0)}}};
+	m_device->setRowCount(static_cast<int>(rows.size()));
+	for (int row = 0; row < rows.size(); ++row)
+	{
+		setRow(m_device, row, rows.at(row).second);
+		m_device->item(row, 0)->setData(Qt::UserRole, rows.at(row).first);
+	}
 }
 
 CpuDiagnosticsDialog* CpuDiagnosticsDialog::open(QWidget* parent)
@@ -175,7 +229,8 @@ void addCpuDiagnosticsAction(QWidget* readout)
 	QObject::connect(action, &QAction::triggered, readout, [readout] { CpuDiagnosticsDialog::open(readout); });
 	readout->addAction(action);
 	readout->setToolTip(QObject::tr("CPU: the engine's load in percent of the audio period. Right-click for CPU "
-		"diagnostics - each instrument's synthesis load and the late periods (mixer.cpu_load)"));
+		"diagnostics - each instrument's synthesis load, the late periods and the audio device's timing and xruns "
+		"(mixer.cpu_load)"));
 }
 
 } // namespace lmms::gui

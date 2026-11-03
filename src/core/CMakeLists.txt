@@ -1012,6 +1012,7 @@ set(LMMS_SRCS
 	core/MusicalTime.cpp
 	core/RemoteControls.cpp
 	core/RenderDiagnostics.cpp
+	core/AudioDeviceDiagnostics.cpp
 	core/RemotePlugin.cpp
 	core/Rack.cpp
 	core/RackMacros.cpp

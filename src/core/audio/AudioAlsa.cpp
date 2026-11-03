@@ -236,7 +236,8 @@ int AudioAlsa::handleError( int _err )
 {
 	if( _err == -EPIPE )
 	{
-		// under-run
+		// under-run: the device ran dry - counted for the diagnostics (Q050-074.2), one relaxed add
+		countBackendXrun();
 		_err = snd_pcm_prepare( m_handle );
 		if( _err < 0 )
 			printf( "Can't recover from underrun, prepare "
@@ -747,8 +748,35 @@ int AudioAlsa::setHWParams( const ch_cnt_t _channels, snd_pcm_access_t _access )
 							snd_strerror( err ) );
 		return ( err );
 	}
+	// Q050-074.2: what the device granted, for the diagnostics.
+	dir = 0;
+	if (snd_pcm_hw_params_get_rate(m_hwParams, &m_grantedRate, &dir) < 0) { m_grantedRate = 0; }
 
 	return ( 0 );	// all ok
+}
+
+
+
+
+AudioDevice::DeviceTiming AudioAlsa::deviceTiming() const
+{
+	DeviceTiming timing;
+	timing.backend = name();
+	if (m_grantedRate > 0) { timing.sampleRate = static_cast<sample_rate_t>(m_grantedRate); }
+	if (m_periodSize > 0) { timing.periodFrames = static_cast<f_cnt_t>(m_periodSize); }
+	if (m_bufferSize > 0)
+	{
+		timing.bufferFrames = static_cast<f_cnt_t>(m_bufferSize);
+		timing.outputLatencyFrames = static_cast<f_cnt_t>(m_bufferSize);
+		timing.outputLatencyBasis = QStringLiteral("playback_buffer");
+	}
+	if (m_captureOpen.load(std::memory_order_acquire) && m_capturePeriodSize > 0)
+	{
+		timing.inputLatencyFrames = static_cast<f_cnt_t>(m_capturePeriodSize);
+		timing.inputLatencyBasis = QStringLiteral("capture_period");
+	}
+	timing.countsXruns = true;
+	return timing;
 }
 
 
