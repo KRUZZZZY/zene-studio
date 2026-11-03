@@ -28,7 +28,10 @@
  *     MidiClient::sendFromNonAudioThread(). A watching client records which thread called which path while track MIDI
  *     and capture clock overlap (MidiOutQueueTest drives the ALSA client's two queues under the same overlap).
  *   - EVERY ACCEPTED START HAS ITS STOP. With the sender held, earlier spans fill the capture ring; successive captures
- *     are then started. A span is either admitted with START and STOP both delivered, or refused before START. */
+ *     are then started. A span is either admitted with START and STOP both delivered, or refused before START.
+ *   - NO SEND TO A CLIENT BEING DESTROYED (review round 3). MidiClock::detachClient() - what AudioEngine calls before it
+ *     deletes the MIDI client - waits for a send in flight, forgets the client and retires what was undelivered; and a
+ *     real Engine::destroy() with capture output pending leaves nothing for the sender to deliver. */
 
 #include <QtTest>
 
@@ -90,6 +93,31 @@ private:
 	std::vector<int> m_log;
 };
 
+//! A client whose off-audio sends block on a gate, so a test can hold one IN FLIGHT; it counts calls after detach.
+class GatedClient : public MidiClient
+{
+public:
+	void processOutEvent(const MidiEvent&, const TimePos&, const MidiPort*) override {}
+	void openGate() { m_gate.store(true); }
+	std::atomic<bool> entered{false};
+	std::atomic<bool> detached{false};
+	std::atomic<int> calls{0};
+	std::atomic<int> callsAfterDetach{0};
+
+protected:
+	bool processNonAudioOutEvent(const MidiEvent&, const MidiPort*) override
+	{
+		if (detached.load()) { callsAfterDetach.fetch_add(1); }
+		calls.fetch_add(1);
+		entered.store(true);
+		for (int i = 0; i < 5000 && !m_gate.load(); ++i) { std::this_thread::sleep_for(std::chrono::milliseconds(1)); }
+		return true;
+	}
+
+private:
+	std::atomic<bool> m_gate{false};
+};
+
 //! True once the sender has delivered everything queued.
 bool delivered()
 {
@@ -114,7 +142,7 @@ private slots:
 
 	void cleanupTestCase()
 	{
-		Engine::destroy();
+		if (!m_engineGone) { Engine::destroy(); }
 	}
 
 	void init()
@@ -126,6 +154,8 @@ private slots:
 
 	void cleanup()
 	{
+		// After the shutdown case the client is gone; if that case failed the sender stays held (never releases onto it).
+		if (m_engineGone) { return; }
 		MidiClock* clock = MidiClock::instance();
 		clock->holdCaptureOutput(false);
 		clock->captureAbort();
@@ -222,6 +252,71 @@ private slots:
 		QCOMPARE(clock->emittedCount(MidiClockMessage::Start) - startsSent, startsDelivered + 1);
 		QCOMPARE(clock->emittedCount(MidiClockMessage::Stop) - stopsSent, stopsDelivered + 1);
 	}
+
+	//! The sender is IN a send (START, held on the client's gate) with five more records behind it when the client's
+	//! owner detaches it. detachClient() must not return until that send has returned; it retires the five; and the
+	//! client is never called again - so the owner can free it.
+	void detachWaitsForTheSendInFlightAndRetiresTheRest()
+	{
+		MidiClock* clock = MidiClock::instance();
+		GatedClient client;
+		MidiClient* previous = clock->swapClientForTesting(&client);
+		const quint32 retired = clock->captureOutputRetired();
+		clock->holdCaptureOutput(true);
+		clock->captureArm();
+		clock->captureStarted(0, 4 * TicksPerMidiClockPulse);
+		clock->captureStopped(4 * TicksPerMidiClockPulse);  // START, 4 pulses, STOP: 6 records
+		clock->holdCaptureOutput(false);
+		for (int i = 0; i < 2000 && !client.entered.load(); ++i) { QTest::qWait(1); }
+		QVERIFY2(client.entered.load(), "the sender never started delivering");
+
+		std::atomic<bool> returned{false};
+		std::thread owner([&] {
+			clock->detachClient(&client);
+			client.detached.store(true);
+			returned.store(true);
+		});
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
+		const bool returnedWhileSending = returned.load();
+		client.openGate();
+		owner.join();
+		std::this_thread::sleep_for(std::chrono::milliseconds(50));  // a sender that kept going would call again by now
+		MidiClient* held = clock->swapClientForTesting(previous);
+
+		QVERIFY2(!returnedWhileSending, "detachClient() returned while a send to the client was still in flight");
+		QCOMPARE(held, static_cast<MidiClient*>(nullptr));  // the clock forgot the client
+		QVERIFY(!clock->captureOutputPending());
+		QCOMPARE(clock->captureOutputRetired() - retired, 5u);
+		QCOMPARE(client.calls.load(), 1);
+		QCOMPARE(client.callsAfterDetach.load(), 0);
+	}
+
+	//! LAST (it destroys the engine): capture output for the engine's own MIDI client is pending (sender held) when the
+	//! engine shuts down. ~AudioEngine detaches the client before deleting it, so nothing is left for the sender and the
+	//! clock holds no client; releasing the sender then reaches nothing.
+	void engineShutdownWithCaptureOutputPendingLeavesNothingForTheSender()
+	{
+		MidiClock* clock = MidiClock::instance();
+		const quint32 retired = clock->captureOutputRetired();
+		clock->holdCaptureOutput(true);
+		clock->captureArm();
+		clock->captureStarted(0, 0);
+		clock->captureStopped(0);  // START, STOP
+		QVERIFY(clock->captureOutputPending());
+
+		m_engineGone = true;
+		Engine::destroy();
+		QVERIFY2(!clock->captureOutputPending(), "capture output for the destroyed MIDI client is still waiting to be sent");
+		QCOMPARE(clock->captureOutputRetired() - retired, 2u);
+		MidiClient* held = clock->swapClientForTesting(nullptr);
+		QCOMPARE(held, static_cast<MidiClient*>(nullptr));
+		clock->holdCaptureOutput(false);  // only once proven safe: the sender has nothing and no client
+		QTest::qWait(20);
+		QVERIFY(!clock->captureOutputPending());
+	}
+
+private:
+	bool m_engineGone = false;
 };
 
 QTEST_GUILESS_MAIN(MidiClockCaptureOutputTest)

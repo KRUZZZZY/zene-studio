@@ -369,6 +369,14 @@ public:
 	quint32 captureOutputDropped() const noexcept { return m_outDropped.load(); }
 	//! Test seam: while held the sender delivers nothing, so a test can see what the audio thread queued and that it delivered none itself.
 	void holdCaptureOutput(bool hold) noexcept { m_outHold.store(hold); }
+	/*! The engine's MIDI client @a client is about to be destroyed (AudioEngine, before `delete`; control thread). Waits
+	 *  for a send the capture sender has in flight, then forgets the client (the sender and the transport clock send to
+	 *  nobody from here on) and RETIRES the capture output it has not delivered - those messages were for a client that
+	 *  is going away - counting them (captureOutputRetired). After it returns nothing in this object calls @a client.
+	 *  A different @a client than the one held is ignored. Never call it from the audio thread (it takes a lock). */
+	void detachClient(MidiClient* client) noexcept;
+	//! Capture records retired undelivered by detachClient().
+	quint32 captureOutputRetired() const noexcept { return m_outRetired.load(); }
 	//! Test seam: the client the clock sends through, swapped (returns the previous one) so a test can watch which thread
 	//! hands it what. The output port is kept. Not for production use.
 	MidiClient* swapClientForTesting(MidiClient* client) noexcept { return m_client.exchange(client); }
@@ -525,6 +533,12 @@ private:
 	std::atomic<quint32> m_outTail{0};
 	std::atomic<quint32> m_outDropped{0};
 	std::atomic<bool> m_outHold{false};
+	std::atomic<quint32> m_outRetired{0};
+	//! Set by detachClient() before it waits for m_deliverMutex: the sender stops after the send in flight.
+	std::atomic<bool> m_detaching{false};
+	//! Held by the sender around each delivery and by detachClient(): the ring's consumer side is one holder at a time,
+	//! and a client is never forgotten (then freed) while a send to it is in flight. Never taken by the audio thread.
+	std::mutex m_deliverMutex;
 	std::thread m_sender;
 	std::mutex m_senderMutex;
 	std::condition_variable m_senderWake;

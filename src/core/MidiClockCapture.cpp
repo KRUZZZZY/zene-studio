@@ -37,6 +37,11 @@
  *  the first - one consumer merges both. A message the client refuses (that queue full) stays at the ring's tail and is
  *  retried a millisecond later, so nothing is lost or reordered downstream of the ring.
  *
+ *  SHUTDOWN (review round 3). The sender lives as long as the process, but never outlives its client's use: it holds
+ *  m_deliverMutex around every delivery, and AudioEngine calls detachClient() before it deletes the MIDI client. That
+ *  stops the sender after the send in flight (m_detaching), waits for that send, clears m_client and retires the
+ *  undelivered records, so no later delivery (or retry) can reach the destroyed client or its half-destroyed backend.
+ *
  *  BOUNDARIES ARE ADMITTED, NOT HOPED FOR (review round 2). Earlier output may still fill the ring (a stalled sender).
  *  captureStarted() opens a span only when START and its STOP both fit; every pulse leaves ReservedSlots (one) free, and
  *  only this span's STOP may take it. The ring has one producer, so from START to STOP that slot cannot be taken: every
@@ -191,14 +196,35 @@ void MidiClock::captureArm()
 void MidiClock::deliverQueued() noexcept
 {
 	if (m_outHold.load()) { return; }
+	std::lock_guard<std::mutex> lock(m_deliverMutex);  // detachClient() waits for this delivery to finish
 	quint32 tail = m_outTail.load(std::memory_order_relaxed);
 	while (tail != m_outHead.load(std::memory_order_acquire))
 	{
+		if (m_detaching.load()) { return; }  // the client is being let go: stop after the send in flight
 		const OutRecord record = m_outRing[tail % RingCapacity];
 		// Refused by the client (its off-audio queue full): left at the tail, retried on the next poll, in order.
 		if (!deliverOffAudio(static_cast<MidiClockMessage>(record.message), record.tick)) { return; }
 		m_outTail.store(++tail, std::memory_order_release);  // after the client has it: "pending" means undelivered
 	}
+}
+
+void MidiClock::detachClient(MidiClient* client) noexcept
+{
+	if (client == nullptr) { return; }
+	m_detaching.store(true);  // the sender stops at its next record instead of draining on
+	{
+		std::lock_guard<std::mutex> lock(m_deliverMutex);  // a send in flight to the client finishes first
+		if (m_client.load() == client)
+		{
+			m_client.store(nullptr);
+			// What is still queued was for this client: retire it (the consumer side is ours while the lock is held).
+			const quint32 head = m_outHead.load(std::memory_order_acquire);
+			const quint32 tail = m_outTail.load(std::memory_order_relaxed);
+			m_outRetired.fetch_add(head - tail);
+			m_outTail.store(head, std::memory_order_release);
+		}
+	}
+	m_detaching.store(false);
 }
 
 void MidiClock::senderMain()
