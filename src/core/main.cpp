@@ -77,6 +77,7 @@
 #include "PluginQuarantineMenu.h"
 #include "MainWindowGeometry.h"
 #include "MixHelpers.h"
+#include "Mixer.h"
 #include "OutputSettings.h"
 #include "ProjectContainer.h"
 #include "ProjectRecovery.h"
@@ -231,6 +232,8 @@ void printHelp()
 		"          If -e is specified zene exits after importing the file.\n"
 		"\nOptions for \"render\", \"rendertracks\" and \"exportstems\":\n"
 		"  -a, --float                    Use 32bit float bit depth\n"
+		"      --capture-channel <id>     Write mixer channel <id>'s output before\n"
+		"          its fader instead of the master (the bus-freeze render)\n"
 		"  -b, --bitrate <bitrate>        Specify output bitrate in KBit/s\n"
 		"          Default: 160.\n"
 		"      --bit-depth <bits>         Bit depth of the render: 16 (default),\n"
@@ -491,6 +494,8 @@ int main( int argc, char * * argv )
 	// span rather than two renderers.
 	tick_t renderRangeBegin = -1;
 	tick_t renderRangeEnd = -1;
+	// Q050-124: the mixer channel (stable id) a bus-freeze render writes in place of the master; -1 = the master.
+	int captureChannelId = -1;
 	bool mastering = false;
 	// The machine-readable half of `master`: the JSON document the control
 	// surface's mastering.run reads back from the child process it starts. Empty
@@ -1102,6 +1107,17 @@ int main( int argc, char * * argv )
 		{
 			os.setBitDepth(OutputSettings::BitDepth::Depth32Bit);
 		}
+		else if( arg == "--capture-channel" )
+		{
+			// Q050-124: BounceInPlace::renderBus's child - the bus's pre-fader output instead of the master.
+			++i;
+			bool ok = false;
+			captureChannelId = i < argc ? QString::fromLocal8Bit( argv[i] ).toInt( &ok ) : -1;
+			if( !ok || captureChannelId < 0 )
+			{
+				return usageError( "--capture-channel takes a mixer channel id" );
+			}
+		}
 		else if( arg == "--loudness-report" )
 		{
 			// Ask the render for an EBU R128 loudness report: the measured
@@ -1426,6 +1442,15 @@ int main( int argc, char * * argv )
 			exit( EXIT_FAILURE );
 		}
 		printf( "Done\n" );
+
+		QString captureError;
+		if( captureChannelId >= 0 && !busfreeze::armCapture( *Engine::mixer(), captureChannelId, &captureError ) )
+		{
+			fprintf( stderr, "Render refused: %s\n", captureError.toUtf8().constData() );
+			crashreporter::endSession();
+			safestart::endSession();
+			exit( EXIT_FAILURE );
+		}
 
 		// 0.5.0 F7: what the master's format and the file format allow is known now that the
 		// project is loaded; a surround export they cannot carry is refused before a file opens.

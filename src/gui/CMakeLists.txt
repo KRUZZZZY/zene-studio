@@ -274,6 +274,7 @@ SET(LMMS_SRCS
 	gui/NoteTransformActions.cpp
 	gui/MixerChannelView.cpp
 	gui/MixerHardwareMenu.cpp
+	gui/MixerBusFreezeMenu.cpp  # Q050-124
 	gui/TaskIndicator.cpp
 	gui/widgets/ControlCues.cpp
 	gui/SurroundPanner.cpp

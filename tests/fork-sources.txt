@@ -3300,3 +3300,12 @@ tests/src/core/MidiOutTimingTest.cpp
 tests/src/gui/SessionCellPlaybackMenuTest.cpp
 # cluster new-p10-290 (2026-10): fix and verification report for pitchAt's window bound (fork-NEW).
 docs/qwen-fixes-2026-10/cluster-new-p10-290.md
+# Q050-124 (2026-11): freeze a mixer bus - the take on the MixerChannel, its commands, the strip menu entry, tests (fork-NEW).
+include/MixerBusFreeze.h
+include/MixerBusFreezeMenu.h
+src/core/ControlCommandsBusFreeze.cpp
+src/core/MixerBusFreeze.cpp
+src/gui/MixerBusFreezeMenu.cpp
+tests/src/core/MixerBusFreezeTest.cpp
+tests/src/gui/MixerBusFreezeMenuTest.cpp
+tests/control-bus-freeze-transcript.py

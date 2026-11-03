@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-29T15:55:04Z",
+  "captured_at": "2026-11-03T07:46:46Z",
   "commands": [
     {
       "args_schema": {
@@ -9977,6 +9977,77 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "out": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel"
+        ],
+        "type": "object"
+      },
+      "description": "Freeze a mixer bus (channel, ch-<n>, must be a bus): its output - every input routed to it, through its trim, devices, VCA and pan, i.e. the signal just before its fader - is rendered to a 32-bit float WAV ('out', or a new file beside the project) and, while the transport plays, the bus plays that take in place of its live inputs and devices. Its fader, its sends to other buses and the master, its taps and its meters keep working on the take. Refused for a channel that is not a bus, a frozen bus, a bus nothing is routed to and a project whose tempo map is on. Saved with the project; one control.undo unfreezes. Blocking: the render runs in a child process against a copy of the session.",
+      "group": "freeze",
+      "id": "freeze.bus",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "audio": {
+            "type": "string"
+          },
+          "audio_missing": {
+            "type": "boolean"
+          },
+          "audio_ready": {
+            "type": "boolean"
+          },
+          "bytes": {
+            "type": "integer"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "end_ticks": {
+            "type": "integer"
+          },
+          "frames": {
+            "type": "integer"
+          },
+          "frozen": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "recovery": {
+            "type": "string"
+          },
+          "sample_rate": {
+            "type": "integer"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "start_ticks": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "end": {
             "type": "integer"
           },
@@ -10185,6 +10256,74 @@
           },
           "track": {
             "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel"
+        ],
+        "type": "object"
+      },
+      "description": "Drop a frozen bus's take: the bus plays its live inputs through its own devices again. Its routing, devices and fader were never changed by the freeze. The take's file stays on disk (not a delete), and one control.undo puts the same take back.",
+      "group": "freeze",
+      "id": "freeze.unfreeze_bus",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "audio": {
+            "type": "string"
+          },
+          "audio_missing": {
+            "type": "boolean"
+          },
+          "audio_ready": {
+            "type": "boolean"
+          },
+          "bytes": {
+            "type": "integer"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "end_ticks": {
+            "type": "integer"
+          },
+          "frames": {
+            "type": "integer"
+          },
+          "frozen": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "recovery": {
+            "type": "string"
+          },
+          "sample_rate": {
+            "type": "integer"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "start_ticks": {
+            "type": "integer"
           }
         },
         "required": [],
@@ -37464,23 +37603,23 @@
       }
     }
   ],
-  "count": 878,
+  "count": 880,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-124/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-k4l1reh3/zene.sock",
-    "version": "0.4.0-alpha.5942+68bed50"
+    "source_socket": "/tmp/zctl-run-_42xrid5/zene.sock",
+    "version": "0.4.0-alpha.5943+2a7fd9f"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 77,
-    "id_count": 878,
-    "ids_sha256": "60473c71cd63735b5af096bbd2cd1d9a5a096cf4b2fd8855d1333df124ea362a"
+    "id_count": 880,
+    "ids_sha256": "58eb199e0c57bf9a0a8a2cd3840feec1c4c0e3a6db35d34e73f3b2902010f61e"
   }
 }

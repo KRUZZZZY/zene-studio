@@ -259,6 +259,17 @@ interface and, under them, one for each record-armed track's chosen input - whet
 channel later - or, with a negative number, earlier - by a number of samples, shown in the menu entry; the automatic
 delay compensation keeps everything else lined up. It is saved with the project and one undo puts it back (an
 instrument track's note delay, which starts notes later, is a separate setting).</p>
+<p>Freeze a bus to save the work of playing everything that feeds it: right-click the bus strip and choose Freeze bus.
+Its output - every track and channel routed to it, through the bus's own trim, devices, VCA and pan - is rendered once to a
+32-bit WAV beside the project (in its <code>-bounces</code> folder), and from then on, while the song plays, the bus plays
+that recording in place of its inputs. Everything after it still works live: its fader, its sends to other buses and to
+the master, its taps and its meters. Choose Unfreeze bus to hear the live inputs again; nothing about the tracks or the
+routing was changed, and the recording stays on disk. Both are one undo step, and a frozen bus stays frozen when the
+project is saved and opened again. If the recording has gone missing the bus stays frozen but plays its live inputs, so
+nothing goes silent; unfreeze it, or put the file back. Freezing needs something routed to the bus and the project's one
+tempo (turn the tempo map off first). The recording follows the song: while it is stopped, or past the recording's end,
+the bus is live. Agents use <code>freeze.bus</code> and <code>freeze.unfreeze_bus</code> with the bus's channel id, and
+<code>bus.list</code> shows <code>frozen</code>, <code>frozen_audio</code> and <code>frozen_audio_ready</code>.</p>
 <p>A channel's Hardware I/O menu sends it to your interface's outputs as well as the mix, builds up to four cue
 (headphone) mixes with their own sends, and adds a hardware insert: send to an output, return from an input, with the
 round trip measured by a ping and compensated. Hover the channel's strip to see the insert's latency in frames and

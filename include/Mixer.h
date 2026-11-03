@@ -31,6 +31,7 @@
 #include "HardwareIo.h"
 #include "JournallingObject.h"
 #include "LatencyCompensation.h"
+#include "MixerBusFreeze.h"
 #include "MixerPostInserts.h"
 #include "MixerStrip.h"
 #include "MixerSurround.h"
@@ -100,6 +101,9 @@ public:
 	//! 0.5.0 F7 (MX-060): the channel's surround format, its side buffer and its panner (MixerSurround.h);
 	//! stereo, panner off - and nothing saved - unless a project sets them.
 	ChannelSurround m_surround;
+
+	//! Q050-124: the bus's frozen take (MixerBusFreeze.h); empty - and nothing saved - unless the bus is frozen.
+	BusFreeze m_freeze;
 
 	// set to true if any effect in the channel is enabled and running
 	bool m_stillRunning;
@@ -320,6 +324,9 @@ public:
 
 private:
 	void doProcessing() override;
+	//! The trim-to-pan stages after the inputs are summed: the devices (chain or rack), the hardware insert, the
+	//! VCA gain, the strip's output stages and the pan. A frozen bus skips them: its take already carries them.
+	void processInserts(const f_cnt_t fpp);
 	//! The two sets carry the channels already expanded by the ongoing solo
 	//!  propagation, one set per walk direction: a channel reached sender-only
 	//!  must still be expanded by a receiver walk, and the reverse. Feedback

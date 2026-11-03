@@ -141,6 +141,10 @@ LMMS_EXPORT void registerLinkAudioCommands(ControlRegistry& registry);
  *  reach it - there is no interface for freeze in this release. */
 LMMS_EXPORT void registerFreezeCommands(ControlRegistry& registry);
 
+/*! Q050-124: freeze.bus and freeze.unfreeze_bus - a mixer bus's output rendered and played in place of its live
+ *  inputs (include/MixerBusFreeze.h); the mixer strip's context menu runs the same two ids. */
+LMMS_EXPORT void registerBusFreezeCommands(ControlRegistry& registry);
+
 /*! The folder half of the track.* group (owner items 3+20+21): track.set_folder,
  *  track.folder_set_collapsed, track.set_routing, track.set_pinned and
  *  track.folder_get_state, plus the four named-visibility-set verbs in their own

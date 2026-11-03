@@ -64,7 +64,13 @@ QJsonArray busReport(Mixer* mixer)
 	for (int i = 0; i < static_cast<int>(mixer->numChannels()); ++i)
 	{
 		MixerChannel* channel = mixer->mixerChannel(i);
-		if (channel->isBus()) { buses.append(channelLatencyJson(*channel)); }
+		if (!channel->isBus()) { continue; }
+		QJsonObject entry = channelLatencyJson(*channel);
+		// Q050-124: the bus's frozen take (freeze.bus), as freeze.bus reports it.
+		entry.insert(QStringLiteral("frozen"), channel->m_freeze.isFrozen());
+		entry.insert(QStringLiteral("frozen_audio"), channel->m_freeze.path);
+		entry.insert(QStringLiteral("frozen_audio_ready"), channel->m_freeze.audioReady());
+		buses.append(entry);
 	}
 	return buses;
 }
