@@ -29,6 +29,11 @@
  *  - ALSA on the "null" PCM (no hardware): the rate, period and buffer the PCM granted, the playback
  *    buffer as output latency, no input latency (no capture opened), and a playback underrun counted as
  *    a device xrun while the engine's late-period count does not move.
+ *  - ALSA with a capture PCM negotiating ITS OWN rate (48 kHz against playback's, or 96 kHz when playback
+ *    already runs at 48): input_sample_rate is the capture's, apart from sample_rate, and input latency
+ *    milliseconds are its frames at the capture rate. The null PCM grants whatever it is asked; the test
+ *    redirects the capture's rate request (snd_pcm_hw_params_set_rate_near, which only the capture path
+ *    calls) by symbol interposition - the AudioAlsaPollDescriptorTest technique - and forwards to ALSA.
  *  - JACK against a private `jackd -d dummy` at 48 kHz / 256 frames (skipped when jackd is absent): the
  *    server's rate and period, both port latencies, no buffer figure; a render made late on purpose
  *    shows up as an engine late period AND as a server xrun, each in its own counter. */
@@ -52,7 +57,24 @@
 #include "Engine.h"
 
 #ifdef LMMS_HAVE_ALSA
+#include <dlfcn.h>
+
 #include "AudioAlsa.h"
+#include "AudioInputPath.h"
+
+namespace
+{
+//! Non-zero: the rate the next capture asks ALSA for, in place of the engine's.
+unsigned int s_captureRate = 0;
+} // namespace
+
+extern "C" int snd_pcm_hw_params_set_rate_near(snd_pcm_t* pcm, snd_pcm_hw_params_t* params, unsigned int* val, int* dir)
+{
+	using Real = int (*)(snd_pcm_t*, snd_pcm_hw_params_t*, unsigned int*, int*);
+	static const auto real = reinterpret_cast<Real>(dlsym(RTLD_NEXT, "snd_pcm_hw_params_set_rate_near"));
+	if (s_captureRate != 0 && val != nullptr) { *val = s_captureRate; }
+	return real != nullptr ? real(pcm, params, val, dir) : -1;
+}
 #endif
 #ifdef LMMS_HAVE_JACK
 #include "AudioJack.h"
@@ -85,7 +107,7 @@ bool available(const QJsonObject& device, const char* key)
 	return device.value(QLatin1String(key)).toObject().value(QStringLiteral("available")).toBool();
 }
 
-constexpr const char* DeviceReadings[] = {"sample_rate", "period_frames", "buffer_frames", "input_latency",
+constexpr const char* DeviceReadings[] = {"sample_rate", "input_sample_rate", "period_frames", "buffer_frames", "input_latency",
 	"output_latency", "xruns"};
 
 } // namespace
@@ -183,6 +205,7 @@ private slots:
 		QCOMPARE(output.value(QStringLiteral("unit")).toString(), QStringLiteral("frames"));
 		QVERIFY(qAbs(output.value(QStringLiteral("ms")).toDouble() - 1000.0 * alsa->m_bufferSize / alsa->m_grantedRate) < 1e-9);
 		QVERIFY2(!available(device, "input_latency"), "no capture is open, so no input latency");
+		QVERIFY2(!available(device, "input_sample_rate"), "no capture is open, so no input rate");
 		QVERIFY(available(device, "xruns"));
 		QCOMPARE(valueOf(device, "xruns"), 0.0);
 
@@ -196,6 +219,58 @@ private slots:
 		engine->restoreAudioDevice();
 		QCOMPARE(cpuLoad().value(QStringLiteral("audio_device")).toObject().value(QStringLiteral("backend")).toString(),
 			AudioDummy::name());
+#endif
+	}
+
+	void alsaCaptureAtItsOwnRateReportsInputLatencyAtThatRate()
+	{
+#ifndef LMMS_HAVE_ALSA
+		QSKIP("built without ALSA");
+#else
+		ConfigManager* config = ConfigManager::inst();
+		config->setValue(QStringLiteral("audioalsa"), QStringLiteral("device"), QStringLiteral("null"));
+		config->setValue(QStringLiteral("audioinput"), QStringLiteral("device"), QStringLiteral("null"));
+		config->setValue(QStringLiteral("audioinput"), QStringLiteral("channels"), QStringLiteral("2"));
+		AudioEngine* engine = Engine::audioEngine();
+		bool ok = false;
+		auto* alsa = new AudioAlsa(ok, engine);
+		if (!ok) { delete alsa; QSKIP("the ALSA null PCM does not open here"); }
+		const unsigned int playbackRate = alsa->m_grantedRate;
+		QVERIFY(playbackRate > 0);
+		s_captureRate = playbackRate == 48000 ? 96000 : 48000;
+		const bool opened = alsa->openCapture();
+		s_captureRate = 0;
+		if (!opened) { delete alsa; QSKIP("the ALSA null PCM does not open for capture here"); }
+		alsa->m_captureOpen.store(true, std::memory_order_release);  // what startProcessingImpl marks, minus the thread
+		engine->storeAudioDevice();
+		engine->setAudioDevice(alsa, false);
+
+		const unsigned int captureRate = playbackRate == 48000 ? 96000 : 48000;
+		const QJsonObject device = cpuLoad().value(QStringLiteral("audio_device")).toObject();
+		QCOMPARE(valueOf(device, "sample_rate"), static_cast<double>(playbackRate));
+		QVERIFY(available(device, "input_sample_rate"));
+		QCOMPARE(valueOf(device, "input_sample_rate"), static_cast<double>(captureRate));
+		QCOMPARE(alsa->m_captureGrantedRate, captureRate);
+		const QJsonObject input = device.value(QStringLiteral("input_latency")).toObject();
+		QVERIFY(input.value(QStringLiteral("available")).toBool());
+		QCOMPARE(input.value(QStringLiteral("basis")).toString(), QStringLiteral("capture_period"));
+		const double frames = input.value(QStringLiteral("value")).toDouble();
+		QCOMPARE(frames, static_cast<double>(alsa->m_capturePeriodSize));
+		QVERIFY(frames > 0);
+		const double ms = input.value(QStringLiteral("ms")).toDouble();
+		QVERIFY2(qAbs(ms - 1000.0 * frames / captureRate) < 1e-9, qPrintable(QString::number(ms)));
+		QVERIFY2(qAbs(ms - 1000.0 * frames / playbackRate) > 1e-6, "input latency was converted at the playback rate");
+		// The output side keeps playback's rate.
+		const QJsonObject output = device.value(QStringLiteral("output_latency")).toObject();
+		QVERIFY(qAbs(output.value(QStringLiteral("ms")).toDouble()
+			- 1000.0 * output.value(QStringLiteral("value")).toDouble() / playbackRate) < 1e-9);
+
+		alsa->closeCapture();
+		const QJsonObject closed = cpuLoad().value(QStringLiteral("audio_device")).toObject();
+		QVERIFY2(!available(closed, "input_sample_rate"), "a closed capture has no input rate");
+		QVERIFY2(!available(closed, "input_latency"), "a closed capture has no input latency");
+		engine->restoreAudioDevice();
+		config->setValue(QStringLiteral("audioinput"), QStringLiteral("device"), QString());
 #endif
 	}
 
@@ -237,6 +312,7 @@ private slots:
 		QVERIFY(device.value(QStringLiteral("running")).toBool());
 		verifyEngineBlock(device);
 		QCOMPARE(valueOf(device, "sample_rate"), 48000.0);
+		QCOMPARE(valueOf(device, "input_sample_rate"), 48000.0);
 		QCOMPARE(device.value(QStringLiteral("engine")).toObject().value(QStringLiteral("output_sample_rate_hz")).toDouble(), 48000.0);
 		QCOMPARE(valueOf(device, "period_frames"), 256.0);
 		QVERIFY2(!available(device, "buffer_frames"), "JACK does not report its period count");

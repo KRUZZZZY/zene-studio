@@ -740,6 +740,7 @@ AudioDevice::DeviceTiming AudioJack::deviceTiming() const
 	timing.backend = name();
 	if (m_client == nullptr) { return timing; }
 	timing.sampleRate = static_cast<sample_rate_t>(jack_get_sample_rate(m_client));
+	timing.inputSampleRate = timing.sampleRate;  // one server clock for every port
 	timing.periodFrames = static_cast<f_cnt_t>(jack_get_buffer_size(m_client));
 	if (!m_inputPorts.empty() && m_inputPorts[0] != nullptr)
 	{

@@ -133,7 +133,7 @@ def check_late_periods(session, problems):
     print("late periods on this host: %r (%d held)" % (count, len(marks)))
 
 
-DEVICE_READINGS = ("sample_rate", "period_frames", "buffer_frames", "input_latency", "output_latency", "xruns")
+DEVICE_READINGS = ("sample_rate", "input_sample_rate", "period_frames", "buffer_frames", "input_latency", "output_latency", "xruns")
 
 
 def check_device_readings(device, problems):

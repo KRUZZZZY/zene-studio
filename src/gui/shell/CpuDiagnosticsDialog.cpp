@@ -182,6 +182,8 @@ void CpuDiagnosticsDialog::showAudioDevice(const QJsonObject& device, double lat
 		{QStringLiteral("engine_sample_rate"), {tr("Engine sample rate"),
 			QStringLiteral("%1 Hz").arg(engine.value(QStringLiteral("sample_rate_hz")).toDouble(), 0, 'f', 0)}},
 		{QStringLiteral("sample_rate"), {tr("Device sample rate"), readingText(device.value(QStringLiteral("sample_rate")).toObject())}},
+		{QStringLiteral("input_sample_rate"), {tr("Input sample rate"),
+			readingText(device.value(QStringLiteral("input_sample_rate")).toObject())}},
 		{QStringLiteral("engine_period"), {tr("Engine period"), framesText(engine.value(QStringLiteral("period_frames")).toDouble())}},
 		{QStringLiteral("period_frames"), {tr("Device period"), readingText(device.value(QStringLiteral("period_frames")).toObject())}},
 		{QStringLiteral("buffer_frames"), {tr("Device buffer"), readingText(device.value(QStringLiteral("buffer_frames")).toObject())}},

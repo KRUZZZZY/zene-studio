@@ -105,7 +105,10 @@ public:
 	struct DeviceTiming
 	{
 		QString backend;                          //!< the backend's name; empty: the engine's device name
-		std::optional<sample_rate_t> sampleRate;  //!< the rate the device runs at
+		std::optional<sample_rate_t> sampleRate;  //!< the rate the device runs at (its output)
+		//! The rate the INPUT runs at - a separate capture device can negotiate its own (ALSA); input
+		//! latency is converted to time at this rate. Empty: no input open, or not reported.
+		std::optional<sample_rate_t> inputSampleRate;
 		std::optional<f_cnt_t> periodFrames;      //!< frames per device period (one callback / write)
 		std::optional<f_cnt_t> bufferFrames;      //!< frames the device queues in all
 		std::optional<f_cnt_t> inputLatencyFrames;

@@ -69,9 +69,15 @@ QJsonObject engineTiming(const AudioEngine* engine)
 		{QStringLiteral("buffer_frames"), static_cast<double>(engine->framesPerAudioBuffer())}};
 }
 
+//! A reported rate in Hz, or the engine's output rate when the device does not report one.
+double rateOf(const std::optional<sample_rate_t>& reported, const AudioEngine* engine)
+{
+	return static_cast<double>(reported.has_value() ? *reported : engine->outputSampleRate());
+}
+
 bool reportsTiming(const AudioDevice::DeviceTiming& timing)
 {
-	return timing.sampleRate.has_value() || timing.periodFrames.has_value() || timing.bufferFrames.has_value()
+	return timing.sampleRate.has_value() || timing.inputSampleRate.has_value() || timing.periodFrames.has_value() || timing.bufferFrames.has_value()
 		|| timing.inputLatencyFrames.has_value() || timing.outputLatencyFrames.has_value();
 }
 
@@ -88,17 +94,18 @@ QJsonObject audioDeviceReport(AudioEngine* engine)
 {
 	AudioDevice* device = engine->audioDev();
 	const AudioDevice::DeviceTiming timing = device != nullptr ? device->deviceTiming() : AudioDevice::DeviceTiming{};
-	const double rate = timing.sampleRate.has_value() ? static_cast<double>(*timing.sampleRate)
-		: static_cast<double>(engine->outputSampleRate());
+	const double rate = rateOf(timing.sampleRate, engine);
+	const double inputRate = rateOf(timing.inputSampleRate, engine);
 	return QJsonObject{
 		{QStringLiteral("backend"), timing.backend.isEmpty() ? engine->audioDevName() : timing.backend},
 		{QStringLiteral("running"), device != nullptr && device->isRunning()},
 		{QStringLiteral("reports_timing"), reportsTiming(timing)},
 		{QStringLiteral("engine"), engineTiming(engine)},
 		{QStringLiteral("sample_rate"), reading(asDouble(timing.sampleRate), QStringLiteral("Hz"))},
+		{QStringLiteral("input_sample_rate"), reading(asDouble(timing.inputSampleRate), QStringLiteral("Hz"))},
 		{QStringLiteral("period_frames"), reading(asDouble(timing.periodFrames), QStringLiteral("frames"))},
 		{QStringLiteral("buffer_frames"), reading(asDouble(timing.bufferFrames), QStringLiteral("frames"))},
-		{QStringLiteral("input_latency"), latency(timing.inputLatencyFrames, timing.inputLatencyBasis, rate)},
+		{QStringLiteral("input_latency"), latency(timing.inputLatencyFrames, timing.inputLatencyBasis, inputRate)},
 		{QStringLiteral("output_latency"), latency(timing.outputLatencyFrames, timing.outputLatencyBasis, rate)},
 		{QStringLiteral("xruns"), reading(xrunCount(device, timing), QStringLiteral("count"))}};
 }

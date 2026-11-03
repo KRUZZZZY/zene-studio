@@ -290,8 +290,9 @@ void registerTrackLookCommands(ControlRegistry& registry)
 		"'late_periods' counts the render periods that took longer than they last - the engine's deadline misses, not the "
 		"audio device's xruns - and lists the newest (serial, tick, position, playing, took_us, period_us, percent). "
 		"'audio_device' gives the backend, the engine's own rate and period ('engine') and what the device negotiated: "
-		"sample_rate, period_frames, buffer_frames, input_latency and output_latency (frames, ms and the basis they are "
-		"measured from) and xruns, the device's own underruns / xrun notifications; each is {available, value, unit} and a "
+		"sample_rate (output), input_sample_rate (the input's own - a separate ALSA capture device can differ), "
+		"period_frames, buffer_frames, input_latency and output_latency (frames, ms at the input's / output's rate, and the "
+		"basis they are measured from) and xruns, the device's own underruns / xrun notifications; each is {available, value, unit} and a "
 		"value the backend does not report (or no audio device) is available:false, never 0. Read-only."),
 		objectSchema({}), false, cpuLoad);
 }

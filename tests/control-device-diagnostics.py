@@ -6,7 +6,7 @@ Drives the REAL binary on the JACK backend against a private `jackd -d dummy` se
 through the socket, the reply an agent reads:
 
   1. audio_device names the JACK backend, running, reporting timing;
-  2. the device's negotiated sample_rate is the server's 48000 Hz and its period_frames the
+  2. the device's negotiated sample_rate (and input_sample_rate) is the server's 48000 Hz and its period_frames the
      server's 256, each {available: true, value, unit}; the engine's own block sits beside
      them (its output rate follows the device);
   3. buffer_frames is available:false with no value - JACK does not say how many periods it
@@ -43,6 +43,9 @@ def reading(device, key):
 
 def check_rates(device, problems):
     rate, period = reading(device, "sample_rate"), reading(device, "period_frames")
+    input_rate = reading(device, "input_sample_rate")
+    problems.require(input_rate.get("available") is True and input_rate.get("value") == 48000 and input_rate.get("unit") == "Hz",
+                     "the input rate is the server's 48000 Hz: %r" % input_rate)
     problems.require(rate.get("available") is True and rate.get("value") == 48000 and rate.get("unit") == "Hz",
                      "the device rate is the server's 48000 Hz: %r" % rate)
     problems.require(period.get("available") is True and period.get("value") == 256 and period.get("unit") == "frames",

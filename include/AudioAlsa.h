@@ -146,6 +146,9 @@ private:
 	snd_pcm_t * m_captureHandle;
 	snd_pcm_hw_params_t * m_captureHwParams;
 	snd_pcm_uframes_t m_capturePeriodSize;
+	//! Q050-074.2: the rate the capture PCM granted - its own, which a separately selected capture
+	//! interface can negotiate apart from playback's; 0 while no capture is open.
+	unsigned int m_captureGrantedRate = 0;
 	//! Device channels the capture PCM granted (the plan's count, or what the
 	//! driver accepted instead).
 	int m_captureChannels;

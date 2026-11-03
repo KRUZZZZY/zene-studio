@@ -171,7 +171,60 @@ private slots:
 		dialog->close();
 	}
 
+	//! Q050-074.2 rework: input and output at different rates - the window's input-rate row and input-latency
+	//! milliseconds are the command's, at the INPUT rate, and the output side keeps the output rate.
+	void theDeviceTableShowsInputAndOutputAtTheirOwnRates()
+	{
+		AudioEngine* engine = Engine::audioEngine();
+		engine->storeAudioDevice();
+		engine->setAudioDevice(new SplitRateDevice(engine), false);
+		TransportReadouts readouts;
+		readouts.load()->findChild<QAction*>(QStringLiteral("cpuDiagnosticsAction"))->trigger();
+		auto* dialog = readouts.findChild<CpuDiagnosticsDialog*>(QStringLiteral("cpuDiagnosticsDialog"));
+		QVERIFY(dialog != nullptr && dialog->isVisible());
+		dialog->refresh();
+
+		const ControlResult load = ControlRegistry::instance()->invoke(QStringLiteral("mixer.cpu_load"));
+		QVERIFY(load.ok);
+		const QJsonObject device = load.result.value(QStringLiteral("audio_device")).toObject();
+		QCOMPARE(device.value(QStringLiteral("sample_rate")).toObject().value(QStringLiteral("value")).toDouble(), 44100.0);
+		QCOMPARE(device.value(QStringLiteral("input_sample_rate")).toObject().value(QStringLiteral("value")).toDouble(), 48000.0);
+		QCOMPARE(device.value(QStringLiteral("input_latency")).toObject().value(QStringLiteral("ms")).toDouble(), 10.0);
+		QCOMPARE(device.value(QStringLiteral("output_latency")).toObject().value(QStringLiteral("ms")).toDouble(), 20.0);
+
+		QTableWidget* table = dialog->audioDevice();
+		QCOMPARE(cell(table, QStringLiteral("sample_rate")), QStringLiteral("44100 Hz"));
+		QCOMPARE(cell(table, QStringLiteral("input_sample_rate")), QStringLiteral("48000 Hz"));
+		QCOMPARE(cell(table, QStringLiteral("input_latency")), QStringLiteral("480 frames (10.00 ms, test_input)"));
+		QCOMPARE(cell(table, QStringLiteral("output_latency")), QStringLiteral("882 frames (20.00 ms, test_output)"));
+		dialog->close();
+		engine->restoreAudioDevice();
+	}
+
 private:
+	//! A device whose input runs at 48 kHz and output at 44.1 kHz - a separate capture interface's case.
+	class SplitRateDevice : public AudioDevice
+	{
+	public:
+		explicit SplitRateDevice(AudioEngine* engine) : AudioDevice(DEFAULT_CHANNELS, engine) {}
+		DeviceTiming deviceTiming() const override
+		{
+			DeviceTiming timing;
+			timing.backend = QStringLiteral("split-rate test device");
+			timing.sampleRate = 44100;
+			timing.inputSampleRate = 48000;
+			timing.inputLatencyFrames = 480;
+			timing.inputLatencyBasis = QStringLiteral("test_input");
+			timing.outputLatencyFrames = 882;
+			timing.outputLatencyBasis = QStringLiteral("test_output");
+			return timing;
+		}
+
+	private:
+		void startProcessingImpl() override {}
+		void stopProcessingImpl() override {}
+	};
+
 	static QString cell(QTableWidget* table, const QString& key)
 	{
 		for (int row = 0; row < table->rowCount(); ++row)
@@ -208,6 +261,7 @@ private:
 			QVERIFY2(text.startsWith(number), qPrintable(QStringLiteral("%1: '%2' vs %3").arg(QLatin1String(key), text, number)));
 		}
 		QCOMPARE(cell(table, QStringLiteral("input_latency")), QStringLiteral("unavailable"));  // no capture open on either
+		QCOMPARE(cell(table, QStringLiteral("input_sample_rate")), QStringLiteral("unavailable"));
 	}
 };
 

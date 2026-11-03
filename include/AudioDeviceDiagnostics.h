@@ -36,8 +36,8 @@ namespace lmms
 class AudioEngine;
 
 /*! Q050-074.2 (WF-104, R-performance-78): mixer.cpu_load's 'audio_device' - the backend, the engine's
- *  own rate and period, and what the device negotiated (rate, period and buffer frames, input/output
- *  latency with the basis of each) beside the device's own xrun count. Every device reading is
+ *  own rate and period, and what the device negotiated (output and input rate, period and buffer frames, input/output
+ *  latency with the basis of each - input latency in ms at the INPUT rate) beside the device's own xrun count. Every device reading is
  *  {available, value, unit}; a value the backend does not report is available:false with no value,
  *  never a zero. The engine's late periods stay in mixer.cpu_load's 'late_periods': a late period is
  *  the engine missing its deadline, an xrun is the device running dry - two different facts.
