@@ -37,12 +37,25 @@
  *    that kept the parameters but lost the chunk is caught;
  *  - its editor records the parent window it was handed and reports a fixed
  *    240x120 rectangle; it draws nothing. Whether it is open is reported in the
- *    chunk (editor=1), never restored from it.
+ *    chunk (editor=1), never restored from it;
+ *  - with ZENE_VST2_FIXTURE_STALL_MS set when it is instantiated, every process
+ *    call sleeps that long: a stand-in for a slow plug-in or a stalled bridge,
+ *    so a test can show the host's audio thread does not wait for it.
  */
+
+#ifndef _WIN32
+#define _POSIX_C_SOURCE 199309L  /* nanosleep */
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <time.h>
+#endif
 
 #include "zene_vst2_abi.h"
 
@@ -74,6 +87,7 @@ typedef struct
 	void* editorParent;
 	ZvRect rect;
 	char chunk[128];
+	long stallMs;
 } Instance;
 
 static Instance* instanceOf(ZvAEffect* effect) { return (Instance*)effect->object; }
@@ -111,9 +125,23 @@ static void applyEvent(Instance* self, const PendingEvent* event)
 	else if (self->heldKeys > 0) { --self->heldKeys; }
 }
 
+static void stall(long ms)
+{
+	if (ms <= 0) { return; }
+#ifdef _WIN32
+	Sleep((DWORD)ms);
+#else
+	struct timespec pause;
+	pause.tv_sec = ms / 1000;
+	pause.tv_nsec = (ms % 1000) * 1000000L;
+	nanosleep(&pause, NULL);
+#endif
+}
+
 static void ZENE_VST_CALL processReplacing(ZvAEffect* effect, float** inputs, float** outputs, int32_t frames)
 {
 	Instance* self = instanceOf(effect);
+	stall(self->stallMs);
 	int next = 0;
 	(void)inputs;
 	for (int32_t f = 0; f < frames; ++f)
@@ -281,6 +309,7 @@ ZENE_VST_EXPORT ZvAEffect* VSTPluginMain(ZvHostCallback host)
 	Instance* self = (Instance*)calloc(1, sizeof(Instance));
 	if (self == NULL) { return NULL; }
 	self->host = host;
+	self->stallMs = getenv("ZENE_VST2_FIXTURE_STALL_MS") != NULL ? atol(getenv("ZENE_VST2_FIXTURE_STALL_MS")) : 0;
 	self->params[ParamLevel] = 0.5f;
 	self->params[ParamTone] = 0.25f;
 	self->effect.magic = zvMagic;

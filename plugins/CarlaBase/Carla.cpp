@@ -151,7 +151,7 @@ static const char* host_ui_save_file(NativeHostHandle, bool isDir, const char* t
 
 
 CarlaInstrument::CarlaInstrument(InstrumentTrack* const instrumentTrack, const Descriptor* const descriptor, const bool isPatchbay,
-    const Descriptor::SubPluginFeatures::Key* key)
+    const Descriptor::SubPluginFeatures::Key* key, bool playNow)
     : Instrument(instrumentTrack, descriptor, key, Flag::IsSingleStreamed | Flag::IsMidiBased | Flag::IsNotBendable),
       kIsPatchbay(isPatchbay),
       fHandle(nullptr),
@@ -195,8 +195,10 @@ CarlaInstrument::CarlaInstrument(InstrumentTrack* const instrumentTrack, const D
         fDescriptor->activate(fHandle);
 
     // we need a play-handle which cares for calling play()
-	auto iph = new InstrumentPlayHandle(this, instrumentTrack);
-	Engine::audioEngine()->addPlayHandle( iph );
+    if (playNow)
+    {
+        startPlaying();
+    }
 
 #if CARLA_VERSION_HEX >= CARLA_MIN_PARAM_VERSION
     // text filter completion
@@ -217,6 +219,12 @@ CarlaInstrument::CarlaInstrument(InstrumentTrack* const instrumentTrack, const D
 #endif
 
     connect(Engine::audioEngine(), SIGNAL(sampleRateChanged()), this, SLOT(sampleRateChanged()));
+}
+
+void CarlaInstrument::startPlaying()
+{
+	auto iph = new InstrumentPlayHandle(this, instrumentTrack());
+	Engine::audioEngine()->addPlayHandle( iph );
 }
 
 CarlaInstrument::~CarlaInstrument()

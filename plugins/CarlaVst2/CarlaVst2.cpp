@@ -34,6 +34,8 @@
  * names the binary (AGENTS.md rule 8).
  */
 
+#include <algorithm>
+#include <limits>
 #include <QDir>
 #include <QDomElement>
 #include <QFileInfo>
@@ -42,6 +44,9 @@
 #include "CarlaVst2Discovery.h"
 #include "CarlaVst2Instrument.h"
 #include "InstrumentTrack.h"
+#include "Song.h"
+#include "Engine.h"
+#include "AudioEngine.h"
 #include "PluginVendors.h"
 #include "embed.h"
 #include "plugin_export.h"
@@ -134,13 +139,23 @@ PLUGIN_EXPORT Plugin* lmms_plugin_main(Model* model, void* data)
 
 CarlaVst2Instrument::CarlaVst2Instrument(InstrumentTrack* track, const Descriptor* descriptor,
 	const Descriptor::SubPluginFeatures::Key& key) :
-	CarlaInstrument(track, descriptor, false, &key),
-	m_pluginKey(key)
+	CarlaInstrument(track, descriptor, false, &key, false),
+	m_pluginKey(key),
+	m_renderer([this](std::span<SampleFrame> out) { renderPeriod(out); })
 {
 	setHideUnusedParameters(true);
 	QString error;
 	if (!loadPlugin(&error)) { m_loadError = error; }
 	reloadParameters();
+	// Automation writes these models on the render thread: there they only mark a change, which idle() emits
+	// on this thread, so no parameter signal - and no Carla UI callback behind it - runs on the render thread.
+	m_sentValues.assign(paramModels().size(), std::numeric_limits<float>::quiet_NaN());
+	for (CarlaParamFloatModel* model : paramModels()) { model->setDeferChangeSignalOnRenderThread(true); }
+	// Carla runs on the render worker, two periods ahead of the audio thread; the track compensates for that.
+	const f_cnt_t ahead = 2 * carlavst2::Renderer::periodFrames();
+	m_renderer.start(ahead);
+	reportLatency(static_cast<int>(m_renderer.latencyFrames()));
+	startPlaying();
 	// Carla's non-realtime idle on the GUI thread: an embedded editor's effEditIdle and the
 	// deferred deletion of a replaced plug-in run here, never on the audio thread.
 	m_idleTimer = new QTimer(this);
@@ -151,6 +166,11 @@ CarlaVst2Instrument::CarlaVst2Instrument(InstrumentTrack* track, const Descripto
 
 CarlaVst2Instrument::~CarlaVst2Instrument()
 {
+	// Off the engine first: from here on the audio thread must not reach this object (nor, while it is torn
+	// down, CarlaInstrument::playImpl). Then the worker, before the rack goes in ~CarlaInstrument.
+	Engine::audioEngine()->removePlayHandlesOfTypes(instrumentTrack(),
+		PlayHandle::Type::NotePlayHandle | PlayHandle::Type::InstrumentPlayHandle);
+	m_renderer.stop();
 	m_editor.close();
 	if (m_hostHandle != nullptr)
 	{
@@ -271,8 +291,12 @@ bool CarlaVst2Instrument::addToRack(const QString& file, CarlaBackend::BinaryTyp
 void CarlaVst2Instrument::loadSettings(const QDomElement& elem)
 {
 	// Carla's state (a project with this one plug-in: binary, parameters, chunk) replaces what the
-	// key loaded. A preset or project saved by this host always carries one.
+	// key loaded. A preset or project saved by this host always carries one. The worker holds still meanwhile:
+	// Carla replaces its plug-in, and no parameter is pushed into one that is going away.
+	m_renderer.pause();
 	CarlaInstrument::loadSettings(elem);
+	std::fill(m_sentValues.begin(), m_sentValues.end(), std::numeric_limits<float>::quiet_NaN());
+	m_renderer.resume();
 	if (m_hostHandle != nullptr && m_api.pluginCount(m_hostHandle) == 0)
 	{
 		m_loadError = QStringLiteral("Carla could not restore the saved VST2 plug-in: %1")
@@ -280,8 +304,37 @@ void CarlaVst2Instrument::loadSettings(const QDomElement& elem)
 	}
 }
 
+void CarlaVst2Instrument::playImpl(std::span<SampleFrame> out)
+{
+	// While a project is exported there is no realtime deadline: wait for the worker rather than drop a period.
+	const Song* song = Engine::getSong();
+	m_renderer.read(out, song != nullptr && song->isExporting());
+}
+
+void CarlaVst2Instrument::renderPeriod(std::span<SampleFrame> out)
+{
+	pushParameters();
+	CarlaInstrument::playImpl(out);
+}
+
+void CarlaVst2Instrument::pushParameters()
+{
+	const auto& models = paramModels();
+	for (std::size_t i = 0; i < models.size() && i < m_sentValues.size(); ++i)
+	{
+		CarlaParamFloatModel* model = models[i];
+		if (!model->enabled() || model->isOutput()) { continue; }
+		const float value = model->value();
+		if (value == m_sentValues[i]) { continue; }
+		m_sentValues[i] = value;
+		nativeDescriptor()->set_parameter_value(nativeHandle(), static_cast<uint32_t>(i), value);
+	}
+}
+
 void CarlaVst2Instrument::idle()
 {
+	// Emits, on this thread, the parameter changes automation made on the render thread.
+	for (CarlaParamFloatModel* model : paramModels()) { model->flushDeferredChange(); }
 	if (nativeHandle() != nullptr && nativeDescriptor()->ui_idle != nullptr) { nativeDescriptor()->ui_idle(nativeHandle()); }
 }
 

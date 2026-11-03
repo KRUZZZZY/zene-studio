@@ -1030,6 +1030,8 @@ plugins/CarlaVst2/CarlaVst2.cpp
 plugins/CarlaVst2/CarlaVst2Discovery.cpp
 plugins/CarlaVst2/CarlaVst2Discovery.h
 plugins/CarlaVst2/CarlaVst2Instrument.h
+plugins/CarlaVst2/CarlaVst2Renderer.cpp
+plugins/CarlaVst2/CarlaVst2Renderer.h
 plugins/ClapEffect/ClapBusMap.cpp
 plugins/ClapEffect/ClapBusMap.h
 plugins/ClapEffect/ClapEffect.cpp
@@ -3158,6 +3160,7 @@ tests/src/gui/CPULoadWidgetTest.cpp
 tests/src/gui/CanvasKeyboardTest.cpp
 tests/src/gui/CaptureMidiMenuTest.cpp
 tests/src/gui/CarlaVst2HostingTest.cpp
+tests/src/gui/CarlaVst2TestSupport.h
 tests/src/gui/ChainPresetMenuTest.cpp
 tests/src/gui/ChordProgressionPanelTest.cpp
 tests/src/gui/ClipEditsMenuTest.cpp

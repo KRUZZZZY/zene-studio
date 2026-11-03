@@ -45,197 +45,13 @@
 #include <QtTest>
 
 #include <QApplication>
-#include <QDomDocument>
 #include <QElapsedTimer>
-#include <QFileInfo>
-#include <QJsonArray>
-#include <QJsonObject>
-#include <QMenu>
 #include <QProcess>
-#include <QRegularExpression>
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QToolButton>
 
-#include <algorithm>
-#include <cmath>
-#include <functional>
-
-#include "AudioDevice.h"
-#include "AudioEngine.h"
-#include "ConfigManager.h"
-#include "ControlRegistry.h"
-#include "ControlVocabulary.h"
-#include "DevicePanel.h"
-#include "DevicePicker.h"
-#include "Engine.h"
-#include "Instrument.h"
-#include "InstrumentTrack.h"
-#include "MenuTestSupport.h"
-#include "MidiClip.h"
-#include "MidiPlayback.h"
-#include "Note.h"
-#include "NotePlayHandle.h"
-#include "PluginFactory.h"
-#include "PluginView.h"
-#include "SampleFrame.h"
-#include "ShellSelection.h"
-#include "Song.h"
-
-#ifndef CARLA_VST2_NATIVE_FIXTURE_DIR
-#define CARLA_VST2_NATIVE_FIXTURE_DIR ""
-#endif
-#ifndef CARLA_VST2_WINE_FIXTURE_DIR
-#define CARLA_VST2_WINE_FIXTURE_DIR ""
-#endif
-#ifndef ZENE_CARLA_RUNTIME_DIR
-#define ZENE_CARLA_RUNTIME_DIR ""
-#endif
-#ifndef ZENE_TEST_WINEPREFIX
-#define ZENE_TEST_WINEPREFIX ""
-#endif
-
-using namespace lmms;
-using namespace lmms::gui;
-
-namespace
-{
-
-const QString NativeFile = QStringLiteral("ZeneVst2TestInstrument.so");
-const QString WineFile = QStringLiteral("ZeneVst2TestInstrument.dll");
-constexpr float DefaultLevel = 0.5f;
-constexpr float DefaultTone = 0.25f;
-constexpr float Tolerance = 1e-4f;
-//! How long a render may wait for sound: an in-process plug-in sounds in its first period; a bridged one only once
-//! its Wine process is up.
-constexpr int NativeRenderMs = 2000;
-constexpr int BridgedRenderMs = 20000;
-
-ControlResult run(const QString& id, const QJsonObject& args = {})
-{
-	return ControlRegistry::instance()->invoke(id, args);
-}
-
-QString nativeFixture() { return QDir(QStringLiteral(CARLA_VST2_NATIVE_FIXTURE_DIR)).filePath(NativeFile); }
-QString wineFixture() { return QDir(QStringLiteral(CARLA_VST2_WINE_FIXTURE_DIR)).filePath(WineFile); }
-
-//! plugin.list's vst2 entry for the binary named @a fileName, or an empty object.
-QJsonObject vst2Device(const QString& fileName)
-{
-	const ControlResult listed = run(QStringLiteral("plugin.list"), {{QStringLiteral("format"), QStringLiteral("vst2")}});
-	for (const QJsonValue& value : listed.result.value(QStringLiteral("devices")).toArray())
-	{
-		if (QFileInfo(value.toObject().value(QStringLiteral("file")).toString()).fileName() == fileName) { return value.toObject(); }
-	}
-	return {};
-}
-
-InstrumentTrack* newTrack()
-{
-	auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
-	QCoreApplication::processEvents();
-	return track;
-}
-
-QJsonObject address(InstrumentTrack* track)
-{
-	return {{QStringLiteral("target"), control::trackIdOf(track)}, {QStringLiteral("plugin"), QStringLiteral("inst")}};
-}
-
-//! The fixture's chunk as Carla saved it in the instrument's state ("ZNV2 level=... editor=..."), or empty.
-QString chunkOf(Instrument* instrument)
-{
-	QDomDocument doc;
-	QDomElement parent = doc.createElement(QStringLiteral("instrument"));
-	const QDomElement state = instrument->saveState(doc, parent);
-	const QDomNodeList chunks = state.elementsByTagName(QStringLiteral("Chunk"));
-	if (chunks.isEmpty()) { return {}; }
-	const QByteArray decoded = QByteArray::fromBase64(chunks.item(0).toElement().text().simplified().toLatin1());
-	return QString::fromLatin1(decoded).trimmed().remove(QChar(0));
-}
-
-//! The integer the chunk carries for @a field ("noteons", "editor"), or -1.
-int chunkField(Instrument* instrument, const QString& field)
-{
-	const QRegularExpression pattern(field + QStringLiteral("=(\\d+)"));
-	const QRegularExpressionMatch match = pattern.match(chunkOf(instrument));
-	return match.hasMatch() ? match.captured(1).toInt() : -1;
-}
-
-double paramValue(InstrumentTrack* track, int index)
-{
-	QJsonObject args = address(track);
-	args.insert(QStringLiteral("index"), index);
-	const ControlResult got = run(QStringLiteral("plugin.param_get"), args);
-	return got.result.value(QStringLiteral("parameter")).toObject().value(QStringLiteral("value")).toDouble(-1.0);
-}
-
-//! What the engine rendered while the song played one long note on @a track: the last sounding
-//! frame's (left, right). A bridged plug-in may be silent for its first periods while Wine starts.
-struct Rendered
-{
-	bool sounded = false;
-	float left = 0.f;
-	float right = 0.f;
-};
-
-Rendered renderNote(InstrumentTrack* track, int timeoutMs)
-{
-	auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
-	clip->addNote(Note(TimePos(64 * DefaultTicksPerBar), TimePos(0), 60, 100), false);
-	Song* song = Engine::getSong();
-	song->setPlayPos(0, Song::PlayMode::Song);
-	MidiPlayback::instance().stopped();
-	song->playSong();
-	Rendered out;
-	int soundingPeriods = 0;
-	QElapsedTimer elapsed;
-	elapsed.start();
-	while (elapsed.elapsed() < timeoutMs && soundingPeriods < 4)
-	{
-		const std::span<const SampleFrame> frames = Engine::audioEngine()->renderNextPeriod();
-		const SampleFrame& last = frames.back();
-		if (std::abs(last.left()) > Tolerance)
-		{
-			out = Rendered{true, last.left(), last.right()};
-			++soundingPeriods;
-		}
-		QCoreApplication::processEvents();
-		QTest::qWait(2);
-	}
-	song->stop();
-	for (int period = 0; period < 8; ++period) { Engine::audioEngine()->renderNextPeriod(); }
-	delete clip;
-	return out;
-}
-
-//! Runs @a handle on the modal dialog the next action opens, once it is up (it is shown inside exec()).
-void onceModal(const std::function<void(QWidget*)>& handle, int triesLeft = 100)
-{
-	QTimer::singleShot(10, [handle, triesLeft] {
-		QWidget* modal = QApplication::activeModalWidget();
-		if (modal == nullptr && triesLeft > 0) { onceModal(handle, triesLeft - 1); return; }
-		handle(modal);
-	});
-}
-
-//! The instrument's device card's action menu (Device panel, the track selected), filled as it opens.
-QMenu* cardMenu(DevicePanel* panel, InstrumentTrack* track)
-{
-	ShellSelection::instance()->setTrack(track);
-	panel->rebuild();
-	QCoreApplication::processEvents();
-	for (DeviceCard* card : panel->findChildren<DeviceCard*>())
-	{
-		auto* actions = card->findChild<QToolButton*>(QStringLiteral("deviceActions"));
-		if (card->spec().instrumentTrack != track || actions == nullptr || actions->menu() == nullptr) { continue; }
-		emit actions->menu()->aboutToShow();
-		return actions->menu();
-	}
-	return nullptr;
-}
-
-} // namespace
+#include "CarlaVst2TestSupport.h"
 
 class CarlaVst2HostingTest : public QObject
 {
@@ -376,21 +192,44 @@ private slots:
 		delete track;
 	}
 
-	//! AC2: automation written on a VST2 parameter (automation.add_point) drives the plug-in during playback.
+	void automationDrivesAVst2Parameter_data()
+	{
+		QTest::addColumn<QString>("file");
+		QTest::newRow("native") << NativeFile;
+		QTest::newRow("wine-bridged") << WineFile;
+	}
+
+	//! AC2 + realtime (review r1): automation written on a VST2 parameter (automation.add_point) drives the plug-in
+	//! during playback, natively and through the Wine bridge, and the render thread never emits the parameter's
+	//! change signal - the only path into Carla's UI callbacks (for this fixture, which has its own editor, the
+	//! bridge's mutex-taking uiParameterChange). The change is emitted afterwards on this (the GUI) thread.
 	void automationDrivesAVst2Parameter()
 	{
+		QFETCH(QString, file);
 		if (const QString why = missingRuntime(); !why.isEmpty()) { QSKIP(qPrintable(why)); }
-		InstrumentTrack* track = loadOnNewTrack(NativeFile);
+		const bool bridged = file == WineFile;
+		if (bridged && !wineAvailable()) { QSKIP("no Wine, no Windows PE fixture or no Carla Wine bridge in the runtime"); }
+		InstrumentTrack* track = loadOnNewTrack(file);
 		QVERIFY(track != nullptr);
 		QJsonObject point{{QStringLiteral("track"), control::trackIdOf(track)}, {QStringLiteral("parameter"), QStringLiteral("inst/1")},
 			{QStringLiteral("ticks"), 0}, {QStringLiteral("value"), 0.125}};
 		const ControlResult added = run(QStringLiteral("automation.add_point"), point);
 		QVERIFY2(added.ok, qPrintable(added.errorMessage));
-		const Rendered sound = renderNote(track, NativeRenderMs);
+		AutomatableModel* tone = track->instrument()->parameterModel(1);
+		QVERIFY(tone != nullptr);
+		int onRenderThread = 0;
+		int elsewhere = 0;
+		const QMetaObject::Connection probe = connect(tone, &Model::dataChanged, this, [&onRenderThread, &elsewhere] {
+			++(Engine::audioEngine()->isRenderThread() ? onRenderThread : elsewhere);
+		}, Qt::DirectConnection);
+		const Rendered sound = renderNote(track, bridged ? BridgedRenderMs : NativeRenderMs);
 		QVERIFY(sound.sounded);
 		// Tone (the right channel) follows the automation; Level stays.
 		QVERIFY2(std::abs(sound.right - sound.left * (0.125f / DefaultLevel)) < 1e-3f,
 			qPrintable(QStringLiteral("%1 %2").arg(sound.left).arg(sound.right)));
+		QCOMPARE(onRenderThread, 0);
+		QTRY_VERIFY_WITH_TIMEOUT(elsewhere > 0, 2000);  // the deferred change, emitted by the instrument's GUI timer
+		disconnect(probe);
 		// The automation lives on a track of its own: it goes with the instrument, so no later case renders a
 		// clip whose parameter is gone.
 		const TrackContainer::TrackList tracks = Engine::getSong()->tracks();
@@ -399,6 +238,44 @@ private slots:
 			if (other->type() == Track::Type::Automation) { delete other; }
 		}
 		delete track;
+	}
+
+	void theAudioThreadNeverWaitsForThePlugin_data() { automationDrivesAVst2Parameter_data(); }
+
+	//! Realtime (review r1): the engine's render period never waits for Carla - not for a native plug-in, and not
+	//! for the Wine bridge, whose process call waits on the bridge's reply. The fixture is made to stall 800 ms in
+	//! every process call (ZENE_VST2_FIXTURE_STALL_MS); while a note plays, every period of the engine still
+	//! renders in a fraction of that.
+	void theAudioThreadNeverWaitsForThePlugin()
+	{
+		QFETCH(QString, file);
+		if (const QString why = missingRuntime(); !why.isEmpty()) { QSKIP(qPrintable(why)); }
+		if (file == WineFile && !wineAvailable()) { QSKIP("no Wine, no Windows PE fixture or no Carla Wine bridge in the runtime"); }
+		qputenv("ZENE_VST2_FIXTURE_STALL_MS", QByteArray::number(StallMs));
+		InstrumentTrack* track = loadOnNewTrack(file);
+		qunsetenv("ZENE_VST2_FIXTURE_STALL_MS");
+		QVERIFY(track != nullptr);
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		clip->addNote(Note(TimePos(16 * DefaultTicksPerBar), TimePos(0), 60, 100), false);
+		Song* song = Engine::getSong();
+		song->setPlayPos(0, Song::PlayMode::Song);
+		MidiPlayback::instance().stopped();
+		song->playSong();
+		qint64 worst = 0;
+		for (int period = 0; period < 12; ++period)
+		{
+			QElapsedTimer timer;
+			timer.start();
+			Engine::audioEngine()->renderNextPeriod();
+			worst = std::max(worst, timer.elapsed());
+			QTest::qWait(5);
+		}
+		song->stop();
+		for (int period = 0; period < 8; ++period) { Engine::audioEngine()->renderNextPeriod(); }
+		delete clip;
+		delete track;
+		qInfo("worst render period with the plug-in stalling %lld ms per process call: %lld ms", StallMs, worst);
+		QVERIFY2(worst < StallMs / 2, qPrintable(QStringLiteral("a render period took %1 ms").arg(worst)));
 	}
 
 	//! AC2: the plug-in's own editor, from the agent's plugin.editor_open/close and from the instrument view's

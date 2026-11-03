@@ -32,6 +32,7 @@
 
 #include "Carla.h"
 #include "CarlaVst2Discovery.h"
+#include "CarlaVst2Renderer.h"
 #include "PluginNativeEditor.h"
 
 class QTimer;
@@ -66,6 +67,13 @@ public:
 
 	void loadSettings(const QDomElement& elem) override;
 
+	//! Audio thread: the frames the render worker finished (CarlaVst2Renderer). Never calls Carla.
+	void playImpl(std::span<SampleFrame> out) override;
+
+	//! Periods the audio thread found not ready (rendered as silence), and periods the worker rendered.
+	std::uint64_t renderUnderruns() const { return m_renderer.underruns(); }
+	std::uint64_t renderedPeriods() const { return m_renderer.renderedPeriods(); }
+
 	bool openNativeEditor(QString* error) override;
 	void closeNativeEditor() override;
 	bool nativeEditorOpen() const override;
@@ -99,6 +107,11 @@ private:
 		int value3, float valuef, const char* valueStr);
 
 	bool isBridged() const;
+	//! Render worker, before each period: hands every parameter value that changed since the last period to Carla
+	//! (automation written on the render thread reaches the plug-in here, never through a signal there).
+	void pushParameters();
+	//! The worker's period: parameters, then Carla's process with the queued MIDI (CarlaInstrument::playImpl).
+	void renderPeriod(std::span<SampleFrame> out);
 	bool openHostApi(QString* error);
 	bool loadPlugin(QString* error);
 	bool addToRack(const QString& file, CarlaBackend::BinaryType type, QString* error);
@@ -114,6 +127,9 @@ private:
 	bool m_bridgedEditorShown = false;
 	std::atomic<int> m_editorWidth{0};
 	std::atomic<int> m_editorHeight{0};
+	//! The value last handed to Carla per parameter; read and written by the render worker only.
+	std::vector<float> m_sentValues;
+	carlavst2::Renderer m_renderer;
 };
 
 } // namespace lmms

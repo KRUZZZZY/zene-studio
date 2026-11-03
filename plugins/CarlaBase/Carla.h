@@ -175,8 +175,10 @@ public:
 
     //! Q050-481.1: @a key is the sub-plugin key a single-plug-in host (plugins/CarlaVst2) was created
     //! with; it becomes Plugin::key(), which the project stores. The Rack and Patchbay pass none.
+    //! With @a playNow false the subclass registers the play handle itself (startPlaying()) once it is fully
+    //! constructed, so the audio thread never reaches a half-built instrument.
     CarlaInstrument(InstrumentTrack* const instrumentTrack, const Descriptor* const descriptor, const bool isPatchbay,
-        const Descriptor::SubPluginFeatures::Key* key = nullptr);
+        const Descriptor::SubPluginFeatures::Key* key = nullptr, bool playNow = true);
     ~CarlaInstrument() override;
 
     //! Q050-481.1: true for a subclass that hosts exactly one plug-in and opens that plug-in's own
@@ -214,6 +216,10 @@ protected:
     //! When on, the Rack's unused parameter slots (and disabled ones) carry no display name, so
     //! Instrument::parameterCount() and plugin.param_* see only the hosted plug-in's parameters.
     void setHideUnusedParameters(bool hide) { m_hideUnusedParams = hide; }
+    //! Q050-481.1: registers the InstrumentPlayHandle that calls play() every period (see the constructor).
+    void startPlaying();
+    //! Q050-481.1: every parameter model of the Rack, in Carla's index order.
+    const std::vector<CarlaParamFloatModel*>& paramModels() const { return m_paramModels; }
 
 private slots:
     void sampleRateChanged();
