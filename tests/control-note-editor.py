@@ -318,49 +318,71 @@ def automated_points(session, track, parameter):
     return [(p["ticks"], p["value"]) for p in (entry.get("automation") or {}).get("points") or []], entry
 
 
-def check_controller_conversion(session, recorder):
+def conversion_setup(session, recorder):
+    """A track with a real instrument, a clip with a CC lane, and a wide-range parameter to convert onto."""
     devices = session.result("plugin.list", {"kind": "instrument", "loadable_only": True}).get("devices") or []
     device = next((d.get("id") for d in devices if d.get("name") == "tripleoscillator"), None)
     recorder.check("a real instrument is available for the conversion", device is not None, "devices=%r" % devices[:3])
     if device is None:
-        return
+        return None
     track, clip = new_clip(session, "Convert")
     session.result("plugin.load", {"target": track, "device": device})
     parameters = session.result("automation.get_state", {"track": track})["tracks"][0].get("parameters") or []
     wide = [p for p in parameters if p["max"] - p["min"] >= 100][0]
-    parameter, low, high = wide["id"], wide["min"], wide["max"]
     ramp = [{"tick": 0, "value": 0}, {"tick": 96, "value": 127}]
     session.result("clip.controllers_set", {"clip": clip, "lane": "cc:1", "points": ramp})
+    return {"track": track, "clip": clip, "parameter": wide["id"], "low": wide["min"], "high": wide["max"], "ramp": ramp}
 
-    ambiguous = session.call("clip.controllers_to_automation", {"clip": clip, "lane": "cc:1"})
+
+def conversion_lanes(session, clip):
+    return {l["lane"]: l["points"] for l in session.result("clip.controllers_get", {"clip": clip}).get("lanes")}
+
+
+def check_conversion_refusals(session, recorder, c):
+    ambiguous = session.call("clip.controllers_to_automation", {"clip": c["clip"], "lane": "cc:1"})
     recorder.check("an unnamed parameter on a many-parameter track is refused, typed",
                    (ambiguous.get("error") or {}).get("kind") == "invalid_args", "reply=%r" % ambiguous)
-    bend = session.call("clip.controllers_to_automation", {"clip": clip, "lane": "pitchbend", "parameter": parameter})
+    bend = session.call("clip.controllers_to_automation", {"clip": c["clip"], "lane": "pitchbend", "parameter": c["parameter"]})
     recorder.check("a pitch-bend lane is refused, typed", (bend.get("error") or {}).get("kind") == "refused", "reply=%r" % bend)
-    points, _ = automated_points(session, track, parameter)
+    points, _ = automated_points(session, c["track"], c["parameter"])
     recorder.check("the refusals changed nothing", points == [], "points=%r" % points)
 
-    done = session.result("clip.controllers_to_automation", {"clip": clip, "lane": "cc:1", "parameter": parameter})
-    points, entry = automated_points(session, track, parameter)
+
+def check_conversion_to_automation(session, recorder, c):
+    args = {"clip": c["clip"], "lane": "cc:1", "parameter": c["parameter"]}
+    done = session.result("clip.controllers_to_automation", args)
+    points, entry = automated_points(session, c["track"], c["parameter"])
+    span = c["high"] - c["low"]
     recorder.check("to_automation writes the parameter's automation, read back through automation.get_state",
                    done.get("converted") == 2 and [t for t, _ in points] == [0, 96] and entry.get("automated") is True
-                   and abs(points[0][1] - low) < 1e-3 * (high - low) and abs(points[1][1] - high) < 1e-3 * (high - low),
-                   "points=%r low=%r high=%r" % (points, low, high))
-    lanes = session.result("clip.controllers_get", {"clip": clip}).get("lanes")
-    recorder.check("the CC lane is kept (a copy)", [l.get("points") for l in lanes] == [ramp], "lanes=%r" % lanes)
+                   and abs(points[0][1] - c["low"]) < 1e-3 * span and abs(points[1][1] - c["high"]) < 1e-3 * span,
+                   "points=%r low=%r high=%r" % (points, c["low"], c["high"]))
+    recorder.check("the CC lane is kept (a copy)", conversion_lanes(session, c["clip"]) == {"cc:1": c["ramp"]},
+                   "lanes=%r" % conversion_lanes(session, c["clip"]))
     session.result("control.undo")
-    points, entry = automated_points(session, track, parameter)
+    points, entry = automated_points(session, c["track"], c["parameter"])
     recorder.check("one undo takes the automation back", points == [] and not entry.get("automated"), "points=%r" % points)
+    session.result("clip.controllers_to_automation", args)
 
-    session.result("clip.controllers_to_automation", {"clip": clip, "lane": "cc:1", "parameter": parameter})
-    session.result("clip.controllers_set", {"clip": clip, "lane": "cc:2", "points": [{"tick": 0, "value": 5}]})
-    back = session.result("clip.controllers_from_automation", {"clip": clip, "lane": "cc:2"})
-    lanes = {l["lane"]: l["points"] for l in session.result("clip.controllers_get", {"clip": clip}).get("lanes")}
+
+def check_conversion_from_automation(session, recorder, c):
+    session.result("clip.controllers_set", {"clip": c["clip"], "lane": "cc:2", "points": [{"tick": 0, "value": 5}]})
+    back = session.result("clip.controllers_from_automation", {"clip": c["clip"], "lane": "cc:2"})
+    lanes = conversion_lanes(session, c["clip"])
     recorder.check("from_automation takes the one automated parameter and fills the lane (read through clip.controllers_get)",
-                   back.get("parameter") == parameter and lanes.get("cc:2") == ramp, "lanes=%r reply=%r" % (lanes, back))
+                   back.get("parameter") == c["parameter"] and lanes.get("cc:2") == c["ramp"], "lanes=%r reply=%r" % (lanes, back))
     session.result("control.undo")
-    lanes = {l["lane"]: l["points"] for l in session.result("clip.controllers_get", {"clip": clip}).get("lanes")}
+    lanes = conversion_lanes(session, c["clip"])
     recorder.check("one undo restores the lane that was there", lanes.get("cc:2") == [{"tick": 0, "value": 5}], "lanes=%r" % lanes)
+
+
+def check_controller_conversion(session, recorder):
+    context = conversion_setup(session, recorder)
+    if context is None:
+        return
+    check_conversion_refusals(session, recorder, context)
+    check_conversion_to_automation(session, recorder, context)
+    check_conversion_from_automation(session, recorder, context)
 
 
 def check_input_transform(session, recorder):

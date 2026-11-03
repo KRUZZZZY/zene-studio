@@ -122,6 +122,28 @@ bool mappable(const AutomationParameter& parameter, ControlResult* error)
 	return true;
 }
 
+//! The candidates for an unnamed parameter: all of @a target's, or - @a automatedOnly - the ones that carry automation points.
+QList<AutomationParameter> candidatesOf(const ControlTarget& target, bool automatedOnly)
+{
+	QList<AutomationParameter> out;
+	for (const AutomationParameter& each : automationParameters(target))
+	{
+		const AutomationClip* clip = automatedOnly ? existingAutomationClip(each.model) : nullptr;
+		if (!automatedOnly || (clip != nullptr && clip->hasAutomation())) { out.append(each); }
+	}
+	return out;
+}
+
+ControlResult ambiguousTarget(const ControlTarget& target, const QList<AutomationParameter>& candidates)
+{
+	QStringList names;
+	for (int i = 0; i < std::min<int>(candidates.size(), MaxListedCandidates); ++i) { names << candidates.at(i).id(); }
+	const QString count = candidates.isEmpty() ? QStringLiteral("no candidate") : QStringLiteral("%1 candidates").arg(candidates.size());
+	const QString more = candidates.size() > MaxListedCandidates ? QStringLiteral(", ...") : QString();
+	return refuse(ControlErrorKind::InvalidArgs, QStringLiteral("'parameter' is required: %1 on %2 (%3%4); automation.get_state names them")
+		.arg(count, target.id, names.join(QStringLiteral(", ")), more));
+}
+
 //! The parameter of @a owner to convert: args.parameter, or - left out - the only candidate. @a automatedOnly narrows
 //! the candidates to parameters that already carry automation points (the from_automation direction).
 bool ownerParameter(const QJsonObject& args, Track* owner, bool automatedOnly, AutomationParameter* out, ControlResult* error)
@@ -130,23 +152,14 @@ bool ownerParameter(const QJsonObject& args, Track* owner, bool automatedOnly, A
 	if (!resolveControlTarget(trackIdOf(owner), &target, error)) { return false; }
 	const QString wanted = args.value(QStringLiteral("parameter")).toString();
 	if (!wanted.isEmpty()) { return findAutomationParameter(target, wanted, out, error); }
-	QList<AutomationParameter> candidates;
-	for (const AutomationParameter& each : automationParameters(target))
+	const QList<AutomationParameter> candidates = candidatesOf(target, automatedOnly);
+	if (candidates.size() != 1)
 	{
-		const AutomationClip* clip = automatedOnly ? existingAutomationClip(each.model) : nullptr;
-		if (!automatedOnly || (clip != nullptr && clip->hasAutomation())) { candidates.append(each); }
+		*error = ambiguousTarget(target, candidates);
+		return false;
 	}
-	if (candidates.size() == 1)
-	{
-		*out = candidates.first();
-		return true;
-	}
-	QStringList names;
-	for (int i = 0; i < std::min<int>(candidates.size(), MaxListedCandidates); ++i) { names << candidates.at(i).id(); }
-	*error = refuse(ControlErrorKind::InvalidArgs, QStringLiteral("'parameter' is required: %1 on %2 (%3%4); automation.get_state names them")
-		.arg(candidates.isEmpty() ? QStringLiteral("no candidate") : QStringLiteral("%1 candidates").arg(candidates.size()), target.id,
-			names.join(QStringLiteral(", ")), candidates.size() > MaxListedCandidates ? QStringLiteral(", ...") : QString()));
-	return false;
+	*out = candidates.first();
+	return true;
 }
 
 float valueOfCc(const AutomatableModel* model, int cc)
@@ -175,12 +188,34 @@ struct Node
 	float value;
 };
 
-/*! The nodes @a lane converts to on @a existing (null: a clip to be created at tick 0), or false with @a error when a
- *  point cannot be placed or the target clip would play differently. Reads only. */
-bool planNodes(const MidiClip* clip, const ControllerLane& lane, const AutomationParameter& parameter,
-	const AutomationClip* existing, std::vector<Node>* nodes, ControlResult* error)
+//! What a conversion call addresses: the clip, its CC lane id and the owning track's parameter.
+struct Conversion
 {
-	const qint64 origin = existing != nullptr ? existing->startPosition().getTicks() : 0;
+	ClipRef ref;
+	MidiClip* clip = nullptr;
+	int controller = 0;
+	QString laneId;
+	AutomationParameter parameter;
+};
+
+//! The call's clip, lane and parameter (a refusal in @a error when any of them cannot be used).
+bool resolveConversion(const QJsonObject& args, bool automatedOnly, Conversion* out, ControlResult* error)
+{
+	out->clip = resolveMidiClip(args.value(QStringLiteral("clip")).toString(), &out->ref, error);
+	return out->clip != nullptr && ccLaneId(args, &out->controller, &out->laneId, error)
+		&& ownerParameter(args, out->ref.track, automatedOnly, &out->parameter, error) && mappable(out->parameter, error);
+}
+
+QJsonObject conversionReply(const Conversion& c, int converted)
+{
+	return {{QStringLiteral("clip"), clipId(c.ref.id)}, {QStringLiteral("lane"), c.laneId}, {QStringLiteral("track"), trackIdOf(c.ref.track)},
+		{QStringLiteral("parameter"), c.parameter.id()}, {QStringLiteral("converted"), converted}};
+}
+
+//! The lane's points as automation-clip ticks (@a origin: the target clip's start) and model values, or false with @a error.
+bool placeNodes(const MidiClip* clip, const ControllerLane& lane, const AutomationParameter& parameter, qint64 origin,
+	std::vector<Node>* nodes, ControlResult* error)
+{
 	for (const ControllerPoint& point : lane.points)
 	{
 		const qint64 song = songTickOfLane(clip, point.tick);
@@ -193,12 +228,15 @@ bool planNodes(const MidiClip* clip, const ControllerLane& lane, const Automatio
 		}
 		nodes->push_back({static_cast<int>(local), parameter.model->inverseScaledValue(valueOfCc(parameter.model, point.value))});
 	}
-	if (existing == nullptr || existing->progressionType() == AutomationClip::ProgressionType::Linear) { return true; }
-	// A CC lane is linear between its points: the clip is made linear too, which is only honest while no node outside
-	// the replaced span would change how it plays.
-	const int first = nodes->front().tick;
-	const int last = nodes->back().tick;
-	for (auto it = existing->getTimeMap().constBegin(); it != existing->getTimeMap().constEnd(); ++it)
+	return true;
+}
+
+/*! A CC lane is linear between its points: the target clip is made linear too, which is only honest while no node outside
+ *  the converted span @a first .. @a last would change how it plays. */
+bool linearisingKeepsOthers(const AutomationClip& existing, int first, int last, const AutomationParameter& parameter, ControlResult* error)
+{
+	if (existing.progressionType() == AutomationClip::ProgressionType::Linear) { return true; }
+	for (auto it = existing.getTimeMap().constBegin(); it != existing.getTimeMap().constEnd(); ++it)
 	{
 		if (it.key() < first || it.key() > last)
 		{
@@ -210,33 +248,30 @@ bool planNodes(const MidiClip* clip, const ControllerLane& lane, const Automatio
 	return true;
 }
 
-ControlResult convertToAutomation(const QJsonObject& args)
+/*! The nodes @a lane converts to on @a existing (null: a clip to be created at tick 0), or false with @a error when a
+ *  point cannot be placed or the target clip would play differently. Reads only. */
+bool planNodes(const MidiClip* clip, const ControllerLane& lane, const AutomationParameter& parameter,
+	const AutomationClip* existing, std::vector<Node>* nodes, ControlResult* error)
 {
-	ClipRef ref;
-	ControlResult error;
-	MidiClip* clip = resolveMidiClip(args.value(QStringLiteral("clip")).toString(), &ref, &error);
-	if (clip == nullptr) { return error; }
-	int controller = 0;
-	QString laneId;
-	if (!ccLaneId(args, &controller, &laneId, &error)) { return error; }
-	const ControllerLane* lane = clip->controllers().lane(ControllerKind::ControlChange, controller);
-	if (lane == nullptr || lane->points.empty()) { return refuse(ControlErrorKind::NotFound, QStringLiteral("%1 has no lane %2 with points").arg(clipId(ref.id), laneId)); }
-	AutomationParameter parameter;
-	if (!ownerParameter(args, ref.track, false, &parameter, &error) || !mappable(parameter, &error)) { return error; }
-	AutomationClip* existing = existingAutomationClip(parameter.model);
 	if (existing != nullptr && existing->isRelative())
 	{
-		return refuse(ControlErrorKind::Refused, QStringLiteral("%1's automation clip is a trim (relative) clip: a CC lane's absolute values cannot be written to it").arg(parameter.id()));
+		*error = refuse(ControlErrorKind::Refused, QStringLiteral("%1's automation clip is a trim (relative) clip: a CC lane's absolute values cannot be written to it").arg(parameter.id()));
+		return false;
 	}
-	if (static_cast<int>(lane->points.size()) > MaxPoints) { return refuse(ControlErrorKind::Refused, QStringLiteral("at most %1 points").arg(MaxPoints)); }
-	std::vector<Node> nodes;
-	if (!planNodes(clip, *lane, parameter, existing, &nodes, &error)) { return error; }
+	if (static_cast<int>(lane.points.size()) > MaxPoints) { *error = refuse(ControlErrorKind::Refused, QStringLiteral("at most %1 points").arg(MaxPoints)); return false; }
+	if (!placeNodes(clip, lane, parameter, existing != nullptr ? existing->startPosition().getTicks() : 0, nodes, error)) { return false; }
+	return existing == nullptr || linearisingKeepsOthers(*existing, nodes->front().tick, nodes->back().tick, parameter, error);
+}
 
+//! Replaces the nodes between the first and last of @a nodes (all of a created clip) with them, as one undoable edit.
+ControlResult writeNodes(const Conversion& c, const std::vector<Node>& nodes)
+{
 	// Nothing below refuses: the edit is checkpointed (or its created track has its action step) and then written.
 	bool created = false;
-	AutomationClip* target = automationClipForEdit(parameter.model, &created, &error);
+	ControlResult error;
+	AutomationClip* target = automationClipForEdit(c.parameter.model, &created, &error);
 	if (target == nullptr) { return error; }
-	const QJsonArray before = created ? QJsonArray() : automationPointsJson(target, parameter.model);
+	const QJsonArray before = created ? QJsonArray() : automationPointsJson(target, c.parameter.model);
 	if (created) { target->clear(); }  // the seed node the new clip starts with is not a lane point
 	else { target->removeNodes(nodes.front().tick, nodes.back().tick); }
 	target->setProgressionType(AutomationClip::ProgressionType::Linear);
@@ -247,12 +282,65 @@ ControlResult convertToAutomation(const QJsonObject& args)
 		const int bar = TimePos::ticksPerBar();
 		target->changeLength(TimePos((needed + bar - 1) / bar * bar));
 	}
-
-	QJsonObject result{{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("lane"), laneId}, {QStringLiteral("track"), trackIdOf(ref.track)},
-		{QStringLiteral("parameter"), parameter.id()}, {QStringLiteral("converted"), static_cast<int>(nodes.size())},
-		{QStringLiteral("created_automation_track"), created}, {QStringLiteral("automation"), automationJson(target, parameter.model)}};
-	result.insert(QStringLiteral("__transaction"), automationTransaction(parameter, before, before.size(), created));
+	QJsonObject result = conversionReply(c, static_cast<int>(nodes.size()));
+	result.insert(QStringLiteral("created_automation_track"), created);
+	result.insert(QStringLiteral("automation"), automationJson(target, c.parameter.model));
+	result.insert(QStringLiteral("__transaction"), automationTransaction(c.parameter, before, before.size(), created));
 	return ControlResult::success(result);
+}
+
+ControlResult convertToAutomation(const QJsonObject& args)
+{
+	Conversion c;
+	ControlResult error;
+	if (!resolveConversion(args, false, &c, &error)) { return error; }
+	const ControllerLane* lane = c.clip->controllers().lane(ControllerKind::ControlChange, c.controller);
+	if (lane == nullptr || lane->points.empty())
+	{
+		return refuse(ControlErrorKind::NotFound, QStringLiteral("%1 has no lane %2 with points").arg(clipId(c.ref.id), c.laneId));
+	}
+	std::vector<Node> nodes;
+	if (!planNodes(c.clip, *lane, c.parameter, existingAutomationClip(c.parameter.model), &nodes, &error)) { return error; }
+	return writeNodes(c, nodes);
+}
+
+//! The window of lane ticks a clip plays, and where lane tick 0 sits on the song and the source clip's own tick 0.
+struct LaneWindow
+{
+	qint64 shift;   //!< song tick of lane tick 0
+	qint64 origin;  //!< song tick of the automation clip's tick 0
+	qint64 low;     //!< first lane tick the clip plays (a lane has none below 0)
+	qint64 high;    //!< last lane tick the clip plays
+};
+
+LaneWindow windowOf(const MidiClip* clip, const AutomationClip* source)
+{
+	const qint64 offset = clip->startTimeOffset().getTicks();
+	return {static_cast<qint64>(clip->startPosition().getTicks()) + offset, source->startPosition().getTicks(),
+		std::max<qint64>(0, -offset), -offset + clip->length().getTicks()};
+}
+
+//! The source's value at lane tick @a tick, as a lane point.
+ControllerPoint sampleAt(const AutomationParameter& parameter, AutomationClip* source, const LaneWindow& w, qint64 tick)
+{
+	const float raw = source->valueAt(TimePos(static_cast<int>(w.shift + tick - w.origin)));
+	return {static_cast<tick_t>(tick), ccOfValue(parameter.model, parameter.model->scaledValue(raw))};
+}
+
+//! The source's nodes inside the window as lane points; @a cutBefore / @a cutAfter say whether nodes lie outside it.
+void collectPoints(const AutomationParameter& parameter, const AutomationClip* source, const LaneWindow& w,
+	std::vector<ControllerPoint>* points, bool* cutBefore, bool* cutAfter)
+{
+	for (auto it = source->getTimeMap().constBegin(); it != source->getTimeMap().constEnd(); ++it)
+	{
+		const qint64 tick = w.origin + it.key() - w.shift;
+		*cutBefore = *cutBefore || tick < w.low;
+		*cutAfter = *cutAfter || tick > w.high;
+		if (tick >= w.low && tick <= w.high)
+		{
+			points->push_back({static_cast<tick_t>(tick), ccOfValue(parameter.model, parameter.model->scaledValue(it.value().getInValue()))});
+		}
+	}
 }
 
 //! The lane points the automation of @a parameter converts to inside @a clip's own span (plus the curve's value at an
@@ -260,31 +348,15 @@ ControlResult convertToAutomation(const QJsonObject& args)
 bool planLane(const MidiClip* clip, AutomationClip* source, const AutomationParameter& parameter,
 	std::vector<ControllerPoint>* points, ControlResult* error)
 {
-	const AutomatableModel* model = parameter.model;
-	const qint64 shift = static_cast<qint64>(clip->startPosition().getTicks()) + clip->startTimeOffset().getTicks();  // lane tick 0 is song tick `shift`
-	const qint64 origin = source->startPosition().getTicks();
-	// The clip plays lane ticks -startTimeOffset .. -startTimeOffset + length; a lane has no tick below 0.
-	const qint64 low = std::max<qint64>(0, -static_cast<qint64>(clip->startTimeOffset().getTicks()));
-	const qint64 high = -static_cast<qint64>(clip->startTimeOffset().getTicks()) + clip->length().getTicks();
+	const LaneWindow w = windowOf(clip, source);
 	bool cutBefore = false;
 	bool cutAfter = false;
-	for (auto it = source->getTimeMap().constBegin(); it != source->getTimeMap().constEnd(); ++it)
-	{
-		const qint64 tick = origin + it.key() - shift;
-		cutBefore = cutBefore || tick < low;
-		cutAfter = cutAfter || tick > high;
-		if (tick >= low && tick <= high) { points->push_back({static_cast<tick_t>(tick), ccOfValue(model, model->scaledValue(it.value().getInValue()))}); }
-	}
-	const auto edge = [&](qint64 tick) -> ControllerPoint
-	{
-		const float raw = source->valueAt(TimePos(static_cast<int>(shift + tick - origin)));
-		return {static_cast<tick_t>(tick), ccOfValue(model, model->scaledValue(raw))};
-	};
-	if (cutBefore && (points->empty() || points->front().tick > low)) { points->insert(points->begin(), edge(low)); }
-	if (cutAfter && (points->empty() || points->back().tick < high)) { points->push_back(edge(high)); }
+	collectPoints(parameter, source, w, points, &cutBefore, &cutAfter);
+	if (cutBefore && (points->empty() || points->front().tick > w.low)) { points->insert(points->begin(), sampleAt(parameter, source, w, w.low)); }
+	if (cutAfter && (points->empty() || points->back().tick < w.high)) { points->push_back(sampleAt(parameter, source, w, w.high)); }
 	if (points->empty())
 	{
-		*error = refuse(ControlErrorKind::NotFound, QStringLiteral("%1 has no automation inside this clip (it spans lane ticks %2..%3)").arg(parameter.id()).arg(low).arg(high));
+		*error = refuse(ControlErrorKind::NotFound, QStringLiteral("%1 has no automation inside this clip (it spans lane ticks %2..%3)").arg(parameter.id()).arg(w.low).arg(w.high));
 		return false;
 	}
 	if (static_cast<int>(points->size()) > MaxPoints) { *error = refuse(ControlErrorKind::Refused, QStringLiteral("at most %1 points").arg(MaxPoints)); return false; }
@@ -293,34 +365,27 @@ bool planLane(const MidiClip* clip, AutomationClip* source, const AutomationPara
 
 ControlResult convertFromAutomation(const QJsonObject& args)
 {
-	ClipRef ref;
+	Conversion c;
 	ControlResult error;
-	MidiClip* clip = resolveMidiClip(args.value(QStringLiteral("clip")).toString(), &ref, &error);
-	if (clip == nullptr) { return error; }
-	int controller = 0;
-	QString laneId;
-	if (!ccLaneId(args, &controller, &laneId, &error)) { return error; }
-	AutomationParameter parameter;
-	if (!ownerParameter(args, ref.track, true, &parameter, &error) || !mappable(parameter, &error)) { return error; }
-	AutomationClip* source = existingAutomationClip(parameter.model);
+	if (!resolveConversion(args, true, &c, &error)) { return error; }
+	AutomationClip* source = existingAutomationClip(c.parameter.model);
 	if (source == nullptr || !source->hasAutomation())
 	{
-		return refuse(ControlErrorKind::NotFound, QStringLiteral("%1 has no automation points to convert").arg(parameter.id()));
+		return refuse(ControlErrorKind::NotFound, QStringLiteral("%1 has no automation points to convert").arg(c.parameter.id()));
 	}
 	std::vector<ControllerPoint> points;
-	if (!planLane(clip, source, parameter, &points, &error)) { return error; }
+	if (!planLane(c.clip, source, c.parameter, &points, &error)) { return error; }
 
-	const ControllerLane* existing = clip->controllers().lane(ControllerKind::ControlChange, controller);
+	const ControllerLane* existing = c.clip->controllers().lane(ControllerKind::ControlChange, c.controller);
 	const QJsonArray before = existing != nullptr ? pointsJson(existing->points) : QJsonArray();
-	clip->addJournalCheckPoint();
-	clip->setControllerPoints(ControllerKind::ControlChange, controller, std::move(points));
-	const ControllerLane* now = clip->controllers().lane(ControllerKind::ControlChange, controller);
-	QJsonObject result{{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("lane"), laneId}, {QStringLiteral("track"), trackIdOf(ref.track)},
-		{QStringLiteral("parameter"), parameter.id()}, {QStringLiteral("converted"), now != nullptr ? static_cast<int>(now->points.size()) : 0},
-		{QStringLiteral("source_progression"), progressionLabel(source->progressionType())},
-		{QStringLiteral("points"), now != nullptr ? pointsJson(now->points) : QJsonArray()}};
+	c.clip->addJournalCheckPoint();
+	c.clip->setControllerPoints(ControllerKind::ControlChange, c.controller, std::move(points));
+	const ControllerLane* now = c.clip->controllers().lane(ControllerKind::ControlChange, c.controller);
+	QJsonObject result = conversionReply(c, now != nullptr ? static_cast<int>(now->points.size()) : 0);
+	result.insert(QStringLiteral("source_progression"), progressionLabel(source->progressionType()));
+	result.insert(QStringLiteral("points"), now != nullptr ? pointsJson(now->points) : QJsonArray());
 	result.insert(QStringLiteral("__transaction"), transactionPayload({{QStringLiteral("points"), before}},
-		QStringLiteral("clip.controllers_set"), {{QStringLiteral("clip"), clipId(ref.id)}, {QStringLiteral("lane"), laneId}, {QStringLiteral("points"), before}},
+		QStringLiteral("clip.controllers_set"), {{QStringLiteral("clip"), clipId(c.ref.id)}, {QStringLiteral("lane"), c.laneId}, {QStringLiteral("points"), before}},
 		true, QStringLiteral("MidiClip journal checkpoint: undo restores the clip's lanes")));
 	return ControlResult::success(result);
 }
