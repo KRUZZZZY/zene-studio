@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-29T15:55:04Z",
+  "captured_at": "2026-11-03T04:49:24Z",
   "commands": [
     {
       "args_schema": {
@@ -17723,6 +17723,138 @@
       "mutating": true,
       "requires": [],
       "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "root": {
+            "description": "key index 0..11, or a name (\"C\", \"C#\", \"Db\")"
+          },
+          "scale": {
+            "type": "string"
+          },
+          "step_ticks": {
+            "maximum": 3072,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "Read a MIDI clip as a melodic step grid: 'step_ticks' (default 12, a sixteenth) ticks a column, every note with its step, offset inside the step, key, velocity (0..200), chance (0..1, 1 always), ratchet (attacks, 1 one), length and - when a scale is set (scale.set) or 'root' / 'scale' are named - whether it is in the scale and its scale degree; and the occupied columns with the ids and pitches stacked in each. The notes are the clip's ordinary notes (note.list, roll.get_state): nothing is stored apart from them. Not mutating.",
+      "group": "note",
+      "id": "note.step_get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "clip_length": {
+            "type": "integer"
+          },
+          "columns": {
+            "type": "array"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "notes": {
+            "type": "array"
+          },
+          "scale": {
+            "type": "object"
+          },
+          "step_ticks": {
+            "maximum": 3072,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "steps": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "edits": {
+            "type": "array"
+          },
+          "root": {
+            "description": "key index 0..11, or a name (\"C\", \"C#\", \"Db\")"
+          },
+          "scale": {
+            "type": "string"
+          },
+          "scale_mode": {
+            "enum": [
+              "snap",
+              "strict",
+              "off"
+            ],
+            "type": "string"
+          },
+          "step_ticks": {
+            "maximum": 3072,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip",
+          "edits"
+        ],
+        "type": "object"
+      },
+      "description": "Edit a MIDI clip's melodic steps as ONE edit and ONE undo step. 'edits' is a list of {note | step + key, velocity?, chance?, ratchet?, length?, key?, remove?}: a cell is a step (column, counted from 0 in 'step_ticks' ticks, default 12) and a key; an entry on an empty cell adds a note there (length one step, velocity 100, chance 1, ratchet 1 unless given), an entry on a note or occupied cell changes the fields named and keeps the rest, 'remove' takes it out. velocity 0..200, chance 0..1 (1 always, 0 never), ratchet 1..16 (attacks evenly spaced across the note; 1 is one). With a scale set (or 'root' / 'scale' named) a pitch the call writes - a new cell, or 'key' on a note - follows 'scale_mode': snap (default; nearest in-scale key, a tie down), strict (refused when out of scale) or off; a note left on its key keeps it, so out-of-scale notes stay editable. The whole batch is validated first: one bad entry refuses it and changes nothing. A batch that changes nothing records no undo step. Reversible through the ProjectJournal (one MidiClip checkpoint); control.undo restores the exact prior note list.",
+      "group": "note",
+      "id": "note.step_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "added": {
+            "type": "integer"
+          },
+          "clip": {
+            "type": "string"
+          },
+          "edited": {
+            "type": "integer"
+          },
+          "notes": {
+            "type": "array"
+          },
+          "removed": {
+            "type": "integer"
+          },
+          "step_ticks": {
+            "maximum": 3072,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [],
         "type": "object"
       }
     },
@@ -37464,23 +37596,23 @@
       }
     }
   ],
-  "count": 878,
+  "count": 880,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-294.1/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-k4l1reh3/zene.sock",
-    "version": "0.4.0-alpha.5942+68bed50"
+    "source_socket": "/tmp/zctl-run-y9rhniuu/zene.sock",
+    "version": "0.4.0-alpha.5943+2a7fd9f"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 77,
-    "id_count": 878,
-    "ids_sha256": "60473c71cd63735b5af096bbd2cd1d9a5a096cf4b2fd8855d1333df124ea362a"
+    "id_count": 880,
+    "ids_sha256": "02bc526f175bc484f6c7915d4ea2d537582d4e8b158b031381493f18e70323d8"
   }
 }

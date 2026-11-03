@@ -355,6 +355,13 @@ int quantizeNotes( const NoteVector& notes, const QuantizeOptions& options )
 }
 
 
+int snapKeyToScale( int key, const std::vector<int>& scaleDegrees )
+{
+	const std::vector<int> classes = pitchClasses( scaleDegrees );
+	return classes.empty() ? key : nearestInScaleKey( key, classes );
+}
+
+
 int snapToScale( const NoteVector& notes, const std::vector<int>& scaleDegrees )
 {
 	const std::vector<int> classes = pitchClasses( scaleDegrees );

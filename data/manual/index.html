@@ -221,6 +221,14 @@ the Repeats lane plays a note several times inside its length; the Velocity Spre
 Articulation picks one of the track's articulations (Track &gt; Articulations... sets the keyswitch, program or controller
 each one sends). New Note Length fixes the length a click draws; Audio Behind the Notes shows an audio clip's waveform
 under them. The controller lane can also hold program changes.</p>
+<p>A MIDI clip also reads as a melodic step grid, for agents and scripts: <code>note.step_get_state</code> lists every
+note by its step (a column of <code>step_ticks</code> ticks, a sixteenth by default), key, velocity, chance and ratchet, says
+which notes are in the set scale and their degree, and lists each column's stacked pitches. <code>note.step_set</code> edits
+those cells as one undo step: name a note or a step and key, and give velocity, chance (0 never to 1 always), ratchet (1 to
+16 evenly spaced attacks inside the note), length or <code>remove</code>. With a scale set, a new or changed pitch is snapped to
+the nearest in-scale key (<code>scale_mode</code> snap; strict refuses, off leaves it), and a note that is already out of the
+scale stays editable. The cells are ordinary notes of the clip, so the piano roll shows the same notes, an old project opens
+with chance 1 and ratchet 1, and one Undo restores the notes as they were.</p>
 <p>Each lane under the notes names what it shows and its scale - for example Velocity, 0 % to 200 %, with the values at its top, middle and bottom on the right. Point at a stem and the lane reads out that note's value and the value at the pointer; while nothing is pointed at, the header shows the selected notes' values. Controller lanes keep MIDI's 0 to 127 (pitch bend: -8192 to +8191 around its centre) and read out the curve's value at the pointer's position. Selected notes have square heads; a note whose key is folded away has a hollow one. A muted note has a dashed outline, a note that may not play a dotted one and its chance in its label, and a very short note can be clicked a little beside it.</p>
 <p>Project &gt; Global Swing delays every off-beat 16th (or 8th) of the song; Chase Notes sounds a note playback starts,
 loops or jumps into the middle of, or one already under the playhead when its track or clip is unmuted; MIDI Playback Offset starts every note a little later, to line up a slow instrument.</p>

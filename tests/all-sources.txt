@@ -1705,6 +1705,7 @@ src/core/ControlCommandsNoteSelect.cpp
 src/core/ControlCommandsNoteShape.cpp
 src/core/ControlCommandsNoteShared.h
 src/core/ControlCommandsNoteSlide.cpp
+src/core/ControlCommandsNoteStep.cpp
 src/core/ControlCommandsNoteTools.cpp
 src/core/ControlCommandsNoteTransform.cpp
 src/core/ControlCommandsNotes.cpp
