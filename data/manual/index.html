@@ -394,7 +394,8 @@ cannot take Zene down. The instruments appear in the device picker and the instr
 Replace Instrument... in the device card's Actions menu or <code>plugin.load</code>. Each one is a Carla Rack holding that plug-in: its
 parameters are knobs in the Params window, <code>plugin.param_get</code> / <code>plugin.param_set</code> parameters and automation
 targets; Show plugin editor (or <code>plugin.editor_open</code>) opens the plug-in's own editor - inside a Zene window for a native
-plug-in, in a window of its own from Wine for a Windows one. The plug-in's settings, including its private state (its chunk), are
+plug-in, in a window of its own from Wine for a Windows one. Zene runs Carla for each VST2 instrument on a thread of its own, two audio periods ahead, so neither a
+slow plug-in nor the Wine bridge can stall playback; the track compensates for those two periods. The plug-in's settings, including its private state (its chunk), are
 saved with the project, in presets (<code>plugin.preset_save</code> / <code>plugin.preset_load</code>) and with
 <code>plugin.state_save</code>, and come back when they are loaded. Without a Carla runtime no VST2 instrument is listed, and a
 project that used one keeps it as a placeholder until Carla is installed. VST2 effects through Carla, and opening projects saved with
