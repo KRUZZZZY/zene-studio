@@ -1141,6 +1141,7 @@ set(LMMS_SRCS
 	core/ControlCommandsAutomationLanes.cpp
 	core/ControlCommandsClipArrange.cpp
 	core/ControlCommandsClipControllers.cpp
+	core/ControlCommandsControllerConvert.cpp
 	core/ControlCommandsClipEnvelope.cpp
 	core/ControlCommandsKeyNames.cpp
 	core/ControlCommandsMarkers.cpp
