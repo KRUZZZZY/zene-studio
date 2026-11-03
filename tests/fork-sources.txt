@@ -1465,6 +1465,7 @@ src/core/ControlCommandsConsoleStrip.cpp
 src/core/ControlCommandsConsolidate.cpp
 src/core/ControlCommandsControl.cpp
 src/core/ControlCommandsController.cpp
+src/core/ControlCommandsControllerConvert.cpp
 src/core/ControlCommandsControllerMap.cpp
 src/core/ControlCommandsControllerTemplates.cpp
 src/core/ControlCommandsCrash.cpp
@@ -2830,6 +2831,7 @@ tools/local-ci.sh
 tests/src/core/ControlRenderOutputPathTest.cpp
 tools/ncpu-shim.c
 tests/src/core/InputChannelRingTest.cpp
+tests/src/core/ControllerConversionTest.cpp
 tests/src/core/MidiClipControllersLoadTest.cpp
 tests/src/gui/ArrangerFileDropTest.cpp
 tests/src/gui/MidiClipLinkedEditTest.cpp
