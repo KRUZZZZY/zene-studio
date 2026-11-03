@@ -157,6 +157,78 @@ int waitForNoteOn(snd_seq_t* receiver, std::chrono::steady_clock::time_point dea
 	return -1;
 }
 
+//! Q050-277: one audio-path producer (channel 0) and two off-audio senders (channels 1, 2) against one MidiAlsaSeq,
+//! drained by the test thread. Each event carries its producer's sequence number in key (low 7 bits) and velocity.
+struct TwoQueueStress
+{
+	static constexpr int PerProducer = 60000;
+
+	explicit TwoQueueStress(lmms::MidiAlsaSeq& sequencer) : seq(sequencer) {}
+
+	static MidiEvent tagged(int channel, int number)
+	{
+		return MidiEvent(lmms::MidiNoteOn, static_cast<int8_t>(channel), static_cast<int16_t>(number & 0x7f),
+			static_cast<int16_t>((number >> 7) & 0x7f));
+	}
+
+	//! The audio thread's own path; a refused push (counted as overflow) is retried.
+	void produceOnAudioPath()
+	{
+		for (int i = 0; i < PerProducer && !giveUp.load();)
+		{
+			const auto before = seq.outputQueueOverflowCount();
+			seq.processOutEvent(tagged(0, i), TimePos(), nullptr);
+			if (seq.outputQueueOverflowCount() == before) { ++i; } else { std::this_thread::yield(); }
+		}
+		producersDone.fetch_add(1);
+	}
+
+	void produceOffAudio(int channel)
+	{
+		for (int i = 0; i < PerProducer && !giveUp.load();)
+		{
+			if (seq.sendFromNonAudioThread(tagged(channel, i), nullptr)) { ++i; } else { std::this_thread::yield(); }
+		}
+		producersDone.fetch_add(1);
+	}
+
+	void take(const MidiOutQueue::Command& command, bool viaOffAudioQueue)
+	{
+		const int channel = command.event.channel();
+		if (channel < 0 || channel > 2) { ++disordered; return; }
+		if (viaOffAudioQueue != (channel != 0)) { ++misrouted; }
+		const int number = (command.event.key() & 0x7f) | ((command.event.velocity() & 0x7f) << 7);
+		int& expected = next[static_cast<std::size_t>(channel)];
+		if (number != (expected & 0x3fff)) { ++disordered; }
+		++expected;
+	}
+
+	//! A corrupted single-producer queue can refuse forever: give up after 20 s, so the test fails instead of hanging.
+	void consumeUntilProducersFinish()
+	{
+		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+		const auto sink = [this](const MidiOutQueue::Command& command, bool off) { take(command, off); };
+		while (producersDone.load() < 3)
+		{
+			seq.drainOutputForTesting(sink);
+			if (std::chrono::steady_clock::now() > deadline) { giveUp.store(true); }
+		}
+	}
+
+	void drainRest()
+	{
+		const auto sink = [this](const MidiOutQueue::Command& command, bool off) { take(command, off); };
+		while (!giveUp.load() && seq.drainOutputForTesting(sink) > 0) {}
+	}
+
+	lmms::MidiAlsaSeq& seq;
+	std::atomic<int> producersDone{0};
+	std::atomic<bool> giveUp{false};
+	std::array<int, 3> next{0, 0, 0};
+	int misrouted = 0;
+	int disordered = 0;
+};
+
 //! Waits for the output worker to enter its poll wait, so the queued event must wake it rather than be found.
 bool waitForPollWait(const lmms::MidiAlsaSeq& outputClient)
 {
@@ -384,60 +456,22 @@ private slots:
 	void offAudioOutputNeverSharesTheAudioThreadsQueue()
 	{
 		lmms::MidiAlsaSeq sequencer{lmms::MidiAlsaSeq::PipeOnlyForTesting{}};
-		constexpr int perProducer = 60000;
-		const auto tagged = [](int channel, int seq) {
-			return MidiEvent(lmms::MidiNoteOn, static_cast<int8_t>(channel), static_cast<int16_t>(seq & 0x7f),
-				static_cast<int16_t>((seq >> 7) & 0x7f));
-		};
-		std::atomic<int> producersDone{0};
-		std::atomic<bool> giveUp{false};  // a corrupted queue can refuse forever: fail, never hang
-		std::thread audio([&] {
-			for (int i = 0; i < perProducer && !giveUp.load();)
-			{
-				const auto before = sequencer.outputQueueOverflowCount();
-				sequencer.processOutEvent(tagged(0, i), TimePos(), nullptr);
-				if (sequencer.outputQueueOverflowCount() == before) { ++i; } else { std::this_thread::yield(); }
-			}
-			producersDone.fetch_add(1);
-		});
-		const auto offAudio = [&](int channel) {
-			for (int i = 0; i < perProducer && !giveUp.load();)
-			{
-				if (sequencer.sendFromNonAudioThread(tagged(channel, i), nullptr)) { ++i; } else { std::this_thread::yield(); }
-			}
-			producersDone.fetch_add(1);
-		};
-		std::thread senderA(offAudio, 1);
-		std::thread senderB(offAudio, 2);
-
-		std::array<int, 3> next{0, 0, 0};
-		int misrouted = 0;
-		int disordered = 0;
-		const auto sink = [&](const MidiOutQueue::Command& command, bool viaOffAudioQueue) {
-			const int channel = command.event.channel();
-			if (channel < 0 || channel > 2) { ++disordered; return; }
-			if (viaOffAudioQueue != (channel != 0)) { ++misrouted; }
-			const int seq = (command.event.key() & 0x7f) | ((command.event.velocity() & 0x7f) << 7);
-			if (seq != (next[static_cast<std::size_t>(channel)] & 0x3fff)) { ++disordered; }
-			++next[static_cast<std::size_t>(channel)];
-		};
-		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
-		while (producersDone.load() < 3)
-		{
-			sequencer.drainOutputForTesting(sink);
-			if (std::chrono::steady_clock::now() > deadline) { giveUp.store(true); }
-		}
+		TwoQueueStress stress(sequencer);
+		std::thread audio([&] { stress.produceOnAudioPath(); });
+		std::thread senderA([&] { stress.produceOffAudio(1); });
+		std::thread senderB([&] { stress.produceOffAudio(2); });
+		stress.consumeUntilProducersFinish();
 		audio.join();
 		senderA.join();
 		senderB.join();
-		while (!giveUp.load() && sequencer.drainOutputForTesting(sink) > 0) {}
+		stress.drainRest();
 
-		QCOMPARE(misrouted, 0);   // the off-audio senders never touched the audio thread's queue
-		QVERIFY2(!giveUp.load(), "the producers never finished: the queue refused or lost events for 20 s");
-		QCOMPARE(disordered, 0);  // no slot overwritten, duplicated or skipped
-		QCOMPARE(next[0], perProducer);
-		QCOMPARE(next[1], perProducer);
-		QCOMPARE(next[2], perProducer);
+		QCOMPARE(stress.misrouted, 0);   // the off-audio senders never touched the audio thread's queue
+		QVERIFY2(!stress.giveUp.load(), "the producers never finished: the queue refused or lost events for 20 s");
+		QCOMPARE(stress.disordered, 0);  // no slot overwritten, duplicated or skipped
+		QCOMPARE(stress.next[0], TwoQueueStress::PerProducer);
+		QCOMPARE(stress.next[1], TwoQueueStress::PerProducer);
+		QCOMPARE(stress.next[2], TwoQueueStress::PerProducer);
 	}
 #endif
 

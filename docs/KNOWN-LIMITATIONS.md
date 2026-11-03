@@ -3073,10 +3073,15 @@ into an empty launcher cell: it starts on the launch quantisation, stops on the 
   (period-granular, like the take); at the stop at most 64 pulses are queued to catch up the period it falls in, never a
   backlog that scales with the capture. If the master is turned OFF mid-capture the span ends there with a STOP and no
   catch-up while the take goes on to its length; if the ring ever fills (a sender starved for seconds) pulses are refused and
-  counted (`MidiClock::captureOutputDropped`), START and STOP are not. The external synth's own latency is not compensated
+  counted (`MidiClock::captureOutputDropped`). A span is admitted only when its START and STOP both fit the ring; when earlier
+  output still fills it, the new capture's span is refused BEFORE START (nothing is sent, the take records unclocked,
+  `session.record_slot_status` `clock.refused` counts it), so the synth is never started without its STOP. The external synth's own latency is not compensated
   beyond the recording round trip the take already drops. While the span is open the song transport's own START/STOP/CONTINUE
-  are not sent. The sender thread calls the MIDI client from a thread other than the audio thread, as a MIDI reader thread
-  already does for input; ALSA's sequencer client serialises its own calls. One take, one cell, empty cells only, as above.
+  are not sent. The sender never calls `processOutEvent()` (the audio thread's path, a single-producer queue on ALSA): it uses
+  `MidiClient::sendFromNonAudioThread()`, serialized by a mutex the audio thread never takes. ALSA's sequencer client gives it
+  its own queue that the sequencer thread drains beside the audio one; raw clients (OSS, sndio, ALSA raw, JACK) carry only the
+  one-byte real-time messages from it, which MIDI lets stand anywhere in a stream; Core MIDI and WinMM send through their
+  thread-safe system calls. The macOS and Windows paths were not run on this host. One take, one cell, empty cells only, as above.
 - *(Updated 2026-10-28, Q050-493.)* Since Q050-013 a launched audio cell also plays on an instrument track's column
   and its gain, loop region, transpose, detune and tempo warp ARE applied (`docs/050-features/Q050-013.md`); the
   sentences below about them are the earlier record. These settings are no longer socket-only: the cell's

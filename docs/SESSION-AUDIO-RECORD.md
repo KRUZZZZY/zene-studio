@@ -10,7 +10,7 @@ quantised stop or after a length, and the take becomes the cell's clip.
 | id | what it does | A16 class |
 |---|---|---|
 | `session.record_slot` | arms an EMPTY cell of a sample track's column and launches it (`quantisation`, else the cell's own, else the session's). `bars` (1-64) or `steps` (1-1024, a sixteenth note - MIDI Clock's own beat; one of the two, not both) fixes the length; without either the take runs until the cell stops. `clock_sync: true` (Q050-277) makes the MIDI clock master send START at the take's start tick and STOP at its end, with exactly the span's pulses between (refused with `refused` while `clock.master_set` has not enabled the master and a destination). `cancel: true` drops the take in hand and stops its cell. | not_mutating (a launch) |
-| `session.record_slot_status` | `state` (`idle`, `armed`, `recording`, `finishing`, `done`), the cell, `start_tick`, `frames`, `target_frames`, `seconds`, `dropped`, `sample_rate`, `latency_frames`, `clock_sync` and `clock` (`active`, `start_tick`, `stop_tick`, `length_ticks`, `pulses`, `starts`, `stops`: what the clock master sent for the take) | not_mutating |
+| `session.record_slot_status` | `state` (`idle`, `armed`, `recording`, `finishing`, `done`), the cell, `start_tick`, `frames`, `target_frames`, `seconds`, `dropped`, `sample_rate`, `latency_frames`, `clock_sync` and `clock` (`active`, `start_tick`, `stop_tick`, `length_ticks`, `pulses`, `starts`, `stops`: what the clock master sent for the take; `refused`: spans refused before START because earlier clock output had not left yet) | not_mutating |
 | `session.record_slot_land` | writes the finished take as a 24-bit WAV (`file`, absolute; a new take in the user's `Recordings` folder when left out) and makes it the cell's audio clip (`name`, else the file's name). Refused until the state is `done`. | true_inverse: one undo step restores the `<session>` block; the WAV stays on disk |
 
 A cell stops recording on whatever stops the cell: `session.stop_slot` (quantised by the cell's own, else
@@ -118,12 +118,18 @@ the capture's messages are delivered (a running transport then sends its own SPP
 (`captureAbort`); so does turning the master off mid-capture (STOP at the last pulse's tick, no catch-up, the take continues).
 
 **Threads** (`src/core/MidiClockCapture.cpp`): the audio thread never calls the MIDI client. START, the pulses and STOP are
-plain records appended to a fixed single-producer/single-consumer ring (`RingCapacity` = 512, `ReservedSlots` = 8 kept free
-of pulses so START/STOP always fit; a full ring refuses and counts pulses). The sender thread - created by `captureArm()` on
-the control thread when a synced capture is armed - delivers them in order through `emitMessage` (which counts, records in the
-monitor and hands each to the client); it polls every millisecond while a capture is armed, open or undelivered and waits on a
-condition variable otherwise. `MidiClock::captureOutputPending()` says whether anything is still queued.
+plain records appended to a fixed single-producer/single-consumer ring (`RingCapacity` = 512). ADMISSION: a span opens only
+when START and its STOP both fit; every pulse then leaves `ReservedSlots` (one) free, so the STOP always has its slot; a span
+with no room for both is refused before START (`clock.refused`), and a full ring refuses and counts pulses. The sender thread -
+created by `captureArm()` on the control thread when a synced capture is armed - delivers them in order through
+`deliverOffAudio` -> `MidiClient::sendFromNonAudioThread()` (never `processOutEvent()`, whose ALSA queue has the audio thread as
+its single producer; ALSA gives the off-audio path a second queue its sequencer thread also drains). A message the client
+refuses stays at the ring's tail and is retried. It polls every millisecond while a capture is armed, open or undelivered and
+waits on a condition variable otherwise. `MidiClock::captureOutputPending()` says whether anything is still queued.
 
 Proof: `SessionAudioRecordTest` (START/STOP ticks, pulse count, message order, nothing after STOP, a cancel, the refusals,
 save and reload; with the sender held the audio thread delivers nothing; a full ring still delivers START and STOP; master off
-mid-capture ends the span without catch-up), `SessionGridRecordTest` (the menu entry) and `ControlClockCommands`.
+mid-capture ends the span without catch-up), `MidiClockCaptureOutputTest` (track MIDI and capture clock on one client: the
+sender never calls the audio path; a ring filled by earlier spans refuses the next span whole, every delivered START has its
+STOP), `MidiOutQueueTest::offAudioOutputNeverSharesTheAudioThreadsQueue` (ALSA client, one audio producer and two off-audio
+senders, every event once and in order), `SessionGridRecordTest` (the menu entry) and `ControlClockCommands`.
