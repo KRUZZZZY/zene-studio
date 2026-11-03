@@ -277,6 +277,11 @@ bool readChance(const QJsonObject& entry, StepEdit* edit, ControlResult* error)
 
 bool checkEntryKeys(const QJsonObject& entry, int index, ControlResult* error)
 {
+	const QJsonValue noteId = entry.value(QStringLiteral("note"));
+	if (!noteId.isUndefined() && (!noteId.isString() || noteId.toString().isEmpty()))
+	{
+		return badField(error, index, QStringLiteral("note"), QStringLiteral("must be a non-empty note id string"));
+	}
 	static const QStringList known{QStringLiteral("note"), QStringLiteral("step"), QStringLiteral("key"),
 		QStringLiteral("velocity"), QStringLiteral("chance"), QStringLiteral("ratchet"), QStringLiteral("length"),
 		QStringLiteral("remove")};

@@ -38,10 +38,9 @@ Also green: `ReversibilityContractTest`, `ControlRegistryTest`, `ControlCommands
   in the render path changed.
 - **Portability:** only `QJson*`, `QString::arg`, `QStringList`, `std::optional/map/set` in C++20; no Qt-6-only API, no
   `small/near/far/interface/min/max` identifiers, no `std::filesystem`, no POSIX calls.
-- **Gates** (run individually, because `feature_check.py` cannot create `<worktree>-feature-check/` inside this jail - the harness row
-  "gates (feature_check.py)" therefore fails for that environment reason): fork-sources, all-sources-reproduce, no-upstream-regression,
-  check-namespace, no-tautology, doc-figures all exit 0. complexity: after splitting `setSteps` (CCN 12 -> under 10) no item lists my
-  files. file-length: `NotePlaybackTest.cpp` is listed but was already 1146 lines at the base (pre-existing).
+- **Gates:** `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-294.1` exits 0:
+  fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology and doc-figures pass; complexity
+  and file-length list no new item in this unit's files.
 
 ## Round 2 (pre-review check)
 

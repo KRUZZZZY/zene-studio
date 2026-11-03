@@ -216,6 +216,7 @@ def check_refusals(session, recorder, clip, ids):
            ({"note": ids[60], "ratchet": 0}, None, "ratchet 0"),
            ({"note": ids[60], "ratchet": 17}, None, "ratchet 17"),
            ({"note": ids[60], "chance": 1.5}, None, "chance 1.5"),
+           ({"note": 99, "step": 1, "key": 70}, None, "a non-string note id"),
            ({"note": ids[60], "pitch": 3}, None, "an unknown field"),
            ({"step": 1, "key": 70}, {"step": 1, "key": 70}, "the same cell twice"),
            ({"note": "note-99999", "velocity": 10}, None, "an unknown note")]
