@@ -105,6 +105,81 @@ No headers changed; no new files; no new control commands; no audio-thread chang
 code is control-thread command handling only). Undo unchanged: the same `recordDepth` /
 `recordRouteRemoval` steps, recorded before the reply is built.
 
+## Self-check
+
+? The regression test FAILS with the product change reverted and PASSES with it.
+   Reverted (`git apply -R fix.patch`): build-8.log EXIT=0, ctest EXIT=8 —
+   `routeCountIsReadFromAfterTheEditMovesTheLayer` FAIL, Actual 0, Expected 2.
+   Re-applied: build-9.log EXIT=0, ctest EXIT=0 — 100% passed. (Before the fix
+   was first written, the same RED was recorded in test-4.log EXIT=8.)
+
+? The test is deterministic - no wall-clock, sleeps or races.
+   It drives the real command path: both modulators are created through
+   `modulator.create`, the route through `modulator.target_set`, and the real
+   block is applied through `applyModulationBlock` so the restore inside the
+   edit writes the parameters back. The reentrant edit is triggered by the
+   synchronous control-thread `dataChanged()` emission inside
+   `restoreModulationBases` - not by a timer, sleep or thread. Sequencing is
+   fixed by QtTest's slot declaration order and the two inserts are sized to
+   grow the vector exactly when each runs (the suite leaves the layer's
+   capacity at 1; libstdc++ doubling 1 -> 2 -> 4 -> 8). No pointer, probe or
+   sleep is used to detect the bug; only the public command results are
+   asserted. Honest limit: the red-without-fix outcome relies on this
+   platform's vector growth and the test's declaration order; with the fix the
+   test passes on any conforming implementation. The earlier one-shot probe
+   (test-3/test-4 logs) confirmed both the RED mechanism and the command path.
+
+? The fix is at the cause and complete; every caller and sibling checked.
+   Changed behaviour: only the two post-edit `target_count` reads in
+   `ControlCommandsModulatorRoutes.cpp` (depth_set, target_remove) now re-read
+   the layer instead of dereferencing the pointer captured before
+   `editModulationLayer`. All other post-edit reads in the group already
+   re-resolve: rate_set and the create/remove/console paths in
+   ControlCommandsModulator.cpp:248/288/377, target_set at
+   ControlCommandsModulatorRoutes.cpp:251, voices at
+   ControlCommandsModulatorVoices.cpp:235, formula/trigger_set via
+   `editModulator` at ControlCommandsModulatorTools.cpp:122/127,
+   instrument_target_set via layerResultFor at Voices:72-76. The pre-edit uses
+   (argument validation, captured bases for undo) are unchanged.
+   `restoreModulationBases` writes are synchronous (AutomatableModel.cpp:530-553);
+   a reentrant `dataChanged()` slot may legally edit the layer, which is why the
+   re-read is the fix and not a lint.
+
+? No collateral damage; old projects and saved data load exactly as before.
+   No file format, schema, undo entry, gate, limit or check was added or
+   changed. When the edit does not move the layer, the two commands report the
+   identical number as before (the layer is the same object; routeCount is
+   read after the edit either way). No other caller reads the changed lines.
+   `modulator.remove` and friends keep their capture-by-value contract.
+   Verified: ModulationLayerValueTest, ModulationLayerTest, ModulationAudioViewTest,
+   ModulationLayerProjectRoundTripTest, ModulationRateTest, ModulatorToolsTest,
+   ControlModulatorCommandsTest, ModulatorPanelTest - all pass (test-6/test-7).
+   No audio-thread code was touched; control-thread only.
+
+? ALREADY-FIXED / FALSE-POSITIVE: not applicable - verdict is FIXED (the named
+   rate_set site already re-resolved on this branch, see the verdict above;
+   the defect survived in the two sibling commands and is fixed there).
+
+? Sibling commands in the changed files and the group - consistency:
+   modulator.create        - consistent: result source re-fetched after the edit
+                             (`layer.modulator(index)` at ControlCommandsModulator.cpp:245).
+   modulator.depth_set     - FIXED by this change (early-return no-op path keeps
+                             the pre-edit read; it runs before any edit, unchanged).
+   modulator.formula_set   - consistent: re-resolves after the edit (Tools:122/127).
+   modulator.get_state     - consistent: read-only; reports a fresh JSON build (165-168).
+   modulator.instrument_target_set - consistent: re-reads via songModulationLayer()
+                             layer after the edit (Voices:230-236).
+   modulator.rate_set      - consistent (already re-resolved; the finding's site).
+   modulator.remove        - consistent: captured modulator copied BY VALUE for the
+                             undo step; result JSON built from the re-fetched layer
+                             (ControlCommandsModulator.cpp:278-296).
+   modulator.target_remove - FIXED by this change (its `removed` JSON is built from
+                             the by-value `captured` route; `target_count` re-reads).
+   modulator.target_set    - consistent: re-reads at ControlCommandsModulatorRoutes.cpp:248-251.
+   modulator.trigger_set   - consistent: formula_set's shared path (Tools:122/127).
+   modulator.voice_set     - consistent: layerResultFor re-resolves the layer
+                             (Voices:72-76, 132).
+
 ## Files committed
 
   src/core/ControlCommandsModulatorRoutes.cpp        (the fix; fork-sourced, already in tests/fork-sources.txt)
