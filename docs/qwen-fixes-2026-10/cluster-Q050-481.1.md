@@ -68,7 +68,7 @@ other neighbours pass (`14-ctest-neighbours.log`).
 create `<worktree>/../zene-feat-q050-481.1-feature-check/`, outside this lane's write-jail (PermissionError). The same
 gates were run with an identical copy of `feature_check.py` whose only change is the log directory (`/tmp/q481-fc`):
 fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures PASS (exit 0);
-complexity and file-length PASS (no new item in my files) - `RESULT: PASS`, exit 0 (`79-feature-check.log`).
+complexity and file-length PASS (no new item in my files) - `RESULT: PASS`, exit 0 (`79-feature-check.log`). Round 2: the same, exit 0 (`r2 logs/20-feature-check.log`); `submit_check.py` again FAILs only that row and WARNs only the canary false positive (`r2 logs/21-submit-check.log`); `git diff --check` exit 0.
 
 - **Each new test fails with the product change reverted, passes restored?** Yes: reverted exit 8 (8/8 hosted cases
   FAIL), restored exit 0 (10/10). Commands and logs above.
