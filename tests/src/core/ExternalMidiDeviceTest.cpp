@@ -54,8 +54,17 @@ public:
 	QStringList writable{QStringLiteral("Synth:out"), QStringLiteral("Other:out")};
 	QList<QPair<const MidiPort*, MidiEvent>> sent;
 	QStringList subscribedOut;
+	QStringList destinationsAtLastSend;
 
-	void processOutEvent(const MidiEvent& event, const TimePos&, const MidiPort* port) override { sent.append({port, event}); }
+	void processOutEvent(const MidiEvent& event, const TimePos&, const MidiPort* port) override
+	{
+		sent.append({port, event});
+		destinationsAtLastSend.clear();
+		for (auto it = port->writablePorts().constBegin(); it != port->writablePorts().constEnd(); ++it)
+		{
+			if (it.value()) { destinationsAtLastSend.append(it.key()); }
+		}
+	}
 	QStringList writablePorts() const override { return writable; }
 	void subscribeWritablePort(MidiPort*, const QString& dest, bool subscribe) override
 	{
@@ -309,6 +318,7 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(stateOf(track), first);
 		QCOMPARE(outputSince(), QStringLiteral("cc0=5@4 cc32=6@4 pc7@4"));
+		QCOMPARE(m_client.destinationsAtLastSend, QStringList{QStringLiteral("Synth:out")});
 		QCOMPARE(undoDepth(), depth);
 
 		// a preset's save, recall and removal are each one step, and one undo takes each back

@@ -319,10 +319,6 @@ void MidiPort::loadSettings( const QDomElement& thisElement )
 		else { model->setValue( -1 ); }
 	}
 	m_patchBatch = false;
-	if( patchBefore[0] != outputBankMsb() || patchBefore[1] != outputBankLsb() || patchBefore[2] != outputProgram() )
-	{
-		sendOutputPatch();
-	}
 	m_devicePresets.clear();
 	for( QDomElement e = thisElement.firstChildElement( "devicepreset" ); !e.isNull() && m_devicePresets.size() < MaxDevicePresets;
 		e = e.nextSiblingElement( "devicepreset" ) )
@@ -369,6 +365,12 @@ void MidiPort::loadSettings( const QDomElement& thisElement )
 			}
 		}
 		emit writablePortsChanged();
+	}
+	// Send after restoring the subscriptions: a backend that writes synchronously would otherwise
+	// deliver an undo's patch to the port that was active before the restore.
+	if( patchBefore[0] != outputBankMsb() || patchBefore[1] != outputBankLsb() || patchBefore[2] != outputProgram() )
+	{
+		sendOutputPatch();
 	}
 
 	if( thisElement.hasAttribute( "basevelocity" ) == false )
