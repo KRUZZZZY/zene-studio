@@ -40,6 +40,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 #include "ExportDither.h"
@@ -121,6 +122,50 @@ class ExportNoiseShaperTest : public QObject
 	Q_OBJECT
 
 private slots:
+//! Cluster new-p10-123: a non-finite sample must not poison the rest of the
+//! channel. AudioEngine::clip passes NaN straight through (its `s > 1` /
+//! `s < -1` guards are both false for NaN), so `lround` receives NaN - in
+//! this build it returns the long minimum and the value is clamped to
+//! -32768 - and `rounded - shaped` is NaN, which then lives in the channel's
+//! error history and turns later samples into NaN as well. The guarded unit
+//! below discards the non-finite sample as silence and resets that channel's
+//! history; the dither draws nothing while discarding, so later samples
+//! reproduce a fresh run sample for sample.
+void aNonFiniteSampleDoesNotPoisonLaterSamples()
+{
+	ExportNoiseShaper victim(1), reference(1);
+	const float nan = std::numeric_limits<float>::quiet_NaN();
+	QVERIFY2(victim.quantise16(nan, 0) == 0, "a NaN sample quantised to a non-silence value");
+	QVERIFY2(victim.quantise16(std::numeric_limits<float>::infinity(), 0) == reference.quantise16(std::numeric_limits<float>::infinity(), 0),
+		"Inf does not match the plain clipped path");
+	for (int n = 0; n < 64; ++n)
+	{
+		const std::int16_t got = victim.quantise16(0.25f, 0);
+		const std::int16_t want = reference.quantise16(0.25f, 0);
+		// Fresh-run equality requires the NaN to have advanced neither the
+		// history nor the dither; a poisoned run instead pins to -32768.
+		QVERIFY2(got == want, qPrintable(QStringLiteral(
+			"sample %1 after NaN: got %2, fresh reference %3 (poisoned history?)").arg(n).arg(got).arg(want)));
+	}
+
+	// quantiseFrames routes through quantise16, so the frame path must
+	// carry the same guard: a NaN frame is silence and the next frame
+	// must not be pinned.
+	ExportNoiseShaper frames(1), framesRef(1);
+	std::vector<SampleFrame> in(4);
+	for (int n = 0; n < 4; ++n) { in[n] = SampleFrame(0.25f, 0.0f); }
+	in[0] = SampleFrame(nan, nan);
+	std::vector<int_sample_t> out(4, 12345), refOut(4, 12345);
+	frames.quantiseFrames(in.data(), 4, 1, out.data(), false);
+	framesRef.quantiseFrames(std::vector<SampleFrame>(4, SampleFrame(0.25f, 0.0f)).data(), 4, 1, refOut.data(), false);
+	QVERIFY2(out[0] == 0, "the NaN frame was not written as silence");
+	for (int n = 1; n < 4; ++n)
+	{
+		QVERIFY2(out[n] == refOut[n - 1], qPrintable(QStringLiteral(
+			"frame %1 after NaN: got %2, fresh reference %3").arg(n).arg(out[n]).arg(refOut[n - 1])));
+	}
+}
+
 	void theSameSeedGivesTheSameSamplesAndResetReproduces()
 	{
 		const std::vector<float> x = quietSine();
