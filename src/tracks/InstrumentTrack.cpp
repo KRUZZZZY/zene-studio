@@ -1406,6 +1406,23 @@ Instrument * InstrumentTrack::loadInstrument(const QString & _plugin_name,
 
 
 
+#ifdef LMMS_TESTING
+void InstrumentTrack::setInstrumentForTest( Instrument* instrument )
+{
+	silenceAllNotes( true );
+	lock();
+	Engine::audioEngine()->requestChangeInModel();
+	destroyInstrument();
+	m_preservedInstrument = QDomElement();
+	Engine::audioEngine()->doneChangeInModel();
+	m_instrument = instrument;
+	unlock();
+	emit instrumentChanged();
+}
+#endif
+
+
+
 InstrumentTrack *InstrumentTrack::s_autoAssignedTrack = nullptr;
 
 /*! \brief Automatically assign a midi controller to this track, based on the midiautoassign setting

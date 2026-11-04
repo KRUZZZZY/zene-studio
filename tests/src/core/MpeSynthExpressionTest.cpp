@@ -38,10 +38,15 @@
  *     and renders identically; a project without MPE attributes opens to notes
  *     with no expression that render bit-identically and never enter the stage.
  *
- *  The DSP slots (the mapping, the exact neutral identity, the ramp, zero
- *  allocations) need no plug-in module and run on every platform; the render
- *  slots load a module, which a Windows test host cannot (see MpePlaybackTest),
- *  and skip there one by one.
+ *  Every slot runs on every platform, Windows included. A Windows test host
+ *  cannot load a plug-in module (see MpePlaybackTest), so the test does not
+ *  load one anywhere: TripleOscillator's own sources are compiled into this
+ *  executable (tests/CMakeLists.txt, the Vibed tests' shape) and the instance
+ *  is installed on the track with InstrumentTrack::setInstrumentForTest(). The
+ *  render then goes through the same NotePlayHandle -> InstrumentTrack ->
+ *  instrument -> processAudioBuffer path a loaded module takes. The plug-in
+ *  search path is an empty private directory, so no module copy is found, on
+ *  any platform, to shadow the compiled-in one.
  */
 
 #include <QtTest>
@@ -49,6 +54,7 @@
 #include <QFile>
 #include <QJsonObject>
 #include <QTemporaryDir>
+
 
 #include <cmath>
 #include <cstdio>
@@ -61,7 +67,6 @@
 #include "BufferManager.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
-#include "DummyInstrument.h"
 #include "Engine.h"
 #include "Instrument.h"
 #include "InstrumentTrack.h"
@@ -74,6 +79,7 @@
 #include "SampleFrame.h"
 #include "Song.h"
 #include "Track.h"
+#include "TripleOscillator.h"
 
 using namespace lmms;
 
@@ -88,19 +94,6 @@ ControlResult run( const QString& id, const QJsonObject& args = {} )
 {
 	return ControlRegistry::instance()->invoke( id, args );
 }
-
-constexpr auto testHostCanLoadPluginModules() -> bool
-{
-#ifdef Q_OS_WIN
-	return false;
-#else
-	return true;
-#endif
-}
-
-#define SKIP_WITHOUT_MODULES() \
-	do { if( !testHostCanLoadPluginModules() ) { \
-		QSKIP( "a Windows test host cannot load plug-in modules (see MpePlaybackTest)" ); } } while( 0 )
 
 //! Left-channel RMS of frames [from, size).
 double rms( const std::vector<SampleFrame>& frames, std::size_t from = 0 )
@@ -160,12 +153,12 @@ class MpeSynthExpressionTest : public QObject
 private slots:
 	void initTestCase()
 	{
-		if( testHostCanLoadPluginModules() )
-		{
-#ifdef LMMS_TEST_PLUGIN_DIR
-			qputenv( "LMMS_PLUGIN_DIR", LMMS_TEST_PLUGIN_DIR );
-#endif
-		}
+		// No module on any platform: an empty private plug-in directory and scan
+		// cache, so the only TripleOscillator in the process is the compiled-in one.
+		QVERIFY( m_pluginDir.isValid() );
+		qputenv( "LMMS_PLUGIN_DIR", QFile::encodeName( m_pluginDir.path() ) );
+		qputenv( "LMMS_PLUGIN_SCAN_CACHE",
+			QFile::encodeName( m_pluginDir.filePath( QStringLiteral( "scan-cache.json" ) ) ) );
 		Engine::init( true );
 		Engine::audioEngine()->audioDev()->stopProcessing();
 		BufferManager::init( Engine::audioEngine()->framesPerPeriod() );
@@ -250,13 +243,13 @@ private slots:
 		QCOMPARE( state.gain, MpeSynthExpression::MaxPressureGain );
 	}
 
-	// ---- a real built-in synthesiser (module) ----------------------------
+	// ---- a real built-in synthesiser (TripleOscillator, compiled in) -------
 
 	//! Acceptance 1: one note rendered with no expression, a neutral capture,
-	//! pressure only, CC74 only and both, through TripleOscillator.
+	//! pressure only, CC74 only and both, through TripleOscillator (compiled in,
+	//! so this runs on Windows too).
 	void aBuiltInSynthSoundsPressureAndTimbreDistinctly()
 	{
-		SKIP_WITHOUT_MODULES();
 		QVERIFY( freshTrack() );
 
 		const auto plain = renderNote( plainNote() ).frames;
@@ -295,7 +288,6 @@ private slots:
 	//! their own note, through InstrumentTrack::processInEvent.
 	void liveExpressionMovesOnlyItsOwnNote()
 	{
-		SKIP_WITHOUT_MODULES();
 		QVERIFY( freshTrack() );
 		QVERIFY( run( QStringLiteral( "device.mpe_set" ), { { QStringLiteral( "enabled" ), true } } ).ok );
 
@@ -329,7 +321,6 @@ private slots:
 	//! enter the stage.
 	void expressionRoundTripsAndOldProjectsSoundTheSame()
 	{
-		SKIP_WITHOUT_MODULES();
 		QTemporaryDir dir;
 		QVERIFY( dir.isValid() );
 
@@ -384,16 +375,24 @@ private:
 		song->clearProject();
 		m_track = dynamic_cast<InstrumentTrack*>( Track::create( Track::Type::Instrument, song ) );
 		if( m_track == nullptr ) { return false; }
-		Instrument* synth = m_track->loadInstrument( QStringLiteral( "tripleoscillator" ) );
-		if( synth == nullptr || dynamic_cast<DummyInstrument*>( synth ) != nullptr ) { return false; }
+		if( !installSynth() ) { return false; }
+		m_clip = dynamic_cast<MidiClip*>( m_track->createClip( TimePos( 0 ) ) );
+		if( m_clip == nullptr ) { return false; }
+		m_clip->addNote( plainNote(), false );
+		return true;
+	}
+
+	//! Put a compiled-in TripleOscillator (all three oscillators saw) on m_track.
+	bool installSynth()
+	{
+		auto* synth = new TripleOscillator( m_track );
+		m_track->setInstrumentForTest( synth );
+		if( m_track->instrument() != synth || synth->isSingleStreamed() ) { return false; }
 		QDomDocument doc;
 		QDomElement parent = doc.createElement( QStringLiteral( "parent" ) );
 		QDomElement settings = synth->saveState( doc, parent );
 		for( int i = 0; i < 3; ++i ) { settings.setAttribute( QStringLiteral( "wavetype%1" ).arg( i ), 2 ); }
 		synth->restoreState( settings );
-		m_clip = dynamic_cast<MidiClip*>( m_track->createClip( TimePos( 0 ) ) );
-		if( m_clip == nullptr ) { return false; }
-		m_clip->addNote( plainNote(), false );
 		return true;
 	}
 
@@ -466,6 +465,9 @@ private:
 			if( auto* instrument = dynamic_cast<InstrumentTrack*>( track ) ) { m_track = instrument; }
 		}
 		if( m_track == nullptr || m_track->getClips().empty() ) { return false; }
+		// The reopened track asked the (empty) plug-in search path for
+		// "tripleoscillator"; give it the compiled-in synth again, same settings.
+		if( !installSynth() ) { return false; }
 		m_clip = dynamic_cast<MidiClip*>( m_track->getClips().front() );
 		return m_clip != nullptr && m_clip->notes().size() == 1;
 	}
@@ -476,6 +478,7 @@ private:
 		return file.open( QIODevice::ReadOnly ) ? file.readAll() : QByteArray();
 	}
 
+	QTemporaryDir m_pluginDir;
 	InstrumentTrack* m_track = nullptr;
 	MidiClip* m_clip = nullptr;
 	f_cnt_t m_frames = 0;

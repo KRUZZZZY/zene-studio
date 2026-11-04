@@ -159,6 +159,12 @@ public:
 	void playNote( NotePlayHandle * _n, std::span<SampleFrame> workingBuffer );
 
 	QString instrumentName() const;
+#ifdef LMMS_TESTING
+	/*! Q050-311 test seam: install an instrument the test constructed itself (a built-in compiled into
+	 *  the test executable, because a Windows test host cannot load plug-in modules) the same way
+	 *  loadInstrument() installs one. The track takes ownership. */
+	void setInstrumentForTest( Instrument* instrument );
+#endif
 	//! 0.5.0 Q050-018: the original `<instrument>` XML the file carried, kept while the instrument is a placeholder
 	//! (its module or hosted plug-in binary is missing) and written back unchanged on save; null otherwise.
 	const QDomElement& preservedInstrument() const { return m_preservedInstrument; }
