@@ -1,5 +1,7 @@
 set_directory_properties(PROPERTIES SYSTEM TRUE)
 
+ADD_SUBDIRECTORY(libsamplerate)
+
 if(LMMS_BUILD_LINUX AND LMMS_HAVE_VST AND NOT WANT_QT6)
 	set(BUILD_SHARED_LIBS OFF)
 	add_subdirectory(qt5-x11embed)

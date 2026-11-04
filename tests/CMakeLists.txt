@@ -79,6 +79,7 @@ set(LMMS_TESTS
 	# the streaming/I8/parameter contract the render path depends on.
 	src/core/AudioStretcherTest.cpp
 	src/core/AudioResamplerRatioTest.cpp
+	src/core/AudioResamplerPoolMemoryTest.cpp
 	# cluster new-p10-520: zero sample rate must not poison BasicFilters'
 	# m_sampleRatio (constructor) or survive setSampleRate.
 	src/core/BasicFiltersSampleRateTest.cpp
@@ -3623,7 +3624,7 @@ if(LMMS_HAVE_MP3LAME)
 	set_tests_properties(AudioFileMP3InitTest PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
-set_tests_properties(AudioResamplerRatioTest PROPERTIES
+set_tests_properties(AudioResamplerRatioTest AudioResamplerPoolMemoryTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # ---------------------------------------------------------------------------
@@ -6072,6 +6073,10 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)
+	add_test(NAME ControlExportSettingsCleanup
+		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/control-export-settings-cleanup.py
+			${CMAKE_CURRENT_SOURCE_DIR}/control-export-settings.py)
+	set_tests_properties(ControlExportSettingsCleanup PROPERTIES TIMEOUT 60)
 	# freeze / bounce-in-place (the engine-level Bar 2 gap): a track's output is
 	# rendered to a WAV and the track made to play it, driven END TO END through
 	# --control-socket. It is registered unconditionally - the bounce.*/freeze.*

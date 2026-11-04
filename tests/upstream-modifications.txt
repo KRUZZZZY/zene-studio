@@ -5550,3 +5550,9 @@ tests/src/core/ClipConsolidateTest.cpp	# Consolidation can overflow while adding
 include/OutputSettings.h	cluster new-p23-190: setCompressionLevel clamps to the documented 0.0-1.0 range (NaN keeps the current level); the only caller (ExportProjectDialog) passes in-range values, so renders are unchanged. Held by tests/src/gui/ExportQualityControlsTest.cpp::compressionLevelStaysInItsLegalRange
 tests/src/gui/ExportQualityControlsTest.cpp	# OutputSettings compression level is not range-checked
 tests/src/core/ProjectRecoveryTest.cpp	# Autosave identity sidecars are read without a size limit
+
+include/AudioResampler.h	cluster test-ControlExportSettings: read-only pool capacity/free-slot test seams.
+src/core/AudioResampler.cpp	cluster test-ControlExportSettings: use the private pinned libsamplerate backend with deferred history clearing; preserve the full pool and selected quality in every slot.
+src/CMakeLists.txt	cluster test-ControlExportSettings: link the private namespaced libsamplerate backend alongside the system reference dependency.
+tests/CMakeLists.txt	cluster test-ControlExportSettings: register the full-pool first-use/numerical regression and transcript child-cleanup test.
+tests/control-export-settings.py	cluster test-ControlExportSettings: adopt the reviewed POSIX child watchdog and cleanup from bugs/qwen-test-ControlExportSettings.

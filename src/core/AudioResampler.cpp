@@ -24,7 +24,7 @@
 
 #include "AudioResampler.h"
 
-#include <samplerate.h>
+#include "src/3rdparty/libsamplerate/zene_samplerate.h"
 #include <array>
 #include <atomic>
 #include <new>
@@ -96,6 +96,19 @@ class RealtimeVoiceConverterPool
 {
 public:
 	static constexpr std::size_t ChunkCapacity = PlayHandle::MaxNumber;
+
+#ifdef LMMS_TESTING
+	auto capacity() const noexcept -> std::size_t { return m_capacity; }
+	auto freeSlots() const noexcept -> std::size_t
+	{
+		std::size_t count = 0;
+		for (const Chunk* chunk = m_head.load(std::memory_order_acquire); chunk != nullptr; chunk = chunk->next)
+		{
+			for (const Slot& slot : chunk->items) { count += !slot.inUse.load(std::memory_order_acquire); }
+		}
+		return count;
+	}
+#endif
 
 	RealtimeVoiceConverterPool() = default;
 	~RealtimeVoiceConverterPool()
@@ -601,6 +614,16 @@ auto AudioResampler::realtimeConverterAllocationsForTest() noexcept -> std::uint
 void AudioResampler::resetRealtimeConverterAllocationsForTest() noexcept
 {
 	s_realtimeConverterAllocations.store(0, std::memory_order_relaxed);
+}
+
+auto AudioResampler::realtimeVoiceConverterCapacityForTest() noexcept -> std::size_t
+{
+	return realtimeVoiceConverterPool().capacity();
+}
+
+auto AudioResampler::freeRealtimeVoiceConvertersForTest() noexcept -> std::size_t
+{
+	return realtimeVoiceConverterPool().freeSlots();
 }
 #endif
 

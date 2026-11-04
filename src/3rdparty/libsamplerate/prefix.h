@@ -1,0 +1,32 @@
+/* Private symbol namespace for the pinned libsamplerate backend. */
+#define src_callback_new zene_src_callback_new
+#define src_callback_read zene_src_callback_read
+#define src_clone zene_src_clone
+#define src_delete zene_src_delete
+#define src_error zene_src_error
+#define src_float_to_int_array zene_src_float_to_int_array
+#define src_float_to_short_array zene_src_float_to_short_array
+#define src_get_channels zene_src_get_channels
+#define src_get_description zene_src_get_description
+#define src_get_name zene_src_get_name
+#define src_get_version zene_src_get_version
+#define src_int_to_float_array zene_src_int_to_float_array
+#define src_is_valid_ratio zene_src_is_valid_ratio
+#define src_new zene_src_new
+#define src_process zene_src_process
+#define src_reset zene_src_reset
+#define src_set_converter zene_src_set_converter
+#define src_set_ratio zene_src_set_ratio
+#define src_short_to_float_array zene_src_short_to_float_array
+#define src_simple zene_src_simple
+#define src_strerror zene_src_strerror
+/* The system dependency may itself be static: hide its internal globals too. */
+#define sinc_get_name zene_sinc_get_name
+#define sinc_get_description zene_sinc_get_description
+#define sinc_state_new zene_sinc_state_new
+#define linear_get_name zene_linear_get_name
+#define linear_get_description zene_linear_get_description
+#define linear_state_new zene_linear_state_new
+#define zoh_get_name zene_zoh_get_name
+#define zoh_get_description zene_zoh_get_description
+#define zoh_state_new zene_zoh_state_new
