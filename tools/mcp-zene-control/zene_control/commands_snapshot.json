@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-29T15:55:04Z",
+  "captured_at": "2026-11-04T04:42:54Z",
   "commands": [
     {
       "args_schema": {
@@ -9251,6 +9251,154 @@
           }
         },
         "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track"
+        ],
+        "type": "object"
+      },
+      "description": "Read an instrument track's External MIDI device: whether its output is on, the MIDI output 'port' it sends to (and 'available_ports', the ones it could), the 'channel' (0 keeps each note's own, 1..16), the bank select 'bank_msb' / 'bank_lsb' (CC 0 / CC 32; -1 sends none) and the 'program' (1..128, as the PROG box counts; sent as 0..127), and the saved device 'presets'. Read-only.",
+      "group": "device",
+      "id": "device.external_get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "name"
+        ],
+        "type": "object"
+      },
+      "description": "Recall the device preset 'name': its port (when the port is present now - 'port_applied' and 'missing_port' say otherwise), channel, bank and program, and send the patch to the output ('patch_sent'), also when the settings were already those. One control.undo puts the previous settings back.",
+      "group": "device",
+      "id": "device.external_preset_recall",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "name"
+        ],
+        "type": "object"
+      },
+      "description": "Delete the device preset 'name'. Reversible through the ProjectJournal (Track checkpoint).",
+      "group": "device",
+      "id": "device.external_preset_remove",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "name"
+        ],
+        "type": "object"
+      },
+      "description": "Save the device's current port, channel, bank and program as the preset 'name' (1..64 characters; a saved name is replaced). A device keeps up to 64, saved with the project. Reversible through the ProjectJournal (Track checkpoint).",
+      "group": "device",
+      "id": "device.external_preset_save",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bank_lsb": {
+            "maximum": 127,
+            "minimum": -1,
+            "type": "integer"
+          },
+          "bank_msb": {
+            "maximum": 127,
+            "minimum": -1,
+            "type": "integer"
+          },
+          "channel": {
+            "maximum": 16,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "port": {
+            "type": "string"
+          },
+          "program": {
+            "maximum": 128,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track"
+        ],
+        "type": "object"
+      },
+      "description": "Configure an instrument track's External MIDI device. 'port' (midi.device_list's writable ports) is the ONE output the device sends to - any other it was sending to is left - and turns the output on; 'enabled' false stops it; 'channel' is 0..16 (0 keeps each note's own); 'bank_msb' / 'bank_lsb' (-1: none) and 'program' (1..128) are the patch the gear is told to select: when any of them changes the output gets bank select CC 0 / CC 32, then the program change, once ('patch_sent' says it reached an enabled output). Changing only the port or channel sends no patch. Name at least one setting. One control.undo puts every setting back (Track checkpoint) and tells the gear the patch that returns.",
+      "group": "device",
+      "id": "device.external_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
         "type": "object"
       }
     },
@@ -37464,23 +37612,23 @@
       }
     }
   ],
-  "count": 878,
+  "count": 883,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-252.1/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-k4l1reh3/zene.sock",
-    "version": "0.4.0-alpha.5942+68bed50"
+    "source_socket": "/tmp/zctl-run-ydbfcb7e/zene.sock",
+    "version": "0.4.0-alpha.5943+2a7fd9f"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 77,
-    "id_count": 878,
-    "ids_sha256": "60473c71cd63735b5af096bbd2cd1d9a5a096cf4b2fd8855d1333df124ea362a"
+    "id_count": 883,
+    "ids_sha256": "2fb6733a29a7ca7b4d7197cae1ba500636e3561a9b72b6a6e340e1bba995734e"
   }
 }
