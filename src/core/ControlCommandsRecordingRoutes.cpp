@@ -223,6 +223,13 @@ ControlResult armTrack(const QJsonObject& args)
 	const QJsonObject before = routeJson(target, route);
 	if (!recorder->armTrack(route, file.toStdString(), sampleRate, channel))
 	{
+		// Explicit file (new-p17-24): a failed arm truncates nothing new and
+		// leaves nothing to release. Default file: the allocator reserved
+		// this path exclusively above - release only that reservation.
+		if (args.value(QStringLiteral("file")).toString().isEmpty())
+		{
+			releaseDefaultTake(file);
+		}
 		return ControlResult::failure(ControlErrorKind::Refused,
 			QStringLiteral("route %1 could not be armed: the take file %2 could not be opened "
 				"for writing, or the route is already armed").arg(route).arg(file));
@@ -254,11 +261,11 @@ ControlResult disarmTrack(const QJsonObject& args)
 
 	TrackRecorder& target = recorder->track(route);
 	const bool wasArmed = target.isArmed();
-	target.disarm();
+	const bool retired = target.disarm();
 
 	QJsonObject result = armedReply(target, route);
 	result.insert(QStringLiteral("armed_before"), wasArmed);
-	result.insert(QStringLiteral("journal_retired"), wasArmed);
+	result.insert(QStringLiteral("journal_retired"), retired);
 	return ControlResult::success(result);
 }
 

@@ -27,15 +27,21 @@
 #include <cstdint>
 #include <vector>
 
+#include <QFile>
 #include <QFileInfo>
 #include <QTemporaryDir>
 
 #include "AudioEngine.h"
+#include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "Engine.h"
 #include "MultiTrackRecorder.h"
+#include "RecordingJournal.h"
 #include "SampleFrame.h"
+#include "TrackRecorder.h"
+
+#include <sndfile.h>
 
 using namespace lmms;
 
@@ -55,6 +61,40 @@ struct StopRecorderOnExit
 class ControlRecordingRoutesTest : public QObject
 {
 	Q_OBJECT
+
+	//! Record \a frames frames of constant \a value into route 0's armed take.
+	void stage(int frames, float value)
+	{
+		AudioEngine* audio = Engine::audioEngine();
+		MultiTrackRecorder& recorder = audio->recorder();
+		const int channels = recorder.inputChannelCapacity();
+		std::vector<sample_t> input(static_cast<std::size_t>(channels) * frames, value);
+		recorder.processInputInterleaved(input.data(), channels, frames);
+	}
+
+	//! Byte content of \a path, for sentinel preservation checks.
+	static QByteArray contents(const QString& path) { QFile f(path); f.open(QIODevice::ReadOnly); return f.readAll(); }
+
+	//! The take's samples read back as int32 (24-bit PCM through libsndfile).
+	static std::vector<std::int32_t> takeSamples(const QString& path, std::size_t frames)
+	{
+		SF_INFO info{}; info.format = 0;
+		SNDFILE* sf = sf_open(path.toUtf8().constData(), SFM_READ, &info);
+		if (sf == nullptr) { return {}; }
+		std::vector<std::int32_t> out;
+		out.resize(frames * 1);
+		sf_readf_int(sf, out.data(), static_cast<sf_count_t>(frames));
+		sf_close(sf);
+		return out;
+	}
+
+	//! Point the default-take directory at \a dir for the rest of the test, then restore it.
+	static auto useRecoveryDir(const QTemporaryDir& dir)
+	{
+		const QString previous = ConfigManager::inst()->workingDir();
+		ConfigManager::inst()->setWorkingDir(dir.path());
+		return qScopeGuard([previous] { ConfigManager::inst()->setWorkingDir(previous); });
+	}
 
 private slots:
 
@@ -127,6 +167,247 @@ private slots:
 		QVERIFY(!recorder.track(0).isArmed());
 		QVERIFY(QFileInfo::exists(takePath));
 		QVERIFY(QFileInfo(takePath).size() > 44);
+	}
+
+	//! new-p17-24: re-arming with no `file` must not reuse the previous take.
+	void secondDefaultArmDoesNotTruncateFirstTake()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		StopRecorderOnExit stopRecorder{Engine::audioEngine()->recorder()};
+		auto restore = useRecoveryDir(dir);
+		ControlRegistry* registry = ControlRegistry::instance();
+
+		const ControlResult first = registry->invoke(QStringLiteral("record.arm_track"),
+			QJsonObject{{QStringLiteral("route"), 0}});
+		QVERIFY2(first.ok, qPrintable(first.errorMessage));
+		stage(8, 0.5f);
+		const QString firstPath = first.result.value(QStringLiteral("file")).toString();
+		QVERIFY(QFileInfo::exists(firstPath));
+		QVERIFY(registry->invoke(QStringLiteral("record.disarm_track"),
+			QJsonObject{{QStringLiteral("route"), 0}}).ok);
+		const auto firstBytes = contents(firstPath);
+		QVERIFY(firstBytes.size() > 44);
+		const auto firstSamples = takeSamples(firstPath, 8);
+		QVERIFY(!firstSamples.empty());
+
+		const ControlResult second = registry->invoke(QStringLiteral("record.arm_track"),
+			QJsonObject{{QStringLiteral("route"), 0}});
+		QVERIFY2(second.ok, qPrintable(second.errorMessage));
+		const QString secondPath = second.result.value(QStringLiteral("file")).toString();
+		QVERIFY2(secondPath != firstPath,
+			qPrintable(QStringLiteral("second default arm reused %1").arg(firstPath)));
+		stage(8, -0.25f);
+		QVERIFY(registry->invoke(QStringLiteral("record.disarm_track"),
+			QJsonObject{{QStringLiteral("route"), 0}}).ok);
+
+		QCOMPARE(contents(firstPath), firstBytes);
+		QCOMPARE(takeSamples(firstPath, 8), firstSamples);
+		QVERIFY(contents(secondPath).size() > 44);
+		QVERIFY(takeSamples(secondPath, 8) != firstSamples);
+	}
+
+	//! new-p17-24: a default arm must skip a candidate whose file or journal exists.
+	void defaultArmSkipsExistingTakeAndJournal()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		StopRecorderOnExit stopRecorder{Engine::audioEngine()->recorder()};
+		auto restore = useRecoveryDir(dir);
+		ControlRegistry* registry = ControlRegistry::instance();
+
+		const QString seeded = dir.filePath(QStringLiteral("zene-take-route0.wav"));
+		const QByteArray sentinel(QStringLiteral("KEEP-ME-WAV-BYTES").toUtf8());
+		{ QFile f(seeded); QVERIFY(f.open(QIODevice::WriteOnly)); f.write(sentinel); }
+		const QString seededJournal = recordingjournal::journalPathFor(seeded);
+		const QByteArray journalSentinel(QStringLiteral("KEEP-ME-JOURNAL-BYTES").toUtf8());
+		{ QFile f(seededJournal); QVERIFY(f.open(QIODevice::WriteOnly)); f.write(journalSentinel); }
+
+		const ControlResult armed = registry->invoke(QStringLiteral("record.arm_track"),
+			QJsonObject{{QStringLiteral("route"), 0}});
+		QVERIFY2(armed.ok, qPrintable(armed.errorMessage));
+		const QString allocated = armed.result.value(QStringLiteral("file")).toString();
+		QVERIFY2(allocated != seeded,
+			qPrintable(QStringLiteral("arm reused the occupied %1").arg(seeded)));
+		QCOMPARE(contents(seeded), sentinel);
+		QCOMPARE(contents(seededJournal), journalSentinel);
+		QVERIFY(QFileInfo::exists(allocated));
+		QVERIFY(registry->invoke(QStringLiteral("record.disarm_track"),
+			QJsonObject{{QStringLiteral("route"), 0}}).ok);
+		QCOMPARE(contents(seeded), sentinel);
+		QCOMPARE(contents(seededJournal), journalSentinel);
+	}
+
+	//! new-p17-24: exhausting every candidate refuses the arm and leaves no residue.
+	void defaultArmExhaustionRefusesAndLeavesNoResidue()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		StopRecorderOnExit stopRecorder{Engine::audioEngine()->recorder()};
+		auto restore = useRecoveryDir(dir);
+		ControlRegistry* registry = ControlRegistry::instance();
+
+		// Occupy the whole bounded candidate space the allocator may try.
+		for (int index = 0; index < 1000; ++index)
+		{
+			const QString suffix = index == 0 ? QString() : QStringLiteral("-%1").arg(index);
+			const QString path = dir.filePath(QStringLiteral("zene-take-route0%1.wav").arg(suffix));
+			QFile f(path); QVERIFY(f.open(QIODevice::WriteOnly)); f.write("x");
+			QFile j(recordingjournal::journalPathFor(path)); QVERIFY(j.open(QIODevice::WriteOnly)); j.write("y");
+		}
+
+		const ControlResult refused = registry->invoke(QStringLiteral("record.arm_track"),
+			QJsonObject{{QStringLiteral("route"), 0}});
+		QVERIFY2(!refused.ok,
+			"arm succeeded with every candidate occupied");
+		QVERIFY(!Engine::audioEngine()->recorder().track(0).isArmed());
+		for (int index = 0; index < 1000; ++index)
+		{
+			const QString suffix = index == 0 ? QString() : QStringLiteral("-%1").arg(index);
+			const QString path = dir.filePath(QStringLiteral("zene-take-route0%1.wav").arg(suffix));
+			QCOMPARE(contents(path), QByteArray("x"));
+			QCOMPARE(contents(recordingjournal::journalPathFor(path)), QByteArray("y"));
+		}
+
+		// Removing occupation frees the allocator again: the route is retryable.
+		QFile::remove(dir.filePath(QStringLiteral("zene-take-route0.wav")));
+		QFile::remove(recordingjournal::journalPathFor(dir.filePath(QStringLiteral("zene-take-route0.wav"))));
+		const ControlResult retry = registry->invoke(QStringLiteral("record.arm_track"),
+			QJsonObject{{QStringLiteral("route"), 0}});
+		QVERIFY2(retry.ok, qPrintable(retry.errorMessage));
+		QVERIFY(registry->invoke(QStringLiteral("record.disarm_track"),
+			QJsonObject{{QStringLiteral("route"), 0}}).ok);
+	}
+
+	//! new-p17-24: writer-start failure after allocation cleans only its own artefacts.
+	void defaultArmFailureLeavesRouteRetryableAndSentinels()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		StopRecorderOnExit stopRecorder{Engine::audioEngine()->recorder()};
+		auto restore = useRecoveryDir(dir);
+		ControlRegistry* registry = ControlRegistry::instance();
+
+		const QString seeded = dir.filePath(QStringLiteral("zene-take-route0.wav"));
+		const QByteArray sentinel(QStringLiteral("KEEP-ROUTE0").toUtf8());
+		{ QFile f(seeded); QVERIFY(f.open(QIODevice::WriteOnly)); f.write(sentinel); }
+		const QString seededJournal = recordingjournal::journalPathFor(seeded);
+		{ QFile f(seededJournal); QVERIFY(f.open(QIODevice::WriteOnly)); f.write("keep-journal"); }
+
+		TrackRecorder::failNextWriterThreadStartForTesting();
+		const ControlResult failed = registry->invoke(QStringLiteral("record.arm_track"),
+			QJsonObject{{QStringLiteral("route"), 0}});
+		QVERIFY2(!failed.ok, "arm reported success despite the injected writer failure");
+		QVERIFY(!Engine::audioEngine()->recorder().track(0).isArmed());
+		QCOMPARE(contents(seeded), sentinel);
+		QCOMPARE(contents(seededJournal), QByteArray("keep-journal"));
+
+		const ControlResult retry = registry->invoke(QStringLiteral("record.arm_track"),
+			QJsonObject{{QStringLiteral("route"), 0}});
+		QVERIFY2(retry.ok, qPrintable(retry.errorMessage));
+		const QString allocated = retry.result.value(QStringLiteral("file")).toString();
+		QVERIFY(allocated != seeded);
+		QCOMPARE(contents(seeded), sentinel);
+		QVERIFY(registry->invoke(QStringLiteral("record.disarm_track"),
+			QJsonObject{{QStringLiteral("route"), 0}}).ok);
+		QCOMPARE(contents(seeded), sentinel);
+	}
+
+	//! new-p17-27: disarm must report the journal's actual retirement result.
+	void disarmJournalRetirementReflectsRemovalResult()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		StopRecorderOnExit stopRecorder{Engine::audioEngine()->recorder()};
+		ControlRegistry* registry = ControlRegistry::instance();
+		const QString take = dir.filePath(QStringLiteral("journalled.wav"));
+		{
+			// Arm on a route, disarm, then inspect what the reply said about the journal.
+		}
+		const ControlResult armed = registry->invoke(QStringLiteral("record.arm_track"),
+			QJsonObject{{QStringLiteral("route"), 0}, {QStringLiteral("file"), take}});
+		QVERIFY2(armed.ok, qPrintable(armed.errorMessage));
+		const QString journal = armed.result.value(QStringLiteral("journal")).toString();
+		QVERIFY(!journal.isEmpty());
+		QVERIFY(QFileInfo::exists(journal));
+		const ControlResult disarmed = registry->invoke(QStringLiteral("record.disarm_track"),
+			QJsonObject{{QStringLiteral("route"), 0}});
+		QVERIFY2(disarmed.ok, qPrintable(disarmed.errorMessage));
+		QCOMPARE(disarmed.result.value(QStringLiteral("journal_retired")).toBool(), true);
+		QVERIFY(!QFileInfo::exists(journal));
+	}
+
+	//! new-p17-27: a journal removal failure must surface as journal_retired=false.
+	void disarmJournalRemovalFailureReportsFalse()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		StopRecorderOnExit stopRecorder{Engine::audioEngine()->recorder()};
+		auto restore = useRecoveryDir(dir);
+		ControlRegistry* registry = ControlRegistry::instance();
+
+		const ControlResult armed = registry->invoke(QStringLiteral("record.arm_track"),
+			QJsonObject{{QStringLiteral("route"), 0}});
+		QVERIFY2(armed.ok, qPrintable(armed.errorMessage));
+		TrackRecorder& target = Engine::audioEngine()->recorder().track(0);
+		const QString journal = QString::fromStdString(target.journalPath());
+		QVERIFY(!journal.isEmpty());
+		QVERIFY(QFileInfo::exists(journal));
+
+		// Make the journal non-removable while keeping it observable: replace it
+		// by a DIRECTORY of the same name. RecordingJournal::remove() (QFile::remove)
+		// cannot remove a directory, so retirement fails deterministically on every platform.
+		QVERIFY(QFile::remove(journal));
+		QVERIFY(QDir().mkdir(journal));
+		const ControlResult disarmed = registry->invoke(QStringLiteral("record.disarm_track"),
+			QJsonObject{{QStringLiteral("route"), 0}});
+		QVERIFY2(disarmed.ok, qPrintable(disarmed.errorMessage));
+		QCOMPARE(disarmed.result.value(QStringLiteral("journal_retired")).toBool(), false);
+		QCOMPARE(QString::fromStdString(target.journalPath()), journal);
+		QVERIFY(QFileInfo(journal).isDir());
+		QVERIFY(QDir().rmdir(journal));
+		// A second disarm has nothing to retire now that the journal is gone: the
+		// second disarm is a no-op (route was already disarmed by the first).
+		const ControlResult again = registry->invoke(QStringLiteral("record.disarm_track"),
+			QJsonObject{{QStringLiteral("route"), 0}});
+		QVERIFY2(again.ok, qPrintable(again.errorMessage));
+		QCOMPARE(again.result.value(QStringLiteral("journal_retired")).toBool(), true);
+		QCOMPARE(QString::fromStdString(target.journalPath()), journal);
+	}
+
+	//! new-p17-24: track.set_arm's default must also be unique per take.
+	void trackSetArmDefaultSecondTakeIsDistinct()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		StopRecorderOnExit stopRecorder{Engine::audioEngine()->recorder()};
+		auto restore = useRecoveryDir(dir);
+		ControlRegistry* registry = ControlRegistry::instance();
+		const ControlResult added = registry->invoke(QStringLiteral("track.add"),
+			QJsonObject{{QStringLiteral("type"), QStringLiteral("sample")}});
+		QVERIFY2(added.ok, qPrintable(added.errorMessage));
+		const QString track = added.result.value(QStringLiteral("track")).toString();
+		QVERIFY(!track.isEmpty());
+
+		const ControlResult first = registry->invoke(QStringLiteral("track.set_arm"),
+			QJsonObject{{QStringLiteral("track"), track}, {QStringLiteral("armed"), true}});
+		QVERIFY2(first.ok, qPrintable(first.errorMessage));
+		const QString firstPath = first.result.value(QStringLiteral("file")).toString();
+		QVERIFY(QFileInfo::exists(firstPath));
+		QVERIFY(registry->invoke(QStringLiteral("track.set_arm"),
+			QJsonObject{{QStringLiteral("track"), track}, {QStringLiteral("armed"), false}}).ok);
+		const auto firstBytes = contents(firstPath);
+
+		const ControlResult second = registry->invoke(QStringLiteral("track.set_arm"),
+			QJsonObject{{QStringLiteral("track"), track}, {QStringLiteral("armed"), true}});
+		QVERIFY2(second.ok, qPrintable(second.errorMessage));
+		const QString secondPath = second.result.value(QStringLiteral("file")).toString();
+		QVERIFY2(secondPath != firstPath,
+			qPrintable(QStringLiteral("track.set_arm second default reused %1").arg(firstPath)));
+		QVERIFY(registry->invoke(QStringLiteral("track.set_arm"),
+			QJsonObject{{QStringLiteral("track"), track}, {QStringLiteral("armed"), false}}).ok);
+		QCOMPARE(contents(firstPath), firstBytes);
+		QVERIFY(QFileInfo::exists(secondPath));
 	}
 };
 

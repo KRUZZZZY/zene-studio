@@ -1966,6 +1966,36 @@ private slots:
 		delete track;
 	}
 
+	//! new-p17-24: the route recorder's audio-thread entry allocates nothing.
+	//! The take path is allocated ONCE on the control thread at arm time; the
+	//! callback (processInputInterleaved) only demuxes into the ring.
+	void routeRecorderCallbackAllocatesNothing()
+	{
+		auto* engine = lmms::Engine::audioEngine();
+		QVERIFY(engine != nullptr);
+		auto& recorder = engine->recorder();
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString take = dir.filePath(QStringLiteral("route.wav"));
+		const int sampleRate = static_cast<int>(engine->baseSampleRate());
+		QVERIFY(recorder.armTrack(0, take.toStdString(), sampleRate, 0));
+		const int channels = recorder.inputChannelCapacity();
+		std::vector<sample_t> input(static_cast<std::size_t>(channels) * 128, 0.5f);
+
+		lmms::test::resetAllocationCount();
+		lmms::test::tlCountAllocations = true;
+		{
+			const lmms::RealtimeScope realtime;
+			for (int i = 0; i < 8; ++i)
+			{
+				recorder.processInputInterleaved(input.data(), channels, 128);
+			}
+		}
+		lmms::test::tlCountAllocations = false;
+		QCOMPARE(asNumber(lmms::test::tlAllocationCount), asNumber(0));
+		recorder.disarmAll();
+	}
+
 	//! The control id ("clip-N") of a clip.
 	static QString clipIdOf(const lmms::Clip* clip)
 	{

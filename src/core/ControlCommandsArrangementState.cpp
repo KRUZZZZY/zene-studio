@@ -198,10 +198,23 @@ ControlResult armTrackArm(MultiTrackRecorder& recorder, Track* track, const QStr
 			QStringLiteral("'file' must be absolute: a relative path names a different file in "
 				"the next process, and so does the take journal beside it"));
 	}
-	const QString takePath = file.isEmpty()
-		? QDir(control::defaultRecoveryDir()).absoluteFilePath(
-			QStringLiteral("zene-take-trk%1.wav").arg(track->id()))
-		: file;
+	QString takePath;
+	if (file.isEmpty())
+	{
+		takePath = control::reserveDefaultTake(control::defaultRecoveryDir(),
+			QStringLiteral("zene-take-trk%1").arg(track->id()));
+		if (takePath.isEmpty())
+		{
+			return ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("route %1 could not be armed: all %2 default take names "
+					"beside this instance's recovery file already hold a take or journal")
+					.arg(route).arg(control::TakeNameProbeBound));
+		}
+	}
+	else
+	{
+		takePath = file;
+	}
 
 	const int channels = target.inputChannelCapacity();
 	const int channel = args.contains(QStringLiteral("input_channel"))
@@ -217,6 +230,7 @@ ControlResult armTrackArm(MultiTrackRecorder& recorder, Track* track, const QStr
 
 	if (!recorder.armTrack(route, takePath.toStdString(), sampleRate, channel))
 	{
+		if (file.isEmpty()) { control::releaseDefaultTake(takePath); }
 		return ControlResult::failure(ControlErrorKind::Refused,
 			QStringLiteral("route %1 could not be armed: the take file %2 could not be opened "
 				"for writing").arg(route).arg(takePath));

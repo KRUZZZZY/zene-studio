@@ -30,6 +30,7 @@
 #include <cmath>
 #include <system_error>
 
+#include <QFile>
 #include <QFileInfo>
 #include <QString>
 
@@ -238,6 +239,9 @@ bool TrackRecorder::arm(const std::string& filePath, int sampleRate, int inputCh
 			recordingjournal::remove(QString::fromStdString(m_journalPath));
 			m_journalPath.clear();
 		}
+		// The WAV this arm opened by exclusive reservation is its own
+		// artefact: a failed arm leaves none of it behind (new-p17-24).
+		QFile::remove(QString::fromStdString(m_filePath));
 		m_journalTake.clear();
 		m_journalFrames.store(0, std::memory_order_relaxed);
 		m_journalSampleRate = 0;
@@ -289,11 +293,11 @@ void TrackRecorder::writeJournal()
 
 
 
-void TrackRecorder::disarm()
+bool TrackRecorder::disarm()
 {
 	if (!m_armed.exchange(false, std::memory_order_acq_rel))
 	{
-		return; // not armed
+		return true; // not armed: nothing outstanding
 	}
 	m_capturing.store(false, std::memory_order_release);
 	m_inputUnavailable.store(false, std::memory_order_release);
@@ -315,12 +319,17 @@ void TrackRecorder::disarm()
 	// journal" and "the capture died" the same fact. Removed after the writer
 	// thread is joined and the file is closed, so the frames the journal last
 	// recorded cannot exceed what the take holds.
+	bool retired = true;
 	if (!m_journalPath.empty())
 	{
-		recordingjournal::remove(QString::fromStdString(m_journalPath));
-		m_journalPath.clear();
-		m_journalFrames = 0;
+		retired = recordingjournal::remove(QString::fromStdString(m_journalPath));
+		if (retired)
+		{
+			m_journalPath.clear();
+			m_journalFrames = 0;
+		}
 	}
+	return retired;
 }
 
 
