@@ -744,6 +744,7 @@ plugins/Patman/Patman.h	cluster new-p9-350 (2026-10-10): LMMS_TESTING-only frien
 plugins/PeakControllerEffect/PeakControllerEffect.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/ReverbSC/ReverbSC.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/ReverbSC/base.c	cluster new-p12-203 (2026-10): sp_auxdata_alloc reports a refused allocation instead of memset()ing the null pointer; covered by tests/src/plugins/ReverbSCInitTest.cpp
+plugins/ReverbSC/base.c	cluster new-p14-265 (2026-10): sp_auxdata_free nulls the pointer and size and tolerates a null aux; covered by tests/src/plugins/ReverbSCInitTest.cpp
 plugins/ReverbSC/base.c	BUG 13 (new-p10-533): reject non-positive channel counts and fail cleanly when either allocation fails in sp_createn; covered by tests/src/plugins/ReverbSCCreateTest.cpp.
 plugins/ReverbSC/base.c	new-p10-532: Soundpipe create, destroy and file processing now return SP_OK on success, matching base.h's status constants
 plugins/ReverbSC/dcblock.c	new-p9-115: dcblock create reports malloc failure; pair setup checks create/init errors and frees partial state
@@ -752,6 +753,7 @@ plugins/ReverbSC/ReverbSC.cpp	rename layer 1: built-in plugin logo resource key 
 plugins/Sfxr/Sfxr.cpp	rename layer 1: user-visible plugin/module description string says Zene Studio; logo resource key zene-plugin-logo; 0.5.0 r6: per-period allocation replaced by a stack block (identical output)
 plugins/ReverbSC/ReverbSC.cpp	cluster new-p12-203 (2026-10): a refused sp_revsc_init leaves the effect bypassed (revsc released) exactly as the DC blocker path already does; covered by tests/src/plugins/ReverbSCInitTest.cpp
 plugins/ReverbSC/revsc.c	cluster new-p12-203 (2026-10): sp_revsc_create/init/destroy check their allocations and refuse a null or uninitialised state; covered by tests/src/plugins/ReverbSCInitTest.cpp
+plugins/ReverbSC/revsc.c	cluster new-p14-265 (2026-10): sp_revsc_create zeroes the state so aux is null until init allocates it, and sp_revsc_destroy frees aux only when init completed and nulls the caller's handle; covered by tests/src/plugins/ReverbSCInitTest.cpp
 plugins/SlewDistortion/SlewDistortion.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/SlewDistortion/SlewDistortionControlDialog.cpp	rename layer 1: built-in plugin logo resource key is zene-plugin-logo (display only, no behavioural change)
 plugins/SpectrumAnalyzer/Analyzer.cpp	fix SA_DEBUG timer to compare steady-clock durations and measure execution time in milliseconds; logo resource key is zene-plugin-logo
