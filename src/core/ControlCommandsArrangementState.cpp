@@ -50,6 +50,14 @@ using namespace control;  // the shared vocabulary lives in ControlVocabulary.h
 namespace
 {
 
+void releaseDefaultTakeIfOmitted(const QJsonObject& args, const QString& path)
+{
+	if (args.value(QStringLiteral("file")).toString().isEmpty())
+	{
+		control::releaseDefaultTake(path);
+	}
+}
+
 void registerArrangementGetState(ControlRegistry& registry)
 {
 	ControlCommand cmd;
@@ -222,6 +230,7 @@ ControlResult armTrackArm(MultiTrackRecorder& recorder, Track* track, const QStr
 		: std::min(route, channels - 1);
 	if (!target.inputChannelSelectable(channel))
 	{
+		releaseDefaultTakeIfOmitted(args, takePath);
 		return ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("input_channel %1 is outside [0, %2): this instance's input path "
 				"delivers %2 channel(s) (record.input_get_state reports the device's own answer)")

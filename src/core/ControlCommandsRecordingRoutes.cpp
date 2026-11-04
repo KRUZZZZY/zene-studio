@@ -73,6 +73,11 @@ using namespace control;  // the shared vocabulary lives in ControlVocabulary.h
 namespace
 {
 
+void releaseDefaultTakeIfOmitted(const QJsonObject& args, const QString& path)
+{
+	if (args.value(QStringLiteral("file")).toString().isEmpty()) { releaseDefaultTake(path); }
+}
+
 //! The live recorder, or nullptr when this instance has no audio engine at all
 //! (a headless render, or an instance that came up without a device).
 MultiTrackRecorder* liveRecorder()
@@ -211,6 +216,7 @@ ControlResult armTrack(const QJsonObject& args)
 	const int channel = channelArg(args, route, target);
 	if (!target.inputChannelSelectable(channel))
 	{
+		releaseDefaultTakeIfOmitted(args, file);
 		return ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("input_channel %1 is outside [0, %2): this instance's capture path "
 				"delivers %2 channel(s) (record.input_get_state reports whether a capture device "

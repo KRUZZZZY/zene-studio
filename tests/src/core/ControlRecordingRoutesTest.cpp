@@ -28,6 +28,7 @@
 #include <vector>
 
 #include <QFile>
+#include <QDir>
 #include <QFileInfo>
 #include <QTemporaryDir>
 
@@ -167,6 +168,44 @@ private slots:
 		QVERIFY(!recorder.track(0).isArmed());
 		QVERIFY(QFileInfo::exists(takePath));
 		QVERIFY(QFileInfo(takePath).size() > 44);
+	}
+
+	//! A rejected input channel must not strand an allocated default take name.
+	void invalidDefaultArmDoesNotLeaveReservation()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		const int invalidChannel = Engine::audioEngine()->recorder().track(0).inputChannelCapacity();
+		QStringList routeArtifacts;
+		QStringList trackArtifacts;
+
+		QTemporaryDir routeDir;
+		QVERIFY(routeDir.isValid());
+		{
+			auto restore = useRecoveryDir(routeDir);
+			const ControlResult rejected = registry->invoke(QStringLiteral("record.arm_track"),
+				QJsonObject{{QStringLiteral("route"), 0},
+					{QStringLiteral("input_channel"), invalidChannel}});
+			QVERIFY(!rejected.ok);
+			routeArtifacts = QDir(routeDir.path()).entryList(QDir::Files | QDir::NoDotAndDotDot);
+		}
+
+		QTemporaryDir trackDir;
+		QVERIFY(trackDir.isValid());
+		{
+			auto restore = useRecoveryDir(trackDir);
+			const ControlResult added = registry->invoke(QStringLiteral("track.add"),
+				QJsonObject{{QStringLiteral("type"), QStringLiteral("sample")}});
+			QVERIFY2(added.ok, qPrintable(added.errorMessage));
+			const ControlResult rejected = registry->invoke(QStringLiteral("track.set_arm"),
+				QJsonObject{{QStringLiteral("track"), added.result.value(QStringLiteral("track")).toString()},
+					{QStringLiteral("armed"), true}, {QStringLiteral("input_channel"), invalidChannel}});
+			QVERIFY(!rejected.ok);
+			trackArtifacts = QDir(trackDir.path()).entryList(QDir::Files | QDir::NoDotAndDotDot);
+		}
+		QVERIFY2(routeArtifacts.isEmpty() && trackArtifacts.isEmpty(),
+			qPrintable(QStringLiteral("record.arm_track left [%1], track.set_arm left [%2]")
+				.arg(routeArtifacts.join(QStringLiteral(", ")))
+				.arg(trackArtifacts.join(QStringLiteral(", ")))));
 	}
 
 	//! new-p17-24: re-arming with no `file` must not reuse the previous take.
@@ -365,14 +404,17 @@ private slots:
 		QCOMPARE(disarmed.result.value(QStringLiteral("journal_retired")).toBool(), false);
 		QCOMPARE(QString::fromStdString(target.journalPath()), journal);
 		QVERIFY(QFileInfo(journal).isDir());
-		QVERIFY(QDir().rmdir(journal));
-		// A second disarm has nothing to retire now that the journal is gone: the
-		// second disarm is a no-op (route was already disarmed by the first).
-		const ControlResult again = registry->invoke(QStringLiteral("record.disarm_track"),
+		const ControlResult retryFailure = registry->invoke(QStringLiteral("record.disarm_track"),
 			QJsonObject{{QStringLiteral("route"), 0}});
-		QVERIFY2(again.ok, qPrintable(again.errorMessage));
-		QCOMPARE(again.result.value(QStringLiteral("journal_retired")).toBool(), true);
+		QVERIFY2(retryFailure.ok, qPrintable(retryFailure.errorMessage));
+		QCOMPARE(retryFailure.result.value(QStringLiteral("journal_retired")).toBool(), false);
 		QCOMPARE(QString::fromStdString(target.journalPath()), journal);
+		QVERIFY(QDir().rmdir(journal));
+		const ControlResult retrySuccess = registry->invoke(QStringLiteral("record.disarm_track"),
+			QJsonObject{{QStringLiteral("route"), 0}});
+		QVERIFY2(retrySuccess.ok, qPrintable(retrySuccess.errorMessage));
+		QCOMPARE(retrySuccess.result.value(QStringLiteral("journal_retired")).toBool(), true);
+		QVERIFY(QString::fromStdString(target.journalPath()).isEmpty());
 	}
 
 	//! new-p17-24: track.set_arm's default must also be unique per take.

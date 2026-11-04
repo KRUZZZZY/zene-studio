@@ -297,7 +297,8 @@ bool TrackRecorder::disarm()
 {
 	if (!m_armed.exchange(false, std::memory_order_acq_rel))
 	{
-		return true; // not armed: nothing outstanding
+		if (m_journalPath.empty()) { return true; } // nothing outstanding
+		// A previous disarm failed to retire its journal; retry below.
 	}
 	m_capturing.store(false, std::memory_order_release);
 	m_inputUnavailable.store(false, std::memory_order_release);
