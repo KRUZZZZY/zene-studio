@@ -38,6 +38,8 @@
 
 #include <QtTest>
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -122,6 +124,46 @@ class ExportNoiseShaperTest : public QObject
 	Q_OBJECT
 
 private slots:
+//! Cluster new-p20-45 pin: the feedback error is measured against the shaped
+//! target - `rounded - shaped` - i.e. the dither offset is part of the error
+//! the loop shapes, so the documented NTF (1.25x DC = -12 dB, 3.71x Nyquist)
+//! applies to the total noise. A reference model that replays the identical
+//! float arithmetic (ExportNoiseShaper::Coefficients, the same seeded
+//! ExportDither, the same clamp) must reproduce the shaper bit-exactly,
+//! while the alternative convention (`rounded - dithered`) diverges. The
+//! spectral test above already requires the <-3 dB low-band suppression
+//! this convention delivers.
+void theFeedbackShapesTheDitherOffsetAsDocumented()
+{
+	const std::vector<float> x = quietSine();
+	ExportNoiseShaper shaper(1);
+	ExportDither referenceDither;
+	std::array<float, 3> history{0.f, 0.f, 0.f};
+	int divergedFromAlternative = 0;
+	for (float v : x)
+	{
+		const std::int16_t got = shaper.quantise16(v, 0);
+		// Identical arithmetic to ExportNoiseShaper::quantise16: the
+		// inputs used here are strictly inside (-1, 1) so AudioEngine::clip
+		// is the identity on them.
+		const float target = v * kScale;
+		const float shaped = target - (ExportNoiseShaper::Coefficients[0] * history[0]
+			+ ExportNoiseShaper::Coefficients[1] * history[1]
+			+ ExportNoiseShaper::Coefficients[2] * history[2]);
+		const float dithered = shaped + referenceDither.nextOffset(1.0f);
+		const long rounded = std::clamp(std::lround(dithered), -32768L, 32767L);
+		const float error = std::clamp(static_cast<float>(rounded) - shaped,
+			-ExportNoiseShaper::MaxFeedbackLsb, ExportNoiseShaper::MaxFeedbackLsb);
+		QCOMPARE(got, static_cast<std::int16_t>(rounded));
+		const long alternative = std::clamp(std::lround(dithered), -32768L, 32767L);
+		const float alternativeError = std::clamp(static_cast<float>(alternative) - dithered,
+			-ExportNoiseShaper::MaxFeedbackLsb, ExportNoiseShaper::MaxFeedbackLsb);
+		divergedFromAlternative += (alternativeError != error);
+		history = {error, history[0], history[1]};
+	}
+	QVERIFY2(divergedFromAlternative > 0, "the alternative feedback convention never diverged");
+}
+
 //! Cluster new-p10-123: a non-finite sample must not poison the rest of the
 //! channel. AudioEngine::clip passes NaN straight through (its `s > 1` /
 //! `s < -1` guards are both false for NaN), so `lround` receives NaN - in
