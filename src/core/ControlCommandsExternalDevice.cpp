@@ -300,7 +300,8 @@ ControlResult presetRecall(const QJsonObject& args)
 	const bool portKnown = preset.port.isEmpty() || portExists(midi, preset.port);
 
 	track->addJournalCheckPoint();
-	if (!preset.port.isEmpty() && portKnown) { selectPort(midi, preset.port); }
+	if (preset.port.isEmpty()) { stopOutput(midi); }
+	else if (portKnown) { selectPort(midi, preset.port); }
 	midi->setOutputChannel(preset.channel);
 	// forced: recalling a preset tells the gear its patch, also when the values were already what the preset holds
 	const bool sent = midi->setOutputPatch(preset.bankMsb, preset.bankLsb, preset.program, true);

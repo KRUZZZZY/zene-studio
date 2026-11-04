@@ -207,7 +207,14 @@ bool ExternalDeviceCard::run(const char* command, QJsonObject args)
 {
 	args.insert(QStringLiteral("track"), m_track);
 	const ControlResult result = invoke(command, args);
-	m_message = result.ok ? QString() : result.errorMessage;
+	if (!result.ok) { m_message = result.errorMessage; }
+	else if (QString::fromLatin1(command) == QLatin1String("device.external_preset_recall")
+		&& !result.result.value(QStringLiteral("port_applied")).toBool())
+	{
+		m_message = tr("Preset output port '%1' is not available; the other settings were applied.")
+			.arg(result.result.value(QStringLiteral("missing_port")).toString());
+	}
+	else { m_message.clear(); }
 	refresh();
 	return result.ok;
 }

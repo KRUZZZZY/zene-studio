@@ -58,7 +58,7 @@ public:
 	void refresh();
 	//! What device.external_get_state last answered.
 	const QJsonObject& state() const { return m_state; }
-	//! The reason the last command was refused; empty after one that went through.
+	//! The status from the last command: a refusal, an unavailable preset port, or empty after a normal edit.
 	QString message() const { return m_message; }
 
 protected:

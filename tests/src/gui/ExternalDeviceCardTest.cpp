@@ -227,6 +227,14 @@ private slots:
 		QCOMPARE(msb->value(), 4);
 		QCOMPARE(sentSince(), QStringLiteral("cc0=4 pc21"));
 
+		// The preset's port can disappear while another output is selected; tell the musician what was not applied.
+		port->setCurrentIndex(port->findData(QStringLiteral("Other:out")));
+		m_client.writable = {QStringLiteral("Other:out")};
+		name->setEditText(QStringLiteral("Pad"));
+		recall->click();
+		QVERIFY(card.message().contains(QStringLiteral("Synth:out")));
+		QCOMPARE(track->midiPort()->outputProgram(), 21);
+
 		name->setEditText(QStringLiteral("Nothing"));
 		recall->click();
 		QVERIFY(!card.message().isEmpty());  // refused, and it says why

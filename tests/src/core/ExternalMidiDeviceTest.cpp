@@ -301,6 +301,30 @@ private slots:
 		m_client.writable = {QStringLiteral("Synth:out"), QStringLiteral("Other:out")};
 	}
 
+	//! A preset saved with output off has no port; recalling it must restore output off, not keep a later route.
+	void anEmptyPortPresetRestoresOutputOff()
+	{
+		InstrumentTrack* track = newTrack();
+		QVERIFY(preset("save", track, QStringLiteral("Silent")).ok);
+		QVERIFY(set(track, {{QStringLiteral("port"), QStringLiteral("Synth:out")}, {QStringLiteral("program"), 12}}).ok);
+		outputSince();
+		const int depth = undoDepth();
+
+		const ControlResult recalled = preset("recall", track, QStringLiteral("Silent"));
+		QVERIFY(recalled.ok);
+		QCOMPARE(recalled.result.value(QStringLiteral("enabled")).toBool(), false);
+		QCOMPARE(recalled.result.value(QStringLiteral("port")).toString(), QString());
+		QCOMPARE(recalled.result.value(QStringLiteral("patch_sent")).toBool(), false);
+		QVERIFY(!track->midiPort()->isWritable());
+		QCOMPARE(outputSince(), QString());
+		QCOMPARE(undoDepth(), depth + 1);
+
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(stateOf(track).value(QStringLiteral("port")).toString(), QStringLiteral("Synth:out"));
+		QVERIFY(track->midiPort()->isWritable());
+		QCOMPARE(outputSince(), QStringLiteral("pc12@1"));
+	}
+
 	//! Criterion 2 (undo): one control.undo puts every setting back, and the gear is told the patch that returns -
 	//! once, not once per setting.
 	void oneUndoRestoresTheDevice()
