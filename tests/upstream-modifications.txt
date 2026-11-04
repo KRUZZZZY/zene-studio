@@ -5550,3 +5550,11 @@ tests/src/core/ClipConsolidateTest.cpp	# Consolidation can overflow while adding
 include/OutputSettings.h	cluster new-p23-190: setCompressionLevel clamps to the documented 0.0-1.0 range (NaN keeps the current level); the only caller (ExportProjectDialog) passes in-range values, so renders are unchanged. Held by tests/src/gui/ExportQualityControlsTest.cpp::compressionLevelStaysInItsLegalRange
 tests/src/gui/ExportQualityControlsTest.cpp	# OutputSettings compression level is not range-checked
 tests/src/core/ProjectRecoveryTest.cpp	# Autosave identity sidecars are read without a size limit
+include/MidiPort.h	Q050-252.1 (External MIDI device): bank select MSB/LSB models (-1 = send none), setOutputPatch()/sendOutputPatch() (bank CC 0/32 then the program change, sent once per edit), a per-port list of named device presets, midiClient() and rebindClientForTest(). Nothing on processOutEvent or the audio path changes. Held by tests/src/core/ExternalMidiDeviceTest.cpp.
+src/core/midi/MidiPort.cpp	Q050-252.1 (External MIDI device): the bank models and the device presets are saved only when set (a project that never used them saves the same bytes) and an absent bank resets to -1 on load; bank and program load as ONE patch (sent once); updateOutputProgram() sends bank select then the program change; loadSettings() now UNsubscribes a writable port the saved state does not list (it could only subscribe, so an undo could not leave a port: track.midi_out and device.external_set), held by ExternalMidiDeviceTest::oneUndoRestoresTheDevice. Project load is unchanged: the ports start unsubscribed.
+src/gui/shell/ShellMenuEntries.cpp	Q050-252.1: Track > MIDI Out > External Device... opens ExternalDeviceCard (declares device.external_set). Held by tests/src/gui/ExternalDeviceCardTest.cpp::theTrackMenuOpensTheCard.
+src/gui/CMakeLists.txt	Q050-252.1: lists gui/instrument/ExternalDeviceCard.cpp.
+src/core/CMakeLists.txt	Q050-252.1: lists core/ControlCommandsExternalDevice.cpp.
+src/core/ControlRegistryRegistrations.cpp	Q050-252.1: registers the device.external_* commands.
+include/ControlRegistryGroups.h	Q050-252.1: declares registerExternalDeviceCommands.
+src/core/ControlReversibilityTableDevices.cpp	Q050-252.1: rows for the five device.external_* commands.

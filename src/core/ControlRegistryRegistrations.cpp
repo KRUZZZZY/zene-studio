@@ -154,6 +154,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerMixerMeterCommands(registry);
 	registerHardwareIoCommands(registry);  // 0.5.0 F1: audio.io_*, mixer.hardware_*, mixer.cue_*
 	registerTrackMidiOutCommands(registry);
+	registerExternalDeviceCommands(registry);  // 0.5.0 L09 (Q050-252.1): device.external_*
 	registerTrackVersionCommands(registry);
 	registerScoreExportCommands(registry);
 	registerThemeCommands(registry);

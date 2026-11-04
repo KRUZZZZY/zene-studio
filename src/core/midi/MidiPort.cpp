@@ -27,6 +27,9 @@
 
 #include "MidiPort.h"
 #include "MidiClient.h"
+#include <algorithm>
+#include <utility>
+
 #include "MidiDummy.h"
 #include "MidiEventProcessor.h"
 #include "MidiReconnect.h"
@@ -40,6 +43,9 @@ namespace lmms
 
 
 static MidiDummy s_dummyClient;
+
+//! CC 32: the low byte of a bank select (CC 0 is the high byte, MidiControllerBankSelect).
+static constexpr int BankSelectLsb = 32;
 
 
 
@@ -62,6 +68,8 @@ MidiPort::MidiPort( const QString& name,
 	m_fixedOutputVelocityModel( -1, -1, MidiMaxVelocity, this, tr( "Fixed output velocity" ) ),
 	m_fixedOutputNoteModel( -1, -1, MidiMaxKey, this, tr( "Fixed output note" ) ),
 	m_outputProgramModel( 1, 1, MidiProgramCount, this, tr( "Output MIDI program" ) ),
+	m_outputBankMsbModel( -1, -1, MidiMaxVelocity, this, tr( "Output MIDI bank (MSB)" ) ),
+	m_outputBankLsbModel( -1, -1, MidiMaxVelocity, this, tr( "Output MIDI bank (LSB)" ) ),
 	m_baseVelocityModel( MidiMaxVelocity/2, 1, MidiMaxVelocity, this, tr( "Base velocity" ) ),
 	m_readableModel( false, this, tr( "Receive MIDI-events" ) ),
 	m_writableModel( false, this, tr( "Send MIDI-events" ) )
@@ -96,6 +104,10 @@ MidiPort::MidiPort( const QString& name,
 	connect( &m_writableModel, SIGNAL(dataChanged()),
 			this, SLOT(updateMidiPortMode()), Qt::DirectConnection );
 	connect( &m_outputProgramModel, SIGNAL(dataChanged()),
+			this, SLOT(updateOutputProgram()), Qt::DirectConnection );
+	connect( &m_outputBankMsbModel, SIGNAL(dataChanged()),
+			this, SLOT(updateOutputProgram()), Qt::DirectConnection );
+	connect( &m_outputBankLsbModel, SIGNAL(dataChanged()),
 			this, SLOT(updateOutputProgram()), Qt::DirectConnection );
 
 
@@ -226,6 +238,20 @@ void MidiPort::saveSettings( QDomDocument& doc, QDomElement& thisElement )
 	m_fixedOutputNoteModel.saveSettings( doc, thisElement, "fixedoutputnote" );
 	m_outputProgramModel.saveSettings( doc, thisElement, "outputprogram" );
 	m_baseVelocityModel.saveSettings( doc, thisElement, "basevelocity" );
+	// Q050-252.1: written only when set, so a project that never used a bank saves exactly the bytes it did before
+	if( outputBankMsb() >= 0 ) { m_outputBankMsbModel.saveSettings( doc, thisElement, "outputbankmsb" ); }
+	if( outputBankLsb() >= 0 ) { m_outputBankLsbModel.saveSettings( doc, thisElement, "outputbanklsb" ); }
+	for( const DevicePreset& preset : m_devicePresets )
+	{
+		QDomElement element = doc.createElement( "devicepreset" );
+		element.setAttribute( "name", preset.name );
+		element.setAttribute( "port", preset.port );
+		element.setAttribute( "channel", preset.channel );
+		element.setAttribute( "bankmsb", preset.bankMsb );
+		element.setAttribute( "banklsb", preset.bankLsb );
+		element.setAttribute( "program", preset.program );
+		thisElement.appendChild( element );
+	}
 	m_readableModel.saveSettings( doc, thisElement, "readable" );
 	m_writableModel.saveSettings( doc, thisElement, "writable" );
 
@@ -278,8 +304,39 @@ void MidiPort::loadSettings( const QDomElement& thisElement )
 	m_fixedInputVelocityModel.loadSettings( thisElement, "fixedinputvelocity" );
 	m_fixedOutputVelocityModel.loadSettings( thisElement, "fixedoutputvelocity" );
 	m_fixedOutputNoteModel.loadSettings( thisElement, "fixedoutputnote" );
+	// Bank and program load as ONE patch: a hardware synth is sent the result once, not each model's
+	// intermediate state (an undo that changes the bank and the program must not step through a third patch)
+	const int patchBefore[3] = { outputBankMsb(), outputBankLsb(), outputProgram() };
+	m_patchBatch = true;
 	m_outputProgramModel.loadSettings( thisElement, "outputprogram" );
 	m_baseVelocityModel.loadSettings( thisElement, "basevelocity" );
+	// Absent means "no bank" (an old project, or an undo back to before one was chosen): the value must be
+	// put back to -1, not left at what the port held, so it is reset here rather than skipped
+	for( auto [model, name] : { std::pair<IntModel*, const char*>{ &m_outputBankMsbModel, "outputbankmsb" },
+		std::pair<IntModel*, const char*>{ &m_outputBankLsbModel, "outputbanklsb" } } )
+	{
+		if( thisElement.hasAttribute( name ) || !thisElement.namedItem( name ).isNull() ) { model->loadSettings( thisElement, name ); }
+		else { model->setValue( -1 ); }
+	}
+	m_patchBatch = false;
+	if( patchBefore[0] != outputBankMsb() || patchBefore[1] != outputBankLsb() || patchBefore[2] != outputProgram() )
+	{
+		sendOutputPatch();
+	}
+	m_devicePresets.clear();
+	for( QDomElement e = thisElement.firstChildElement( "devicepreset" ); !e.isNull() && m_devicePresets.size() < MaxDevicePresets;
+		e = e.nextSiblingElement( "devicepreset" ) )
+	{
+		DevicePreset preset;
+		preset.name = e.attribute( "name" ).left( MaxDevicePresetName );
+		if( preset.name.isEmpty() || findDevicePreset( preset.name ) != nullptr ) { continue; }
+		preset.port = e.attribute( "port" );
+		preset.channel = std::clamp( e.attribute( "channel", "1" ).toInt(), 0, MidiChannelCount );
+		preset.bankMsb = std::clamp( e.attribute( "bankmsb", "-1" ).toInt(), -1, MidiMaxVelocity );
+		preset.bankLsb = std::clamp( e.attribute( "banklsb", "-1" ).toInt(), -1, MidiMaxVelocity );
+		preset.program = std::clamp( e.attribute( "program", "1" ).toInt(), 1, MidiProgramCount );
+		m_devicePresets.append( preset );
+	}
 	m_readableModel.loadSettings( thisElement, "readable" );
 	m_writableModel.loadSettings( thisElement, "writable" );
 
@@ -303,9 +360,12 @@ void MidiPort::loadSettings( const QDomElement& thisElement )
 		QStringList wp = thisElement.attribute( "outports" ).split( ',' );
 		for( Map::ConstIterator it = m_writablePorts.begin(); it != m_writablePorts.end(); ++it )
 		{
-			if( it.value() != ( wp.indexOf( it.key() ) != -1 ) )
+			// subscribe the ports the file lists and UNsubscribe the ones it does not: restoring a track
+			// (an undo of device.external_set, track.midi_out) must be able to leave a port, not only join one
+			const bool listed = wp.indexOf( it.key() ) != -1;
+			if( it.value() != listed )
 			{
-				subscribeWritablePort( it.key() );
+				subscribeWritablePort( it.key(), listed );
 			}
 		}
 		emit writablePortsChanged();
@@ -486,7 +546,96 @@ void MidiPort::updateWritablePorts()
 
 void MidiPort::updateOutputProgram()
 {
-	processOutEvent( MidiEvent( MidiProgramChange, realOutputChannel(), outputProgram()-1 ) );
+	if( m_patchBatch ) { return; }  // setOutputPatch() sends once, after it has set all three
+	sendOutputPatch();
+}
+
+
+
+
+void MidiPort::sendOutputPatch()
+{
+	// Bank select first (CC 0 = MSB, CC 32 = LSB), then the program change that makes it take effect.
+	// A bank of -1 sends no select: a port that never chose one sends exactly the program change it always did.
+	const int channel = realOutputChannel();
+	if( outputBankMsb() >= 0 )
+	{
+		processOutEvent( MidiEvent( MidiControlChange, channel, MidiControllerBankSelect, outputBankMsb() ) );
+	}
+	if( outputBankLsb() >= 0 )
+	{
+		processOutEvent( MidiEvent( MidiControlChange, channel, BankSelectLsb, outputBankLsb() ) );
+	}
+	processOutEvent( MidiEvent( MidiProgramChange, channel, outputProgram()-1 ) );
+}
+
+
+
+
+bool MidiPort::setOutputPatch( int bankMsb, int bankLsb, int program, bool force )
+{
+	const bool changed = bankMsb != outputBankMsb() || bankLsb != outputBankLsb() || program != outputProgram();
+	m_patchBatch = true;
+	m_outputBankMsbModel.setValue( bankMsb );
+	m_outputBankLsbModel.setValue( bankLsb );
+	m_outputProgramModel.setValue( program );
+	m_patchBatch = false;
+	if( !changed && !force ) { return false; }
+	sendOutputPatch();
+	return true;
+}
+
+
+
+
+const MidiPort::DevicePreset* MidiPort::findDevicePreset( const QString& name ) const
+{
+	for( const DevicePreset& preset : m_devicePresets )
+	{
+		if( preset.name == name ) { return &preset; }
+	}
+	return nullptr;
+}
+
+
+
+
+bool MidiPort::setDevicePreset( const DevicePreset& preset )
+{
+	for( DevicePreset& existing : m_devicePresets )
+	{
+		if( existing.name == preset.name ) { existing = preset; return true; }
+	}
+	if( m_devicePresets.size() >= MaxDevicePresets ) { return false; }
+	m_devicePresets.append( preset );
+	return true;
+}
+
+
+
+
+bool MidiPort::removeDevicePreset( const QString& name )
+{
+	for( int i = 0; i < m_devicePresets.size(); ++i )
+	{
+		if( m_devicePresets[i].name == name ) { m_devicePresets.removeAt( i ); return true; }
+	}
+	return false;
+}
+
+
+
+
+void MidiPort::rebindClientForTest( MidiClient* client )
+{
+	m_midiClient->removePort( this );
+	m_midiClient = client;
+	m_midiClient->addPort( this );
+	if( !m_midiClient->isRaw() )
+	{
+		updateReadablePorts();
+		updateWritablePorts();
+	}
 }
 
 

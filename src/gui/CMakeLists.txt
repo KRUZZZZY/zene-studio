@@ -194,6 +194,7 @@ SET(LMMS_SRCS
 	gui/noteeditor/NoteCanvasAccess.cpp
 	gui/noteeditor/NoteKeyNav.cpp
 	gui/noteeditor/ArticulationMapEditor.cpp
+	gui/instrument/ExternalDeviceCard.cpp
 	gui/noteeditor/NoteLaneKeys.cpp
 	gui/noteeditor/NoteEditor.cpp
 	gui/noteeditor/NoteEditorParts.cpp

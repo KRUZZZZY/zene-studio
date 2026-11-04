@@ -413,6 +413,7 @@ include/ExportNoiseShaper.h
 include/ExportProjectDialog.h
 include/ExportQualityControls.h
 include/ExportRenderSettings.h
+include/ExternalDeviceCard.h
 include/FadeButton.h
 include/Fader.h
 include/FeedbackModeAction.h
@@ -1642,6 +1643,7 @@ src/core/ControlCommandsDrumRack.cpp
 src/core/ControlCommandsDsp.cpp
 src/core/ControlCommandsExport.cpp
 src/core/ControlCommandsExportPresets.cpp
+src/core/ControlCommandsExternalDevice.cpp
 src/core/ControlCommandsFeedback.cpp
 src/core/ControlCommandsFreeze.cpp
 src/core/ControlCommandsGroove.cpp
@@ -2513,6 +2515,7 @@ src/gui/editors/TrackContainerView.cpp
 src/gui/embed.cpp
 src/gui/instrument/EnvelopeAndLfoView.cpp
 src/gui/instrument/EnvelopeGraph.cpp
+src/gui/instrument/ExternalDeviceCard.cpp
 src/gui/instrument/InstrumentFunctionViews.cpp
 src/gui/instrument/InstrumentMidiIOView.cpp
 src/gui/instrument/InstrumentSoundShapingView.cpp
@@ -2829,6 +2832,7 @@ tests/src/core/ExportDitherTest.cpp
 tests/src/core/ExportNoiseShaperTest.cpp
 tests/src/core/ExportWavDitherTest.cpp
 tests/src/core/ExportWavWriteErrorTest.cpp
+tests/src/core/ExternalMidiDeviceTest.cpp
 tests/src/core/FreezeRegionRepairTest.cpp
 tests/src/core/FrozenTakeHandoffTest.cpp
 tests/src/core/FrozenTakeRoundTwoTest.cpp
@@ -3180,6 +3184,7 @@ tests/src/gui/EqFader.h
 tests/src/gui/ExportChannelsTest.cpp
 tests/src/gui/ExportProjectDialogPresetTest.cpp
 tests/src/gui/ExportQualityControlsTest.cpp
+tests/src/gui/ExternalDeviceCardTest.cpp
 tests/src/gui/FeedbackModeActionTest.cpp
 tests/src/gui/FileRevealerTest.cpp
 tests/src/gui/FileSearchJobTest.cpp

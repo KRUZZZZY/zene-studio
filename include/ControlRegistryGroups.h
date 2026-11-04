@@ -898,6 +898,8 @@ LMMS_EXPORT void registerSampleStereoCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerMixerMeterCommands(ControlRegistry& registry);
 //! 0.5.0 L09 (MX-062): track.midi_out (ControlCommandsTrackMidiOut.cpp).
 LMMS_EXPORT void registerTrackMidiOutCommands(ControlRegistry& registry);
+//! 0.5.0 L09 (Q050-252.1, MX-062): device.external_* - an instrument track's External MIDI device (ControlCommandsExternalDevice.cpp).
+LMMS_EXPORT void registerExternalDeviceCommands(ControlRegistry& registry);
 //! 0.5.0 L04 (ED-049): track.version_list / save / switch / remove (ControlCommandsTrackVersions.cpp).
 LMMS_EXPORT void registerTrackVersionCommands(ControlRegistry& registry);
 //! 0.5.0 L07 (ED-086): clip.export_musicxml (ControlCommandsScoreExport.cpp).
