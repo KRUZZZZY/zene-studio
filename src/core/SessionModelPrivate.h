@@ -71,7 +71,7 @@ inline double doubleAttribute( const QDomElement& element, const QString& name, 
 //! values never enter the model: chance clamps to [0,1] (Follow Action chance
 //! 0..1), all others fall back to defaultValue, gain clamps to [-60,24] dB
 //! (ClipEdits Min/MaxGainPointDb), tempo/warpBpm aborts to default when outside
-//! (0,4096] BPM. timeBars needs only finiteness (default covers non-finite).
+//! (0,4096] BPM. timeBars defaults non-finite values and clamps negatives to 0.
 inline double clampedChanceAttribute( const QDomElement& element, const QString& name, double defaultValue )
 {
 	bool ok = false;

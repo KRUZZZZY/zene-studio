@@ -360,7 +360,6 @@ private slots:
 		QCOMPARE( model.trackCount(), 256 );
 		QCOMPARE( model.sceneCount(), 512 );
 
-		const QString dup = full.arg( QStringLiteral( "<z:cell track=\"255\" scene=\"511\"/>" ) );
 		const QDomElement withDuplicate = parseElement(
 			QStringLiteral( "<z:scenes v=\"1\" tracks=\"256\" scenes=\"512\">%1%2</z:scenes>" )
 				.arg( cells, QStringLiteral( "<z:cell track=\"255\" scene=\"511\"/>" ) ) );
@@ -372,7 +371,8 @@ private slots:
 
 	//! new-p10-384: non-finite numbers (nan/inf) and out-of-range finite
 	//! values must not enter the model. Per-field policy:
-	//! chance clamp [0,1], timeBars finite or default, tempo/warpBpm
+		//! chance clamp [0,1], timeBars defaults non-finite and clamps negatives to 0,
+		//! tempo/warpBpm
 	//! finite in (0,4096], gain finite clamped to [-60,24].
 	void nonFiniteAndOutOfRangeNumbersUseDocumentedPolicy()
 	{
@@ -397,6 +397,15 @@ private slots:
 			QVERIFY( action.chance >= 0.0 && action.chance <= 1.0 );
 			QVERIFY( std::isfinite( action.timeBars ) );
 		}
+
+		const QDomElement negativeTime = parseElement( QStringLiteral(
+			"<clip type=\"1\" pattern=\"3\"><followactions>"
+			"<followaction type=\"9\" chance=\"1\" linked=\"0\" time=\"-0.5\" jump=\"2\"/>"
+			"</followactions></clip>" ) );
+		QVERIFY( !negativeTime.isNull() );
+		ClipSlot negativeTimeSlot;
+		negativeTimeSlot.restoreState( negativeTime );
+		QCOMPARE( negativeTimeSlot.followActions().front().timeBars, 0.0 );
 
 		const QDomElement infScene = parseElement( QStringLiteral(
 			"<z:scene index=\"0\" tempo=\"inf\"/>" ) );

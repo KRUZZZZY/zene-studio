@@ -24,9 +24,11 @@ timeBars), :226 (gain), :231 (warpbpm), :274 (tempo). RED run: nan clip
 gain/warpBpm non-finite, chance/time non-finite, inf scene tempo non-finite.
 Fix: doubleAttribute() rejects non-finite to default; per-field helpers
 clampedChanceAttribute [0,1], gainDbAttribute [-60,24], bpmAttribute (0,4096]
-(BPM), timeBars finite-or-default. Callers in SessionClip.cpp updated.
+(BPM), timeBars defaults non-finite values and clamps finite negative values
+to zero. Callers in SessionClip.cpp updated.
 Tests: SessionMalformedAttributeTest::nonFiniteAndOutOfRangeNumbersUseDocumen
-tedPolicy (nan/inf, out-of-range finite, and valid boundaries -60/4096/0).
+tedPolicy (nan/inf, out-of-range finite, valid boundaries -60/4096/0, and
+negative timeBars).
 
 ## Test matrix (Luna plan) coverage
 - Ordinary: SessionModelTest::songProjectRoundTripsSessionBlock +
@@ -38,7 +40,7 @@ tedPolicy (nan/inf, out-of-range finite, and valid boundaries -60/4096/0).
 - Max size: maxGridDuplicateAtEndDeclinesSection (256x512 unique accept,
   duplicate at end decline, no commit).
 - Numeric: nonFinite test (nan/+inf/-inf per field, finite boundaries accepted,
-  out-of-range clamped/defaulted).
+  out-of-range clamped/defaulted, negative timeBars clamped to zero).
 - Realtime: SessionSchedulerRenderTest + SessionPlaybackRenderTest PASS before
   and after; restore-time rejection only, no audio-thread change.
 - Portability: configured build is Qt 6; edit is plain C++20/QtCore (no Qt
@@ -63,7 +65,7 @@ One commit message names the cluster for both bugs in this batched task.
 - Realtime: validation runs at project-load (model thread), no render change.
 - git status clean after commits (verified before submit_check).
 
-## Self-check
+## Self-check (continued)
 - RED/GREEN: fix.patch reverted → SessionMalformedAttributeTest FAILS (ctest exit 1, red-06-revert.log);
   re-applied → PASSES (exit 0, green-08-reapply.log). Recorded in Evidence table above.
 - Determinism: QDom string fixtures parsed in-process; Engine::init(true) only; no sleeps,
@@ -77,3 +79,9 @@ One commit message names the cluster for both bugs in this batched task.
   ScenesUpconvert/Song round-trips unchanged (family 5/5 pass); clamp bounds (chance
   0..1, gain -60..24, BPM (0,4096]) are per-field documented ranges, not grid limits.
 - ALREADY-FIXED/FALSE-POSITIVE question: N/A — both verdicts are FIXED (REAL).
+
+## QA review follow-up
+- `followActionFieldsFromJson()` refuses negative `time_bars` (`src/core/ControlCommandsSessionFollow.cpp:177-181`), while the original project restore accepted finite negatives. `restoreFollowChain()` now clamps a negative saved time to zero, preserving its existing non-firing scheduler behavior.
+- Added regression RED with only the clamp reversed: `cmake --build build --target zene SessionMalformedAttributeTest -j12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-385.r3/logs/qa-build-29-red-finaltest.log 2>&1` EXIT 0; `QT_QPA_PLATFORM=offscreen ctest -R '^SessionMalformedAttributeTest$' --output-on-failure` from `build/tests` EXIT 8 (`-0.5` restored instead of `0.0`, `qa-test-30-red-finaltest.log`).
+- Final restored build and GREEN: `cmake --build build --target zene ScenesUpconvertTest SessionMalformedAttributeTest SessionModelTest SessionPlaybackRenderTest SessionSchedulerRenderTest -j12 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p10-385.r3/logs/qa-build-31-green-final.log 2>&1` EXIT 0; the same five-test `ctest -R` family from `build/tests` EXIT 0 (5/5, `qa-test-32-green-final.log`). Final `feature_check.py` EXIT 0 (`qa-gates-33-final.log`).
+- QA fix files: `src/core/SessionClip.cpp`, `src/core/SessionModelPrivate.h`, `tests/src/core/SessionMalformedAttributeTest.cpp`, and this report.

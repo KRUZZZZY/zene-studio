@@ -93,7 +93,9 @@ std::vector<FollowAction> restoreFollowChain( const QDomElement& element )
 		action.type = followActionTypeFromInt( type );
 		action.chance = clampedChanceAttribute( actionElement, QStringLiteral( "chance" ), 1.0 );
 		action.linked = boolAttribute( actionElement, QStringLiteral( "linked" ), true );
-		action.timeBars = doubleAttribute( actionElement, QStringLiteral( "time" ), 1.0 );
+		// The session command refuses negative times; clamp malformed saved
+		// values to zero so the restored action remains non-firing.
+		action.timeBars = std::max( 0.0, doubleAttribute( actionElement, QStringLiteral( "time" ), 1.0 ) );
 		// A jump target that is not a number is NOT scene zero: -1 is this
 		// codebase's "no addressable target" (include/SessionFollow.h's
 		// followTargetScene refuses it), so the action keeps its place in the
