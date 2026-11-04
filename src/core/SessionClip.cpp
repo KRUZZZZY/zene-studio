@@ -91,7 +91,7 @@ std::vector<FollowAction> restoreFollowChain( const QDomElement& element )
 		int type = 0;
 		intAttribute( actionElement, QStringLiteral( "type" ), type );
 		action.type = followActionTypeFromInt( type );
-		action.chance = doubleAttribute( actionElement, QStringLiteral( "chance" ), 1.0 );
+		action.chance = clampedChanceAttribute( actionElement, QStringLiteral( "chance" ), 1.0 );
 		action.linked = boolAttribute( actionElement, QStringLiteral( "linked" ), true );
 		action.timeBars = doubleAttribute( actionElement, QStringLiteral( "time" ), 1.0 );
 		// A jump target that is not a number is NOT scene zero: -1 is this
@@ -223,12 +223,12 @@ void ClipSlot::restoreState( const QDomElement& element )
 	m_legato = clipIntegerAttribute( element, QStringLiteral( "legato" ), 0 ) != 0;
 	m_loopStart = clipIntegerAttribute( element, QStringLiteral( "loopstart" ), 0 );
 	m_loopLength = clipIntegerAttribute( element, QStringLiteral( "looplength" ), 0 );
-	m_gainDb = static_cast<float>( doubleAttribute( element, QStringLiteral( "gain" ), 0.0 ) );
+	m_gainDb = static_cast<float>( gainDbAttribute( element, QStringLiteral( "gain" ), 0.0 ) );
 	m_transpose = clipIntegerAttribute( element, QStringLiteral( "transpose" ), 0 );
 	m_detune = clipIntegerAttribute( element, QStringLiteral( "detune" ), 0 );
 	m_ramMode = clipIntegerAttribute( element, QStringLiteral( "ram" ), 0 ) != 0;
 	m_warp = clipIntegerAttribute( element, QStringLiteral( "warp" ), 0 ) != 0;
-	m_warpBpm = doubleAttribute( element, QStringLiteral( "warpbpm" ), 120.0 );
+	m_warpBpm = bpmAttribute( element, QStringLiteral( "warpbpm" ), 120.0 );
 
 	m_followActions = restoreFollowChain( element );
 }
@@ -271,7 +271,7 @@ void Scene::restoreState( const QDomElement& element )
 	if( element.hasAttribute( QStringLiteral( "tempo" ) ) )
 	{
 		m_tempoEnabled = true;
-		m_tempo = doubleAttribute( element, QStringLiteral( "tempo" ), 120.0 );
+		m_tempo = bpmAttribute( element, QStringLiteral( "tempo" ), 120.0 );
 	}
 	if( element.hasAttribute( QStringLiteral( "timesig_numerator" ) )
 		|| element.hasAttribute( QStringLiteral( "timesig_denominator" ) ) )

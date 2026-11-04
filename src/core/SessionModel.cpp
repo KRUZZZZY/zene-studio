@@ -561,6 +561,12 @@ bool SessionModel::restoreScenesSection( const QDomElement& section )
 	candidate.resize( tracks, scenes );
 	candidate.m_globalLaunchQuantisation = restoreGlobalLaunchQuantisation( section );
 
+	// new-p10-385: duplicate scene indices or cell coordinates decline the
+	// whole section. Bounded tracking: one flag per scene row and one per
+	// grid cell (never a per-record hash), so hostile input cannot grow it.
+	std::vector<bool> seenScenes( static_cast<std::size_t>( scenes ), false );
+	std::vector<bool> seenCells( static_cast<std::size_t>( tracks ) * static_cast<std::size_t>( scenes ), false );
+
 	for( QDomNode node = section.firstChild(); !node.isNull(); node = node.nextSibling() )
 	{
 		if( !node.isElement() ) { continue; }  // non-elements carry no state
@@ -568,11 +574,17 @@ bool SessionModel::restoreScenesSection( const QDomElement& section )
 		const QString name = node.nodeName();
 		if( name == QLatin1String( "z:scene" ) )
 		{
-			if( !applySceneRow( child, candidate.m_scenes ) ) { return false; }
+			int index = -1;
+			if( !intAttribute( child, QStringLiteral( "index" ), index ) ) { return false; }
+			if( static_cast<unsigned>( index ) >= static_cast<unsigned>( scenes ) ) { return false; }
+			if( seenScenes[static_cast<std::size_t>( index )] ) { return false; }
+			seenScenes[static_cast<std::size_t>( index )] = true;
+			candidate.m_scenes[static_cast<std::size_t>( index )].restoreState( child );
 		}
 		else if( name == QLatin1String( "z:cell" ) )
 		{
-			if( !applySceneCell( child, candidate.m_slots, tracks, scenes ) ) { return false; }
+			if( !cellIsFresh( child, tracks, scenes, seenCells ) ) { return false; }
+			(void)applySceneCell( child, candidate.m_slots, tracks, scenes );
 		}
 		else { return false; }
 	}
