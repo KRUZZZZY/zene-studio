@@ -903,7 +903,13 @@ library to work.
   MPE-style input, stored backwards-compatibly on the note as `mpepitch` / `mpepressure` / `mpetimbre`, readable
   and editable through a headless API, with all three axes reaching the instrument through the playback path
   (`src/core/NotePlayHandle.cpp`). `src/core/midi/MpeExpression.cpp` is in the tree, and the lane
-  `post-alpha/mpe` is an ancestor of this tip. **What consumes the two new axes, stated plainly:** no built-in
+  `post-alpha/mpe` is an ancestor of this tip. *(Updated 2026-11-04, Q050-311: the built-in per-note synthesisers
+  now DO sound pressure and timbre - `MpeSynthExpression` maps pressure to intensity (gain 1 + p/127) and CC74 to
+  brightness (high-band emphasis around 1 kHz) on every instrument that is not single-streamed, after the note's
+  envelopes; measured on TripleOscillator by `MpeSynthExpressionTest`. Single-streamed built-ins (LB302, OpulenZ, SF2/GIG,
+  ZynAddSubFx, the sfz player) and hosted plug-ins are unchanged: they get the axes as MIDI and map them
+  themselves, or not at all. The mapping is fixed - there is no per-instrument mapping editor. The record below
+  is the pre-Q050-311 state.)* **What consumes the two new axes, stated plainly:** no built-in
   synthesiser does — they are driven by a note's frequency and volume and never see MIDI — so a hosted
   instrument (Vestige / LV2 / CLAP / Carla) or a MIDI output port is where a musician hears pressure and timbre,
   and the *proof* applies them to an in-tree MIT test instrument
