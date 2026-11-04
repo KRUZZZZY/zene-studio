@@ -1,3 +1,5 @@
+Verdict: FIXED
+
 # Cluster new-p17-24
 
 new-p17-24: FIXED
@@ -112,35 +114,89 @@ test-18-reapply-direct2.log). Recorded in redo-proof.log.
 
 ## Self-check
 
-- **Regression fails with the change reverted and passes with it.** See
-  RED/GREEN proof above: reverted ControlRecordingRoutesTest EXIT=6 (6 FAIL),
-  MultiTrackRecorderTest EXIT=1; reapplied both EXIT=0. The pre-fix run
-  (test-1-red.log) showed the same 6 route failures.
-- **Deterministic.** No sleeps, wall-clock timing or races in the new tests:
-  takes are driven by explicit `processInputInterleaved` calls
-  (`ControlRecordingRoutesTest::stage`), the writer-start failure uses the
-  existing `failNextWriterThreadStartForTesting()` seam, exhaustion occupies
-  the full bounded 1000-candidate space, and the non-removable journal is a
-  directory with the journal's name (fails `QFile::remove` on Linux, macOS
-  and Windows alike). Paths are compared via `QFileInfo` / `contents()`,
-  with no platform separator assumptions.
-- **Fix at the cause, callers and siblings checked.** All `disarm()` callers
-  reviewed (see Sibling section). Both default-path producers changed
-  consistently (`record.arm_track` via `takePathArg`, `track.set_arm` via
-  `armTrackArm`). Explicit-file callers are untouched. No new control
-  commands added, so `ControlCommandsSnapshot` is unchanged (its test passes,
-  test-9-snapshot.log).
-- **No collateral.** Old takes and journals are read exactly as before: the
-  allocator only *skips* existing candidates. The two pre-existing
-  `ControlRecordingRoutesTest` slots, `ControlArmReversibilityTest`,
-  `ControlEditCommandsTest`, `ControlRecordingRecovery`, `ControlRecordInputs`
-  and the rest of the 29-test family all pass (test-19-final-family.log).
-  The `zene` binary rebuilds cleanly (build-12-zene.log, EXIT=0).
-- **Realtime.** Allocation happens in `reserveDefaultTake` on the control
-  thread at arm time; `processInputInterleaved` only demuxes into the
-  pre-allocated ring. Proved by `routeRecorderCallbackAllocatesNothing`.
-- **Undo.** No undo record is added or altered: arm stays irreversible
-  (take file outside the project journal), disarm stays explicit.
+### The regression test FAILS with your product change reverted and PASSES with it (exit codes)
+
+Proved by step-19 RED/GREEN (redo-proof.log): reverted rebuild EXIT=0
+(build-18-revert.log), then `ControlRecordingRoutesTest` EXIT=6 with 4
+passed / 6 failed (`secondDefaultArmDoesNotTruncateFirstTake`,
+`defaultArmSkipsExistingTakeAndJournal`,
+`defaultArmExhaustionRefusesAndLeavesNoResidue`,
+`defaultArmFailureLeavesRouteRetryableAndSentinels`,
+`disarmJournalRemovalFailureReportsFalse`,
+`trackSetArmDefaultSecondTakeIsDistinct` — test-15-revert-direct.log) and
+`MultiTrackRecorderTest` EXIT=1 (`writerStartFailureLeavesRouteRetryable` —
+test-16-revert-direct2.log). Reapplied rebuild EXIT=0 (build-19-reapply.log):
+`ControlRecordingRoutesTest` EXIT=0 (10 passed, test-17-reapply-direct.log),
+`MultiTrackRecorderTest` EXIT=0 (10 passed, test-18-reapply-direct2.log).
+The pre-fix run gave the same failures (test-1-red.log, ctest EXIT=8), and
+the fixed run is green (test-3-green.log, EXIT=0; 29-test family EXIT=0,
+test-19-final-family.log).
+
+### The test is deterministic: no wall-clock timing, sleeps or races (name the seam or injected values it uses)
+
+No sleeps, wall-clock reads or races anywhere in the new slots: takes are
+driven by explicit `processInputInterleaved` calls with constant values
+(`ControlRecordingRoutesTest::stage(8, 0.5f)` then `-0.25f`); the writer-start
+failure uses the existing `TrackRecorder::failNextWriterThreadStartForTesting()`
+seam; exhaustion occupies the full `TakeNameProbeBound` (1000) candidate
+space by name; the non-removable journal is a directory with the journal's
+exact name (`QDir().mkdir(journal)`), which fails `QFile::remove` on Linux,
+macOS and Windows alike. Path checks use `QFileInfo` and byte `contents()`
+comparisons, with no platform separator assumptions. The realtime slot arms
+on the control thread and probes `processInputInterleaved` under
+`RealtimeScope` with `AllocationProbe`, asserting 0 allocations.
+
+### The fix is at the cause and complete: every caller and sibling of what you changed was checked and stays consistent
+
+new-p17-24 cause: the fixed default name in `takePathArg`
+(`ControlRecordingSupport.cpp:302-303`) and `armTrackArm`
+(`ControlCommandsArrangementState.cpp:201-204`). Both producers now reserve
+via `reserveDefaultTake`; both release the reservation on arm failure.
+Every caller of `TrackRecorder::arm` was audited: `MultiTrackRecorder::armTrack`
+(pure delegation, no path logic — unchanged by design), command handlers
+(checked, release added), tests (explicit files). Every caller of
+`TrackRecorder::disarm()` was audited: `MultiTrackRecorder::disarmAll`,
+`MultiTrackRecorder::reconcileInputChannelCapacity`,
+`TrackRecorder::setInputChannelCapacity`, the destructor, `track.set_arm`
+`armed:false` (`disarmTrackArm`), `record.disarm_track`, `record.disarm_all`
+and test `StopRecorderOnExit` structs — only the two new reporting surfaces
+consume the return value. No new control commands were added.
+
+### No collateral damage: old projects and saved data still load as before, and any limit or check you added does not hit other callers that legitimately exceed it
+
+The allocator only *skips* existing candidates (WAV or journal present) and
+refuses after a bounded 1000-try search — existing takes, journals and
+project data are read exactly as before, and no established caller
+legitimately needs more than 1000 default names in one recovery directory
+(the retry after deleting occupation succeeds, as the exhaustion test
+shows). Explicit-file arms are byte-for-byte unchanged. The 29-test
+recording family, the `zene` binary rebuild and all gates pass
+(test-19-final-family.log, build-12-zene.log, gates-1.log).
+
+### If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or the intended contract that shows it
+
+Not applicable — verdict is FIXED.
+
+### Sibling commands in the changed command files (arrangement.* list)
+
+The submit check listed the `arrangement.*` ids registered in the touched
+file `src/core/ControlCommandsArrangementState.cpp` (also `track.add` et al.
+live nearby, but the listed question is the `arrangement.*` sibling set).
+The only change in that file is inside `armTrackArm`, the handler of
+`track.set_arm` (and, through it, `track.set_arm_many`, which calls the same
+`armTrackArm` semantics per its registration text): `armTrackArm` is the
+sole default-path producer for that command family, so `set_arm` and
+`set_arm_many` both reserve and release consistently. The other listed
+siblings — arrangement.fit_tracks, arrangement.get_state, arrangement.modes,
+arrangement.modifier_tools, arrangement.navigator, arrangement.next_transient,
+arrangement.nudge, arrangement.ruler_lanes, arrangement.scroll,
+arrangement.select_clip, arrangement.set_tool, arrangement.zoom,
+arrangement.zoom_back, arrangement.zoom_forward, arrangement.zoom_toggle —
+share no code path with `armTrackArm` or `reserveDefaultTake` and are
+unaffected by the change (each is its own handler in the same TU; the edit
+touches only `armTrackArm`'s take-path computation and its failure return).
+`ControlCommandsSnapshot` is unchanged (test-9-snapshot.log, EXIT=0).
+
 
 ## Notes on the diagnostic checkpoint's test list
 
