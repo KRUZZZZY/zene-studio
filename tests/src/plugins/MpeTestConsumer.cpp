@@ -276,6 +276,11 @@ public:
 	//! (Note::saveSettings writes mpepitch/mpepressure/mpetimbre), so these
 	//! are deliberately no-ops rather than a second store.
 	QString nodeName() const override { return QStringLiteral( "mpetestconsumer" ); }
+
+	//! Q050-311: this fixture maps pressure/CC74 itself (expressionGain), from
+	//! the MIDI it receives; the track must not apply the built-in synth mapping
+	//! on top, or every ratio MpePlaybackTest measures would be doubled.
+	bool appliesMpeExpressionItself() const override { return true; }
 	//! The one exception (Q050-015): the order the instrument was handed note-ons, program changes and
 	//! controllers in, as the 'events' attribute ("k60 p3 c32=127": a key, a program, a controller=value),
 	//! so ArticulationPlaybackTest can read what an articulation sent ahead of its note. Read it from the

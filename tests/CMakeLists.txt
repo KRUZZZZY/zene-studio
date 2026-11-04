@@ -576,6 +576,8 @@ set(LMMS_TESTS
 	# the route every measured ratio is exactly 1.0 and the test fails;
 	# docs/MPE.md §4 and docs/KNOWN-LIMITATIONS.md carry the claim it backs.
 	src/core/MpePlaybackTest.cpp
+	# Q050-311: MPE pressure (intensity) and CC74 (brightness) heard on a built-in synth (TripleOscillator).
+	src/core/MpeSynthExpressionTest.cpp
 	# The #602 modulation layer: the ENGINE half (the LFO arithmetic, the target
 	# resolver, the per-block relative write and the persistence round trip) and
 	# the SURFACE half (the ten modulator.*/note.expression.* commands, their
@@ -2480,7 +2482,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "UndoHistoryOptionsTest"
 		# Q050-111: clip effects load the build's amplifier module (the test and its GUI half).
 		OR LMMS_TEST_NAME STREQUAL "ClipEffectsTest"
-		OR LMMS_TEST_NAME STREQUAL "ClipEffectsDialogTest")
+		OR LMMS_TEST_NAME STREQUAL "ClipEffectsDialogTest"
+		# Q050-311: renders MPE pressure and timbre through the build's tripleoscillator module.
+		OR LMMS_TEST_NAME STREQUAL "MpeSynthExpressionTest")
 		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			LMMS_TEST_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
@@ -2552,6 +2556,10 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# Q050-040: the unmute-chase tests play a real instrument (tripleoscillator) on their tracks,
 	# so a targeted build has to bring that module up first.
 	if(LMMS_TEST_NAME STREQUAL "UnmuteChaseTest")
+		add_dependencies(${LMMS_TEST_NAME} tripleoscillator)
+	endif()
+	# Q050-311: the MPE synth-expression renders load the tripleoscillator module.
+	if(LMMS_TEST_NAME STREQUAL "MpeSynthExpressionTest" AND TARGET tripleoscillator)
 		add_dependencies(${LMMS_TEST_NAME} tripleoscillator)
 	endif()
 

@@ -87,6 +87,12 @@ public:
 	//! (SPEC-slide-notes D-3 per-instrument opt-out).
 	virtual bool supportsSlideNotes() const { return true; }
 
+	//! Q050-311: whether this per-note instrument turns MPE channel pressure and
+	//! CC74 into sound ITSELF (through handleMidiEvent). The built-ins do not, so
+	//! the track applies MpeSynthExpression to their notes; an instrument that
+	//! returns true is left to its own mapping, so the axes are not applied twice.
+	virtual bool appliesMpeExpressionItself() const { return false; }
+
 	// if the plugin doesn't play each note, it can create an instrument-
 	// play-handle and re-implement this method, so that it mixes its
 	// output buffer only once per audio engine period
