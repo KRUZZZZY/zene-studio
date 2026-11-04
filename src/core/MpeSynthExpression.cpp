@@ -82,27 +82,42 @@ void MpeSynthExpression::process( State& state, SampleFrame* buf, f_cnt_t frames
 		state.low[1] = buf[0][1];
 	}
 
-	// One-pole lowpass coefficient for the brightness corner at this rate.
-	const float rate = sampleRate > 0.f ? sampleRate : 44100.f;
-	constexpr float kTwoPi = 6.28318530718f;	// not M_PI: MSVC hides it
-	const float a = 1.f - std::exp( -kTwoPi * BrightnessCornerHz / rate );
-
+	const float a = lowpassCoefficient( sampleRate );
 	const bool neutral = state.gain == 1.f && targetGain == 1.f
 		&& state.brightness == 0.f && targetBrightness == 0.f;
 	if( neutral )
 	{
 		// Exact identity: keep the lowpass following the signal so a later
 		// timbre change starts from the right state, but leave the audio alone.
-		for( f_cnt_t f = 0; f < frames; ++f )
-		{
-			for( int c = 0; c < 2; ++c )
-			{
-				state.low[c] += a * ( buf[f][c] - state.low[c] );
-			}
-		}
+		trackLowpass( state, buf, frames, a );
 		return;
 	}
+	shapeRamped( state, buf, frames, a, targetGain, targetBrightness );
+}
 
+
+float MpeSynthExpression::lowpassCoefficient( float sampleRate )
+{
+	// One-pole lowpass coefficient for the brightness corner at this rate.
+	const float rate = sampleRate > 0.f ? sampleRate : 44100.f;
+	constexpr float kTwoPi = 6.28318530718f;	// not M_PI: MSVC hides it
+	return 1.f - std::exp( -kTwoPi * BrightnessCornerHz / rate );
+}
+
+
+void MpeSynthExpression::trackLowpass( State& state, const SampleFrame* buf, f_cnt_t frames, float a )
+{
+	for( f_cnt_t f = 0; f < frames; ++f )
+	{
+		state.low[0] += a * ( buf[f][0] - state.low[0] );
+		state.low[1] += a * ( buf[f][1] - state.low[1] );
+	}
+}
+
+
+void MpeSynthExpression::shapeRamped( State& state, SampleFrame* buf, f_cnt_t frames, float a,
+	float targetGain, float targetBrightness )
+{
 	const float gainStep = ( targetGain - state.gain ) / static_cast<float>( frames );
 	const float brightnessStep = ( targetBrightness - state.brightness ) / static_cast<float>( frames );
 	float gain = state.gain;

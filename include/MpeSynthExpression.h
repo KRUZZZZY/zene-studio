@@ -92,6 +92,12 @@ public:
 	/*! The playback entry point: \a buf already starts at the note's own offset.
 	 *  Does nothing for a note without expression or stream. */
 	static void applyToNote( NotePlayHandle& note, SampleFrame* buf, f_cnt_t frames );
+
+private:
+	static float lowpassCoefficient( float sampleRate );
+	static void trackLowpass( State& state, const SampleFrame* buf, f_cnt_t frames, float a );
+	static void shapeRamped( State& state, SampleFrame* buf, f_cnt_t frames, float a,
+		float targetGain, float targetBrightness );
 };
 
 } // namespace lmms
