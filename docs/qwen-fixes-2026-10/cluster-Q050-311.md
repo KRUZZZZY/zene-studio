@@ -27,6 +27,30 @@ Scope decisions, since the brief marked them UNCLEAR:
 
 No new command, no changed command metadata, no format change.
 
+## Round 2 (review r1)
+
+**The blocking point:** on Windows the native-synth render, live MPE and project round-trip slots were
+skipped, so the proof was missing there. Fixed:
+
+- **TripleOscillator is compiled into the test.** `tests/CMakeLists.txt` adds
+  `plugins/TripleOscillator/TripleOscillator.cpp/.h` to the target, the same way the Vibed and VeSTige
+  tests compile their plug-ins. This replaces the module directory and module dependency.
+- **A test seam installs it.** The new `LMMS_TESTING`-only `InstrumentTrack::setInstrumentForTest()` does
+  what `loadInstrument()` does, so every render goes through the full real track path. The seam is in
+  `include/InstrumentTrack.h` and `src/tracks/InstrumentTrack.cpp`, after `loadInstrument`.
+- **No module is loaded anywhere.** `LMMS_PLUGIN_DIR` is an empty private directory on every platform.
+  After `project.open`, the reopened track gets the compiled-in synth again.
+- **No platform skips remain.** All 9 slots pass, 0 skipped (r2 `test-1.log`, exit 0). The pressure and
+  timbre figures are unchanged.
+- **The revert still fails.** With the hook removed, build exit 0 (r2 `build-2-reverted-hook.log`) and test
+  exit 8 (r2 `test-2-reverted-hook.log`): the same three render slots fail. After restoring, build exit 0
+  (r2 `build-3-restored.log`) and the 8 neighbour suites pass 8/8, exit 0 (r2 `test-3.log`).
+- **Gates:** the copied checker passes all 8 rows (r2 `feature-check-1.log`, exit 0).
+- **Non-blocking note fixed:** `docs/KNOWN-LIMITATIONS.md` no longer says "no built-in synthesiser" right
+  after the Q050-311 update.
+
+Round-2 logs are in `runs/Q050-311.r2/logs/`; the r1 logs referenced below are in `runs/Q050-311.r1/logs/`.
+
 ## Acceptance
 
 All commands ran from `build/tests` with `QT_QPA_PLATFORM=offscreen` and no global `LMMS_PLUGIN_DIR`.
@@ -85,10 +109,10 @@ runs for that fixture, because the fixture opts out. I did not reproduce the fla
   - No Qt-6-only API: QtTest, QDom, QJsonObject and QByteArray::contains all exist in Qt 5.15.
   - No `M_PI`: a local constant, because MSVC hides it. No `std::filesystem`, no POSIX calls, no
     windows.h macro names as identifiers.
-  - The DSP slots run everywhere. The module-loading render slots `QSKIP` on Windows like
-    `MpePlaybackTest`, because a test host there cannot load plug-in modules.
-  - The test gets `LMMS_TEST_PLUGIN_DIR` and `add_dependencies(... tripleoscillator)` like
-    `UnmuteChaseTest`.
+  - Every slot of `MpeSynthExpressionTest` runs on every platform, Windows included (round 2). The test
+    does not load a module: TripleOscillator's sources are compiled into it and installed on the track
+    with the `LMMS_TESTING`-only `InstrumentTrack::setInstrumentForTest()`.
+  - The new seam is declared and defined only under `#ifdef LMMS_TESTING`.
 
   Built and run on Linux/Qt 6 only. The other CI configurations were not run here.
 - **GUI and agent paths (the checker's WARN rows).** This feature changes what existing paths sound like.
