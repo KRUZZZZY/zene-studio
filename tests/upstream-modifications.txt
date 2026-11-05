@@ -5704,3 +5704,14 @@ plugins/Delay/Lfo.h	cluster new-p16-95: clamp the existing frequency to the new 
 tests/src/core/MathTest.cpp	cluster new-p16-95: regression for the LFO frequency clamp on sample-rate change, plus no-collateral cases (valid frequency kept, upward change, ignored zero rate).
 src/core/BounceInPlace.cpp	cluster new-p16-307 (2026-10-27): framesBetweenTicks takes the tick span wide (qint64) before the float conversion, so INT32_MIN..INT32_MAX no longer overflows tick_t; in-range results are unchanged bit for bit.
 src/core/Track.cpp	cluster new-p16-307 (2026-10-28): playFrozenTake maps every pass through frozenTakeSourceFrame, in force or not (the no-tempo-map branch subtracted the take start from the seek in tick_t and could wrap); the pinned map is kept unconditionally in playFrozenTake and adoptTempoMapForFrozenTake so the helper always decides from the current map. m_frozenLastMapInForce is now recorded but not branched on.
+CMakeLists.txt	Q050-501: option ZENE_UPDATE_CHECK (default ON; OFF compiles the update check out) and the Qt Network it needs.
+src/lmmsconfig.h.in	Q050-501: #cmakedefine ZENE_UPDATE_CHECK_ENABLED, the packager switch for the update check.
+src/core/CMakeLists.txt	Q050-501: names the fork-NEW core/UpdateCheck.cpp and core/ControlCommandsUpdateCheck.cpp, only with ZENE_UPDATE_CHECK_ENABLED.
+src/gui/CMakeLists.txt	Q050-501: names the fork-NEW gui/UpdateCheckWindows.cpp, only with ZENE_UPDATE_CHECK_ENABLED.
+tests/CMakeLists.txt	Q050-501: registers UpdateCheckTest, UpdateCheckWindowsTest and the ControlUpdateCheck socket transcript.
+tests/fork-sources.txt	Q050-501: adds the update check's new sources and tests.
+tests/all-sources.txt	Q050-501: re-derived from its header recipe with the update check's new sources.
+src/gui/modals/SetupDialog.cpp	Q050-501: Settings > General > Updates, two check boxes saved through app.update_check_set; absent where the command is. No other setting changes (held by UpdateCheckWindowsTest).
+include/SetupDialog.h	Q050-501: declares the two Updates check boxes for Settings > General.
+data/manual/index.html	Q050-501: the Access section's help paragraphs describe the update check, exactly what it sends, and that installation stays manual.
+docs/KNOWN-LIMITATIONS.md	Q050-501: the update check's limits, exactly what is sent, and that installation stays manual.

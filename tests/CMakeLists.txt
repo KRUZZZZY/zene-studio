@@ -1392,6 +1392,8 @@ set(LMMS_TESTS
 	src/gui/CarlaVst2HostingTest.cpp
 	# M0 coverage: the reference project's window and its track / clip / device copies.
 	src/gui/ReferenceProjectPanelTest.cpp
+	# Q050-501: the update check against a loopback feed (only the commands' absence with -DZENE_UPDATE_CHECK=OFF).
+	src/core/UpdateCheckTest.cpp
 	# M0 coverage: the telemetry consent window, File > Import AAF..., track header icons and the level meter.
 	src/gui/TelemetryConsentDialogTest.cpp
 	src/gui/AafImportMenuTest.cpp
@@ -1714,6 +1716,11 @@ IF(LMMS_HAVE_ABLETON_LINK)
 		# esp32-freertos-host/): a failed task creation must be reported.
 		src/core/AbletonLinkEsp32RunnerTest.cpp
 	)
+ENDIF()
+
+# Q050-501: Help > Check for Updates, the question and the notice over the real main window.
+IF(ZENE_UPDATE_CHECK_ENABLED)
+	LIST(APPEND LMMS_TESTS src/gui/UpdateCheckWindowsTest.cpp src/gui/UpdateCheckHiddenTest.cpp)
 ENDIF()
 
 # Peer-to-peer collaboration (0.5.0 F6): the invite, the TLS-PSK transport and the port-mapping
@@ -3757,6 +3764,10 @@ endforeach()
 if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.22)
 	set_tests_properties(CarlaVst2HostingTest PROPERTIES
 		ENVIRONMENT_MODIFICATION "LD_LIBRARY_PATH=path_list_prepend:${ZENE_CARLA_RUNTIME_DIR}")
+endif()
+set_tests_properties(UpdateCheckTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+if(ZENE_UPDATE_CHECK_ENABLED)
+	set_tests_properties(UpdateCheckWindowsTest UpdateCheckHiddenTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
 set_tests_properties(ReferenceProjectPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TelemetryConsentDialogTest AafImportMenuTest TrackIconsLevelBarTest ArrangerKeysNavigatorTest NoteBackgroundAudioTest ArrangerOverlaysVideoLaneTest VideoClipsGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -6222,6 +6233,12 @@ set_tests_properties(RoutingGraphScheduleTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 	TIMEOUT 300)
 
+if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE AND ZENE_UPDATE_CHECK_ENABLED)
+	# Q050-501: the update-check commands over the real socket, against a loopback feed.
+	add_test(NAME ControlUpdateCheck
+		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/control-update-check.py $<TARGET_FILE:zene>)
+	set_tests_properties(ControlUpdateCheck PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 120)
+endif()
 if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	add_test(NAME ControlSocketIntegration
 		COMMAND ${PYTHON3_EXECUTABLE}

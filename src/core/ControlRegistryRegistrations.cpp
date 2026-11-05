@@ -164,6 +164,10 @@ void registerControlCommands(ControlRegistry& registry)
 	registerThemeCommands(registry);
 	registerTrackLookCommands(registry);
 	registerAssistantCommands(registry);
+#ifdef ZENE_UPDATE_CHECK_ENABLED
+	registerUpdateCheckCommands(registry);
+	registerUpdateCheckWindowCommands(registry);
+#endif
 	registerWorkspaceCommands(registry);
 	registerViewMemoryCommands(registry);
 	registerHistoryJumpCommand(registry);

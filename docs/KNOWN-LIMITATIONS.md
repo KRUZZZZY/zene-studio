@@ -3326,3 +3326,32 @@ A VST3 or CLAP editor gesture is one journal step per parameter, drained from a 
 - **The Undo History panel's list** still shows command steps only: a gesture is undoable from its buttons and has no row.
 - **`control.undo` after an undone agent edit** reports the newer edit as `unrecorded edit` (with its `step_serial`), the existing
   label for a journal top the record does not match.
+
+## Update check (Q050-501, 2026-10-30)
+
+- **What is sent, exactly:** when the user has said yes, one bodyless HTTP GET of the configured feed (by default
+  `https://api.github.com/repos/KRUZZZZY/zene-studio/releases?per_page=10`; the `updatecheck/feed` config key) at most
+  once a day and on Help > Check for Updates, with `User-Agent: ZeneStudio/<version> (<kernel type>; <cpu>)`, a fixed
+  `Accept: application/json` and `Accept-Language: en`, the host, and Qt's `Accept-Encoding` and `Connection` transport
+  headers. No account, project, file, setting, locale or instance identifier. The feed's server (GitHub by default) still
+  sees the caller's IP address and the time, as with any web request. A system proxy, if set, is used.
+- **Installation stays manual.** Zene never downloads or installs anything: the notice's button opens the release's page in
+  the browser. Automatic download and installation are a later unit and need signed installers first.
+- **While the setting is off, or the question is unanswered, no request is made**, and Help > Check for Updates asks first.
+- **Hidden where something else updates the program:** a packager's `-DZENE_UPDATE_CHECK=OFF` compiles the checker, its
+  commands and its menu entry out; a Flatpak or Snap copy is recognised at run time (`/.flatpak-info`, `FLATPAK_ID`, `SNAP`)
+  and registers none of them. A distribution package that does not set the option is **not** detected, and would offer the
+  question like any other build.
+- Only https feeds and pages are followed (plain http to a loopback address exists for the tests); redirects never go from
+  https to http. Certificates are checked by Qt's normal TLS stack; the answer is not signed, so a compromised feed could
+  announce a release that does not exist and link to any https page. Nothing runs from it: its text is shown as plain text.
+- The default feed has **not been exercised by a test**: every test uses a loopback fixture and nothing leaves the machine.
+  If the repository is private or has no releases, the check reports a failure (HTTP 404) or "up to date".
+  GitHub's unauthenticated rate limit (a shared limit per IP address) can answer 403 or 429; that is a failed check and one
+  quiet line, and the next check is a day later.
+- A failed automatic check is not retried until the next day: the time of the request is stored whatever came of it.
+- The check's answer (`app.update_check_get`'s `result`, what `window.update_download_page` opens) lasts for the session.
+- The first-run question is asked once, whatever comes of it: quitting with it open leaves checks off and it does not come
+  back. Settings and Help > Check for Updates remain.
+- Answering in Settings or in the question is an undo step like any `app.update_check_set` (it can be undone with Edit > Undo).
+- The feed's version tags must be SemVer (`v1.2.3`, `1.2.3-rc.1`); a release tagged otherwise is passed over.

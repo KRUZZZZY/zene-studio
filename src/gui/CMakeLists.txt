@@ -19,6 +19,11 @@ IF(ZENE_TELEMETRY_ENABLED)
 		gui/TelemetryConsentDialog.cpp
 	)
 ENDIF()
+# Q050-501: the update question and notice travel with the checker.
+SET(LMMS_UPDATE_CHECK_GUI_SRCS)
+IF(ZENE_UPDATE_CHECK_ENABLED)
+	SET(LMMS_UPDATE_CHECK_GUI_SRCS gui/UpdateCheckWindows.cpp)
+ENDIF()
 # The collaboration panel (0.5.0 F6) needs the session, which needs Qt Network.
 SET(LMMS_COLLAB_GUI_SRCS)
 IF(ZENE_HAVE_COLLAB)
@@ -411,6 +416,7 @@ SET(LMMS_SRCS
 	${LMMS_STEM_GUI_SRCS}
 
 	${LMMS_TELEMETRY_GUI_SRCS}
+	${LMMS_UPDATE_CHECK_GUI_SRCS}
 	${LMMS_COLLAB_GUI_SRCS}
 
 	PARENT_SCOPE

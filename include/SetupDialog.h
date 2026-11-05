@@ -147,6 +147,8 @@ private:
 	bool m_sideBarOnRight;
 	bool m_letPreviewsFinish;
 	bool m_soloLegacyBehavior;
+	QCheckBox* m_updateCheck = nullptr;  //!< Q050-501; null where the command does not exist
+	QCheckBox* m_updatePrereleases = nullptr;
 	bool m_trackDeletionWarning;
 	bool m_mixerChannelDeletionWarning;
 	bool m_MMPZ;

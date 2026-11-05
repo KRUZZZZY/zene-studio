@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-11-05T10:51:23Z",
+  "captured_at": "2026-11-05T13:22:06Z",
   "commands": [
     {
       "args_schema": {
@@ -203,6 +203,61 @@
         "required": [],
         "type": "object"
       },
+      "description": "Whether Zene may check for a newer release: 'enabled', 'answered' (the question was answered; unanswered is off), 'prereleases'; the 'feed', the 'user_agent' a request sends (all it sends about the program), 'last_check', 'in_progress' and 'result' of the last check this session ('state' none|newer|up_to_date|failed, 'version', 'title', 'notes', 'url' of the download page, 'reason'). Nothing is sent.",
+      "group": "app",
+      "id": "app.update_check_get",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Start a check of the feed in the background and return at once; app.update_check_get's 'result' has the answer. Refused while update checks are off: no request is ever made then. One GET naming the version and platform in its User-Agent; nothing is downloaded or installed.",
+      "group": "app",
+      "id": "app.update_check_run",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "prereleases": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Allow or forbid update checks ('enabled') and whether pre-releases count ('prereleases'; the other stays as it was). Saved in the user's configuration, as Settings does; one undo step. This only changes the preference: app.update_check_run or the daily check makes the request.",
+      "group": "app",
+      "id": "app.update_check_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
       "description": "The product name, the version string, the control protocol version and the build options the binary was compiled with.",
       "group": "app",
       "id": "app.version",
@@ -235,7 +290,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "The release notes the program ships for this version ('notes': version, title, items), every version's ('all'), and whether they have been shown here ('seen'; window.whats_new shows them, and the interface does so once per version at start). Nothing is fetched: there is no update check.",
+      "description": "The release notes the program ships for this version ('notes': version, title, items), every version's ('all'), and whether they have been shown here ('seen'; window.whats_new shows them, and the interface does so once per version at start). Nothing is fetched; 'update_check' says whether the separate check for newer releases is on (app.update_check_get).",
       "group": "app",
       "id": "app.whats_new",
       "mutating": false,
@@ -38917,6 +38972,38 @@
         "required": [],
         "type": "object"
       },
+      "description": "Help > Check for Updates: check the feed now and show the answer in a notice that blocks nothing (a newer release with its notes and a button to its download page, up to date, or why it could not tell). While update checks are off it asks first and makes no request unless the answer is yes.",
+      "group": "window",
+      "id": "window.update_check",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Open the download page of the newer release the last check found, in the system's browser ('opened', 'url'). Nothing is downloaded or installed by the program.",
+      "group": "window",
+      "id": "window.update_download_page",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
       "description": "Show this version's release notes (app.whats_new) and remember they were shown, so the start does not show them again until the next version.",
       "group": "window",
       "id": "window.whats_new",
@@ -39212,23 +39299,23 @@
       }
     }
   ],
-  "count": 917,
+  "count": 922,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-integrate-Q050-501-081630835b/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-d5foro6x/zene.sock",
-    "version": "0.4.0-alpha.6169+74099e0"
+    "source_socket": "/tmp/zctl-run-71nxjnib/zene.sock",
+    "version": "0.4.0-alpha.6170+0816308"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 78,
-    "id_count": 917,
-    "ids_sha256": "f3e06d68a40aa270d8742c86b889bd1afacd4fee8eb5554dbb5547af6a045ca9"
+    "id_count": 922,
+    "ids_sha256": "68322bf9d179149c18b6b381011314b22e6755b6bebc9c7169cf01747eb6fe1f"
   }
 }
