@@ -540,8 +540,8 @@ include/MarkerActions.h
 include/MasterLoudnessTap.h
 include/MasteringChain.h
 include/MasteringJob.h
-include/MasteringSequence.h
 include/MasteringReport.h
+include/MasteringSequence.h
 include/McuProtocol.h
 include/McuSurface.h
 include/MenuBarExtras.h
@@ -2873,8 +2873,8 @@ tests/src/core/LoudnessReportTest.cpp
 tests/src/core/LufsMeterTest.cpp
 tests/src/core/Lv2StateTest.cpp
 tests/src/core/MainCliStartupTest.cpp
-tests/src/core/MasteringTest.cpp
 tests/src/core/MasteringSequenceTest.cpp
+tests/src/core/MasteringTest.cpp
 tests/src/core/MasteringTestSupport.h
 tests/src/core/MathTest.cpp
 tests/src/core/McuSurfaceFeedbackTest.cpp

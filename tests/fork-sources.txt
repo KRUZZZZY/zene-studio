@@ -955,8 +955,8 @@ include/MarkerActions.h
 include/MasterLoudnessTap.h
 include/MasteringChain.h
 include/MasteringJob.h
-include/MasteringSequence.h
 include/MasteringReport.h
+include/MasteringSequence.h
 include/McuProtocol.h
 include/McuSurface.h
 include/MenuBarExtras.h
@@ -2516,7 +2516,6 @@ tests/src/core/LufsMeterTest.cpp
 tests/src/core/Lv2StateTest.cpp
 tests/src/core/McuSurfaceFeedbackTest.cpp
 tests/src/core/MasteringTest.cpp
-tests/src/core/MasteringSequenceTest.cpp
 tests/src/core/McuSurfaceTest.cpp
 tests/src/core/MidiClockTest.cpp
 tests/src/core/MidiClockSourceTest.cpp
@@ -3176,6 +3175,7 @@ docs/qwen-fixes-2026-10/cluster-5564.md
 # cluster 5110 batch (2026-10): startup-scale, dump/compress and session-marker regressions.
 tests/src/core/AppearanceStartupTest.cpp
 tests/src/core/MainCliStartupTest.cpp
+tests/src/core/MasteringSequenceTest.cpp
 # cluster 5110 batch (2026-10): verdicts, negative-control evidence and completion record.
 docs/qwen-fixes-2026-10/cluster-5110.md
 # 2026-10-20 (Q050-156): record a bounded input take straight into AudioFileProcessor / SlicerT.
