@@ -24,6 +24,7 @@ IF(LMMS_HAVE_STEM_SPLIT)
 		# it there is no engine for any of them to drive; each file is split the
 		# way this tree splits a group, for the file-length ratchet.
 		core/ControlStemSupport.cpp
+		core/ControlStemSource.cpp
 		core/ControlStemModel.cpp
 		core/ControlStemWav.cpp
 		core/ControlCommandsStems.cpp
@@ -185,6 +186,7 @@ set(LMMS_SRCS
 	core/BrowserCatalog.cpp
 	core/BrowserMetadata.cpp
 	core/BrowserPeakCache.cpp
+	core/PeakJobs.cpp
 	core/BrowserSearch.cpp
 	core/BrowserTagStore.cpp
 	# Import detection (feature row 34 of docs/FEATURE-LIST-0.3.0.md): the Qt-free

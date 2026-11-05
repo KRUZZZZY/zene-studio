@@ -5633,3 +5633,4 @@ src/gui/modals/SetupDialog.cpp	Q050-212: a General checkbox for app/autotrackcha
 include/SetupDialog.h	Q050-212: the toggleAutoTrackChannel slot and its member for the app/autotrackchannel checkbox.
 tests/CMakeLists.txt	Q050-212: registers TrackAddRoutingTest.
 src/gui/clips/ClipView.cpp	Q050-255: a plain left click on a clip clears the selected folder summary clips (FolderSpanSelection), a new selection as the click already is for clips. One line in mousePressEvent, nothing else.
+tests/src/gui/PluginQuarantineMenuTest.cpp	# Move long-running jobs off the interface thread

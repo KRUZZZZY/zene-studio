@@ -52,7 +52,7 @@ enum class TaskState
 struct LMMS_EXPORT TaskInfo
 {
 	int id = 0;
-	QString kind;           //!< render, convert, stem_split, mastering, index, video_audio
+	QString kind;           //!< render, convert, stem_split, mastering, index, video_audio, plugin_scan, browser_peak, stem_prepare
 	QString title;          //!< what a person reads: "Render mix.wav"
 	QString status;         //!< a line under the title: "Queued", "1200 files", a failure's reason
 	double progress = -1.0; //!< 0..1, or -1 while the job cannot say
@@ -93,7 +93,7 @@ private:
 };
 
 /*! 0.5.0 UX decision (theme 24): the one place the interface's long jobs report to - renders and conversions in the
- *  render queue, stem splits, mastering runs, library indexing, video audio extraction - so a person sees them in one
+ *  render queue, stem splits, mastering runs, library indexing, video audio extraction, plug-in scans, waveform reads - so a person sees them in one
  *  non-modal list (the status bar's Tasks indicator, TaskIndicator.h) with their progress and, where the job supports
  *  it, Cancel. Short operations do not report: they stay synchronous.
  *

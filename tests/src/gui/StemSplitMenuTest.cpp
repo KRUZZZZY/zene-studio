@@ -221,7 +221,9 @@ private slots:
 		const int lastJobBefore = newestStemJob().value(QStringLiteral("job_id")).toInt(-1);
 		high->trigger();
 
-		// The job the registry started is a new one, at the chosen quality.
+		// The job the registry started is a new one, at the chosen quality (an in-memory
+		// clip's job starts once its WAV is written on a worker, Q050-010).
+		QTRY_VERIFY_WITH_TIMEOUT(newestStemJob().value(QStringLiteral("job_id")).toInt(-1) > lastJobBefore, 30000);
 		const QJsonObject job = newestStemJob();
 		const int jobId = job.value(QStringLiteral("job_id")).toInt(-1);
 		QVERIFY2(jobId > lastJobBefore, "the menu item started no stem.job_start job");

@@ -22,6 +22,7 @@
  */
 
 #include <QtTest>
+#include <QThreadPool>
 
 #include <algorithm>
 #include <array>
@@ -692,6 +693,10 @@ subprocess.Popen(
 
 		gui::StemSplitController controller;
 		controller.splitClipToStems(source);
+		// Q050-010: an in-memory clip's WAV is written on a worker and its job starts on that report. Deliver only
+		// the report (a posted call to the application object), never a timer, so the poll timer still cannot run.
+		QVERIFY(QThreadPool::globalInstance()->waitForDone(60000));
+		QCoreApplication::sendPostedEvents(QCoreApplication::instance(), QEvent::MetaCall);
 
 		QProgressDialog* dialog = nullptr;
 		for (QWidget* widget : QApplication::topLevelWidgets())

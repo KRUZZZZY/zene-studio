@@ -388,6 +388,12 @@ const ReversibilityRow kPassiveRows[] = {
 	R("browser.categories", RC::NotMutating, false,
 		"reads the tag store's categories table and the vocabulary derived "
 		"from it", "no write", ""),
+	R("browser.peaks_start", RC::NotMutating, false,
+		"reads the audio file on a worker and fills the same peak cache browser.peaks "
+		"fills: a memory-resident derived view of the file, neither project state nor "
+		"written to disk; a cancelled job fills nothing",
+		"no write: an entry is dropped when the file changes, and the whole "
+		"cache is bounded", ""),
 	R("browser.peaks", RC::NotMutating, false,
 		"opens the audio file and fills the peak cache: the cache is a "
 		"memory-resident derived view of the file, keyed on its path and last "

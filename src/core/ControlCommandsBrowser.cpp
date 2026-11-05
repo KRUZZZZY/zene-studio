@@ -44,6 +44,7 @@
 
 #include "BrowserCatalog.h"
 #include "BrowserPeakCache.h"
+#include "PeakJobs.h"
 #include "ControlBrowserSupport.h"
 #include "ControlRegistry.h"
 
@@ -169,6 +170,26 @@ ControlResult browserQueryHandler(const QJsonObject& args)
 	result.insert(QStringLiteral("scan_limit"), BrowserMaxScanEntries);
 	result.insert(QStringLiteral("probe_limit"), BrowserMaxProbes);
 	result.insert(QStringLiteral("roots"), QJsonArray::fromStringList(found.roots));
+	return ControlResult::success(result);
+}
+
+//! Q050-010: browser.peaks_start - the same read as browser.peaks, off the interface thread.
+ControlResult browserPeaksStartHandler(const QJsonObject& args)
+{
+	QString key;
+	ControlResult error;
+	if (!readBrowserFileArgument(args, &key, &error)) { return error; }
+	const QFileInfo info(key);
+	if (!info.exists() || !info.isFile())
+	{
+		return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("there is no file at '%1'").arg(key));
+	}
+	const int id = PeakJobs::instance().start(key);
+	QJsonObject result;
+	result.insert(QStringLiteral("task"), QStringLiteral("peak-%1").arg(id));
+	result.insert(QStringLiteral("task_id"), id);
+	result.insert(QStringLiteral("path"), key);
+	result.insert(QStringLiteral("cached"), !PeakJobs::instance().isOpen(id));
 	return ControlResult::success(result);
 }
 
@@ -343,8 +364,9 @@ void registerBrowserCommands(ControlRegistry& registry)
 			"min/max pairs over the interleaved samples, the frames each bucket covers, the "
 			"file's rate, channels and length, and whether the answer came out of the cache "
 			"('cached') or off the disk. The cache is bounded (capacity entries, base_buckets "
-			"per file) and its hit and miss counts are reported. Read-only: it writes no "
-			"project state and nothing at all on disk.");
+			"per file) and its hit and miss counts are reported. An uncached file is read before this "
+			"answers, holding the interface for a long one: browser.peaks_start reads it in the background. "
+			"Read-only: it writes no project state and nothing at all on disk.");
 		cmd.argsSchema = objectSchema({
 			{QStringLiteral("path"), stringProperty()},
 			{QStringLiteral("buckets"), integerProperty(1, BrowserPeakCache::BaseBuckets)},
@@ -363,6 +385,28 @@ void registerBrowserCommands(ControlRegistry& registry)
 		});
 		cmd.mutating = false;
 		cmd.handler = [](const QJsonObject& args) { return browserPeaksHandler(args); };
+		registry.registerCommand(cmd);
+	}
+
+	{
+		ControlCommand cmd;
+		cmd.id = QStringLiteral("browser.peaks_start");
+		cmd.group = QStringLiteral("browser");
+		cmd.verb = QStringLiteral("peaks_start");
+		cmd.description = QStringLiteral("Read an audio file's waveform peaks on a background worker, so the "
+			"window keeps working during a long file. Returns at once with 'task', the id app.tasks lists it "
+			"under (kind browser_peak, with progress) and app.task_cancel stops it by; a cancelled job leaves "
+			"the cache as it was. When the task is done, browser.peaks answers from the cache ('cached' true). "
+			"Read-only: it writes no project state and nothing at all on disk.");
+		cmd.argsSchema = objectSchema({{QStringLiteral("path"), stringProperty()}}, {QStringLiteral("path")});
+		cmd.resultSchema = objectSchema({
+			{QStringLiteral("task"), stringProperty()},
+			{QStringLiteral("task_id"), integerProperty()},
+			{QStringLiteral("path"), stringProperty()},
+			{QStringLiteral("cached"), booleanProperty()},
+		});
+		cmd.mutating = false;
+		cmd.handler = [](const QJsonObject& args) { return browserPeaksStartHandler(args); };
 		registry.registerCommand(cmd);
 	}
 

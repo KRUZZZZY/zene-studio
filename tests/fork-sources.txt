@@ -869,6 +869,7 @@ include/ControlRoom.h
 include/ControlSampleArray.h
 include/ControlScaleShared.h
 include/ControlServer.h
+include/ControlStemSource.h
 include/ControlStemSupport.h
 include/ControlStructuralSupport.h
 include/ControlTrackCreation.h
@@ -1032,6 +1033,7 @@ include/ParameterControls.h
 include/ParameterGridDialog.h
 include/ParameterReadOnly.h
 include/PatchWiring.h
+include/PeakJobs.h
 include/PerformView.h
 include/PhaseScopeTap.h
 include/PhaseScopeView.h
@@ -1772,6 +1774,7 @@ src/core/ControlServerSocket.cpp
 src/core/ControlServerWin32.cpp
 src/core/ControlSession.cpp
 src/core/ControlStemModel.cpp
+src/core/ControlStemSource.cpp
 src/core/ControlStemSupport.cpp
 src/core/ControlStemWav.cpp
 src/core/ControlStructuralSupport.cpp
@@ -1879,6 +1882,7 @@ src/core/PatchWiring.cpp
 src/core/PhaseScopeTap.cpp
 src/core/PitchTrack.cpp
 src/core/PluginEditorHost.cpp
+src/core/PeakJobs.cpp
 src/core/PluginFactoryBackgroundScan.cpp
 src/core/PluginFactoryScanDetail.h
 src/core/PluginHostChunking.cpp
@@ -2242,6 +2246,7 @@ tests/agent-surface-gate.py
 tests/agent_surface_lib.py
 tests/control-absent-socket.py
 tests/control-arrangement-group-edits.py
+tests/control-background-tasks.py
 tests/control-bus-commands.py
 tests/control-chain-presets.py
 tests/control-clock-commands.py
@@ -2388,6 +2393,7 @@ tests/src/core/AuComponentTest.cpp
 tests/src/core/ControlEventHubTest.cpp
 tests/src/core/DrumRackPadsTest.cpp
 tests/src/gui/AuHostingTest.cpp
+tests/src/gui/BackgroundTasksGuiTest.cpp
 tests/src/gui/DrumRackPanelTest.cpp
 tests/src/plugins/AuParameterHandoffTest.cpp
 tests/stem-availability-docs-gate.py
@@ -2404,6 +2410,7 @@ tests/src/core/AudioAlsaCaptureErrorTest.cpp
 tests/src/core/AudioAlsaPollDescriptorTest.cpp
 tests/src/core/AudioAlsaWriteTest.cpp
 tests/src/core/AudioAnalysisTest.cpp
+tests/src/core/PeakJobsTest.cpp
 tests/src/core/PitchTrackCmndBoundary.h
 tests/src/core/AudioAutomationToolsTest.cpp
 tests/src/core/AudioBusHandleTest.cpp
@@ -2532,6 +2539,9 @@ tests/src/core/LibraryBrowserTest.cpp
 tests/src/core/LibraryProjectsTest.cpp
 tests/src/core/BrowserCollectionStoreWriteTest.cpp
 tests/src/core/MidiWorkflowBindingsTest.cpp
+tests/src/core/PluginScanWorkerTest.cpp
+tests/src/core/RenderTaskLifecycleTest.cpp
+tests/src/core/StemJobLoaderTest.cpp
 tests/src/core/TrackPresetCommandsTest.cpp
 tests/src/core/LinkAudioStreamTest.cpp
 tests/src/core/LinkAudioStreamTestSupport.h
@@ -2747,6 +2757,7 @@ tests/src/gui/DelayControlsDialog.h
 tests/src/gui/EqFader.h
 tests/src/gui/TrackAddRoutingTest.cpp
 tests/src/gui/TrackRouteDropTest.cpp
+tests/src/gui/StemSplitBackgroundTest.cpp
 tests/src/gui/XyPadPairTest.cpp
 tests/src/plugins/HydrogenImportLocalFileMngTest.cpp
 tests/src/plugins/ZynNoteOffTest.cpp
@@ -2835,6 +2846,7 @@ docs/qwen-fixes-2026-10/cluster-Q050-062.3.md
 # warp docs keep stating the three warp.stretch modes, the per-algorithm caveats and the
 # runnable reviewer example, and rejects the old "pitch-preserving stretch is not built"
 # blanket claims (runs offline against docs/; also registered as ctest WarpDocsAgree).
+tests/stem_task_checks.py
 tests/warp-docs-agree.py
 # Shared SF2 patch-list iteration policy exercised by PluginPortsMigrationTest.
 plugins/Sf2Player/PatchPresetIteration.h

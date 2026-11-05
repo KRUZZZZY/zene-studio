@@ -128,8 +128,7 @@ ListSpec pluginManager()
 		act("Hide", "plugin.organise", device, {{QStringLiteral("hidden"), true}}),
 		act("Show", "plugin.organise", device, {{QStringLiteral("hidden"), false}}),
 		act("Move to Folder...", "plugin.organise", device, {}, true)};
-	out.extras = {extra("Rescan", "plugin.rescan", {}, false),
-		extra("Rescan in Background", "plugin.scan_start", {}, false),
+	out.extras = {extra("Rescan", "plugin.scan_start", {}, false),
 		extra("Scan Progress", "plugin.scan_status", {}, false),
 		extra("Cancel Scan", "plugin.scan_cancel", {}, false),
 		readExtra("Plug-in Folders", "plugin.paths_get"),
@@ -145,8 +144,7 @@ ListSpec pluginModules()
 	out.actions = {act("Quarantine...", "plugin.scan_cache_quarantine_add", path, {}, true),
 		act("Release", "plugin.scan_cache_quarantine_remove", path)};
 	out.summaryKeys = QStringList{QStringLiteral("count"), QStringLiteral("load_failed_count")};
-	out.extras = {extra("Rescan", "plugin.rescan", {}, false),
-		extra("Rescan in Background", "plugin.scan_start", {}, false),
+	out.extras = {extra("Rescan", "plugin.scan_start", {}, false),
 		extra("Scan Progress", "plugin.scan_status", {}, false),
 		extra("Cancel Scan", "plugin.scan_cancel", {}, false)};
 	return out;

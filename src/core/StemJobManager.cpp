@@ -165,13 +165,42 @@ int StemJobManager::submit(std::shared_ptr<const SampleBuffer> mix,
 	}
 
 	auto job = std::make_shared<Job>();
+	job->mix = std::move(mix);
+	job->sampleRate = sampleRate;
+	job->segmentFrames = segmentFrames;
+	job->quality = quality;
+	return enqueue(std::move(job));
+}
+
+
+
+
+int StemJobManager::submitFrom(MixLoader loader,
+	int sampleRate,
+	int segmentFrames,
+	StemQuality quality)
+{
+	if (!loader)
+	{
+		return -1;
+	}
+
+	auto job = std::make_shared<Job>();
+	job->loader = std::move(loader);
+	job->sampleRate = sampleRate;
+	job->segmentFrames = segmentFrames;
+	job->quality = quality;
+	return enqueue(std::move(job));
+}
+
+
+
+
+int StemJobManager::enqueue(std::shared_ptr<Job> job)
+{
 	{
 		QMutexLocker locker(&m_state->mutex);
 		job->id = m_state->nextJobId++;
-		job->mix = std::move(mix);
-		job->sampleRate = sampleRate;
-		job->segmentFrames = segmentFrames;
-		job->quality = quality;
 		m_state->jobs.insert(job->id, job);
 		m_state->queue.push_back(job);
 	}
@@ -180,6 +209,16 @@ int StemJobManager::submit(std::shared_ptr<const SampleBuffer> mix,
 		[manager = QPointer<StemJobManager>(this), id = job->id] { if (manager != nullptr) { manager->cancel(id); } }, {}, true});
 	m_state->jobAvailable.wakeOne();
 	return job->id;
+}
+
+
+
+
+int StemJobManager::loadedFrames(int jobId) const
+{
+	QMutexLocker locker(&m_state->mutex);
+	auto it = m_state->jobs.find(jobId);
+	return it == m_state->jobs.end() ? 0 : (*it)->loadedFrames.load();
 }
 
 
@@ -210,6 +249,7 @@ void StemJobManager::cancel(int jobId)
 				}
 			}
 			job->mix.reset();
+			job->loader = nullptr;
 			job->state.store(State::Cancelled);
 			cancelledImmediately = true;
 		}
@@ -474,7 +514,60 @@ void StemJobManager::workerLoop(const std::shared_ptr<SharedState>& state)
 		// finished job keeps only its result rather than its whole source mix as well.
 		QMutexLocker locker(&state->mutex);
 		job->mix.reset();
+		job->loader = nullptr;
 	}
+}
+
+
+
+
+void StemJobManager::failJob(const std::shared_ptr<SharedState>& state, const std::shared_ptr<Job>& job, const QString& error)
+{
+	{
+		QMutexLocker locker(&state->mutex);
+		job->error = error;
+		job->state.store(State::Failed);
+	}
+	emitJobFailed(state, job->id, error);
+}
+
+
+
+
+bool StemJobManager::prepareJob(const std::shared_ptr<SharedState>& state, const std::shared_ptr<Job>& job)
+{
+	return loadMix(state, job) && provisionModel(state, job);
+}
+
+
+
+
+bool StemJobManager::loadMix(const std::shared_ptr<SharedState>& state, const std::shared_ptr<Job>& job)
+{
+	MixLoader loader;
+	{
+		QMutexLocker locker(&state->mutex);
+		loader = job->loader;
+	}
+	if (!loader) { return true; }
+
+	QString loadError;
+	std::shared_ptr<const SampleBuffer> mix = loader(job->cancelRequested, &loadError);
+	if (job->cancelRequested.load())
+	{
+		job->state.store(State::Cancelled);
+		emitJobCancelled(state, job->id);
+		return false;
+	}
+	if (!mix)
+	{
+		failJob(state, job, loadError.isEmpty() ? QStringLiteral("the source could not be read") : loadError);
+		return false;
+	}
+	job->loadedFrames.store(static_cast<int>(mix->size()));
+	QMutexLocker locker(&state->mutex);
+	job->mix = std::move(mix);
+	return true;
 }
 
 
@@ -505,12 +598,7 @@ bool StemJobManager::provisionModel(const std::shared_ptr<SharedState>& state, c
 	}
 	if (!provisioned)
 	{
-		{
-			QMutexLocker locker(&state->mutex);
-			job->error = provisionError;
-			job->state.store(State::Failed);
-		}
-		emitJobFailed(state, job->id, provisionError);
+		failJob(state, job, provisionError);
 		return false;
 	}
 	return true;
@@ -525,19 +613,13 @@ void StemJobManager::runJob(const std::shared_ptr<SharedState>& state, const std
 
 	if (state->separator == nullptr)
 	{
-		const auto error = QStringLiteral("No stem-separation backend configured");
-		{
-			QMutexLocker locker(&state->mutex);
-			job->error = error;
-			job->state.store(State::Failed);
-		}
-		emitJobFailed(state, job->id, error);
+		failJob(state, job, QStringLiteral("No stem-separation backend configured"));
 		return;
 	}
 
 	const auto startTime = std::chrono::steady_clock::now();
 
-	if (!provisionModel(state, job)) { return; }
+	if (!prepareJob(state, job)) { return; }
 
 	StemSet stems;
 	QString error;

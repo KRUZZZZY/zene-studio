@@ -134,6 +134,8 @@ set(LMMS_TESTS
 	src/core/ControlBounceRenderTest.cpp
 	# Cluster 917: cancellable bounce jobs apply edits on the main thread after stale-target checks.
 	src/core/ControlRenderJobTest.cpp
+	# Q050-010: a render followed and cancelled through app.tasks, under the id its start reply named.
+	src/core/RenderTaskLifecycleTest.cpp
 	# Cluster new-p16-186: a render queued onto its own source project is refused, and the project kept.
 	src/core/RenderSourceGuardTest.cpp
 	src/core/ControlSessionRecordLandTest.cpp
@@ -634,6 +636,10 @@ set(LMMS_TESTS
 	src/core/PluginLogoResourceTest.cpp
 	src/core/PluginAudioPortsTest.cpp
 	src/core/PluginScanCacheTest.cpp
+	# Q050-010: the background rescan's library loads run off the interface thread, through app.tasks.
+	src/core/PluginScanWorkerTest.cpp
+	# Q050-010: browser.peaks_start's job through app.tasks: ids, cancels at every stage, failure, responsiveness.
+	src/core/PeakJobsTest.cpp
 	# 0.5.0 Q050-018: a project with unavailable instruments/effects keeps their XML and reports placeholders
 	src/core/MissingDevicesPreserveTest.cpp
 	# Q050-018 review round 2: every mixer chain, save/reopen and the real GUI project-loaded notice.
@@ -1453,7 +1459,9 @@ set(LMMS_TESTS
 	# 0.5.0 L12 (Q050-009): the export dialog's render-preset picker - save from the dialog, reopen,
 	# select, and render at the preset's own rate and depth.
 	src/gui/ExportProjectDialogPresetTest.cpp
-	# Edit > Plugin Quarantine (plugin.scan_cache_* / plugin.rescan), over a throwaway scan-cache file.
+	# Q050-010: the waveform view and Rescan Plugins as tasks the Tasks list shows and stops.
+	src/gui/BackgroundTasksGuiTest.cpp
+	# Edit > Plugin Quarantine (plugin.scan_cache_* / plugin.scan_start), over a throwaway scan-cache file.
 	src/gui/PluginQuarantineMenuTest.cpp
 	# Help > Crash Reports (crash.enable / disable / list / acknowledge / discard), over throwaway directories.
 	src/gui/CrashReportMenuTest.cpp
@@ -1619,12 +1627,16 @@ list(APPEND LMMS_TESTS src/core/SampleDecoderLimitTest.cpp)
 IF(LMMS_HAVE_STEM_SPLIT)
 	LIST(APPEND LMMS_TESTS
 		src/core/StemJobManagerTest.cpp
+		# Q050-010: a stem job's mix is decoded and resampled on the worker, not before submit.
+		src/core/StemJobLoaderTest.cpp
 		src/core/StemModelStoreTest.cpp
 		# Q050-062.1: the quality table and the hop formula every backend shares.
 		src/core/StemQualityTest.cpp
 		src/core/StemSplitPipelineTest.cpp
 		# Q050-062.2: the sample clip's Split to stems submenu picks the job's quality.
 		src/gui/StemSplitMenuTest.cpp
+		# Q050-010: a .ds source and a long in-memory clip reach their job without holding the interface.
+		src/gui/StemSplitBackgroundTest.cpp
 		# new-p21-107: the stem WAV writer's header arithmetic and its refusals (ControlStemWav.cpp).
 		src/core/ControlStemWavTest.cpp
 	)
@@ -2385,6 +2397,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# instrument parameter through plugin.param_set, and without the modules the
 	# song's track holds a parameterless DummyInstrument.
 	if(LMMS_TEST_NAME STREQUAL "ScriptEngineTest" OR LMMS_TEST_NAME STREQUAL "PluginScanCacheTest"
+		OR LMMS_TEST_NAME STREQUAL "PluginScanWorkerTest"
 		OR LMMS_TEST_NAME STREQUAL "ControlDeviceCatalogueTest"
 		OR LMMS_TEST_NAME STREQUAL "ReceiverEffectTest"
 		OR LMMS_TEST_NAME STREQUAL "ScriptMemoryBudgetTest"
@@ -2736,6 +2749,13 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# module (the enumeration path, not a stub): the module has to exist before
 	# ctest runs. It also constructs the plugin browser, so it needs a Qt
 	# platform plugin even on a headless machine.
+	if(LMMS_TEST_NAME STREQUAL "PluginScanWorkerTest")
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			LMMS_TEST_SCAN_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
+		add_dependencies(${LMMS_TEST_NAME} tripleoscillator)
+		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES
+			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	endif()
 	if(LMMS_TEST_NAME STREQUAL "PluginScanCacheTest")
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			LMMS_TEST_SCAN_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
@@ -3509,6 +3529,7 @@ set_tests_properties(NoteEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offs
 set_tests_properties(LaneReadoutTest SampleEditorDialogTest SampleEditorDocsTest CrossfadeEditorTest MixerModesTest MixerMeteringTest WorkflowFeedbackTest
 	ShellHomesTest TaskCenterTest TaskIndicatorTest CPULoadWidgetTest RecordRemainingTest CpuDiagnosticsDialogTest RecordModeMenuTest CanvasKeyboardTest ItemListPanelTest ItemListButtonsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(BackgroundTasksGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MixerSelectionIdentityTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TrackSynthesisLoadTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MixerInsertLatencyTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -6595,6 +6616,15 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 600
 	)
+	# Q050-010: every long job over the real socket, under one id, through app.tasks, with pings between.
+	add_test(NAME ControlBackgroundTasks
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-background-tasks.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlBackgroundTasks PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
 	# plugin.scan_start / scan_status / scan_cancel + plugin.list's vendor
 	# (Q050-090 "Plug-in manager vendor and background scan"): the background
 	# rescan driven over --control-socket - a paced run is followed (progress,
@@ -7522,6 +7552,10 @@ IF(LMMS_HAVE_STEM_SPLIT)
 	# The controller regression exercises its progress and completion dialogs.
 	set_tests_properties(StemSplitPipelineTest PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	# Q050-010: the long-source regressions read the task list and the split's dialog.
+	set_tests_properties(StemSplitBackgroundTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 300)
+	target_compile_definitions(StemSplitBackgroundTest PRIVATE
+		LMMS_TEST_DS_FILE="${CMAKE_SOURCE_DIR}/data/samples/drumsynth/misc/verylong.ds")
 	# Q050-062.2: the menu test triggers the submenu and reads the job dialogs.
 	set_tests_properties(StemSplitMenuTest PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
