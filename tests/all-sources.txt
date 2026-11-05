@@ -3390,6 +3390,7 @@ tests/src/gui/TouchLayoutTest.cpp
 tests/src/gui/TouchWorkspaceTest.cpp
 tests/src/gui/TrackAddRoutingTest.cpp
 tests/src/gui/TrackFolderMenuTest.cpp
+tests/src/gui/TrackGripContrastTest.cpp
 tests/src/gui/TrackIconsLevelBarTest.cpp
 tests/src/gui/TrackRenderMenuTest.cpp
 tests/src/gui/TrackRouteDropTest.cpp
