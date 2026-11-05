@@ -32,7 +32,9 @@
 
 #include <QAction>
 #include <QCheckBox>
+#include <QDialogButtonBox>
 #include <QJsonArray>
+#include <QPushButton>
 #include <QSpinBox>
 #include <QWheelEvent>
 
@@ -354,7 +356,10 @@ private slots:
 		const QJsonObject edit = box.changes();
 		QCOMPARE(edit.value(QStringLiteral("recur_length")).toInt(), 4);
 		QCOMPARE(edit.value(QStringLiteral("recur_mask")).toInt(), 4);
-		box.accept();
+		// The dialog's own OK button, clicked as a user's press would be - not the slot called.
+		auto* buttons = box.findChild<QDialogButtonBox*>();
+		QVERIFY(buttons != nullptr && buttons->button(QDialogButtonBox::Ok) != nullptr);
+		buttons->button(QDialogButtonBox::Ok)->click();
 		const Note* applied = noteAt(m_clip, 192, 62);
 		QCOMPARE(applied->conditions().recurLength, 4);
 		QCOMPARE(applied->conditions().recurMask, 4);
