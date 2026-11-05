@@ -929,11 +929,11 @@ private slots:
 
 	/*! Q050-242: recurrence through a LOCALLY LOOPED clip - the combination no test covered. The
 	 *  clip is 96 ticks long and looped every 24 ticks, so within ONE song pass it folds its note
-	 *  onto ticks 0, 24, 48 and 72 (four local repeats). The recurrence mask counts SONG passes
+	 *  onto ticks 0, 24, 48 and 72 (four local repeats inside a 96-tick song pass). The recurrence mask counts SONG passes
 	 *  (MidiPlayback::pass(), advanced only by a transport loop wrap), not the clip's own repeats:
 	 *  with length 2 and mask 1 (the first of every two passes) the note sounds on every local
-	 *  repeat of pass 0 and on none of pass 1, while the clip keeps folding. The tempo is pushed to
-	 *  999 BPM so a 24-tick pass is well under three periods, then restored by the guard below.
+	 *  repeat of pass 0 and on none of pass 1, while the clip keeps folding. The tempo is set to
+	 *  180 BPM so the note handle ends before each local repeat, then restored by the guard below.
 	 *
 	 *  The three cases are the ones a length/mask pair can be wrong about: the selected passes
 	 *  sound and the others do not (2/1), a positive length with mask 0 plays NONE, and length 0
@@ -941,7 +941,8 @@ private slots:
 	 */
 	void recurrenceSelectsThePassesOfALocallyLoopedClip()
 	{
-		Note* note = oneNote(60, 24);
+		// A note shorter than the 24-tick local loop leaves an observable gap after each start.
+		Note* note = oneNote(60, 18);
 		m_clip->changeLength(TimePos(96));
 		QVERIFY(run(QStringLiteral("clip.set_loop"), {{QStringLiteral("clip"), control::clipIdOf(m_clip)},
 			{QStringLiteral("length"), 24}}).ok);
@@ -972,14 +973,14 @@ private slots:
 				song->setTempo(tempo);
 			}
 		} restore{song, timeline, tempo};
-		// 24 ticks of a 140 BPM song is ~0.26 s = ~12 periods; at 999 BPM it is under one, so three
-		// rendered periods land inside one pass and the loop's own wrap is what moves the pass on.
-		song->setTempo(999);
-		timeline.setLoopPoints(TimePos(0), TimePos(24));
+		// The song pass is four times the clip loop: each selected pass must produce four starts,
+		// while the clip's three internal loop wraps must leave MidiPlayback::pass() unchanged.
+		song->setTempo(180);
+		timeline.setLoopPoints(TimePos(0), TimePos(96));
 		timeline.setLoopEnabled(true);
 
 		// Which song pass sounds the note: render a good many periods and record the pass at each
-		// trigger. The note is 24 ticks long, so a handle lives across the wrap; count STARTS.
+		// trigger. The note ends six ticks before its local loop restarts, so count distinct STARTS.
 		const auto soundsOnPasses = [&](int periods) {
 			QList<int> passes;
 			song->setPlayPos(0, Song::PlayMode::Song);
@@ -999,12 +1000,15 @@ private slots:
 			return passes;
 		};
 
-		// Over five passes the first-of-two mask sounds only on the even ones - pass 1's local
-		// repeats are silent, which is the fact a "model helper only" test could not show.
+		// The first-of-two mask sounds only on even song passes. Each selected pass has four starts
+		// (the clip's local repeats); an odd song pass has none. This distinguishes the song-pass
+		// mask from incorrectly advancing it at each local clip-loop wrap.
 		const QList<int> passes = soundsOnPasses(6000);
-		QVERIFY2(passes.size() >= 4, qPrintable(QStringLiteral("only %1 starts in five passes").arg(passes.size())));
+		QVERIFY2(passes.size() >= 12, qPrintable(QStringLiteral("only %1 local starts across passes 0, 2 and 4").arg(passes.size())));
 		for (int pass : passes) { QCOMPARE(pass % 2, 0); }
-		QVERIFY2(passes.contains(0) && passes.contains(2) && passes.contains(4), "the even passes each sounded");
+		QCOMPARE(passes.count(0), 4);
+		QCOMPARE(passes.count(2), 4);
+		QCOMPARE(passes.count(4), 4);
 
 		// Mask 0 with a positive length means NO pass, opposite of length 0 (every pass).
 		QVERIFY(run(QStringLiteral("note.edit"), edit(m_clip->notes().front(), {{QStringLiteral("recur_length"), 2},

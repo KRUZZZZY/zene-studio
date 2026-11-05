@@ -94,8 +94,8 @@ private:
 	int passMask() const;
 	//! Add recur_length / recur_mask to \p edit when the box's pair differs from what opened.
 	void addRecurrenceChange(QJsonObject* edit) const;
-	//! Show only the pass bits below @a length (a length of 0 shows them all, so a mask
-	//! can be set before the length is), and disable them when a length of 0 means every pass.
+	//! Show only the pass bits below @a length; at length 0, show all of them disabled because
+	//! every pass plays and the mask is ignored.
 	void showPassBits(int length);
 
 	NoteEditor* m_editor;

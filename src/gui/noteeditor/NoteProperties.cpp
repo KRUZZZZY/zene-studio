@@ -159,8 +159,8 @@ int NotePropertiesDialog::passMask() const
 
 void NotePropertiesDialog::showPassBits(int length)
 {
-	// A positive length shows exactly its own passes; 0 (every pass) shows them all, so a mask can
-	// be ticked and then given a length, and ungreys the row again when the length comes back.
+	// A positive length enables exactly its own pass bits. At 0, every pass plays, so show all bits
+	// disabled; choosing a positive length enables the corresponding mask controls.
 	const bool everyPass = length <= 0;
 	const int shown = everyPass ? MaxPassBits : length;
 	for (int pass = 0; pass < static_cast<int>(m_passBits.size()); ++pass)
