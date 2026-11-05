@@ -101,6 +101,8 @@ LMMS_EXPORT QJsonObject shellSelectionState();
 //! keys, src/gui/ControlCommandsShortcuts.cpp), window.layout_* / detach / attach / header_*
 //! (src/gui/ControlCommandsLayouts.cpp) and macro.* (src/gui/ControlCommandsMacros.cpp).
 LMMS_EXPORT void registerShortcutCommands(ControlRegistry& registry);
+//! Q050-055.2: the keyboard's plug-in actions - plugin.selected_editor_open, plugin.selected_load, shortcuts.bind_plugin
+LMMS_EXPORT void registerPluginActionCommands(ControlRegistry& registry);
 //! 0.5.0 L13, the context-aware keyboard map's stage 1: automation.editor_mode, the automation
 //! editor's four edit modes (src/gui/ControlCommandsAutomationMode.cpp); registered by
 //! registerWindowCommands.

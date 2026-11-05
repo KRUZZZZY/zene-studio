@@ -1099,6 +1099,8 @@ config lists back) and one `not_mutating` (`session.command_bindings`, a read) -
 
 **Q050-180.1** (multiple positioned video clips, integrated onto `050/m0-train-22`, 2026-10-30): `video.clip_add` and `video.clip_remove` add two `true_inverse` rows and `video.render_frames` one `not_mutating` row - `rows=890 true_inverse=436 snapshot=42 irreversible=25 not_mutating=387`.
 
+**Q050-055.2** (keyboard plug-in actions, 2026-10-30): `plugin.selected_editor_open`, `plugin.selected_load` and `shortcuts.bind_plugin` add three `not_mutating` rows - `rows=890 true_inverse=434 snapshot=42 irreversible=25 not_mutating=389`. The last two run `plugin.load` and `shortcuts.set` inside themselves, and those record themselves with their own classes.
+
 <!-- A16-HISTOGRAM-BEGIN
      measured: rows=888 true_inverse=434 snapshot=42 irreversible=25 not_mutating=387
      configuration: telemetry.status wasm.load session.get_state stem.get_state

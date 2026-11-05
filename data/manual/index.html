@@ -35,6 +35,15 @@ keep working until you bind a scoped action over them. A clash is two actions of
 list marks it, Set Keys refuses it until you turn on <i>Force</i>, which moves the key there and unbinds the other
 action of that context only - a binding in another context is never touched. The choices are saved with your
 configuration, so they are there at the next start.</p>
+<p class="tip"><b>Plug-ins from the keyboard.</b> Every context's list has <i>Open Selected Track's Editor</i> (the
+track's instrument, or on a track with no instrument its first effect) and <i>Open Selected Track's First Effect</i>:
+give either a key and it opens that device of the track selected when you press it - the plug-in's own window when it
+has one, otherwise Zene's view of it. To load a plug-in from a key, press <i>Bind a Plug-in...</i> in Keyboard Shortcuts,
+choose the context, the plug-in and the key. Pressing it loads that plug-in onto the selected track or mixer channel, as
+adding it by hand does: an effect goes at the end of the chain and Undo removes it; an instrument replaces the track's
+instrument, which cannot be undone. A target that cannot take it (an instrument on a sample track, anything on an automation track, or
+nothing selected) loads nothing and a message says why. The same actions are in Project tools &gt; Selected Track, and
+the binding's row takes Set Keys and Unbind like any other, where Unbind removes it from the list.</p>
 <nav><a href="#quickstart">Quick start</a> <a href="#window">The window</a> <a href="#arrange">Arranging</a> <a href="#notes">Notes</a> <a href="#mix">Mixing</a>
 <a href="#devices">Devices</a> <a href="#record">Recording</a> <a href="#launch">Launcher</a> <a href="#workflows">Patterns and cells</a>
 <a href="#projects">Projects</a> <a href="#agents">Scripts and agents</a> <a href="#customise">Customising</a> <a href="#access">Access</a></nav>

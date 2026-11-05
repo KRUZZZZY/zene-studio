@@ -2342,6 +2342,7 @@ src/gui/ControlCommandsLayouts.cpp
 src/gui/ControlCommandsMacros.cpp
 src/gui/ControlCommandsMixerView.cpp
 src/gui/ControlCommandsNoteEditor.cpp
+src/gui/ControlCommandsPluginActions.cpp
 src/gui/ControlCommandsSampleEditor.cpp
 src/gui/ControlCommandsSelection.cpp
 src/gui/ControlCommandsShell.cpp
@@ -3257,6 +3258,7 @@ tests/src/gui/PluginCompatEditorProbe.cpp
 tests/src/gui/PluginControlDialogsTest.cpp
 tests/src/gui/PluginNativeEditorTest.cpp
 tests/src/gui/PluginQuarantineMenuTest.cpp
+tests/src/gui/PluginShortcutsTest.cpp
 tests/src/gui/PresetBindingsGuiTest.cpp
 tests/src/gui/ProjectContainerSaveAsGuiTest.cpp
 tests/src/gui/RackDeferredLifetimeTest.cpp
