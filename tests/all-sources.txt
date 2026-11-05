@@ -573,6 +573,7 @@ include/MidiEvent.h
 include/MidiEventProcessor.h
 include/MidiEventToByteSeq.h
 include/MidiHandoffQueue.h
+include/MidiInputGate.h
 include/MidiInputTransform.h
 include/MidiJack.h
 include/MidiJackOutSchedule.h
@@ -2892,6 +2893,8 @@ tests/src/core/MathTest.cpp
 tests/src/core/McuSurfaceFeedbackTest.cpp
 tests/src/core/McuSurfaceTest.cpp
 tests/src/core/MeterTapTest.cpp
+tests/src/core/MidiAlsaRawShutdownTest.cpp
+tests/src/core/MidiAlsaSeqShutdownTest.cpp
 tests/src/core/MidiClipControllersLoadTest.cpp
 tests/src/core/MidiClockSourceTest.cpp
 tests/src/core/MidiClockTest.cpp
@@ -2899,6 +2902,7 @@ tests/src/core/MidiCommandBindingsTest.cpp
 tests/src/core/MidiEventToByteSeqTest.cpp
 tests/src/core/MidiExportTest.cpp
 tests/src/core/MidiHandoffQueueTest.cpp
+tests/src/core/MidiInputGateTest.cpp
 tests/src/core/MidiInputTransformTest.cpp
 tests/src/core/MidiJackOutScheduleTest.cpp
 tests/src/core/MidiLearnTest.cpp

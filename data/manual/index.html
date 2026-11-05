@@ -636,6 +636,12 @@ the waveform the device now holds.</p>
 by you alone); anything connected to it can do whatever the menus can - save, render, delete - so connect only programs
 you trust. A controller can drive the remote-control pages (eight knobs following the selected device), a Mackie
 Control surface, or any parameter through MIDI learn. window.note_editor_set opens a clip in the note editor and sets its tool and view; window.get_state's note_editor reports the active tool and the same zoom, row height and visible top and bottom key.</p>
+<p><b>Closing a MIDI device.</b> When you quit (File &gt; Quit, or <code>control.quit</code>), an ALSA Raw-MIDI
+device (the MIDI interface chosen in Settings) that is waiting for input closes at once: its reader is woken
+and stopped before the device is released, instead of being waited on for a second and then killed. On ALSA Raw-MIDI, ALSA Sequencer, JACK, WinMM and CoreMIDI, incoming MIDI stops before the
+project's tracks are closed; with the ALSA sequencer the last note-offs your tracks send still go out. If at start-up a raw device opens but cannot
+be watched for input, it is closed straight away and treated like a device that failed to open, so Zene falls back to
+the next interface it would try, or to no MIDI.</p>
 
 <p id="controller-scripts"><b>Controller scripts (Customise &gt; Controller Scripts).</b> A control-surface script is a
 Lua file that stays loaded and answers a MIDI controller: Start Script... (<code>controller.script_start</code>) takes a

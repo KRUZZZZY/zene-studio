@@ -536,6 +536,7 @@ set(LMMS_TESTS
 	# unnamed raw-client stream is still followed while no source is chosen, and a
 	# name the follower cannot hold is refused invalid_args.
 	src/core/MidiClockSourceTest.cpp
+	src/core/MidiInputGateTest.cpp
 	src/core/MidiLearnThreadTest.cpp
 	src/core/MidiSurfaceInputTest.cpp
 	src/core/MidiRetroCaptureTest.cpp
@@ -1741,6 +1742,10 @@ if(LMMS_HAVE_ALSA)
 	# cluster 4584: the ALSA capture thread must not log a failed recovery -
 	# the failure is parked and reported by the thread that closes the capture.
 	list(APPEND LMMS_TESTS src/core/AudioAlsaCaptureErrorTest.cpp)
+	# Q050-488: the ALSA raw-MIDI worker is woken and joined on close, never terminated.
+	list(APPEND LMMS_TESTS src/core/MidiAlsaRawShutdownTest.cpp)
+	# Q050-488: the sequencer worker is joined before the project's ports are destroyed.
+	list(APPEND LMMS_TESTS src/core/MidiAlsaSeqShutdownTest.cpp)
 endif()
 
 # The OSS MIDI output guard needs the optional backend and its API.
