@@ -147,6 +147,11 @@ int PianoView::touchVelocity(const QPoint& position, int key) const
 	return static_cast<int>(static_cast<float>(yDiff) / height * base);
 }
 
+/*! The finger at a position slid off the key bed: TouchContacts::moveTo sees keyAt() answer -1 and
+ *  ends that one note, leaving every other contact alone. Qt keeps sending every point of a
+ *  sequence it gave a widget, even outside that widget, so the silence is reported to the widget
+ *  the finger is on rather than to a model only a test could call. */
+
 QRect PianoView::keyRect(int key) const
 {
 	return QRect(getKeyX(key), KeyAreaTop, getKeyWidth(key), getKeyHeight(key));

@@ -115,9 +115,8 @@ void TouchContacts::release(int contact)
 {
 	const auto it = m_contacts.find(contact);
 	if (it == m_contacts.end()) { return; }
-	const int key = it->second.key;
+	silence(it);
 	m_contacts.erase(it);
-	unhold(key, contact);
 }
 
 void TouchContacts::moveTo(int contact, const QPoint& position)
@@ -125,19 +124,38 @@ void TouchContacts::moveTo(int contact, const QPoint& position)
 	const auto it = m_contacts.find(contact);
 	if (it == m_contacts.end()) { return; }
 	const int key = keyUnder(position);
-	if (key < 0 || key == it->second.key) { return; }  // off the keys: sound on until the lift
+	if (key == it->second.key) { return; }
+	if (key < 0)
+	{
+		// Slid off the key bed: THIS finger's note ends and every other finger keeps sounding. The
+		// contact stays tracked (with no key) rather than being forgotten, so sliding back onto the
+		// keys sounds its note again - and lifting it later releases nothing extra.
+		silence(it);
+		return;
+	}
 
 	// A finger sliding from one key to the next moves ITS note: the old one ends (unless another
 	// contact still holds it) and the new one starts (unless another contact already holds it).
-	const int previous = it->second.key;
+	silence(it);
 	it->second.key = key;
 	it->second.velocity = velocityAt(position, key, it->second.velocity);
-	unhold(previous, contact);
 	hold(key, contact, it->second.velocity);
+}
+
+void TouchContacts::silence(std::map<int, Held>::iterator contact)
+{
+	if (contact->second.key < 0) { return; }
+	const int previous = contact->second.key;
+	contact->second.key = NoKey;
+	unhold(previous, contact->first);
 }
 
 void TouchContacts::cancel(int contact)
 {
+	const auto it = m_contacts.find(contact);
+	if (it == m_contacts.end()) { return; }
+	// A cancelled contact is gone from the surface (the platform will not report it again), so it
+	// must be forgotten, not merely silenced: only its own note ends.
 	release(contact);
 }
 
@@ -153,6 +171,7 @@ void TouchContacts::releaseAll()
 	keys.reserve(held.size());
 	for (const auto& [contact, note] : held)
 	{
+		if (note.key < 0) { continue; }  // a finger that slid off the bed sounds nothing
 		if (std::find(keys.begin(), keys.end(), note.key) == keys.end()) { keys.push_back(note.key); }
 	}
 	for (int key : keys)

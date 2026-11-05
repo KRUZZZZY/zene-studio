@@ -290,11 +290,13 @@ with the downmix.</p>
 more fingers play two or more notes at once, each finger its own note, and a finger's note lasts until that finger
 lifts - lifting, sliding off or cancelling one finger never releases another's. A white key is loudest at its bottom
 edge and a black key at its top, as with the mouse; sliding a held finger to the next key moves only that finger's note.
-Two fingers on the same key sound one note, held until the last of them lifts. The mouse and the computer keyboard
-play the keyboard exactly as before, and the touch notes go into the same MIDI input, so record arming, monitoring,
-the track's input transform and MIDI recording all see them. A widget that loses the keyboard focus drops every touch
-note (nothing is left hanging), and the keyboard accepts touch events only for the surface itself, so Qt's fallback
-that turns an unhandled touch into a mouse click is never a second note for the same finger.</p>
+Two fingers on the same key sound one note, held until the last of them lifts. Sliding one held finger off the key
+bed - down past the last key, up into the octave strip or out of the keyboard - silences only that finger's note; the
+others keep sounding, and sliding the same finger back onto the keys sounds its note again. The mouse and the computer
+keyboard play the keyboard exactly as before, and the touch notes go into the same MIDI input, so record arming,
+monitoring, the track's input transform and MIDI recording all see them. A widget that loses the keyboard focus drops
+every touch note (nothing is left hanging), and the keyboard accepts touch events only for the surface itself, so Qt's
+fallback that turns an unhandled touch into a mouse click is never a second note for the same finger.</p>
 <p>Add a device from the browser or the rack's menu; right-click a device to insert another before or after it, copy it
 or its whole chain to other channels, or compare two settings (A/B). Racks hold parallel chains, macros (each mapping
 with its own range and curve) and key or velocity zones; <i>Wrap into Rack</i> moves a chain into a rack chain. Plug-in

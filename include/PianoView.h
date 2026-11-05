@@ -77,11 +77,16 @@ public:
 	 *  in TouchContacts (src/gui/TouchContacts.cpp), which the drum pads reuse. */
 	//! The height of the root-note marker strip above the keys (PianoView.cpp's drawing base).
 	static constexpr int KeyAreaTop = 11;
+	//! A white key's height: the key bed the fingers play on (PianoView.cpp's drawing height).
+	static constexpr int KeyBedHeight = 57;
 	TouchContacts& touchContacts() { return m_touchContacts; }
-	//! The key under a widget position (or a negative value above the keys).
+	/*! The key under a widget position, or -1 off the key bed. The bed is the drawn key area only:
+	 *  the marker strip above and the scrollbar below it are not keys, which is what makes sliding a
+	 *  finger off the bed a silence for that finger alone (see TouchContacts::moveTo). */
 	int keyAt( const QPoint& position ) const
 	{
-		return position.y() > KeyAreaTop ? getKeyFromMouse( position ) : -1;
+		if (position.y() <= KeyAreaTop || position.y() >= KeyAreaTop + KeyBedHeight) { return -1; }
+		return getKeyFromMouse( position );
 	}
 	//! The note velocity a press at @a position on @a key gives, as the mouse path scales it.
 	int touchVelocity( const QPoint& position, int key ) const;

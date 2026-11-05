@@ -24,18 +24,39 @@ is turned on in `wireTouch()` (called from the constructor) and Qt-synthesized m
 ignored, so a finger is never a second note. `TouchCancel`, `TouchEnd` and a focus loss release
 everything; `TouchContacts::cancel(id)` releases exactly one contact.
 
+## Rework (round 1)
+
+The review found no musician-reachable single-contact cancellation: the only per-contact release
+was `TouchContacts::cancel(id)`, which the test called directly, while a platform `TouchCancel`
+releases the whole sequence. Fixed by giving the keyboard the gesture a touch musician uses - a
+held finger slid off the key bed (below it, or up into the octave strip, or out of the widget)
+silences that one finger's note and no other. `PianoView::keyAt` now answers -1 off the drawn key
+bed, and `TouchContacts::moveTo` ends only that contact's note there; the contact stays tracked but
+keyless, so an identical slide back onto the keys sounds its note again, and its later lift
+releases nothing extra. `cancel(id)` is kept as the tracker seam's own per-contact release.
+
+The cancellation criterion's test now drives the GUI path: real `QTest::touchEvent` sequences press
+two keys and then `move` one finger off the bed (and separately up into the strip), asserting the
+slid finger's note ends while the other's keeps sounding. A second test keeps the direct `cancel(id)`
+seam honest, and the whole-sequence `TouchCancel` test is unchanged.
+
 ## Acceptance
 
 | Criterion | Test (all in `tests/src/gui/TouchInstrumentSurfaceTest.cpp`) | Command | Exit |
 |---|---|---|---|
 | Two or more contacts sound distinct simultaneous notes | `twoContactsSoundTwoDistinctNotes` (keys 60 + 64), `threeContactsSoundThreeDistinctNotes` (55 + 60 + 64) | `ctest -R '^TouchInstrumentSurfaceTest$'` from `build/tests` | 0 (red 8) |
-| Releasing or cancelling one contact leaves the others held | `releasingOneContactLeavesTheOtherHeld`, `cancellingOneContactLeavesTheOtherHeld`, `aSequenceCancelReleasesEveryContact`, `twoContactsOnOneKeyHoldOneNote`, `slidingOneContactMovesOnlyItsOwnNote` | same | 0 (red 8) |
+| Releasing or cancelling one contact leaves the others held | `releasingOneContactLeavesTheOtherHeld`, `cancellingOneContactBySlidingItOffTheKeysLeavesTheOtherHeld` (GUI gesture), `slidingOneContactUpIntoTheMarkerStripSilencesOnlyIt` (GUI gesture), `theTrackersPerContactCancelReleasesOnlyThatContact` (seam), `aSequenceCancelReleasesEveryContact`, `twoContactsOnOneKeyHoldOneNote`, `slidingOneContactMovesOnlyItsOwnNote` | same | 0 (red 8) |
 | Existing mouse and computer-keyboard input still works | `theMouseStillPlaysTheKeyboard`, `theComputerKeyboardStillPlaysTheKeyboard` | same | 0 (mutation control 8) |
 
-Red proof (run against the final commit, `c58ff43a3d`): with `wireTouch()`'s `setAttribute` and
-the `event()` touch branch reverted (the test kept and compiling against the same API), the build
-exits 0 and `ctest -R '^TouchInstrumentSurfaceTest$'` exits 8 with exactly the seven touch cases
-failing at `playingNote()`; restored, the build exits 0 and the same command exits 0 (11 pass).
+Red proof (run against the reworked tree): with `wireTouch()`'s `setAttribute` and the `event()`
+touch branch reverted (the test kept and compiling against the same API), the build exits 0 and
+`ctest -R '^TouchInstrumentSurfaceTest$'` exits 8 with the touch cases failing at `playingNote()`;
+restored, exit 0. For the per-contact cancellation gesture specifically, reverting
+`TouchContacts::moveTo`'s off-bed branch keeps the build at 0 and makes exactly
+`cancellingOneContactBySlidingItOffTheKeysLeavesTheOtherHeld` and
+`slidingOneContactUpIntoTheMarkerStripSilencesOnlyIt` fail (`ctest` exit 8); restored, exit 0
+(`r1-red-build.log` 0 / `r1-red-test.log` 8, then `r1-build-2.log` 0 / `r1-test-2.log` 0). The
+suite now runs 14 cases, all passing.
 Because reverting a touch feature cannot break the mouse/keyboard paths, the "existing input"
 criterion has its own control: an `event()` that swallows `MouseButtonPress/Release`,
 `MouseMove`, `KeyPress` and `KeyRelease` makes exactly `theMouseStillPlaysTheKeyboard` and

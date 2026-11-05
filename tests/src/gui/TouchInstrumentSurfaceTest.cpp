@@ -191,8 +191,79 @@ private slots:
 		QVERIFY(!m_track->pianoModel()->isKeyPressed(held));
 	}
 
-	//! Cancelling one contact - not the whole sequence - leaves the other contact's note sounding.
-	void cancellingOneContactLeavesTheOtherHeld()
+	/*! Cancelling one contact - not the whole sequence - leaves the other contact's note sounding,
+	 *  through the gesture a musician performs: sliding that one finger off the key bed. The touch
+	 *  events are real QTest sequences sent to the widget, so the criterion is proven on the surface
+	 *  a finger reaches, not on the tracker's API. */
+	void cancellingOneContactBySlidingItOffTheKeysLeavesTheOtherHeld()
+	{
+		const int cancelled = 60;
+		const int held = 64;
+		const QPoint atCancelled = pointOfKey(cancelled, true);
+
+		auto pressed = QTest::touchEvent(m_view, m_device, false);
+		pressed.press(0, atCancelled, m_view).press(1, pointOfKey(held, true), m_view);
+		QVERIFY(commitTouchSequence(pressed));
+		QVERIFY(m_track->playingNote(cancelled) != nullptr);
+		QVERIFY(m_track->playingNote(held) != nullptr);
+
+		// The first finger slides off the bottom of the key bed while the second stays on its key:
+		// the surface's own hit test says that position is no key, so only that contact is silenced.
+		const QPoint offTheBed(atCancelled.x(), m_view->KeyAreaTop + m_view->KeyBedHeight + 4);
+		QCOMPARE(m_view->keyAt(offTheBed), -1);
+		auto slid = QTest::touchEvent(m_view, m_device, false);
+		slid.move(0, offTheBed, m_view).stationary(1);
+		QVERIFY(commitTouchSequence(slid));
+
+		QVERIFY2(m_track->playingNote(cancelled) == nullptr, "the finger slid off the keys but its note kept sounding");
+		QVERIFY2(m_track->playingNote(held) != nullptr, "cancelling one contact released another");
+		QVERIFY(!m_track->pianoModel()->isKeyPressed(cancelled));
+		QVERIFY(m_track->pianoModel()->isKeyPressed(held));
+		QCOMPARE(m_view->touchHolders(cancelled), 0);
+		QCOMPARE(m_view->touchHolders(held), 1);
+
+		// The silenced finger is still on the surface: sliding it back onto the keys sounds its note
+		// again, without disturbing the finger that never left its own key.
+		auto backOn = QTest::touchEvent(m_view, m_device, false);
+		backOn.move(0, atCancelled, m_view).stationary(1);
+		QVERIFY(commitTouchSequence(backOn));
+		QVERIFY2(m_track->playingNote(cancelled) != nullptr, "the silenced contact did not sound again when it came back");
+		QVERIFY(m_track->playingNote(held) != nullptr);
+		QCOMPARE(m_view->touchHolders(held), 1);
+
+		// And lifting it now releases only its own note; the held finger still sounds.
+		auto lifts = QTest::touchEvent(m_view, m_device, false);
+		lifts.release(0, atCancelled, m_view).stationary(1);
+		QVERIFY(commitTouchSequence(lifts));
+		QVERIFY(m_track->playingNote(cancelled) == nullptr);
+		QVERIFY2(m_track->playingNote(held) != nullptr, "the held contact's note ended with the other finger's lift");
+	}
+
+	//! Sliding a finger up off the key bed (into the root-note strip) is the same per-contact silence.
+	void slidingOneContactUpIntoTheMarkerStripSilencesOnlyIt()
+	{
+		const int cancelled = 62;
+		const int held = 67;
+		const QPoint atCancelled = pointOfKey(cancelled, true);
+
+		auto pressed = QTest::touchEvent(m_view, m_device, false);
+		pressed.press(0, atCancelled, m_view).press(1, pointOfKey(held, true), m_view);
+		QVERIFY(commitTouchSequence(pressed));
+		QVERIFY(m_track->playingNote(cancelled) != nullptr);
+		QVERIFY(m_track->playingNote(held) != nullptr);
+
+		const QPoint aboveTheKeys(atCancelled.x(), m_view->KeyAreaTop - 4);
+		QCOMPARE(m_view->keyAt(aboveTheKeys), -1);
+		auto slid = QTest::touchEvent(m_view, m_device, false);
+		slid.move(0, aboveTheKeys, m_view).stationary(1);
+		QVERIFY(commitTouchSequence(slid));
+
+		QVERIFY(m_track->playingNote(cancelled) == nullptr);
+		QVERIFY2(m_track->playingNote(held) != nullptr, "one finger's silence released another's note");
+	}
+
+	//! The tracker's own per-contact cancel still releases exactly one contact (the surface's seam).
+	void theTrackersPerContactCancelReleasesOnlyThatContact()
 	{
 		const int cancelled = 60;
 		const int held = 64;
@@ -205,8 +276,8 @@ private slots:
 
 		m_view->touchContacts().cancel(0);
 
-		QVERIFY2(m_track->playingNote(cancelled) == nullptr, "the cancelled contact's note did not end");
-		QVERIFY2(m_track->playingNote(held) != nullptr, "cancelling one contact released another");
+		QVERIFY(m_track->playingNote(cancelled) == nullptr);
+		QVERIFY(m_track->playingNote(held) != nullptr);
 		QCOMPARE(m_view->touchHolders(cancelled), 0);
 		QCOMPARE(m_view->touchHolders(held), 1);
 	}
@@ -338,6 +409,11 @@ private:
 			return {};
 		}
 		const QPoint at(rect.center().x(), lowOnKey ? rect.bottom() + 1 - 6 : rect.top() + 6);
+		if (at.y() >= m_view->KeyAreaTop + m_view->KeyBedHeight)
+		{
+			QTest::qFail(qPrintable(QStringLiteral("key %1's point is off the key bed").arg(key)), __FILE__, __LINE__);
+			return {};
+		}
 		if (m_view->keyAt(at) != key)
 		{
 			QTest::qFail(qPrintable(QStringLiteral("the surface says key %1 is at %2,%3, not key %4")
