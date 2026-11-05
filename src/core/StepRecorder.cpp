@@ -174,8 +174,12 @@ void StepRecorder::setStepsLength(const TimePos& newLength)
 {
 	if(m_isStepInProgress)
 	{
-		//update current step length by the new amount : (number_of_steps * newLength)
-		m_curStepLength = (m_curStepLength / m_stepsLength) * newLength;
+		// with a zero old step length every step added to the current one was zero, so there is nothing to scale
+		if(m_stepsLength != 0)
+		{
+			//update current step length by the new amount : (number_of_steps * newLength)
+			m_curStepLength = (m_curStepLength / m_stepsLength) * newLength;
+		}
 
 		updateCurStepNotes();
 	}
