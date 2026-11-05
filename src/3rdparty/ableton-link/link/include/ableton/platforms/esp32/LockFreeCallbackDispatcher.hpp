@@ -23,6 +23,8 @@
 #include <condition_variable>
 #include <freertos/task.h>
 
+#include <stdexcept>
+
 namespace ableton
 {
 namespace platforms
@@ -51,7 +53,13 @@ public:
 
   ~LockFreeCallbackDispatcher() { stop(); }
 
-  void start() { xTaskCreate(run, "link", 4096, this, tskIDLE_PRIORITY, &mTaskHandle); }
+  void start()
+  {
+    if (xTaskCreate(run, "link", 4096, this, tskIDLE_PRIORITY, &mTaskHandle) != pdPASS)
+    {
+      throw std::runtime_error("Link: could not create the callback dispatcher task");
+    }
+  }
 
   void stop()
   {
@@ -62,7 +70,11 @@ public:
     }
 
     mCondition.notify_one();
-    vTaskDelete(mTaskHandle);
+    // Never started (or the task could not be created): there is no task to delete.
+    if (mTaskHandle != nullptr)
+    {
+      vTaskDelete(mTaskHandle);
+    }
   }
 
   void invoke()
@@ -100,7 +112,7 @@ private:
   std::atomic<bool> mRunning;
   std::mutex mMutex;
   std::condition_variable mCondition;
-  TaskHandle_t mTaskHandle;
+  TaskHandle_t mTaskHandle = nullptr;
 };
 
 } // namespace esp32

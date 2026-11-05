@@ -2409,6 +2409,10 @@ tests/src/core/DrumRackPadsTest.cpp
 tests/src/core/ExternalMidiDeviceTest.cpp
 tests/src/gui/AuHostingTest.cpp
 tests/src/gui/BackgroundTasksGuiTest.cpp
+tests/src/core/AbletonLinkEsp32RunnerTest.cpp
+tests/src/core/DrumRackPadsTest.cpp
+tests/src/core/esp32-freertos-host/freertos/FreeRTOS.h
+tests/src/core/esp32-freertos-host/freertos/task.h
 tests/src/gui/DrumRackPanelTest.cpp
 tests/src/gui/ExternalDeviceCardTest.cpp
 tests/src/plugins/AuParameterHandoffTest.cpp

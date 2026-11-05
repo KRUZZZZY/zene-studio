@@ -1710,6 +1710,9 @@ IF(LMMS_HAVE_ABLETON_LINK)
 		# Zene's engine in a real Link session against a peer built from Link's own
 		# API (that test constructs ableton::Link itself, hence the link below).
 		src/core/AbletonLinkInteropTest.cpp
+		# Link's ESP32 service runner against a FreeRTOS stand-in (host-only, see
+		# esp32-freertos-host/): a failed task creation must be reported.
+		src/core/AbletonLinkEsp32RunnerTest.cpp
 	)
 ENDIF()
 
@@ -7626,6 +7629,11 @@ IF(LMMS_HAVE_ABLETON_LINK)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen" RUN_SERIAL TRUE)
 	target_link_libraries(AbletonLinkInteropTest PRIVATE ableton_link)
 	target_link_libraries(AbletonLinkAllocatorTest PRIVATE ableton_link)
+	# The ESP32 port's Context.hpp includes <freertos/...>; these host stand-ins
+	# provide it for this one test. Nothing else sees this directory.
+	target_link_libraries(AbletonLinkEsp32RunnerTest PRIVATE ableton_link)
+	target_include_directories(AbletonLinkEsp32RunnerTest PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}/src/core/esp32-freertos-host")
 ENDIF()
 # The browser.* group: BrowserCatalogTest drives libsndfile and the config
 # manager's working directory, ControlBrowserCommandsTest constructs a full
