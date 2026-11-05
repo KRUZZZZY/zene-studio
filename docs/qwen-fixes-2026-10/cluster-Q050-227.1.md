@@ -19,6 +19,11 @@ Manual: `data/manual/index.html` (the paragraph after the mode-bar paragraph).
   `reset` -> `zones`, `sizes`, `mixer_zones`).
 - `src/gui/MixerModeBar.cpp`, `include/MixerModeBar.h`: a **Zones** chip whose menu docks each region
   left/right and resets, every entry declaring and running `window.mixer_zones`.
+- **Round 2 (the review's missing path):** a separator drag no longer writes `MixerZoneState` directly. Its
+  `splitterMoved` handler invokes the registered `window.mixer_zones` with `live: true` and the widths the
+  splitter now has; the handler's live branch writes them through the state's sizes-only path without
+  re-laying the splitter (which is what makes it safe mid-gesture), and refuses `dock`/`zones`/`reset` with
+  a typed `InvalidArgs`. A drag and an agent's `sizes` are now one handler with two callers.
 - `src/core/ControlReversibilityTableMixing.cpp`: one `not_mutating` row for `window.mixer_zones`.
 - `src/gui/ControlCommandsLayouts.cpp`: `window.layout_project_save`'s `apply` now restores the stored
   layout on screen, so its already-`true_inverse` step is honest in the interface as well as in the project.
@@ -47,7 +52,7 @@ directly, still at `-j4`).
 
 | # | Criterion | Test | Exit code |
 | - | --- | --- | --- |
-| 1 | At least two mixer regions can be docked in supported positions and separators can be resized in the UI | `MixerZonesTest::twoRegionsDockInSupportedPositions`, `::aSeparatorDragResizesAZone` | 0 (`ctest -R '^MixerZonesTest$'` -> `ctest-green-4.log`); red 8 |
+| 1 | At least two mixer regions can be docked in supported positions and separators can be resized in the UI, **through the one registered command** | `MixerZonesTest::twoRegionsDockInSupportedPositions`, `::aSeparatorDragResizesAZone`, `::aLiveReportRefusesAnythingButSizes` | 0 (`r2-slots-green.log`, `r2-ctest-green.log`); red 8 (`r2-slots-red.log`, `r2-ctest-red.log`) |
 | 2 | Saving and reopening the project layout restores dock positions and separator sizes | `::savingAndReopeningTheProjectRestoresTheDocksAndTheSizes` (real `saveProjectFile` / `loadProject` of a real `.mmp`), `::theLayoutSaveIsOneUndoStepForTheWholeArrangement` | 0; red 8 |
 | 3 | Projects without the new layout fields load with a usable default layout | `::theDefaultArrangementIsTheFixedOneTheMixerHad`, `::aLayoutWithoutTheNewFieldsOpensWithTheDefault` | 0; red 8 |
 | GUI/agent parity | Every user-facing action has a GUI entry on the same registered command | `::everyZonesMenuEntryDeclaresTheCommand`; the criterion-1 case triggers the built menu action | 0; red 8 |
@@ -69,7 +74,25 @@ Exact commands and logs:
 - `ctest -R '^ControlCommandsSnapshot$'` -> **exit 0** (`ctest-12.log`).
 - `python3 tests/doc-figures-gate.py` -> **exit 0** (`docfig-2.log`).
 
-Red/green, measured. The red configuration keeps the test file and neuters the product: `relayoutZones()`
+### Round 2 - the review's blocking point, and its own red/green
+
+The review found that GUI separator resizing bypassed `window.mixer_zones`: `splitterMoved` called
+`writeZoneSizes()`, which wrote `MixerZoneState` directly. Fixed as described above, and proven with the
+registry's own top-level tap (`collab::CommandTap::install`), which is told of every command the registry
+ran after its handler - so a widget writing the state directly cannot produce the record the test asserts.
+
+- `ctest -R '^MixerZonesTest$'` -> **exit 0**, 10/10 slots (`r2-slots-final.log`, `r2-ctest-green.log`).
+- Red: the drag hunk reverted to the previous direct `MixerZoneState::setSizes()` write, every other fix
+  kept, test file untouched -> **exit 8** (`r2-ctest-red.log`), failing exactly
+  `aSeparatorDragResizesAZone` on `!ran.isEmpty()` (the separator drag never invoked window.mixer_zones)
+  while its width assertions still pass. That is why the round-1 test could not see the gap.
+- `ctest -R '^(MixerZonesTest|MixerModesTest|MixerMeteringTest|MixerSelectionIdentityTest|MixerSendsOnFadersTest|MixerStripFeaturesTest|MixerWindowsTest|ShellTest|VcaStripViewTest|ReversibilityContractTest|AccessibilityWalkTest|VcaStripLifetimeTest|ControlCommandsSnapshot)$'`
+  -> **exit 0**, 13/13 (`r2-ctest-final.log`).
+- `python3 tests/control-customisation.py build/zene` -> **exit 0** (`r2-customisation.log`).
+- Snapshot regenerated live (`r2-snapshot3.log`: 879 ids / 77 groups); `doc-figures-gate.py` -> **exit 0**;
+  every gate in the table below re-run -> same results.
+
+Red/green (round 1), measured. The red configuration keeps the test file and neuters the product: `relayoutZones()`
 returns before touching the splitter, `writeZoneSizes()` returns immediately, `Shell::snapshot()` omits
 `mixer_zones`, `Shell::restoreSnapshot()` ignores it, `MixerModeBar::fillZones()` adds no entries and the
 command refuses. Rebuilt, then:
@@ -91,7 +114,12 @@ the recorded proof, and it is the one whose failure lines name the assertions.
 code?), then PASSES restored.**
 
 Answered above, with commands and logs: red **exit 8** (`ctest-red-3.log`), green **exit 0**
-(`ctest-green-4.log`). The reverts are the product hunks only; `tests/src/gui/MixerZonesTest.cpp` is
+(`ctest-green-4.log`).
+
+Round 2 specifically: with the drag's command call reverted to the direct state write, `MixerZonesTest` is
+**exit 8** (`r2-ctest-red.log`) and the failing slot is `aSeparatorDragResizesAZone` on
+`!ran.isEmpty()`; restored, **exit 0** 10/10 (`r2-slots-final.log`). The new assertion is what makes the
+GUI/agent parity observable, so this red is narrower and sharper than the round-1 one. The reverts are the product hunks only; `tests/src/gui/MixerZonesTest.cpp` is
 untouched in both runs. An earlier coarser red (whole-file revert) is also recorded as **exit 8**, with a
 harness teardown crash after the assertion failures.
 
