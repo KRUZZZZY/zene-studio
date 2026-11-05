@@ -135,6 +135,16 @@ The neighbouring suites re-run green: `ControlRegistryTest`, `ReversibilityContr
   button (real widget clicks), and compares the page with `mastering.sequence_list`; exit 0.
 - **Snapshot / canary / histogram.** Regenerated live with the supplied script (`snapshot EXIT=0`,
   883 commands), `doc-figures-gate` PASS, A16 histogram re-taken and `ReversibilityContractTest` exit 0.
+- **Completion check.** `submit_check.py $PWD Q050-317.1` exits 1 on this box for ONE mechanical
+  reason and no other: `feature_check.py` creates its log folder *beside* the worktree
+  (`<worktree>-feature-check`), and the parent directory refuses creations (`Permission denied`,
+  measured with `mkdir`/`touch` on the parent and on sibling paths). With the same script's log
+  folder relocated to `/tmp` (byte-identical checks, only `logs = ...` changed), it prints
+  `PASS fork-sources · all-sources-reproduce · no-upstream-regression · check-namespace ·
+  no-tautology · doc-figures · complexity (no new item in your files) · file-length (no new item
+  in your files)` and `RESULT: PASS` (exit 0). Every row of the submit check itself passes
+  (commits, clean tree, report, feature record, GUI path, GUI test, snapshot, canary, manual,
+  tests, test registration).
 - **Environment note.** The run's documented log directory
   (`~/.local/share/zene-bunny-fix/qwen/runs/Q050-317.1.r1/logs`) is not writable by this account
   (`Permission denied` on every create, `getfacl` shows mode 755 owned by the same uid but writes are
