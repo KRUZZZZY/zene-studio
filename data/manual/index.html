@@ -208,6 +208,14 @@ lanes as well; showing it brings them back. Select a lane's clip by clicking it 
 its points. Deleting the owner deletes its lanes in the same undo step, and undo brings the owner and its lanes back together. The fold is saved
 with the track; a project saved before lanes could be folded opens with every lane shown. <code>automation.get_state</code> reports each lane's
 owner (<code>follows</code>) and each track's lane count and folded state, the same state the arranger draws.</p>
+<p>Automation clips that carry a curve (Linear or CubicHermite) render at sample precision by default, so the
+curve reaches the mixer, effect chains and instrument tracks at every frame inside an audio block. Discrete
+clips keep their per-tick step, and a CubicHermite curve is approximated as one straight segment per tick.
+Each audio block's ramp holds 32 knots; a block that needs more has the surplus knots refused and counted
+(<code>automation.ramp_get</code> reports <code>refused_knots</code>), and a clip in a pattern is refused by
+<code>automation.ramp_set</code> because a pattern has no single block timeline. A project file's
+<code>sample_accurate</code> attribute or <code>automation.ramp_set</code> is the only way to set it; there is
+no interface toggle.</p>
 
 <h2 id="notes">Editing notes</h2>
 <p>Double-click a MIDI clip to open it in the note editor. Opening a clip fits its length to the view and its used pitches with a little room; a very wide range stays centred at the smallest readable row, and an empty clip opens around C5. With Draw, a translucent note previews the click under the pointer, and dragging up or down while drawing moves the preview, the audition and the note to that pitch. The note area's cursor names the next action (draw, erase, slice or play), and choosing a tool from the toolbar or its letter shows it at once. The tools follow FL Studio's piano roll: P draw, B paint, D delete, T mute, C slice, E select, Y play, Z zooms to the selection (1-7 also pick them). With any tool the right button deletes every note it crosses (one undo step); a double-click on a note opens its properties; Ctrl selects (Ctrl+Shift adds), Shift and Ctrl lock pitch and timing while dragging, Alt bypasses the grid and Alt+wheel changes velocity; a new note takes the last note's length; Ctrl+C, X, V and B copy, cut, paste and duplicate; the lanes

@@ -828,11 +828,17 @@ library to work.
   the same reasoning that left the whole-tree ratchets red rather than grandfathered. The plan is on the record:
   build an effect fixture and instantiate the effect module, then decide the headless-untestable and
   deliberately-inert files individually, with their reasons.
-- **Automation is not sample-accurate.** Modes work (Read / Touch / Latch / Write) and riding a control in Read
-  cannot destroy written automation, but automation is evaluated once per tick, so it lands on a tick boundary
-  rather than a sample. Verified in the tree via the automation lane's own record: `docs/AUTOMATION-MODES.md`
-  states that automation is evaluated once per tick and names the line that stands between that and a
-  per-frame read.
+- **Automation clips carrying a curve are sample-accurate by default; a Discrete clip keeps its step.**
+  Modes work (Read / Touch / Latch / Write) and riding a control in Read cannot destroy written automation.
+  A Linear or CubicHermite clip publishes a per-block ramp at every sample by default, while a Discrete clip
+  keeps the per-tick step and a CubicHermite curve is approximated as one straight segment per tick. Each
+  ramp holds **32 knots**; a block that needs more is refused the surplus knots and counts them
+  (`refused_knots` in `automation.ramp_get`), never allocated for. A clip in a **pattern** has no single
+  block timeline, so `automation.ramp_set` refuses it (`Refused`). The detailed account, including the
+  consumers that must ask for the per-sample buffer and the one-block transport-jump case, is
+  **Sample-accurate automation (`automation.ramp_set`, `automation.ramp_get`) — feature row 9** below;
+  `docs/SAMPLE-ACCURATE-AUTOMATION.md` is the design record, and `docs/AUTOMATION-MODES.md` is the dated
+  pre-ramp record.
 - *(Updated 2026-09-30.)* **Every control's context menu now has an "Automation mode" submenu** (Off,
   Read, Touch, Latch, Write, the current one checked) that runs `automation.mode_set` for that parameter
   (`src/gui/AutomationModeMenu.cpp`, held by `AutomationModeMenuTest` against a real instrument). It
