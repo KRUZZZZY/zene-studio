@@ -35,7 +35,7 @@ The accepted patch was `feat/050-Q050-313-oc` @ `415d3dbbbe`. The target was `05
   - `ZynNoteOffTest` no longer compiles: it indexes the per-channel count array the fix adds, and the build exited 2 (`build-3-reverted.log`). Its "Passed" line in `test-2-reverted.log` came from the stale binary, so it is not evidence.
   - `ZynAddSubFxInstrumentTest` exited 8, with `aRefusedNoteOffIsCountedAndTheKeyIsNotStuckAfterwards`, `theRecoveryCutFollowsEventsScheduledLaterInThePeriod` and `theEighteenthSameChannelRecoveryCutStaysAfterItsQueuedNote` failing (`test-2-reverted.log`, ctest exit 8).
   - Restored: the build exited 0 (`build-4-restored.log`) and the tests exited 0.
-- **Gates.** `feature_check.py` was run, unchanged, through `/tmp/q313-fc-wrap.py`, which only redirects its log directory to `/tmp` because the jail refuses `../*-feature-check`. It exited 0 with all 8 rows PASS (`gates-1.log`). `python3 tests/rt-safety-sweep.py --check` exited 0 (`rt-1.log`).
+- **Gates.** `feature_check.py` was run, unchanged, through `/tmp/q313-fc-wrap.py`, which only redirects its log directory to `/tmp` because the jail refuses `../*-feature-check`. It exited 0 with all 8 rows PASS (`gates-1.log`). Run directly, it exits 1 with that `PermissionError` and no gate run (`gates-2-direct.log`). That is why `submit_check.py` shows its gates row as FAIL here (`submit-2.log`); every other row passes. `python3 tests/rt-safety-sweep.py --check` exited 0 (`rt-1.log`).
 
 ## Round 2
 
