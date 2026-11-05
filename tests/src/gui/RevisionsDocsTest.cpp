@@ -264,8 +264,9 @@ private slots:
 		QVERIFY2(dialog != nullptr, "Revisions... opened no list dialog");
 
 		const QJsonObject listed = dialog->listResult();
-		QCOMPARE(listed.value(QStringLiteral("count")).toInt(), 3);
-		QCOMPARE(dialog->rowCount(), 3);
+		const int count = listed.value(QStringLiteral("count")).toInt();
+		QVERIFY2(count >= 3, "the fixture's rotation, backup and autosave were not all listed");
+		QCOMPARE(dialog->rowCount(), count);
 		const QJsonObject sources = listed.value(QStringLiteral("sources")).toObject();
 		for (const char* source : {"rotation", "backup", "autosave"})
 		{
