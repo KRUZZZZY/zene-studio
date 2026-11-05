@@ -425,7 +425,11 @@ private:
 
 	InstrumentTrack* m_track = nullptr;
 	PianoView* m_view = nullptr;
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 	QPointingDevice* m_device = nullptr;
+#else
+	QTouchDevice* m_device = nullptr;
+#endif
 };
 
 int main(int argc, char** argv)
