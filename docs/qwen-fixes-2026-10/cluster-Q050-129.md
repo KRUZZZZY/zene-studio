@@ -50,6 +50,7 @@ The assertions are unchanged and none was weakened or removed.
 | `ShellSelection` connection removed from `MixerView.cpp` | `ctest -R '^MixerMeteringTest$'` (`test-6-noconnect.log`): both follow tests fail at their first post-selection visibility assertion | 8 |
 | Follow branch removed from `shows()` | `ctest -R '^(MixerMeteringTest\|ControlMixingRouting)$'` (`test-7-nofollow.log`): both fail | 8 |
 | Canary | `python3 tests/doc-figures-gate.py` (`figures-1.log`), 917 ids / 78 groups | 0 |
+| Gate table (after the menu-table change and a rebuild; focused tests 5/5 again, `test-9-final.log`) | `feature_check.py` through a `/tmp` copy with only `ROOT` and the log path changed, since its log directory is outside the write-jail (`fc-2.log`): all 8 rows PASS on the 14-file diff | 0 |
 
 Both reverted sources were restored and rebuilt before the final run. `ccache` needed
 `CCACHE_TEMPDIR=/tmp/ccache-tmp-r7`, because the configured temporary directory is outside this session's write-jail.
