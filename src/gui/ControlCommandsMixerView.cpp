@@ -288,37 +288,43 @@ QJsonObject zonesState()
 		{QStringLiteral("mixer_zones"), gui::mixerzones::toJson(layout)}};
 }
 
+//! The 'dock' argument: "<region>=<dock>", or just "<region>" for the side it is not on. False, with
+//! @a error, unless it names a side region (the channels never move, so they have another side).
+bool applyDockArg(const QString& arg, const gui::mixerzones::Layout& before, QJsonObject* zones, QString* error)
+{
+	const int eq = arg.indexOf(QLatin1Char('='));
+	const QString id = eq < 0 ? arg : arg.left(eq);
+	if (!gui::mixerzones::sideRegionIds().contains(id))
+	{
+		*error = QStringLiteral("'dock' names a side region (%1)").arg(gui::mixerzones::sideRegionIds().join(QStringLiteral(" / ")));
+		return false;
+	}
+	QString target = eq < 0 ? QString() : arg.mid(eq + 1);
+	if (target.isEmpty()) { target = before.docks.value(id) == QStringLiteral("left") ? QStringLiteral("right") : QStringLiteral("left"); }
+	zones->insert(id, target);
+	return true;
+}
+
 ControlResult mixerZones(const QJsonObject& args)
 {
 	if (controlMainWindow() == nullptr) { return noInterface(QStringLiteral("window.mixer_zones")); }
 	gui::MixerView* view = gui::getGUI() != nullptr ? gui::getGUI()->mixerView() : nullptr;
 	if (view == nullptr) { return noInterface(QStringLiteral("window.mixer_zones")); }
-	gui::mixerzones::Layout next = gui::mixerzones::MixerZoneState::instance()->layout();
-	if (args.value(QStringLiteral("reset")).toBool(false)) { next = gui::mixerzones::defaultLayout(); }
+	const gui::mixerzones::Layout before = gui::mixerzones::MixerZoneState::instance()->layout();
+	gui::mixerzones::Layout next = args.value(QStringLiteral("reset")).toBool(false)
+		? gui::mixerzones::defaultLayout() : before;
 	// One region per call: "<region>" asks for that region's other side, "<region>=<dock>" names it.
-	// The 'zones' object (the saved shape) may also be sent whole; the two merge.
+	// The 'zones' object (the saved shape) may also be sent whole; the two merge. Every argument is
+	// checked before anything is applied, so a refused call changes nothing.
 	QJsonObject zonesArg = args.value(QStringLiteral("zones")).toObject();
-	if (args.contains(QStringLiteral("dock")))
+	QString error;
+	if (args.contains(QStringLiteral("dock"))
+		&& !applyDockArg(args.value(QStringLiteral("dock")).toString(), before, &zonesArg, &error))
 	{
-		const QString dock = args.value(QStringLiteral("dock")).toString();
-		const int eq = dock.indexOf(QLatin1Char('='));
-		const QString id = eq < 0 ? dock : dock.left(eq);
-		if (!gui::mixerzones::sideRegionIds().contains(id))
-		{
-			return ControlResult::failure(ControlErrorKind::InvalidArgs,
-				QStringLiteral("'dock' names a side region (%1)").arg(gui::mixerzones::sideRegionIds().join(QStringLiteral(" / "))));
-		}
-		QString target = eq < 0 ? QString() : dock.mid(eq + 1);
-		if (target.isEmpty())
-		{
-			// No side named: the one it is not on. The channels never move, so this always has an answer.
-			target = next.docks.value(id) == QStringLiteral("left") ? QStringLiteral("right") : QStringLiteral("left");
-		}
-		zonesArg.insert(id, target);
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, error);
 	}
 	QJsonObject checked = args;
 	if (!zonesArg.isEmpty()) { checked.insert(QStringLiteral("zones"), zonesArg); }
-	QString error;
 	if (!gui::mixerzones::parse(checked, &next, &error)) { return ControlResult::failure(ControlErrorKind::InvalidArgs, error); }
 	gui::mixerzones::MixerZoneState::instance()->set(next);
 	view->relayoutZones();  // the state's changed() signal does this too; this also covers a test with no loop yet

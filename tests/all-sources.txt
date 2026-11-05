@@ -603,7 +603,6 @@ include/MixerPostInserts.h
 include/MixerRoutingMatrix.h
 include/MixerSendPan.h
 include/MixerSendsBanner.h
-include/MixerZones.h
 include/MixerSnapshots.h
 include/MixerStrip.h
 include/MixerStripInfo.h
@@ -612,6 +611,7 @@ include/MixerSurround.h
 include/MixerView.h
 include/MixerViewOptions.h
 include/MixerWindows.h
+include/MixerZones.h
 include/Model.h
 include/ModelView.h
 include/ModelVisitor.h
@@ -2408,12 +2408,12 @@ src/gui/MixerModeBar.cpp
 src/gui/MixerOverlays.cpp
 src/gui/MixerRoutingMatrix.cpp
 src/gui/MixerSendsBanner.cpp
-src/gui/MixerZones.cpp
 src/gui/MixerStripInfo.cpp
 src/gui/MixerStripTags.cpp
 src/gui/MixerView.cpp
 src/gui/MixerViewOptions.cpp
 src/gui/MixerWindows.cpp
+src/gui/MixerZones.cpp
 src/gui/ModelView.cpp
 src/gui/ModifierTools.cpp
 src/gui/ModulatorPanel.cpp
@@ -3219,10 +3219,10 @@ tests/src/gui/MixerLatencyTextTest.cpp
 tests/src/gui/MixerMeteringTest.cpp
 tests/src/gui/MixerModesTest.cpp
 tests/src/gui/MixerSelectionIdentityTest.cpp
-tests/src/gui/MixerZonesTest.cpp
 tests/src/gui/MixerSendsOnFadersTest.cpp
 tests/src/gui/MixerStripFeaturesTest.cpp
 tests/src/gui/MixerWindowsTest.cpp
+tests/src/gui/MixerZonesTest.cpp
 tests/src/gui/ModulatorPanelTest.cpp
 tests/src/gui/MpeInputActionTest.cpp
 tests/src/gui/NoteBackgroundAudioTest.cpp

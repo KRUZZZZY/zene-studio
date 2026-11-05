@@ -132,97 +132,131 @@ QJsonObject toJson(const Layout& layout)
 	return QJsonObject{{QStringLiteral("zones"), zones}, {QStringLiteral("sizes"), sizes}};
 }
 
-Layout fromJson(const QJsonObject& doc)
+namespace
 {
-	Layout layout = defaultLayout();
-	const QJsonObject zones = doc.value(QStringLiteral("zones")).toObject();
+
+//! Apply one region -> dock object onto @a layout, skipping what cannot be honoured.
+void readDocks(const QJsonObject& zones, Layout* layout)
+{
 	for (auto it = zones.begin(); it != zones.end(); ++it)
 	{
 		if (!isRegion(it.key())) { continue; }
 		const QString dock = it.value().toString();
 		if (!dockNames().contains(dock)) { continue; }
 		if (it.key() == kChannels && dock != kMiddle) { continue; }  // the scrolling area never leaves the middle
-		layout.docks.insert(it.key(), dock);
+		layout->docks.insert(it.key(), dock);
 	}
 	// A side region stored as "middle" is where the channels are: it would be drawn on top of them. Keep
 	// the default dock for it instead of inventing a second middle.
 	for (const QString& id : sideRegionIds())
 	{
-		if (layout.docks.value(id) == kMiddle) { layout.docks.insert(id, defaultLayout().docks.value(id)); }
+		if (layout->docks.value(id) == kMiddle) { layout->docks.insert(id, defaultLayout().docks.value(id)); }
 	}
-	const QJsonObject sizes = doc.value(QStringLiteral("sizes")).toObject();
+}
+
+//! Apply one region -> pixels object onto @a layout, skipping unusable widths.
+void readSizes(const QJsonObject& sizes, Layout* layout)
+{
 	for (auto it = sizes.begin(); it != sizes.end(); ++it)
 	{
 		if (!isRegion(it.key())) { continue; }
 		const int size = it.value().toInt(0);
-		if (usableSize(size)) { layout.sizes.insert(it.key(), size); }
+		if (usableSize(size)) { layout->sizes.insert(it.key(), size); }
 	}
+}
+
+//! One region's dock in a caller's 'zones' object: false, with @a error, unless it names a region and a
+//! dock that region can take.
+bool checkDock(const QString& region, const QString& dock, QString* error)
+{
+	if (!isRegion(region))
+	{
+		*error = QStringLiteral("'%1' is not a mixer region (%2)").arg(region, regionIds().join(QStringLiteral(" / ")));
+		return false;
+	}
+	if (!dockNames().contains(dock))
+	{
+		*error = QStringLiteral("'%1' docks %2").arg(region, dockNames().join(QStringLiteral(" / ")));
+		return false;
+	}
+	if (region == kChannels && dock != kMiddle)
+	{
+		*error = QStringLiteral("the channels are the scrolling area; they stay in the middle");
+		return false;
+	}
+	if (region != kChannels && dock == kMiddle)
+	{
+		*error = QStringLiteral("'%1' docks left or right; the middle holds the channels").arg(region);
+		return false;
+	}
+	return true;
+}
+
+//! A caller's width: false, with @a error, unless it names a region and a width in bounds.
+bool checkSize(const QString& region, const QJsonValue& value, QString* error)
+{
+	if (!isRegion(region))
+	{
+		*error = QStringLiteral("'%1' is not a mixer region (%2)").arg(region, regionIds().join(QStringLiteral(" / ")));
+		return false;
+	}
+	if (!value.isDouble() || !usableSize(value.toInt()))
+	{
+		*error = QStringLiteral("'%1' is a width in pixels, %2..%3").arg(region).arg(MinZoneSize).arg(MaxZoneSize);
+		return false;
+	}
+	return true;
+}
+
+bool readArgDocks(const QJsonValue& value, Layout* next, QString* error)
+{
+	if (!value.isObject())
+	{
+		*error = QStringLiteral("'zones' is an object of region id -> dock (%1)").arg(dockNames().join(QStringLiteral(" / ")));
+		return false;
+	}
+	const QJsonObject zones = value.toObject();
+	for (auto it = zones.begin(); it != zones.end(); ++it)
+	{
+		const QString dock = it.value().toString();
+		if (!checkDock(it.key(), dock, error)) { return false; }
+		next->docks.insert(it.key(), dock);
+	}
+	return true;
+}
+
+bool readArgSizes(const QJsonValue& value, Layout* next, QString* error)
+{
+	if (!value.isObject())
+	{
+		*error = QStringLiteral("'sizes' is an object of region id -> pixels (%1..%2)")
+			.arg(MinZoneSize).arg(MaxZoneSize);
+		return false;
+	}
+	const QJsonObject sizes = value.toObject();
+	for (auto it = sizes.begin(); it != sizes.end(); ++it)
+	{
+		if (!checkSize(it.key(), it.value(), error)) { return false; }
+		next->sizes.insert(it.key(), it.value().toInt());
+	}
+	return true;
+}
+
+} // namespace
+
+Layout fromJson(const QJsonObject& doc)
+{
+	Layout layout = defaultLayout();
+	readDocks(doc.value(QStringLiteral("zones")).toObject(), &layout);
+	readSizes(doc.value(QStringLiteral("sizes")).toObject(), &layout);
 	return layout;
 }
 
 bool parse(const QJsonObject& args, Layout* base, QString* error)
 {
 	Layout next = *base;
-	if (args.contains(QStringLiteral("zones")))
-	{
-		const QJsonValue zonesValue = args.value(QStringLiteral("zones"));
-		if (!zonesValue.isObject())
-		{
-			*error = QStringLiteral("'zones' is an object of region id -> dock (%1)").arg(dockNames().join(QStringLiteral(" / ")));
-			return false;
-		}
-		const QJsonObject zones = zonesValue.toObject();
-		for (auto it = zones.begin(); it != zones.end(); ++it)
-		{
-			if (!isRegion(it.key()))
-			{
-				*error = QStringLiteral("'%1' is not a mixer region (%2)").arg(it.key(), regionIds().join(QStringLiteral(" / ")));
-				return false;
-			}
-			if (!it.value().isString() || !dockNames().contains(it.value().toString()))
-			{
-				*error = QStringLiteral("'%1' docks %2").arg(it.key(), dockNames().join(QStringLiteral(" / ")));
-				return false;
-			}
-			const QString dock = it.value().toString();
-			if (it.key() == QStringLiteral("channels") && dock != QStringLiteral("middle"))
-			{
-				*error = QStringLiteral("the channels are the scrolling area; they stay in the middle");
-				return false;
-			}
-			if (it.key() != QStringLiteral("channels") && dock == QStringLiteral("middle"))
-			{
-				*error = QStringLiteral("'%1' docks left or right; the middle holds the channels").arg(it.key());
-				return false;
-			}
-			next.docks.insert(it.key(), dock);
-		}
-	}
-	if (args.contains(QStringLiteral("sizes")))
-	{
-		const QJsonValue sizesValue = args.value(QStringLiteral("sizes"));
-		if (!sizesValue.isObject())
-		{
-			*error = QStringLiteral("'sizes' is an object of region id -> pixels (%1..%2)")
-				.arg(MinZoneSize).arg(MaxZoneSize);
-			return false;
-		}
-		const QJsonObject sizes = sizesValue.toObject();
-		for (auto it = sizes.begin(); it != sizes.end(); ++it)
-		{
-			if (!isRegion(it.key()))
-			{
-				*error = QStringLiteral("'%1' is not a mixer region (%2)").arg(it.key(), regionIds().join(QStringLiteral(" / ")));
-				return false;
-			}
-			if (!it.value().isDouble() || !usableSize(it.value().toInt()))
-			{
-				*error = QStringLiteral("'%1' is a width in pixels, %2..%3").arg(it.key()).arg(MinZoneSize).arg(MaxZoneSize);
-				return false;
-			}
-			next.sizes.insert(it.key(), it.value().toInt());
-		}
-	}
+	if (args.contains(QStringLiteral("zones")) && !readArgDocks(args.value(QStringLiteral("zones")), &next, error)) { return false; }
+	if (args.contains(QStringLiteral("sizes")) && !readArgSizes(args.value(QStringLiteral("sizes")), &next, error)) { return false; }
 	*base = next;
 	return true;
 }
