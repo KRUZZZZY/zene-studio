@@ -477,6 +477,17 @@ detune (cents), the loop region (loop start and loop length, in ticks; a length 
 warp and the clip's own tempo (warp BPM), and RAM mode. Change any of them and press Run. Warp to Song Tempo On/Off
 switches the tempo warp alone: a warped cell plays at the song's tempo, keeping its pitch, as if it was recorded at
 its warp BPM. Transpose and detune change the pitch the way a sampler does, so the clip also gets shorter or longer.
+<p><b>Saving an audio cell to the library.</b> Right-click a cell that holds audio and choose Save to Library... The
+cell's name is filled in; change it if you like, add tags, and press Run. The audio the cell plays is written to your
+samples library under Clips, which the browser's Samples list shows, and the project is not changed. The library entry
+is the audio itself, at the file's own rate and length: the cell's gain, transpose, detune, loop and warp are playback
+settings of that cell and are not baked into it, so putting the entry in another cell plays the same audio and its own
+playback settings apply there. After you save and reopen the project the entry is still in the browser; drag it onto
+another cell, or give a cell the Audio File..., to use it again. An entry that already exists is refused rather than
+replaced unless you ask to overwrite it, and saving is one Edit &gt; Undo step: undo removes the new file again (or puts
+back the file an overwrite replaced). A very long file is refused with a message saying how much audio it holds instead
+of being loaded whole; a MIDI cell is not saved this way (its notes are stage 2). An agent does the same with
+browser.save_clip and the cell's track and scene, and finds the entry with browser.query.</p>
 Reset Gain, Pitch, Loop and Warp puts them all back to their defaults. Each change is one Edit &gt; Undo step and is
 saved with the project. A cell with settings away from their defaults shows them after its name, for example
 "-6.0dB +12st +50ct ⟲ W128" (gain, transpose, detune, a loop region, warped from 128 BPM), and a screen reader hears

@@ -1199,6 +1199,9 @@ set(LMMS_SRCS
 	# 0.5.0 L11 (W3): a clip into the library, the library index and similar sounds, thumbnails and the
 	# matched preview, the browser's history and remembered sources.
 	core/ControlCommandsLibraryClips.cpp
+	# Q050-273.1: one launcher cell's source audio, saved to the library - bounded by DECODED size,
+	# written atomically through QSaveFile (the decoded-memory hole the 512 MiB input check left).
+	core/LibraryCellAudio.cpp
 	core/ControlCommandsBrowserIndex.cpp
 	core/ControlCommandsBrowserMedia.cpp
 	core/ControlCommandsBrowserNavigation.cpp

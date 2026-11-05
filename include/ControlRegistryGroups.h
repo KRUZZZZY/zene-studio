@@ -927,7 +927,9 @@ LMMS_EXPORT void registerTunerCommands(ControlRegistry& registry);
 //! metadata / locks, track.set_locked, clip.set_locked (ControlCommandsProjectInfo.cpp).
 LMMS_EXPORT void registerMixerSnapshotCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerProjectInfoCommands(ControlRegistry& registry);
-//! 0.5.0 L11 (W3): browser.save_clip (ControlCommandsLibraryClips.cpp); browser.reindex / index_status / index_query /
+//! 0.5.0 L11 (W3): browser.save_clip (ControlCommandsLibraryClips.cpp) - an arrangement clip or, since
+//! Q050-273.1, a populated audio launcher cell addressed by track + scene (LibraryCellAudio.cpp);
+//! browser.reindex / index_status / index_query /
 //! similar (ControlCommandsBrowserIndex.cpp); browser.thumbnail / preview / preview_stop (ControlCommandsBrowserMedia.cpp);
 //! browser.browse / history / history_go / sources / remember_source (ControlCommandsBrowserNavigation.cpp).
 LMMS_EXPORT void registerLibraryClipCommands(ControlRegistry& registry);

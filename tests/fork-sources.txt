@@ -1501,6 +1501,7 @@ src/core/ControlCommandsInterchange.cpp
 src/core/ControlCommandsKeyNames.cpp
 src/core/ControlCommandsLaunchBindings.cpp
 src/core/ControlCommandsLibraryClips.cpp
+src/core/LibraryCellAudio.cpp
 src/core/ControlCommandsLink.cpp
 src/core/ControlCommandsLinkAudio.cpp
 src/core/ControlCommandsLivecode.cpp
@@ -2261,6 +2262,7 @@ tests/control-routing-commands.py
 tests/control-save-state.py
 tests/control-session-api-proof.py
 tests/control-session-lifecycle-transcript.py
+tests/control-session-library-save.py
 tests/control-session-m1.py
 tests/control-shell.py
 tests/control-shutdown.py
@@ -3304,3 +3306,9 @@ docs/qwen-fixes-2026-10/cluster-new-p10-290.md
 # SRC converter memory regression and transcript child cleanup.
 tests/src/core/AudioResamplerPoolMemoryTest.cpp
 tests/control-export-settings-cleanup.py
+# Q050-273.1 (2026-10): the launcher cell's source audio saved into the shared library - bounded by DECODED
+# bytes (not the input file's size) and written atomically, with deterministic allocation/write-fault seams.
+include/LibraryCellAudio.h
+tests/src/gui/SessionLibrarySaveTest.cpp
+docs/050-features/Q050-273.1.md
+docs/qwen-fixes-2026-10/cluster-Q050-273.1.md

@@ -188,6 +188,19 @@ void populateCell(QMenu* menu, int track, int scene, const QJsonObject& slot)
 		return call(QStringLiteral("session.set_slot"), audio, title);
 	});
 	if (slot.value(QStringLiteral("type")).toString() == QLatin1String("audio")) { addPlaybackEntries(menu, where, slot, title); }
+	// Q050-273.1: the cell's audio into the shared library, through the same browser.save_clip an arrangement
+	// clip's Save to Library uses - the command form comes up with the cell's own name filled in. Only a
+	// populated AUDIO cell gets the entry: an empty cell has nothing to save, and a MIDI cell's pattern notes
+	// are stage 2 (the command refuses one by name, so a menu entry that always refused would be a dead item).
+	if (slot.value(QStringLiteral("type")).toString() == QLatin1String("audio") && !slot.isEmpty())
+	{
+		addCommandAction(menu, QObject::tr("Save to Library..."), QStringLiteral("browser.save_clip"), [where, slot, title] {
+			CommandCall save = call(QStringLiteral("browser.save_clip"), where, title);
+			const QString name = slot.value(QStringLiteral("name")).toString();
+			if (!name.isEmpty()) { save.defaults.insert(QStringLiteral("name"), name); }
+			return save;
+		});
+	}
 	addRecordEntries(menu, where, title, slot.isEmpty());  // WF-055
 	const auto set = [where, title] { return call(QStringLiteral("session.set_slot"), where, title); };
 	addCommandChoices(menu, QObject::tr("Launch Mode"), QStringLiteral("session.set_slot"), QStringLiteral("mode"), set);

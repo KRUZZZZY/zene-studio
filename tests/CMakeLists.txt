@@ -1441,6 +1441,11 @@ set(LMMS_TESTS
 	src/gui/SessionGridViewTest.cpp
 	# 0.5.0 L02 (WF-055): an empty cell records audio from its menu, says so, and the grid lands its own take.
 	src/gui/SessionGridRecordTest.cpp
+	# Q050-273.1: a populated audio launcher cell's Save to Library... (browser.save_clip) writes its audio
+	# into the shared library in one undo step; after a save and reopen the entry is browsable and a drop of
+	# it on another cell plays the same frames. The failure matrix (missing/empty/damaged/over-decoded source,
+	# duplicate, allocation and write failures) and the realtime render check are in the same file.
+	src/gui/SessionLibrarySaveTest.cpp
 	# Q050-493: an audio cell's Playback and Warp menu - every set_slot playback field from the GUI, one undo step,
 	# saved and reloaded, shown on the cell, rendered as the Q050-013 engine tests expect.
 	src/gui/SessionCellPlaybackMenuTest.cpp
@@ -3459,6 +3464,7 @@ set_tests_properties(CommandFormTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=off
 set_tests_properties(VcaStripViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SessionGridViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SessionGridRecordTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(SessionLibrarySaveTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SessionCellPlaybackMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SessionTransportBarTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PerformViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -6053,6 +6059,21 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 			TIMEOUT 300
 			SKIP_RETURN_CODE 77
+		)
+		# Q050-273.1 stage 1: an audio launcher cell saved into the shared library with browser.save_clip
+		# {track, scene} - its own frames, tagged - read back through browser.query / browser.tags, undone
+		# and redone as ONE true-inverse step, then the project saved and reopened and the entry put in
+		# another audio cell with the same frames. The refusal/exhaustion matrix (missing, empty, damaged,
+		# unsupported, over-decoded-limit, MIDI, empty cell) and the deterministic allocation and write-fault
+		# seams each run in their own instance. No window: the agent drives the same command the grid's
+		# Save to Library... menu entry runs (SessionLibrarySaveTest drives that half).
+		add_test(NAME ControlSessionLibrarySave
+			COMMAND ${PYTHON3_EXECUTABLE}
+				${CMAKE_CURRENT_SOURCE_DIR}/control-session-library-save.py
+				$<TARGET_FILE:zene>)
+		set_tests_properties(ControlSessionLibrarySave PROPERTIES
+			ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+			TIMEOUT 600
 		)
 	# The export.* group (render settings): dither and the SRC converter. It had
 	# NO registered proof at all before the 2026-09-13 coverage audit - the only
