@@ -26,6 +26,7 @@
 #define LMMS_MIDI_CLIENT_H
 
 #include <QStringList>
+#include <mutex>
 #include <vector>
 
 
@@ -67,6 +68,14 @@ public:
 		(void) offset;
 		processOutEvent( event, time, port );
 	}
+
+	/*! Q050-277: sends @a event on @a port from a thread that is NOT the audio thread (the MIDI clock's capture sender),
+	 *  merged into this client's output WITHOUT becoming a second producer of whatever the audio thread feeds through
+	 *  processOutEvent(). Callers are serialized by a mutex the audio thread never takes, so whatever a client does in
+	 *  processNonAudioOutEvent() has exactly one non-audio producer at a time. False: the client refused it (its
+	 *  off-audio queue is full, or it cannot carry this event beside the audio thread's); nothing was sent and the
+	 *  caller may retry. May lock and wait: never call it from the audio thread. */
+	bool sendFromNonAudioThread( const MidiEvent& event, const MidiPort* port );
 
 	// inheriting classes can re-implement this for being able to update
 	// their internal port-structures etc.
@@ -190,6 +199,14 @@ public:
 	}
 
 protected:
+	/*! The client half of sendFromNonAudioThread(), called with its mutex held (one caller at a time, never the audio
+	 *  thread). The base hands the event to processOutEvent(): right for a client whose processOutEvent() is safe beside
+	 *  the audio thread's own calls because it ends in a thread-safe system call and only READS its port maps - Core MIDI
+	 *  (MIDISend) and WinMM (midiOutShortMsg). A client that feeds a single-producer queue from the audio thread
+	 *  (MidiAlsaSeq) overrides it with a second queue its one consumer also drains; MidiClientRaw narrows it to the
+	 *  one-byte System Real-Time messages, the only ones a raw byte stream can carry from a second thread. */
+	virtual bool processNonAudioOutEvent( const MidiEvent& event, const MidiPort* port );
+
 	std::vector<MidiPort *> m_midiPorts;
 
 	RetroMidiCapture m_retroCapture;
@@ -198,6 +215,10 @@ protected:
 	//! port this client's MidiPorts are subscribed to, so a device that is
 	//! unplugged and replugged at a NEW sequencer address is re-attached.
 	MidiReconnect m_reconnect;
+
+private:
+	//! Serializes sendFromNonAudioThread() (Q050-277). Never taken by the audio thread.
+	std::mutex m_nonAudioOutMutex;
 
 } ;
 
@@ -230,6 +251,13 @@ protected:
 	// the raw encoder: one event as its bytes through sendByte(). Protected (0.5.0) so a client
 	// can wrap it - MidiJack assembles the bytes into whole messages for its JACK output port.
 	void processOutEvent( const MidiEvent& event, const TimePos& time, const MidiPort* port ) override;
+
+	/*! Q050-277: only a one-byte System Real-Time message (0xF8..0xFF: the clock's pulse, START, CONTINUE, STOP) is
+	 *  sent from a second thread. MIDI 1.0 lets such a byte stand anywhere in a stream, even between the bytes of
+	 *  another message, and each client writes it as one unit - MidiOss/MidiSndio one write() of one byte into a pipe
+	 *  (atomic below PIPE_BUF), MidiAlsaRaw one snd_rawmidi_write() of one byte, MidiJack one message on its
+	 *  multi-producer queue - so it cannot split or corrupt what the audio thread is sending. Anything longer is refused. */
+	bool processNonAudioOutEvent( const MidiEvent& event, const MidiPort* port ) override;
 
 
 private:

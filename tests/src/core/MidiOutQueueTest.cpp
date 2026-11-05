@@ -10,6 +10,7 @@
 #include "lmmsconfig.h"
 
 #include <QtTest>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -155,6 +156,78 @@ int waitForNoteOn(snd_seq_t* receiver, std::chrono::steady_clock::time_point dea
 	}
 	return -1;
 }
+
+//! Q050-277: one audio-path producer (channel 0) and two off-audio senders (channels 1, 2) against one MidiAlsaSeq,
+//! drained by the test thread. Each event carries its producer's sequence number in key (low 7 bits) and velocity.
+struct TwoQueueStress
+{
+	static constexpr int PerProducer = 60000;
+
+	explicit TwoQueueStress(lmms::MidiAlsaSeq& sequencer) : seq(sequencer) {}
+
+	static MidiEvent tagged(int channel, int number)
+	{
+		return MidiEvent(lmms::MidiNoteOn, static_cast<int8_t>(channel), static_cast<int16_t>(number & 0x7f),
+			static_cast<int16_t>((number >> 7) & 0x7f));
+	}
+
+	//! The audio thread's own path; a refused push (counted as overflow) is retried.
+	void produceOnAudioPath()
+	{
+		for (int i = 0; i < PerProducer && !giveUp.load();)
+		{
+			const auto before = seq.outputQueueOverflowCount();
+			seq.processOutEvent(tagged(0, i), TimePos(), nullptr);
+			if (seq.outputQueueOverflowCount() == before) { ++i; } else { std::this_thread::yield(); }
+		}
+		producersDone.fetch_add(1);
+	}
+
+	void produceOffAudio(int channel)
+	{
+		for (int i = 0; i < PerProducer && !giveUp.load();)
+		{
+			if (seq.sendFromNonAudioThread(tagged(channel, i), nullptr)) { ++i; } else { std::this_thread::yield(); }
+		}
+		producersDone.fetch_add(1);
+	}
+
+	void take(const MidiOutQueue::Command& command, bool viaOffAudioQueue)
+	{
+		const int channel = command.event.channel();
+		if (channel < 0 || channel > 2) { ++disordered; return; }
+		if (viaOffAudioQueue != (channel != 0)) { ++misrouted; }
+		const int number = (command.event.key() & 0x7f) | ((command.event.velocity() & 0x7f) << 7);
+		int& expected = next[static_cast<std::size_t>(channel)];
+		if (number != (expected & 0x3fff)) { ++disordered; }
+		++expected;
+	}
+
+	//! A corrupted single-producer queue can refuse forever: give up after 20 s, so the test fails instead of hanging.
+	void consumeUntilProducersFinish()
+	{
+		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+		const auto sink = [this](const MidiOutQueue::Command& command, bool off) { take(command, off); };
+		while (producersDone.load() < 3)
+		{
+			seq.drainOutputForTesting(sink);
+			if (std::chrono::steady_clock::now() > deadline) { giveUp.store(true); }
+		}
+	}
+
+	void drainRest()
+	{
+		const auto sink = [this](const MidiOutQueue::Command& command, bool off) { take(command, off); };
+		while (!giveUp.load() && seq.drainOutputForTesting(sink) > 0) {}
+	}
+
+	lmms::MidiAlsaSeq& seq;
+	std::atomic<int> producersDone{0};
+	std::atomic<bool> giveUp{false};
+	std::array<int, 3> next{0, 0, 0};
+	int misrouted = 0;
+	int disordered = 0;
+};
 
 //! Waits for the output worker to enter its poll wait, so the queued event must wake it rather than be found.
 bool waitForPollWait(const lmms::MidiAlsaSeq& outputClient)
@@ -373,6 +446,32 @@ private slots:
 		caller.join();
 		QVERIFY2(finished,
 			"the audio-thread MIDI output path took the sequencer mutex and can stall an audio period");
+	}
+
+	//! Q050-277 (review round 2): the MIDI clock's capture sender sends from a second thread. It must not become a
+	//! second producer of m_outQueue, which is single-producer (the audio thread's). One thread plays the audio thread
+	//! (processOutEvent, channel 0) while TWO off-audio senders (sendFromNonAudioThread, channels 1 and 2 - the
+	//! client's mutex serializes them) and this thread, the consumer, drain both queues concurrently. Every event must
+	//! arrive exactly once, in its producer's order, and an off-audio event only ever through the off-audio queue.
+	void offAudioOutputNeverSharesTheAudioThreadsQueue()
+	{
+		lmms::MidiAlsaSeq sequencer{lmms::MidiAlsaSeq::PipeOnlyForTesting{}};
+		TwoQueueStress stress(sequencer);
+		std::thread audio([&] { stress.produceOnAudioPath(); });
+		std::thread senderA([&] { stress.produceOffAudio(1); });
+		std::thread senderB([&] { stress.produceOffAudio(2); });
+		stress.consumeUntilProducersFinish();
+		audio.join();
+		senderA.join();
+		senderB.join();
+		stress.drainRest();
+
+		QCOMPARE(stress.misrouted, 0);   // the off-audio senders never touched the audio thread's queue
+		QVERIFY2(!stress.giveUp.load(), "the producers never finished: the queue refused or lost events for 20 s");
+		QCOMPARE(stress.disordered, 0);  // no slot overwritten, duplicated or skipped
+		QCOMPARE(stress.next[0], TwoQueueStress::PerProducer);
+		QCOMPARE(stress.next[1], TwoQueueStress::PerProducer);
+		QCOMPARE(stress.next[2], TwoQueueStress::PerProducer);
 	}
 #endif
 

@@ -3078,6 +3078,26 @@ into an empty launcher cell: it starts on the launch quantisation, stops on the 
   quantised stop, and the grid lands the take it started into the user's `samples/Recordings` folder. There is no
   record BUTTON on the cell itself, no keyboard shortcut for it, no count-in, and the grid does not land a take it
   did not start (an agent's take is left for the agent).
+- **Clock-synced capture (Q050-277)** (`session.record_slot` `clock_sync: true`, `bars` or `steps`): the MIDI clock master
+  sends START when the take starts and STOP at its end with exactly the span's pulses between. The audio thread only QUEUES
+  these messages (a fixed lock-free ring of 512 records, no I/O); a sender thread started when the capture is armed hands them
+  to the MIDI client in order, about a millisecond later, so no client's output path (a raw device write, Core MIDI) ever runs
+  on the audio thread. The bound is the master's own: the messages are what the engine handed its MIDI client, not bytes a
+  device received - the test fixture reads the emission monitor. START is queued in the period in which the cell starts
+  (period-granular, like the take); at the stop at most 64 pulses are queued to catch up the period it falls in, never a
+  backlog that scales with the capture. If the master is turned OFF mid-capture the span ends there with a STOP and no
+  catch-up while the take goes on to its length; if the ring ever fills (a sender starved for seconds) pulses are refused and
+  counted (`MidiClock::captureOutputDropped`). A span is admitted only when its START and STOP both fit the ring; when earlier
+  output still fills it, the new capture's span is refused BEFORE START (nothing is sent, the take records unclocked,
+  `session.record_slot_status` `clock.refused` counts it), so the synth is never started without its STOP. The external synth's own latency is not compensated
+  beyond the recording round trip the take already drops. While the span is open the song transport's own START/STOP/CONTINUE
+  are not sent. The sender never calls `processOutEvent()` (the audio thread's path, a single-producer queue on ALSA): it uses
+  `MidiClient::sendFromNonAudioThread()`, serialized by a mutex the audio thread never takes. ALSA's sequencer client gives it
+  its own queue that the sequencer thread drains beside the audio one; raw clients (OSS, sndio, ALSA raw, JACK) carry only the
+  one-byte real-time messages from it, which MIDI lets stand anywhere in a stream; Core MIDI and WinMM send through their
+  thread-safe system calls. The macOS and Windows paths were not run on this host. At engine shutdown the clock lets go of
+  the MIDI client first (`MidiClock::detachClient`): a send in flight finishes, capture output not yet sent is dropped
+  (counted), so a synth started by a capture the engine is torn down under gets no STOP from Zene. One take, one cell, empty cells only, as above.
 - *(Updated 2026-10-28, Q050-493.)* Since Q050-013 a launched audio cell also plays on an instrument track's column
   and its gain, loop region, transpose, detune and tempo warp ARE applied (`docs/050-features/Q050-013.md`); the
   sentences below about them are the earlier record. These settings are no longer socket-only: the cell's

@@ -1851,6 +1851,7 @@ src/core/McuSurface.cpp
 src/core/MetronomeOptions.cpp
 src/core/MidiClipControllers.cpp
 src/core/MidiClock.cpp
+src/core/MidiClockCapture.cpp
 src/core/MidiClockState.cpp
 src/core/MidiClockTracker.cpp
 src/core/MidiInputTransform.cpp
@@ -2316,6 +2317,7 @@ tests/control_detect_fixtures.py
 tests/control_instance_diagnosis.py
 tests/control_pipe_client.py
 tests/control_socket_flows.py
+tests/control_clock_capture_checks.py
 tests/control_socket_harness.py
 tests/control_vendor_libs.py
 # Q050-145: product-new static documentation gate - re-verifies the README's
@@ -2557,6 +2559,7 @@ tests/src/core/McuSurfaceFeedbackTest.cpp
 tests/src/core/MasteringTest.cpp
 tests/src/core/McuSurfaceTest.cpp
 tests/src/core/MidiClockTest.cpp
+tests/src/core/MidiClockCaptureOutputTest.cpp
 tests/src/core/MidiClockSourceTest.cpp
 tests/src/core/MidiExportTest.cpp
 tests/src/core/MidiInputTransformTest.cpp

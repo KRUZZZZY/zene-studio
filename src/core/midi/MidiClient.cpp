@@ -30,6 +30,7 @@
 #include "MidiLearn.h"
 #include "MidiClock.h"
 #include "MidiPort.h"
+#include "TimePos.h"
 
 namespace lmms
 {
@@ -40,6 +41,42 @@ MidiClient::~MidiClient()
 	for (MidiPort* port : m_midiPorts)
 	{
 		port->invalidateCilent();
+	}
+}
+
+
+
+
+bool MidiClient::sendFromNonAudioThread( const MidiEvent& event, const MidiPort* port )
+{
+	std::lock_guard<std::mutex> lock( m_nonAudioOutMutex );
+	return processNonAudioOutEvent( event, port );
+}
+
+
+
+
+bool MidiClient::processNonAudioOutEvent( const MidiEvent& event, const MidiPort* port )
+{
+	processOutEvent( event, TimePos(), port );
+	return true;
+}
+
+
+
+
+bool MidiClientRaw::processNonAudioOutEvent( const MidiEvent& event, const MidiPort* port )
+{
+	switch( event.type() )
+	{
+		case MidiSync:
+		case MidiStart:
+		case MidiContinue:
+		case MidiStop:
+			processOutEvent( event, TimePos(), port );
+			return true;
+		default:
+			return false;
 	}
 }
 

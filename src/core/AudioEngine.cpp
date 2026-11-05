@@ -77,6 +77,7 @@
 #include "MidiWinMM.h"
 #include "MidiApple.h"
 #include "MidiDummy.h"
+#include "MidiClock.h"
 
 #include "BufferManager.h"
 
@@ -603,6 +604,9 @@ AudioEngine::~AudioEngine()
 
 	// The pooled bus unregisters its device port in its destructor, so it must go before the device.
 	m_sampleVoicePool.reset();
+	// Q050-277: the MIDI clock's capture sender must be done with the client (an in-flight send finished, nothing
+	// undelivered left to retry) before the client - and its backend's threads and queues - is destroyed.
+	MidiClock::instance()->detachClient(m_midiClient);
 	delete m_midiClient;
 	delete m_audioDev;
 

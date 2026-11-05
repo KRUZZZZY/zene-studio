@@ -530,6 +530,9 @@ set(LMMS_TESTS
 	# into a running instance from outside; the socket half of the proof is the
 	# ControlClockCommands ctest below, which drives the real binary.
 	src/core/MidiClockTest.cpp
+	# Q050-277 (review round 2): the capture span's output contract - its sender never feeds the audio thread's
+	# single-producer MIDI path, and a span is admitted only when its START and STOP both fit the capture ring.
+	src/core/MidiClockCaptureOutputTest.cpp
 	# Q050-026: WHICH clock the follower listens to. The source `clock.slave_set`
 	# stores used to be reported and never read, and every client delivered clock
 	# bytes with no sender, so any connected device could drive the tempo. Two

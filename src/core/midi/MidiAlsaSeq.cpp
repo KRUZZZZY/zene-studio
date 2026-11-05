@@ -381,6 +381,22 @@ void MidiAlsaSeq::enqueueOutEvent( const MidiEvent& event, const TimePos& time, 
 }
 
 
+bool MidiAlsaSeq::processNonAudioOutEvent( const MidiEvent& event, const MidiPort* port )
+{
+	// Not m_outQueue: its single producer is the audio thread (Q050-277). The caller holds MidiClient's off-audio
+	// mutex, so this queue has one producer too; the sequencer thread drains it beside m_outQueue.
+	if( !m_nonAudioQueue.push( event, TimePos(), port, 0 ) ) { return false; }
+	// Off the audio thread, so one wake byte per event is affordable (a full pipe already holds a pending wake).
+	if( m_pipe[1] >= 0 )
+	{
+		const char wakeByte = 0;
+		const ssize_t written = ::write( m_pipe[1], &wakeByte, 1 );
+		static_cast<void>( written );
+	}
+	return true;
+}
+
+
 void MidiAlsaSeq::processQueuedOutEvent(const MidiOutQueue::Command& command)
 {
 	const MidiEvent& event = command.event;
@@ -868,6 +884,11 @@ void MidiAlsaSeq::run()
 		m_outQueue.acknowledgeWake();
 		MidiOutQueue::Command command;
 		while (m_outQueue.pop(command))
+		{
+			processQueuedOutEvent(command);
+		}
+		// Q050-277: the off-audio queue (the clock's capture sender), drained by this same thread - one consumer.
+		while (m_nonAudioQueue.pop(command))
 		{
 			processQueuedOutEvent(command);
 		}

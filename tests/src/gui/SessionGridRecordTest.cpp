@@ -32,18 +32,22 @@
 
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QApplication>
 #include <QMenu>
 #include <QTemporaryDir>
 #include <QToolButton>
 
+#include <cmath>
 #include <vector>
 
 #include "AudioDevice.h"
 #include "AudioEngine.h"
+#include "CommandForm.h"
 #include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "MenuTestSupport.h"
+#include "MidiClock.h"
 #include "SampleFrame.h"
 #include "SessionScheduler.h"
 #include "SessionGridView.h"
@@ -65,6 +69,26 @@ ControlResult run(const QString& id, const QJsonObject& args = QJsonObject())
 QString takeState()
 {
 	return run(QStringLiteral("session.record_slot_status")).result.value(QStringLiteral("state")).toString();
+}
+
+//! The first visible command form (the one a menu entry opened), or nullptr.
+CommandForm* openedForm()
+{
+	for (QWidget* widget : QApplication::topLevelWidgets())
+	{
+		auto* form = qobject_cast<CommandForm*>(widget);
+		if (form != nullptr && form->isVisible()) { return form; }
+	}
+	return nullptr;
+}
+
+void closeForms()
+{
+	for (QWidget* widget : QApplication::topLevelWidgets())
+	{
+		if (qobject_cast<CommandForm*>(widget) != nullptr) { widget->close(); }
+	}
+	QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 }
 
 } // namespace
@@ -127,6 +151,66 @@ private slots:
 		QVERIFY(view.statusLine().contains(QStringLiteral("landed")));
 		QVERIFY(run(QStringLiteral("control.undo")).ok);  // one step takes the cell back
 		QVERIFY(Engine::getSong()->sessionModel().slot(0, 0).isEmpty());
+	}
+
+	//! Q050-277: Record Steps with MIDI Clock Start/Stop... on an empty cell is session.record_slot with clock_sync on: its
+	//! form holds the steps and the clock flag, Run arms the cell, the MIDI clock master sends START, exactly the span's
+	//! pulses and STOP, the take is that many steps of frames, and the grid lands it.
+	void theClockSyncedStepsEntryStartsAndStopsTheClockAndTheGridLandsTheTake()
+	{
+		QString error;
+		QVERIFY2(MidiClock::instance()->setMasterEnabled(true, QString(), &error), qPrintable(error));
+		SessionGridView view;
+		view.refresh();
+		QMenu menu;
+		view.populateMenu(&menu, view.cellButton(0, 0));
+		for (const QString& label : {QStringLiteral("Record Audio for Steps..."), QStringLiteral("Record Bars with MIDI Clock Start/Stop...")})
+		{
+			QVERIFY2(menuAction(&menu, {label}) != nullptr, qPrintable(label));
+		}
+		QAction* synced = menuAction(&menu, {QStringLiteral("Record Steps with MIDI Clock Start/Stop...")});
+		QVERIFY2(synced != nullptr, "an empty cell's menu has no clock-synced steps entry");
+		QCOMPARE(synced->property("controlCommand").toString(), QStringLiteral("session.record_slot"));
+		QVERIFY(synced->isEnabled());
+
+		closeForms();
+		synced->trigger();
+		CommandForm* form = openedForm();
+		QVERIFY2(form != nullptr, "the entry opened no form");
+		QVERIFY(form->setField(QStringLiteral("steps"), 4));
+		QJsonObject collected;
+		QVERIFY2(form->collect(&collected, &error), qPrintable(error));
+		QVERIFY(collected.value(QStringLiteral("clock_sync")).toBool());
+		QCOMPARE(collected.value(QStringLiteral("steps")).toInt(), 4);
+
+		MidiClock* clock = MidiClock::instance();
+		const quint32 starts = clock->emittedCount(MidiClockMessage::Start);
+		const quint32 stops = clock->emittedCount(MidiClockMessage::Stop);
+		const quint32 pulses = clock->emittedCount(MidiClockMessage::Clock);
+		form->accept();
+		QVERIFY2(form->result().ok, qPrintable(form->result().errorMessage));
+		closeForms();
+		for (int i = 0; i < 400 && takeState() != QStringLiteral("done"); ++i) { period(); }
+		QCOMPARE(takeState(), QStringLiteral("done"));
+		for (int i = 0; i < 3000 && MidiClock::instance()->captureOutputPending(); ++i) { QTest::qWait(1); }  // the sender thread delivers
+		QVERIFY(!MidiClock::instance()->captureOutputPending());
+		const QJsonObject status = run(QStringLiteral("session.record_slot_status")).result;
+		QVERIFY(status.value(QStringLiteral("clock_sync")).toBool());
+		const auto frames = static_cast<std::uint64_t>(std::llround(4 * TicksPerMidiBeat * static_cast<double>(Engine::framesPerTick())));
+		QCOMPARE(static_cast<std::uint64_t>(status.value(QStringLiteral("target_frames")).toDouble()), frames);
+		QCOMPARE(clock->emittedCount(MidiClockMessage::Start) - starts, 1u);
+		QCOMPARE(clock->emittedCount(MidiClockMessage::Stop) - stops, 1u);
+		QCOMPARE(clock->emittedCount(MidiClockMessage::Clock) - pulses, static_cast<quint32>(4 * TicksPerMidiBeat / TicksPerMidiClockPulse));
+		const QJsonObject span = status.value(QStringLiteral("clock")).toObject();
+		QCOMPARE(span.value(QStringLiteral("stop_tick")).toDouble() - span.value(QStringLiteral("start_tick")).toDouble(),
+			static_cast<double>(4 * TicksPerMidiBeat));
+
+		view.refresh();  // the grid lands the take it started
+		QCOMPARE(takeState(), QStringLiteral("idle"));
+		const ClipSlot& slot = Engine::getSong()->sessionModel().slot(0, 0);
+		QVERIFY(slot.type() == ClipSlot::Type::Audio);
+		QVERIFY(QFileInfo::exists(slot.audioSource()));
+		MidiClock::instance()->setMasterEnabled(false, QString(), nullptr);
 	}
 
 	void aTakeTheGridDidNotStartIsLeftForItsOwner()

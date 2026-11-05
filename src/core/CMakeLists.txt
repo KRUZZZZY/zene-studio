@@ -925,6 +925,7 @@ set(LMMS_SRCS
 	core/MidiClipControllers.cpp
 	core/MidiInputTransform.cpp
 	core/MidiClock.cpp
+	core/MidiClockCapture.cpp
 	core/MidiClockState.cpp
 	core/MidiClockTracker.cpp
 	core/MixHelpers.cpp

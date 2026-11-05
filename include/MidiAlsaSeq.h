@@ -78,6 +78,19 @@ public:
 	//! reach the device from the audio path.
 	QMutex& seqMutexForTesting() noexcept { return m_seqMutex; }
 #endif
+	/*! Q050-277: the sequencer thread's drain, for a PipeOnlyForTesting client (whose thread does not run): pops what
+	 *  both output queues hold, the audio thread's first, and hands each command to @a sink with whether it came
+	 *  through sendFromNonAudioThread(). At most @a limit per queue per call, so a test of a corrupted queue fails
+	 *  instead of spinning. Returns how many it popped. */
+	template <typename Sink>
+	std::size_t drainOutputForTesting(Sink&& sink, std::size_t limit = MidiOutQueue::Capacity)
+	{
+		std::size_t popped = 0;
+		MidiOutQueue::Command command;
+		for (std::size_t i = 0; i < limit && m_outQueue.pop(command); ++i) { sink(command, false); ++popped; }
+		for (std::size_t i = 0; i < limit && m_nonAudioQueue.pop(command); ++i) { sink(command, true); ++popped; }
+		return popped;
+	}
 #endif // LMMS_TESTING
 
 	static QString probeDevice();
@@ -128,6 +141,11 @@ public:
 	{
 		return m_outQueue.overflowCount();
 	}
+	//! Q050-277: events sendFromNonAudioThread() found its own queue full for (refused, not lost: the caller retries).
+	std::uint64_t nonAudioQueueOverflowCount() const noexcept
+	{
+		return m_nonAudioQueue.overflowCount();
+	}
 
 	// list seq-ports from ALSA
 	QStringList readablePorts() const override
@@ -170,6 +188,13 @@ private slots:
 	void updatePortList();
 
 
+protected:
+	/*! Q050-277: the off-audio output (MidiClock's capture sender). It does NOT touch m_outQueue - that queue is
+	 *  single-producer and its producer is the audio thread - but pushes into m_nonAudioQueue, whose one producer is
+	 *  whoever holds MidiClient's off-audio mutex, and wakes the sequencer thread, which drains both queues: one
+	 *  consumer merges track MIDI and capture clock. False when that queue is full. */
+	bool processNonAudioOutEvent( const MidiEvent& event, const MidiPort* port ) override;
+
 private:
 	//! The shared, audio-path half of processOutEvent() / processOutEventAt(): @a dueNs 0 = no frame position.
 	void enqueueOutEvent( const MidiEvent& event, const TimePos& time, const MidiPort* port, std::int64_t dueNs );
@@ -195,6 +220,8 @@ private:
 
 	int m_queueID;
 	MidiOutQueue m_outQueue;
+	//! Q050-277: what processNonAudioOutEvent() hands the sequencer thread (one producer: MidiClient's off-audio mutex).
+	MidiOutQueue m_nonAudioQueue;
 
 	std::atomic_bool m_quit;
 	//! Set after the join: the stopping thread is the output queue's consumer from then on.
