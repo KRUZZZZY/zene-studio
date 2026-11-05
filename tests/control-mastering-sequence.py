@@ -159,109 +159,160 @@ def check_empty_document(session, recorder):
                    "names=%r" % (names,))
 
 
-def check_two_songs(session, first, second, recorder):
-    added = session.ok("mastering.song_add", {"source": first, "title": "Opening"})
-    first_id = added.get("song")
+def add_two_songs(session, first, second):
+    session.ok("mastering.song_add", {"source": first, "title": "Opening"})
     session.ok("mastering.song_add", {"source": second, "title": "Closing"})
-    listed = session.ok("mastering.sequence_list")
-    songs = listed.get("songs") or []
+    songs = session.ok("mastering.sequence_list").get("songs") or []
+    return [song.get("song") for song in songs]
+
+
+def real_sources(session):
+    return [os.path.realpath(song.get("source") or "")
+            for song in session.ok("mastering.sequence_list").get("songs") or []]
+
+
+def row_of(session, song_id):
+    for row in release_state(session):
+        if row[0] == song_id:
+            return row
+    return None
+
+
+def song_ids(session):
+    return [row[0] for row in release_state(session)]
+
+
+def check_two_songs(session, first, second, recorder):
+    songs = session.ok("mastering.sequence_list").get("songs") or []
     recorder.require("two audio files are songs of the release, in the order added",
-                   len(songs) == 2
-                   and os.path.realpath(songs[0].get("source")) == os.path.realpath(first)
-                   and os.path.realpath(songs[1].get("source")) == os.path.realpath(second),
-                   "songs=%r" % songs)
+                   len(songs) == 2 and real_sources(session)
+                   == [os.path.realpath(first), os.path.realpath(second)],
+                   "sources=%r" % (real_sources(session),))
     recorder.require("the songs carry stable ids and report their file exists",
-                   all(song.get("song") for song in songs) and all(song.get("exists") for song in songs),
+                   len(songs) == 2 and all(song.get("song") for song in songs)
+                   and all(song.get("exists") for song in songs),
                    "songs=%r" % songs)
     recorder.require("the last song's gap is reported as not heard between songs",
-                   songs[0].get("gap_applies") is True and songs[1].get("gap_applies") is False,
-                   "gap_applies=%r" % [s.get("gap_applies") for s in songs])
-    # The A16 record of the add is the group's declared class, and it is reversible.
+                   [song.get("gap_applies") for song in songs] == [True, False],
+                   "songs=%r" % songs)
+
+
+def check_adds_are_recorded(session, recorder):
+    """The A16 record of the last add is the group's declared class, and it is reversible."""
     records = session.ok("control.transactions").get("transactions") or []
     last = records[-1] if records else {}
     recorder.require("the add recorded one reversible true_inverse step",
                    last.get("command") == "mastering.song_add" and last.get("class") == "true_inverse"
                    and last.get("reversible") is True,
                    "record=%r" % last)
-    return first_id
+
+
+def set_field(session, song, **fields):
+    args = {"song": song}
+    args.update(fields)
+    session.ok("mastering.song_set", args)
+
+
+def check_both_edits_landed(session, first_id, second_id, recorder):
+    first_row = row_of(session, first_id)
+    second_row = row_of(session, second_id)
+    recorder.require("processing, gap and fades are set per song",
+                   first_row is not None and first_row[2:] == ("streaming-14", 3000, 1500, 2500)
+                   and second_row is not None and second_row[2:] == ("ebu-r128", 0, 500, 4000),
+                   "first=%r second=%r" % (first_row, second_row))
+
+
+def check_edit_order(session, first_id, second_id, recorder):
+    set_field(session, first_id, processing="streaming-14", fade_in_ms=1500, fade_out_ms=2500, gap_ms=3000)
+    set_field(session, second_id, processing="ebu-r128", fade_in_ms=500, fade_out_ms=4000)
+    check_both_edits_landed(session, first_id, second_id, recorder)
+    moved = session.ok("mastering.song_move", {"song": second_id, "to": 0})
+    recorder.require("the order changes through song_move, ids travelling with their songs",
+                   song_ids(session) == [second_id, first_id],
+                   "reply=%r ids=%r" % (moved, song_ids(session)))
+
+
+def check_reorder_undo(session, recorder, second_id, first_id):
+    session.ok("control.undo")
+    recorder.require("one undo takes the reorder back",
+                   song_ids(session) == [first_id, second_id], "ids=%r" % (song_ids(session),))
+
+
+def check_field_undo(session, recorder, first_id, second_id):
+    session.ok("control.undo")  # the second song's own field edit: one step for its four fields
+    second_row = row_of(session, second_id)
+    recorder.require("the second song's processing and fades are taken back as ONE step",
+                   second_row is not None and second_row[2:] == ("none", 0, 0, 0),
+                   "state=%r (the first song keeps its own edit)" % (row_of(session, second_id),))
+    session.ok("control.undo")  # the first song's too
+    first_row = row_of(session, first_id)
+    recorder.require("the first song's four edited fields are taken back as ONE step",
+                   first_row is not None and first_row[2:] == ("none", 0, 0, 0),
+                   "state=%r" % (row_of(session, first_id),))
 
 
 def check_edits_are_undoable(session, first, first_id, recorder):
-    songs = session.ok("mastering.sequence_list").get("songs") or []
-    second_id = songs[1].get("song")
-    before = release_state(session)
-    session.ok("mastering.song_set", {"song": first_id, "processing": "streaming-14",
-                                      "fade_in_ms": 1500, "fade_out_ms": 2500, "gap_ms": 3000})
-    session.ok("mastering.song_set", {"song": second_id, "processing": "ebu-r128",
-                                      "fade_in_ms": 500, "fade_out_ms": 4000})
-    edited = release_state(session)
-    recorder.require("processing, gap and fades are set per song",
-                   any(row[0] == first_id and row[2] == "streaming-14" and row[3] == 3000
-                       and row[4] == 1500 and row[5] == 2500 for row in edited)
-                   and any(row[0] == second_id and row[2] == "ebu-r128" and row[4] == 500 and row[5] == 4000
-                           for row in edited),
-                   "state=%r" % (edited,))
-    moves = session.ok("mastering.song_move", {"song": second_id, "to": 0})
-    reordered = release_state(session)
-    recorder.require("the order changes through song_move, ids travelling with their songs",
-                   [row[0] for row in reordered] == [second_id, first_id],
-                   "reply=%r state=%r" % (moves, reordered))
-
-    session.ok("control.undo")
-    recorder.require("one undo takes the reorder back",
-                   [row[0] for row in release_state(session)] == [row[0] for row in edited],
-                   "state=%r" % (release_state(session),))
-    session.ok("control.undo")  # the second song's own field edit, one step for its four fields
-    restored = release_state(session)
-    recorder.require("the second song's processing and fades are taken back as ONE step",
-                   any(row[0] == second_id and row[2] == "none" and row[4] == 0 and row[5] == 0
-                       for row in restored),
-                   "state=%r (the first song keeps its own edit)" % (restored,))
-    session.ok("control.undo")
-    restored = release_state(session)
-    recorder.require("the first song's four edited fields are taken back as ONE step",
-                   any(row[0] == first_id and row[2] == "none" and row[3] == 0
-                       and row[4] == 0 and row[5] == 0 for row in restored),
-                   "state=%r" % (restored,))
-
-    refused = session.typed("mastering.song_set", {"song": "song-999", "gap_ms": 10})
-    recorder.require("an unknown song is a typed not_found and changes nothing",
-                   refused == "not_found", "kind=%r" % (refused,))
-    refused = session.typed("mastering.song_set", {"song": first_id, "processing": "louder-please"})
-    recorder.require("an unknown processing name is invalid_args",
-                   refused == "invalid_args", "kind=%r" % (refused,))
-    refused = session.typed("mastering.song_add", {"source": os.path.join(os.path.dirname(first), "gone.wav")})
-    recorder.require("a missing audio file is a typed not_found",
-                   refused == "not_found", "kind=%r" % (refused,))
+    second_id = song_ids(session)[1]
+    check_edit_order(session, first_id, second_id, recorder)
+    check_reorder_undo(session, recorder, second_id, first_id)
+    check_field_undo(session, recorder, first_id, second_id)
+    check_edit_refusals(session, recorder, first, first_id)
     return second_id
 
 
-def check_save_and_reopen(session, instance, first, second, second_id, recorder):
-    """Put the release back the way the acceptance wants it, save, reopen, compare."""
+def check_edit_refusals(session, recorder, first, first_id):
+    for name, call, expected in (
+            ("an unknown song is a typed not_found and changes nothing",
+             lambda: session.typed("mastering.song_set", {"song": "song-999", "gap_ms": 10}), "not_found"),
+            ("an unknown processing name is invalid_args",
+             lambda: session.typed("mastering.song_set", {"song": first_id, "processing": "louder-please"}),
+             "invalid_args"),
+            ("a missing audio file is a typed not_found",
+             lambda: session.typed("mastering.song_add",
+                                   {"source": os.path.join(os.path.dirname(first), "gone.wav")}), "not_found")):
+        refused = call()
+        recorder.require(name, refused == expected, "kind=%r" % (refused,))
+
+
+def set_release_for_saving(session, first, second_id):
     songs = session.ok("mastering.sequence_list").get("songs") or []
-    first_id = [song.get("song") for song in songs if os.path.realpath(song.get("source")) == os.path.realpath(first)][0]
+    first_id = [song.get("song") for song in songs
+                if os.path.realpath(song.get("source")) == os.path.realpath(first)][0]
     session.ok("mastering.song_set", {"song": first_id, "processing": "streaming-16-dynamics",
                                       "fade_in_ms": 1200, "fade_out_ms": 3400, "gap_ms": 2500})
     session.ok("mastering.song_set", {"song": second_id, "processing": "streaming-14-ceiling-2",
                                       "fade_in_ms": 700, "fade_out_ms": 2100, "gap_ms": 900})
     # Put the second song first, so the saved ORDER is deliberately not the order of the adds.
     session.ok("mastering.song_move", {"song": second_id, "to": 0})
-    before = release_state(session)
 
-    path = os.path.join(instance.tmp, "release.mmp")
-    session.ok("project.save", {"path": path})
+
+def saved_sequence(path):
+    """The release the file states, in the same shape release_state() reports."""
     tree = ET.parse(path)
     element = tree.getroot().find(".//mastering-sequence")
-    recorder.require("the saved project carries a <mastering-sequence> element",
-                   element is not None, "path=%s" % path)
-    saved = []
-    for child in list(element) if element is not None else []:
-        saved.append(("song-" + (child.get("id") or ""), os.path.realpath(child.get("source") or ""),
-                      child.get("processing") or "none", int(child.get("gap-ms") or 0),
-                      int(child.get("fade-in-ms") or 0), int(child.get("fade-out-ms") or 0)))
+    if element is None:
+        return None
+    return [("song-" + (child.get("id") or ""), os.path.realpath(child.get("source") or ""),
+             child.get("processing") or "none", int(child.get("gap-ms") or 0),
+             int(child.get("fade-in-ms") or 0), int(child.get("fade-out-ms") or 0))
+            for child in list(element)]
+
+
+def check_save_and_reopen(session, instance, first, second, second_id, recorder):
+    """Put the release back the way the acceptance wants it, save, reopen, compare."""
+    set_release_for_saving(session, first, second_id)
+    before = release_state(session)
+    path = os.path.join(instance.tmp, "release.mmp")
+    session.ok("project.save", {"path": path})
+    saved = saved_sequence(path)
+    recorder.require("the saved project carries a <mastering-sequence> element at all",
+                   saved is not None, "path=%s" % path)
     recorder.require("the saved XML states the same order, sources, processing, gap and fades",
                    saved == before, "saved=%r before=%r" % (saved, before))
+    check_reopen(session, path, before, first, second, recorder)
 
+
+def check_reopen(session, path, before, first, second, recorder):
     # Replace the session, then open the file: a real load, not a left-over.
     session.ok("project.new_document", {"type": "production"})
     recorder.require("a production document has no release",
@@ -309,7 +360,9 @@ def check_the_instance(binary, problems):
         recorder = Recorder(problems)
         check_registration(session, recorder)
         check_empty_document(session, recorder)
-        first_id = check_two_songs(session, first, second, recorder)
+        first_id = add_two_songs(session, first, second)[0]
+        check_adds_are_recorded(session, recorder)
+        check_two_songs(session, first, second, recorder)
         second_id = check_edits_are_undoable(session, first, first_id, recorder)
         check_save_and_reopen(session, instance, first, second, second_id, recorder)
         check_a_project_without_a_release(session, instance, recorder)

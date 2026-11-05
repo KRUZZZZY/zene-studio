@@ -152,8 +152,22 @@ bool optionalMs(const QJsonObject& args, const char* key, int current, int maxim
 	return true;
 }
 
-//! The audio file @a path names: an existing decoded audio file. Refused, typed, otherwise - a
-//! song pointing at nothing is a release that fails only when someone tries to render it.
+//! The audio extensions this build decodes: the decoders' own list, plus the container types
+//! the engine reads through them. One lookup used by audioSource().
+bool decodesSuffix(const QString& suffix)
+{
+	static const QStringList containers{QStringLiteral("wav"), QStringLiteral("ogg"), QStringLiteral("flac"),
+		QStringLiteral("mp3"), QStringLiteral("aif"), QStringLiteral("aiff"), QStringLiteral("opus")};
+	if (containers.contains(suffix)) { return true; }
+	for (const SampleDecoder::AudioType& type : SampleDecoder::supportedAudioTypes())
+	{
+		if (suffix == QString::fromStdString(type.extension).toLower()) { return true; }
+	}
+	return false;
+}
+
+//! The audio file @a path names, absolute in @a absolute; false with a typed @a error otherwise.
+//! A song pointing at nothing is a release that fails only when someone tries to render it.
 bool audioSource(const QString& path, QString* absolute, ControlResult* error)
 {
 	const QFileInfo file(path);
@@ -167,16 +181,7 @@ bool audioSource(const QString& path, QString* absolute, ControlResult* error)
 		*error = ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("no audio file '%1'").arg(path));
 		return false;
 	}
-	const QString suffix = file.suffix().toLower();
-	bool decoded = suffix == QLatin1String("wav") || suffix == QLatin1String("ogg") || suffix == QLatin1String("flac")
-		|| suffix == QLatin1String("mp3") || suffix == QLatin1String("aif") || suffix == QLatin1String("aiff")
-		|| suffix == QLatin1String("opus");
-	for (const SampleDecoder::AudioType& type : SampleDecoder::supportedAudioTypes())
-	{
-		if (decoded) { break; }
-		decoded = suffix == QString::fromStdString(type.extension).toLower();
-	}
-	if (!decoded)
+	if (!decodesSuffix(file.suffix().toLower()))
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("'source' is an audio file this build decodes, not '%1'").arg(file.fileName()));
