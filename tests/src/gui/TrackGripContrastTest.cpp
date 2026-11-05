@@ -57,7 +57,6 @@
 #include "Appearance.h"
 #include "CommandForm.h"
 #include "CommandListDialog.h"
-#include "CommandLists.h"
 #include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "DesignTokens.h"
@@ -360,16 +359,48 @@ private:
 		return nullptr;
 	}
 
-	//! Change the `text` role the way a person does: Theme Colours list, the text row's Change...
-	//! form, a colour typed in, Run. Every step is the registered command (SPEC A11), so the list
-	//! and the form cannot drift from what an agent runs.
+	//! The visible Theme Colours list (the shared CommandListDialog), or null.
+	static QPointer<CommandListDialog> awaitThemeColoursList()
+	{
+		for (int turn = 0; turn < 100; ++turn)
+		{
+			for (QWidget* widget : QApplication::topLevelWidgets())
+			{
+				auto* candidate = qobject_cast<CommandListDialog*>(widget);
+				if (candidate != nullptr && candidate->isVisible()) { return candidate; }
+			}
+			QTest::qWait(10);
+		}
+		return nullptr;
+	}
+
+	//! Change the `text` role the way a person does: Customise > Theme > Colours..., the text row's
+	//! Change... form, a colour typed in, Run. Every step is the registered command (SPEC A11), so the
+	//! menu, the list and the form cannot drift from what an agent runs.
 	void changeTextRoleThroughTheList(const QColor& colour)
 	{
-		CommandListDialog dialog(CommandLists::themeColors());
-		const int row = textRow(dialog);
+		QMenu customise;
+		populateCustomiseExtras(&customise);
+		QMenu* theme = nullptr;
+		for (QMenu* menu : customise.findChildren<QMenu*>(QString(), Qt::FindDirectChildrenOnly))
+		{
+			if (menu->title() == QStringLiteral("Theme")) { theme = menu; }
+		}
+		QVERIFY2(theme != nullptr, "Customise > Theme is missing");
+		QAction* colours = nullptr;
+		for (QAction* action : theme->actions())
+		{
+			if (action->text() == QStringLiteral("Colours...")) { colours = action; }
+		}
+		QVERIFY2(colours != nullptr, "Theme > Colours... is missing");
+		QCOMPARE(colours->property("controlCommand").toString(), QStringLiteral("theme.get"));
+		colours->trigger();
+		const QPointer<CommandListDialog> dialog = awaitThemeColoursList();
+		QVERIFY2(dialog != nullptr, "Customise > Theme > Colours... opened no colour list");
+		const int row = textRow(*dialog);
 		QVERIFY2(row >= 0, "the Theme Colours list has no text row");
-		const ControlResult asked = dialog.runAction(row, 0);  // "Change..."
-		QCOMPARE(asked.errorKind, ControlErrorKind::Busy);     // the form is open
+		const ControlResult asked = dialog->runAction(row, 0);  // "Change..."
+		QCOMPARE(asked.errorKind, ControlErrorKind::Busy);      // the form is open
 		const QPointer<CommandForm> form = awaitForm();
 		QVERIFY2(form != nullptr, "Change... opened no command form");
 		QVERIFY2(form->setField(QStringLiteral("color"), colour.name()), "the form has no color field");
