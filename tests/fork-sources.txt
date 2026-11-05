@@ -3300,3 +3300,9 @@ tests/src/core/MidiOutTimingTest.cpp
 tests/src/gui/SessionCellPlaybackMenuTest.cpp
 # cluster new-p10-290 (2026-10): fix and verification report for pitchAt's window bound (fork-NEW).
 docs/qwen-fixes-2026-10/cluster-new-p10-290.md
+# Q050-438 (2026-11): the documented Revisions list - Project tools > Revisions... and
+# revisions.list's live sources, columns and row actions held against the manual and known
+# limitations by a GUI test (fork-NEW).
+tests/src/gui/RevisionsDocsTest.cpp
+docs/050-features/Q050-438.md
+docs/qwen-fixes-2026-10/cluster-Q050-438.md

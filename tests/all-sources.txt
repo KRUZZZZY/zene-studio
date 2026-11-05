@@ -3251,6 +3251,7 @@ tests/src/gui/RecordingRecoveryMenuTest.cpp
 tests/src/gui/ReferenceProjectPanelTest.cpp
 tests/src/gui/RenderPresetMenuTest.cpp
 tests/src/gui/RenderRangeMenuTest.cpp
+tests/src/gui/RevisionsDocsTest.cpp
 tests/src/gui/RowTableViewTest.cpp
 tests/src/gui/SampleClipWarpModeMenuTest.cpp
 tests/src/gui/SampleEditorDialogTest.cpp
