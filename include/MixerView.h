@@ -26,6 +26,7 @@
 #define LMMS_GUI_MIXER_VIEW_H
 
 #include <QHash>
+#include <QJsonObject>
 #include <QWidget>
 
 #include "MixerChannelView.h"
@@ -205,8 +206,8 @@ private:
 	Mixer* m_mixer;
 
 	void updateMaxChannelSelector();
-	//! Q050-227.1: take the splitter's current widths back into the zones state (a finished drag).
-	void writeZoneSizes();
+	//! Q050-227.1: the splitter's current widths as window.mixer_zones' 'sizes' object (a drag's report).
+	QJsonObject zoneSizesJson() const;
 
 	friend class MixerChannelView;
 } ;

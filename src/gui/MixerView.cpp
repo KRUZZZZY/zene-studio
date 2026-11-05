@@ -258,11 +258,16 @@ MixerView::MixerView(Mixer* mixer) :
 	relayoutZones();
 	connect(mixerzones::MixerZoneState::instance(), &mixerzones::MixerZoneState::changed,
 		this, &MixerView::relayoutZones);
-	// A finished drag writes the widths back; the state then lives with the layout and is saved with
-	// the project. A relayout's own setSizes() is not a gesture and is skipped.
+	// A drag writes its widths back THROUGH THE REGISTERED COMMAND - the same window.mixer_zones an agent
+	// calls - with 'live': true so the command records them without re-laying the splitter under the
+	// mouse. The state then lives with the layout and is saved with the project. A relayout's own
+	// setSizes() is not a gesture and is skipped.
 	connect(m_zoneSplitter, &QSplitter::splitterMoved, this, [this] {
 		if (m_applyingZones) { return; }
-		writeZoneSizes();
+		// A refused report (typed, never silent) leaves the state as it was; the next sync pass refreshes the
+		// mode bar's Zones chip from whatever the state holds.
+		runCommand(this, CommandCall{QStringLiteral("window.mixer_zones"),
+			{{QStringLiteral("live"), true}, {QStringLiteral("sizes"), zoneSizesJson()}}, {}, QString(), false});
 	});
 
 	setCurrentMixerChannel(m_mixerChannelViews[0]);
@@ -374,10 +379,10 @@ void MixerView::relayoutZones()
 }
 
 
-void MixerView::writeZoneSizes()
+QJsonObject MixerView::zoneSizesJson() const
 {
-	if (m_zoneSplitter == nullptr) { return; }
-	QHash<QString, int> sizes = mixerzones::MixerZoneState::instance()->layout().sizes;
+	QJsonObject sizes;
+	if (m_zoneSplitter == nullptr) { return sizes; }
 	const QList<int> current = m_zoneSplitter->sizes();
 	for (int i = 0; i < m_zoneSplitter->count() && i < current.size(); ++i)
 	{
@@ -385,10 +390,15 @@ void MixerView::writeZoneSizes()
 		if (host == m_middleHost || !host->isVisible()) { continue; }  // a collapsed region keeps its width
 		for (auto it = m_zoneHosts.cbegin(); it != m_zoneHosts.cend(); ++it)
 		{
-			if (it.value() == host) { sizes.insert(it.key(), current.at(i)); }
+			// Clamped to what the command accepts, so a splitter that a style shrank below the minimum
+			// still reports a usable width rather than a refused one.
+			if (it.value() == host)
+			{
+				sizes.insert(it.key(), qBound(mixerzones::MinZoneSize, current.at(i), mixerzones::MaxZoneSize));
+			}
 		}
 	}
-	mixerzones::MixerZoneState::instance()->setSizes(sizes);
+	return sizes;
 }
 
 

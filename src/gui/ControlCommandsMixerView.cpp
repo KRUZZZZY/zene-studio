@@ -273,7 +273,9 @@ void registerInputMeters(ControlRegistry& registry)
  *  leave them. The arrangement lives with the layout the project keeps (window.layout_project_save's
  *  snapshot, under `mixer_zones`), so this command answers it and one layout save carries it. The
  *  arguments: an optional 'dock' ("<region>" or "<region>=<left|right>"), an optional 'sizes'
- *  ({region: pixels}) and 'reset'. Every one is checked before anything is applied. */
+ *  ({region: pixels}), 'reset', and 'live' - which a separator drag sends with the widths it just left,
+ *  so the interface's own resize is this command's write too, and no relayout happens mid-gesture.
+ *  Every argument is checked before anything is applied. */
 QJsonObject zonesState()
 {
 	const gui::mixerzones::Layout& layout = gui::mixerzones::MixerZoneState::instance()->layout();
@@ -305,11 +307,38 @@ bool applyDockArg(const QString& arg, const gui::mixerzones::Layout& before, QJs
 	return true;
 }
 
+//! Put @a layout into force. A live report (a separator drag) sets ONLY the widths, through the state's
+//! sizes-only path, because the splitter already shows them: re-laying it under the mouse would fight the
+//! gesture. Anything else applies the whole arrangement and re-lays the view.
+void applyZones(gui::MixerView* view, const gui::mixerzones::Layout& layout, bool live)
+{
+	if (live) { gui::mixerzones::MixerZoneState::instance()->setSizes(layout.sizes); return; }
+	gui::mixerzones::MixerZoneState::instance()->set(layout);
+	view->relayoutZones();  // the state's changed() signal does this too; this also covers a test with no loop yet
+}
+
+//! 'live' is the separator drag's own call: the widths on screen, reported so they are saved like any
+//! other. It may carry nothing else - a dock or a reset during a gesture would re-lay the splitter under
+//! the mouse, and it would also mean the drag is asking for something it never showed.
+QString liveRefusal(const QJsonObject& args)
+{
+	if (!args.value(QStringLiteral("live")).toBool(false)) { return QString(); }
+	if (args.contains(QStringLiteral("dock")) || args.contains(QStringLiteral("reset")) || args.contains(QStringLiteral("zones")))
+	{
+		return QStringLiteral("'live' reports the widths a separator drag left; it takes only 'sizes'");
+	}
+	return QString();
+}
+
 ControlResult mixerZones(const QJsonObject& args)
 {
 	if (controlMainWindow() == nullptr) { return noInterface(QStringLiteral("window.mixer_zones")); }
 	gui::MixerView* view = gui::getGUI() != nullptr ? gui::getGUI()->mixerView() : nullptr;
 	if (view == nullptr) { return noInterface(QStringLiteral("window.mixer_zones")); }
+	if (const QString misuse = liveRefusal(args); !misuse.isEmpty())
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, misuse);
+	}
 	const gui::mixerzones::Layout before = gui::mixerzones::MixerZoneState::instance()->layout();
 	gui::mixerzones::Layout next = args.value(QStringLiteral("reset")).toBool(false)
 		? gui::mixerzones::defaultLayout() : before;
@@ -326,8 +355,7 @@ ControlResult mixerZones(const QJsonObject& args)
 	QJsonObject checked = args;
 	if (!zonesArg.isEmpty()) { checked.insert(QStringLiteral("zones"), zonesArg); }
 	if (!gui::mixerzones::parse(checked, &next, &error)) { return ControlResult::failure(ControlErrorKind::InvalidArgs, error); }
-	gui::mixerzones::MixerZoneState::instance()->set(next);
-	view->relayoutZones();  // the state's changed() signal does this too; this also covers a test with no loop yet
+	applyZones(view, next, args.value(QStringLiteral("live")).toBool(false));
 	return ControlResult::success(zonesState());
 }
 
@@ -405,7 +433,9 @@ void registerMixerViewCommands(ControlRegistry& registry)
 		"(the VCA strips) and 'rack' (the effect rack). 'channels' is always 'middle'; 'master', 'vca' and 'rack' dock 'left' "
 		"or 'right' of it. 'dock' takes one side region, either alone (put it on the other side) or as '<region>=<left|right>', "
 		"and 'zones' takes the whole arrangement as an object ({region: dock}). 'sizes' sets a region's width in pixels (%1..%2); "
-		"dragging a separator in the interface writes the same values back. 'reset' puts the default arrangement back: master "
+		"dragging a separator in the interface sends the same 'sizes' back through this very command, with 'live': true, so the "
+		"interface's own resize and an agent's are one path ('live' takes only 'sizes' and never re-lays the splitter, which is "
+		"what makes it safe mid-gesture). 'reset' puts the default arrangement back: master "
 		"left, channels middle, VCA and rack right. The answer is what the mixer shows now: 'zones' and 'sizes' (the portable "
 		"arrangement), and 'mixer_zones', the one object window.layout_project_save keeps inside the project's window layout, "
 		"so saving that layout and reopening the project brings the arrangement and the widths back. Projects and layouts "
@@ -414,7 +444,7 @@ void registerMixerViewCommands(ControlRegistry& registry)
 		.arg(gui::mixerzones::MinZoneSize).arg(gui::mixerzones::MaxZoneSize);
 	const QJsonObject zoneFields{{QStringLiteral("dock"), stringProperty()},
 		{QStringLiteral("zones"), objectProperty()}, {QStringLiteral("sizes"), objectProperty()},
-		{QStringLiteral("reset"), booleanProperty()}};
+		{QStringLiteral("reset"), booleanProperty()}, {QStringLiteral("live"), booleanProperty()}};
 	zones.argsSchema = objectSchema(zoneFields);
 	zones.resultSchema = objectSchema({{QStringLiteral("zones"), objectProperty()},
 		{QStringLiteral("sizes"), objectProperty()}, {QStringLiteral("mixer_zones"), objectProperty()}});

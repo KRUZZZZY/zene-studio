@@ -42,6 +42,7 @@
 #include <QSplitterHandle>
 #include <QTemporaryDir>
 
+#include "CollabCommandTap.h"
 #include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
@@ -238,8 +239,9 @@ private slots:
 			QStringLiteral("middle"));
 	}
 
-	//! Criterion 1: dragging a real separator resizes the region and the new width is what the state
-	//! (and so the saved layout) reports.
+	//! Criterion 1: dragging a real separator resizes the region, the new width is what the state (and so
+	//! the saved layout) reports, AND the drag reached that state through the registered
+	//! window.mixer_zones command - the same one an agent calls - not by writing the state directly.
 	void aSeparatorDragResizesAZone()
 	{
 		MixerView* view = getGUI()->mixerView();
@@ -253,13 +255,49 @@ private slots:
 		QTRY_VERIFY2(splitter->sizes().at(index) > 0, "the master region has no width to drag");
 		const int masterBefore = splitter->sizes().at(index);
 
+		// The registry's own top-level tap: it is told of EVERY command it ran, after the handler. So the
+		// record below cannot be produced by a widget writing MixerZoneState directly - only by the
+		// command being the thing that ran.
+		QVector<QJsonObject> ran;
+		collab::CommandTap::install({}, [&ran](const QString& id, const QJsonObject& args, bool, bool) {
+			if (id == QStringLiteral("window.mixer_zones")) { ran.append(args); }
+		});
 		dragHandle(index, 40);
 		QCoreApplication::processEvents();
+		collab::CommandTap::clear();
+
 		QVERIFY2(splitter->sizes().at(index) > masterBefore,
 			qPrintable(QStringLiteral("master kept its width %1 after the drag").arg(masterBefore)));
 		QVERIFY(splitter->sizes().at(index + 1) < before);
+		// The drag went through the command, as a live width report, with the width the splitter now has.
+		QVERIFY2(!ran.isEmpty(), "the separator drag never invoked window.mixer_zones");
+		const QJsonObject report = ran.last();
+		QCOMPARE(report.value(QStringLiteral("live")).toBool(), true);
+		for (const QJsonObject& call : ran) { QCOMPARE(call.value(QStringLiteral("live")).toBool(), true); }
+		QCOMPARE(report.value(QStringLiteral("sizes")).toObject().value(QStringLiteral("master")).toInt(),
+			splitter->sizes().at(index));
 		QCOMPARE(sizesOf(run(QStringLiteral("window.mixer_zones"))).value(QStringLiteral("master")).toInt(),
 			splitter->sizes().at(index));
+
+		// And the agent's own size argument goes through the identical handler: same id, same state, same
+		// answer shape - a dragged width and a commanded one are one path with two callers.
+		QVERIFY(run(QStringLiteral("window.mixer_zones"), {{QStringLiteral("sizes"),
+			QJsonObject{{QStringLiteral("master"), 220}}}}).ok);
+		QCOMPARE(splitter->sizes().at(zoneIndex(QStringLiteral("master"))), 220);
+	}
+	//! 'live' is the drag's report only: it refuses a dock or a reset, so it can never re-lay the
+	//! splitter in the middle of a gesture.
+	void aLiveReportRefusesAnythingButSizes()
+	{
+		const ControlResult refused = run(QStringLiteral("window.mixer_zones"), {{QStringLiteral("live"), true},
+			{QStringLiteral("dock"), QStringLiteral("master=right")}});
+		QVERIFY(!refused.ok);
+		QCOMPARE(refused.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(zonesOf(run(QStringLiteral("window.mixer_zones"))).value(QStringLiteral("master")).toString(),
+			QStringLiteral("left"));
+		// A live report with no sizes is a no-op that still answers, so a stray splitterMoved cannot fail.
+		const ControlResult empty = run(QStringLiteral("window.mixer_zones"), {{QStringLiteral("live"), true}});
+		QVERIFY2(empty.ok, qPrintable(empty.errorMessage));
 	}
 
 	//! Criterion 2: the project's own layout carries the docks and the widths. Save the layout with the
