@@ -41,6 +41,11 @@
 # to the base - the regression for the control selection store keeping the selected notes' ids
 # - so it belongs in this manifest. Its entry is emitted in the sorted source list below; no
 # other entry changed.
+# 2026-10-29 (Q050-217.2, cluster MIDI workflow bindings): tests/src/core/MidiWorkflowBindingsTest.cpp and
+# tests/src/gui/MidiWorkflowBindingsGuiTest.cpp are fork-NEW test sources for the stage - a note and a CC bound
+# to a saved workflow run it through workflow.run, read back, survive a config reload and follow the library in
+# use, and the Launcher > Controller > Bind a Workflow entries drive the same path over the real application.
+# No other entry changed.
 # Regenerate with (base = 4e677cb6c6ab, the upstream commit this fork is based on):
 #   { git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- src include plugins tests/src/core tests/src/plugins tests/src/tracks \
 #       | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
@@ -2279,6 +2284,7 @@ tests/control-undo-structural.py
 tests/control-vca-commands.py
 tests/control-warp-commands-transcript.py
 tests/control-wasm-sandbox.py
+tests/control-workflow-bindings.py
 tests/control-workflow-models.py
 tests/control_detect_fixtures.py
 tests/control_instance_diagnosis.py
@@ -2504,6 +2510,7 @@ tests/src/core/LadspaPortCountFixture.cpp
 tests/src/core/LibraryBrowserTest.cpp
 tests/src/core/LibraryProjectsTest.cpp
 tests/src/core/BrowserCollectionStoreWriteTest.cpp
+tests/src/core/MidiWorkflowBindingsTest.cpp
 tests/src/core/TrackPresetCommandsTest.cpp
 tests/src/core/LinkAudioStreamTest.cpp
 tests/src/core/LinkAudioStreamTestSupport.h
@@ -2700,6 +2707,7 @@ tests/src/core/VstSubPluginFeaturesTest.cpp
 tests/src/core/W3EngineTest.cpp
 tests/src/core/WarpQuantizeTest.cpp
 tests/src/core/WriteRefusalGateTest.cpp
+tests/src/gui/MidiWorkflowBindingsGuiTest.cpp
 tests/src/tracks/HeadlessGuiGuardTest.cpp
 # cluster new-p15-83: the instrument track's render path - it reads no GUI state (the piano roll's
 # recording state is published for the audio thread), it collects the clips it plays into storage

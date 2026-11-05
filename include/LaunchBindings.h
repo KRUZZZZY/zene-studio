@@ -62,22 +62,31 @@ struct LaunchTrigger
 	bool on = true;       //!< a note press, or a control-change value above zero
 };
 
-/*! 0.5.0 L02 (WF-069) and Q050-217.1: the controller's bindings.
+/*! 0.5.0 L02 (WF-069), Q050-217.1 and Q050-217.2: the controller's bindings.
  *
  *  Launcher bindings (launcher/bindings) bind a note to an action - launch a cell (track, scene),
  *  launch a scene, or stop everything - and pressing it runs session.launch_slot /
  *  session.launch_scene / session.stop_all through the registry; releasing a cell's note releases it
  *  (a Gate or Repeat cell stops or stops repeating). learn() binds the next note played to an action.
  *
- *  Command bindings (midi/commandbindings, Q050-217.1) bind a note OR a control-change to a
- *  built-in command that needs no arguments, and one activation runs it once through the registry:
+ *  Command bindings (midi/commandbindings, Q050-217.1) bind a note OR a control-change to a target
+ *  that needs no arguments, and one activation runs it once through the registry:
  *
  *      {trigger:"note", key:60, channel:0, command:"mixer.add_channel"}
  *      {trigger:"cc", controller:74, channel:-1, command:"transport.stop"}
+ *      {trigger:"note", key:62, channel:-1, workflow:"Bounce stems"}
+ *
+ *  A binding carries ONE target key: `command` (a registered command whose schema requires no
+ *  arguments, Q050-217.1) or `workflow` (a saved workflow's NAME, Q050-217.2, run through
+ *  workflow.run - the path the Workflows menu and the socket take, so a run is acknowledged and its
+ *  steps run on the event loop as they always do). A workflow is resolved from the library in use
+ *  WHEN THE BINDING FIRES, not when it was made: a shared or per-project workflow keeps answering
+ *  after the user switches workflow.set_scope, and a name the library no longer holds is a no-op
+ *  rather than a stale id that fails a dispatch nobody asked for.
  *
  *  A note fires on its press and rearms on its release; a control-change fires when it goes from 0
  *  to a positive value and rearms at 0, so a knob sweeping 1..127 is ONE activation. The CC value is
- *  not passed on as an argument - a bound command takes none. For notes, the more channel-specific
+ *  not passed on as an argument - a bound target takes none. For notes, the more channel-specific
  *  binding wins; a command wins over a launcher binding at equal specificity. A channel-specific
  *  command leaves a wildcard launcher available on other channels.
  *
@@ -104,9 +113,13 @@ public:
 	void learn(const QJsonObject& action) { m_learning = action; }
 	const QJsonObject& learning() const { return m_learning; }
 
-	//! The stored command bindings: [{trigger: note|cc, key|controller, channel (-1 any), command}].
+	/*! The stored command bindings: [{trigger: note|cc, key|controller, channel (-1 any), target}]
+	 *  where target is `command` (a command id) or `workflow` (a saved workflow's name). */
 	static QJsonArray commandBindings();
 	static void setCommandBindings(const QJsonArray& list);
+
+	//! The target key a command binding carries: "command" (an id) or "workflow" (a saved name).
+	static QString targetKey(const QJsonObject& binding);
 
 	//! What a note does (the UI thread's half; the tests drive it directly).
 	void applyNote(const LaunchNote& note);
