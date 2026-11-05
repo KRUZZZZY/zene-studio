@@ -925,6 +925,7 @@ include/TrackRenderMenu.h
 include/TrackSpacers.h
 include/TrackVersions.h
 include/TrackView.h
+include/TransientRepeat.h
 include/TransportReadouts.h
 include/TunerTap.h
 include/UiConfigStore.h
@@ -2223,6 +2224,7 @@ src/core/TrackLooks.cpp
 src/core/TrackMixModels.cpp
 src/core/TrackSpacers.cpp
 src/core/TrackVersions.cpp
+src/core/TransientRepeat.cpp
 src/core/TunerTap.cpp
 src/core/UnattendedRun.cpp
 src/core/UnclaimedElements.cpp
@@ -3401,6 +3403,8 @@ tests/src/tracks/HeadlessGuiGuardTest.cpp
 tests/src/tracks/InstrumentTrackRenderPathTest.cpp
 tests/src/tracks/SampleClipRubberBandTest.cpp
 tests/src/tracks/SampleClipStretchTest.cpp
+tests/src/tracks/SampleClipTransientRepeatSafetyTest.cpp
+tests/src/tracks/SampleClipTransientRepeatTest.cpp
 tests/src/tracks/SampleClipWarpModesTest.cpp
 tests/src/tracks/SampleClipWarpTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp

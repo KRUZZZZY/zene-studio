@@ -128,7 +128,8 @@ namespace
 //! change it renders.
 bool rendersThroughStretcher(WarpStretchMode mode, bool rendersLinearly, int transpose)
 {
-	return (warpModeKeepsPitch(mode) && !rendersLinearly)
+	// Q050-162: Repeat and Gate keep the pitch without a stretcher (snapshotTransientRepeat).
+	return (warpModeKeepsPitch(mode) && !warpModeRepeatsTransients(mode) && !rendersLinearly)
 		|| (transpose != 0 && warpModeUsesRubberBand(mode));
 }
 
@@ -213,6 +214,9 @@ SamplePlayHandle::SamplePlayHandle( SampleClip* clip, const SampleWindow& window
 		m_stretcher.prepare(wsolaParametersFor(stretchMode));
 		m_stretcher.seek(0.0);
 	}
+
+	// Q050-162: a warped Repeat / Gate clip fills its slots from its transients.
+	if (warpModeRepeatsTransients(stretchMode) && !m_rendersLinearly) { snapshotTransientRepeat(clip, stretchMode); }
 
 	// The clip's fades and its gain (the fade/crossfade/clip-gain wave), taken
 	// here for exactly the reason the window and the warp are: a live handle
@@ -583,7 +587,11 @@ void SamplePlayHandle::play( std::span<SampleFrame> buffer )
 		// Row 30: a clip whose stretch mode is PreservePitch does NOT come
 		// through here - its rate change is rendered by the stretcher, which
 		// is the only difference between the two modes.
-		if (m_preservePitch)
+		if (m_repeatsTransients)
+		{
+			renderTransientRepeat(workingBuffer, frames);
+		}
+		else if (m_preservePitch)
 		{
 			renderPreservingPitch(workingBuffer, frames);
 		}

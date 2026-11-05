@@ -710,6 +710,9 @@ void SampleClipView::reverseSample()
 	m_transientAudioKey.clear();
 	m_transientKey.clear();
 	m_clip->setStartTimeOffset(m_clip->length() - m_clip->startTimeOffset() - m_clip->sampleLength());
+	// Q050-162: the clip's own announcement of a direction change (the one its load
+	// path already makes), so a Repeat / Gate clip re-reads its transients.
+	emit m_clip->wasReversed();
 	Engine::getSong()->setModified();
 	update();
 }

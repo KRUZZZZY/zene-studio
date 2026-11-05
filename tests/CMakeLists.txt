@@ -1543,6 +1543,11 @@ set(LMMS_TESTS
 	# Complex) - selection through the command, one render per mode, and a
 	# project-file round trip with different modes on separate clips.
 	src/tracks/SampleClipWarpModesTest.cpp
+	# Q050-162: the transient Repeat / Gate warp modes - free and tempo-synced
+	# rates rendered on a transient fixture, warp.stretch, undo and save/load.
+	src/tracks/SampleClipTransientRepeatTest.cpp
+	# Q050-162 review r1: the reader-safe transient table, amplification, reverse, mid-clip passes.
+	src/tracks/SampleClipTransientRepeatSafetyTest.cpp
 	src/tracks/SampleClipWarpTest.cpp
 	src/tracks/SampleClipWindowTest.cpp
 	# Soundpipe lifecycle methods must report SP_OK on successful setup and teardown.
@@ -7194,9 +7199,17 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/control-media-agent-transcript.py
 			$<TARGET_FILE:zene>
 	)
+	# Q050-162: the transient Repeat / Gate warp modes over the socket - mode
+	# and rate through warp.stretch / warp.list, the A16 inverse, undo, two
+	# renders that differ, and a save/open that brings the same render back.
+	add_test(NAME ControlTransientRepeatTranscript
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-transient-repeat-transcript.py
+			$<TARGET_FILE:zene>
+	)
 	set_tests_properties(ControlShutdown ControlReadiness ControlNoAudioDevice
 		ControlNegativeControl ControlStableIdsSlice2 ControlStableIds
-		ControlReversibilityTranscript ControlMediaAgentTranscript PROPERTIES
+		ControlReversibilityTranscript ControlMediaAgentTranscript ControlTransientRepeatTranscript PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 420
 		SKIP_RETURN_CODE 77
@@ -7289,7 +7302,8 @@ set_tests_properties(ControlWarpCommandsTest PROPERTIES
 # opens a window. AudioStretcherTest needs no Engine (it is pure DSP), but it is
 # built from the same objects; it is listed here only to keep the pair together
 # in one place whose reason is written down.
-set_tests_properties(SampleClipStretchTest SampleClipRubberBandTest SampleClipWarpModesTest TakeLaneCompPlaybackTest AudioStretcherTest PROPERTIES
+set_tests_properties(SampleClipStretchTest SampleClipRubberBandTest SampleClipWarpModesTest SampleClipTransientRepeatTest SampleClipTransientRepeatSafetyTest
+	TakeLaneCompPlaybackTest AudioStretcherTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # The link.* group drives the process-wide session model (and the Song's tempo,
 # for an adopted one) and starts the UI-thread service timer, so it wants a real

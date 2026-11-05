@@ -199,6 +199,23 @@ public:
 	//! Clip::restoreState plus the Rubber Band pool a restored mode may need.
 	void restoreState(const QDomElement& element) override;
 
+	/*! Q050-162: the interval the Repeat and Gate modes retrigger / cut at - a
+	 *  tempo division or a free interval in ms (include/TransientRepeat.h).
+	 *  Stored with the warp state (one atomic word) and kept whatever the mode,
+	 *  so switching away from Repeat and back keeps the user's rate. */
+	TransientRepeatRate transientRepeatRate() const
+	{
+		return TransientRepeatRate::unpack(m_transientRate.load(std::memory_order_acquire));
+	}
+	void setTransientRepeatRate(const TransientRepeatRate& rate);
+
+	/*! Q050-162: the clip's transients as play frames, a value copy - what a
+	 *  Repeat / Gate play handle segments the clip at. Analysed on the control
+	 *  thread (clipTransientFrames) when the clip enters one of those modes and
+	 *  again when its audio or window changes while it is in one; the render
+	 *  path only ever copies the published table. Empty in every other mode. */
+	TransientTable transientTable() const { return m_transients.read(); }
+
 	//! The tempo the clip was recorded at, in BPM; only read in `SourceTempo`.
 	float sourceTempo() const { return m_sourceTempo; }
 	void setSourceTempo(float bpm);
@@ -336,7 +353,19 @@ private:
 	void ensureRubberBandPool();
 	//! Builds @a mode's pool if it asks for one and it is absent, then publishes it.
 	void ensureRubberBandPool(WarpStretchMode mode);
-	void prepareWarpStretchMode(WarpStretchMode mode) override { ensureRubberBandPool(mode); }
+	void prepareWarpStretchMode(WarpStretchMode mode) override;
+	/*! Q050-162: the transient table as the render thread may read it - three
+	 *  pinned slots, never written while a reader copies one (see
+	 *  PublishedTransients). The key of the last analysis - buffer, window,
+	 *  direction - skips re-analysing audio that did not change (control thread). */
+	PublishedTransients m_transients;
+	std::weak_ptr<const SampleBuffer> m_transientsBuffer;
+	SampleWindow m_transientsWindow;
+	bool m_transientsReversed = false;
+	//! Control thread: (re)analyse the transients when the audio, window or direction changed.
+	void analyseTransients();
+	//! Control thread (queued when announced off it): analyseTransients() for a Repeat / Gate clip.
+	void refreshTransients();
 	//! Q050-111: see clipEffects(). Built with the clip; saved as an `<fxchain>` child only when it holds a device.
 	std::unique_ptr<EffectChain> m_clipEffects;
 	//! Q050-111: set while one play handle runs the chain this period (see processClipEffects()).

@@ -36,6 +36,8 @@
 // The warp vocabulary and WarpMarkers, the base clip's warp state's value type
 // (SPEC-ARCH-4 census row 5: warp is native to the base clip).
 #include "WarpMarkers.h"
+// Q050-162: the repeat interval of the Repeat / Gate modes rides the warp state.
+#include "TransientRepeat.h"
 
 // GLOBAL scope, never inside namespace lmms: a `class QDomDocument;` declared
 // after `namespace lmms {` declares the DIFFERENT type lmms::QDomDocument, and
@@ -294,6 +296,11 @@ protected:
 	 *  Band-backed mode is only stored AFTER prepareWarpStretchMode() built
 	 *  its voices, so a reader that sees the mode finds the pool. */
 	std::atomic<WarpStretchMode> m_stretchMode{WarpStretchMode::Resample};
+	/*! Q050-162: the Repeat / Gate interval (a tempo division or free ms),
+	 *  packed into one word (TransientRepeatRate::pack) so the control thread
+	 *  publishes it in one store and a play handle reads it in one load. Only
+	 *  rendered in those two modes; the default (synced 1/16) writes nothing. */
+	std::atomic<std::int32_t> m_transientRate{TransientRepeatRate{}.pack()};
 	//! Control thread, before a mode is published: lets a subclass build what the
 	//! mode needs (SampleClip: the Rubber Band voices). Never called on the audio thread.
 	virtual void prepareWarpStretchMode(WarpStretchMode mode) { Q_UNUSED(mode); }

@@ -34,6 +34,7 @@
 #include <QFileInfo>
 
 #include "AudioEngine.h"
+#include "ClipTransients.h"
 #include "ControlEdit.h"
 #include "EffectChain.h"
 #include "Engine.h"
@@ -86,6 +87,10 @@ SampleClip::SampleClip(Track* _track, Sample sample, bool isPlaying):
 	// Without this, the model's entry sits in front of the arm's step and a second undo does nothing.
 	m_recordModel.setJournalling( false );
 	updateTrackClips();
+	// Q050-162: a Repeat / Gate clip re-reads its transients when its audio or
+	// window changes (queued when the change is announced off this thread).
+	connect(this, &SampleClip::sampleChanged, this, &SampleClip::refreshTransients);
+	connect(this, &SampleClip::wasReversed, this, &SampleClip::refreshTransients);
 }
 
 SampleClip::SampleClip(Track* track)
@@ -140,6 +145,9 @@ SampleClip::SampleClip(const SampleClip& orig) :
 	ensureRubberBandPool();
 	// Q050-111: and its own devices, built from the source's chain document (never the source's instances).
 	copyClipEffects(orig);
+	connect(this, &SampleClip::sampleChanged, this, &SampleClip::refreshTransients);
+	connect(this, &SampleClip::wasReversed, this, &SampleClip::refreshTransients);
+	prepareWarpStretchMode(warpStretchMode());
 }
 
 
@@ -698,11 +706,67 @@ void SampleClip::setWarpStretchMode(WarpStretchMode mode)
 	// handle construction, so a change takes effect on the next playback pass.
 	if (m_stretchMode == mode) { return; }
 	// Voices first, mode second (both on this control thread): the render thread
-	// reads the mode with an acquire load, so a mode it sees has its pool published.
-	ensureRubberBandPool(mode);
+	// reads the mode with an acquire load, so a mode it sees has its pool (and,
+	// Q050-162, its transients) published.
+	prepareWarpStretchMode(mode);
 	m_stretchMode.store(mode, std::memory_order_release);
 	Engine::getSong()->setModified();
 	emit sampleChanged();
+}
+
+
+void SampleClip::setTransientRepeatRate(const TransientRepeatRate& rate)
+{
+	if (transientRepeatRate() == rate) { return; }
+	m_transientRate.store(rate.pack(), std::memory_order_release);
+	Engine::getSong()->setModified();
+	emit sampleChanged();
+}
+
+
+void SampleClip::prepareWarpStretchMode(WarpStretchMode mode)
+{
+	ensureRubberBandPool(mode);
+	if (warpModeRepeatsTransients(mode)) { analyseTransients(); }
+}
+
+
+void SampleClip::refreshTransients()
+{
+	if (warpModeRepeatsTransients(warpStretchMode())) { analyseTransients(); }
+}
+
+
+void SampleClip::analyseTransients()
+{
+	const auto buffer = m_sample.buffer();
+	const bool reversed = m_sample.reversed();
+	if (buffer != nullptr && m_transientsBuffer.lock() == buffer && m_window == m_transientsWindow && reversed == m_transientsReversed)
+	{
+		return;
+	}
+	// The detector reports SOURCE frames; the warp map, and so the segments,
+	// speak play frames (the mirror, for a reversed source).
+	std::vector<f_cnt_t> frames = clipTransientFrames(*this);
+	for (f_cnt_t& frame : frames) { frame = playFrameFor(frame); }
+	std::sort(frames.begin(), frames.end());
+	// A transient within 20 ms of the window's head or of the previous kept one
+	// is the same attack (the detector reports an onset at the very head one hop
+	// late): segmenting there would cut a sliver off the attack.
+	const auto minimumGap = static_cast<f_cnt_t>(m_sample.sampleRate() / 50);
+	std::vector<f_cnt_t> kept;
+	f_cnt_t previous = m_window.sourceIn;
+	for (const f_cnt_t frame : frames)
+	{
+		if (frame < previous + minimumGap) { continue; }
+		kept.push_back(frame);
+		previous = frame;
+	}
+	frames = std::move(kept);
+	m_transients.publish(frames);
+	m_transientsBuffer = buffer;
+	m_transientsWindow = m_window;
+	m_transientsReversed = reversed;
 }
 
 

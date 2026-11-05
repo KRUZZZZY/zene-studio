@@ -3314,3 +3314,13 @@ include/LibraryCellAudio.h
 tests/src/gui/SessionLibrarySaveTest.cpp
 docs/050-features/Q050-273.1.md
 docs/qwen-fixes-2026-10/cluster-Q050-273.1.md
+# Q050-162 (2026-10): transient Repeat / Gate warp modes - the rate type, the transient table and
+# the render half, their render/command/persistence test and socket transcript (fork-NEW).
+include/TransientRepeat.h
+src/core/TransientRepeat.cpp
+tests/src/tracks/SampleClipTransientRepeatTest.cpp
+tests/src/tracks/SampleClipTransientRepeatSafetyTest.cpp
+tests/control-transient-repeat-transcript.py
+# Q050-162 (2026-10): the unit's feature record and report (fork-NEW).
+docs/050-features/Q050-162.md
+docs/qwen-fixes-2026-10/cluster-Q050-162.md
