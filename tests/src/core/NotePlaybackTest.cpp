@@ -633,6 +633,30 @@ private slots:
 		QCOMPARE(m_clip->notes().front()->conditions().repeats, 0);
 	}
 
+	//! Q050-294.1: the step view's ratchet and chance are PLAYED, not display values. note.step_set writes the same
+	//! fields the engine reads at trigger time: ratchet 4 is four attacks, chance 0 is none, one undo is one attack.
+	void stepSetRatchetAndChanceArePlayed()
+	{
+		oneNote();
+		const QString clip = control::clipIdOf(m_clip);
+		// An undo reloads the clip's notes, so each edit names the note as the clip holds it now.
+		const auto step = [&](const QJsonObject& values) {
+			QJsonObject entry = values;
+			entry.insert(QStringLiteral("note"), control::noteIdOf(m_clip->notes().front()));
+			return run(QStringLiteral("note.step_set"), {{QStringLiteral("clip"), clip}, {QStringLiteral("edits"), QJsonArray{entry}}});
+		};
+		QCOMPARE(playFrom(0), (QList<int>{60}));
+		QVERIFY(step({{QStringLiteral("ratchet"), 4}}).ok);
+		QCOMPARE(m_clip->notes().front()->conditions().repeats, 3);
+		QCOMPARE(playFrom(0), (QList<int>{60, 60, 60, 60}));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(playFrom(0), (QList<int>{60}));
+		QVERIFY(step({{QStringLiteral("chance"), 0.0}}).ok);
+		QCOMPARE(playFrom(0), (QList<int>{}));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(playFrom(0), (QList<int>{60}));
+	}
+
 	void upDownArpeggioHandlesRepeatedSinglePitch()
 	{
 		oneNote();

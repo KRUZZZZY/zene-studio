@@ -6315,6 +6315,16 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)
+	# Q050-294.1: a MIDI clip's melodic step state over the socket - note.step_get_state, note.step_set
+	# (scale-aware pitch, velocity, chance, ratchet; one control.undo restores the exact note list).
+	add_test(NAME ControlNoteStep
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-note-step.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlNoteStep PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
 	# The 0.5.0 engine wiring (L01, research/daw-ui-specs/synthesis/engine-audit.md): devices at a
 	# slot and on rack chains, chain presets on rack chains, track.set_mixer_channel, the header's
 	# transport.record, and the Lua scripting spine (zene.command) - each proven over the socket.

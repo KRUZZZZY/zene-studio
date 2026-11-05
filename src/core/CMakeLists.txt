@@ -389,6 +389,8 @@ set(LMMS_SRCS
 	core/ControlCommandsNoteProbability.cpp
 	# note.edit (0.5.0 note editor): a batch of note edits as one journal checkpoint.
 	core/ControlCommandsNoteEdit.cpp
+	# note.step_get_state / note.step_set (Q050-294.1): the melodic step grid view of a MIDI clip.
+	core/ControlCommandsNoteStep.cpp
 	# The 0.3.0 note/scale/device wave (board task #648; feature-list rows 11, 66 and
 	# 81): the note randomisation verbs (note.random_seed_get/_set, note.randomize),
 	# the slide verbs (note.slide_set / note.slide_clear), the three note transforms,

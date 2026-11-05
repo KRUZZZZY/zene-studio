@@ -1109,6 +1109,8 @@ config lists back) and one `not_mutating` (`session.command_bindings`, a read) -
 
 **Q050-263** (per-slice SlicerT controls, 2026-11-02): `plugin.slice_get` adds one `not_mutating` row and `plugin.slice_set` one `true_inverse` row - `rows=889 true_inverse=435 snapshot=42 irreversible=25 not_mutating=387`.
 
+**Q050-294.1** (melodic step state, stage 1, 2026-11-03): `note.step_set` adds one `true_inverse` row (a MidiClip checkpoint) and `note.step_get_state` one `not_mutating` row - `rows=889 true_inverse=435 snapshot=42 irreversible=25 not_mutating=387`.
+
 <!-- A16-HISTOGRAM-BEGIN
      measured: rows=888 true_inverse=434 snapshot=42 irreversible=25 not_mutating=387
      configuration: telemetry.status wasm.load session.get_state stem.get_state
