@@ -932,10 +932,12 @@ private slots:
 	 *  onto ticks 0, 24, 48 and 72 (four local repeats). The recurrence mask counts SONG passes
 	 *  (MidiPlayback::pass(), advanced only by a transport loop wrap), not the clip's own repeats:
 	 *  with length 2 and mask 1 (the first of every two passes) the note sounds on every local
-	 *  repeat of pass 0 and on none of pass 1, while the clip keeps folding. The tempo is pushed so
-	 *  3 periods cover more than a 24-tick pass, then restored.
+	 *  repeat of pass 0 and on none of pass 1, while the clip keeps folding. The tempo is pushed to
+	 *  999 BPM so a 24-tick pass is well under three periods, then restored by the guard below.
 	 *
-	 *  A second note follows the mask over four passes: length 4, mask 0b0101 - passes 0 and 2 only.
+	 *  The three cases are the ones a length/mask pair can be wrong about: the selected passes
+	 *  sound and the others do not (2/1), a positive length with mask 0 plays NONE, and length 0
+	 *  plays every pass.
 	 */
 	void recurrenceSelectsThePassesOfALocallyLoopedClip()
 	{

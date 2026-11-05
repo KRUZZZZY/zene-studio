@@ -3,7 +3,7 @@ IMPLEMENTED
 # Q050-242 — Pattern recurrence controls
 
 Branch `feat/050-Q050-242-oc`, cut from `050/m0-train-24` (`2a7fd9f9c7`). Product commit
-`d9c4902759`, tests/record commit `bd48d406da`, this report's commit follows.
+`d9c4902759`, tests + feature record `bd48d406da`, report `c46f6313c5`/`427d0dc5e6`.
 
 The recurrence model (`NoteConditions::recursOnPass`, `recl`/`recm`, `note.edit`'s
 `recur_length`/`recur_mask`) and the playback gate already existed. This unit exposes the pair in
