@@ -91,13 +91,15 @@ PianoView::PianoView(QWidget *parent) :
 	m_movedNoteModel(nullptr)        /*!< Key marker which is being moved */
 {
 	setFocusPolicy(Qt::StrongFocus);
+	// 0.5.0 L14 (Q050-321.1): the keys are a multi-touch surface (PianoViewTouch.cpp); a widget
+	// must accept touch events before the platform will send it any.
+	wireTouch();
 
 	// Black keys are drawn halfway between successive white keys, so they do not
 	// contribute to the total width. Half of a black key is added in case the last
 	// octave is incomplete and ends with a black key. Drawing always starts at
 	// a white key, so no similar modification is needed at the beginning.
-	setMaximumWidth(Piano::NumWhiteKeys * PW_WHITE_KEY_WIDTH +
-		(Piano::isBlackKey(NumKeys-1) ? PW_BLACK_KEY_WIDTH / 2 : 0));
+	setMaximumWidth(Piano::NumWhiteKeys * PW_WHITE_KEY_WIDTH + (Piano::isBlackKey(NumKeys-1) ? PW_BLACK_KEY_WIDTH / 2 : 0));
 
 	// create scrollbar at the bottom
 	m_pianoScroll = new QScrollBar( Qt::Horizontal, this );

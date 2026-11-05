@@ -30,6 +30,7 @@
 
 #include "AutomatableModel.h"
 #include "ModelView.h"
+#include "TouchContacts.h"
 #include "embed.h"
 
 namespace lmms
@@ -65,6 +66,31 @@ protected:
 	void focusOutEvent( QFocusEvent * _fe ) override;
 	void focusInEvent( QFocusEvent * fe ) override;
 	void resizeEvent( QResizeEvent * _event ) override;
+	bool event( QEvent * _event ) override;
+
+
+public:
+	/*! 0.5.0 L14 (Q050-321.1): the keyboard as a multi-touch performance surface. Each contact
+	 *  sounds its own note through the same MIDI input path the mouse and the computer keyboard
+	 *  use, and keeps sounding until that contact lifts (or the sequence is cancelled) - so two
+	 *  fingers play two notes and one release leaves the other held. The touch bookkeeping lives
+	 *  in TouchContacts (src/gui/TouchContacts.cpp), which the drum pads reuse. */
+	//! The height of the root-note marker strip above the keys (PianoView.cpp's drawing base).
+	static constexpr int KeyAreaTop = 11;
+	TouchContacts& touchContacts() { return m_touchContacts; }
+	//! The key under a widget position (or a negative value above the keys).
+	int keyAt( const QPoint& position ) const
+	{
+		return position.y() > KeyAreaTop ? getKeyFromMouse( position ) : -1;
+	}
+	//! The note velocity a press at @a position on @a key gives, as the mouse path scales it.
+	int touchVelocity( const QPoint& position, int key ) const;
+	//! The key's hit rectangle in this widget's coordinates - what a finger has to reach.
+	QRect keyRect( int key ) const;
+	//! How many fingers currently sound @a key.
+	int touchHolders( int key ) const { return m_touchContacts.contactsOn( key ); }
+	//! Drops every touch note (a cancelled sequence or a lost focus).
+	void releaseTouchNotes();
 
 
 private:
@@ -73,6 +99,7 @@ private:
 	int getKeyWidth(int key_num) const;
 	int getKeyHeight(int key_num) const;
 	IntModel *getNearestMarker(int key, QString* title = nullptr);
+	void wireTouch();
 
 	QPixmap m_whiteKeyPm = embed::getIconPixmap("white_key");
 	QPixmap m_blackKeyPm = embed::getIconPixmap("black_key");
@@ -87,6 +114,8 @@ private:
 	int m_startKey;					//!< first key when drawing
 	int m_lastKey;					//!< previously pressed key
 	IntModel *m_movedNoteModel;		//!< note marker which is being moved
+	TouchContacts m_touchContacts;	//!< the fingers on the keys, each its own note
+	bool m_touchWired = false;		//!< the touch surface is connected (see PianoViewTouch.cpp)
 
 
 

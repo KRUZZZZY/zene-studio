@@ -286,6 +286,15 @@ with the downmix.</p>
 <p>The mode bar across the top of the mixer shows and sets how it is laid out and what mode it is in. View: Mix shows levels, pan and processing; Routing shows, on every strip, where its signal comes from and where it goes, by channel name, with each send's amount and the hardware output. Density: Compact keeps only the essentials (no inserts or macro knobs, routing on one line); Expanded shows every section turned on in Mixer View. Strips never shrink below their width; use Show to filter channels, or scroll. The mode buttons name what the faders drive, the solo mode (exclusive or additive), who is listening (AFL or PFL) and where the master plays and in what speaker format; click one to change it. Every strip has a badge saying what it is (Master, Return, Group, Track, Channel or VCA, plus its surround format) and a line for the modes it is in (AFL/PFL, Solo safe, Surround pan, Cue, HW insert). Routing Matrix... opens every channel against every channel; filter the senders by name, and double-click or press Enter on a cell to make or change that send.</p>
 
 <h2 id="devices">Devices</h2>
+<p>The instrument window's <b>keyboard</b> is a touch performance surface: on a touch screen, two or
+more fingers play two or more notes at once, each finger its own note, and a finger's note lasts until that finger
+lifts - lifting, sliding off or cancelling one finger never releases another's. A white key is loudest at its bottom
+edge and a black key at its top, as with the mouse; sliding a held finger to the next key moves only that finger's note.
+Two fingers on the same key sound one note, held until the last of them lifts. The mouse and the computer keyboard
+play the keyboard exactly as before, and the touch notes go into the same MIDI input, so record arming, monitoring,
+the track's input transform and MIDI recording all see them. A widget that loses the keyboard focus drops every touch
+note (nothing is left hanging), and the keyboard accepts touch events only for the surface itself, so Qt's fallback
+that turns an unhandled touch into a mouse click is never a second note for the same finger.</p>
 <p>Add a device from the browser or the rack's menu; right-click a device to insert another before or after it, copy it
 or its whole chain to other channels, or compare two settings (A/B). Racks hold parallel chains, macros (each mapping
 with its own range and curve) and key or velocity zones; <i>Wrap into Rack</i> moves a chain into a rack chain. Plug-in
