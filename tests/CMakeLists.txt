@@ -1692,6 +1692,8 @@ LIST(APPEND LMMS_TESTS src/core/LinkPhaseLockTest.cpp)
 # Q050-024 (docs/LINK-AUDIO.md): the PCM stream between instances - codec, ring, loopback exchange,
 # the audio thread's allocation count, a 3 s two-thread stress, the registered commands. Loopback only.
 LIST(APPEND LMMS_TESTS src/core/LinkAudioStreamTest.cpp)
+# Q050-024 (src/core/LinkAudioCodec.cpp): the datagram codec on its own - pure functions, no socket or engine.
+LIST(APPEND LMMS_TESTS src/core/LinkAudioCodecTest.cpp)
 
 # JACK port state must be replaced when a dead client is reopened.
 IF(LMMS_HAVE_JACK)

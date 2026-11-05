@@ -89,10 +89,12 @@ struct AudioPacketHeader
 	std::uint16_t frames = 0;
 };
 
-//! Encode \a header + \a frames interleaved stereo floats into \a out; returns the byte count, 0 if it does not fit.
+//! Encode \a header + \a frames interleaved stereo floats into \a out; returns the byte count, 0 if it does not fit
+//! or the sample rate is zero (zero is "not known yet", never a packet).
 LMMS_EXPORT std::size_t encodeAudioPacket(const AudioPacketHeader& header, const float* interleaved,
 	std::uint8_t* out, std::size_t capacity);
-//! Decode a datagram; false for anything that is not a well-formed packet of ours (wrong magic/size/channels).
+//! Decode a datagram; false for anything that is not a well-formed packet of ours (wrong magic/size/channels,
+//! or a zero sample rate).
 //! A non-finite sample (NaN, infinity) in an otherwise valid packet is decoded as 0.f: it never reaches the mix.
 LMMS_EXPORT bool decodeAudioPacket(const std::uint8_t* data, std::size_t size, AudioPacketHeader& header,
 	float* interleavedOut, std::size_t outCapacityFloats);
