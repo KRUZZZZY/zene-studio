@@ -25,6 +25,7 @@
 #ifndef LMMS_GUI_MIXER_VIEW_H
 #define LMMS_GUI_MIXER_VIEW_H
 
+#include <QHash>
 #include <QWidget>
 
 #include "MixerChannelView.h"
@@ -34,6 +35,7 @@
 class QDomDocument;  // IWYU pragma: keep
 class QDomElement;  // IWYU pragma: keep
 class QHBoxLayout;
+class QSplitter;
 class QStackedLayout;
 class QScrollArea;
 
@@ -134,6 +136,18 @@ public:
 	//! 0.5.0 theme 16: the bar naming and setting the view, density, filter and modes (MixerModeBar.h).
 	MixerModeBar* modeBar() const { return m_modeBar; }
 
+	//! Q050-227.1: the horizontal splitter holding the mixer's docked regions, from left to right -
+	//! the regions docked left, the scrolling channels (plus the add buttons), the regions docked
+	//! right. Its handles are the separators a drag resizes. Public for the zones menu and the tests.
+	QSplitter* zonesSplitter() const { return m_zoneSplitter; }
+	//! The widget a region id names (mixerzones::regionIds()): the dock host the splitter holds, with
+	//! the region's content inside it. nullptr for anything else.
+	QWidget* zoneWidget(const QString& regionId) const;
+	//! Re-lay the splitter from mixerzones::MixerZoneState: the docked order, the widths and which
+	//! regions are shown at all. Runs on the GUI thread only; the zones menu and a restored layout
+	//! both end here.
+	void relayoutZones();
+
 public slots:
 	int addNewChannel();
 
@@ -164,6 +178,16 @@ private:
 	QScrollArea* channelArea;
 	QHBoxLayout* chLayout;
 	QWidget* m_channelAreaWidget;
+	//! Q050-227.1: the channels' own dock (the scroll area plus the add buttons) and the splitter
+	//! that carries every region; a region parked here while it is hidden.
+	QWidget* m_middleHost = nullptr;
+	QSplitter* m_zoneSplitter = nullptr;
+	QWidget* m_zoneParking = nullptr;
+	//! region id -> the host widget the splitter holds (the region's content is inside it).
+	QHash<QString, QWidget*> m_zoneHosts;
+	//! True while relayoutZones() applies a layout: the splitter's own signals then describe the
+	//! stored widths, not a gesture, and must not be written back.
+	bool m_applyingZones = false;
 	QStackedLayout* m_racksLayout;
 	QWidget* m_racksWidget;
 	//! M3.7: the VCA groups' strips, to the right of the channels.
@@ -181,6 +205,8 @@ private:
 	Mixer* m_mixer;
 
 	void updateMaxChannelSelector();
+	//! Q050-227.1: take the splitter's current widths back into the zones state (a finished drag).
+	void writeZoneSizes();
 
 	friend class MixerChannelView;
 } ;

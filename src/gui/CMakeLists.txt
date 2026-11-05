@@ -285,6 +285,7 @@ SET(LMMS_SRCS
 	gui/MixerModeBar.cpp
 	gui/MixerRoutingMatrix.cpp
 	gui/MixerViewOptions.cpp
+	gui/MixerZones.cpp
 	gui/MixerView.cpp
 	gui/ModelView.cpp
 	gui/PeakControllerDialog.cpp
