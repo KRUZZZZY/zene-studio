@@ -1182,6 +1182,32 @@ private slots:
 		QCOMPARE(ab.silenceFlags()[2], true);  // updated!
 		QCOMPARE(ab.silenceFlags()[3], true);  // updated!
 	}
+
+	//! The shared checked-size helper must reject products that overflow
+	//! size_t and expose the view range predicate with subtraction semantics.
+	void checkedSizeHelperAndSubspanRange()
+	{
+		// Interleaved view length arithmetic goes through the shared helper:
+		// dataSizeBytes/dataView on a view whose channels*frames overflows
+		// size_t must not silently wrap to a small span.
+		constexpr auto hugeFrames = static_cast<lmms::f_cnt_t>(std::numeric_limits<std::size_t>::max() / 4) + 1;
+		float dummy = 0.f;
+		lmms::InterleavedBufferView<float> view{&dummy, lmms::ch_cnt_t{4}, hugeFrames};
+		(void)dummy;
+		// The safe path: size saturates rather than wrapping (documented
+		// overflow semantics of the non-throwing view helper).
+		QCOMPARE(view.dataSizeBytes(), std::numeric_limits<std::size_t>::max());
+		QCOMPARE(view.dataView().size(), std::numeric_limits<std::size_t>::max());
+
+		// Range predicate: offset near UINT64_MAX with frames that would wrap
+		// offset+frames past the end must be rejected by the subtraction check.
+		QVERIFY(!lmms::detail::inFrameRange(
+			std::numeric_limits<lmms::f_cnt_t>::max() - 1, lmms::f_cnt_t{2},
+			std::numeric_limits<lmms::f_cnt_t>::max()));
+		QVERIFY(lmms::detail::inFrameRange(0, 10, 10));
+		QVERIFY(lmms::detail::inFrameRange(5, 5, 10));
+		QVERIFY(!lmms::detail::inFrameRange(11, 0, 10));
+	}
 };
 
 QTEST_GUILESS_MAIN(AudioBufferTest)

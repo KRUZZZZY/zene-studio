@@ -34,6 +34,7 @@
 #include <atomic>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <type_traits>
 
 #include <QDir>
@@ -572,6 +573,32 @@ private slots:
 		// ... and the new block is really writable
 		newOut.bufferPtr(0)[frames - 1] = 1.5f;
 		QCOMPARE(newOut.sample(0, frames - 1), 1.5f);
+	}
+
+	//! A direct oversized updateAudioBuffer request whose wrapped product is
+	//! small must be rejected BEFORE allocation: returns nullptr and the ports
+	//! go inactive (the failedReallocationLeavesBuffersInactive contract).
+	void oversizedUpdateAudioBufferIsRejected()
+	{
+		constexpr f_cnt_t hugeFrames = static_cast<f_cnt_t>(std::numeric_limits<std::size_t>::max() / 2) + 1;
+
+		TestRemotePluginAudioPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+
+		// First a small valid allocation so there is state to preserve/invalidate
+		const auto frames = Engine::audioEngine()->framesPerPeriod();
+		QVERIFY(frames > 0);
+		QVERIFY(plugin.updateAudioBuffer(2, 2, frames) != nullptr);
+		QCOMPARE(ports.buffers()->initialized(), false); // updateAudioBuffer alone doesn't set ports' m_frames
+
+		// Direct oversized request: (4 * hugeFrames) wraps to a small size_t.
+		// Pre-fix it would create() a tiny block and return non-null.
+		QCOMPARE(plugin.updateAudioBuffer(2, 2, hugeFrames), static_cast<float*>(nullptr));
+
+		// Through the ports, the failed reallocation leaves them inactive
+		ports.buffers()->updateBuffers(2, 2, hugeFrames);
+		QCOMPARE(ports.buffers()->initialized(), false);
+		QCOMPARE(ports.buffers()->frames(), f_cnt_t{0});
 	}
 
 	//! A plugin that never initialized has no remote client, so process() must
