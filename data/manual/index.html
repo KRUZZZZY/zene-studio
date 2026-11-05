@@ -546,12 +546,13 @@ the cells and their launch settings, and <code>session.set_slot</code> fills one
 
 <h2 id="projects">Projects</h2>
 <p><b>Revisions.</b> <b>Project tools &gt; Revisions...</b> lists the revisions still available for the open
-project, newest first, with each row's id, source, UTC time and size. The sources are the files Zene already
-writes beside the project: the <b>rotation</b> (<code>&lt;file&gt;.rev0</code> to <code>.rev2</code>, the
+project, newest first, with each row's id, source, UTC time and size. The list gathers the existing sources:
+the <b>rotation</b> (<code>&lt;file&gt;.rev0</code> to <code>.rev2</code>, the
 three saves the keep-3 policy holds before overwriting the project, 8 MiB each), the <b>backup</b>
 (<code>&lt;file&gt;.bak</code>, left by a save from the interface), the <b>autosave</b>
-(<code>recover.mmp</code> and the <code>recover.mmp.bak</code> it replaced, timed by its
-<code>.info</code> sidecar) and, where the project lives in a git repository, <b>git</b> - the newest ten
+(<code>recover.mmp</code>, timed by its <code>.info</code> sidecar's <code>savedUTC</code> value, and
+<code>recover.mmp.bak</code> when present, timed by its file timestamp) and, where the project lives in a git
+repository, <b>git</b> - the newest ten
 commits that touched it; git is optional and bounded, skipped when you turn <i>include_git</i> off or no
 git is installed, and the list says which. <b>Compare With Now</b> compares the selected revision with the
 file on disk and reports each document's element counts and the tags that differ - a structural summary,

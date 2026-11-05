@@ -2190,11 +2190,12 @@ mixer channel and the socket-addressable chain from Lua and reads the engine bac
   revisions are listed with their source and their UTC time by `revisions.list` (group `revisions`,
   feature-list row 76 / OWNER-31 item 30): the **keep-3 rotation** `project.save` performs
   (`<file>.rev0` .. `<file>.rev2`, 8 MiB each), the **`<file>.bak`** a save from the interface leaves,
-  the **autosave** (`recover.mmp`, and `recover.mmp.bak` when it replaced one, each with its `.info`
-  sidecar's recorded time) and the project's own **git history** where it lives in a repository (one
-  bounded `git log`, 2500 ms, skipped entirely when no `git` is on the machine — the `git` object in the
-  reply says which). **No new store and no format change**: every entry is an artefact the engine
-  already writes. Stated limits, all structural or measured: **`revisions.compare` is a STRUCTURAL
+  the **autosave** (`recover.mmp`, timed by its `.info` sidecar's `savedUTC` value, and
+  `recover.mmp.bak` when present, timed by its file timestamp) and the project's own **git history** where it
+  lives in a repository (one bounded `git log`, 2500 ms, skipped entirely when no `git` is on the machine —
+  the `git` object in the reply says which). **No new store and no format change**: rotation, backup
+  and autosave entries are existing files; Git entries come from the project's existing repository
+  history. Stated limits, all structural or measured: **`revisions.compare` is a STRUCTURAL
   comparison** — each document's element count per tag and the tags that differ — and it is **not a
   semantic diff**; the musical diff of two project documents stays `tools/mmpz-git`'s (`mmpz-git diff`),
   outside this process; **a git entry carries no `sha256`** (hashing every listed commit would be one

@@ -200,6 +200,19 @@ private slots:
 			"the manual still names the obsolete Project > Revisions route");
 		QVERIFY2(note.contains(QStringLiteral("Project tools ▸ Revisions...")),
 			"KNOWN-LIMITATIONS does not name Project tools ▸ Revisions...");
+		QVERIFY2(note.contains(QStringLiteral("existing files"))
+			&& note.contains(QStringLiteral("existing repository history")),
+			"KNOWN-LIMITATIONS conflates Zene-written revisions with repository Git entries");
+		QVERIFY2(!page.contains(QStringLiteral("writes beside the project")),
+			"the manual incorrectly locates every revision source beside the project");
+		QVERIFY2(!note.contains(QStringLiteral("each with its `.info` sidecar's recorded time")),
+			"KNOWN-LIMITATIONS incorrectly gives recover.mmp.bak the sidecar timestamp");
+		QVERIFY2(page.contains(QStringLiteral("savedUTC")), "the manual omits the current autosave's sidecar time");
+		QVERIFY2(note.contains(QStringLiteral("savedUTC")), "KNOWN-LIMITATIONS omits the current autosave's sidecar time");
+		QVERIFY2(page.contains(QStringLiteral("timed by its file timestamp")),
+			"the manual does not distinguish recover.mmp.bak's timestamp from the sidecar time");
+		QVERIFY2(note.contains(QStringLiteral("timed by its file timestamp")),
+			"KNOWN-LIMITATIONS does not distinguish recover.mmp.bak's timestamp from the sidecar time");
 
 		// The two row actions the list offers.
 		for (const char* action : {"Restore", "Compare With Now"})

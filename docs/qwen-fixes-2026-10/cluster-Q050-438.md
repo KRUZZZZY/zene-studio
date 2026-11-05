@@ -12,27 +12,31 @@ Acceptance:
 
 | # | Criterion | Command and evidence | Exit |
 |---|---|---|---|
-| 1 | The documented Revisions list matches the current GUI command/menu and `revisions.list` sources | `RevisionsDocsTest::theDocumentsMatchTheMenuAndTheLiveList` triggers **Project tools ▸ Revisions...**, checks the opened `CommandListDialog` against `CommandLists::revisions()`, and requires both documents to name every source the live list reports. With both document hunks reverted to HEAD the test fails on the absent `autosave` source at `tests/src/gui/RevisionsDocsTest.cpp:281` (`ctest-docs-reverted-4.log`, exit 8); restored it passes. Head run: `ctest -R "RevisionsDocsTest\|RevisionTimelineTest"` from `build/tests` (`ctest-7.log`) | 0 at HEAD; 8 with the documents reverted |
-| 2 | `KNOWN-LIMITATIONS` no longer claims there is no Revisions UI | `RevisionsDocsTest::theDocumentsNameTheProjectToolsListAndItsSources` reads `docs/KNOWN-LIMITATIONS.md` and fails on the old present-tense claim, then requires **Project tools ▸ Revisions...** and the retained limits. With the documents reverted it fails on the stale sentence at `tests/src/gui/RevisionsDocsTest.cpp:189` (`ctest-docs-reverted-4.log`, exit 8); restored it passes (`ctest-7.log`) | 0 at HEAD; 8 with the documents reverted |
+| 1 | The documented Revisions list matches the current GUI command/menu and `revisions.list` sources | `RevisionsDocsTest::theDocumentsMatchTheMenuAndTheLiveList` triggers **Project tools ▸ Revisions...**, checks the opened `CommandListDialog` against `CommandLists::revisions()`, and requires both documents to name every source the live list reports. With both document hunks restored from branch base the test fails on the absent `autosave` source at `tests/src/gui/RevisionsDocsTest.cpp:294` (`code-verify-ctest-reverted-6.log`, exit 8); restored docs pass (`code-verify-ctest-10.log`). | `ctest -R 'RevisionsDocsTest|RevisionTimelineTest' --output-on-failure` from `build/tests`; exit 0 at HEAD, 8 with the docs reverted |
+| 2 | `KNOWN-LIMITATIONS` no longer claims there is no Revisions UI | `RevisionsDocsTest::theDocumentsNameTheProjectToolsListAndItsSources` reads `docs/KNOWN-LIMITATIONS.md` and fails on the old present-tense claim, then requires **Project tools ▸ Revisions...** and the retained limits. With the documents restored from branch base it fails on the stale sentence at `tests/src/gui/RevisionsDocsTest.cpp:189` (`code-verify-ctest-reverted-6.log`, exit 8); restored docs pass (`code-verify-ctest-10.log`). | `ctest -R RevisionsDocsTest --output-on-failure` from `build/tests`; exit 0 at HEAD, 8 with the docs reverted |
 
 Build/test logs (`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/Q050-438.r1/logs/`):
-`build-7.log` (zene + RevisionsDocsTest + RevisionTimelineTest, exit 0), `ctest-7.log`
-(RevisionsDocsTest + RevisionTimelineTest, 2/2, exit 0), `ctest-docs-reverted-4.log` (both document
-hunks reversed, exit 8), `doc-figures-1.log` (exit 0); the pre-submit check also passes (exit 0).
+`code-verify-build-6.log` (zene + RevisionsDocsTest + RevisionTimelineTest, exit 0),
+`code-verify-ctest-10.log` (2/2, exit 0), `code-verify-build-reverted-5.log` (exit 0),
+`code-verify-ctest-reverted-6.log` (documents restored from branch base, test exit 8), and
+the final `feature_check.py` run (exit 0).
 
 ## Self-check
 
 - **Each new test FAILS with the product change reverted, then PASSES restored.** Product change
-  = the two document hunks. I ran `cp` backups, `git checkout HEAD -- docs/KNOWN-LIMITATIONS.md
-  data/manual/index.html`, then `ctest -R RevisionsDocsTest --output-on-failure` from
-  `build/tests`: exit **8**, both test functions failed (criterion 2 at line 189, criterion 1 at
-  line 281); log `ctest-docs-reverted-4.log`. I restored both files and ran `ctest -R
-  "RevisionsDocsTest|RevisionTimelineTest"`: exit **0**, 2/2 passed; log `ctest-7.log`.
+  = the two document hunks. I ran `git restore --worktree --source=2a7fd9f9c7891256caed49d922dfbc649a8a9188 --
+  docs/KNOWN-LIMITATIONS.md data/manual/index.html`, rebuilt the targets, and ran `ctest -R
+  RevisionsDocsTest --output-on-failure` from `build/tests`: exit **8**, both test functions failed
+  (criterion 2 at line 189, criterion 1 at line 294); logs `code-verify-build-reverted-5.log` and
+  `code-verify-ctest-reverted-6.log`. I restored the feature documents and ran
+  `ctest -R 'RevisionsDocsTest|RevisionTimelineTest' --output-on-failure` from `build/tests`:
+  exit **0**, 2/2 passed; log
+  `code-verify-ctest-10.log`.
 - **Every acceptance criterion is proven by a test I ran.** Criterion 1:
-  `RevisionsDocsTest::theDocumentsMatchTheMenuAndTheLiveList` (part of `ctest-7.log`, exit 0).
-  Criterion 2: `RevisionsDocsTest::theDocumentsNameTheProjectToolsListAndItsSources` (`ctest-7.log`,
+  `RevisionsDocsTest::theDocumentsMatchTheMenuAndTheLiveList` (part of `code-verify-ctest-10.log`, exit 0).
+  Criterion 2: `RevisionsDocsTest::theDocumentsNameTheProjectToolsListAndItsSources` (`code-verify-ctest-10.log`,
   exit 0). The same test with the documents reverted fails both, exit 8
-  (`ctest-docs-reverted-4.log`).
+  (`code-verify-ctest-reverted-6.log`).
 - **One undo step per edit; honest reversibility.** No command, handler, list action or
   reversibility table was added or changed. `revisions.list` and `revisions.compare` remain
   `not_mutating`; `revisions.restore` remains `true_inverse`; the GUI's **Restore** row action
