@@ -101,6 +101,8 @@ constexpr TrackRestoreRule TRACK_RESTORE_SCHEMA[] = {
 //! Test seam for FrozenTakeHandoffTest; null in product use.
 #ifdef LMMS_TESTING
 void (*s_frozenTakeLockProbeForTest)() = nullptr;
+//! Test seam for Track::create: called once the new track exists, before it is finished; null in product use.
+void (*s_createFaultProbeForTest)() = nullptr;
 #endif
 
 //! The schema's default for \a attribute (SPEC-ARCH-4 1.7 R6).
@@ -258,6 +260,11 @@ void unmuteFrozenClips(const std::vector<Track::FrozenTake::MutedClip>& muted, T
 } // namespace
 
 #ifdef LMMS_TESTING
+void Track::setCreateFaultProbeForTest(void (*probe)())
+{
+	s_createFaultProbeForTest = probe;
+}
+
 void Track::setFrozenTakeLockProbeForTest(void (*probe)())
 {
 	s_frozenTakeLockProbeForTest = probe;
@@ -482,6 +489,26 @@ bool Track::hasAutomationLaneChildren() const
 
 
 
+namespace
+{
+
+//! The steps after a new track exists: its clips for the existing patterns, and the container's own follow-up (the
+//! Pattern Editor's first pattern track).
+void finishCreatedTrack(Track* t, TrackContainer* tc)
+{
+#ifdef LMMS_TESTING
+	if (s_createFaultProbeForTest != nullptr) { s_createFaultProbeForTest(); }
+#endif
+	if (tc == Engine::patternStore() && t)
+	{
+		t->createClipsForPattern(Engine::patternStore()->numOfPatterns() - 1);
+	}
+
+	tc->updateAfterTrackAdd();
+}
+
+} // namespace
+
 /*! \brief Create a track based on the given track type and container.
  *
  *  \param tt The type of track to create
@@ -489,7 +516,9 @@ bool Track::hasAutomationLaneChildren() const
  */
 Track * Track::create( Type tt, TrackContainer * tc )
 {
-	Engine::audioEngine()->requestChangeInModel();
+	// cluster gui-1105: the change lock is held by a guard, so an exception out of the construction below (a
+	// std::bad_alloc) releases it on the way out instead of leaving the audio engine's model lock taken for good.
+	const auto changeGuard = Engine::audioEngine()->requestChangesGuard();
 
 	Track * t = nullptr;
 
@@ -511,14 +540,17 @@ Track * Track::create( Type tt, TrackContainer * tc )
 		default: break;
 	}
 
-	if (tc == Engine::patternStore() && t)
+	// The track is already in the container's list here. A failure while it is being finished takes it back out
+	// (its destructor unlinks it) so no half-made row is left behind, then reaches the caller.
+	try
 	{
-		t->createClipsForPattern(Engine::patternStore()->numOfPatterns() - 1);
+		finishCreatedTrack(t, tc);
 	}
-
-	tc->updateAfterTrackAdd();
-
-	Engine::audioEngine()->doneChangeInModel();
+	catch (...)
+	{
+		delete t;
+		throw;
+	}
 
 	return t;
 }
@@ -573,15 +605,14 @@ Track * Track::create( const QDomElement & element, TrackContainer * tc )
 		return nullptr;
 	}
 
-	Engine::audioEngine()->requestChangeInModel();
+	// Held by a guard, like Track::create(Type, ...): a throw out of create() or restoreState() releases the lock.
+	const auto changeGuard = Engine::audioEngine()->requestChangesGuard();
 
 	Track* t = create( static_cast<Type>( typeValue ), tc );
 	if( t != nullptr )
 	{
 		t->restoreState( element );
 	}
-
-	Engine::audioEngine()->doneChangeInModel();
 
 	return t;
 }

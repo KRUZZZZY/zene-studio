@@ -30,6 +30,8 @@
 
 #include <QtTest>
 
+#include <new>
+
 #include <cmath>
 #include <memory>
 
@@ -45,6 +47,7 @@
 #include "ControlVocabulary.h"
 #include "DataFile.h"
 #include "Engine.h"
+#include "AudioEngine.h"
 #include "GuiApplication.h"
 #include "GuiTestApplication.h"
 #include "InstrumentTrack.h"
@@ -450,9 +453,8 @@ private slots:
 		QCOMPARE(store->tracks().back()->numOfClips(), 1);  // one pattern clip, not one from the redo and one from the restore
 	}
 
-	//! cluster gui-1105 (characterization, not a regression proof: the reported std::bad_alloc did not reproduce, see
-	//! docs/qwen-fixes-2026-10/cluster-gui-1105-tab-pattern-add-automation-track.md). The Pattern Editor's
-	//! "Add automation-track" button on a Song with no pattern track makes the row and the Song's first pattern track.
+	//! cluster gui-1105: the Pattern Editor's "Add automation-track" button on a Song with no pattern track makes the
+	//! row and the Song's first pattern track.
 	void addAutomationTrackInAnEmptyPatternEditorMakesTheRow()
 	{
 		PatternStore* store = Engine::patternStore();
@@ -482,6 +484,35 @@ private slots:
 		QVERIFY(dynamic_cast<AutomationTrack*>(store->tracks().back()) != nullptr);
 		// Every row of the store owns one clip per pattern - the pattern-mode automation read indexes by pattern number.
 		for (Track* track : store->tracks()) { QCOMPARE(track->numOfClips(), store->numOfPatterns()); }
+	}
+
+	//! The reported failure: the allocation behind the new row fails (the seam throws std::bad_alloc once the track
+	//! exists). The button must not let it out of the slot, must give the model-change lock back, and must leave the
+	//! project as it was - no half-made row in the store or the Song.
+	void aFailedAllocationInAddAutomationTrackIsReportedAndLeavesTheProjectAsItWas()
+	{
+		PatternStore* store = Engine::patternStore();
+		PatternEditor* editor = getGUI()->patternEditor()->m_editor;
+		Track::create(Track::Type::Instrument, store);  // a store with a pattern, so nothing but the new row can change it
+		QCOMPARE(store->numOfPatterns(), 1);
+		const int storeTracks = static_cast<int>(store->tracks().size());
+		const int songTracks = static_cast<int>(Engine::getSong()->tracks().size());
+		QVERIFY(!Engine::audioEngine()->isChangeInModelHeld());
+
+		Track::setCreateFaultProbeForTest([] { throw std::bad_alloc(); });
+		bool escaped = false;
+		try { editor->addAutomationTrack(); }
+		catch (const std::bad_alloc&) { escaped = true; }
+		Track::setCreateFaultProbeForTest(nullptr);
+
+		QVERIFY2(!escaped, "std::bad_alloc left the Add automation-track slot");
+		QVERIFY2(!Engine::audioEngine()->isChangeInModelHeld(), "the model-change lock was left taken");
+		QCOMPARE(static_cast<int>(store->tracks().size()), storeTracks);
+		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), songTracks);
+		QVERIFY(getGUI()->mainWindow()->statusBar()->currentMessage().contains(QStringLiteral("out of memory")));
+
+		editor->addAutomationTrack();  // the button works again afterwards
+		QCOMPARE(static_cast<int>(store->tracks().size()), storeTracks + 1);
 	}
 
 	//! A malformed track-copy payload is refused before the Pattern Editor creates its first pattern track.

@@ -27,6 +27,8 @@
 #include "ArrangerClipKeys.h"
 
 #include <QSignalBlocker>
+#include <QStatusBar>
+#include <new>
 #include "Timeline.h"
 #include "AddTrackMenu.h"
 #include "ControlRegistry.h"
@@ -963,7 +965,14 @@ SongEditorWindow::SongEditorWindow(Song* song) :
 	connect(m_addSampleTrackAction, &QAction::triggered, this, [] {
 		ControlRegistry::instance()->invoke(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("sample")}});
 	});
-	connect(m_addAutomationTrackAction, SIGNAL(triggered()), m_editor->m_song, SLOT(addAutomationTrack()));
+	// cluster gui-1105: like the Pattern Editor's button, a failed allocation is reported, not thrown out of the slot.
+	connect(m_addAutomationTrackAction, &QAction::triggered, this, [this] {
+		try { (void) Track::create(Track::Type::Automation, m_editor->m_song); }
+		catch (const std::bad_alloc&)
+		{
+			getGUI()->mainWindow()->statusBar()->showMessage(tr("Could not add the track: the application is out of memory."), 8000);
+		}
+	});
 
 	trackActionsToolBar->addAction( m_addPatternTrackAction );
 	trackActionsToolBar->addAction( m_addSampleTrackAction );
