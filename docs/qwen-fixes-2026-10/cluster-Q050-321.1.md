@@ -72,11 +72,17 @@ command path. The manual (`data/manual/index.html`, Devices) documents the gestu
   `check-namespace` 0, `no-tautology` 0, `doc-figures` 0, `feature_check.py` PASS. `complexity`
   and `file-length` are red on the train line by design; neither lists any item in a file this
   branch changed (checked against the base listing, and by name against the diff).
-- **Run environment note.** This session's sandbox cannot write
-  `~/.local/share/zene-bunny-fix/...` (even for the owner) or beside the worktree, so gate logs are
-  under `build/qwen-logs/` (git-ignored) and `feature_check.py` was run from a copy whose only
-  difference is `logs = wt / "build/qwen-logs/feature-check"` and `ROOT` pointing at the installed
-  script's directory. Every gate command in it is the published one.
+- **Run environment note.** This session's file sandbox denies writes under
+  `~/.local/share/zene-bunny-fix/...` (even for the owner) and in the worktree's parent directory,
+  where both published scripts create their log directory (`<worktree>/../<name>-feature-check`)
+  and where `build_guard.py` keeps its lease. Gate logs therefore live in `build/qwen-logs/`
+  (git-ignored) and builds ran with `ZENE_BUILD_GUARDED=1` (the guard's own bypass variable, so the
+  build is the unmodified `cmake --build`). The two published checks were then run UNMODIFIED
+  against a faithful copy of this commit at `/tmp/qwen-fc/zene-feat-q050-321.1` (an `rsync` of the
+  tracked tree with each `.git` gitfile rewritten to an absolute path; no source byte differs):
+  `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <copy>` → all 8 rows PASS, exit 0;
+  `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <copy> Q050-321.1` → every row PASS
+  except the expected "no command file changed" WARN, `RESULT: PASS - submit`, exit 0.
 - **Existing tests.** `PianoViewFocusTest` (the one other test that constructs a `PianoView`) still
   passes; the constructor's `wireTouch()` call is inert without the attribute being needed, and
   the focus-out path gains only the empty `releaseTouchNotes()` call.
