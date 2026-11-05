@@ -26,6 +26,7 @@
 #define LMMS_GUI_CPU_DIAGNOSTICS_DIALOG_H
 
 #include <QDialog>
+#include <QJsonObject>
 
 #include "lmms_export.h"
 
@@ -37,7 +38,8 @@ namespace lmms::gui
 {
 
 /*! Q050-074.1: the CPU readout's diagnostics - every instrument track's synthesis share of the period and
- *  the engine's late periods at their song positions. Everything it shows is mixer.cpu_load's answer,
+ *  the engine's late periods at their song positions; Q050-074.2: the audio device's negotiated timing
+ *  and its own xruns beside them ('unavailable' where the backend reports nothing). Everything it shows is mixer.cpu_load's answer,
  *  asked through ControlRegistry, so the window and an agent read the same state. Twice a second while
  *  shown; read-only, nothing to undo or save. */
 class LMMS_EXPORT CpuDiagnosticsDialog : public QDialog
@@ -53,6 +55,8 @@ public:
 	QLabel* summary() const { return m_summary; }
 	QTableWidget* tracks() const { return m_tracks; }
 	QTableWidget* latePeriods() const { return m_late; }
+	//! Q050-074.2: the audio device's readings - one row per reading, its key in column 0's Qt::UserRole.
+	QTableWidget* audioDevice() const { return m_device; }
 
 	//! The one window for @a parent's top-level window, built on first use, shown and refreshed.
 	static CpuDiagnosticsDialog* open(QWidget* parent);
@@ -62,9 +66,12 @@ protected:
 	void hideEvent(QHideEvent* event) override;
 
 private:
+	void showAudioDevice(const QJsonObject& device, double latePeriods);
+
 	QLabel* m_summary;
 	QTableWidget* m_tracks;
 	QTableWidget* m_late;
+	QTableWidget* m_device;
 	QTimer* m_timer;
 };
 

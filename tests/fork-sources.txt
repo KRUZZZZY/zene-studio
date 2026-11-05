@@ -3417,3 +3417,7 @@ tests/src/gui/CarlaVst2TestSupport.h
 tools/build-carla-runtime.sh
 docs/050-features/Q050-481.1.md
 docs/qwen-fixes-2026-10/cluster-Q050-481.1.md
+include/AudioDeviceDiagnostics.h
+src/core/AudioDeviceDiagnostics.cpp
+tests/src/core/AudioDeviceDiagnosticsTest.cpp
+tests/control-device-diagnostics.py

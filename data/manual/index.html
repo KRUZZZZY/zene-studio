@@ -113,7 +113,16 @@ alone, apart from its mixer channel and effects (several cores working at once c
 first. A late period is the engine missing its deadline, not the audio device reporting an xrun. The window refreshes
 twice a second and shows exactly what agents read from <code>mixer.cpu_load</code> (its <code>tracks</code> and
 <code>late_periods</code>); <code>track.overview</code> gives each instrument track's <code>synthesis_cpu_percent</code>
-beside its channel's <code>cpu_percent</code>. The readings are live only: nothing is saved with the project. Pressing Play hands the period's work to the worker threads and wakes any that
+beside its channel's <code>cpu_percent</code>. Below them, <b>Audio device</b> shows whether the device's timing
+plays a part: the backend, the engine's own sample rate and period, and what the device negotiated - its output sample rate, the
+input's own sample rate (a separately chosen ALSA capture interface can run at a different rate; input latency is
+timed at it), period and buffer in frames, its input and output latency (frames, milliseconds and what the figure is read from:
+JACK's port latency ranges, or ALSA's playback buffer and, while capture is open, one capture period) - and the
+device's own <i>xruns</i> (JACK's xrun notifications, ALSA's playback underruns), counted apart from the engine's
+late periods. A reading the backend does not report says <b>unavailable</b>, never 0: JACK does not say how many
+periods it queues, and with no audio device (the Dummy) every device reading is unavailable while the CPU and
+late-period readings carry on. Agents read the same state as <code>mixer.cpu_load</code>'s <code>audio_device</code>,
+each reading <code>{available, value, unit}</code>. The readings are live only: nothing is saved with the project. Pressing Play hands the period's work to the worker threads and wakes any that
 are asleep; that wake is a single atomic word, so it never waits for a lock or allocates, on macOS as on every other
 platform. On the Apple build the supported floor is <b>macOS 10.13</b> (High Sierra); a build for a newer macOS runs
 the same wake.</li>
