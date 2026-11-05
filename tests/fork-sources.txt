@@ -910,6 +910,7 @@ include/ExportDitherMode.h
 include/ExportNoiseShaper.h
 include/ExportQualityControls.h
 include/ExportRenderSettings.h
+include/ExternalDeviceCard.h
 include/FeedbackModeAction.h
 include/FolderSummary.h
 include/FolderSummaryLane.h
@@ -1497,6 +1498,7 @@ src/core/ControlCommandsDsp.cpp
 src/core/ControlCommandsEvents.cpp
 src/core/ControlCommandsExport.cpp
 src/core/ControlCommandsExportPresets.cpp
+src/core/ControlCommandsExternalDevice.cpp
 src/core/ControlCommandsFeedback.cpp
 src/core/ControlCommandsFolderSpans.cpp
 src/core/ControlCommandsFreeze.cpp
@@ -2179,6 +2181,7 @@ src/gui/editors/AutomationEditorFades.cpp
 src/gui/editors/AutomationEditorKeys.cpp
 src/gui/editors/AutomationPointEdit.cpp
 src/gui/editors/ItemListAutomationSource.cpp
+src/gui/instrument/ExternalDeviceCard.cpp
 src/gui/modals/EffectPickerOrganiser.cpp
 src/gui/noteeditor/ArticulationMapEditor.cpp
 src/gui/noteeditor/ControllerLaneView.cpp
@@ -2398,9 +2401,11 @@ tests/session_api_proof_rows.py
 tests/src/core/AuComponentTest.cpp
 tests/src/core/ControlEventHubTest.cpp
 tests/src/core/DrumRackPadsTest.cpp
+tests/src/core/ExternalMidiDeviceTest.cpp
 tests/src/gui/AuHostingTest.cpp
 tests/src/gui/BackgroundTasksGuiTest.cpp
 tests/src/gui/DrumRackPanelTest.cpp
+tests/src/gui/ExternalDeviceCardTest.cpp
 tests/src/plugins/AuParameterHandoffTest.cpp
 tests/stem-availability-docs-gate.py
 tests/src/core/AafImportTest.cpp

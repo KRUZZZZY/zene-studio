@@ -1248,6 +1248,7 @@ set(LMMS_SRCS
 	core/PreviewOutput.cpp
 	core/ControlRoom.cpp
 	core/ControlCommandsTrackMidiOut.cpp
+	core/ControlCommandsExternalDevice.cpp
 	core/TrackVersions.cpp
 	core/ControlCommandsTrackVersions.cpp
 	core/ProjectSectionRegistry.cpp

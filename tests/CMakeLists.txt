@@ -987,6 +987,8 @@ set(LMMS_TESTS
 	src/core/AudioDeviceDiagnosticsTest.cpp
 	# 0.5.0 L08 (W3): pan law, swap, sends switched off, returns, find, gang, order, group colours.
 	src/core/MixerToolsTest.cpp
+	# 0.5.0 L09 (Q050-252.1): the External MIDI device - port, channel, bank, program and presets; what reaches the output; save/open; undo.
+	src/core/ExternalMidiDeviceTest.cpp
 	# cluster new-p14-29 (BUG 14): order_by_tracks refuses an index that names no channel, observed before the read.
 	src/core/MixerOrderByTracksTest.cpp
 	# 0.5.0 L02 (W3): capture a scene, playlists, setlists, marker actions, release and jump.
@@ -1405,6 +1407,8 @@ set(LMMS_TESTS
 	src/gui/LivecodePanelTest.cpp
 	# Track > Articulations: the editor leaves the map track.articulations_set leaves; one undo step per edit.
 	src/gui/ArticulationMapEditorTest.cpp
+	# Track > MIDI Out > External Device...: the card's controls run device.external_*; one undo step per edit.
+	src/gui/ExternalDeviceCardTest.cpp
 	# The file browser's Tags menu (browser.tag.add / browser.tag.remove), over a throwaway store.
 	src/gui/BrowserTagMenuTest.cpp
 	# 0.5.0 L11 (Q050-133): a browser file drag carries a text/uri-list URL beside its StringPair payload.
@@ -3706,6 +3710,7 @@ set_tests_properties(MpeInputActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=
 set_tests_properties(TempoMapPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(LivecodePanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ArticulationMapEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(ExternalMidiDeviceTest ExternalDeviceCardTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(BrowserTagMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(BrowserDragUrlTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(FileSearchJobTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

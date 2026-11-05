@@ -504,6 +504,16 @@ instead of the input (record.route_source), before or after the channel's device
 you record, lower the level first: a signal recorded from what it feeds can howl. Track &gt; MIDI Out sends an
 instrument track's notes to a hardware synth (on ALSA each note leaves at its own frame inside the audio period, so a
 fast 1/32-note line keeps its spacing - measured within 1 ms); record its audio back on an audio track that monitors the input.
+Track &gt; MIDI Out &gt; External Device... opens the track's External MIDI device card: the output port, the channel
+(-- keeps each note's own), the bank select (MSB and LSB, Off sends none) and the program the gear is told to select, and
+the device's presets. A change to the bank or program sends bank select (CC 0 and CC 32) and then the program change to the
+chosen port once, so the synth does not step through the patches in between; changing only the port or the channel sends no
+patch. Name a preset and Save keeps the port, channel, bank and program in the track (and so in the project); Recall applies
+them and sends the patch even when the settings were already those, and says so if the preset's port is not connected now
+(the rest is still applied); Delete removes it. A device keeps up to 64 presets. One undo puts the whole device back and
+tells the gear the patch that returns. Agents use device.external_get_state, device.external_set,
+device.external_preset_save, device.external_preset_recall and device.external_preset_remove for the same things. This
+stage covers the MIDI half: the audio return, monitoring and latency offset are separate.
 AudioFileProcessor and SlicerT also record the input straight into the sampler: Record take in the
 instrument's window captures a bounded take (click again to stop, or let it reach its length), then loads it
 so the waveform and, for SlicerT, the slices are ready to play. The take is a WAV in Recordings; one undo
