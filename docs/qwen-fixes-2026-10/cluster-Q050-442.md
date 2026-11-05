@@ -2,8 +2,9 @@ IMPLEMENTED
 
 # Q050-442 — High-contrast track movement grip
 
-Round 2. The branch now carries two commits on top of `050/m0-train-25`
-(`081630835b`): the fix plus the test that proves it.
+Round 2. The branch carries the fix and the test that proves it on top of
+`050/m0-train-25` (`081630835b`), plus the unit record and this report; there is
+no uncommitted change.
 
 ## What changed, and why
 
@@ -57,10 +58,13 @@ the grabbed case fails on `during.inked > before.inked` (14 vs 14). Restored:
 `build-restore-2.log` exit 0 and `ctest -R '^TrackGripContrastTest$'` exit **0**
 (`test-restore-2.log`).
 
-Gates (`feature_check.py`, all rows PASS, exit 0; log `feature-check-2.log`):
+Gates (`feature_check.py`, all rows PASS, exit 0; log `feature-check-final.log`):
 fork-sources 0, all-sources-reproduce 0, no-upstream-regression 0,
 check-namespace 0, no-tautology 0, doc-figures 0 (917 ids / 78 groups, unchanged —
 no command was added), complexity and file-length "no new item in your files".
+A final rebuild of `zene` and the test, then the seven neighbouring suites, also
+passed after the last commit (`build-final.log`, exit 0; `test-final.log`, 7/7,
+exit 0).
 
 ## Self-check
 
@@ -131,7 +135,7 @@ for a harness reason, not a gate reason: `feature_check.py` writes its logs to
 either (`mkdir ../zene-feat-q050-442-feature-check` → `Permission denied`, the
 same sandbox refusal). Run with only that output directory redirected
 (`/tmp/q442/feature_check.py`, `CACHE` and `ROOT` untouched), the identical gate
-set returns **PASS, exit 0** for all eight rows — log `feature-check-2.log`. Every
+set returns **PASS, exit 0** for all eight rows — log `feature-check-final.log`. Every
 gate was also run individually from the worktree with exit 0 (see the table
 above).
 
