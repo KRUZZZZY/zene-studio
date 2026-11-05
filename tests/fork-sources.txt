@@ -3454,3 +3454,9 @@ docs/050-features/Q050-124.md
 docs/qwen-fixes-2026-10/cluster-Q050-124.md
 tests/src/core/MpeSynthExpressionTest.cpp
 tests/automation-docs-agree.py
+# Q050-438 (2026-11): the documented Revisions list - Project tools > Revisions... and
+# revisions.list's live sources, columns and row actions held against the manual and known
+# limitations by a GUI test (fork-NEW).
+tests/src/gui/RevisionsDocsTest.cpp
+docs/050-features/Q050-438.md
+docs/qwen-fixes-2026-10/cluster-Q050-438.md

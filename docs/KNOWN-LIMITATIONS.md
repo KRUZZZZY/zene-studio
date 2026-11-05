@@ -2207,11 +2207,12 @@ mixer channel and the socket-addressable chain from Lua and reads the engine bac
   revisions are listed with their source and their UTC time by `revisions.list` (group `revisions`,
   feature-list row 76 / OWNER-31 item 30): the **keep-3 rotation** `project.save` performs
   (`<file>.rev0` .. `<file>.rev2`, 8 MiB each), the **`<file>.bak`** a save from the interface leaves,
-  the **autosave** (`recover.mmp`, and `recover.mmp.bak` when it replaced one, each with its `.info`
-  sidecar's recorded time) and the project's own **git history** where it lives in a repository (one
-  bounded `git log`, 2500 ms, skipped entirely when no `git` is on the machine — the `git` object in the
-  reply says which). **No new store and no format change**: every entry is an artefact the engine
-  already writes. Stated limits, all structural or measured: **`revisions.compare` is a STRUCTURAL
+  the **autosave** (`recover.mmp`, timed by its `.info` sidecar's `savedUTC` value, and
+  `recover.mmp.bak` when present, timed by its file timestamp) and the project's own **git history** where it
+  lives in a repository (one bounded `git log`, 2500 ms, skipped entirely when no `git` is on the machine —
+  the `git` object in the reply says which). **No new store and no format change**: rotation, backup
+  and autosave entries are existing files; Git entries come from the project's existing repository
+  history. Stated limits, all structural or measured: **`revisions.compare` is a STRUCTURAL
   comparison** — each document's element count per tag and the tags that differ — and it is **not a
   semantic diff**; the musical diff of two project documents stays `tools/mmpz-git`'s (`mmpz-git diff`),
   outside this process; **a git entry carries no `sha256`** (hashing every listed commit would be one
@@ -2227,10 +2228,17 @@ mixer channel and the socket-addressable chain from Lua and reads the engine bac
   after `qUncompress`**, so a document over 64 MiB decompressed is reported unreadable rather than
   counted. Proof: the registered ctest `RevisionTimelineTest` (real documents, a real `.bak`/`.rev0`/
   autosave fixture, a real repository where git exists, all three ids driven through the registry).
-  **UI absence — one line: the revision timeline is drivable through the socket, not from the
-  interface** — `grep -rniI 'RevisionTimeline\|revisions\.list\|revisions\.restore\|RevisionEntry'
-  src/gui/` returns **0** hits: there is no revision panel, no timeline strip and no "restore this
-  revision" entry, and `revisions.list` is where a caller finds out what a project has.
+  **The interface (corrected 2026-11-05, Q050-438): Project tools ▸ Revisions...** opens the list over
+  `revisions.list` (`CommandLists::revisions`, `src/gui/CommandLists.cpp`) whose rows carry the id,
+  source, UTC timestamp and size; **Restore** (asking first) runs `revisions.restore` on the row's id,
+  and **Compare With Now** runs `revisions.compare` with the row as `a` and the live file as `b` and
+  shows the reply. The menu runs the same registered commands the socket and MCP expose, so the person
+  and an agent read one list and take one action. It keeps these limits: the list reports only the
+  artefacts above (at most 24 entries, 10 of them git commits) - a numbered **File ▸ Save as New
+  Version** file and a named **alternative** are separate files the session switches to, not sources;
+  the git half is optional and bounded as stated; **Compare With Now** is the structural summary, not
+  a musical diff; and **Restore** changes the file on disk only - the session already open keeps the
+  state it had, and `project.open` is how the restored bytes are read back.
 
 **Import detection (`detect.*`) suggests a tempo and a key, and it is drivable only through the socket.**
 `detect.analyze` reads one audio file and reports a tempo (BPM), the first transient it carries and a key;

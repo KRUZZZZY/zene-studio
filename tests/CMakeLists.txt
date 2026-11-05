@@ -1507,6 +1507,9 @@ set(LMMS_TESTS
 	# M3.7: the mixer's VCA strip and the channel's VCA menu; Q050-171: the Groups list spec and the
 	# Clip menu's Move With Edit Group entry.
 	src/gui/VcaStripViewTest.cpp
+	# Q050-438: the documented Revisions list, driven through Project tools > Revisions... and held
+	# against revisions.list's live sources, columns and row actions.
+	src/gui/RevisionsDocsTest.cpp
 	# R5.3: the clip-launch grid - launch, stop and scene-launch from the grid produce the
 	# socket-visible state; every cell focusable and announced; the arrow keys.
 	src/gui/SessionGridViewTest.cpp
@@ -3616,6 +3619,7 @@ set_tests_properties(BrowserProjectMediaTest PROPERTIES ENVIRONMENT "QT_QPA_PLAT
 set_tests_properties(CommandPaletteTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(CommandFormTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(VcaStripViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(RevisionsDocsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SessionGridViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SessionGridRecordTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SessionLibrarySaveTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

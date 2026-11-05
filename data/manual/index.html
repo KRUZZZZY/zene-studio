@@ -717,9 +717,27 @@ For the rest of the model, <code>arrangement.get_state</code> lists the song tra
 the cells and their launch settings, and <code>session.set_slot</code> fills one.</p>
 
 <h2 id="projects">Projects</h2>
-<p>Projects keep their history: Project &gt; Revisions restores or compares an earlier state. Collect Media copies every
-file a project uses beside it; Project &gt; Hand Off writes a folder someone else can open with a list of the devices
-to install first. Import Tracks copies tracks from another project; Save as Template keeps a project to start from.</p>
+<p><b>Revisions.</b> <b>Project tools &gt; Revisions...</b> lists the revisions still available for the open
+project, newest first, with each row's id, source, UTC time and size. The list gathers the existing sources:
+the <b>rotation</b> (<code>&lt;file&gt;.rev0</code> to <code>.rev2</code>, the
+three saves the keep-3 policy holds before overwriting the project, 8 MiB each), the <b>backup</b>
+(<code>&lt;file&gt;.bak</code>, left by a save from the interface), the <b>autosave</b>
+(<code>recover.mmp</code>, timed by its <code>.info</code> sidecar's <code>savedUTC</code> value, and
+<code>recover.mmp.bak</code> when present, timed by its file timestamp) and, where the project lives in a git
+repository, <b>git</b> - the newest ten
+commits that touched it; git is optional and bounded, skipped when you turn <i>include_git</i> off or no
+git is installed, and the list says which. <b>Compare With Now</b> compares the selected revision with the
+file on disk and reports each document's element counts and the tags that differ - a structural summary,
+not a musical diff. <b>Restore</b> asks first, replaces the file on disk and keeps the file it replaced in
+the rotation so the restore can be undone; it does not reload the session already open, which keeps the
+state it had until you reopen the project. Numbered saves (<b>File &gt; Save as New Version</b>) and named
+<b>Alternatives</b> are separate: they change which file the session works on, and they are not sources in
+this list. An agent gets the same ids from <code>revisions.list</code> and runs the same
+<code>revisions.compare</code> or <code>revisions.restore</code>; a restore changes the file on disk, so
+the agent reopens the project with <code>project.open</code> to work with the restored bytes.</p>
+<p>Collect Media copies every file a project uses beside it; Project &gt; Hand Off writes a folder someone
+else can open with a list of the devices to install first. Import Tracks copies tracks from another project;
+Save as Template keeps a project to start from.</p>
 <p>Project &gt; New Document starts a production, mastering or live project from its own template (your own
 <i>type</i>.mpt in the templates folder wins); the window title names a mastering or live document. A mastering document
 also has a <b>release sequence</b>: Project Tools &gt; Mastering Release... lists the songs of the release in order, each
