@@ -11,7 +11,8 @@ Manual: `data/manual/index.html` (the paragraph after the mode-bar paragraph).
   portable JSON form, the strict argument parser and the one live `MixerZoneState`.
 - `src/gui/MixerView.cpp`, `include/MixerView.h` (inherited, ledger rows added): the fixed `QHBoxLayout`
   body is now one horizontal `QSplitter` of dock hosts (`master`, `channels`, `vca`, `rack`), with
-  `relayoutZones()` and `writeZoneSizes()`. The channels' host keeps the scroll area and the New/Return
+  `relayoutZones()` plus a `splitterMoved` handler that sends the widths through `zoneSizesJson()` to
+  `window.mixer_zones` with `live: true`. The channels' host keeps the scroll area and the New/Return
   buttons together; master-first and the rack stack order are unchanged.
 - `src/gui/shell/Shell.cpp`: `snapshot()` gains `mixer_zones`, `restoreSnapshot()` reads it (absent -> the
   default arrangement).
@@ -145,9 +146,10 @@ layout save restores both the dock and the size, asserted in
 **? Nothing you added runs on the audio thread and allocates, frees, locks, waits, does I/O or emits a
 signal.**
 
-Everything added is GUI-thread widget code: `relayoutZones()` / `writeZoneSizes()` run from a splitter
-signal, a menu action or a command handler; `MixerZoneState` is constructed on first use from the GUI
-thread and emits queued/auto Qt signals only there. No `updateFaders()` path, no `Mixer` model path and no
+Everything added is GUI-thread widget code: `relayoutZones()` runs from menu actions, layout restores and
+commands; the splitter's GUI-thread `splitterMoved` signal sends `zoneSizesJson()` through the registered
+`window.mixer_zones` command. `MixerZoneState` is first constructed on the GUI thread. No `updateFaders()`
+path, no `Mixer` model path and no
 `processNextBuffer()` path was touched. This is reasoning, not a measurement: local TSan is unavailable in
 this session.
 
