@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-29T15:55:04Z",
+  "captured_at": "2026-11-05T00:46:00Z",
   "commands": [
     {
       "args_schema": {
@@ -12563,6 +12563,164 @@
           }
         },
         "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The mastering release sequence: the songs in release order, each with its stable id (song-<n>), its audio 'source', its 'title', the 'processing' it is mastered with (a name from mastering.list_candidates, or \"none\"), its fade-in and fade-out in milliseconds, and the 'gap_ms' of silence that follows it. 'gap_applies' is false for the last song, whose gap is the silence after the release and is not inserted between two songs. Also names every 'processing' value a song may take, and the document type. Read-only.",
+      "group": "mastering",
+      "id": "mastering.sequence_list",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "fade_in_ms": {
+            "maximum": 600000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "fade_out_ms": {
+            "maximum": 600000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "gap_ms": {
+            "maximum": 600000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "processing": {
+            "type": "string"
+          },
+          "song": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "type": "object"
+      },
+      "description": "Add an audio file to the end of the mastering release as 'source', with an optional 'title', 'processing' (a candidate name or \"none\"; default \"none\"), 'fade_in_ms', 'fade_out_ms' and 'gap_ms'. The file must exist and be one this build decodes; the path is stored absolute. One undo step.",
+      "group": "mastering",
+      "id": "mastering.song_add",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "song": {
+            "type": "string"
+          },
+          "to": {
+            "maximum": 511,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "song",
+          "to"
+        ],
+        "type": "object"
+      },
+      "description": "Move song 'song' to release position 'to' (0-based); every other song keeps its order around it. One undo step.",
+      "group": "mastering",
+      "id": "mastering.song_move",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "song": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "song"
+        ],
+        "type": "object"
+      },
+      "description": "Remove song 'song' from the release sequence. The audio file is not touched. One undo step.",
+      "group": "mastering",
+      "id": "mastering.song_remove",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "fade_in_ms": {
+            "maximum": 600000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "fade_out_ms": {
+            "maximum": 600000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "gap_ms": {
+            "maximum": 600000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "processing": {
+            "type": "string"
+          },
+          "song": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "song"
+        ],
+        "type": "object"
+      },
+      "description": "Change the fields of song 'song' (only the fields given change): 'source', 'title', 'processing', 'fade_in_ms', 'fade_out_ms', 'gap_ms'. The song's id and its place in the release are kept. One undo step.",
+      "group": "mastering",
+      "id": "mastering.song_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
         "type": "object"
       }
     },
@@ -37464,23 +37622,23 @@
       }
     }
   ],
-  "count": 878,
+  "count": 883,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-317.1/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-k4l1reh3/zene.sock",
-    "version": "0.4.0-alpha.5942+68bed50"
+    "source_socket": "/tmp/zctl-run-n7975tvs/zene.sock",
+    "version": "0.4.0-alpha.5943+2a7fd9f"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 77,
-    "id_count": 878,
-    "ids_sha256": "60473c71cd63735b5af096bbd2cd1d9a5a096cf4b2fd8855d1333df124ea362a"
+    "id_count": 883,
+    "ids_sha256": "e8f57aa835db42b8e4af21079bb598aec02cec5f6fffcb15651087635bfe9e7a"
   }
 }

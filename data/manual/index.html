@@ -549,7 +549,14 @@ the cells and their launch settings, and <code>session.set_slot</code> fills one
 file a project uses beside it; Project &gt; Hand Off writes a folder someone else can open with a list of the devices
 to install first. Import Tracks copies tracks from another project; Save as Template keeps a project to start from.</p>
 <p>Project &gt; New Document starts a production, mastering or live project from its own template (your own
-<i>type</i>.mpt in the templates folder wins); the window title names a mastering or live document. Project &gt; Other Projects
+<i>type</i>.mpt in the templates folder wins); the window title names a mastering or live document. A mastering document
+also has a <b>release sequence</b>: Project Tools &gt; Mastering Release... lists the songs of the release in order, each
+an audio file with its own processing - one of the engine's mastering candidates, or <i>none</i> to play the file as it
+is - a fade-in, a fade-out, and the silence that follows it before the next song. Add a song with its audio file, edit one
+in place, move it to the top or bottom (or to any position), and remove one; the last song's gap is the silence after the
+release and is not inserted between two songs. The list is saved with the project and is the same state an agent reads and
+edits through <code>mastering.sequence_list</code> and <code>mastering.song_add</code>, <code>song_set</code>,
+<code>song_move</code> and <code>song_remove</code>, and every edit is one undo step (Ctrl+Z). Project &gt; Other Projects
 opens another project as a read-only reference beside this one and copies its tracks, clips or devices across, and switches to
 a recent project - keeping the one you left open as the reference if you like. Project &gt; Import AAF... brings in an AAF
 from another editor: its audio tracks, clips, fades, clip gain and markers (embedded audio is extracted beside the project;
