@@ -71,12 +71,16 @@ command path. The manual (`data/manual/index.html`, Devices) documents the gestu
 
 ## Self-check
 
-- **Red/green.** Reversing the product hunks: build exit 0, `ctest` exit 8 (7 touch cases fail).
-  Restored: build exit 0, `ctest` exit 0 (11 pass). Second criterion's control: build exit 0,
-  `ctest` exit 8 with exactly the two existing-input tests failing.
+- **Red/green.** Reversing the touch acceptance and the `event()` touch branch: build exit 0,
+  `ctest` exit 8 (the touch cases fail). Restored: build exit 0, `ctest` exit 0 (14 pass).
+  Reverting only `TouchContacts::moveTo`'s off-bed branch: build 0, `ctest` 8 with exactly the two
+  per-contact cancellation gesture tests failing. Second criterion's control: build 0, `ctest` 8
+  with exactly the two existing-input tests failing.
 - **Every criterion proven.** Criterion 1 → `twoContactsSoundTwoDistinctNotes` and
-  `threeContactsSoundThreeDistinctNotes`, exit 0. Criterion 2 → the five release/cancel cases,
-  exit 0. Criterion 3 (existing input) → the two mouse/keyboard cases, exit 0, plus the mutation
+  `threeContactsSoundThreeDistinctNotes`, exit 0. Criterion 2 → the seven release/cancel cases,
+  exit 0, of which three now drive cancellation through real touch events on the widget (sliding a
+  finger off the key bed and up into the strip) and one keeps the tracker's `cancel(id)` seam
+  honest. Criterion 3 (existing input) → the two mouse/keyboard cases, exit 0, plus the mutation
   control above.
 - **One undo step per edit; reversibility.** No edits: live touch contacts are transient MIDI
   input and never enter the project, so there is no undo step and no reversibility class to
