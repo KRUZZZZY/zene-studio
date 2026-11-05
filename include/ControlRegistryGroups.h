@@ -413,6 +413,13 @@ LMMS_EXPORT void registerMasteringCommands(ControlRegistry& registry);
  * the choice is the user's (docs/AUTO-MASTERING.md section 8).
  */
 LMMS_EXPORT void registerMasteringRunCommands(ControlRegistry& registry);
+/*! 0.5.0 L12 (Q050-317.1): the mastering release sequence - the ordered songs of a release, each
+ *  with its own processing, fade-in/fade-out and the silence that follows it. The reads
+ *  (mastering.sequence_list) and the four edits (song_add / song_set / song_move / song_remove)
+ *  live in ControlCommandsMasteringSequence.cpp; each edit is one undo step that puts the whole
+ *  previous list back, and the state is saved as the project's <mastering-sequence> section.
+ *  Rendering the songs and the whole release is the next stage, not this one. */
+LMMS_EXPORT void registerMasteringSequenceCommands(ControlRegistry& registry);
 /*! The `detect.*` group (feature row 34 of docs/FEATURE-LIST-0.3.0.md): transient /
  *  BPM / key detection for an imported audio file, over the control surface -
  *  detect.analyze (the SUGGESTION: one file in, tempo + first transient + key out,

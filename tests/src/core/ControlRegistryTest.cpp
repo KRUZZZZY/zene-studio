@@ -675,7 +675,12 @@ private slots:
 		// older hand-summed figure (85 + 7 + 5 + 5 + 5 + 3 + 3 + 7 + 4 = 124) had
 		// stopped matching long before. A mismatch at the tip = finding: the merge
 		// train must re-measure.
-		QCOMPARE(registry->commandCount(), 858);
+		// Q050-317.1 adds the mastering release sequence's five ids
+		// (mastering.sequence_list and the four mastering.song_* verbs), so the
+		// telemetry-OFF count moves 858 -> 863. Measured on this branch: the live
+		// snapshot (telemetry ON) holds 883 ids, and telemetry.consent/status are
+		// the two the option removes.
+		QCOMPARE(registry->commandCount(), 863);
 	}
 #endif
 };
