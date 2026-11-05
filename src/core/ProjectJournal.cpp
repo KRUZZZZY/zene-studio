@@ -405,6 +405,7 @@ void ProjectJournal::clearJournal()
 	// left over from the previous document can never match a new step.
 	m_retainedBytes = 0;
 	m_evicted = 0;
+	m_newestEvictedSerial = m_stepSerial;  // every step of the previous document is gone for good
 	m_coalesced = 0;
 
 	for( JoIdMap::Iterator it = m_joIDs.begin(); it != m_joIDs.end(); )

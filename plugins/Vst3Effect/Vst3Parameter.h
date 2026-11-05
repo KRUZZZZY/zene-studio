@@ -32,6 +32,7 @@
 #include <QString>
 
 #include "AutomatableModel.h"
+#include "PluginGestureHistory.h"
 #include "Vst3ParamDescriptor.h"
 
 class QDomElement;
@@ -71,9 +72,16 @@ public:
 
 	QString displayValue(const float value) const override;
 
+	//! GUI thread, each poll: what the plug-in reported, one undo step per gesture (Q050-214).
+	void pullFromPlugin(const PluginParamGesture::Edits& edits, float tolerance)
+	{
+		m_gestureHistory.pull(*this, edits, tolerance);
+	}
+
 private:
 	Vst3ParamDescriptor m_descriptor;
 	DisplayFormatter m_formatter;
+	PluginGestureHistory m_gestureHistory;
 };
 
 /*! stress-4 (b): the host's own value of each writable parameter, saved beside the plug-in's state chunks

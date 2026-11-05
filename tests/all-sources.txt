@@ -690,6 +690,7 @@ include/PluginAudioPorts.h
 include/PluginBrowser.h
 include/PluginEditorHost.h
 include/PluginFactory.h
+include/PluginGestureHistory.h
 include/PluginHostChunking.h
 include/PluginHostNotes.h
 include/PluginInstantiationFailure.h
@@ -697,6 +698,7 @@ include/PluginIssue.h
 include/PluginLoadPolicy.h
 include/PluginNativeEditor.h
 include/PluginOrganiser.h
+include/PluginParamGesture.h
 include/PluginPaths.h
 include/PluginQuarantineMenu.h
 include/PluginScanCache.h
@@ -2663,6 +2665,7 @@ tests/control-detect-commands.py
 tests/control_detect_fixtures.py
 tests/data/clap-test-plugin/clap-test-broken.c
 tests/data/clap-test-plugin/clap-test-gain.c
+tests/data/clap-test-plugin/clap-test-gesture.h
 tests/data/clap-test-plugin/clap-test-instrument.c
 tests/data/gigproof/make_gig.cpp
 tests/data/lv2-test-instrument/lv2-test-instrument.c
@@ -2968,6 +2971,7 @@ tests/src/core/PluginAudioPortsTest.cpp
 tests/src/core/PluginEditorHostTest.cpp
 tests/src/core/PluginHostMetadataTest.cpp
 tests/src/core/PluginLogoResourceTest.cpp
+tests/src/core/PluginParamGestureTest.cpp
 tests/src/core/PluginScanCacheTest.cpp
 tests/src/core/PluginWindowPlatformTest.cpp
 tests/src/core/PortMappingCodecTest.cpp
@@ -3256,6 +3260,7 @@ tests/src/gui/PianoViewFocusTest.cpp
 tests/src/gui/PinConnectorTest.cpp
 tests/src/gui/PluginCompatEditorProbe.cpp
 tests/src/gui/PluginControlDialogsTest.cpp
+tests/src/gui/PluginGestureUndoTest.cpp
 tests/src/gui/PluginNativeEditorTest.cpp
 tests/src/gui/PluginQuarantineMenuTest.cpp
 tests/src/gui/PluginShortcutsTest.cpp

@@ -199,6 +199,8 @@ private:
 
 	/** A latent instance: follow a new count, then delay the block by it. No allocation. */
 	void applyLatency (ProcessData& data);
+	/** VST3_TEST_INSTRUMENT_GESTURE: report the gesture the test scripted, as a dragged editor knob does. */
+	void reportGesture ();
 	/** A latent instance: take the count the environment names now; tell the host when it moved. */
 	void followLatency ();
 	/** Delay the first two channels of @a outBus by mLatency, through the rings. */
@@ -212,6 +214,7 @@ private:
 	int32 mLatency;
 	int32 mRingPos;
 	float mRing[2][kMaxLatency];
+	long mGestureSeen = 0;
 };
 
 //------------------------------------------------------------------------
@@ -243,6 +246,43 @@ void TestInstrument::applyLatency (ProcessData& data)
 		return;
 	}
 	delayChannels (data.outputs[0], data.numSamples);
+}
+
+//------------------------------------------------------------------------
+// VST3_TEST_INSTRUMENT_GESTURE="<sequence> <token>...": the first host call into the controller (UI thread) that sees
+// a new sequence reports the tokens on the Level parameter, in order: b (beginEdit), e (endEdit), or a number
+// (performEdit). The same script as the CLAP fixtures' clap-test-gesture.h.
+void TestInstrument::reportGesture ()
+{
+	const char* script = std::getenv ("VST3_TEST_INSTRUMENT_GESTURE");
+	if (script == nullptr)
+	{
+		return;
+	}
+	char* cursor = nullptr;
+	const long sequence = std::strtol (script, &cursor, 10);
+	if (sequence == mGestureSeen)
+	{
+		return;
+	}
+	mGestureSeen = sequence;
+	for (char* next = cursor;; cursor = next)
+	{
+		cursor += std::strspn (cursor, " ");
+		if (*cursor == 'b' || *cursor == 'e')
+		{
+			*cursor == 'b' ? beginEdit (kLevelParam) : endEdit (kLevelParam);
+			next = cursor + 1;
+			continue;
+		}
+		const double value = *cursor != 0 ? std::strtod (cursor, &next) : 0.;
+		if (*cursor == 0 || next == cursor)
+		{
+			return;
+		}
+		mLevel = static_cast<float> (value);
+		performEdit (kLevelParam, value);
+	}
 }
 
 //------------------------------------------------------------------------
@@ -335,6 +375,7 @@ tresult PLUGIN_API TestInstrument::setActive (TBool state)
 tresult PLUGIN_API TestInstrument::setParamNormalized (ParamID tag, ParamValue value)
 {
 	tresult result = SingleComponentEffect::setParamNormalized (tag, value);
+	reportGesture ();
 	if (result == kResultOk && tag == kLevelParam)
 	{
 		mLevel = static_cast<float> (value);

@@ -5602,3 +5602,5 @@ src/gui/CMakeLists.txt	Q050-055.2 (0.5.0 L13): builds gui/ControlCommandsPluginA
 include/ControlWindowCommands.h	Q050-055.2 (0.5.0 L13): declares registerPluginActionCommands.
 src/gui/ControlCommandsWindow.cpp	Q050-055.2 (0.5.0 L13): registers the keyboard's plug-in actions beside the shortcuts.* commands.
 src/gui/CommandLists.cpp	Q050-055.2 (0.5.0 L13): the shortcuts page gains Bind a Plug-in..., which opens shortcuts.bind_plugin's form.
+include/ProjectJournal.h	Q050-214: additive - newestEvictedSerial() tells a step a bound evicted from one that was only undone, so control.undo stops refusing "EVICTED" after Ctrl+Z took an agent's edit and an editor gesture followed; proved by PluginGestureUndoTest, UndoBoundsTest still green.
+src/core/ProjectJournal.cpp	Q050-214: clear() marks every earlier serial evicted, so a record from the previous document is still refused as before; proved by UndoBoundsTest and PluginGestureUndoTest.

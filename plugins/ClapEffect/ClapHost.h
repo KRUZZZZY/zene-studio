@@ -37,6 +37,7 @@
 #include "ClapNoteQueue.h"
 #include "ClapParamDescriptor.h"
 #include "PluginHostChunking.h"
+#include "PluginParamGesture.h"
 
 namespace lmms { enum class PluginWindowSystem; }  // PluginWindowSystem.h
 
@@ -139,6 +140,8 @@ public:
 	auto paramsRevision() const -> std::uint32_t;
 	auto paramIndex(std::uint32_t id) const -> int;
 	auto paramPlain(std::uint32_t id) const -> double;
+	//! Lock free, GUI thread only: the plug-in's gesture reports since the last call, and the value (Q050-214)
+	void readParamEdits(std::uint32_t id, PluginParamGesture::Edits* edits);
 	auto paramNormalized(std::uint32_t id) const -> float;
 	auto paramDisplayValue(std::uint32_t id, double plainValue) const -> QString;
 

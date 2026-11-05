@@ -38,6 +38,7 @@
 #include <QString>
 
 #include "PluginHostChunking.h"
+#include "PluginParamGesture.h"
 #include "Vst3BusMap.h"
 #include "Vst3MidiQueue.h"
 #include "Vst3ParamDescriptor.h"
@@ -210,6 +211,8 @@ public:
 	void setParamNormalized(std::uint32_t id, float normalized);
 	//! Lock free, any thread
 	auto paramNormalized(std::uint32_t id) const -> float;
+	//! Lock free, GUI thread only: the editor's gesture reports since the last call, and the value (Q050-214)
+	void readParamEdits(std::uint32_t id, PluginParamGesture::Edits* edits);
 	//! -1 if the plug-in has no such parameter
 	auto paramIndex(std::uint32_t id) const -> int;
 	//! GUI thread: also informs the edit controller (GUI-side value mirror)

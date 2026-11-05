@@ -529,14 +529,12 @@ void Vst3Instrument::poll()
 
 	if (m_syncing) { return; }
 	m_syncing = true;
+	PluginParamGesture::Edits edits;
 	for (auto* model : m_paramModels)
 	{
 		const auto id = model->paramId();
-		const auto value = m_plugin.paramNormalized(id);
-		if (std::abs(model->value() - value) > 1e-4f)
-		{
-			model->setValue(value);
-		}
+		m_plugin.readParamEdits(id, &edits);
+		model->pullFromPlugin(edits, 1e-4f);
 		// keep the edit controller's GUI-side mirror in sync (GUI thread only)
 		m_plugin.notifyController(id, model->value());
 	}

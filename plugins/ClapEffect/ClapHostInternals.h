@@ -130,6 +130,8 @@ struct HostedPlugin::Impl
 		//! The revision process() last handed the plug-in (stress-4): while it is behind `revision` the
 		//! host's own change has not reached the plug-in yet, and a rescan's read-back must not replace it.
 		std::atomic<std::uint32_t> delivered{0};
+		//! The begin and end marks the plug-in reported (Q050-214), drained by the GUI poll.
+		PluginParamGesture gesture;
 	};
 
 	// --- module -----------------------------------------------------------
@@ -510,11 +512,27 @@ struct HostedPlugin::Impl
 		return &state->notes[index].header;
 	}
 
+	//! The audio thread (a plug-in reports these from process()): preallocated atomics only (Q050-214).
+	void markGesture(const clap_event_header_t* event)
+	{
+		if (event->size < sizeof(clap_event_param_gesture_t)) { return; }
+		const auto index = indexOfParam(reinterpret_cast<const clap_event_param_gesture_t*>(event)->param_id);
+		if (index < 0) { return; }
+		auto& slot = paramSlots[index];
+		if (event->type == CLAP_EVENT_PARAM_GESTURE_BEGIN) { slot.gesture.begin(slot.value); }
+		else { slot.gesture.end(slot.value); }
+	}
+
 	static auto CLAP_ABI outEventsTryPush(const clap_output_events_t* list,
 		const clap_event_header_t* event) -> bool
 	{
 		auto* self = static_cast<Impl*>(list->ctx);
-		if (event->space_id == CLAP_CORE_EVENT_SPACE_ID &&
+		if (event->space_id == CLAP_CORE_EVENT_SPACE_ID
+			&& (event->type == CLAP_EVENT_PARAM_GESTURE_BEGIN || event->type == CLAP_EVENT_PARAM_GESTURE_END))
+		{
+			self->markGesture(event);
+		}
+		else if (event->space_id == CLAP_CORE_EVENT_SPACE_ID &&
 			event->type == CLAP_EVENT_PARAM_VALUE &&
 			event->size >= sizeof(clap_event_param_value_t))
 		{

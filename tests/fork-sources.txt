@@ -3347,3 +3347,10 @@ tests/src/core/LoopFixture.h
 tests/src/core/LoopImportWarpTest.cpp
 tests/src/gui/LoopDropWarpTest.cpp
 tests/control-loop-import-warp.py
+# Q050-214: a hosted plug-in's editor gesture as one project-history step.
+include/PluginGestureHistory.h
+include/PluginParamGesture.h
+tests/data/clap-test-plugin/clap-test-gesture.h
+tests/src/gui/PluginGestureUndoTest.cpp
+tests/src/core/PluginParamGestureTest.cpp
+docs/qwen-fixes-2026-10/cluster-Q050-214.md

@@ -149,12 +149,13 @@ void ClapParamModelList::pullValues(float tolerance)
 {
 	if (m_syncing) { return; }
 	m_syncing = true;
+	PluginParamGesture::Edits edits;
 	for (auto* model : m_models)
 	{
 		const auto& descriptor = model->descriptor();
 		const auto range = std::max(1e-12, descriptor.maxValue - descriptor.minValue);
-		const auto value = static_cast<float>(m_plugin->paramPlain(model->paramId()));
-		if (std::abs(model->value() - value) > range * tolerance) { model->setValue(value); }
+		m_plugin->readParamEdits(model->paramId(), &edits);
+		model->pullFromPlugin(edits, static_cast<float>(range * tolerance));
 	}
 	m_syncing = false;
 }

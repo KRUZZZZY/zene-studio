@@ -204,6 +204,8 @@ set(LMMS_TESTS
 	src/core/ControllerScriptTest.cpp
 	# Q050-331: controller bindings saved with track and chain presets, on real devices.
 	src/core/PresetBindingsTest.cpp
+	# Q050-214: the queue that carries a plug-in's gesture marks from its thread to the GUI poll.
+	src/core/PluginParamGestureTest.cpp
 	# Out-of-process plugin hosting BEYOND ZynAddSubFx (feature row 80 of
 	# docs/FEATURE-LIST-0.3.0.md, board card #670): the family table
 	# (include/OutOfProcessHosting.h), the client-process record it keys the
@@ -1328,6 +1330,8 @@ set(LMMS_TESTS
 	src/gui/FollowActionEditorTest.cpp
 	# M0 coverage: the Gate, Modulation and Receiver effects' control dialogs, built over the real modules.
 	src/gui/PluginControlDialogsTest.cpp
+	# Q050-214: a hosted VST3 or CLAP editor gesture is one history step, through Edit > Undo and control.undo alike.
+	src/gui/PluginGestureUndoTest.cpp
 	# Q050-486: the Wave Shaper editor's Graph shows a loaded curve, keeps it on a damaged one, and saves a drawn edit.
 	src/gui/GraphWaveformEditorGuiTest.cpp
 	# M0 coverage: the mixer's windows (routing matrix, large meters, EQ compare), hardware / surround menus, the surround panner.
@@ -2406,6 +2410,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "EffectDeviceMenuTest"
 		OR LMMS_TEST_NAME STREQUAL "EffectPickerOrganiserTest"
 		OR LMMS_TEST_NAME STREQUAL "PluginNativeEditorTest"
+		OR LMMS_TEST_NAME STREQUAL "PluginGestureUndoTest"
 		# Q050-491: plugin.list and plugin.load reach the build's aueffect / auinstrument modules (macOS).
 		OR LMMS_TEST_NAME STREQUAL "AuHostingTest"
 		OR LMMS_TEST_NAME STREQUAL "ReferenceProjectPanelTest"
@@ -3575,6 +3580,7 @@ set_tests_properties(SurroundPannerTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=
 set_tests_properties(EffectDeviceMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(EffectPickerOrganiserTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PluginNativeEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(PluginGestureUndoTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(AuHostingTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 if(TARGET aueffect AND TARGET auinstrument)
 	add_dependencies(AuHostingTest aueffect auinstrument)
@@ -5095,6 +5101,13 @@ if(TARGET lmms_clap)
 			CLAP_TEST_EFFECT_DIR="$<TARGET_FILE_DIR:clap-test-gain>")
 		add_dependencies(PluginNativeEditorTest clap-test-gain clapeffect)
 	endif()
+	# Q050-214: the CLAP fixtures report the scripted editor gesture from process().
+	if(TARGET clap-test-gain AND TARGET clap-test-instrument AND TARGET clapeffect AND TARGET clapinstrument AND TARGET PluginGestureUndoTest)
+		target_compile_definitions(PluginGestureUndoTest PRIVATE
+			CLAP_TEST_EFFECT_PATH="$<TARGET_FILE:clap-test-gain>"
+			CLAP_TEST_INSTRUMENT_PATH="$<TARGET_FILE:clap-test-instrument>")
+		add_dependencies(PluginGestureUndoTest clap-test-gain clap-test-instrument clapeffect clapinstrument)
+	endif()
 	# Cluster stress-3: the CLAP fixture's mono side-chain and no-audio layouts, through plugin.load.
 	if(TARGET clap-test-gain AND TARGET clapeffect AND TARGET ControlHostedBusLayoutTest)
 		target_compile_definitions(ControlHostedBusLayoutTest PRIVATE
@@ -5670,6 +5683,12 @@ if(TARGET lmms_vst3_sdk)
 			VST3_TEST_INSTRUMENT_BUNDLE="${LMMS_VST3_TEST_BUNDLE_DIR}"
 		)
 		add_dependencies(Vst3EditorTest vst3-test-instrument)
+	endif()
+	# Q050-214: the VST3 fixture reports the scripted editor gesture through the handler the host gave it.
+	if(WANT_VST3_TEST_INSTRUMENT AND TARGET vst3effect AND TARGET vst3instrument AND TARGET PluginGestureUndoTest)
+		target_compile_definitions(PluginGestureUndoTest PRIVATE
+			VST3_TEST_INSTRUMENT_BUNDLE="${LMMS_VST3_TEST_BUNDLE_DIR}")
+		add_dependencies(PluginGestureUndoTest vst3-test-instrument vst3effect vst3instrument)
 	endif()
 	# The rest of the fixture's suite - the probe, the MIDI path, the product-level and
 	# socket-driven cases - has only ever run on the linux-x86_64 job, and stays there: the

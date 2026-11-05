@@ -187,6 +187,7 @@ void ProjectJournal::trimUndoStack()
 			|| ( m_retainedBytes > m_maxUndoBytes && m_undoCheckPoints.size() > 1 ) ) )
 	{
 		m_retainedBytes -= m_undoCheckPoints.first().bytes;
+		m_newestEvictedSerial = qMax( m_newestEvictedSerial, m_undoCheckPoints.first().serial );
 		m_undoCheckPoints.remove( 0 );
 		++m_evicted;
 	}
