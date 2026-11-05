@@ -121,6 +121,15 @@ LMMS_EXPORT void setSelectedChannels(const QList<int>& indices);
 LMMS_EXPORT void clearSelection();
 //! The selection as ch-<n> ids, in mixer order (window.mixer_view's selected_channels).
 LMMS_EXPORT QJsonArray selectionJson();
+
+/*! 0.5.0 L08 (MX-021): whether the Selected filter follows the arranger selection - the focused
+ *  track's (or clip owner's) mixer channel. A user preference kept in the config file, ui/followchannel,
+ *  off when absent; the manual Selected set above is left untouched while it is on, so turning it
+ *  off restores the channels the user picked. */
+LMMS_EXPORT bool followSelection();
+LMMS_EXPORT void setFollowSelection(bool follow);
+//! The channel the focused arranger track plays into (the clip's track when a clip is focused), or -1.
+LMMS_EXPORT int followedChannel();
 //! A strip's Ctrl+click: channel @a index in or out of the selection, through window.mixer_view.
 LMMS_EXPORT void toggleSelected(QWidget* origin, int index);
 

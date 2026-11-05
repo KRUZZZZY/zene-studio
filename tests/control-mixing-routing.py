@@ -97,6 +97,49 @@ def check_view(session, recorder, chans):
                                          "meter_falloff": "fast", "peak_hold": "1.5s"})
 
 
+def check_follow(session, recorder, chans):
+    track = session.result("track.add", {"type": "instrument", "name": "Follow me"}).get("track")
+    channel = chans[1]
+    session.result("track.set_mixer_channel", {"track": track, "channel": channel})
+    session.result("window.mixer_view", {"selected_channels": [chans[0]], "filter": "selected",
+                                          "follow_selection": False})
+    on = session.result("window.mixer_view", {"follow_selection": True})
+    recorder.check("window.mixer_view saves and reports the follow preference",
+                   on.get("follow_selection") is True and on.get("selected_channels") == [chans[0]],
+                   "reply=%r" % on)
+    selected = session.result("window.select", {"track": track})
+    recorder.check("the arranger track is selected", selected.get("track") == track, "reply=%r" % selected)
+    followed = session.result("window.mixer_view")
+    visible = followed.get("visible_channels") or []
+    recorder.check("the Selected filter follows the focused arranger track",
+                   channel in visible and chans[0] not in visible, "reply=%r" % followed)
+    # A clip on another track focuses its owner's channel as well.
+    clip_track = session.result("track.add", {"type": "instrument", "name": "Clip owner"}).get("track")
+    clip_channel = chans[2]
+    session.result("track.set_mixer_channel", {"track": clip_track, "channel": clip_channel})
+    clip = session.result("clip.add", {"track": clip_track, "position": 0}).get("clip")
+    session.result("window.select", {"clip": clip})
+    from_clip = session.result("window.mixer_view")
+    clip_visible = from_clip.get("visible_channels") or []
+    recorder.check("the Selected filter follows a focused clip's owner",
+                   clip_channel in clip_visible and channel not in clip_visible, "reply=%r" % from_clip)
+    # A refused call changes nothing: not the preference, not the manual set.
+    for bad in ("ch-9999", "ch-0"):
+        refused = session.call("window.mixer_view", {"follow_selection": False, "selected_channels": [bad]})
+        kept = session.result("window.mixer_view")
+        recorder.check("a refused channel (%s) leaves the follow state alone" % bad,
+                       not refused.get("ok", False) and kept.get("follow_selection") is True
+                       and kept.get("selected_channels") == [chans[0]],
+                       "refused=%r reply=%r" % (refused, kept))
+    off = session.result("window.mixer_view", {"follow_selection": False})
+    restored = session.result("window.mixer_view")
+    visible_back = restored.get("visible_channels") or []
+    recorder.check("turning follow off restores the manual Selected set",
+                   off.get("follow_selection") is False and chans[0] in visible_back and channel not in visible_back,
+                   "off=%r reply=%r" % (off, restored))
+    session.result("window.mixer_view", {"follow_selection": False, "selected_channels": [], "filter": "all"})
+
+
 def check_phase_scope(session, recorder, chans):
     scope = session.result("window.phase_scope", {"channel": chans[1]})
     recorder.check("window.phase_scope opens on the channel asked for",
@@ -147,6 +190,7 @@ def main(argv):
         check_sends(session, recorder, chans)
         check_groups(session, recorder, chans)
         check_view(session, recorder, chans)
+        check_follow(session, recorder, chans)
         check_strip(session, recorder, chans)
         check_phase_scope(session, recorder, chans)
     report_results(recorder)

@@ -132,6 +132,14 @@ void syncMixerViewSoon()
 	QTimer::singleShot(0, gui::getGUI()->mixerView(), &gui::MixerView::syncWithMixer);
 }
 
+//! MX-021: set the follow preference through the same path the GUI toggle uses.
+void applyFollowSelection(const QJsonObject& args)
+{
+	if (!args.contains(QStringLiteral("follow_selection"))) { return; }
+	gui::mixerviewoptions::setFollowSelection(args.value(QStringLiteral("follow_selection")).toBool());
+	syncMixerViewSoon();
+}
+
 QJsonObject mixerViewState()
 {
 	QJsonArray folded;
@@ -147,6 +155,13 @@ QJsonObject mixerViewState()
 	state.insert(QStringLiteral("strips"), stripInfos());
 	state.insert(QStringLiteral("folded"), folded);
 	state.insert(QStringLiteral("selected_channels"), gui::mixerviewoptions::selectionJson());  // MX-005
+	state.insert(QStringLiteral("follow_selection"), gui::mixerviewoptions::followSelection());  // MX-021
+	QJsonArray visible;
+	for (int i = 0; i < Engine::mixer()->numChannels(); ++i)
+	{
+		if (gui::mixerviewoptions::shows(i)) { visible.append(channelIdOf(Engine::mixer()->mixerChannel(i))); }
+	}
+	state.insert(QStringLiteral("visible_channels"), visible);
 	return state;
 }
 
@@ -167,6 +182,7 @@ ControlResult mixerView(const QJsonObject& args)
 	if (!gui::mixerviewoptions::merge(args, &next, &error)) { return ControlResult::failure(ControlErrorKind::InvalidArgs, error); }
 	// Everything is checked before anything is set: a refused call changes no mode.
 	if (args.contains(QStringLiteral("selected_channels"))) { gui::mixerviewoptions::setSelectedChannels(selection); }
+	applyFollowSelection(args);
 	if (sendsGiven)
 	{
 		gui::mixeroverlays::setSendsOnFaders(index);
@@ -289,7 +305,10 @@ void registerMixerViewCommands(ControlRegistry& registry)
 		"(track.folder_set_collapsed folds). MX-005: 'selected_channels' (ch-<n> ids, never the master) are the channels the "
 		"'selected' filter shows - interface state, never saved, forgotten when the mixer is cleared for another project; a "
 		"Ctrl+click on a strip adds or removes its channel, and the mode bar's 'Pick...' chooses them; the answer lists them in "
-		"mixer order. The view options, kept in the config file (ui/mixerview): 'show_sends', "
+		"mixer order. MX-021: 'follow_selection' makes the 'selected' filter show the focused arranger track's (or clip "
+		"owner's) mixer channel instead, keeping the manual set for when it is turned off; it is saved in the config file "
+		"(ui/followchannel, off when absent), and the answer adds it with 'visible_channels' (the channels the filter shows "
+		"now, master included). The view options, kept in the config file (ui/mixerview): 'show_sends', "
 		"'show_pan', 'show_number', 'show_meter_info', 'show_inserts', 'show_macros' (a strip's sections - the meter line is "
 		"the gain reduction and the clip light, the inserts are listed by name, the macros are the rack's first four as knobs), 'show_console' (Q050-088: the Console section - "
 		"knobs and switches for the channel's trim, polarity, EQ and its Console's drive and glue compressor, each running "
@@ -320,11 +339,13 @@ void registerMixerViewCommands(ControlRegistry& registry)
 	QJsonObject args = fields;
 	args.insert(QStringLiteral("sends_on_faders"), stringProperty());
 	args.insert(QStringLiteral("selected_channels"), arrayProperty());  // MX-005
+	args.insert(QStringLiteral("follow_selection"), booleanProperty());  // MX-021
 	QJsonObject result = args;
 	result.insert(QStringLiteral("folded"), arrayProperty());
 	result.insert(QStringLiteral("sends_on_faders_name"), stringProperty());
 	result.insert(QStringLiteral("faders"), arrayProperty());
 	result.insert(QStringLiteral("strips"), arrayProperty());
+	result.insert(QStringLiteral("visible_channels"), arrayProperty());
 	cmd.argsSchema = objectSchema(args);
 	cmd.resultSchema = objectSchema(result);
 	cmd.handler = mixerView;

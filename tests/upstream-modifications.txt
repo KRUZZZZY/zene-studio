@@ -5704,3 +5704,5 @@ plugins/Delay/Lfo.h	cluster new-p16-95: clamp the existing frequency to the new 
 tests/src/core/MathTest.cpp	cluster new-p16-95: regression for the LFO frequency clamp on sample-rate change, plus no-collateral cases (valid frequency kept, upward change, ignored zero rate).
 src/core/BounceInPlace.cpp	cluster new-p16-307 (2026-10-27): framesBetweenTicks takes the tick span wide (qint64) before the float conversion, so INT32_MIN..INT32_MAX no longer overflows tick_t; in-range results are unchanged bit for bit.
 src/core/Track.cpp	cluster new-p16-307 (2026-10-28): playFrozenTake maps every pass through frozenTakeSourceFrame, in force or not (the no-tempo-map branch subtracted the take start from the seek in tick_t and could wrap); the pinned map is kept unconditionally in playFrozenTake and adoptTempoMapForFrozenTake so the helper always decides from the current map. m_frozenLastMapInForce is now recorded but not branched on.
+tests/control-mixing-routing.py	# Follow arranger selection in the mixer
+tests/src/gui/MixerMeteringTest.cpp	# Follow arranger selection in the mixer

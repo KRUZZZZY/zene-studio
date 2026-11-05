@@ -66,6 +66,7 @@ public:
 	QPushButton* viewButton(const QString& view) const { return m_viewButtons.value(view); }
 	QPushButton* densityButton(const QString& density) const { return m_densityButtons.value(density); }
 	QComboBox* filterBox() const { return m_filter; }
+	QPushButton* followButton() const { return m_follow; }
 	QToolButton* fadersButton() const { return m_faders; }
 	QToolButton* soloButton() const { return m_solo; }
 	QToolButton* listenButton() const { return m_listen; }
@@ -91,6 +92,7 @@ private:
 	QHash<QString, QPushButton*> m_viewButtons;
 	QHash<QString, QPushButton*> m_densityButtons;
 	QComboBox* m_filter = nullptr;
+	QPushButton* m_follow = nullptr;  // MX-021: the Selected filter follows the arranger selection
 	QToolButton* m_faders = nullptr;
 	QToolButton* m_solo = nullptr;
 	QToolButton* m_listen = nullptr;

@@ -69,6 +69,11 @@
 #include "MixerWindows.h"
 #include "PhaseScopeTap.h"
 #include "PhaseScopeView.h"
+#include "ShellSelection.h"
+#include "Song.h"
+#include "SongEditor.h"
+#include "Track.h"
+#include "TrackView.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -86,6 +91,46 @@ void syncMixer()
 {
 	getGUI()->mixerView()->syncWithMixer();
 	getGUI()->mixerView()->syncWithMixer();
+}
+
+/*! MX-021: run what is queued for the mixer view, and only that. No event-loop turn: the view's half-second sync
+ *  timer cannot fire and mask a missing connection, and a deferred delete stays queued. */
+void deliverQueuedRefresh()
+{
+	QCoreApplication::sendPostedEvents(getGUI()->mixerView(), QEvent::MetaCall);
+}
+
+/*! The arranger builds a view for a new track from a queued call. Deliver the queued calls only: a full event-loop
+ *  turn also runs window activation, which the later shortcut test (speakMeter...) needs left alone. */
+void buildTrackViews()
+{
+	QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+}
+
+//! Leave the view as the other tests expect it: every channel shown, nothing picked, not following.
+void restoreViewDefaults()
+{
+	const ControlResult reset = run(QStringLiteral("window.mixer_view"), {{QStringLiteral("selected_channels"), QJsonArray{}},
+		{QStringLiteral("filter"), QStringLiteral("all")}, {QStringLiteral("follow_selection"), false}});
+	QVERIFY2(reset.ok, qPrintable(reset.errorMessage));
+	syncMixer();
+}
+
+/*! Remove a fixture track the way the arranger does: its view first, while the track it reads is alive
+ *  (TrackContainerView::deleteTrackView; ~InstrumentTrackView reads its model). False when the track has no view:
+ *  the arranger builds one a turn after the track is added, so a fixture turns the event loop once after adding. */
+bool removeTrack(Track* track)
+{
+	SongEditor* arranger = getGUI()->songEditor()->m_editor;
+	for (TrackView* trackView : arranger->trackViews())
+	{
+		if (trackView->getTrack() == track)
+		{
+			arranger->deleteTrackView(trackView);
+			return true;
+		}
+	}
+	return false;
 }
 
 //! One meter tick (the main window's 60 Hz periodicUpdate drives it).
@@ -235,6 +280,151 @@ private slots:
 			QVERIFY(fader()->peakHoldMs() >= 1500);
 			QCOMPARE(heldAfterADrop(), 1.f);  // held
 		}
+	}
+
+	//! MX-021: an older configuration has no followchannel key, which reads as off.
+	void followSelectionDefaultsOff()
+	{
+		QCOMPARE(ConfigManager::inst()->value(QStringLiteral("ui"), QStringLiteral("followchannel")), QString());
+		QVERIFY(!mixerviewoptions::followSelection());
+		QCOMPARE(run(QStringLiteral("window.mixer_view")).result.value(QStringLiteral("follow_selection")).toBool(), false);
+	}
+
+	//! MX-021: the Selected filter follows the focused arranger track (or clip owner) when the preference is on;
+	//! the manual set is kept while it follows and returns unchanged when it is turned off. Nothing here calls the
+	//! view's sync between a selection and what is asserted about the strips: the selection's own queued refresh
+	//! has to re-lay them (see deliverQueuedRefresh).
+	void theSelectedFilterFollowsTheArrangerSelection()
+	{
+		m_other = Engine::mixer()->createChannel();
+		const int secondChannel = Engine::mixer()->createChannel();
+		Track* first = Track::create(Track::Type::Instrument, Engine::getSong());
+		Track* second = Track::create(Track::Type::Instrument, Engine::getSong());
+		first->mixerChannelModel()->setValue(m_channel);
+		second->mixerChannelModel()->setValue(secondChannel);
+		buildTrackViews();
+		syncMixer();
+		// A manual pick, then following: the pick is kept but not shown while a track is focused.
+		QVERIFY(run(QStringLiteral("window.mixer_view"), {{QStringLiteral("selected_channels"), QJsonArray{ch(m_other)}},
+			{QStringLiteral("filter"), QStringLiteral("selected")}, {QStringLiteral("follow_selection"), false}}).ok);
+		syncMixer();
+		MixerView* view = getGUI()->mixerView();
+		QVERIFY(view->channelView(m_other)->isVisibleTo(view));
+		QVERIFY(!view->channelView(m_channel)->isVisibleTo(view));
+		const ControlResult on = run(QStringLiteral("window.mixer_view"), {{QStringLiteral("follow_selection"), true}});
+		QVERIFY2(on.ok, qPrintable(on.errorMessage));
+		QCOMPARE(on.result.value(QStringLiteral("follow_selection")).toBool(), true);
+		QCOMPARE(ConfigManager::inst()->value(QStringLiteral("ui"), QStringLiteral("followchannel")), QStringLiteral("1"));
+		QVERIFY(mixerviewoptions::followSelection());
+		deliverQueuedRefresh();  // the command's own refresh is not the one under test
+		ShellSelection::instance()->setTrack(first);
+		QVERIFY(!view->channelView(m_channel)->isVisibleTo(view));  // queued: nothing has moved yet
+		deliverQueuedRefresh();
+		QVERIFY(view->channelView(0)->isVisibleTo(view));  // the master always shows
+		QVERIFY(view->channelView(m_channel)->isVisibleTo(view));
+		QVERIFY(!view->channelView(m_other)->isVisibleTo(view));
+		QCOMPARE(run(QStringLiteral("window.mixer_view")).result.value(QStringLiteral("visible_channels")).toArray(),
+			(QJsonArray{ch(0), ch(m_channel)}));
+		// A clip on another track focuses its owner's channel.
+		Clip* clip = second->createClip(TimePos(0));
+		ShellSelection::instance()->setClip(clip);
+		QVERIFY(!view->channelView(secondChannel)->isVisibleTo(view));
+		deliverQueuedRefresh();
+		QVERIFY(view->channelView(secondChannel)->isVisibleTo(view));
+		QVERIFY(!view->channelView(m_channel)->isVisibleTo(view));
+		// Off: the manual set is still there, and arranger selection no longer moves the filter.
+		QVERIFY(run(QStringLiteral("window.mixer_view"), {{QStringLiteral("follow_selection"), false}}).ok);
+		ShellSelection::instance()->setTrack(first);
+		deliverQueuedRefresh();
+		QVERIFY(view->channelView(m_other)->isVisibleTo(view));
+		QVERIFY(!view->channelView(m_channel)->isVisibleTo(view));
+		QVERIFY(!view->channelView(secondChannel)->isVisibleTo(view));
+		QCOMPARE(run(QStringLiteral("window.mixer_view")).result.value(QStringLiteral("selected_channels")).toArray(),
+			(QJsonArray{ch(m_other)}));
+		// The mode bar's toggle is the same preference, through the same command.
+		QPushButton* follow = view->modeBar()->followButton();
+		QVERIFY(follow != nullptr);
+		QCOMPARE(follow->property("controlCommand").toString(), QStringLiteral("window.mixer_view"));
+		follow->click();
+		QVERIFY(mixerviewoptions::followSelection());
+		QCOMPARE(ConfigManager::inst()->value(QStringLiteral("ui"), QStringLiteral("followchannel")), QStringLiteral("1"));
+		follow->click();
+		QVERIFY(!mixerviewoptions::followSelection());
+		QCOMPARE(ConfigManager::inst()->value(QStringLiteral("ui"), QStringLiteral("followchannel")), QStringLiteral("0"));
+		ShellSelection::instance()->setTrack(nullptr);
+		QVERIFY(removeTrack(first));
+		QVERIFY(removeTrack(second));
+		restoreViewDefaults();
+	}
+
+	//! MX-021: while following, nothing to follow shows the master alone (the manual set stays out of it); of
+	//! selections made before the refresh runs the last one wins; a selected track or clip that is removed leaves
+	//! no stale strip, and the manual set comes back when following is turned off.
+	void theFollowedFilterSurvivesEmptyAndStaleSelections()
+	{
+		const int manual = Engine::mixer()->createChannel();  // the channel picked by hand
+		const int firstChannel = Engine::mixer()->createChannel();
+		const int secondChannel = Engine::mixer()->createChannel();
+		Track* first = Track::create(Track::Type::Instrument, Engine::getSong());
+		Track* second = Track::create(Track::Type::Instrument, Engine::getSong());
+		Track* unmapped = Track::create(Track::Type::Instrument, Engine::getSong());
+		Track* automation = Track::create(Track::Type::Automation, Engine::getSong());
+		first->mixerChannelModel()->setValue(firstChannel);
+		second->mixerChannelModel()->setValue(secondChannel);
+		unmapped->mixerChannelModel()->setValue(0);
+		buildTrackViews();
+		ShellSelection* selection = ShellSelection::instance();
+		selection->setTrack(first);
+		QVERIFY(run(QStringLiteral("window.mixer_view"), {{QStringLiteral("selected_channels"), QJsonArray{ch(manual)}},
+			{QStringLiteral("filter"), QStringLiteral("selected")}, {QStringLiteral("follow_selection"), true}}).ok);
+		syncMixer();
+		MixerView* view = getGUI()->mixerView();
+		const auto shown = [view](int index) { return view->channelView(index)->isVisibleTo(view); };
+		QVERIFY(shown(firstChannel));
+		deliverQueuedRefresh();
+		const auto masterOnly = [&] { return shown(0) && !shown(manual) && !shown(firstChannel) && !shown(secondChannel); };
+
+		selection->setTrack(nullptr);  // no selection
+		deliverQueuedRefresh();
+		QVERIFY(masterOnly());
+		selection->setTrack(first);
+		deliverQueuedRefresh();
+		QVERIFY(shown(firstChannel));
+		selection->setTrack(unmapped);  // plays straight into the master
+		deliverQueuedRefresh();
+		QVERIFY(masterOnly());
+		selection->setTrack(first);
+		deliverQueuedRefresh();
+		QVERIFY(shown(firstChannel));
+		selection->setTrack(automation);  // has no mixer channel at all
+		QVERIFY(automation->mixerChannelModel() == nullptr);
+		deliverQueuedRefresh();
+		QVERIFY(masterOnly());
+
+		selection->setTrack(first);  // rapid selections: only the last one counts
+		selection->setTrack(unmapped);
+		selection->setClip(second->createClip(TimePos(0)));
+		deliverQueuedRefresh();
+		QVERIFY(shown(secondChannel));
+		QVERIFY(!shown(firstChannel));
+
+		QVERIFY(removeTrack(second));  // the focused clip's owner goes: its pointers read as nothing selected
+		QVERIFY(selection->track() == nullptr);
+		QVERIFY(selection->clip() == nullptr);
+		syncMixer();  // a removal is not a selection change: the view's periodic sync is what re-lays it
+		QVERIFY(masterOnly());
+
+		selection->setTrack(first);  // removed with its refresh still queued
+		QVERIFY(removeTrack(first));
+		deliverQueuedRefresh();
+		QVERIFY(masterOnly());
+
+		QVERIFY(run(QStringLiteral("window.mixer_view"), {{QStringLiteral("follow_selection"), false}}).ok);
+		deliverQueuedRefresh();
+		QVERIFY(shown(manual));
+		QVERIFY(removeTrack(unmapped));
+		QVERIFY(removeTrack(automation));
+		restoreViewDefaults();
 	}
 
 	//! MX-005: the Selected filter shows the master and the channels picked for it, nothing else.

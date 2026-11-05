@@ -399,6 +399,7 @@ void viewOptionsMenu(QMenu* menu)
 	choices(view, "Show Console Section", "window.mixer_view", "show_console", {});  // Q050-088
 	choices(view, "Strip Width", "window.mixer_view", "strip_width", {});
 	choices(view, "Show Channels", "window.mixer_view", "filter", {});
+	choices(view, "Follow Arranger Selection", "window.mixer_view", "follow_selection", {});  // MX-021
 	choices(view, "Meter", "window.mixer_view", "meter_mode", {});
 	choices(view, "Meter Scale", "window.mixer_view", "meter_scale", {});
 	choices(view, "Meter Fall-Off", "window.mixer_view", "meter_falloff", {});  // MX-128

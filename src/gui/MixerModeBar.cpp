@@ -123,6 +123,18 @@ MixerModeBar::MixerModeBar(QWidget* parent) :
 	pick->setProperty("controlCommand", kViewCommand);
 	connect(pick, &QPushButton::clicked, this, &MixerModeBar::pickSelected);
 	layout->addWidget(pick);
+	// MX-021: the Selected filter follows the focused arranger track (or the focused clip's track).
+	m_follow = new QPushButton(tr("Follow Selection"), this);
+	m_follow->setObjectName(QStringLiteral("mixerModeFollow"));
+	m_follow->setCheckable(true);
+	m_follow->setMinimumHeight(tokens::targetSize());
+	m_follow->setAccessibleName(tr("Follow the arranger selection"));
+	m_follow->setToolTip(tr("With the Selected filter on, show the focused arranger track's channel"));
+	m_follow->setProperty("controlCommand", kViewCommand);
+	connect(m_follow, &QPushButton::toggled, this, [this](bool on) {
+		setOption(QStringLiteral("follow_selection"), on);
+	});
+	layout->addWidget(m_follow);
 	layout->addStretch(1);
 	m_faders = addChip(layout, QStringLiteral("mixerModeFaders"), tr("What every fader drives: its channel's volume, or its send to one return"), &MixerModeBar::fillFaders);
 	m_solo = addChip(layout, QStringLiteral("mixerModeSolo"), tr("The solo mode: whether a solo unsolos the others"), &MixerModeBar::fillSolo);
@@ -256,6 +268,12 @@ void MixerModeBar::refresh(const mixerstripinfo::Context& context)
 		const QSignalBlocker quiet(m_filter);
 		m_filter->setCurrentIndex(row);
 	}
+	if (m_follow->isChecked() != mixerviewoptions::followSelection())
+	{
+		const QSignalBlocker quiet(m_follow);
+		m_follow->setChecked(mixerviewoptions::followSelection());
+	}
+	m_follow->setEnabled(options.filter == QLatin1String("selected") || mixerviewoptions::followSelection());
 	refreshChips(context);
 }
 
