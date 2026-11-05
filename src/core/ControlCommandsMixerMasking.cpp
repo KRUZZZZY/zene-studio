@@ -96,6 +96,31 @@ struct ChannelSpectrum
 	double peakDb = FloorDb;
 };
 
+//! Frame @a at of @a data, mono and windowed, into @a re / @a im, then transformed.
+void transformFrame(const SampleFrame* data, std::size_t at, const std::vector<float>& hann, std::vector<float>& re, std::vector<float>& im)
+{
+	for (int i = 0; i < FrameSize; ++i)
+	{
+		const SampleFrame& frame = data[at + static_cast<std::size_t>(i)];
+		re[static_cast<std::size_t>(i)] = 0.5f * (frame.left() + frame.right()) * hann[static_cast<std::size_t>(i)];
+		im[static_cast<std::size_t>(i)] = 0.f;
+	}
+	detection::detail::fftRadix2(re, im);
+}
+
+//! Add a transformed frame's power to the bands its bins fall in.
+void addBands(const std::vector<float>& re, const std::vector<float>& im, double binHz, std::array<double, BandCount>& power)
+{
+	for (int bin = 1; bin < FrameSize / 2; ++bin)
+	{
+		const int band = bandOf(bin * binHz);
+		if (band < 0) { continue; }
+		// 4 / N turns a Hann-windowed sine's peak bin back into its amplitude.
+		const double amplitude = std::hypot(re[static_cast<std::size_t>(bin)], im[static_cast<std::size_t>(bin)]) * 4.0 / FrameSize;
+		power[static_cast<std::size_t>(band)] += amplitude * amplitude;
+	}
+}
+
 //! Add one clip's frames to @a power (summed band power per frame) and return how many frames it read.
 int addClip(const SampleClip& clip, const std::vector<float>& hann, std::array<double, BandCount>& power)
 {
@@ -113,22 +138,27 @@ int addClip(const SampleClip& clip, const std::vector<float>& hann, std::array<d
 	for (int f = 0; f < frames; ++f)
 	{
 		const std::size_t at = frames > 1 ? span * static_cast<std::size_t>(f) / static_cast<std::size_t>(frames - 1) : 0;
-		for (int i = 0; i < FrameSize; ++i)
-		{
-			const SampleFrame& frame = data[at + static_cast<std::size_t>(i)];
-			re[static_cast<std::size_t>(i)] = 0.5f * (frame.left() + frame.right()) * hann[static_cast<std::size_t>(i)];
-			im[static_cast<std::size_t>(i)] = 0.f;
-		}
-		detection::detail::fftRadix2(re, im);
-		for (int bin = 1; bin < FrameSize / 2; ++bin)
-		{
-			const int band = bandOf(bin * binHz);
-			if (band < 0) { continue; }
-			// 4 / N turns a Hann-windowed sine's peak bin back into its amplitude.
-			const double amplitude = std::hypot(re[static_cast<std::size_t>(bin)], im[static_cast<std::size_t>(bin)]) * 4.0 / FrameSize;
-			power[static_cast<std::size_t>(band)] += amplitude * amplitude;
-		}
+		transformFrame(data, at, hann, re, im);
+		addBands(re, im, binHz, power);
 	}
+	return frames;
+}
+
+//! Read @a track's unmuted audio clips into @a spectrum; the frames read. A track with no clip read that is not a
+//! sample track (an instrument) is listed as unanalysed.
+int addTrack(Track* track, ChannelSpectrum& spectrum, const std::vector<float>& hann)
+{
+	int frames = 0;
+	const int before = spectrum.clips;
+	for (Clip* clip : track->getClips())
+	{
+		const auto* audio = dynamic_cast<const SampleClip*>(clip);
+		if (audio == nullptr || audio->isMuted()) { continue; }
+		const int read = addClip(*audio, hann, spectrum.power);
+		frames += read;
+		spectrum.clips += read > 0 ? 1 : 0;
+	}
+	if (spectrum.clips == before && dynamic_cast<SampleTrack*>(track) == nullptr) { spectrum.skippedTracks.append(trackIdOf(track)); }
 	return frames;
 }
 
@@ -139,17 +169,7 @@ void analyse(ChannelSpectrum& spectrum, const std::vector<float>& hann)
 	for (Track* track : Engine::getSong()->tracks())
 	{
 		const IntModel* model = track->mixerChannelModel();
-		if (model == nullptr || model->value() != spectrum.channel->index() || track->isMuted()) { continue; }
-		int before = spectrum.clips;
-		for (Clip* clip : track->getClips())
-		{
-			const auto* audio = dynamic_cast<const SampleClip*>(clip);
-			if (audio == nullptr || audio->isMuted()) { continue; }
-			const int read = addClip(*audio, hann, spectrum.power);
-			frames += read;
-			if (read > 0) { ++spectrum.clips; }
-		}
-		if (spectrum.clips == before && dynamic_cast<SampleTrack*>(track) == nullptr) { spectrum.skippedTracks.append(trackIdOf(track)); }
+		if (model != nullptr && model->value() == spectrum.channel->index() && !track->isMuted()) { frames += addTrack(track, spectrum, hann); }
 	}
 	const double rate = Engine::audioEngine()->outputSampleRate();
 	for (int band = 0; band < BandCount; ++band)
