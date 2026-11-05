@@ -5550,3 +5550,5 @@ tests/src/core/ClipConsolidateTest.cpp	# Consolidation can overflow while adding
 include/OutputSettings.h	cluster new-p23-190: setCompressionLevel clamps to the documented 0.0-1.0 range (NaN keeps the current level); the only caller (ExportProjectDialog) passes in-range values, so renders are unchanged. Held by tests/src/gui/ExportQualityControlsTest.cpp::compressionLevelStaysInItsLegalRange
 tests/src/gui/ExportQualityControlsTest.cpp	# OutputSettings compression level is not range-checked
 tests/src/core/ProjectRecoveryTest.cpp	# Autosave identity sidecars are read without a size limit
+src/core/MixHelpers.cpp	cluster new-p14-190: AddSwappedMultipliedOp now caches both source channels in a swapped temporary before writing dst, so aliased dst==src uses the original left channel; covered by AudioBufferTest AddSwappedMultiplied_AliasedBufferUsesOriginalLeftChannel.
+tests/src/core/AudioBufferTest.cpp	cluster new-p14-190: regressions for MixHelpers::addSwappedMultiplied on aliased, disjoint multi-frame, and zero-frame inputs.

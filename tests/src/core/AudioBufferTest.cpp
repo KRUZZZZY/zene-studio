@@ -1067,6 +1067,47 @@ private slots:
 		QVERIFY(lmms::MixHelpers::isSilent(loud.data(), -1));
 	}
 
+	void AddSwappedMultiplied_AliasedBufferUsesOriginalLeftChannel()
+	{
+		std::array<lmms::SampleFrame, 1> buffer{lmms::SampleFrame{1.0f, 2.0f}};
+
+		lmms::MixHelpers::addSwappedMultiplied(buffer.data(), buffer.data(), 0.5f, 1);
+
+		QCOMPARE(buffer[0].left(), 2.0f);
+		QCOMPARE(buffer[0].right(), 2.5f);
+	}
+
+	void AddSwappedMultiplied_DisjointBuffersUseScaledOppositeChannel()
+	{
+		const std::array<lmms::SampleFrame, 3> source{
+			lmms::SampleFrame{1.0f, 4.0f},
+			lmms::SampleFrame{-2.0f, 1.0f},
+			lmms::SampleFrame{0.5f, -1.0f}};
+		std::array<lmms::SampleFrame, 3> destination{
+			lmms::SampleFrame{10.0f, 20.0f},
+			lmms::SampleFrame{10.0f, 20.0f},
+			lmms::SampleFrame{10.0f, 20.0f}};
+
+		lmms::MixHelpers::addSwappedMultiplied(destination.data(), source.data(), 0.5f, 3);
+
+		QCOMPARE(destination[0].left(), 12.0f);
+		QCOMPARE(destination[0].right(), 20.5f);
+		QCOMPARE(destination[1].left(), 10.5f);
+		QCOMPARE(destination[1].right(), 19.0f);
+		QCOMPARE(destination[2].left(), 9.5f);
+		QCOMPARE(destination[2].right(), 20.25f);
+	}
+
+	void AddSwappedMultiplied_ZeroFramesIsNoOp()
+	{
+		std::array<lmms::SampleFrame, 1> buffer{lmms::SampleFrame{1.0f, 2.0f}};
+
+		lmms::MixHelpers::addSwappedMultiplied(buffer.data(), buffer.data(), 0.5f, 0);
+
+		QCOMPARE(buffer[0].left(), 1.0f);
+		QCOMPARE(buffer[0].right(), 2.0f);
+	}
+
 	//! Verifies that the `sanitize` method only silences channels containing Inf or NaN
 	void Sanitize_SilencesOnlyInfAndNaN()
 	{
