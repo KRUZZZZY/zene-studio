@@ -25,8 +25,10 @@
 #include "SlicerT.h"
 
 #include <QDomElement>
+#include <algorithm>
 #include <cmath>
 #include <fftw3.h>
+#include <numbers>
 
 #include "AudioEngine.h"
 #include "Engine.h"
@@ -54,6 +56,48 @@ Plugin::Descriptor PLUGIN_EXPORT slicert_plugin_descriptor = {
 };
 } // end extern
 
+namespace {
+
+//! A 32-bit integer hash (the "lowbias32" mix) mapped to -1..1.
+float unitHash(std::uint32_t x) noexcept
+{
+	x ^= x >> 16;
+	x *= 0x7feb352dU;
+	x ^= x >> 15;
+	x *= 0x846ca68bU;
+	x ^= x >> 16;
+	return static_cast<float>(x) * (2.0f / 4294967295.0f) - 1.0f;
+}
+
+//! One channel of a two-pole state-variable filter (trapezoidal integration, Q = 0.707), low-pass or high-pass.
+float svfTick(std::array<float, 2>& state, float x, float a1, float a2, float a3, float k, bool lowpass) noexcept
+{
+	const float v3 = x - state[1];
+	const float v1 = a1 * state[0] + a2 * v3;
+	const float v2 = state[1] + a2 * state[0] + a3 * v3;
+	state[0] = 2.0f * v1 - state[0];
+	state[1] = 2.0f * v2 - state[1];
+	return lowpass ? v2 : x - k * v1 - v2;
+}
+
+int sliceControlIndex(const QString& name) noexcept
+{
+	for (std::size_t i = 0; i < slicer::SliceControlCount; ++i)
+	{
+		if (name == QLatin1String(slicer::SliceControlSpecs[i].name)) { return static_cast<int>(i); }
+	}
+	return -1;
+}
+
+QString sliceAttributeName(std::size_t control, std::size_t slice)
+{
+	static const char* const prefixes[slicer::SliceControlCount] = {"sliceGain_", "slicePan_", "sliceFilter_",
+		"sliceRandom_"};
+	return QString::fromLatin1(prefixes[control]) + QString::number(slice);
+}
+
+} // namespace
+
 // ################################# SlicerT ####################################
 
 SlicerT::SlicerT(InstrumentTrack* instrumentTrack)
@@ -74,6 +118,7 @@ SlicerT::SlicerT(InstrumentTrack* instrumentTrack)
 	m_sliceSnap.addItem("1/16");
 	m_sliceSnap.addItem("1/32");
 	m_sliceSnap.setValue(0);
+	resetSliceControls();
 }
 
 void SlicerT::applyConverterMode(AudioResampler::Mode mode)
@@ -114,6 +159,12 @@ SlicerT::PlaybackSlot* SlicerT::acquirePlaybackSlot(int startFrame) noexcept
 			std::memory_order_relaxed))
 		{
 			slot.state.setFrameIndex(startFrame);
+			// This trigger's own random draws (-1..1): a hash of a running trigger count, so repeated
+			// triggers differ, any thread can take one without a lock, and nothing allocates.
+			const std::uint32_t trigger = m_triggerCounter.fetch_add(1, std::memory_order_relaxed);
+			slot.voice = SliceVoice{};
+			slot.voice.randomGain = unitHash(trigger * 2);
+			slot.voice.randomPan = unitHash(trigger * 2 + 1);
 			return &slot;
 		}
 	}
@@ -135,6 +186,7 @@ void SlicerT::playNoteImpl(NotePlayHandle* handle, std::span<SampleFrame> out)
 	speedRatio *= pitchRatio;
 
 	float sliceStart, sliceEnd;
+	int sliceIndex = -1; // the base note plays the whole sample: no per-slice controls
 	if (noteIndex == 0) // full sample at base note
 	{
 		sliceStart = 0;
@@ -143,6 +195,7 @@ void SlicerT::playNoteImpl(NotePlayHandle* handle, std::span<SampleFrame> out)
 	else if (noteIndex > 0 && static_cast<std::size_t>(noteIndex) < m_slicePoints.size())
 	{
 		noteIndex -= 1;
+		sliceIndex = noteIndex;
 		sliceStart = m_slicePoints[noteIndex];
 		sliceEnd = m_slicePoints[noteIndex + 1];
 	}
@@ -171,7 +224,8 @@ void SlicerT::playNoteImpl(NotePlayHandle* handle, std::span<SampleFrame> out)
 		handle->m_pluginData = slot;
 	}
 
-	auto* playbackState = &static_cast<PlaybackSlot*>(handle->m_pluginData)->state;
+	auto* playbackSlot = static_cast<PlaybackSlot*>(handle->m_pluginData);
+	auto* playbackState = &playbackSlot->state;
 	const auto endFrame = sliceEnd * m_originalSample.sampleSize();
 	const auto framesLeft = endFrame - playbackState->frameIndex();
 
@@ -190,6 +244,11 @@ void SlicerT::playNoteImpl(NotePlayHandle* handle, std::span<SampleFrame> out)
 
 			out[i + offset][0] *= fadeValue;
 			out[i + offset][1] *= fadeValue;
+		}
+
+		if (sliceIndex >= 0 && static_cast<std::size_t>(sliceIndex) < slicer::MaxSlices)
+		{
+			applySliceControls(playbackSlot->voice, sliceIndex, out.data() + offset, frames);
 		}
 
 		const auto currentNote = static_cast<float>(playbackState->frameIndex()) / m_originalSample.sampleSize();
@@ -213,6 +272,131 @@ void SlicerT::deleteNotePluginData(NotePlayHandle* handle)
 		handle->m_pluginData = nullptr;
 	}
 	publishPlayhead(-1, 0, 0);
+}
+
+void SlicerT::applySliceControls(SliceVoice& voice, int slice, SampleFrame* block, f_cnt_t frames) noexcept
+{
+	using namespace slicer;
+	const SliceBank& bank = m_sliceControls[static_cast<std::size_t>(slice)];
+	const float gainDb = bank[GainControl].load(std::memory_order_relaxed);
+	const float pan = bank[PanControl].load(std::memory_order_relaxed);
+	const float filter = bank[FilterControl].load(std::memory_order_relaxed);
+	const float random = bank[RandomControl].load(std::memory_order_relaxed);
+	if (gainDb == 0.f && pan == 0.f && filter == 0.f && random == 0.f) { return; }
+
+	if (filter != 0.f)
+	{
+		const float sampleRate = static_cast<float>(Engine::audioEngine()->outputSampleRate());
+		const bool lowpass = filter < 0.f;
+		const float amount = std::abs(filter);
+		const float cutoff = lowpass
+			? LowpassCeilingHz * std::pow(LowpassFloorHz / LowpassCeilingHz, amount)
+			: HighpassFloorHz * std::pow(HighpassCeilingHz / HighpassFloorHz, amount);
+		const float g = std::tan(std::numbers::pi_v<float> * std::min(cutoff, sampleRate * 0.45f) / sampleRate);
+		const float k = 1.41421356f; // 1 / Q, Q = 0.707
+		const float a1 = 1.0f / (1.0f + g * (g + k));
+		const float a2 = g * a1;
+		const float a3 = g * a2;
+		for (f_cnt_t i = 0; i < frames; ++i)
+		{
+			block[i][0] = svfTick(voice.filterState[0], block[i][0], a1, a2, a3, k, lowpass);
+			block[i][1] = svfTick(voice.filterState[1], block[i][1], a1, a2, a3, k, lowpass);
+		}
+	}
+
+	const float gain = std::pow(10.0f, (gainDb + voice.randomGain * random * RandomGainDb) / 20.0f);
+	const float balance = std::clamp(pan + voice.randomPan * random * RandomPan, -1.0f, 1.0f);
+	const float left = gain * (balance > 0.f ? 1.0f - balance : 1.0f);
+	const float right = gain * (balance < 0.f ? 1.0f + balance : 1.0f);
+	if (left == 1.0f && right == 1.0f) { return; }
+	for (f_cnt_t i = 0; i < frames; ++i)
+	{
+		block[i][0] *= left;
+		block[i][1] *= right;
+	}
+}
+
+void SlicerT::resetSliceControls() noexcept
+{
+	for (SliceBank& bank : m_sliceControls)
+	{
+		for (std::size_t c = 0; c < slicer::SliceControlCount; ++c)
+		{
+			bank[c].store(static_cast<float>(slicer::SliceControlSpecs[c].neutral), std::memory_order_relaxed);
+		}
+	}
+}
+
+// slice point pointIndex (1..n-2) was deleted: slices pointIndex-1 and pointIndex are one slice now, which
+// keeps the earlier one's controls.
+void SlicerT::sliceMerged(int pointIndex) noexcept
+{
+	const auto first = static_cast<std::size_t>(std::max(pointIndex, 1));
+	for (std::size_t i = first; i + 1 < slicer::MaxSlices; ++i)
+	{
+		for (std::size_t c = 0; c < slicer::SliceControlCount; ++c)
+		{
+			m_sliceControls[i][c].store(m_sliceControls[i + 1][c].load(std::memory_order_relaxed),
+				std::memory_order_relaxed);
+		}
+	}
+	for (std::size_t c = 0; c < slicer::SliceControlCount; ++c)
+	{
+		m_sliceControls[slicer::MaxSlices - 1][c].store(
+			static_cast<float>(slicer::SliceControlSpecs[c].neutral), std::memory_order_relaxed);
+	}
+}
+
+// a slice point was inserted at pointIndex: slice pointIndex-1 is split in two, and both halves keep its controls.
+void SlicerT::sliceSplit(int pointIndex) noexcept
+{
+	const auto first = static_cast<std::size_t>(std::max(pointIndex, 1));
+	for (std::size_t i = slicer::MaxSlices - 1; i >= first; --i)
+	{
+		for (std::size_t c = 0; c < slicer::SliceControlCount; ++c)
+		{
+			m_sliceControls[i][c].store(m_sliceControls[i - 1][c].load(std::memory_order_relaxed),
+				std::memory_order_relaxed);
+		}
+	}
+}
+
+int SlicerT::sliceCount() const
+{
+	if (m_slicePoints.size() < 2) { return 0; }
+	return static_cast<int>(std::min(m_slicePoints.size() - 1, slicer::MaxSlices));
+}
+
+double SlicerT::slicePoint(int index) const
+{
+	if (index < 0 || static_cast<std::size_t>(index) >= m_slicePoints.size()) { return -1.0; }
+	return static_cast<double>(m_slicePoints[static_cast<std::size_t>(index)]);
+}
+
+double SlicerT::sliceControl(int slice, const QString& name) const
+{
+	const int control = sliceControlIndex(name);
+	if (control < 0 || slice < 0 || slice >= sliceCount()) { return std::nan(""); }
+	return static_cast<double>(
+		m_sliceControls[static_cast<std::size_t>(slice)][static_cast<std::size_t>(control)].load(
+			std::memory_order_relaxed));
+}
+
+bool SlicerT::setSliceControl(int slice, const QString& name, double value)
+{
+	const int control = sliceControlIndex(name);
+	if (control < 0 || slice < 0 || slice >= sliceCount()) { return false; }
+	const auto& spec = slicer::SliceControlSpecs[static_cast<std::size_t>(control)];
+	// Compared as it is stored, a float: the range's own ends are accepted.
+	const auto stored = static_cast<float>(value);
+	if (!std::isfinite(value) || stored < static_cast<float>(spec.lowest) || stored > static_cast<float>(spec.highest))
+	{
+		return false;
+	}
+	m_sliceControls[static_cast<std::size_t>(slice)][static_cast<std::size_t>(control)].store(
+		stored, std::memory_order_relaxed);
+	emit dataChanged();
+	return true;
 }
 
 void SlicerT::publishPlayhead(float current, float start, float end) noexcept
@@ -241,6 +425,7 @@ void SlicerT::findSlices()
 {
 	if (m_originalSample.sampleSize() <= 1) { return; }
 	m_slicePoints = {};
+	resetSliceControls(); // the slices are new: so are their controls
 
 	const int windowSize = 512;
 	const float minBeatLength = 0.05f; // in seconds, ~ 1/4 length at 220 bpm
@@ -432,6 +617,20 @@ void SlicerT::saveSettings(QDomDocument& document, QDomElement& element)
 		element.setAttribute(QString("slice_%1").arg(i), m_slicePoints[i]);
 	}
 
+	// Q050-263: only controls that are not neutral are written, so a project that never touched them saves
+	// exactly what it always did, and a project without them loads with every slice neutral.
+	for (std::size_t slice = 0; slice < slicer::MaxSlices; ++slice)
+	{
+		for (std::size_t c = 0; c < slicer::SliceControlCount; ++c)
+		{
+			const float value = m_sliceControls[slice][c].load(std::memory_order_relaxed);
+			if (value != static_cast<float>(slicer::SliceControlSpecs[c].neutral))
+			{
+				element.setAttribute(sliceAttributeName(c, slice), value);
+			}
+		}
+	}
+
 	m_fadeOutFrames.saveSettings(document, element, "fadeOut");
 	m_noteThreshold.saveSettings(document, element, "threshold");
 	m_originalBPM.saveSettings(document, element, "origBPM");
@@ -466,6 +665,24 @@ void SlicerT::loadSettings(const QDomElement& element)
 		for (int i = 0; i < totalSlices; i++)
 		{
 			m_slicePoints.push_back(element.attribute(QString("slice_%1").arg(i)).toFloat());
+		}
+	}
+
+	// Q050-263: every slice starts neutral, so state without the attributes (an old project, or an undo to
+	// before they were set) leaves nothing behind.
+	resetSliceControls();
+	for (std::size_t slice = 0; slice < slicer::MaxSlices; ++slice)
+	{
+		for (std::size_t c = 0; c < slicer::SliceControlCount; ++c)
+		{
+			const QString name = sliceAttributeName(c, slice);
+			if (!element.hasAttribute(name)) { continue; }
+			const auto& spec = slicer::SliceControlSpecs[c];
+			const float value = element.attribute(name).toFloat();
+			if (!std::isfinite(value)) { continue; }
+			m_sliceControls[slice][c].store(
+				std::clamp(value, static_cast<float>(spec.lowest), static_cast<float>(spec.highest)),
+				std::memory_order_relaxed);
 		}
 	}
 

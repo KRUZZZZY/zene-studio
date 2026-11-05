@@ -3390,3 +3390,9 @@ tests/src/gui/PluginGestureUndoTest.cpp
 tests/src/core/PluginParamGestureTest.cpp
 docs/qwen-fixes-2026-10/cluster-Q050-214.md
 tests/control-project-events.py
+# Q050-263 (2026-11): per-slice SlicerT controls - shared names/ranges, the plugin.slice_get/slice_set commands, their test.
+include/SlicerSliceControls.h
+src/core/ControlCommandsSlicerSlices.cpp
+tests/src/gui/SlicerTSliceControlsTest.cpp
+docs/050-features/Q050-263.md
+docs/qwen-fixes-2026-10/cluster-Q050-263.md

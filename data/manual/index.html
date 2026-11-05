@@ -460,6 +460,17 @@ instrument's window captures a bounded take (click again to stop, or let it reac
 so the waveform and, for SlicerT, the slices are ready to play. The take is a WAV in Recordings; one undo
 puts the sampler's previous sample back. Agents use record.sampler_capture, record.sampler_capture_stop,
 record.sampler_capture_status and record.sampler_capture_land for the same take.</p>
+<p>SlicerT's window has a per-slice bar between the waveform and the sample name. Slice picks one playable slice
+(slice 0 plays on the key above the base note; the base note still plays the whole sample) and the waveform shades it.
+Gain (-48 to +12 dB), Pan (-1 left to +1 right; a balance, so 0 leaves the stereo sample alone), Filter (below 0 a low-pass
+that closes to 100 Hz at -1, above 0 a high-pass that opens to 8 kHz at +1, 0 off) and Random (0 to 1) then belong to that
+slice only: a note on its key plays it that way, and the other slices are untouched. Random makes every trigger of the
+slice differ a little - gain by up to 6 dB and pan by up to 0.5, times the amount - and 0 means none. Type a value and press
+Enter, or use the arrows; each edit is one undo step. Deleting a slice point keeps the earlier slice's values for the merged
+slice, and double-clicking to add a point gives both halves the slice's values; Reset slices and detecting slices again start every
+slice neutral. The values are saved with the project (a project without them opens neutral). Agents use plugin.slice_get
+(one slice or all of them: key, start, end and the four values) and plugin.slice_set (any of gain, pan, filter, random on one
+slice; a value outside its range is refused and nothing is written) - the panel calls these same commands.</p>
 <p>Project &gt; Low-Latency Monitoring helps you play in through a latent device. On, it stops each device whose latency is
 over 3 ms on the chains a record-armed track plays through (its own, the channels it plays into and the master), and a
 record-armed instrument track whose instrument reports more than 3 ms of latency keeps playing but is no longer held back

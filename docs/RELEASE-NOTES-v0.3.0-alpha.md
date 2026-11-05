@@ -1107,6 +1107,8 @@ config lists back) and one `not_mutating` (`session.command_bindings`, a read) -
 
 **Q050-255 and Q050-219** (`feat/050-Q050-255-oc`, 2026-11-01): `track.folder_span_resize`, `track.folder_span_split`, `track.folder_span_move`, `track.folder_span_delete` and `section.move` add five `true_inverse` rows; `track.folder_spans` and `track.folder_span_select` add two `not_mutating` rows - `rows=894 true_inverse=439 snapshot=42 irreversible=25 not_mutating=388`.
 
+**Q050-263** (per-slice SlicerT controls, 2026-11-02): `plugin.slice_get` adds one `not_mutating` row and `plugin.slice_set` one `true_inverse` row - `rows=889 true_inverse=435 snapshot=42 irreversible=25 not_mutating=387`.
+
 <!-- A16-HISTOGRAM-BEGIN
      measured: rows=888 true_inverse=434 snapshot=42 irreversible=25 not_mutating=387
      configuration: telemetry.status wasm.load session.get_state stem.get_state

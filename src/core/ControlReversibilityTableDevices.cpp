@@ -119,6 +119,11 @@ const ReversibilityRow kDeviceRows[] = {
 	R("record.sampler_capture_land", RC::TrueInverse, true, "it writes the take to a WAV and loads it into the "
 		"sampler device (its sample and, for SlicerT, its slices)",
 		"ProjectJournal (Track checkpoint): the device's previous sample and settings come back; the WAV stays on disk", ""),
+	// 0.5.0 L10 (Q050-263): the per-slice SlicerT controls (gain, pan, filter, random amount).
+	R("plugin.slice_get", RC::NotMutating, false, "it reads one or every slice's gain, pan, filter and random amount", "no write", ""),
+	R("plugin.slice_set", RC::TrueInverse, true, "it writes slice controls that are saved in the SlicerT's state",
+		"ProjectJournal (Track checkpoint): the SlicerT's saveSettings/loadSettings carry every slice's controls, "
+		"so one undo restores the previous values", ""),
 	// 0.5.0 L01 / L11 / L12 / L14.
 	R("transport.low_latency", RC::NotMutating, false, "it stops high-latency devices processing while monitoring: session "
 		"state (Effect::setDontRun, neither journalled nor saved)", "no project write (enabled:false puts them back)", ""),
