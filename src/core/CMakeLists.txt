@@ -332,6 +332,10 @@ set(LMMS_SRCS
 	core/ControlMasteringSupport.cpp
 	core/ControlCommandsMastering.cpp
 	core/ControlCommandsMasteringRun.cpp
+	# 0.5.0 L12 (Q050-317.1): the release sequence of a mastering document - the model
+	# (MasteringSequence.h, a ProjectSection) and the mastering.song_* commands that edit it.
+	core/MasteringSequence.cpp
+	core/ControlCommandsMasteringSequence.cpp
 	# Import detection (feature row 34): detect.analyze (the SUGGESTION - one audio
 	# file in, tempo + first transient + key out, nothing written), detect.apply
 	# (the acceptance: the tempo into the tempo map and the key into the project's

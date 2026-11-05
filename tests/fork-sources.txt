@@ -955,6 +955,7 @@ include/MarkerActions.h
 include/MasterLoudnessTap.h
 include/MasteringChain.h
 include/MasteringJob.h
+include/MasteringSequence.h
 include/MasteringReport.h
 include/McuProtocol.h
 include/McuSurface.h
@@ -1508,6 +1509,7 @@ src/core/ControlCommandsLowLatency.cpp
 src/core/ControlCommandsMarkers.cpp
 src/core/ControlCommandsMastering.cpp
 src/core/ControlCommandsMasteringRun.cpp
+src/core/ControlCommandsMasteringSequence.cpp
 src/core/ControlCommandsMcu.cpp
 src/core/ControlCommandsMeter.cpp
 src/core/ControlCommandsMeterFile.cpp
@@ -1824,6 +1826,7 @@ src/core/MasterLoudnessTap.cpp
 src/core/MasteringChain.cpp
 src/core/MasteringJob.cpp
 src/core/MasteringReport.cpp
+src/core/MasteringSequence.cpp
 src/core/McuProtocol.cpp
 src/core/McuSurface.cpp
 src/core/MetronomeOptions.cpp
@@ -2236,6 +2239,7 @@ tests/control-link-sync.py
 tests/control-livecode-commands.py
 tests/control-low-latency-commands.py
 tests/control-mastering-commands.py
+tests/control-mastering-sequence.py
 tests/control-mastering-quit.py
 tests/control-mastering-run-bound.py
 tests/control-mcp-group-coverage.py
@@ -2512,6 +2516,7 @@ tests/src/core/LufsMeterTest.cpp
 tests/src/core/Lv2StateTest.cpp
 tests/src/core/McuSurfaceFeedbackTest.cpp
 tests/src/core/MasteringTest.cpp
+tests/src/core/MasteringSequenceTest.cpp
 tests/src/core/McuSurfaceTest.cpp
 tests/src/core/MidiClockTest.cpp
 tests/src/core/MidiClockSourceTest.cpp
@@ -2838,6 +2843,7 @@ tests/src/gui/AgentSurfaceReportTest.cpp
 tests/src/gui/ProjectContainerSaveAsGuiTest.cpp
 tests/src/gui/ShortcutsCommandsTest.cpp
 tests/src/gui/MainWindowTest.cpp
+tests/src/gui/MasteringReleaseGuiTest.cpp
 tests/src/gui/LivecodePanelTest.cpp
 tests/src/gui/LmmsStyleTest.cpp
 tests/src/gui/PianoRollRecordTest.cpp

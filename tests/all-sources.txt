@@ -540,6 +540,7 @@ include/MarkerActions.h
 include/MasterLoudnessTap.h
 include/MasteringChain.h
 include/MasteringJob.h
+include/MasteringSequence.h
 include/MasteringReport.h
 include/McuProtocol.h
 include/McuSurface.h
@@ -1668,6 +1669,7 @@ src/core/ControlCommandsLowLatency.cpp
 src/core/ControlCommandsMarkers.cpp
 src/core/ControlCommandsMastering.cpp
 src/core/ControlCommandsMasteringRun.cpp
+src/core/ControlCommandsMasteringSequence.cpp
 src/core/ControlCommandsMcu.cpp
 src/core/ControlCommandsMeter.cpp
 src/core/ControlCommandsMeterFile.cpp
@@ -2017,6 +2019,7 @@ src/core/MasterLoudnessTap.cpp
 src/core/MasteringChain.cpp
 src/core/MasteringJob.cpp
 src/core/MasteringReport.cpp
+src/core/MasteringSequence.cpp
 src/core/McuProtocol.cpp
 src/core/McuSurface.cpp
 src/core/MeterModel.cpp
@@ -2871,6 +2874,7 @@ tests/src/core/LufsMeterTest.cpp
 tests/src/core/Lv2StateTest.cpp
 tests/src/core/MainCliStartupTest.cpp
 tests/src/core/MasteringTest.cpp
+tests/src/core/MasteringSequenceTest.cpp
 tests/src/core/MasteringTestSupport.h
 tests/src/core/MathTest.cpp
 tests/src/core/McuSurfaceFeedbackTest.cpp
@@ -3203,6 +3207,7 @@ tests/src/gui/LmmsStyleTest.cpp
 tests/src/gui/Lv2ViewBaseLifetimeTest.cpp
 tests/src/gui/MainWindowGeometryTest.cpp
 tests/src/gui/MainWindowTest.cpp
+tests/src/gui/MasteringReleaseGuiTest.cpp
 tests/src/gui/MenuTestSupport.h
 tests/src/gui/MicrotunerScaleFileTest.cpp
 tests/src/gui/MidiClipLinkedEditTest.cpp

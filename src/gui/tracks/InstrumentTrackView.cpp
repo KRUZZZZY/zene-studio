@@ -180,8 +180,16 @@ InstrumentTrackView::~InstrumentTrackView()
 	delete m_window;
 	m_window = nullptr;
 
-	delete model()->m_midiPort.m_readablePortsMenu;
-	delete model()->m_midiPort.m_writablePortsMenu;
+	// Q050-317.1: the view outlives its TRACK when the track dies first. The two MIDI port menus are
+	// owned by the track's MIDI port, so a closed view (WA_DeleteOnClose, scheduled by
+	// Track::destroyedTrack) reaches this destructor after a document replacement has already
+	// deleted the track - model() is then null because ModelView holds it in a QPointer. Dereferencing
+	// it here was a SIGSEGV measured right after project.new_document answered; when the track is gone
+	// its menus are gone with it, so there is nothing left to delete.
+	InstrumentTrack* track = model();
+	if (track == nullptr) { return; }
+	delete track->m_midiPort.m_readablePortsMenu;
+	delete track->m_midiPort.m_writablePortsMenu;
 }
 
 

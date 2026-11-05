@@ -4,12 +4,12 @@
  *
  * A GROUP file, on the seam ControlReversibilityTable{TrackFolder,Vca,Routing}.cpp
  * already use: the block's CLASS comes from each row, never from the file it
- * happens to live in, so a group's rows (here one recorded-action true_inverse
- * row and two not_mutating inspectors) are joined into reversibilityRowTable()
+ * happens to live in, so a group's rows are joined into reversibilityRowTable()
  * through reversibilityMasteringRowTable(). The rows are one file rather than
- * three because they are one feature (docs/FEATURE-LIST-0.3.0.md rows 25 and 72,
- * auto-mastering wave 1), and a reviewer reads the whole contract for that
- * feature in one place.
+ * several because they are one feature area - auto-mastering wave 1
+ * (docs/FEATURE-LIST-0.3.0.md rows 25 and 72) and the release sequence
+ * (Q050-317.1) - and a reviewer reads the whole contract for that area in one
+ * place.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -34,7 +34,8 @@
 #include "ControlReversibility.h"
 
 /*! The auto-mastering surface (feature rows 25 and 72; docs/AUTO-MASTERING.md,
- *  task #610). Two reads and one writer:
+ *  task #610) and the mastering release sequence (Q050-317.1). Two reads and one
+ *  writer, then the release sequence's one read and four edits:
  *
  *   * the two reads write nothing - one publishes the engine's own candidate set
  *     (MasteringJob::defaultCandidates) and one publishes the last run's report
@@ -59,6 +60,15 @@
  *  a stated reason: this group writes NO project XML at all. The render runs in a
  *  child process on a serialised copy of the session, so no attribute, no element
  *  and no model of the running project is touched by any mastering command.
+ *
+ *  THE RELEASE SEQUENCE'S ROWS (Q050-317.1) are the opposite case in one respect:
+ *  they DO write project XML - the <mastering-sequence> section - but a
+ *  ProjectSection is not a JournallingObject, so a live checkpoint cannot reach
+ *  it. Their inverse is the recorded action the section.* group uses for the same
+ *  kind of state: the whole previous list, restored by the one recorded undo step.
+ *  Each edit records exactly one such step (a call that changes nothing records
+ *  none), and the state is saved with the project, so what undo puts back is what
+ *  a save and reopen would have kept.
  */
 
 namespace lmms
@@ -109,6 +119,41 @@ const ReversibilityRow kMasteringRows[] = {
 		"an agent that wants them back re-issues mastering.run (the settings and the file set "
 		"are reproducible, the audio is not bit-reproducible - see docs/AUTO-MASTERING.md "
 		"section 5)"),
+	// Q050-317.1: the mastering release sequence. One read and four edits of the project's
+	// <mastering-sequence> section. The edits are recorded ACTION checkpoints - the same
+	// mechanism the section.* group uses for its own list - because the list is a ProjectSection
+	// and not a JournallingObject, so no live checkpoint reaches it.
+	R("mastering.sequence_list", RC::NotMutating, false,
+		"it reads the mastering release sequence out of the project: the songs in release order, "
+		"their processing, fades and gaps. Nothing is written",
+		"no write",
+		""),
+	R("mastering.song_add", RC::TrueInverse, true,
+		"it appends one song - its audio file reference, processing name, fade-in, fade-out and gap - "
+		"to the project's <mastering-sequence> section. The section is not a JournallingObject, so "
+		"no live checkpoint reaches it",
+		"action checkpoint: the recorded undo step puts the whole previous song list back, and its "
+		"redo half puts the new list back",
+		""),
+	R("mastering.song_set", RC::TrueInverse, true,
+		"it changes one song's fields (source, title, processing, fades, gap) in the project's "
+		"<mastering-sequence> section; the song's id and position are kept. A section is not a "
+		"JournallingObject, so no live checkpoint reaches it",
+		"action checkpoint: the recorded undo step puts the whole previous song list back, and its "
+		"redo half puts the changed list back",
+		""),
+	R("mastering.song_move", RC::TrueInverse, true,
+		"it reorders one song in the project's <mastering-sequence> section, which is an ordered "
+		"list and not a JournallingObject",
+		"action checkpoint: the recorded undo step puts the whole previous song list back, and its "
+		"redo half puts the moved list back",
+		""),
+	R("mastering.song_remove", RC::TrueInverse, true,
+		"it removes one song from the project's <mastering-sequence> section; the audio FILE is not "
+		"touched, so only the list entry has an inverse",
+		"action checkpoint: the recorded undo step puts the whole previous song list back (the "
+		"removed entry included), and its redo half removes it again",
+		""),
 };
 
 constexpr int kMasteringRowCount =

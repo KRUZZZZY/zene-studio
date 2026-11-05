@@ -384,6 +384,10 @@ void registerControlCommands(ControlRegistry& registry)
 	// meter are in every configuration, so its ids are honest in every one.
 	registerMasteringCommands(registry);
 	registerMasteringRunCommands(registry);
+	// The mastering release sequence (Q050-317.1): the ordered songs of a release with their
+	// processing, fades and gaps. No compile-time switch - the candidate set it names is in
+	// every configuration.
+	registerMasteringSequenceCommands(registry);
 	// Import detection (feature row 34: transient / BPM / key detection on
 	// import). No compile-time switch: the engine's own decoder, the Qt-free
 	// arithmetic and the project's `<detected-key>` field are in every

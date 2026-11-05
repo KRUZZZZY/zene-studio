@@ -1003,6 +1003,9 @@ set(LMMS_TESTS
 	src/core/CustomAccessTest.cpp
 	# 0.5.0 L12 (W3): mixer snapshots, project settings and metadata, the document type, edit locks.
 	src/core/ProjectStateTest.cpp
+	# 0.5.0 L12 (Q050-317.1): a mastering document's release sequence - songs, order, processing,
+	# gaps and fades through mastering.song_*, and the save/reopen round trip.
+	src/core/MasteringSequenceTest.cpp
 	# 0.5.0 L11 (W3): a clip into the library, the index and similar sounds, thumbnails, the matched preview, history.
 	src/core/LibraryBrowserTest.cpp
 	# 0.5.0 Q050-048: browser feature analysis decodes only its window (WAV/FLAC/OGG), duration from the header.
@@ -1222,6 +1225,9 @@ set(LMMS_TESTS
 	src/gui/Lv2ViewBaseLifetimeTest.cpp
 	# 0.5.0 L11 / L12 (W3): the project menu's new entries, a track's lock, the gallery, the browser's remembered sources.
 	src/gui/LibraryMenusTest.cpp
+	# 0.5.0 L12 (Q050-317.1): Project Tools > Mastering Release... - the release page is the
+	# registered mastering.sequence_list, and its edits and an agent's are the same commands.
+	src/gui/MasteringReleaseGuiTest.cpp
 	# Q050-121: Project Media's usage/state columns, the Unused view, and the injected
 	# confirmation proving Cancel keeps and Confirm removes only the selected unused file.
 	src/gui/BrowserProjectMediaTest.cpp
@@ -1891,6 +1897,16 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		add_dependencies(${LMMS_TEST_NAME} rnnoise_vendored)
 		if(NOT MSVC)
 			target_link_libraries(${LMMS_TEST_NAME} PRIVATE m)
+		endif()
+	endif()
+	# Q050-317.1: the release-sequence tests open a real mastering document through
+	# project.new_document, so the build's own template devices must exist (the same reason
+	# ArrangingCatchUpTest's plugin directory is set below).
+	if(LMMS_TEST_NAME STREQUAL "MasteringSequenceTest" OR LMMS_TEST_NAME STREQUAL "MasteringReleaseGuiTest")
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			LMMS_TEST_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
+		if(TARGET eq)
+			add_dependencies(${LMMS_TEST_NAME} eq lomm compressor analyzer)
 		endif()
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "MasteringTest")
@@ -3452,6 +3468,7 @@ set_tests_properties(PatcherCanvasTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=o
 set_tests_properties(PluginCompatEditorProbe PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(Lv2ViewBaseLifetimeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(LibraryMenusTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(MasteringReleaseGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(BrowserProjectMediaTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(CommandPaletteTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(CommandFormTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -6947,6 +6964,17 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/control-mastering-quit.py
 			$<TARGET_FILE:zene>)
 	set_tests_properties(ControlMasteringQuit PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
+	# Q050-317.1: the mastering release sequence over the control socket of the real binary -
+	# two audio-file songs, order/processing/gap/fades through mastering.song_*, and the
+	# save/reopen round trip measured on the wire and in the saved XML.
+	add_test(NAME ControlMasteringSequence
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-mastering-sequence.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlMasteringSequence PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)

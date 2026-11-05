@@ -384,6 +384,28 @@ ListSpec subprojects()
 	return out;
 }
 
+ListSpec masteringSequence()
+{
+	// Q050-317.1: the mastering release sequence. The rows are the songs in release order, and
+	// every entry is one of the mastering.song_* commands - so the page and an agent edit the
+	// same list, and every edit is one undo step. "Move to Top"/"Move to Bottom" (rather than
+	// up/down) keep the row actions to arguments the row itself carries; the form of "Move to
+	// Position..." reaches any other place in the release.
+	ListSpec out = spec("Mastering Release", "mastering.sequence_list", "songs",
+		{QStringLiteral("index"), QStringLiteral("title"), QStringLiteral("processing"), QStringLiteral("fade_in_ms"),
+			QStringLiteral("fade_out_ms"), QStringLiteral("gap_ms"), QStringLiteral("source")});
+	out.summaryKeys = QStringList{QStringLiteral("count"), QStringLiteral("document_type")};
+	const QHash<QString, QString> song{{QStringLiteral("song"), QStringLiteral("song")}};
+	RowAction remove = act("Remove", "mastering.song_remove", song);
+	remove.confirm = true;
+	out.actions = {act("Edit...", "mastering.song_set", song, {}, true),
+		act("Move to Top", "mastering.song_move", song, {{QStringLiteral("to"), 0}}),
+		act("Move to Bottom", "mastering.song_move", song, {{QStringLiteral("to"), 511}}),
+		act("Move to Position...", "mastering.song_move", song, {}, true), remove};
+	out.extras = {extra("Add Song...", "mastering.song_add")};
+	return out;
+}
+
 ListSpec alternatives()
 {
 	ListSpec out = spec("Alternatives", "project.alternatives", "alternatives", {QStringLiteral("name"), QStringLiteral("active"),
