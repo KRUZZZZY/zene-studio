@@ -504,9 +504,12 @@ library to work.
   clip moves every clip inside it (`track.folder_move` with its new optional `start`/`end` span), Ctrl+drag
   copies them there (`range.copy` + `range.paste`), and its menu duplicates it after itself or deletes it
   (`range.delete`); each edit is one undo step and the arranger's own range is put back after it
-  (`FolderSummaryLaneTest`; `include/FolderSummaryLane.h`). Not done: a summary clip cannot be resized,
-  split or selected together with ordinary clips, and has no keyboard route; the copy uses (and so replaces)
-  the range clipboard; a delete follows the arranger's ripple mode. The paragraph below is the pre-M3 record.
+  (`FolderSummaryLaneTest`; `include/FolderSummaryLane.h`). *(Updated 2026-11-01, Q050-255.)* A summary clip can also be
+  selected (several, beside ordinary clips), resized by its edges, split, and edited from the keyboard
+  (`track.folder_span_*`; `docs/050-features/Q050-255.md`). Not done: the copy uses (and so replaces)
+  the range clipboard; the single-clip menu delete follows the arranger's ripple mode, the selection's
+  `track.folder_span_delete` does not; a group split takes no zero-crossing snap; lengthening moves only the
+  clips already at that edge. The paragraph below is the pre-M3 record.
   **Folder tracks, their two modes, pinning and the named visibility sets are drivable through the
   socket, not from the interface**: nothing in `src/gui/` creates a folder, indents a child, collapses
   a row, draws the relation, shows a pin or offers a set switcher — a folder's row is an ordinary

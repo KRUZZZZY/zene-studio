@@ -25,6 +25,7 @@
 #ifndef LMMS_GUI_ARRANGER_CLIP_KEYS_H
 #define LMMS_GUI_ARRANGER_CLIP_KEYS_H
 
+#include <QJsonArray>
 #include <QString>
 
 #include "lmms_export.h"
@@ -44,7 +45,17 @@ class Clip;
  *  - Ctrl+Alt+Left / Ctrl+Alt+Right: the selected clip a snap step shorter / longer - clip.resize, one undo step;
  *  - Ctrl+Shift+L: the editable clip list (window.item_list).
  *  A clip chosen this way is selected in the arranger too (what Delete acts on) and read out: its name, track,
- *  start and length. */
+ *  start and length.
+ *
+ *  Q050-255: the same keys over a folder's summary clips, which the same commands edit as groups:
+ *  - Ctrl+Alt+G: select the summary clip holding the selected clip (with none, the first at or after the play position);
+ *    with Shift, add it to the selection;
+ *  and while one is selected, one undo step each, over the selected summary clips and the arranger's selected clips:
+ *  - Ctrl+Alt+Left / Ctrl+Alt+Right: their end edge a snap step earlier / later, Shift for the start edge
+ *    (track.folder_span_resize);
+ *  - Ctrl+Alt+K: split them at the play position (track.folder_span_split);
+ *  - Ctrl+Alt+Page Up / Page Down: move them a snap step earlier / later (track.folder_span_move);
+ *  - Delete: delete them (track.folder_span_delete); Escape: select nothing. */
 namespace lmms::gui
 {
 
@@ -60,6 +71,8 @@ LMMS_EXPORT bool handle(SongEditor* editor, const QKeyEvent* event);
 //! Select @a clip in the shell (window.select) and in @a editor's own selection (null: the shell only); false, with
 //! the refusal announced, when window.select refused it.
 LMMS_EXPORT bool selectClip(SongEditor* editor, Clip* clip);
+//! The ids of the clips selected in the arranger: what a summary clip's group edit takes along.
+LMMS_EXPORT QJsonArray selectedClipIds();
 //! "Bass, on Drums, 5.1.1, 2.0.0 long" - what a clip is read out as.
 LMMS_EXPORT QString describeClip(const Clip* clip);
 

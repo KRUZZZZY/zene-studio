@@ -25,12 +25,27 @@
 /*! 0.5.0 ED-035, in the real application: a folder track's row carries one summary clip per stretch of
  *  its children's clips; dragging one moves only the clips inside it, Ctrl+dragging copies them, and its
  *  Delete removes them - each one undo step, through track.folder_move and the range commands - and the
- *  arranger's own range is left as the user had it. */
+ *  arranger's own range is left as the user had it.
+ *
+ *  Q050-255: a summary clip is also resized by its edges and split from its menu, over its child clips on every track
+ *  (nested ones too); clicks select several, which the keyboard route and the edits take with the arranger's own selected
+ *  clips - a clip reached twice changing once - and each edit is one undo step. */
+
+#include <algorithm>
+#include <cmath>
+#include <utility>
+#include <vector>
 
 #include <QtTest>
 
+#include <QContextMenuEvent>
 #include <QJsonArray>
+#include <QKeyEvent>
+#include <QMenu>
+#include <QTimer>
 
+#include "ArrangerClipKeys.h"
+#include "ClipView.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
@@ -83,6 +98,31 @@ std::vector<tick_t> startsOf(const Track* track)
 	std::sort(out.begin(), out.end());
 	return out;
 }
+
+using Spans = std::vector<std::pair<tick_t, tick_t>>;
+
+//! Every clip of @a track as (start, end), earliest first.
+Spans layoutOf(const Track* track)
+{
+	Spans out;
+	for (const Clip* clip : track->getClips()) { out.emplace_back(clip->startPosition().getTicks(), clip->endPosition().getTicks()); }
+	std::sort(out.begin(), out.end());
+	return out;
+}
+
+void hover(QWidget* widget, const QPoint& pos)
+{
+	QMouseEvent event(QEvent::MouseMove, pos, widget->mapToGlobal(pos), Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+	QApplication::sendEvent(widget, &event);
+}
+
+bool press(int key, Qt::KeyboardModifiers mods)
+{
+	QKeyEvent event(QEvent::KeyPress, key, mods);
+	return arrangerkeys::handle(getGUI()->songEditor()->m_editor, &event);
+}
+
+const Qt::KeyboardModifiers Chord = Qt::ControlModifier | Qt::AltModifier;
 
 } // namespace
 
@@ -212,7 +252,241 @@ private slots:
 		QCOMPARE(startsOf(m_a), (std::vector<tick_t>{0, 768}));
 	}
 
+	void anEdgeDragLengthensTheClipsAtThatEdgeInOneStep()
+	{
+		const Spans a = layoutOf(m_a);
+		const Spans b = layoutOf(m_b);
+		dragEdge(m_lane->spanRect(m_lane->spans()[0]).right() - 1, bar());
+		// The first summary clip now ends a bar later; only the clip that ended there moved out, and the next span stayed.
+		QCOMPARE(layoutOf(m_b), (Spans{{96, 288 + bar()}}));
+		QCOMPARE(layoutOf(m_a), a);
+		QCOMPARE(m_lane->spans()[0].end, 288 + bar());
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(layoutOf(m_a), a);
+		QCOMPARE(layoutOf(m_b), b);
+	}
+
+	void anEdgeDragInwardsCutsTheChildClipsTogether()
+	{
+		const Spans a = layoutOf(m_a);
+		const Spans b = layoutOf(m_b);
+		// Both clips cross the new end: both are cut there together.
+		dragEdge(m_lane->spanRect(m_lane->spans()[0]).right() - 1, -96);
+		QCOMPARE(layoutOf(m_a), (Spans{{0, 192}, {768, 960}}));
+		QCOMPARE(layoutOf(m_b), (Spans{{96, 192}}));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		// Past every start but the first: the clip wholly past it goes, and one undo brings it back.
+		dragEdge(m_lane->spanRect(m_lane->spans()[0]).right() - 1, -192);
+		QCOMPARE(layoutOf(m_a), (Spans{{0, 96}, {768, 960}}));
+		QVERIFY(m_b->getClips().empty());
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(layoutOf(m_a), a);
+		QCOMPARE(layoutOf(m_b), b);
+	}
+
+	void theStartEdgeTrimsAndKeepsTheContentInPlace()
+	{
+		const Spans a = layoutOf(m_a);
+		Clip* first = m_a->getClips().front();
+		const tick_t offset = first->startTimeOffset().getTicks();
+		dragEdge(m_lane->spanRect(m_lane->spans()[0]).left() + 1, 96);
+		QCOMPARE(layoutOf(m_a), (Spans{{96, 192}, {768, 960}}));
+		QCOMPARE(layoutOf(m_b), (Spans{{96, 288}}));
+		QCOMPARE(first->startTimeOffset().getTicks(), offset - 96);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(layoutOf(m_a), a);
+		// Out to the left: the second summary clip's start, not past the first summary clip's end.
+		dragEdge(m_lane->spanRect(m_lane->spans()[1]).left() + 1, -bar());
+		QCOMPARE(layoutOf(m_a), (Spans{{0, 192}, {768 - bar(), 960}}));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(layoutOf(m_a), a);
+		const QJsonObject one{{QStringLiteral("folder"), control::trackIdOf(m_folder)}, {QStringLiteral("start"), 768}, {QStringLiteral("end"), 960}};
+		const ControlResult tooFar = run(QStringLiteral("track.folder_span_resize"), {{QStringLiteral("spans"), QJsonArray{one}},
+			{QStringLiteral("edge"), QStringLiteral("start")}, {QStringLiteral("delta"), -600}});
+		QCOMPARE(tooFar.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(layoutOf(m_a), a);
+	}
+
+	void theCursorShowsAnEdgeAndAClickSelects()
+	{
+		const QRect first = m_lane->spanRect(m_lane->spans()[0]);
+		hover(m_lane, QPoint(first.right() - 1, first.center().y()));
+		QCOMPARE(m_lane->cursor().shape(), Qt::SizeHorCursor);
+		hover(m_lane, first.center());
+		QVERIFY(m_lane->cursor().shape() != Qt::SizeHorCursor);
+		QTest::mouseClick(m_lane, Qt::LeftButton, Qt::NoModifier, first.center());
+		QCOMPARE(selectedCount(), 1);
+		QTest::mouseClick(m_lane, Qt::LeftButton, Qt::ShiftModifier, m_lane->spanRect(m_lane->spans()[1]).center());
+		QCOMPARE(selectedCount(), 2);
+		QTest::mouseClick(m_lane, Qt::LeftButton, Qt::ShiftModifier, first.center());  // Shift takes it out again
+		QCOMPARE(selectedCount(), 1);
+		QVERIFY(run(QStringLiteral("track.folder_span_select")).ok);
+		QCOMPARE(selectedCount(), 0);
+	}
+
+	void theMenuSplitsEveryCrossingClipIncludingNestedOnes()
+	{
+		// A sub-folder's track inside the first summary clip: the split reaches it too.
+		auto* sub = dynamic_cast<TrackFolder*>(Track::create(Track::Type::Folder, Engine::getSong()));
+		Track* nested = Track::create(Track::Type::Sample, Engine::getSong());
+		QVERIFY(run(QStringLiteral("track.set_folder"), {{QStringLiteral("track"), control::trackIdOf(sub)}, {QStringLiteral("folder"), control::trackIdOf(m_folder)}}).ok);
+		QVERIFY(run(QStringLiteral("track.set_folder"), {{QStringLiteral("track"), control::trackIdOf(nested)}, {QStringLiteral("folder"), control::trackIdOf(sub)}}).ok);
+		clipAt(nested, 48, 192);
+		const Spans a = layoutOf(m_a);
+		const Spans b = layoutOf(m_b);
+		const FolderSpan span = m_lane->spans()[0];
+		const int x = m_lane->spanRect(span).left() + (bar() / 2) * m_lane->spanRect(span).width() / (span.end - span.start);
+		menuAction(QPoint(x, m_lane->spanRect(span).center().y()), QStringLiteral("track.folder_span_split"));
+		QCOMPARE(layoutOf(m_a), (Spans{{0, 96}, {96, 192}, {768, 960}}));
+		QCOMPARE(layoutOf(m_b), (Spans{{96, 288}}));  // it starts at the cut: not crossed
+		QCOMPARE(layoutOf(nested), (Spans{{48, 96}, {96, 240}}));
+		QCOMPARE(m_lane->spans().size(), std::size_t{2});  // the pieces touch: still one summary clip
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(layoutOf(m_a), a);
+		QCOMPARE(layoutOf(nested), (Spans{{48, 240}}));
+		QVERIFY(run(QStringLiteral("track.remove"), {{QStringLiteral("track"), control::trackIdOf(nested)}}).ok);
+		QVERIFY(run(QStringLiteral("track.remove"), {{QStringLiteral("track"), control::trackIdOf(sub)}}).ok);
+		QCOMPARE(layoutOf(m_b), b);
+	}
+
+	void aSelectionOfSpansAndClipsResizesOnceInOneStepFromTheKeyboard()
+	{
+		const Spans a = layoutOf(m_a);
+		const Spans b = layoutOf(m_b);
+		Track* outside = Track::create(Track::Type::Sample, Engine::getSong());
+		clipAt(outside, 0, 192);
+		QCoreApplication::processEvents();
+		QTest::mouseClick(m_lane, Qt::LeftButton, Qt::NoModifier, m_lane->spanRect(m_lane->spans()[0]).center());
+		QTest::mouseClick(m_lane, Qt::LeftButton, Qt::ShiftModifier, m_lane->spanRect(m_lane->spans()[1]).center());
+		// In the arranger's selection too: an ordinary clip, and a child of a selected summary clip that must change once.
+		SongEditor* editor = getGUI()->songEditor()->m_editor;
+		editor->selectAllClips(false);
+		for (ClipView* view : editor->findChildren<ClipView*>())
+		{
+			if (view->getClip()->getTrack() == outside || view->getClip()->getTrack() == m_b) { view->setSelected(true); }
+		}
+		const tick_t snap = std::max<tick_t>(1, std::lround(editor->getSnapSize() * TimePos::ticksPerBar()));
+		QVERIFY(press(Qt::Key_Right, Chord));
+		QCOMPARE(layoutOf(m_a), (Spans{{0, 192}, {768, 960 + snap}}));
+		QCOMPARE(layoutOf(m_b), (Spans{{96, 288 + snap}}));  // once, not twice
+		QCOMPARE(layoutOf(outside), (Spans{{0, 192 + snap}}));
+		QCOMPARE(selectedCount(), 2);  // the selection stays on them
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // the one step
+		QCOMPARE(layoutOf(m_a), a);
+		QCOMPARE(layoutOf(m_b), b);
+		QCOMPARE(layoutOf(outside), (Spans{{0, 192}}));
+		QCOMPARE(selectedCount(), 2);  // an undo rebuilt the clips: the selection found them again
+		editor->selectAllClips(false);
+		QVERIFY(run(QStringLiteral("track.remove"), {{QStringLiteral("track"), control::trackIdOf(outside)}}).ok);
+		QVERIFY(run(QStringLiteral("track.folder_span_select")).ok);
+		QCoreApplication::processEvents();
+	}
+
+	void theKeysChooseSplitMoveAndDelete()
+	{
+		const Spans a = layoutOf(m_a);
+		const Spans b = layoutOf(m_b);
+		Engine::getSong()->setPlayPos(144, Song::PlayMode::Song);
+		// Nothing selected: the edit keys are left alone.
+		QVERIFY(!press(Qt::Key_K, Chord));
+		QVERIFY(press(Qt::Key_G, Chord));
+		QCOMPARE(selectedCount(), 1);
+
+		QVERIFY(press(Qt::Key_K, Chord));
+		QCOMPARE(layoutOf(m_a), (Spans{{0, 144}, {144, 192}, {768, 960}}));
+		QCOMPARE(layoutOf(m_b), (Spans{{96, 144}, {144, 288}}));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(layoutOf(m_a), a);
+
+		const tick_t snap = std::max<tick_t>(1, std::lround(getGUI()->songEditor()->m_editor->getSnapSize() * TimePos::ticksPerBar()));
+		QVERIFY(press(Qt::Key_PageDown, Chord));
+		QCOMPARE(layoutOf(m_b), (Spans{{96 + snap, 288 + snap}}));
+		QCOMPARE(selectedCount(), 1);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(layoutOf(m_b), b);
+
+		QVERIFY(press(Qt::Key_Right, Chord | Qt::ShiftModifier));  // the start edge, a snap step inwards
+		QCOMPARE(layoutOf(m_a).front(), (std::pair<tick_t, tick_t>{snap, 192}));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+
+		QVERIFY(press(Qt::Key_Delete, Qt::NoModifier));
+		QCOMPARE(layoutOf(m_a), (Spans{{768, 960}}));
+		QVERIFY(m_b->getClips().empty());
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(layoutOf(m_a), a);
+		QCOMPARE(layoutOf(m_b), b);
+
+		QVERIFY(!press(Qt::Key_Escape, Qt::NoModifier));  // the arranger's own Escape still runs
+		QCOMPARE(selectedCount(), 0);
+		Engine::getSong()->setPlayPos(0, Song::PlayMode::Song);
+	}
+
+	void aDragOfASelectedSpanMovesTheWholeSelection()
+	{
+		const Spans a = layoutOf(m_a);
+		const Spans b = layoutOf(m_b);
+		QTest::mouseClick(m_lane, Qt::LeftButton, Qt::NoModifier, m_lane->spanRect(m_lane->spans()[0]).center());
+		QTest::mouseClick(m_lane, Qt::LeftButton, Qt::ShiftModifier, m_lane->spanRect(m_lane->spans()[1]).center());
+		const QPoint from = m_lane->spanRect(m_lane->spans()[1]).center();
+		const QPoint to = from + QPoint(static_cast<int>(viewOf(m_folder)->trackContainerView()->pixelsPerBar()), 0);
+		QTest::mousePress(m_lane, Qt::LeftButton, Qt::NoModifier, from);
+		QTest::mouseRelease(m_lane, Qt::LeftButton, Qt::NoModifier, to);
+		QCOMPARE(layoutOf(m_a), (Spans{{bar(), 192 + bar()}, {768 + bar(), 960 + bar()}}));
+		QCOMPARE(layoutOf(m_b), (Spans{{96 + bar(), 288 + bar()}}));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(layoutOf(m_a), a);
+		QCOMPARE(layoutOf(m_b), b);
+		QVERIFY(run(QStringLiteral("track.folder_span_select")).ok);
+	}
+
+	void aLockedChildRefusesTheGroupEdit()
+	{
+		const Spans a = layoutOf(m_a);
+		const QString clip = control::clipIdOf(m_a->getClips().front());
+		QVERIFY(run(QStringLiteral("clip.set_locked"), {{QStringLiteral("clip"), clip}, {QStringLiteral("locked"), true}}).ok);
+		const QJsonObject one{{QStringLiteral("folder"), control::trackIdOf(m_folder)}, {QStringLiteral("start"), 0}, {QStringLiteral("end"), 288}};
+		QCOMPARE(run(QStringLiteral("track.folder_span_split"), {{QStringLiteral("spans"), QJsonArray{one}}, {QStringLiteral("at"), 144}}).errorKind, ControlErrorKind::Refused);
+		QCOMPARE(layoutOf(m_a), a);
+		QVERIFY(run(QStringLiteral("clip.set_locked"), {{QStringLiteral("clip"), clip}, {QStringLiteral("locked"), false}}).ok);
+	}
+
 private:
+	static tick_t bar() { return TimePos::ticksPerBar(); }
+
+	int selectedCount() const
+	{
+		return run(QStringLiteral("track.folder_spans"), {{QStringLiteral("folder"), control::trackIdOf(m_folder)}}).result.value(QStringLiteral("selected")).toArray().size();
+	}
+
+	//! Press at @a x on the lane and drag by @a ticks.
+	void dragEdge(int x, tick_t ticks)
+	{
+		const int y = m_lane->spanRect(m_lane->spans()[0]).center().y();
+		const int dx = static_cast<int>(std::lround(ticks * viewOf(m_folder)->trackContainerView()->pixelsPerBar() / bar()));
+		QTest::mousePress(m_lane, Qt::LeftButton, Qt::NoModifier, QPoint(x, y));
+		QTest::mouseRelease(m_lane, Qt::LeftButton, Qt::NoModifier, QPoint(x + dx, y));
+	}
+
+	//! Open the lane's menu at @a pos and trigger the action that runs @a command.
+	void menuAction(const QPoint& pos, const QString& command)
+	{
+		bool triggered = false;
+		QTimer::singleShot(0, this, [&] {
+			auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget());
+			if (menu == nullptr) { return; }
+			for (QAction* action : menu->actions())
+			{
+				if (action->data().toString() != command) { continue; }
+				triggered = true;
+				action->trigger();
+			}
+			menu->close();
+		});
+		QContextMenuEvent event(QContextMenuEvent::Mouse, pos, m_lane->mapToGlobal(pos));
+		QApplication::sendEvent(m_lane, &event);
+		QVERIFY2(triggered, qPrintable(QStringLiteral("no menu action runs ") + command));
+	}
+
 	void makeFolder()
 	{
 		Song* song = Engine::getSong();

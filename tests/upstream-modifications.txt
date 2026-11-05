@@ -5632,3 +5632,4 @@ src/gui/PluginBrowser.cpp	Q050-212: a plug-in opened in a new track takes its ow
 src/gui/modals/SetupDialog.cpp	Q050-212: a General checkbox for app/autotrackchannel, written on OK through settings.set.
 include/SetupDialog.h	Q050-212: the toggleAutoTrackChannel slot and its member for the app/autotrackchannel checkbox.
 tests/CMakeLists.txt	Q050-212: registers TrackAddRoutingTest.
+src/gui/clips/ClipView.cpp	Q050-255: a plain left click on a clip clears the selected folder summary clips (FolderSpanSelection), a new selection as the click already is for clips. One line in mousePressEvent, nothing else.

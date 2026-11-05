@@ -30,9 +30,11 @@
 #include <QPoint>
 #include <QWidget>
 
+#include "ClipGroupEdits.h"
 #include "FolderSummary.h"
 #include "lmms_export.h"
 
+class QJsonObject;
 class QPainter;
 
 namespace lmms
@@ -53,7 +55,17 @@ class TrackView;
  *  - Ctrl+drag to copy them there (range.copy then range.paste over the span's tracks);
  *  - its menu duplicates it right after itself (the same copy) or deletes it (range.delete).
  *
- *  Every edit is ONE existing command that checkpoints the tracks it touches, so it is one undo step.
+ *  Q050-255, a group edit over its child clips:
+ *
+ *  - a click selects it (track.folder_span_select), Shift+click or Ctrl+click adds it or takes it out; the lane rings the
+ *    selected ones. Selected summary clips and the arranger's selected clips are edited together;
+ *  - drag an edge to resize it (track.folder_span_resize), the whole selection when it is selected; the cursor shows
+ *    the edge. A drag of a summary clip selected among others moves them all (track.folder_span_move);
+ *  - its menu splits it at the pointer (track.folder_span_split).
+ *
+ *  ArrangerClipKeys.h is the keyboard route to the same commands.
+ *
+ *  Every edit is ONE command that checkpoints the tracks it touches, so it is one undo step.
  *  The arranger's range (interface state) is put back as it was after a copy or a delete.
  *
  *  The lane lies over the folder's TrackContentWidget; a press or a menu anywhere but on a summary clip
@@ -76,6 +88,11 @@ public:
 	bool moveSpan(const FolderSpan& span, tick_t delta);
 	bool copySpan(const FolderSpan& span, tick_t position);
 	bool deleteSpan(const FolderSpan& span);
+	//! Q050-255: a group edit aimed at @a span - with the rest of the selection, when it is selected.
+	bool resizeSpan(const FolderSpan& span, arrangement::SpanEdge edge, tick_t delta);
+	bool splitSpan(const FolderSpan& span, tick_t at);
+	//! A click on @a span: select it alone, or with @a add add it or take it out.
+	void clickSpan(const FolderSpan& span, bool add);
 
 protected:
 	bool eventFilter(QObject* watched, QEvent* event) override;
@@ -86,10 +103,24 @@ protected:
 	void contextMenuEvent(QContextMenuEvent* event) override;
 
 private:
+	enum class Drag { Move, ResizeStart, ResizeEnd };
+
+	//! What a press at @a pos on @a span takes hold of: an edge within reach of the pointer, else the whole clip.
+	Drag dragAt(const FolderSpan& span, const QPoint& pos) const;
+	//! The cursor over @a pos: the resize arrows on a summary clip's edge.
+	void followPointer(const QPoint& pos);
+	//! The targets of a group edit on @a span: the selection and the arranger's selected clips, or @a span alone.
+	QJsonObject targetsOf(const FolderSpan& span) const;
+	//! What the drag just released does.
+	void finishDrag(const FolderSpan& span, Drag drag, tick_t delta);
+	//! @a span's rectangle with the edge the drag holds moved by the drag so far.
+	QRect resizedRect(const FolderSpan& span) const;
 	int xOfTick(tick_t tick) const;
 	//! @a dx pixels as ticks, on the song editor's snap unless @a free.
 	tick_t ticksOf(int dx, bool free) const;
 	void paintSpan(QPainter& p, const FolderSpan& span, int dx, bool dragged) const;
+	//! The ring of a selected summary clip, the dashed outline of one being resized.
+	void paintRing(QPainter& p, const FolderSpan& span, bool dragged) const;
 	void paintMiniature(QPainter& p, const FolderSpan& span, const QRect& rect) const;
 	//! Repaint when the children's clips changed (a move elsewhere, an undo, the socket).
 	void watch();
@@ -101,6 +132,8 @@ private:
 	QPoint m_pressPos;
 	int m_dragDx = 0;
 	bool m_copy = false;    //!< Ctrl was held at the press: the drag copies
+	bool m_add = false;     //!< Shift or Ctrl was held at the press: a click adds to the selection
+	Drag m_drag = Drag::Move;
 };
 
 } // namespace lmms::gui

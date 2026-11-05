@@ -803,6 +803,7 @@ include/ClipAudioLoop.h
 include/ClipConsolidate.h
 include/ClipEdits.h
 include/ClipEditsMenu.h
+include/ClipGroupEdits.h
 include/ClipLinks.h
 include/ClipLockFeedback.h
 include/ClipPreFades.h
@@ -1403,6 +1404,7 @@ src/core/ChordVocabulary.cpp
 src/core/ClipAudioLoop.cpp
 src/core/ClipConsolidate.cpp
 src/core/ClipEdits.cpp
+src/core/ClipGroupEdits.cpp
 src/core/ClipLinks.cpp
 src/core/ClipPreFades.cpp
 src/core/ClipTransients.cpp
@@ -1492,6 +1494,7 @@ src/core/ControlCommandsEvents.cpp
 src/core/ControlCommandsExport.cpp
 src/core/ControlCommandsExportPresets.cpp
 src/core/ControlCommandsFeedback.cpp
+src/core/ControlCommandsFolderSpans.cpp
 src/core/ControlCommandsFreeze.cpp
 src/core/ControlCommandsGroove.cpp
 src/core/ControlCommandsGrooveEdit.cpp
@@ -2238,6 +2241,7 @@ src/wasm/WasmWorkerPool.h
 tests/agent-surface-gate.py
 tests/agent_surface_lib.py
 tests/control-absent-socket.py
+tests/control-arrangement-group-edits.py
 tests/control-bus-commands.py
 tests/control-chain-presets.py
 tests/control-clock-commands.py
