@@ -327,7 +327,10 @@ adds and releases entries too). Its Rescan and Rescan in Background (agent: <cod
 before, and the new scan applies to devices you add or reload afterwards. A device card's dot lights while the device processes audio. The rack menu bypasses every device,
 switches them all back on, removes the bypassed ones and opens an XY pad that plays two macros at once. Modulators can
 be random, smooth random, a step sequence or a retriggered envelope as well as an LFO; a modulator can run a formula of
-its own (sin(2*pi*t), tri(t) * rand(x)...) and restart on every note a track plays.</p>
+its own (sin(2*pi*t), tri(t) * rand(x)...) and restart on every note a track plays. In Edit &gt; Modulators, each
+parameter a modulator drives has a Per sample switch (agent: <code>modulator.per_sample_set</code>): on, the parameter
+moves smoothly inside each audio block, so a fast LFO does not zipper; off, it moves once per block. It is saved with
+the project, and Undo restores it.</p>
 <p>A rack can split its input between its parallel chains (Rack &gt; Split the Input): by frequency band, mid and side,
 or left and right - the chains add back to the whole. A device's menu finds, renames and randomises its parameters
 (a renamed parameter keeps its own name for macros and modulators), blends its A and B settings, folds its card to

@@ -1101,6 +1101,8 @@ config lists back) and one `not_mutating` (`session.command_bindings`, a read) -
 
 **Q050-055.2** (keyboard plug-in actions, 2026-10-30): `plugin.selected_editor_open`, `plugin.selected_load` and `shortcuts.bind_plugin` add three `not_mutating` rows - `rows=890 true_inverse=434 snapshot=42 irreversible=25 not_mutating=389`. The last two run `plugin.load` and `shortcuts.set` inside themselves, and those record themselves with their own classes.
 
+**Q050-164** (per-sample switch in the Modulators panel, 2026-10-31): `modulator.per_sample_set` adds one `true_inverse` row - `rows=888 true_inverse=435 snapshot=42 irreversible=25 not_mutating=386`.
+
 <!-- A16-HISTOGRAM-BEGIN
      measured: rows=888 true_inverse=434 snapshot=42 irreversible=25 not_mutating=387
      configuration: telemetry.status wasm.load session.get_state stem.get_state
