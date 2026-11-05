@@ -136,7 +136,7 @@ private:
 		const QJsonArray clashes = result.result.value(QStringLiteral("clashes")).toArray();
 		for (const QJsonValue& value : clashes) { addClash(value.toObject()); }
 		m_summary->setText(clashes.isEmpty() ? QObject::tr("No clashes between these channels.")
-			: QObject::tr("%n clash(es). Nothing was changed: apply a cut with the channel's EQ.", nullptr, clashes.size()));
+			: QObject::tr("%n clash(es). Nothing was changed: apply a cut with the channel's EQ.", nullptr, static_cast<int>(clashes.size())));
 	}
 
 	void addClash(const QJsonObject& clash)
