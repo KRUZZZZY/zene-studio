@@ -57,9 +57,15 @@ Exact commands and logs:
 
 - `ctest -R '^MixerZonesTest$' --output-on-failure` -> **exit 0**, 9 slots, 8 passed + `cleanupTestCase`,
   `ctest-green-4.log`. Earlier green run `ctest-9.log`.
-- `ctest -R '^(MixerZonesTest|MixerModesTest|MixerMeteringTest|MixerSelectionIdentityTest|MixerSendsOnFadersTest|MixerStripFeaturesTest|MixerWindowsTest|ShellTest|VcaStripViewTest|ReversibilityContractTest)$'`
-  -> 9/10 passed in `ctest-10.log`; the one failure was the A16 histogram, which the release notes then
-  re-took, and `ctest -R '^ReversibilityContractTest$'` -> **exit 0** (`ctest-11.log`).
+- `ctest -R '^(MixerZonesTest|MixerModesTest|MixerMeteringTest|MixerSelectionIdentityTest|MixerSendsOnFadersTest|MixerStripFeaturesTest|MixerWindowsTest|ShellTest|VcaStripViewTest|ReversibilityContractTest|ControlCommandsSnapshot)$'`
+  -> **exit 0**, 11/11 (`ctest-14.log`). An earlier run of the same set before the histogram was re-taken
+  was 9/10 in `ctest-10.log` (the A16 failure); re-run alone after the notes change,
+  `ReversibilityContractTest` was **exit 0** (`ctest-11.log`).
+- `ctest -R '^(AccessibilityWalkTest|CustomAccessTest|MixerInsertLatencyTest|VcaStripLifetimeTest|MixerZonesTest)$'`
+  -> **exit 0**, 5/5 (`ctest-13.log`) - the suites that walk the mixer's widget tree or outlive a strip.
+- `python3 tests/control-customisation.py build/zene` -> **exit 0**, every check held
+  (`python-customisation.log`): the project-layout save/apply/clear/undo path the zones travel on still
+  behaves end to end over the control socket.
 - `ctest -R '^ControlCommandsSnapshot$'` -> **exit 0** (`ctest-12.log`).
 - `python3 tests/doc-figures-gate.py` -> **exit 0** (`docfig-2.log`).
 
