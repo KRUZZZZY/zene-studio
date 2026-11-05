@@ -67,7 +67,9 @@ auto WhiteKeys = std::array
 	Key::C, Key::D, Key::E, Key::F, Key::G, Key::A, Key::H
 } ;
 
-const int PIANO_BASE = 11;          /*!< The height of the root note display */
+// Q050-321.1: the touch surface (PianoViewTouch.cpp) needs the same base, so the header owns the
+// value and this file derives its own name from it - one constant, two translation units.
+constexpr int PIANO_BASE = PianoView::KeyAreaTop;  /*!< The height of the root note display */
 const int PW_WHITE_KEY_WIDTH = 10;  /*!< The width of a white key */
 const int PW_BLACK_KEY_WIDTH = 8;   /*!< The width of a black key */
 const int PW_WHITE_KEY_HEIGHT = 57; /*!< The height of a white key */

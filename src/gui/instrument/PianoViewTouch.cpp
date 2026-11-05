@@ -140,8 +140,10 @@ int PianoView::touchVelocity(const QPoint& position, int key) const
 	const int height = getKeyHeight(key);
 	const int base = m_piano->instrumentTrack()->midiPort()->baseVelocity();
 	const int yDiff = position.y() - KeyAreaTop;
+	if (yDiff > height) { return base; }
+	// The mouse handler's own clamp order: a press above the key area is silent, one at or below the
+	// key's bottom edge is full velocity (the mouse path clamps to 0 first, then to the maximum).
 	if (yDiff <= 0) { return 0; }
-	if (yDiff >= height) { return base; }
 	return static_cast<int>(static_cast<float>(yDiff) / height * base);
 }
 
