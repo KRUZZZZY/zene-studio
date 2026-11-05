@@ -67,7 +67,9 @@ auto WhiteKeys = std::array
 	Key::C, Key::D, Key::E, Key::F, Key::G, Key::A, Key::H
 } ;
 
-const int PIANO_BASE = 11;          /*!< The height of the root note display */
+// Q050-321.1: the touch surface (PianoViewTouch.cpp) needs the same base, so the header owns the
+// value and this file derives its own name from it - one constant, two translation units.
+constexpr int PIANO_BASE = PianoView::KeyAreaTop;  /*!< The height of the root note display */
 const int PW_WHITE_KEY_WIDTH = 10;  /*!< The width of a white key */
 const int PW_BLACK_KEY_WIDTH = 8;   /*!< The width of a black key */
 const int PW_WHITE_KEY_HEIGHT = 57; /*!< The height of a white key */
@@ -91,13 +93,15 @@ PianoView::PianoView(QWidget *parent) :
 	m_movedNoteModel(nullptr)        /*!< Key marker which is being moved */
 {
 	setFocusPolicy(Qt::StrongFocus);
+	// 0.5.0 L14 (Q050-321.1): the keys are a multi-touch surface (PianoViewTouch.cpp); a widget
+	// must accept touch events before the platform will send it any.
+	wireTouch();
 
 	// Black keys are drawn halfway between successive white keys, so they do not
 	// contribute to the total width. Half of a black key is added in case the last
 	// octave is incomplete and ends with a black key. Drawing always starts at
 	// a white key, so no similar modification is needed at the beginning.
-	setMaximumWidth(Piano::NumWhiteKeys * PW_WHITE_KEY_WIDTH +
-		(Piano::isBlackKey(NumKeys-1) ? PW_BLACK_KEY_WIDTH / 2 : 0));
+	setMaximumWidth(Piano::NumWhiteKeys * PW_WHITE_KEY_WIDTH + (Piano::isBlackKey(NumKeys-1) ? PW_BLACK_KEY_WIDTH / 2 : 0));
 
 	// create scrollbar at the bottom
 	m_pianoScroll = new QScrollBar( Qt::Horizontal, this );

@@ -3226,6 +3226,13 @@ tests/src/gui/MicrotunerScaleFileTest.cpp
 # registered by name rather than derived, and `bash tests/fork-sources-gate.sh` accepts either.
 tests/src/gui/TouchWorkspaceTest.cpp
 tests/control-touch-workspace.py
+# cluster Q050-321.1 (2026-10): stage 1 of the touch keyboard / drum-pad pair - the multi-touch
+# contact bookkeeping (a fork-NEW product source shared by both surfaces), its PianoView half, and
+# the GUI test that drives real QTouchEvent sequences through the instrument keyboard.
+include/TouchContacts.h
+src/gui/TouchContacts.cpp
+src/gui/instrument/PianoViewTouch.cpp
+tests/src/gui/TouchInstrumentSurfaceTest.cpp
 # Clusters new-p23-4/new-p22-32/new-p23-5 (2026-10): workflow names, saved-step schemas and read-only recording regression.
 tests/src/gui/ControlCommandsMacrosTest.cpp
 # cluster new-p17-202 (2026-10): the real-time-safe Watsyn parameter hand-off regression test (fork-NEW).

@@ -78,6 +78,8 @@ SET(LMMS_SRCS
 	gui/ArrangerAids.cpp
 	# 0.5.0 Q050-141: a finger's tap and drag as the mouse gesture the widgets already handle.
 	gui/TouchInput.cpp
+	# 0.5.0 L14 (Q050-321.1): the fingers of a multi-touch performance surface, each an independent note.
+	gui/TouchContacts.cpp
 	gui/AccessibilityAudit.cpp
 	gui/AccessibleMode.cpp
 	gui/AccessibleWidgets.cpp
@@ -341,6 +343,9 @@ SET(LMMS_SRCS
 	gui/instrument/InstrumentView.cpp
 	gui/instrument/LfoGraph.cpp
 	gui/instrument/PianoView.cpp
+	# 0.5.0 L14 (Q050-321.1): PianoView's multi-touch half (kept out of the inherited handler file,
+	# which the whole-tree file-length ratchet measures).
+	gui/instrument/PianoViewTouch.cpp
 
 	gui/menus/MidiPortMenu.cpp
 	gui/menus/RecentProjectsMenu.cpp
