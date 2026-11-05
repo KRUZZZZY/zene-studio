@@ -250,6 +250,7 @@ const ReversibilityRow kDeviceRows[] = {
 	R("routing.matrix", RC::NotMutating, false, "it reads the channels and their sends. Nothing is written", "no write", ""),
 	R("mixer.send_meters", RC::NotMutating, false, "it reads the sends' levels. Nothing is written", "no write", ""),
 	R("mixer.eq_compare", RC::NotMutating, false, "it reads two channels' EQ settings. Nothing is written", "no write", ""),
+	R("mixer.masking_report", RC::NotMutating, false, "it analyses the channels' audio clips and proposes cuts. No EQ is written, no undo step", "no write", ""),
 	R("track.midi_out", RC::TrueInverse, true, "it sets an instrument track's MIDI output ports and channel", "Track journal checkpoint", ""),
 	R("monitor.control_room", RC::NotMutating, false, "it changes what the speakers get - never the project or a render; trims are preferences", "no write", ""),
 	R("mixer.crossfader", RC::TrueInverse, true, "it moves the crossfader or puts a channel on a side", "closure plus a model journal step", ""),

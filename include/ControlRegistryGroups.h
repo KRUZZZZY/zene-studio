@@ -896,6 +896,9 @@ LMMS_EXPORT void registerSampleStereoCommands(ControlRegistry& registry);
 //! 0.5.0 L09 (MX-053, MX-140, MX-042): mixer.send_meters, mixer.eq_compare, browser.preview_output, monitor.control_room
 //! (ControlCommandsMixerMeters.cpp).
 LMMS_EXPORT void registerMixerMeterCommands(ControlRegistry& registry);
+//! 0.5.0 L08 (Q050-231.1): mixer.masking_report, read-only cross-channel masking clashes and cut proposals
+//! (ControlCommandsMixerMasking.cpp).
+LMMS_EXPORT void registerMixerMaskingCommands(ControlRegistry& registry);
 //! 0.5.0 L09 (MX-062): track.midi_out (ControlCommandsTrackMidiOut.cpp).
 LMMS_EXPORT void registerTrackMidiOutCommands(ControlRegistry& registry);
 //! 0.5.0 L04 (ED-049): track.version_list / save / switch / remove (ControlCommandsTrackVersions.cpp).

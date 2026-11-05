@@ -596,6 +596,7 @@ include/MixerGroups.h
 include/MixerHardwareMenu.h
 include/MixerLatencyText.h
 include/MixerListen.h
+include/MixerMaskingReport.h
 include/MixerModeBar.h
 include/MixerOptions.h
 include/MixerOverlays.h
@@ -1678,6 +1679,7 @@ src/core/ControlCommandsMidiReconnectEdit.cpp
 src/core/ControlCommandsMidiReconnectShared.h
 src/core/ControlCommandsMixer.cpp
 src/core/ControlCommandsMixerListen.cpp
+src/core/ControlCommandsMixerMasking.cpp
 src/core/ControlCommandsMixerMeters.cpp
 src/core/ControlCommandsMixerRename.cpp
 src/core/ControlCommandsMixerRoutes.cpp
@@ -2403,6 +2405,7 @@ src/gui/MidiSetupWidget.cpp
 src/gui/MissingDevicesNotice.cpp
 src/gui/MixerChannelView.cpp
 src/gui/MixerHardwareMenu.cpp
+src/gui/MixerMaskingReport.cpp
 src/gui/MixerModeBar.cpp
 src/gui/MixerOverlays.cpp
 src/gui/MixerRoutingMatrix.cpp
@@ -2901,6 +2904,7 @@ tests/src/core/MixerAbRegressionTest.cpp
 tests/src/core/MixerChannelPanTest.cpp
 tests/src/core/MixerConcurrencyTest.cpp
 tests/src/core/MixerListenTest.cpp
+tests/src/core/MixerMaskingReportTest.cpp
 tests/src/core/MixerOrderByTracksTest.cpp
 tests/src/core/MixerRoutingBackwardCompatTest.cpp
 tests/src/core/MixerStripTest.cpp

@@ -1218,6 +1218,7 @@ set(LMMS_SRCS
 	# Q050-106: the stereo pair - sample.split_stereo writes the two channels as mono WAVs.
 	core/ControlCommandsSampleStereo.cpp
 	core/ControlCommandDef.cpp
+	core/ControlCommandsMixerMasking.cpp
 	core/ControlCommandsMixerMeters.cpp
 	core/PreviewOutput.cpp
 	core/ControlRoom.cpp

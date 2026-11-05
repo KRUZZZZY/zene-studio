@@ -954,6 +954,8 @@ set(LMMS_TESTS
 	src/core/TrackSynthesisLoadTest.cpp
 	# 0.5.0 L08 (W3): pan law, swap, sends switched off, returns, find, gang, order, group colours.
 	src/core/MixerToolsTest.cpp
+	# 0.5.0 L08 (Q050-231.1): mixer.masking_report - deterministic clashes and cut proposals over fixed tones, read only.
+	src/core/MixerMaskingReportTest.cpp
 	# cluster new-p14-29 (BUG 14): order_by_tracks refuses an index that names no channel, observed before the read.
 	src/core/MixerOrderByTracksTest.cpp
 	# 0.5.0 L02 (W3): capture a scene, playlists, setlists, marker actions, release and jump.
@@ -6205,6 +6207,16 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/control-clip-polarity.py
 			$<TARGET_FILE:zene>)
 	set_tests_properties(ControlClipPolarity PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
+	# Q050-231.1 over the socket: mixer.masking_report names the pair, range and lower-priority target,
+	# repeats byte-identically, follows the priorities and changes no strip EQ and no undo depth.
+	add_test(NAME ControlMaskingReport
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-masking-report.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlMaskingReport PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)
