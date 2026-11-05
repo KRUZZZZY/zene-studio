@@ -252,6 +252,10 @@ void registerBrowserCommands(ControlRegistry& registry)
 			"length, and the embedded title/artist/album/comment/genre tags). Every 'tags' "
 			"entry must be present (AND). 'category' narrows to the files carrying that one "
 			"category (browser.category.set assigns it; empty matches every category). "
+			"'tempo_min' and 'tempo_max' narrow to the audio files whose MEASURED tempo is in "
+			"that range (BPM, 0 = open) and 'key' to the measured pitch class (C, C#, Db ... B, "
+			"0..11, or 'any') - the same measurement browser.index_query filters on, so both "
+			"answer the same files; a file whose tempo or key is unknown matches neither. "
 			"Sorted by path, so paging with offset is stable. "
 			"The walk is bounded by scan_limit entries and the probe by probe_limit files, "
 			"and a result that hit either bound says truncated: true. 'text' is one substring, or an "
@@ -263,6 +267,9 @@ void registerBrowserCommands(ControlRegistry& registry)
 			{QStringLiteral("kind"), stringProperty()},
 			{QStringLiteral("root"), stringProperty()},
 			{QStringLiteral("category"), stringProperty()},
+			{QStringLiteral("tempo_min"), numberProperty()},
+			{QStringLiteral("tempo_max"), numberProperty()},
+			{QStringLiteral("key"), stringProperty()},
 			{QStringLiteral("path"), stringProperty()},
 			{QStringLiteral("probe"), booleanProperty()},
 			{QStringLiteral("limit"), integerProperty(1, 500)},

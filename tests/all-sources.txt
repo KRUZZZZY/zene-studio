@@ -2722,6 +2722,7 @@ tests/src/core/BrowserCatalogQueryTest.cpp
 tests/src/core/BrowserCatalogTest.cpp
 tests/src/core/BrowserCollectionStoreWriteTest.cpp
 tests/src/core/BrowserFeaturesWindowTest.cpp
+tests/src/core/BrowserTempoKeyTest.cpp
 tests/src/core/BrowserTestSupport.h
 tests/src/core/CapturePublisherTest.cpp
 tests/src/core/ChordDetectTest.cpp
@@ -3150,6 +3151,7 @@ tests/src/gui/AutomationModeMenuTest.cpp
 tests/src/gui/BrowserDragUrlTest.cpp
 tests/src/gui/BrowserProjectMediaTest.cpp
 tests/src/gui/BrowserTagMenuTest.cpp
+tests/src/gui/BrowserTempoKeyGuiTest.cpp
 tests/src/gui/CPULoadWidgetTest.cpp
 tests/src/gui/CanvasKeyboardTest.cpp
 tests/src/gui/CaptureMidiMenuTest.cpp

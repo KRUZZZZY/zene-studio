@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-29T15:55:04Z",
+  "captured_at": "2026-10-29T22:14:58Z",
   "commands": [
     {
       "args_schema": {
@@ -2208,6 +2208,9 @@
           "category": {
             "type": "string"
           },
+          "key": {
+            "type": "string"
+          },
           "kind": {
             "type": "string"
           },
@@ -2220,6 +2223,12 @@
           "tags": {
             "type": "array"
           },
+          "tempo_max": {
+            "type": "number"
+          },
+          "tempo_min": {
+            "type": "number"
+          },
           "text": {
             "type": "string"
           }
@@ -2229,7 +2238,7 @@
         ],
         "type": "object"
       },
-      "description": "Save a search as a smart collection: 'name' and browser.query's 'text' (a substring or an expression - OR, -word, \"phrase\", name: path: tag: kind: ext:), 'tags', 'kind', 'root' and 'category'. A collection of the same name is replaced. Kept beside the browser tags in the config directory, not the project; one undo step.",
+      "description": "Save a search as a smart collection: 'name' and browser.query's 'text' (a substring or an expression - OR, -word, \"phrase\", name: path: tag: kind: ext:), 'tags', 'kind', 'root', 'category', 'tempo_min', 'tempo_max' and 'key' (the measured tempo range and pitch class, as browser.query takes them, so a tempo/key-filtered search runs again later). A collection of the same name is replaced. Kept beside the browser tags in the config directory, not the project; one undo step.",
       "group": "browser",
       "id": "browser.collection_save",
       "mutating": true,
@@ -2299,6 +2308,9 @@
           "category": {
             "type": "string"
           },
+          "key": {
+            "type": "string"
+          },
           "kind": {
             "type": "string"
           },
@@ -2315,6 +2327,12 @@
           "tags": {
             "type": "array"
           },
+          "tempo_max": {
+            "type": "number"
+          },
+          "tempo_min": {
+            "type": "number"
+          },
           "text": {
             "type": "string"
           }
@@ -2322,7 +2340,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "browser.query over the library index - the whole library, without walking it: 'text' (a substring or an expression - OR, -word, \"phrase\", name: path: tag: kind: ext:), 'tags' (all of them), 'kind', 'category' (the files carrying that one category; empty matches every category), 'limit' and 'offset'. As fresh as the last browser.reindex; the tags and the category are as fresh as the store now.",
+      "description": "browser.query over the library index - the whole library, without walking it: 'text' (a substring or an expression - OR, -word, \"phrase\", name: path: tag: kind: ext:), 'tags' (all of them), 'kind', 'category' (the files carrying that one category; empty matches every category), 'tempo_min' and 'tempo_max' (the measured tempo's range in BPM; 0 = open), 'key' (the measured pitch class - C, C#, Db ... B, 0..11, or 'any'), 'limit' and 'offset'. A file whose tempo or key is unknown matches neither facet, exactly as it does in browser.query: both filter with the same measurement, so both answer the same files. As fresh as the last browser.reindex; the tags and the category are as fresh as the store now.",
       "group": "browser",
       "id": "browser.index_query",
       "mutating": false,
@@ -2522,6 +2540,9 @@
           "category": {
             "type": "string"
           },
+          "key": {
+            "type": "string"
+          },
           "kind": {
             "type": "string"
           },
@@ -2550,6 +2571,12 @@
             },
             "type": "array"
           },
+          "tempo_max": {
+            "type": "number"
+          },
+          "tempo_min": {
+            "type": "number"
+          },
           "text": {
             "type": "string"
           }
@@ -2557,7 +2584,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Find files in the browser by name, by tag, or - with 'probe' - by what the audio file itself says it is (sample rate, channels, length, and the embedded title/artist/album/comment/genre tags). Every 'tags' entry must be present (AND). 'category' narrows to the files carrying that one category (browser.category.set assigns it; empty matches every category). Sorted by path, so paging with offset is stable. The walk is bounded by scan_limit entries and the probe by probe_limit files, and a result that hit either bound says truncated: true. 'text' is one substring, or an expression: words ANDed, OR (or |) between groups, -word to exclude, \"a phrase\", and the fields name: path: tag: kind: ext: (e.g. kind:audio tag:drums -loop OR \"bass drum\"). Read-only.",
+      "description": "Find files in the browser by name, by tag, or - with 'probe' - by what the audio file itself says it is (sample rate, channels, length, and the embedded title/artist/album/comment/genre tags). Every 'tags' entry must be present (AND). 'category' narrows to the files carrying that one category (browser.category.set assigns it; empty matches every category). 'tempo_min' and 'tempo_max' narrow to the audio files whose MEASURED tempo is in that range (BPM, 0 = open) and 'key' to the measured pitch class (C, C#, Db ... B, 0..11, or 'any') - the same measurement browser.index_query filters on, so both answer the same files; a file whose tempo or key is unknown matches neither. Sorted by path, so paging with offset is stable. The walk is bounded by scan_limit entries and the probe by probe_limit files, and a result that hit either bound says truncated: true. 'text' is one substring, or an expression: words ANDed, OR (or |) between groups, -word to exclude, \"a phrase\", and the fields name: path: tag: kind: ext: (e.g. kind:audio tag:drums -loop OR \"bass drum\"). Read-only.",
       "group": "browser",
       "id": "browser.query",
       "mutating": false,
@@ -2571,6 +2598,14 @@
               "properties": {
                 "category": {
                   "type": "string"
+                },
+                "key": {
+                  "type": "string"
+                },
+                "key_pitch_class": {
+                  "maximum": 11,
+                  "minimum": -1,
+                  "type": "integer"
                 },
                 "kind": {
                   "type": "string"
@@ -2627,6 +2662,12 @@
                 },
                 "tags": {
                   "type": "array"
+                },
+                "tempo_bpm": {
+                  "type": "number"
+                },
+                "tempo_known": {
+                  "type": "boolean"
                 }
               },
               "required": [],
@@ -37469,11 +37510,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-316.1/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-k4l1reh3/zene.sock",
-    "version": "0.4.0-alpha.5942+68bed50"
+    "source_socket": "/tmp/zctl-run-wpwba1ob/zene.sock",
+    "version": "0.4.0-alpha.5943+2a7fd9f"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

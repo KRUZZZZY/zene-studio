@@ -28,6 +28,7 @@
 #include <atomic>
 #include <vector>
 
+#include <QHash>
 #include <QMutex>
 #include <QString>
 #include <QStringList>
@@ -135,6 +136,17 @@ private:
 	mutable bool m_loaded = false;
 	std::atomic<bool> m_cancel{false};
 };
+
+/*! 0.5.0 L11 (Q050-316.1): every measured entry, keyed by canonical path.
+ *
+ * The tempo/key filter has to answer the SAME file set from a walked search
+ * (browser.query) and an indexed one (browser.index_query). The index is the one
+ * place a sound's tempo and key are measured, so the walk reads its measurement
+ * here instead of holding a second analyzer. A one-shot copy taken under the
+ * index's lock and released before the walk: a search must never hold that lock
+ * across a filesystem walk that a background scan needs to publish through.
+ */
+LMMS_EXPORT QHash<QString, BrowserFeatures> browserMeasuredFeatures();
 
 } // namespace lmms
 

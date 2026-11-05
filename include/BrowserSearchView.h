@@ -40,6 +40,7 @@ class QLineEdit;
 class QMenu;
 class QPushButton;
 class QListWidget;
+class QSpinBox;
 class QTimer;
 class QTreeWidget;
 class QTreeWidgetItem;
@@ -118,10 +119,20 @@ public:
 	QListWidget* galleryView() const { return m_gallery; }
 	//! The category facet (Any category + the catalog's own), for tests and the panel.
 	QComboBox* categoryFilter() const { return m_category; }
+	//! 0.5.0 L11 (Q050-316.1): the tempo and key facets, for tests and the panel.
+	//! A tempo bound of 0 is open on that side (both 0 = any tempo); the key
+	//! filter's first entry is Any key.
+	QSpinBox* tempoMinFilter() const { return m_tempoMin; }
+	QSpinBox* tempoMaxFilter() const { return m_tempoMax; }
+	QComboBox* keyFilter() const { return m_key; }
 	class BrowserResultActions* actions() const { return m_actions; }
 
 private:
 	void buildActionRow();
+	//! The tempo range and key row (0.5.0 L11, Q050-316.1): both feed queryArgs()
+	//! and so run through the SAME browser.query / browser.index_query a caller
+	//! reaches over the control socket.
+	void buildTempoKeyRow();
 	void connectLists();
 	//! A collection picked in the list: run once per gesture (a click and an activation can both come).
 	void pickCollection(const QString& name);
@@ -158,6 +169,12 @@ private:
 	QComboBox* m_kind = nullptr;
 	QComboBox* m_root = nullptr;
 	QComboBox* m_category = nullptr;  //!< the category facet (Any category + the catalog's own)
+	//! 0.5.0 L11 (Q050-316.1): the tempo range in whole BPM, 0 = open on that
+	//! side, and the key facet (Any key + C..B). Both are the SAME measurement
+	//! browser.query and browser.index_query filter on.
+	QSpinBox* m_tempoMin = nullptr;
+	QSpinBox* m_tempoMax = nullptr;
+	QComboBox* m_key = nullptr;
 	QCheckBox* m_indexed = nullptr;
 	QCheckBox* m_probe = nullptr;
 	QLabel* m_status = nullptr;

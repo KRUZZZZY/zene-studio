@@ -120,42 +120,46 @@ BrowserItem itemOf(const BrowserIndexEntry& entry)
 	// The category comes from the store live, as the tags do: the index is a
 	// cache of the files, and the classification is the library's own state.
 	item.category = BrowserTagStore::instance().categoryOf(entry.path);
+	// 0.5.0 L11 (Q050-316.1): the measured tempo and key are the index's own
+	// record of THIS file - it was read to answer the search, so the item can say
+	// what it carries (and say that the detector found none: bpm 0, key -1).
+	if (entry.features.valid)
+	{
+		item.hasMeasuredTempoKey = true;
+		item.measuredBpm = entry.features.bpm;
+		item.measuredKeyPitchClass = entry.features.keyPitchClass;
+	}
 	return item;
 }
 
-//! Whether @a item passes the kind, category and tag filters @a args sets.
-bool passes(const BrowserItem& item, const QJsonObject& args)
+//! Whether @a item passes @a query's kind and shared facet filters.
+bool passes(const BrowserItem& item, const BrowserQuery& query)
 {
-	const QString kind = args.value(QStringLiteral("kind")).toString();
-	if (!kind.isEmpty() && browserKindName(item.kind) != kind) { return false; }
-	const QString category = args.value(QStringLiteral("category")).toString();
-	if (!category.isEmpty() && QString::compare(item.category, category, Qt::CaseInsensitive) != 0) { return false; }
-	const QJsonArray tags = args.value(QStringLiteral("tags")).toArray();
-	return std::all_of(tags.begin(), tags.end(), [&item](const QJsonValue& tag) { return item.tags.contains(tag.toString()); });
+	if (!query.kind.isEmpty() && browserKindName(item.kind) != query.kind) { return false; }
+	// The tag, category and tempo/key facets are the ONE filter browser.query
+	// applies too, so the two engines cannot answer different files for a facet.
+	return browserItemMatchesFilters(item, query);
 }
 
 ControlResult indexQuery(const QJsonObject& args)
 {
-	const QJsonArray tags = args.value(QStringLiteral("tags")).toArray();
-	for (int i = 0; i < tags.size(); ++i)
-	{
-		if (!tags.at(i).isString())
-		{
-			return ControlResult::failure(ControlErrorKind::InvalidArgs,
-				QStringLiteral("tags[%1] must be a string").arg(i));
-		}
-	}
+	// The same arguments reader browser.query uses (0.5.0 L11, Q050-316.1): the
+	// tempo/key facets, the tag bounds and the label rules are validated once, so a
+	// filter that cannot be expressed walks and reads the index identically. The
+	// index takes no 'path'/'root' and no 'probe' - its schema has no such keys, so
+	// a caller cannot reach those branches.
+	BrowserQuery query;
+	ControlResult error;
+	if (!readBrowserQueryArguments(args, &query, &error)) { return error; }
 	BrowserTagStore::instance().load();
-	const BrowserSearch search(args.value(QStringLiteral("text")).toString());
-	const int limit = args.value(QStringLiteral("limit")).toInt(25);
-	const int offset = args.value(QStringLiteral("offset")).toInt(0);
+	const BrowserSearch search(query.text);
 	QJsonArray items;
 	int matched = 0;
 	for (const BrowserIndexEntry& entry : BrowserIndex::instance().entries())
 	{
 		const BrowserItem item = itemOf(entry);
-		if (!passes(item, args) || (!search.isEmpty() && !search.matches(item))) { continue; }
-		if (matched++ >= offset && items.size() < limit) { items.append(browserItemJson(item, false)); }
+		if (!passes(item, query) || (!search.isEmpty() && !search.matches(item))) { continue; }
+		if (matched++ >= query.offset && items.size() < query.limit) { items.append(browserItemJson(item, false)); }
 	}
 	QJsonObject result = statusJson();
 	result.insert(QStringLiteral("items"), items);
@@ -238,10 +242,15 @@ void registerBrowserIndexCommands(ControlRegistry& registry)
 		[](const QJsonObject&) { return ControlResult::success(statusJson()); });
 	add(registry, "index_query", QStringLiteral("browser.query over the library index - the whole library, without walking it: "
 		"'text' (a substring or an expression - OR, -word, \"phrase\", name: path: tag: kind: ext:), 'tags' (all of them), "
-		"'kind', 'category' (the files carrying that one category; empty matches every category), 'limit' and 'offset'. "
-		"As fresh as the last browser.reindex; the tags and the category are as fresh as the store now."),
+		"'kind', 'category' (the files carrying that one category; empty matches every category), 'tempo_min' and 'tempo_max' "
+		"(the measured tempo's range in BPM; 0 = open), 'key' (the measured pitch class - C, C#, Db ... B, 0..11, or 'any'), "
+		"'limit' and 'offset'. A file whose tempo or key is unknown matches neither facet, exactly as it does in browser.query: "
+		"both filter with the same measurement, so both answer the same files. As fresh as the last browser.reindex; the tags "
+		"and the category are as fresh as the store now."),
 		{{QStringLiteral("text"), stringProperty()}, {QStringLiteral("tags"), arrayProperty()}, {QStringLiteral("kind"), stringProperty()},
 			{QStringLiteral("category"), stringProperty()},
+			{QStringLiteral("tempo_min"), numberProperty()}, {QStringLiteral("tempo_max"), numberProperty()},
+			{QStringLiteral("key"), stringProperty()},
 			{QStringLiteral("limit"), integerProperty(1, 500)}, {QStringLiteral("offset"), integerProperty(0, 2147483647)}}, {}, indexQuery);
 	add(registry, "similar", QStringLiteral("The indexed sounds most like the audio file 'path', closest first ('limit', 10 when left "
 		"out): each with its distance (0 = the same numbers) and the features it was compared on. The file itself need not be "

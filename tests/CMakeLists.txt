@@ -112,6 +112,11 @@ set(LMMS_TESTS
 	# scan and depth bounds, the probe budget), split out of BrowserCatalogTest to
 	# keep both files under the file-length ratchet. Headless, like its sibling.
 	src/core/BrowserCatalogQueryTest.cpp
+	# 0.5.0 L11 (Q050-316.1): the tempo and key facets - the measured-only rule,
+	# the shared predicate both searches call, the walk and the index answering
+	# the same files, the wire form, an old index store, typed refusals and a
+	# collection that keeps the facets. Headless: writes its own index store.
+	src/core/BrowserTempoKeyTest.cpp
 	src/core/BrowserCatalogTest.cpp
 	# The trim half of a bounce (the render half is a child process, so it is not
 	# reachable from a test): a range copied to another file, and the refusal
@@ -1223,6 +1228,11 @@ set(LMMS_TESTS
 	src/gui/Lv2ViewBaseLifetimeTest.cpp
 	# 0.5.0 L11 / L12 (W3): the project menu's new entries, a track's lock, the gallery, the browser's remembered sources.
 	src/gui/LibraryMenusTest.cpp
+	# 0.5.0 L11 (Q050-316.1): the Search view's tempo range and key facets, driven as a
+	# musician drives them - they narrow the walking and the whole-library lists to the
+	# same files, and an unknown tempo never matches an active range. Its own executable
+	# because LibraryMenusTest is at the file-length ratchet.
+	src/gui/BrowserTempoKeyGuiTest.cpp
 	# Q050-121: Project Media's usage/state columns, the Unused view, and the injected
 	# confirmation proving Cancel keeps and Confirm removes only the selected unused file.
 	src/gui/BrowserProjectMediaTest.cpp
@@ -3458,6 +3468,7 @@ set_tests_properties(PatcherCanvasTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=o
 set_tests_properties(PluginCompatEditorProbe PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(Lv2ViewBaseLifetimeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(LibraryMenusTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(BrowserTempoKeyGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(BrowserProjectMediaTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(CommandPaletteTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(CommandFormTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -7304,7 +7315,7 @@ ENDIF()
 # manager's working directory, ControlBrowserCommandsTest constructs a full
 # Engine and drives project-free commands through the registry. Neither opens a
 # window, both want a real Qt platform plugin.
-set_tests_properties(BrowserCatalogTest BrowserCatalogQueryTest ControlBrowserCommandsTest PROPERTIES
+set_tests_properties(BrowserCatalogTest BrowserCatalogQueryTest BrowserTempoKeyTest ControlBrowserCommandsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # The chain-preset group constructs a full Engine and drives real devices through
 # the registry (plugin.load, plugin.param_set, chain.save/apply), so it wants a
