@@ -82,3 +82,22 @@ Files committed:
 - Undo/commands: not touched; no new control commands.
 - Saved data: no format change; disjoint-buffer results are bit-identical
   to before (verified by the disjoint test values).
+- RED/GREEN proof: test-01-red.log FAILs with exit 8 on the original code
+  (`Actual (buffer[0].right()): 3 Expected (2.5f): 2.5`); test-02-green.log
+  passes with exit 0 after the fix; test-03-reverse.log FAILs with exit 8
+  after `git apply -R fix.patch`; test-04-forward.log passes with exit 0
+  after `git apply fix.patch`.
+- Deterministic: fixed exactly representable float values (`1.0f, 2.0f, 0.5f`)
+  and `std::array` buffers; no sleeps, wall-clock, or races. Seam is the
+  `MixHelpers::addSwappedMultiplied(dst, src, coeff, frames)` function itself.
+- Cause and completeness: root cause is
+  `AddSwappedMultipliedOp::operator()` writing `dst[0]` before `dst[1]` reads
+  aliased `src[0]` (`src/core/MixHelpers.cpp:135-136`, reference passing at
+  `MixHelpers.cpp:42-47`). Only callers are
+  `RingBuffer::writeSwappedAddingMultiplied` (`src/core/RingBuffer.cpp:365,372,374`);
+  the swapped-temporary fix leaves disjoint results unchanged and fixes the
+  aliased case. Siblings (`AddMultipliedOp`, `AddMultipliedStereoOp`,
+  `MultiplyAndAddMultipliedOp`) read `src` channels into the same write or
+  use `dst += src * coeff`, so they are not affected.
+- Collateral: no limits or checks added; no data-format change; disjoint
+  test values prove bit-identical results for non-aliased callers.
