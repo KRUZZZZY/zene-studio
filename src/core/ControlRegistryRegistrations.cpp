@@ -135,6 +135,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerNoteShapeCommands(registry);
 	registerKeyNameCommands(registry);
 	registerNoteToolCommands(registry);
+	registerNoteMelodyCommands(registry);
 	registerNoteMoveCommands(registry);
 	registerNoteHarmonyCommands(registry);
 	registerNotePlaybackCommands(registry);

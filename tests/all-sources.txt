@@ -1697,6 +1697,7 @@ src/core/ControlCommandsNoteCurves.cpp
 src/core/ControlCommandsNoteEdit.cpp
 src/core/ControlCommandsNoteExpression.cpp
 src/core/ControlCommandsNoteHarmony.cpp
+src/core/ControlCommandsNoteMelody.cpp
 src/core/ControlCommandsNoteMoves.cpp
 src/core/ControlCommandsNotePlayback.cpp
 src/core/ControlCommandsNoteProbability.cpp
@@ -3226,6 +3227,7 @@ tests/src/gui/NoteBackgroundAudioTest.cpp
 tests/src/gui/NoteEditorFlTest.cpp
 tests/src/gui/NoteEditorTest.cpp
 tests/src/gui/NoteGridTest.cpp
+tests/src/gui/NoteMelodyTest.cpp
 tests/src/gui/NoteTransformActionsTest.cpp
 tests/src/gui/OnlineHelpNoticeTest.cpp
 tests/src/gui/OscServerMenuTest.cpp

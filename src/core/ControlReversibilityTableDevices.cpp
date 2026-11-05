@@ -152,6 +152,7 @@ const ReversibilityRow kDeviceRows[] = {
 	R("note.transpose_in_key", RC::TrueInverse, true, "it changes the keys of notes", "MidiClip journal checkpoint", ""),
 	R("note.repeat", RC::TrueInverse, true, "it adds copies of notes", "MidiClip journal checkpoint", ""),
 	R("note.generate", RC::TrueInverse, true, "it adds notes", "MidiClip journal checkpoint", ""),
+	R("note.generate_melody", RC::TrueInverse, true, "it adds notes, or changes the keys of notes", "MidiClip journal checkpoint", ""),
 	R("note.move_to_track", RC::TrueInverse, true, "it moves notes into a new clip on another track",
 		"journal checkpoints of the source clip and the destination track", ""),
 	R("note.split_by_pitch", RC::TrueInverse, true, "it adds one track per key", "action checkpoint: undo removes the tracks", ""),

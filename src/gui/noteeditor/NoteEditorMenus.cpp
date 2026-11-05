@@ -98,6 +98,7 @@ void fillToolsMenu(QMenu* menu, const QJsonObject& scoped, const QJsonObject& wh
 	addCommandAction(menu, tr("Follow the Chord Track"), QStringLiteral("note.follow_chords"), run("note.follow_chords", scoped, true));
 	menu->addSeparator();
 	addCommandAction(menu, tr("Generate a Rhythm..."), QStringLiteral("note.generate"), run("note.generate", where, true));
+	addCommandAction(menu, tr("Generate a Melody..."), QStringLiteral("note.generate_melody"), run("note.generate_melody", where, true));
 	addCommandAction(menu, tr("Move to Track..."), QStringLiteral("note.move_to_track"), run("note.move_to_track", scoped, true));
 	addCommandAction(menu, tr("Split by Key into Tracks"), QStringLiteral("note.split_by_pitch"), run("note.split_by_pitch", where, false));
 	menu->addSeparator();

@@ -1150,6 +1150,7 @@ set(LMMS_SRCS
 	core/ControlCommandsNoteClipboard.cpp
 	core/ControlCommandsRackMacroPair.cpp
 	core/ControlCommandsNoteTools.cpp
+	core/ControlCommandsNoteMelody.cpp
 	core/ControlCommandsNoteMoves.cpp
 	core/ControlCommandsNoteHarmony.cpp
 	core/ControlCommandsNotePlayback.cpp

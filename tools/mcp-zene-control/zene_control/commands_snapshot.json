@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-29T15:55:04Z",
+  "captured_at": "2026-11-05T08:18:44Z",
   "commands": [
     {
       "args_schema": {
@@ -16640,6 +16640,97 @@
       "description": "Write a rhythm into the clip from its start: 'kind' euclid ('pulses' spread evenly over 'steps', turned by 'rotate') or random ('pulses' in 'steps' on average, from 'seed'), 'step' ticks a step, on 'key' at 'velocity'. One undo step.",
       "group": "note",
       "id": "note.generate",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "contour": {
+            "enum": [
+              "walk",
+              "rise",
+              "fall",
+              "arch",
+              "valley"
+            ],
+            "type": "string"
+          },
+          "count": {
+            "maximum": 256,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "high": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "length": {
+            "maximum": 3072,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "low": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scope": {
+            "enum": [
+              "clip",
+              "selection"
+            ],
+            "type": "string"
+          },
+          "seed": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "spread": {
+            "maximum": 12,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "start": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "step": {
+            "maximum": 3072,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "target": {
+            "enum": [
+              "new",
+              "existing"
+            ],
+            "type": "string"
+          },
+          "velocity": {
+            "maximum": 200,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "Generate a melodic line in the active scale (scale.set; custom scales too): every key is one of the scale's keys in 'low'..'high' (48..72 when left out). 'contour' walk (a random walk, steps of 1..'spread' degrees), rise, fall, arch or valley (the shape, moved up to 'spread' degrees either way; 2 when left out, 0 = the bare shape). 'target' new writes 'count' notes (16) 'step' ticks (24) apart from 'start', 'length' ticks long, at 'velocity'; existing re-pitches the notes in 'scope' and keeps their rhythm. The same 'seed' (the project's seed when left out) and the same clip give the same notes. Refused when no scale is set. One undo step.",
+      "group": "note",
+      "id": "note.generate_melody",
       "mutating": true,
       "requires": [],
       "result_schema": {
@@ -37464,23 +37555,23 @@
       }
     }
   ],
-  "count": 878,
+  "count": 879,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-221.1/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-k4l1reh3/zene.sock",
-    "version": "0.4.0-alpha.5942+68bed50"
+    "source_socket": "/tmp/zctl-run-8xz8_tq9/zene.sock",
+    "version": "0.4.0-alpha.5943+2a7fd9f"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 77,
-    "id_count": 878,
-    "ids_sha256": "60473c71cd63735b5af096bbd2cd1d9a5a096cf4b2fd8855d1333df124ea362a"
+    "id_count": 879,
+    "ids_sha256": "5c077a16b8f3949a9ad73d4d37e3fbd4dd5b5e4816a29bb78700ba4d76e8d4c7"
   }
 }

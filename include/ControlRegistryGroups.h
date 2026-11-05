@@ -855,6 +855,9 @@ LMMS_EXPORT void registerKeyNameCommands(ControlRegistry& registry);
 //! 0.5.0 L07 (W3): note.invert / arpeggiate / flam / transpose_in_key / repeat / generate
 //! (ControlCommandsNoteTools.cpp).
 LMMS_EXPORT void registerNoteToolCommands(ControlRegistry& registry);
+//! 0.5.0 Q050-221.1 (L07): note.generate_melody, a seeded melodic contour in the active scale
+//! (ControlCommandsNoteMelody.cpp).
+LMMS_EXPORT void registerNoteMelodyCommands(ControlRegistry& registry);
 //! 0.5.0 L07 (W3): note.move_to_track / split_by_pitch, scale.detect, transport.panic
 //! (ControlCommandsNoteMoves.cpp).
 LMMS_EXPORT void registerNoteMoveCommands(ControlRegistry& registry);

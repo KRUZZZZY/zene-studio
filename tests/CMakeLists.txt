@@ -1190,6 +1190,9 @@ set(LMMS_TESTS
 	# command and one undo step - and note.edit's whole-batch validation.
 	src/gui/NoteGridTest.cpp
 	src/gui/NoteEditorTest.cpp
+	# 0.5.0 Q050-221.1: note.generate_melody - seeded, in the active (or a custom) scale, one undo step, and
+	# Notes > Tools > Generate a Melody... running the same command through its form.
+	src/gui/NoteMelodyTest.cpp
 	# 0.5.0 wave 3 theme 10/17: canvases by keyboard; the editable item list, the staged audit, announcements
 	src/gui/CanvasKeyboardTest.cpp
 	src/gui/ItemListPanelTest.cpp
@@ -3438,6 +3441,7 @@ set_tests_properties(ShellTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen
 set_tests_properties(DesignTokensTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TouchLayoutTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(NoteEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(NoteMelodyTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(LaneReadoutTest SampleEditorDialogTest SampleEditorDocsTest CrossfadeEditorTest MixerModesTest MixerMeteringTest WorkflowFeedbackTest
 	ShellHomesTest TaskCenterTest TaskIndicatorTest CPULoadWidgetTest RecordRemainingTest CpuDiagnosticsDialogTest RecordModeMenuTest CanvasKeyboardTest ItemListPanelTest ItemListButtonsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -6667,6 +6671,16 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/control-groove-commands.py
 			$<TARGET_FILE:zene>)
 	set_tests_properties(ControlGrooveCommands PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
+	# Q050-221.1: note.generate_melody through --control-socket - same seed, same notes; another seed,
+	# another line; every key in the active (and a custom) scale; undo; the typed no-scale refusal.
+	add_test(NAME ControlNoteMelody
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-note-melody.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlNoteMelody PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)
