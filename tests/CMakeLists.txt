@@ -281,6 +281,7 @@ set(LMMS_TESTS
 	src/core/ControlSampleArrayTest.cpp
 	# The undo-record bookkeeping for nested and wrapped commands (one record per journal step).
 	src/core/ControlRegistryNestingTest.cpp
+	src/core/ControlEventHubTest.cpp
 	# Replies held to their declared resultSchema (ZENE_CONTROL_CHECK_RESULTS), and
 	# every command's id is its group.verb.
 	src/core/ControlResultSchemaTest.cpp
@@ -7886,6 +7887,17 @@ endif()
 # above) cannot hold an add_test() call.
 # AF_UNIX clients: registered where the control suite is (see CONTROL_SUITE_AVAILABLE).
 if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
+	# Q050-334.1: ordered, bounded project-change events over a real socket (includes one idle-timeout wait).
+	add_test(NAME ControlProjectEvents
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-project-events.py
+			$<TARGET_FILE:zene>
+	)
+	set_tests_properties(ControlProjectEvents PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
+	set_tests_properties(ControlEventHubTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	add_test(NAME ControlLivecodeCommands
 		COMMAND ${PYTHON3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/control-livecode-commands.py

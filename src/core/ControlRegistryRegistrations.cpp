@@ -247,6 +247,8 @@ void registerControlCommands(ControlRegistry& registry)
 	// ScriptEngine, reached through hooks (bar/beat/transport) instead of only
 	// an explicit run.
 	registerLivecodeCommands(registry);
+	// Q050-334.1: ordered, bounded project-change events for local control clients.
+	registerEventsCommands(registry);
 	// board card #712: the session-wide dynamic-tuning table (MTS-ESP
 	// host-wide tuning) - the mts.* group over include/SessionTuning.h.
 	registerMtsCommands(registry);

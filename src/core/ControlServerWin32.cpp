@@ -62,6 +62,8 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QMetaObject>
+#include <QMutex>
+#include <QMutexLocker>
 #include <QSemaphore>
 #include <QString>
 
@@ -69,9 +71,11 @@
 
 #include <atomic>
 #include <cstring>
+#include <functional>
 #include <memory>
 #include <string>
 
+#include "ControlEventHub.h"
 #include "ControlRegistry.h"
 
 namespace lmms
@@ -219,23 +223,71 @@ QByteArray overCapRefusalLine()
 	return QJsonDocument(reply).toJson(QJsonDocument::Compact);
 }
 
+//! A client worker's own events (Q050-334.1): a read stays pending while events are written, so it needs its own.
+struct WorkerEvents
+{
+	const HANDLE io = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+	const HANDLE read = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+
+	WorkerEvents() = default;
+	~WorkerEvents()
+	{
+		if (io != nullptr) { CloseHandle(io); }
+		if (read != nullptr) { CloseHandle(read); }
+	}
+	WorkerEvents(const WorkerEvents&) = delete;
+	WorkerEvents& operator=(const WorkerEvents&) = delete;
+	bool created() const { return io != nullptr && read != nullptr; }
+};
+
+//! Wait out one pending read, serving event wake-ups meanwhile (Q050-334.1): the read stays pending in its own
+//! OVERLAPPED and event while \p writeEvents writes on the worker's I/O event. The idle deadline ends a read only for
+//! a connection that is not \p subscribed. False means cancelled and completed, or failed: the connection is over.
+bool waitForRead(HANDLE pipe, OVERLAPPED* operation, HANDLE quitEvent, HANDLE wakeEvent,
+	quint64* idleDeadlineMs, const std::function<bool()>& writeEvents, const std::atomic<bool>& subscribed,
+	DWORD* got)
+{
+	const HANDLE waits[3] = { operation->hEvent, quitEvent, wakeEvent };
+	while (true)
+	{
+		const DWORD woken = WaitForMultipleObjects(3, waits, FALSE, clientIdleWaitMs(*idleDeadlineMs));
+		if (woken == WAIT_OBJECT_0) { return GetOverlappedResult(pipe, operation, got, TRUE) != FALSE; }
+		if (woken == WAIT_OBJECT_0 + 2)
+		{
+			ResetEvent(wakeEvent);
+			if (writeEvents()) { continue; }
+		}
+		else if (woken == WAIT_TIMEOUT && subscribed.load())
+		{
+			*idleDeadlineMs = nextClientIdleDeadlineMs();
+			continue;
+		}
+		// See waitForIo: the kernel may still write the OVERLAPPED and the buffer until this completes.
+		CancelIoEx(pipe, operation);
+		GetOverlappedResult(pipe, operation, got, TRUE);
+		return false;
+	}
+}
+
 //! One overlapped read: whatever the peer has sent is appended to \p buffer.
 //! Returns false when this connection is over - the peer closed its end, the pipe
 //! failed, or the instance is closing (the quit event cancels the pending read).
-bool readChunk(HANDLE pipe, HANDLE ioEvent, HANDLE quitEvent, QByteArray* buffer,
-	quint64* idleDeadlineMs)
+bool readChunk(HANDLE pipe, HANDLE readEvent, HANDLE quitEvent, HANDLE wakeEvent, QByteArray* buffer,
+	quint64* idleDeadlineMs, const std::function<bool()>& writeEvents, const std::atomic<bool>& subscribed)
 {
 	char chunk[kReadChunkBytes];
 	OVERLAPPED operation;
 	std::memset(&operation, 0, sizeof(operation));
-	ResetEvent(ioEvent);
-	operation.hEvent = ioEvent;
+	ResetEvent(readEvent);
+	operation.hEvent = readEvent;
 	DWORD got = 0;
 	if (!ReadFile(pipe, chunk, sizeof(chunk), &got, &operation))
 	{
 		if (GetLastError() != ERROR_IO_PENDING) { return false; } // the peer is gone
-		if (!waitForIo(pipe, &operation, quitEvent,
-			clientIdleWaitMs(*idleDeadlineMs), &got)) { return false; }
+		if (!waitForRead(pipe, &operation, quitEvent, wakeEvent, idleDeadlineMs, writeEvents, subscribed, &got))
+		{
+			return false;
+		}
 	}
 	if (got == 0) { return false; } // a clean EOF: the peer closed its end
 	buffer->append(chunk, static_cast<int>(got));
@@ -243,6 +295,21 @@ bool readChunk(HANDLE pipe, HANDLE ioEvent, HANDLE quitEvent, QByteArray* buffer
 }
 
 } // namespace
+
+struct ControlServer::Win32EventLink
+{
+	explicit Win32EventLink(HANDLE wakeHandle) :
+		key(control::ControlEventHub::nextConnectionKey()), wake(wakeHandle) {}
+	~Win32EventLink() { CloseHandle(wake); }
+	Win32EventLink(const Win32EventLink&) = delete;
+	Win32EventLink& operator=(const Win32EventLink&) = delete;
+
+	const quint64 key;
+	const HANDLE wake;  //!< manual-reset: the outbox has lines for the worker
+	QMutex mutex;
+	QByteArray outbox;  //!< lines on their way to the worker, at most one pump's worth
+	std::atomic<bool> subscribed{false};
+};
 
 ControlErrorKind ControlServer::listenWin32(const QString& path, QString* detail)
 {
@@ -418,20 +485,42 @@ void ControlServer::win32ClientLoop(void* hPipe)
 	// This thread's own I/O event: one at a time, because a client thread issues
 	// one pipe operation at a time (read, then reply, then read again), which is
 	// also what keeps a reply line whole and in order on the wire.
-	const HANDLE ioEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
-	if (ioEvent == nullptr)
+	WorkerEvents events;
+	if (!events.created())
 	{
 		DisconnectNamedPipe(pipe);
 		CloseHandle(pipe);
 		return;
 	}
+	const HANDLE ioEvent = events.io;
+	const HANDLE readEvent = events.read;
+	const HANDLE wakeEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+	if (wakeEvent == nullptr)
+	{
+		DisconnectNamedPipe(pipe);
+		CloseHandle(pipe);
+		return;
+	}
+	const auto link = std::make_shared<Win32EventLink>(wakeEvent);
+	const auto connectionClosed = [this, &link]() {
+		const quint64 key = link->key;
+		QMetaObject::invokeMethod(this, [key]() {
+			control::ControlEventHub::instance().connectionClosed(key);
+		}, Qt::QueuedConnection);
+	};
 
 	QByteArray buffer;
 	bool draining = false;
 	quint64 idleDeadlineMs = nextClientIdleDeadlineMs();
+	const std::function<bool()> writeEvents = [&]() {
+		return win32WriteEvents(hPipe, ioEvent, quitEvent, link, &idleDeadlineMs);
+	};
 	while (!m_win32Quit.load())
 	{
-		if (!readChunk(pipe, ioEvent, quitEvent, &buffer, &idleDeadlineMs)) { break; }
+		if (!readChunk(pipe, readEvent, quitEvent, wakeEvent, &buffer, &idleDeadlineMs, writeEvents, link->subscribed))
+		{
+			break;
+		}
 		if (draining)
 		{
 			// The over-cap line was refused: the rest of what this peer sends is
@@ -441,17 +530,52 @@ void ControlServer::win32ClientLoop(void* hPipe)
 			continue;
 		}
 		if (!win32ServeBuffer(hPipe, ioEvent, quitEvent, buffer, &draining,
-			&idleDeadlineMs)) { break; }
+			&idleDeadlineMs, link)) { break; }
+		if (draining) { connectionClosed(); }  // it can no longer be told anything but the refusal
 		if (buffer.isEmpty()) { idleDeadlineMs = nextClientIdleDeadlineMs(); }
 	}
 
+	connectionClosed();
 	DisconnectNamedPipe(pipe);
 	CloseHandle(pipe);
-	CloseHandle(ioEvent);
+}
+
+void ControlServer::win32PumpEvents(const std::shared_ptr<Win32EventLink>& link)
+{
+	control::ControlEventHub& hub = control::ControlEventHub::instance();
+	QMutexLocker locker(&link->mutex);
+	if (link->outbox.isEmpty())
+	{
+		QByteArray line;
+		// One line's worth at a time keeps this hand-off as small as the POSIX path's Client::pending.
+		while (link->outbox.size() < control::ControlEventHub::MaxEventLineBytes && hub.nextLine(link->key, &line))
+		{
+			link->outbox.append(line);
+			link->outbox.append('\n');
+		}
+		if (!link->outbox.isEmpty()) { SetEvent(link->wake); }
+	}
+	link->subscribed.store(hub.isSubscribed(link->key));
+}
+
+bool ControlServer::win32WriteEvents(void* hPipe, void* hIoEvent, void* hQuitEvent,
+	const std::shared_ptr<Win32EventLink>& link, quint64* idleDeadlineMs)
+{
+	QByteArray lines;
+	{
+		QMutexLocker locker(&link->mutex);
+		lines.swap(link->outbox);
+	}
+	if (lines.isEmpty()) { return true; }
+	// The deadline bounds THIS write now: a peer that stopped reading long ago still gets a full period.
+	*idleDeadlineMs = nextClientIdleDeadlineMs();
+	if (!writeAll(asHandle(hPipe), asHandle(hIoEvent), asHandle(hQuitEvent), lines, idleDeadlineMs)) { return false; }
+	QMetaObject::invokeMethod(this, [this, link]() { win32PumpEvents(link); }, Qt::QueuedConnection);
+	return true;
 }
 
 bool ControlServer::win32ServeBuffer(void* hPipe, void* hIoEvent, void* hQuitEvent,
-	QByteArray& buffer, bool* overCap, quint64* idleDeadlineMs)
+	QByteArray& buffer, bool* overCap, quint64* idleDeadlineMs, const std::shared_ptr<Win32EventLink>& link)
 {
 	const HANDLE pipe = asHandle(hPipe);
 	const HANDLE ioEvent = asHandle(hIoEvent);
@@ -479,7 +603,7 @@ bool ControlServer::win32ServeBuffer(void* hPipe, void* hIoEvent, void* hQuitEve
 			*overCap = true;
 			return true;
 		}
-		const QByteArray reply = win32Dispatch(line);
+		const QByteArray reply = win32Dispatch(line, link);
 		if (m_win32Quit.load()) { return false; }
 		if (!reply.isEmpty() && !writeAll(pipe, ioEvent, quitEvent, reply + '\n',
 			idleDeadlineMs)) { return false; }
@@ -500,11 +624,11 @@ bool ControlServer::win32ServeBuffer(void* hPipe, void* hIoEvent, void* hQuitEve
 	return true;
 }
 
-QByteArray ControlServer::win32Dispatch(const QByteArray& line)
+QByteArray ControlServer::win32Dispatch(const QByteArray& line, const std::shared_ptr<Win32EventLink>& link)
 {
 	auto pending = std::make_shared<Win32Dispatch>();
 	pending->request = line;
-	const bool posted = QMetaObject::invokeMethod(this, [this, pending]() {
+	const bool posted = QMetaObject::invokeMethod(this, [this, pending, link]() {
 		// The server's thread, which is the whole point: dispatchLine() touches
 		// the registry, the engine and the journal, and the control surface has
 		// always been served from one thread (the POSIX path dispatches from the
@@ -512,7 +636,16 @@ QByteArray ControlServer::win32Dispatch(const QByteArray& line)
 		// closing instance from deadlocking on a thread it is about to join.
 		if (!m_win32Quit.load())
 		{
+			// Q050-334.1: events.* commands act for this connection while it is dispatched.
+			control::ControlEventHub::Connection connection;
+			connection.key = link->key;
+			connection.owner = this;
+			connection.wake = [this, link]() {
+				QMetaObject::invokeMethod(this, [this, link]() { win32PumpEvents(link); }, Qt::QueuedConnection);
+			};
+			const control::ControlEventHub::ConnectionScope eventScope(connection);
 			pending->response = dispatchLine(pending->request);
+			link->subscribed.store(control::ControlEventHub::instance().isSubscribed(link->key));
 			pending->answeredOk = true;
 		}
 		pending->answered.release();

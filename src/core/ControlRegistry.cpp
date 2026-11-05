@@ -28,6 +28,7 @@
 #include "CollabCommandTap.h"
 #include "ControlReversibility.h"
 #include "EditLocks.h"
+#include "ControlEventHub.h"
 #include "ProjectJournal.h"
 #include "ProvenanceSection.h"
 
@@ -554,6 +555,7 @@ ControlResult ControlRegistry::runHandler(
 	control::finishResult(commandId, m_commands.value(commandId).resultSchema, &result);
 	notifyObserver(commandId, args, mutating, changed);
 	collab::CommandTap::observed(commandId, args, mutating, changed, m_depth);  // F6: what a host streams to its peers
+	control::ControlEventHub::commandFinished(commandId, args, mutating, changed, enclosedByMutating, m_depth);  // Q050-334.1
 	return result;
 }
 

@@ -835,6 +835,9 @@ set(LMMS_SRCS
 	core/ControlVocabulary.cpp
 	core/ControlServer.cpp
 	core/ControlServerSocket.cpp
+	core/ControlServerEvents.cpp
+	core/ControlEventHub.cpp
+	core/ControlCommandsEvents.cpp
 	# The one reader of a caller's sample array (include/ControlSampleArray.h):
 	# the rules an 'input' array has to satisfy before a render or a process
 	# is driven with it. Pure Qt and no wasmtime, so it is compiled in EVERY

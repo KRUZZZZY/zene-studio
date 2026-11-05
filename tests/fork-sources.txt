@@ -844,6 +844,7 @@ include/ControlDeviceMoves.h
 include/ControlDevicePlacement.h
 include/ControlDeviceSupport.h
 include/ControlEdit.h
+include/ControlEventHub.h
 include/ControlExportPresetSupport.h
 include/ControlGrooveSupport.h
 include/ControlHardwareIoSupport.h
@@ -1485,6 +1486,7 @@ src/core/ControlCommandsDeviceTools.cpp
 src/core/ControlCommandsDocuments.cpp
 src/core/ControlCommandsDrumRack.cpp
 src/core/ControlCommandsDsp.cpp
+src/core/ControlCommandsEvents.cpp
 src/core/ControlCommandsExport.cpp
 src/core/ControlCommandsExportPresets.cpp
 src/core/ControlCommandsFeedback.cpp
@@ -1685,6 +1687,7 @@ src/core/ControlDeviceSupport.cpp
 src/core/ControlDeviceTools.h
 src/core/ControlDeviceVst3.cpp
 src/core/ControlEditSupport.cpp
+src/core/ControlEventHub.cpp
 src/core/ControlExportPresetSupport.cpp
 src/core/ControlGrooveSupport.cpp
 src/core/ControlHardwareIoSupport.cpp
@@ -1758,6 +1761,7 @@ src/core/ControlSampleArray.cpp
 src/core/ControlScaleSupport.cpp
 src/core/ControlSchema.cpp
 src/core/ControlServer.cpp
+src/core/ControlServerEvents.cpp
 src/core/ControlServerSocket.cpp
 src/core/ControlServerWin32.cpp
 src/core/ControlSession.cpp
@@ -2372,6 +2376,7 @@ tests/session_api_proof_rows.py
 # Q050-035 (R-platform-26): the docs-truth gate for offline HTDemucs stem separation - built in,
 # local and ON by default. Reads CMakeLists.txt, the release-honesty manifest and the user docs.
 tests/src/core/AuComponentTest.cpp
+tests/src/core/ControlEventHubTest.cpp
 tests/src/core/DrumRackPadsTest.cpp
 tests/src/gui/AuHostingTest.cpp
 tests/src/gui/DrumRackPanelTest.cpp
@@ -3361,3 +3366,4 @@ tests/data/clap-test-plugin/clap-test-gesture.h
 tests/src/gui/PluginGestureUndoTest.cpp
 tests/src/core/PluginParamGestureTest.cpp
 docs/qwen-fixes-2026-10/cluster-Q050-214.md
+tests/control-project-events.py
