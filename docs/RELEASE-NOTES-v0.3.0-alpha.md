@@ -1097,6 +1097,8 @@ config lists back) and one `not_mutating` (`session.command_bindings`, a read) -
 
 **Q050-093** (loop import tempo and key, integrated onto `050/m0-train-22`, 2026-10-30): `clip.source_get_state` adds one `not_mutating` row - `rows=888 true_inverse=434 snapshot=42 irreversible=25 not_mutating=387`.
 
+**Q050-180.1** (multiple positioned video clips, integrated onto `050/m0-train-22`, 2026-10-30): `video.clip_add` and `video.clip_remove` add two `true_inverse` rows and `video.render_frames` one `not_mutating` row - `rows=890 true_inverse=436 snapshot=42 irreversible=25 not_mutating=387`.
+
 <!-- A16-HISTOGRAM-BEGIN
      measured: rows=888 true_inverse=434 snapshot=42 irreversible=25 not_mutating=387
      configuration: telemetry.status wasm.load session.get_state stem.get_state

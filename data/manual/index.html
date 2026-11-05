@@ -585,7 +585,16 @@ opens another project as a read-only reference beside this one and copies its tr
 a recent project - keeping the one you left open as the reference if you like. Project &gt; Import AAF... brings in an AAF
 from another editor: its audio tracks, clips, fades, clip gain and markers (embedded audio is extracted beside the project;
 OMF is not read). View &gt; Video Window shows a project's video in time with the transport, with a strip of its frames over
-the arranger; the video's sound can be extracted to an audio track. Edit &gt; Collaborate... lets someone on your network (or
+the arranger. A project's video track holds several clips, each a file placed at its own song position: View &gt; Add
+Video Clip... adds one at the play position, double-click empty space in the arranger's video lane (or right-click it,
+Add Video Clip Here...) to add one there, drag a clip to move where it starts, and right-click a clip to move its start
+to the play position or remove it. A click on a clip moves the play position there. The video window always shows the
+clip at the play position and shows no picture before, after or between clips. Right-click the lane and choose Render
+Video Frames of Loop Range... to write the picture at each moment of the loop range as PNG images (25 per second of
+song time). Each clip keeps its own id: <i>video.clip_add</i> returns the new id, <i>video.set_offset</i> and
+<i>video.clip_remove</i> accept one clip id, <i>video.get_state</i> lists every clip, and <i>video.render_frames</i>
+renders the whole track; every edit is one undo step, and a project
+saved with one video before opens as one clip. A clip's sound can be extracted to an audio track. Edit &gt; Collaborate... lets someone on your network (or
 across the internet, where your router allows it) join the project: you share an invite code, every edit is sent to the
 others, and a remote invite gives a phone or another machine the transport and faders only. Nothing listens until you host,
 and you are asked first.</p>

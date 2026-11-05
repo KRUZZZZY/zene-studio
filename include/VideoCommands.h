@@ -32,10 +32,13 @@ namespace lmms
 
 class ControlRegistry;
 
-/*! 0.5.0 ED-054: video.attach / detach / get_state / set_offset / extract_audio (src/core/ControlCommandsVideo.cpp)
- *  and video.window_show (src/gui/VideoWindow.cpp, registered from here). Registered in every build: without
- *  FFmpeg each one answers a typed `requires` refusal saying video is unavailable. */
+/*! 0.5.0 ED-054: video.attach / detach / get_state / set_offset / extract_audio, and since Q050-139/Q050-180.1
+ *  video.clip_add / clip_remove (src/core/ControlCommandsVideo.cpp), video.render_frames
+ *  (src/core/ControlCommandsVideoRender.cpp) and video.window_show (src/gui/VideoWindow.cpp), all registered from
+ *  here. Registered in every build: without FFmpeg each one answers a typed `requires` refusal saying video is
+ *  unavailable. */
 LMMS_EXPORT void registerVideoCommands(ControlRegistry& registry);
+LMMS_EXPORT void registerVideoRenderCommand(ControlRegistry& registry);
 LMMS_EXPORT void registerVideoWindowCommand(ControlRegistry& registry);
 
 } // namespace lmms

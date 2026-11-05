@@ -1659,6 +1659,7 @@ src/core/ControlCommandsVcaMix.cpp
 src/core/ControlCommandsVcaNest.cpp
 src/core/ControlCommandsVcaShared.h
 src/core/ControlCommandsVideo.cpp
+src/core/ControlCommandsVideoRender.cpp
 src/core/ControlCommandsW3Engine.cpp
 src/core/ControlCommandsWarp.cpp
 src/core/ControlCommandsWarpEdit.cpp
@@ -2691,6 +2692,10 @@ tests/src/core/VideoFfmpegTest.cpp
 tests/src/core/VideoTestClip.h
 tests/src/core/VideoTestClipTest.cpp
 tests/src/core/VideoTrackTest.cpp
+# Q050-180.1 (L04): several positioned video clips - the core, lane and MCP proofs.
+tests/src/core/VideoClipsTest.cpp
+tests/src/gui/VideoClipsGuiTest.cpp
+tests/control-video-clips-mcp.py
 tests/src/core/VstSubPluginFeaturesTest.cpp
 tests/src/core/W3EngineTest.cpp
 tests/src/core/WarpQuantizeTest.cpp
