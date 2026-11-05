@@ -414,6 +414,7 @@ SET(LMMS_REQUIRED_LIBS ${LMMS_REQUIRED_LIBS}
 	${SUIL_LIBRARIES}
 	${FFTW3F_LIBRARIES}
 	SampleRate::samplerate
+	zene_samplerate
 	SndFile::sndfile
 	${EXTRA_LIBRARIES}
 )

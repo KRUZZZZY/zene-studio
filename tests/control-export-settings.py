@@ -8,9 +8,11 @@ so it can also be read as the protocol's shape.
 
 Every call is bounded; a hang is a failure.
 """
+import atexit
 import json
 import os
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -66,9 +68,66 @@ env["XDG_CONFIG_HOME"] = os.path.join(RUN_DIR, "config")
 env["XDG_DATA_HOME"] = os.path.join(RUN_DIR, "data")
 os.makedirs(env["XDG_CONFIG_HOME"], exist_ok=True)
 os.makedirs(env["XDG_DATA_HOME"], exist_ok=True)
+
+
+# Run by a separate process, so it survives the SIGKILL that no Python cleanup in
+# this file can answer. Portable POSIX only (os.getppid, kill, killpg): no
+# prctl(PR_SET_PDEATHSIG), which exists on Linux alone. When this script dies for
+# any reason the watchdog's parent changes (reparenting happens at once, even
+# while the dead script is still an unreaped zombie), and it kills the instance's
+# whole process group. It leaves when the instance is gone.
+_WATCHDOG = """
+import os, signal, sys, time
+parent, child = int(sys.argv[1]), int(sys.argv[2])
+def gone(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    except PermissionError:
+        return False
+    return False
+while os.getppid() == parent and not gone(child):
+    time.sleep(0.1)
+if os.getppid() != parent:
+    try:
+        os.killpg(child, signal.SIGKILL)
+    except OSError:
+        try:
+            os.kill(child, signal.SIGKILL)
+        except OSError:
+            pass
+"""
+
 proc = subprocess.Popen(
     [BINARY, PROJECT, "--config", CONFIG, "--control-socket", SOCKET],
-    stdout=open(LOG, "w"), stderr=subprocess.STDOUT, env=env, cwd=RUN_DIR)
+    stdout=open(LOG, "w"), stderr=subprocess.STDOUT, env=env, cwd=RUN_DIR,
+    start_new_session=True)
+watchdog = subprocess.Popen(
+    [sys.executable, "-c", _WATCHDOG, str(os.getpid()), str(proc.pid)],
+    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    start_new_session=True)
+
+
+def _reap_instance():
+    """Never leave the instance running: every exit path of this file ends here."""
+    if proc.poll() is None:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)  # the instance and anything it spawned
+        except OSError:
+            proc.kill()
+    try:
+        proc.wait(timeout=15)
+    except subprocess.TimeoutExpired:
+        pass
+    if watchdog.poll() is None:
+        watchdog.kill()
+        watchdog.wait()
+
+
+atexit.register(_reap_instance)  # sys.exit, an uncaught exception, normal end
+for _sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+    signal.signal(_sig, lambda number, frame: sys.exit(128 + number))
 
 deadline = time.time() + 90
 while not os.path.exists(SOCKET) and time.time() < deadline:
@@ -291,7 +350,7 @@ try:
     proc.wait(timeout=60)
 except subprocess.TimeoutExpired:
     failures.append("the instance did not exit after control.quit")
-    proc.kill()
+    _reap_instance()
 print()
 if failures:
     print("FAIL:")
