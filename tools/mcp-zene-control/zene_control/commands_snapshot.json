@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-29T15:55:04Z",
+  "captured_at": "2026-11-05T03:33:51Z",
   "commands": [
     {
       "args_schema": {
@@ -14050,6 +14050,34 @@
       "description": "The listen bus: 'mode' afl (after the fader, the default) or pfl (before it); 'clear' takes every channel off. Answers the mode and the channels listening.",
       "group": "mixer",
       "id": "mixer.listen_mode",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channels": {
+            "type": "array"
+          },
+          "priorities": {
+            "type": "object"
+          },
+          "threshold_db": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "channels"
+        ],
+        "type": "object"
+      },
+      "description": "Which frequency ranges the selected mixer 'channels' (2..16) fight over, from their audio: each channel's long-term spectrum (the unmuted audio clips on the tracks playing into it, through its strip EQ; instrument tracks are listed as unanalysed) in 24 log bands from 40 Hz to 16 kHz. A band counts for a channel within 'threshold_db' (3..40, 12) of its loudest band and above -70 dB. Each run of bands two channels share is a clash: the pair 'a'/'b', the range, and a proposed cut ('cut_db', -1..-6) on 'target' - the lower of the 'priorities' (channel id to front, middle or back; middle unless set), at equal priority the quieter channel there - with the mixer.channel_eq arguments that would make it ('strip_eq'). The same audio, EQ and priorities give the same report. Read only: it changes no EQ and records no undo step.",
+      "group": "mixer",
+      "id": "mixer.masking_report",
       "mutating": false,
       "requires": [],
       "result_schema": {
@@ -37464,23 +37492,23 @@
       }
     }
   ],
-  "count": 878,
+  "count": 879,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-231.1/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-k4l1reh3/zene.sock",
-    "version": "0.4.0-alpha.5942+68bed50"
+    "source_socket": "/tmp/zctl-run-zkjib792/zene.sock",
+    "version": "0.4.0-alpha.5943+2a7fd9f"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 77,
-    "id_count": 878,
-    "ids_sha256": "60473c71cd63735b5af096bbd2cd1d9a5a096cf4b2fd8855d1333df124ea362a"
+    "id_count": 879,
+    "ids_sha256": "a781e05518898731ae90e1d2fd4549a5c4ab7e3afbfee5513853dc29c328a640"
   }
 }
