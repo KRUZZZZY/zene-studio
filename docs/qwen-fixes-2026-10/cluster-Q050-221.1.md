@@ -3,7 +3,8 @@ IMPLEMENTED
 # Q050-221.1 - Seeded scale-aware melodic contours (stage 1/3 of Q050-221)
 
 Branch `feat/050-Q050-221.1-oc`, cut from `050/m0-train-24` (`2a7fd9f9c`). Feature record:
-`docs/050-features/Q050-221.1.md`. Logs: `~/.local/share/zene-bunny-fix/qwen/runs/Q050-221.1.r1/logs`.
+`docs/050-features/Q050-221.1.md`. Logs: `~/.local/share/zene-bunny-fix/qwen/runs/Q050-221.1.r1/logs` (initial run) and
+`~/.local/share/zene-bunny-fix/qwen/runs/Q050-221.1.r2/logs` (review round 2).
 
 **What was built.** `note.generate_melody` (`src/core/ControlCommandsNoteMelody.cpp`). It writes a line of ordinary
 notes whose every key is in the active root and scale, custom scales included. You choose a contour (walk / rise /
@@ -35,8 +36,8 @@ checkpoint (`true_inverse`). GUI entry: Notes > Tools > Generate a Melody..., wh
 
 | # | Criterion | Test(s) | Command | Exit with change | Exit reverted |
 | --- | --- | --- | --- | --- | --- |
-| 1 | Same seed + starting clip/settings give identical notes; a different seed changes the pitch line | `NoteMelodyTest::{theSameSeedRepeatsAndAnotherSeedChangesTheLine, aSeedsLineIsPinned, theProjectSeedIsTheDefault}`; `ControlNoteMelody` (socket) | `ctest -R '^(NoteMelodyTest\|ControlNoteMelody)$' --output-on-failure` from `build/tests` | 0 [test-7.log, test-8.log] | 8 / 8 [test-revert-1.log: 6 QtTest failures; test-revert-2.log: 6 socket checks FAILED] |
-| 2 | Every pitch in the active root and scale, custom scales too; undoable; no generative model | `NoteMelodyTest::{everyKeyIsInTheActiveScale, aGenerationIsOneUndoStep, theNoteEditorMenuRunsTheSameCommand}`; `ControlNoteMelody` | same | 0 [test-7.log, test-8.log] | 8 / 8 [test-revert-1.log, test-revert-2.log] |
+| 1 | Same seed + starting clip/settings give identical notes; a different seed changes the pitch line | `NoteMelodyTest::{theSameSeedRepeatsAndAnotherSeedChangesTheLine, aSeedsLineIsPinned, theProjectSeedIsTheDefault}`; `ControlNoteMelody` (socket) | <code>ctest -R '^(NoteMelodyTest&#124;ControlNoteMelody)$' --output-on-failure</code> from <code>build/tests</code> | 0 [test-7.log, test-8.log] | 8 / 8 [test-revert-1.log: 6 QtTest failures; test-revert-2.log: 6 socket checks FAILED] |
+| 2 | Every pitch in the active root and scale, custom scales too; undoable; no generative model | `NoteMelodyTest::{everyKeyIsInTheActiveScale, aGenerationIsOneUndoStep, theNoteEditorMenuRunsTheSameCommand}`; `ControlNoteMelody` | <code>ctest -R '^(NoteMelodyTest&#124;ControlNoteMelody)$' --output-on-failure</code> from <code>build/tests</code> | 0 [test-7.log, test-8.log] | 8 / 8 [test-revert-1.log, test-revert-2.log] |
 
 The revert: `git apply -R` of the product hunks (registration header and call, `src/core/CMakeLists.txt`, the
 reversibility row, the menu entry), then `cmake --build build --target zene NoteMelodyTest -- -j4` (exit 0,
