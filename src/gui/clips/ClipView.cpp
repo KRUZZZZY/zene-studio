@@ -466,7 +466,7 @@ void ClipView::dropEvent( QDropEvent * de )
 	if (arrangerdrop::carriesFile(de->mimeData()))
 	{
 		TrackContentWidget * lane = getTrackView()->getTrackContentWidget();
-		if (lane->dropFile(de->mimeData(), mapTo(lane, position(de)).x())) { de->acceptProposedAction(); }
+		if (lane->dropFile(de->mimeData(), mapTo(lane, position(de)).x(), arrangerdrop::dropModifiers(de))) { de->acceptProposedAction(); }
 		else { de->ignore(); }
 		return;
 	}

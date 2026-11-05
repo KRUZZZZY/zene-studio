@@ -46,6 +46,7 @@
 #include "MeterSpeech.h"
 #include "SessionAnnouncements.h"
 #include "AboutDialog.h"
+#include "ArrangerFileDrop.h"
 #include "AudioEngine.h"
 #include "AutomationEditor.h"
 #include "BrowserPanel.h"
@@ -427,6 +428,8 @@ void MainWindow::finalize()
 	addMidiClockMenu(edit_menu);
 	addSessionTuningMenu(edit_menu);
 	addPluginQuarantineMenu(edit_menu);
+	// Q050-093: the remembered loop mode of a dropped audio loop (settings.set on import/loopwarp).
+	arrangerdrop::addLoopWarpAction(edit_menu);
 
 	// Saved MIDI mapping sets (controller.template_*), re-read each time the submenu opens.
 	QMenu* templatesMenu = edit_menu->addMenu(tr("Controller Templates"));

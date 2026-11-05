@@ -179,6 +179,9 @@ const ReversibilityRow kDeviceRows[] = {
 		"action checkpoint: the recorded undo step removes the track", ""),
 	R("clip.import_file", RC::TrueInverse, true, "it adds one clip (and, with no track named, the track) made from a MIDI or audio file",
 		"Track checkpoint, or - when it created the track - an action checkpoint: the recorded undo step removes the track", ""),
+	// 0.5.0 L05 (Q050-093): an import's loop mode is applied inside clip.import_file's own step; this only reads.
+	R("clip.source_get_state", RC::NotMutating, false, "it reads what an import detected in a sample clip's file and what "
+		"the clip plays. Nothing is written", "no write", ""),
 	R("sample.spectrogram", RC::NotMutating, false, "it reads a clip's frequency content. Nothing is written", "no write", ""),
 	R("track.folder_move", RC::TrueInverse, true, "it moves every clip inside a folder", "journal checkpoints of the folder's tracks", ""),
 	R("clip.set_loop", RC::TrueInverse, true, "it sets a MIDI clip's content loop", "Clip journal checkpoint", ""),

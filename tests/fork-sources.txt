@@ -3324,3 +3324,10 @@ tests/control-transient-repeat-transcript.py
 # Q050-162 (2026-10): the unit's feature record and report (fork-NEW).
 docs/050-features/Q050-162.md
 docs/qwen-fixes-2026-10/cluster-Q050-162.md
+include/LoopImportWarp.h
+include/LoopSource.h
+src/core/LoopImportWarp.cpp
+tests/src/core/LoopFixture.h
+tests/src/core/LoopImportWarpTest.cpp
+tests/src/gui/LoopDropWarpTest.cpp
+tests/control-loop-import-warp.py

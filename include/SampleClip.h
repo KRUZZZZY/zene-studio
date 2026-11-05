@@ -32,6 +32,7 @@
 #include <vector>
 
 #include "Clip.h"
+#include "LoopSource.h"
 #include "RubberBandStretch.h"
 #include "Sample.h"
 #include "SampleWindow.h"
@@ -236,6 +237,11 @@ public:
 
 	void setStartTimeOffset(const TimePos& startTimeOffset) override;
 
+	//! Q050-093: what an import detected in this clip's file and which loop mode it took (LoopSource.h).
+	//! Control thread only; the playback path never reads it.
+	const LoopSource& loopSource() const { return m_loopSource; }
+	void setLoopSource(const LoopSource& source) { m_loopSource = source; }
+
 	/*! 0.5.0 ED-021: the sub-tick part of a frame-exact edit. The clip's audio starts this many SOURCE
 	 *  frames after its tick origin (start + offset), less than one tick's worth: a split or a trim at a
 	 *  frame between two ticks puts the remainder here, so the cut frame sounds exactly where it did.
@@ -379,6 +385,8 @@ private:
 	//! ED-021: see leadFrames(). Written on the UI thread, read by the playback path: a relaxed atomic, the
 	//! pattern Sample's own frame fields use.
 	std::atomic<f_cnt_t> m_leadFrames = 0;
+	//! Q050-093: see loopSource().
+	LoopSource m_loopSource;
 
 	//! Points the window (and Sample's frame fields) at the whole buffer; called
 	//! wherever the source buffer is replaced.

@@ -340,6 +340,8 @@ set(LMMS_TESTS
 	src/core/ControlSampleStereoTest.cpp
 	# 0.5.0 L04 (Q050-031): clip.import_file - a MIDI or audio file becomes a clip, a bad one changes nothing - and the SMF note reader.
 	src/core/ClipImportFileTest.cpp
+	# 0.5.0 L05 (Q050-093): an imported loop's tempo and key detected; it follows the project or keeps its own rate.
+	src/core/LoopImportWarpTest.cpp
 	# The 0.3.0 note/scale/device wave (board task #648; feature-list rows 11, 66 and
 	# 81): the fifteen ids, their contract rows and the REAL inverses - the seed pair
 	# (persisted + undone), the repeatability pair of the seeded roll (same seed ->
@@ -1289,6 +1291,8 @@ set(LMMS_TESTS
 	src/gui/ArrangerTakePunchTest.cpp
 	# 0.5.0 L04 (Q050-031): files dragged out of a plug-in editor become clips where they are dropped.
 	src/gui/ArrangerFileDropTest.cpp
+	# 0.5.0 L05 (Q050-093): a dropped loop follows the project tempo and key, or keeps its own (Edit menu, Alt).
+	src/gui/LoopDropWarpTest.cpp
 	# 4218c1e30 rework: the arranger's trim of a linked MIDI clip keeps the notes of the clip and its peers.
 	src/gui/MidiClipLinkedEditTest.cpp
 	# new-p14-176: the beat step menu names and edits the step under the cursor on a clip with millions of steps.
@@ -7057,6 +7061,16 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 600
 	)
+	# 0.5.0 L05 (Q050-093): an imported loop's detected tempo and key, followed or kept, through clip.import_file's
+	# loop_mode and the import/loopwarp preference, read back by clip.source_get_state; one undo per import.
+	add_test(NAME ControlLoopImportWarp
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-loop-import-warp.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlLoopImportWarp PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 600
+	)
 	# The loudness surface (feature row 24 of docs/FEATURE-LIST-0.3.0.md, "LUFS /
 	# loudness metering"), which is the release contract's section 3.1 claim for
 	# the `meter.*` group: it starts the real binary, arms the PASSIVE master tap
@@ -7292,6 +7306,7 @@ set_tests_properties(ControlSampleBakeGuardTest PROPERTIES
 set_tests_properties(ControlSampleStereoTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ClipImportFileTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(LoopImportWarpTest LoopDropWarpTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # The warp.* group edits a SampleClip created through track.add/clip.add, which
 # also wants a real Qt platform plugin even though nothing opens a window.
 set_tests_properties(ControlWarpCommandsTest PROPERTIES

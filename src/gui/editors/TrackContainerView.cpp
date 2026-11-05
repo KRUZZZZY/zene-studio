@@ -566,7 +566,8 @@ void TrackContainerView::dropEvent( QDropEvent * _de )
 	{
 		// The empty space below the tracks: the file gets a new track of its kind at the drop's time.
 		const bool made = m_tc == Engine::getSong()
-			&& arrangerdrop::dropFileAndReport(_de->mimeData(), nullptr, arrangerdrop::tickAtContainerX(this, position(_de).x()));
+			&& arrangerdrop::dropFileAndReport(_de->mimeData(), nullptr, arrangerdrop::tickAtContainerX(this, position(_de).x()),
+				arrangerdrop::dropModifiers(_de));
 		if (made) { _de->acceptProposedAction(); }
 		else { _de->ignore(); }
 		return;

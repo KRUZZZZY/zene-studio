@@ -517,6 +517,8 @@ include/LocaleHelper.h
 include/LocklessAllocator.h
 include/LocklessList.h
 include/LocklessRingBuffer.h
+include/LoopImportWarp.h
+include/LoopSource.h
 include/LoudnessReport.h
 include/LufsMeter.h
 include/Lv2Basics.h
@@ -2013,6 +2015,7 @@ src/core/LinkedClipEdits.cpp
 src/core/LinkedModelGroups.cpp
 src/core/LmmsSemaphore.cpp
 src/core/LocklessAllocator.cpp
+src/core/LoopImportWarp.cpp
 src/core/LoudnessReport.cpp
 src/core/LufsMeter.cpp
 src/core/MarkerActions.cpp
@@ -2872,6 +2875,8 @@ tests/src/core/LinkRealtimeProbe.h
 tests/src/core/LinkedClipEditsTest.cpp
 tests/src/core/LinkedClipGroupEditsTest.cpp
 tests/src/core/LinkedModelGroupsTest.cpp
+tests/src/core/LoopFixture.h
+tests/src/core/LoopImportWarpTest.cpp
 tests/src/core/LoudnessReportTest.cpp
 tests/src/core/LufsMeterTest.cpp
 tests/src/core/Lv2StateTest.cpp
@@ -3207,6 +3212,7 @@ tests/src/gui/LibraryMenusTest.cpp
 tests/src/gui/LinkedModelGroupViewLifetimeTest.cpp
 tests/src/gui/LivecodePanelTest.cpp
 tests/src/gui/LmmsStyleTest.cpp
+tests/src/gui/LoopDropWarpTest.cpp
 tests/src/gui/Lv2ViewBaseLifetimeTest.cpp
 tests/src/gui/MainWindowGeometryTest.cpp
 tests/src/gui/MainWindowTest.cpp

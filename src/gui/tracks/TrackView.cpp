@@ -408,7 +408,7 @@ void TrackView::dropEvent( QDropEvent * de )
 	if (arrangerdrop::carriesFile(de->mimeData()))
 	{
 		const TimePos tick = arrangerdrop::tickAtContainerX(trackContainerView(), position(de).x());
-		if (arrangerdrop::dropFileAndReport(de->mimeData(), m_track, tick)) { de->acceptProposedAction(); }
+		if (arrangerdrop::dropFileAndReport(de->mimeData(), m_track, tick, arrangerdrop::dropModifiers(de))) { de->acceptProposedAction(); }
 		else { de->ignore(); }
 		return;
 	}

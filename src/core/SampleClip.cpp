@@ -38,6 +38,7 @@
 #include "ControlEdit.h"
 #include "EffectChain.h"
 #include "Engine.h"
+#include "LoopImportWarp.h"
 #include "PatternStore.h"
 #include "PathUtil.h"
 #include "RecordOptions.h"
@@ -107,7 +108,8 @@ SampleClip::SampleClip(const SampleClip& orig) :
 	m_clipEffects(std::make_unique<EffectChain>(this)),
 	m_isPlaying(orig.m_isPlaying),
 	m_startFrameOffset(orig.m_startFrameOffset),
-	m_leadFrames(orig.leadFrames())
+	m_leadFrames(orig.leadFrames()),
+	m_loopSource(orig.m_loopSource)
 {
 	saveJournallingState( false );
 	setSampleFile( "" );
@@ -1044,6 +1046,8 @@ void SampleClip::saveSettings( QDomDocument & _doc, QDomElement & _this )
 	}
 	// Q050-111: the clip's own effects - an `<fxchain>` child, written only when the chain holds a device.
 	saveClipEffects(_doc, _this);
+	// Q050-093: what an import detected and applied; additive (a clip no import analysed writes nothing).
+	if (m_loopSource.analysed) { loopwarp::saveLoopSource(_doc, _this, m_loopSource); }
 }
 
 
@@ -1149,6 +1153,8 @@ void SampleClip::loadSettings( const QDomElement & _this )
 	}
 	// Q050-111: reset on absence, so an older project (and a checkpoint taken before the first device) has none.
 	loadClipEffects(_this);
+	// Q050-093: reset on absence, so a checkpoint taken before the import's analysis takes it back.
+	m_loopSource = loopwarp::loadLoopSource(_this);
 }
 
 
