@@ -744,6 +744,7 @@ include/Accessibility.h
 include/AccessibilityAudit.h
 include/AccessibleCanvas.h
 include/AccessibleWidgets.h
+include/AddTrackMenu.h
 include/Appearance.h
 include/ArrangementEdits.h
 include/ArrangementSections.h
@@ -870,6 +871,7 @@ include/ControlServer.h
 include/ControlStemSupport.h
 include/ControlStructuralSupport.h
 include/ControlTrackCreation.h
+include/ControlTrackRouting.h
 include/ControlUndoCoalescing.h
 include/ControlVocabulary.h
 include/ControlWarpSupport.h
@@ -1651,6 +1653,7 @@ src/core/ControlCommandsTrackLooks.cpp
 src/core/ControlCommandsTrackMidiOut.cpp
 src/core/ControlCommandsTrackOffset.cpp
 src/core/ControlCommandsTrackPresets.cpp
+src/core/ControlCommandsTrackRouting.cpp
 src/core/ControlCommandsTrackSpacers.cpp
 src/core/ControlCommandsTrackVersions.cpp
 src/core/ControlCommandsTransport.cpp
@@ -1770,6 +1773,7 @@ src/core/ControlStemSupport.cpp
 src/core/ControlStemWav.cpp
 src/core/ControlStructuralSupport.cpp
 src/core/ControlTrackCreation.cpp
+src/core/ControlTrackRouting.cpp
 src/core/ControlTransactions.cpp
 src/core/ControlUndoCoalescing.cpp
 src/core/ControlVocabulary.cpp
@@ -2158,6 +2162,7 @@ src/gui/XyPad.cpp
 src/gui/clips/ClipLockFeedback.cpp
 src/gui/clips/ClipViewTheme.cpp
 src/gui/clips/SampleClipOverlays.cpp
+src/gui/editors/AddTrackMenu.cpp
 src/gui/editors/AutomationEditorFades.cpp
 src/gui/editors/AutomationEditorKeys.cpp
 src/gui/editors/AutomationPointEdit.cpp
@@ -2736,6 +2741,8 @@ tests/src/plugins/ClapInstrumentViewTest.cpp
 tests/src/plugins/ClapTestInstrumentUnitTest.cpp
 tests/src/gui/DelayControlsDialog.h
 tests/src/gui/EqFader.h
+tests/src/gui/TrackAddRoutingTest.cpp
+tests/src/gui/TrackRouteDropTest.cpp
 tests/src/gui/XyPadPairTest.cpp
 tests/src/plugins/HydrogenImportLocalFileMngTest.cpp
 tests/src/plugins/ZynNoteOffTest.cpp

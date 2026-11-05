@@ -49,6 +49,7 @@
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
 #include "ControlTrackCreation.h"
+#include "ControlTrackRouting.h"
 #include "ControlVocabulary.h"
 #include "EditLocks.h"
 #include "Engine.h"
@@ -339,7 +340,7 @@ void recordImport(QJsonObject* result, Clip* clip, Track* track, const QJsonObje
 	QJsonObject inverseArgs;
 	if (created)
 	{
-		recordCreatedTrack(track);
+		recordCreatedRoutedTrack(track);
 		inverseArgs.insert(QStringLiteral("track"), trackIdOf(track));
 		result->insert(QStringLiteral("__transaction"), transactionPayload(before, QStringLiteral("track.remove"), inverseArgs, true,
 			QStringLiteral("action checkpoint: the recorded undo step removes the created track, and its clip with it")));

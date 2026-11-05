@@ -71,6 +71,7 @@ protected slots:
 
 private slots:
 	// General settings widget.
+	void toggleAutoTrackChannel(bool enabled);
 	void toggleTooltips(bool enabled);
 	void toggleDisplayWaveform(bool enabled);
 	void toggleNoteLabels(bool enabled);
@@ -136,6 +137,7 @@ private:
 	TabBar * m_tabBar;
 
 	// General settings widgets.
+	bool m_autoTrackChannel;
 	bool m_tooltips;
 	bool m_displayWaveform;
 	bool m_printNoteLabels;

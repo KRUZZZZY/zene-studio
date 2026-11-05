@@ -165,6 +165,7 @@ include/AccessibilityAudit.h
 include/AccessibleCanvas.h
 include/AccessibleWidgets.h
 include/ActionGroup.h
+include/AddTrackMenu.h
 include/Appearance.h
 include/ArrangementEdits.h
 include/ArrangementSections.h
@@ -345,6 +346,7 @@ include/ControlServer.h
 include/ControlStemSupport.h
 include/ControlStructuralSupport.h
 include/ControlTrackCreation.h
+include/ControlTrackRouting.h
 include/ControlUndoCoalescing.h
 include/ControlVocabulary.h
 include/ControlWarpSupport.h
@@ -1819,6 +1821,7 @@ src/core/ControlCommandsTrackLooks.cpp
 src/core/ControlCommandsTrackMidiOut.cpp
 src/core/ControlCommandsTrackOffset.cpp
 src/core/ControlCommandsTrackPresets.cpp
+src/core/ControlCommandsTrackRouting.cpp
 src/core/ControlCommandsTrackSpacers.cpp
 src/core/ControlCommandsTrackVersions.cpp
 src/core/ControlCommandsTransport.cpp
@@ -1940,6 +1943,7 @@ src/core/ControlStemSupport.cpp
 src/core/ControlStemWav.cpp
 src/core/ControlStructuralSupport.cpp
 src/core/ControlTrackCreation.cpp
+src/core/ControlTrackRouting.cpp
 src/core/ControlTransactions.cpp
 src/core/ControlUndoCoalescing.cpp
 src/core/ControlVocabulary.cpp
@@ -2512,6 +2516,7 @@ src/gui/clips/MidiClipView.cpp
 src/gui/clips/PatternClipView.cpp
 src/gui/clips/SampleClipOverlays.cpp
 src/gui/clips/SampleClipView.cpp
+src/gui/editors/AddTrackMenu.cpp
 src/gui/editors/AutomationEditor.cpp
 src/gui/editors/AutomationEditorFades.cpp
 src/gui/editors/AutomationEditorKeys.cpp
@@ -3314,9 +3319,11 @@ tests/src/gui/TempoMapPanelTest.cpp
 tests/src/gui/ThemeContrastTest.cpp
 tests/src/gui/TouchLayoutTest.cpp
 tests/src/gui/TouchWorkspaceTest.cpp
+tests/src/gui/TrackAddRoutingTest.cpp
 tests/src/gui/TrackFolderMenuTest.cpp
 tests/src/gui/TrackIconsLevelBarTest.cpp
 tests/src/gui/TrackRenderMenuTest.cpp
+tests/src/gui/TrackRouteDropTest.cpp
 tests/src/gui/TrackViewDeferredLifetimeTest.cpp
 tests/src/gui/UndoHistoryPanelTest.cpp
 tests/src/gui/VcaStripLifetimeTest.cpp

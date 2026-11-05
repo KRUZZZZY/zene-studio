@@ -525,6 +525,8 @@ set(LMMS_SRCS
 	${LMMS_TELEMETRY_COMMAND_SRCS}
 	core/ControlCommandsTransport.cpp
 	core/ControlCommandsTrackChannel.cpp
+	core/ControlCommandsTrackRouting.cpp
+	core/ControlTrackRouting.cpp
 	core/ControlCommandsTrackFolder.cpp
 	core/ControlCommandsTrackFolderSets.cpp
 	# VCA / mix-and-edit groups (OWNER-31 item 11): the group+entity half, the

@@ -31,6 +31,7 @@
 
 #include <QDomElement>
 #include <QFileInfo>
+#include <QThread>
 #include <QVariant>
 
 #include <limits>
@@ -43,10 +44,12 @@
 #include "Engine.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
+#include "Mixer.h"
 #include "PatternClip.h"
 #include "PatternStore.h"
 #include "PatternTrack.h"
 #include "ProjectIds.h"
+#include "ProjectJournal.h"
 #include "Sample.h"
 #include "SampleBuffer.h"
 #include "SampleClip.h"
@@ -92,6 +95,7 @@ constexpr TrackRestoreRule TRACK_RESTORE_SCHEMA[] = {
 	{ "folder", "-1" }, // absent => the track is in no folder (-1 = no id)
 	{ "visible", "1" },  // absent => visible
 	{ "autolanes", "0" }, // absent => this track's automation lanes are shown
+	{ "mixlink", "-1" }, // absent => no mixer channel was made for this track (Q050-212)
 };
 
 //! Test seam for FrozenTakeHandoffTest; null in product use.
@@ -304,6 +308,9 @@ m_trackContainer->addTrack( this );
 m_height = -1;
 // R2.1: the behaviour this track type had before monitoring existed (Track.h).
 m_monitorMode.store( static_cast<int>( defaultMonitorMode() ), std::memory_order_relaxed );
+// Q050-212: through the signal, not a call in setName: InstrumentLoaderThread names a track off the UI thread, and
+// this connection brings that rename back to the thread the channel's name lives on.
+connect( this, &Track::nameChanged, this, [this] { syncLinkedChannelName(); } );
 }
 
 
@@ -668,6 +675,11 @@ void Track::saveTrack(QDomDocument& doc, QDomElement& element, bool presetMode)
 	{
 		element.setAttribute("autolanes", 1);
 	}
+	// Q050-212: written only for a track that has a channel of its own.
+	if (!presetMode && m_linkedChannelId >= 0)
+	{
+		element.setAttribute("mixlink", m_linkedChannelId);
+	}
 	
 	QDomElement tsDe = doc.createElement( nodeName() );
 	// let actual track (InstrumentTrack, PatternTrack, SampleTrack etc.) save its settings
@@ -973,6 +985,12 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 	if( lanesCollapsedBefore != m_automationLanesCollapsed )
 	{
 		emit automationLanesCollapsedChanged();
+	}
+	// Q050-212: a preset leaves the track's link alone; a copy (ProjectIds::isDocumentElement) has none of its own.
+	if( !presetMode )
+	{
+		m_linkedChannelId = ProjectIds::isDocumentElement( element )
+			? element.attribute( "mixlink", trackRestoreDefault( "mixlink" ) ).toInt() : -1;
 	}
 	{
 		TrackFolder* resolved = m_pendingFolderId >= 0
@@ -1615,6 +1633,56 @@ void Track::setColor(const std::optional<QColor>& color)
 BoolModel *Track::getMutedModel()
 {
 	return &m_mutedModel;
+}
+
+MixerChannel* Track::linkedChannel()
+{
+	Mixer* mixer = Engine::mixer();
+	IntModel* model = m_linkedChannelId >= 0 ? mixerChannelModel() : nullptr;
+	if (model == nullptr || mixer == nullptr) { return nullptr; }
+	const int index = model->value();
+	if (index <= 0 || index >= static_cast<int>(mixer->numChannels())) { return nullptr; }
+	MixerChannel* channel = mixer->mixerChannel(index);
+	return channel->id() == m_linkedChannelId ? channel : nullptr;
+}
+
+void Track::syncLinkedChannelName()
+{
+	// A project being read carries both names already, and its mixer may not be there yet.
+	const Song* song = Engine::getSong();
+	if (song == nullptr || song->isLoadingProject()) { return; }
+	MixerChannel* channel = linkedChannel();
+	if (channel == nullptr || channel->m_name == m_name) { return; }
+	channel->m_name = m_name;
+	emit Engine::mixer()->dataChanged();
+}
+
+void Track::reconcileLinkedChannelName()
+{
+	if (m_linkedChannelId < 0 || QThread::currentThread() != thread()) { return; }
+	const Song* song = Engine::getSong();
+	ProjectJournal* journal = Engine::projectJournal();
+	if (song == nullptr || song->isLoadingProject() || journal == nullptr || !journal->isJournalling()) { return; }
+	MixerChannel* channel = linkedChannel();
+	if (channel == nullptr || channel->m_name == m_name) { return; }
+
+	const auto nameChannel = [id = m_linkedChannelId](const QString& name) {
+		Mixer* mixer = Engine::mixer();
+		for (int i = static_cast<int>(mixer->numChannels()) - 1; i > 0; --i)
+		{
+			if (mixer->mixerChannel(i)->id() != id) { continue; }
+			mixer->mixerChannel(i)->m_name = name;
+			emit mixer->dataChanged();
+			return;
+		}
+	};
+	const QString before = channel->m_name;
+	const QString after = m_name;
+	// The route's own checkpoint went on the stack just before this signal, unless the writer asked for none.
+	const bool routeStepOnTop = journal->topStepCaptures(mixerChannelModel()->id());
+	journal->addJournalAction([nameChannel, before] { nameChannel(before); }, [nameChannel, after] { nameChannel(after); });
+	if (routeStepOnTop) { journal->coalesceTopStepIntoPrevious(); }
+	nameChannel(after);
 }
 
 void Track::setName(const QString& newName)

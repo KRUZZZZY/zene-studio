@@ -36,6 +36,7 @@
 #include "Engine.h"
 #include "Mixer.h"
 #include "Song.h"
+#include "Track.h"
 
 namespace lmms
 {
@@ -56,6 +57,11 @@ void nameChannel(const QString& id, const QString& name)
 	MixerChannel* channel = resolveMixerChannel(id, &ignored);
 	if (channel == nullptr) { return; }
 	channel->m_name = name;
+	// Q050-212: the track this channel was made for carries the same name.
+	for (Track* track : Engine::getSong()->tracks())
+	{
+		if (track->linkedChannel() == channel) { track->setName(name); }
+	}
 	emit Engine::mixer()->dataChanged();
 }
 

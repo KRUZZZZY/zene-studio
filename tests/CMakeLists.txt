@@ -1312,6 +1312,9 @@ set(LMMS_TESTS
 	src/gui/XyPadPairTest.cpp
 	# M3: folders from the interface - make one, move a track in, collapse, pin, take it out.
 	src/gui/TrackFolderMenuTest.cpp
+	# Q050-212: a new track's destination and its own named mixer channel, from the commands and the interface.
+	src/gui/TrackAddRoutingTest.cpp
+	src/gui/TrackRouteDropTest.cpp
 	# Q050-066 stage 1: the folder's Drum Rack Pads... panel adds and edits pads through track.drum_rack_*.
 	src/gui/DrumRackPanelTest.cpp
 	# 0.5.0 ED-035: a folder's row draws its children's clips as summary clips, each moved, copied or deleted as one.
@@ -2394,6 +2397,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "AutomationModeMenuTest"
 		# The automation editor's keys move a point of one real instrument's parameter.
 		OR LMMS_TEST_NAME STREQUAL "AutomationEditorEditingTest"
+		OR LMMS_TEST_NAME STREQUAL "TrackAddRoutingTest"
+		OR LMMS_TEST_NAME STREQUAL "TrackRouteDropTest"
 		OR LMMS_TEST_NAME STREQUAL "ControlChainPresetTest"
 		# The track menu's chain presets save and apply a chain holding one real effect.
 		OR LMMS_TEST_NAME STREQUAL "ChainPresetMenuTest"
@@ -2599,6 +2604,14 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# cluster new-p23-37: the replacement regression loads a real amplifier device.
 	if(LMMS_TEST_NAME STREQUAL "DeviceToolsChainTest")
 		add_dependencies(${LMMS_TEST_NAME} amplifier)
+	endif()
+
+	# Q050-212: track.add's `instrument` loads a real plug-in.
+	if(LMMS_TEST_NAME STREQUAL "TrackAddRoutingTest")
+		add_dependencies(${LMMS_TEST_NAME} tripleoscillator)
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "TrackRouteDropTest")
+		add_dependencies(${LMMS_TEST_NAME} tripleoscillator audiofileprocessor slicert)
 	endif()
 
 	# Q050-040: the unmute-chase tests play a real instrument (tripleoscillator) on their tracks,
@@ -3570,6 +3583,8 @@ set_tests_properties(MidiClipLinkedEditTest PROPERTIES ENVIRONMENT "QT_QPA_PLATF
 set_tests_properties(MidiClipStepMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(XyPadPairTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TrackFolderMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(TrackAddRoutingTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(TrackRouteDropTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(DrumRackPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(FolderSummaryLaneTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(AutomationLaneChildGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

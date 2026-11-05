@@ -471,6 +471,7 @@ LMMS_EXPORT void registerNoteProbabilityCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerNoteEditCommands(ControlRegistry& registry);
 //! track.set_mixer_channel - which mixer channel a track plays into (0.5.0 L01).
 LMMS_EXPORT void registerTrackChannelCommands(ControlRegistry& registry);
+LMMS_EXPORT void registerTrackRoutingCommands(ControlRegistry& registry);
 //! project.collect_media - a project's media copied beside it, references made relative (L01 E28).
 LMMS_EXPORT void registerCollectMediaCommand(ControlRegistry& registry);
 //! bounce.land - a track rendered onto a new audio track, the source muted (L01).

@@ -214,6 +214,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerNoteProbabilityCommands(registry);
 	registerNoteEditCommands(registry);
 	registerTrackChannelCommands(registry);
+	registerTrackRoutingCommands(registry);
 	registerCollectMediaCommand(registry);
 	registerBounceLandCommand(registry);
 	registerRenderStemsCommands(registry);

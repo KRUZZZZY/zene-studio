@@ -862,6 +862,7 @@ void InstrumentTrack::updateMixerChannel()
 {
 	m_audioBusHandle.setNextMixerChannel(m_mixerChannelModel.value());
 	m_layers.followMixerChannel(m_mixerChannelModel.value());  // 0.5.0 MX-112: the layers play where the track does
+	reconcileLinkedChannelName();  // Q050-212
 }
 
 

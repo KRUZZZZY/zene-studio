@@ -1833,10 +1833,11 @@ int main( int argc, char * * argv )
 
 	// The application is fully constructed and the initial project exists: from
 	// here the agent surface may drive the model (before this point every
-	// command returns the typed 'busy' refusal).
+	// command returns the typed 'busy' refusal). Unconditional: the interface's own actions
+	// reach the same registry (Q050-212), and without a socket nothing else would ever open it.
+	ControlRegistry::setReady( true );
 	if( controlServer )
 	{
-		controlServer->registry()->setReady( true );
 		// A client may have asked to quit before startup finished (the socket is
 		// up first, by design). Apply it now that the normal shutdown path - and
 		// the main event loop - actually exist (task #626).

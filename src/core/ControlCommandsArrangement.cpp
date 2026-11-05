@@ -32,6 +32,8 @@
 #include "ControlReversibility.h"
 #include "ControlStructuralSupport.h"
 #include "ControlTrackCreation.h"
+#include "ControlTrackRouting.h"
+#include "ControlTrackRouting.h"
 #include "Engine.h"
 #include "GuiApplication.h"
 #include "JournallingObject.h"
@@ -167,16 +169,25 @@ void registerTrackAdd(ControlRegistry& registry)
 	cmd.group = QStringLiteral("track");
 	cmd.verb = QStringLiteral("add");
 	cmd.description = QStringLiteral("Append a track of the given type (default instrument) and return "
-		"its stable trk-<n> id. Undo removes the track; redo recreates it with a fresh stable "
-		"trk-<n> id.");
+		"its stable trk-<n> id. An instrument or sample track can name its destination: `output` is a "
+		"ch-<n> id (mixer.get_state lists them; a parallel bus takes no track input and is refused). Without "
+		"`output`, the preference app/autotrackchannel (settings.set, \"1\" on) gives the track its own mixer "
+		"channel, named after it and kept in step when either is renamed; off, the track plays into the master "
+		"as before. `instrument` loads that plug-in. Undo removes the track and any channel made for it; redo "
+		"recreates both, the track with a fresh stable trk-<n> id.");
 	cmd.argsSchema = control::objectSchema({
 		{QStringLiteral("type"), QJsonObject{{QStringLiteral("type"), QStringLiteral("string")},
 			{QStringLiteral("enum"), QJsonArray{QStringLiteral("instrument"), QStringLiteral("pattern"),
 				QStringLiteral("sample"), QStringLiteral("automation"), QStringLiteral("folder")}}}},
 		{QStringLiteral("name"), control::stringProperty()},
+		{QStringLiteral("output"), control::stringProperty()},
+		{QStringLiteral("instrument"), control::stringProperty()},
 	});
 	cmd.resultSchema = control::objectSchema({
 		{QStringLiteral("track"), control::stringProperty()},
+		{QStringLiteral("channel"), control::stringProperty()},
+		{QStringLiteral("channel_name"), control::stringProperty()},
+		{QStringLiteral("channel_linked"), control::booleanProperty()},
 		{QStringLiteral("index"), control::integerProperty(0, MaxSongLength)},
 		{QStringLiteral("name"), control::stringProperty()},
 		{QStringLiteral("type"), control::stringProperty()},
@@ -210,16 +221,20 @@ void registerTrackAdd(ControlRegistry& registry)
 		// unwinds the same ProjectJournal - removes the track again. The holder
 		// shares the track's id between the two lambdas, never its pointer:
 		// track.remove and its undo free the track and build an equal one.
-		const QString name = args.value(QStringLiteral("name")).toString();
+		ControlResult refusal;
+		control::NewTrackSpec spec;
+		if (!control::readNewTrackSpec(args, type, &spec, &refusal)) { return refusal; }
 		auto holder = std::make_shared<int>(-1);
+		auto channelHolder = std::make_shared<int>(-1);  // the channel made for it; a redo makes it under the same id
 		control::addUndoStep(
-			[holder]() {
+			[holder, channelHolder]() {
 				if (Track* live = control::trackWithId(*holder)) { control::removeTrack(live); }
 				*holder = -1;
+				control::deleteChannelWithId(*channelHolder);
 			},
-			[song, type, name, holder]() {
+			[song, type, spec, holder, channelHolder]() {
 				Track* created = createTrackOfType(type, song);
-				if (created != nullptr && !name.isEmpty()) { created->setName(name); }
+				if (created != nullptr) { control::finishNewTrack(created, spec, channelHolder.get()); }
 				*holder = created != nullptr ? created->id() : -1;
 			});
 
@@ -229,12 +244,13 @@ void registerTrackAdd(ControlRegistry& registry)
 		// they themselves call - see Song.cpp).
 		Track* track = createTrackOfType(type, song);
 		*holder = track->id();
-		if (!name.isEmpty()) { track->setName(name); }
+		control::finishNewTrack(track, spec, channelHolder.get());
 		QJsonObject result = trackAddResult(track, song);
+		control::insertChannelFields(&result, track);
 		result.insert(QStringLiteral("__transaction"),
 			trackSnapshot(beforeState, QStringLiteral("remove the created track"),
 				QStringLiteral("action checkpoint: the recorded undo step removes the created "
-					"track through the product's own TrackContainerView::deleteTrackView path, "
+					"track, and the mixer channel made for it if any, through the product's own TrackContainerView::deleteTrackView path, "
 					"and a fresh track carries only defaults, so removing it restores the "
 					"container. LIMIT: the project's id counter is monotonic and is not rewound, "
 					"so a re-add gets a fresh trk-<n>"),
