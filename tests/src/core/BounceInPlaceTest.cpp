@@ -43,8 +43,12 @@
 #include <QFileInfo>
 #include <QTemporaryDir>
 
+#include <cmath>
+#include <limits>
+
 #include "BounceInPlace.h"
 #include "BrowserTestSupport.h"
+#include "TempoMap.h"
 
 using namespace lmms;
 using namespace browserfixture;
@@ -180,6 +184,31 @@ private slots:
 		QCOMPARE(written, qint64(0));
 		QCOMPARE(BounceInPlace::sha256OfFile(source), before);
 		QCOMPARE(BounceInPlace::wavFrameCount(source), kFixtureFrames);
+	}
+
+	/*! The tick span from INT32_MIN to INT32_MAX is 2^32 - 1, which a tick_t cannot hold: the subtraction
+	 *  used to happen in tick_t before the frame conversion, so it wrapped to -1 tick (undefined behaviour
+	 *  in the signed form). The span must come out as its full frame count, and the reverse span as the
+	 *  negated count. Ordinary ticks are unchanged, bit for bit.
+	 */
+	void framesBetweenTicksSpansTheWholeTickRange()
+	{
+		constexpr float framesPerTick = 100.0f;
+		const TempoMap inactive;
+		constexpr tick_t lowest = std::numeric_limits<tick_t>::min();
+		constexpr tick_t highest = std::numeric_limits<tick_t>::max();
+		constexpr double span = 4294967295.0;  // highest - lowest, exactly
+		const double expected = span * framesPerTick;
+
+		const double forward = BounceInPlace::framesBetweenTicks(lowest, highest, framesPerTick, inactive, 120, 44100);
+		QVERIFY2(forward > 0.0, qPrintable(QString::number(forward)));
+		QVERIFY2(std::abs(forward - expected) <= expected * 1e-6, qPrintable(QString::number(forward)));
+
+		const double backward = BounceInPlace::framesBetweenTicks(highest, lowest, framesPerTick, inactive, 120, 44100);
+		QVERIFY2(backward < 0.0, qPrintable(QString::number(backward)));
+		QVERIFY2(std::abs(backward + expected) <= expected * 1e-6, qPrintable(QString::number(backward)));
+
+		QCOMPARE(BounceInPlace::framesBetweenTicks(24, 120, framesPerTick, inactive, 120, 44100), 96.0 * framesPerTick);
 	}
 };
 
