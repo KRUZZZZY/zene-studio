@@ -601,6 +601,17 @@ private slots:
 		QCOMPARE(ports.buffers()->frames(), f_cnt_t{0});
 	}
 
+	void combinedChannelCountsRetainWideTotal()
+	{
+		TestRemotePluginAudioPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+
+		// The two 16-bit channel counts can sum to more than ch_cnt_t. The
+		// shared block must retain that total instead of narrowing it to zero.
+		QVERIFY(plugin.updateAudioBuffer(std::numeric_limits<ch_cnt_t>::max(), ch_cnt_t{1}, 1) != nullptr);
+		QCOMPARE(plugin.m_hostBlock.size(), std::size_t{65536});
+	}
+
 	//! A plugin that never initialized has no remote client, so process() must
 	//! report failure and render silence: it zeroes the shared output planes,
 	//! which is what the pre-migration path did to the caller's output buffer.

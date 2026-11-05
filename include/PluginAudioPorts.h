@@ -89,8 +89,7 @@ public:
 		if (channelsIn == DynamicChannelCount || channelsOut == DynamicChannelCount) { return; }
 
 		const auto channels = static_cast<std::size_t>(channelsIn + channelsOut);
-		const auto totalSamples = detail::checkedSizeFromCounts(
-			static_cast<ch_cnt_t>(channels), frames);
+		const auto totalSamples = detail::checkedSizeFromCounts(channels, frames);
 		if (totalSamples == std::numeric_limits<std::size_t>::max()) { return; }
 
 		m_sourceBuffer.resize(totalSamples);

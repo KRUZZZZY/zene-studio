@@ -952,8 +952,8 @@ auto RemotePlugin::updateAudioBuffer(ch_cnt_t channelsIn, ch_cnt_t channelsOut, 
 		m_hostOutputs = {};
 		m_sharedInputs = {};
 		m_audioOutputs = {};
-		const auto totalSamples = detail::checkedSizeFromCounts(
-			static_cast<ch_cnt_t>(channelsIn + channelsOut), frames);
+		const auto totalChannels = static_cast<std::size_t>(channelsIn) + channelsOut;
+		const auto totalSamples = detail::checkedSizeFromCounts(totalChannels, frames);
 		if (totalSamples == std::numeric_limits<std::size_t>::max())
 		{
 			std::cerr << "Audio buffer size overflows size_t\n";

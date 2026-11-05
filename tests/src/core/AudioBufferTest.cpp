@@ -1183,24 +1183,26 @@ private slots:
 		QCOMPARE(ab.silenceFlags()[3], true);  // updated!
 	}
 
-	//! The shared checked-size helper must reject products that overflow
-	//! size_t and expose the view range predicate with subtraction semantics.
-	void checkedSizeHelperAndSubspanRange()
+	//! Interleaved view size arithmetic must not wrap or create an invalid span.
+	void interleavedViewSizeOverflowIsSafe()
 	{
 		// Interleaved view length arithmetic goes through the shared helper:
 		// dataSizeBytes/dataView on a view whose channels*frames overflows
 		// size_t must not silently wrap to a small span.
-		constexpr auto hugeFrames = static_cast<lmms::f_cnt_t>(std::numeric_limits<std::size_t>::max() / 4) + 1;
+		constexpr auto hugeFrames = static_cast<lmms::f_cnt_t>(std::numeric_limits<std::size_t>::max() / 4) + 2;
 		float dummy = 0.f;
 		lmms::InterleavedBufferView<float> view{&dummy, lmms::ch_cnt_t{4}, hugeFrames};
 		(void)dummy;
-		// The safe path: size saturates rather than wrapping (documented
-		// overflow semantics of the non-throwing view helper).
+		// Byte size saturates, while dataView refuses to create a span whose
+		// extent cannot be represented safely for its backing pointer.
 		QCOMPARE(view.dataSizeBytes(), std::numeric_limits<std::size_t>::max());
-		QCOMPARE(view.dataView().size(), std::numeric_limits<std::size_t>::max());
+		QVERIFY(view.dataView().empty());
+	}
 
-		// Range predicate: offset near UINT64_MAX with frames that would wrap
-		// offset+frames past the end must be rejected by the subtraction check.
+	void subspanRangePredicateDoesNotWrap()
+	{
+		// An offset near UINT64_MAX with a count that wraps offset+count past
+		// the end must be rejected by the subtraction check.
 		QVERIFY(!lmms::detail::inFrameRange(
 			std::numeric_limits<lmms::f_cnt_t>::max() - 1, lmms::f_cnt_t{2},
 			std::numeric_limits<lmms::f_cnt_t>::max()));

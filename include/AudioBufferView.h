@@ -54,7 +54,7 @@ constexpr auto checkedSizeMul(std::size_t lhs, std::size_t rhs) noexcept -> std:
 	return lhs * rhs;
 }
 
-constexpr auto checkedSizeFromCounts(ch_cnt_t channels, f_cnt_t frames) noexcept -> std::size_t
+constexpr auto checkedSizeFromCounts(std::size_t channels, f_cnt_t frames) noexcept -> std::size_t
 {
 	if constexpr (std::numeric_limits<f_cnt_t>::max() > std::numeric_limits<std::size_t>::max())
 	{
@@ -380,8 +380,9 @@ public:
 
 	constexpr auto dataView() noexcept -> std::span<T>
 	{
-		return std::span<T>{this->m_data,
-			detail::checkedSizeFromCounts(Base::channels(), this->m_frames)};
+		const auto samples = detail::checkedSizeFromCounts(Base::channels(), this->m_frames);
+		if (samples == std::numeric_limits<std::size_t>::max()) { return {}; }
+		return std::span<T>{this->m_data, samples};
 	}
 
 	//! @return the sample at the given channel and frame indicies

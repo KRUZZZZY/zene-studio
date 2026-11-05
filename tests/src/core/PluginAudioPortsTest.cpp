@@ -425,9 +425,14 @@ private slots:
 		QCOMPARE(quadInOut.bufferPtr(3) - quadInOut.bufferPtr(2), frames);
 	}
 
-	//! The total sample count (channels * frames) must be computed checked: a
-	//! product that wraps in f_cnt_t/size_t must reject the request BEFORE
-	//! allocating or mutating state (the shared checked-size helper).
+	//! The shared helper must preserve combined channel totals wider than ch_cnt_t.
+	void checkedSizeHelperAcceptsWideChannelTotal()
+	{
+		// The helper must accept a combined channel total wider than ch_cnt_t.
+		QCOMPARE(detail::checkedSizeFromCounts(std::size_t{80000}, f_cnt_t{1}), std::size_t{80000});
+	}
+
+	//! Every plugin storage variant rejects overflowing products without mutation.
 	void oversizedBufferRequestIsRejectedWithoutMutation()
 	{
 		// frames = (SIZE_MAX/4)+1 with 4 channels wraps a 64-bit product to a
