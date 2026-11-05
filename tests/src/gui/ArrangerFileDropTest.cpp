@@ -50,6 +50,7 @@
 #include "InstrumentTrack.h"
 #include "MainWindow.h"
 #include "MidiClip.h"
+#include "AutomationTrack.h"
 #include "PatternEditor.h"
 #include "PatternStore.h"
 #include "ProjectJournal.h"
@@ -447,6 +448,40 @@ private slots:
 		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), songTracks + 1);
 		QCoreApplication::processEvents();  // the redone track's view is built on the next turn
 		QCOMPARE(store->tracks().back()->numOfClips(), 1);  // one pattern clip, not one from the redo and one from the restore
+	}
+
+	//! cluster gui-1105 (characterization, not a regression proof: the reported std::bad_alloc did not reproduce, see
+	//! docs/qwen-fixes-2026-10/cluster-gui-1105-tab-pattern-add-automation-track.md). The Pattern Editor's
+	//! "Add automation-track" button on a Song with no pattern track makes the row and the Song's first pattern track.
+	void addAutomationTrackInAnEmptyPatternEditorMakesTheRow()
+	{
+		PatternStore* store = Engine::patternStore();
+		QCOMPARE(store->numOfPatterns(), 0);
+		const int storeTracks = static_cast<int>(store->tracks().size());
+		getGUI()->patternEditor()->m_editor->addAutomationTrack();
+		QCOMPARE(static_cast<int>(store->tracks().size()), storeTracks + 1);
+		QVERIFY(dynamic_cast<AutomationTrack*>(store->tracks().back()) != nullptr);
+	}
+
+	//! The sweep's sequence: New pattern, Clone pattern, Add sample-track, then Add automation-track.
+	void addAutomationTrackAfterNewAndClonePatternMakesTheRow()
+	{
+		PatternStore* store = Engine::patternStore();
+		PatternEditor* editor = getGUI()->patternEditor()->m_editor;
+		Track::create(Track::Type::Instrument, store);
+		Track::create(Track::Type::Automation, Engine::getSong());
+		Engine::getSong()->addPatternTrack();
+		QCoreApplication::processEvents();
+		editor->cloneClip();
+		QCoreApplication::processEvents();
+		editor->addSampleTrack();
+		QCoreApplication::processEvents();
+		const int storeTracks = static_cast<int>(store->tracks().size());
+		editor->addAutomationTrack();
+		QCOMPARE(static_cast<int>(store->tracks().size()), storeTracks + 1);
+		QVERIFY(dynamic_cast<AutomationTrack*>(store->tracks().back()) != nullptr);
+		// Every row of the store owns one clip per pattern - the pattern-mode automation read indexes by pattern number.
+		for (Track* track : store->tracks()) { QCOMPARE(track->numOfClips(), store->numOfPatterns()); }
 	}
 
 	//! A malformed track-copy payload is refused before the Pattern Editor creates its first pattern track.
