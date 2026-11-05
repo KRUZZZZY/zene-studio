@@ -23,6 +23,8 @@ exceptional path, whatever made the allocation fail in the sweep:
 
 ## The fix
 
+- `Track::Track` now removes its just-registered row if its constructor body throws. This covers the allocation in
+  `QObject::connect` after `TrackContainer::addTrack`: a constructor that throws never runs `Track::~Track`.
 - `Track::create` now holds the lock through `AudioEngine::requestChangesGuard()` (released on every exit). The steps
   after the track exists live in a file-local `finishCreatedTrack`; if they throw, the half-made track is deleted
   (its destructor unlinks it from the container) and the exception is rethrown. Success behaviour is identical.
@@ -33,8 +35,8 @@ exceptional path, whatever made the allocation fail in the sweep:
   helper that catches `std::bad_alloc` and says so in the status bar. The Song Editor's Add automation-track button
   (same `Track::create` call, via `Song::addAutomationTrack`) gets the same catch. The Song Editor's Add sample-track
   button already goes through `track.add` (a command, which has its own error boundary), so it is unchanged.
-- A test-only seam, `Track::setCreateFaultProbeForTest` (inside `LMMS_TESTING`), lets a test throw from inside
-  `Track::create` once the track exists.
+- A test-only seam, `Track::setCreateFaultProbeForTest` (inside `LMMS_TESTING`), lets the test throw after the base
+  constructor registers a row and again during `Track::create` follow-up.
 
 Not changed: the unknown cause of the allocation failure in the sweep (no stack trace; the same click sequence passed in
 `m0-train-24`). The click path itself is sound in the GUI harness (tests below, which pass before and after). If it
@@ -43,10 +45,10 @@ recurs, the user now sees a status-bar message and the project is intact, instea
 ## Regression test
 
 `tests/src/gui/ArrangerFileDropTest.cpp`:
-- `aFailedAllocationInAddAutomationTrackIsReportedAndLeavesTheProjectAsItWas`: the seam throws `std::bad_alloc`; the
-  test asserts the exception does not escape the slot, the model-change lock is free
-  (`AudioEngine::isChangeInModelHeld()`), the store and Song track counts are unchanged, the status bar names the
-  failure, and the button works again afterwards.
+- `aFailedAllocationInAddAutomationTrackIsReportedAndLeavesTheProjectAsItWas`: the seam throws `std::bad_alloc`
+  after Track's container registration and again during factory follow-up; each time the test asserts the exception
+  does not escape the slot, the model-change lock is free (`AudioEngine::isChangeInModelHeld()`), the store and Song
+  track counts are unchanged, and the status bar names the failure. The button works again afterwards.
 - `addAutomationTrackInAnEmptyPatternEditorMakesTheRow` and
   `addAutomationTrackAfterNewAndClonePatternMakesTheRow`: the happy path (empty project; the sweep's New pattern,
   Clone pattern, Add sample-track sequence), including one clip per pattern on every store track.
@@ -82,6 +84,14 @@ alone makes the test fail.
 | Affected-family test count | `ArrangerFileDropTest` 16, `StableTrackIdsTest` and `AutomationTrackTest` pass (3 ctest entries, 3 passed) |
 | Gates | `feature_check.py` exit 1 (jail: cannot write its log folder); the log-folder-only copy exit 0, 8 of 8 PASS |
 | Files committed | `include/Track.h`, `src/core/Track.cpp`, `src/gui/editors/PatternEditor.cpp`, `src/gui/editors/SongEditor.cpp`, `tests/src/gui/ArrangerFileDropTest.cpp`, `tests/upstream-modifications.txt`, this report |
+
+The QA reviewer found one additional exceptional path: the functor connection in `Track::Track` allocates after
+`TrackContainer::addTrack` has published the raw pointer. The constructor now unregisters that pointer if its body
+throws. The same deterministic regression injects a failure at this point and during factory follow-up. Reviewer
+verification after this change: `cmake --build build --target zene ArrangerFileDropTest -j12` exit 0;
+`ctest -R '^ArrangerFileDropTest$' --output-on-failure` from `build/tests` exit 0; the same ctest with the constructor
+rollback reversed fails (exit 8: the store count rises from 1 to 2, then the following test sees the dangling entry);
+the exact `feature_check.py <worktree>` command exits 0, all 8 rows PASS.
 
 ## Self-check
 

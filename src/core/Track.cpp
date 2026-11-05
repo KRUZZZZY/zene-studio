@@ -310,14 +310,27 @@ Track::Track( Type type, TrackContainer * tc ) :
 	                                 * rejects; C++ initialises in declaration order
 	                                 * either way, so the order here is a no-op). */
 	m_clips()        /*!< The clips (segments) */
-{	
-m_trackContainer->addTrack( this );
-m_height = -1;
-// R2.1: the behaviour this track type had before monitoring existed (Track.h).
-m_monitorMode.store( static_cast<int>( defaultMonitorMode() ), std::memory_order_relaxed );
-// Q050-212: through the signal, not a call in setName: InstrumentLoaderThread names a track off the UI thread, and
-// this connection brings that rename back to the thread the channel's name lives on.
-connect( this, &Track::nameChanged, this, [this] { syncLinkedChannelName(); } );
+{
+	try
+	{
+		m_trackContainer->addTrack( this );
+#ifdef LMMS_TESTING
+		if (s_createFaultProbeForTest != nullptr) { s_createFaultProbeForTest(); }
+#endif
+		m_height = -1;
+		// R2.1: the behaviour this track type had before monitoring existed (Track.h).
+		m_monitorMode.store( static_cast<int>( defaultMonitorMode() ), std::memory_order_relaxed );
+		// Q050-212: through the signal, not a call in setName: InstrumentLoaderThread names a track off the UI thread, and
+		// this connection brings that rename back to the thread the channel's name lives on.
+		connect( this, &Track::nameChanged, this, [this] { syncLinkedChannelName(); } );
+	}
+	catch (...)
+	{
+		// Track's destructor does not run if its constructor throws. Undo the raw-pointer registration here so an
+		// allocation failure in connect() cannot leave a dangling entry in the container.
+		m_trackContainer->removeTrack( this );
+		throw;
+}
 }
 
 

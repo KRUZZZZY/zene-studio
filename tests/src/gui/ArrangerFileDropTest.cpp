@@ -74,6 +74,14 @@ namespace
 constexpr tick_t Bar = 192;
 constexpr int PixelsPerBar = 40;
 
+int s_createFaultProbeCalls = 0;
+int s_createFaultProbeThrowsOn = 0;
+
+void throwOnSelectedCreateFaultProbe()
+{
+	if (++s_createFaultProbeCalls == s_createFaultProbeThrowsOn) { throw std::bad_alloc(); }
+}
+
 ControlResult run(const QString& id, const QJsonObject& args = {})
 {
 	return ControlRegistry::instance()->invoke(id, args);
@@ -486,9 +494,8 @@ private slots:
 		for (Track* track : store->tracks()) { QCOMPARE(track->numOfClips(), store->numOfPatterns()); }
 	}
 
-	//! The reported failure: the allocation behind the new row fails (the seam throws std::bad_alloc once the track
-	//! exists). The button must not let it out of the slot, must give the model-change lock back, and must leave the
-	//! project as it was - no half-made row in the store or the Song.
+	//! An allocation fails after container registration in Track's constructor or while its follow-up work runs. The
+	//! button must report both failures, release the model-change lock and leave no half-made row in the project.
 	void aFailedAllocationInAddAutomationTrackIsReportedAndLeavesTheProjectAsItWas()
 	{
 		PatternStore* store = Engine::patternStore();
@@ -499,17 +506,22 @@ private slots:
 		const int songTracks = static_cast<int>(Engine::getSong()->tracks().size());
 		QVERIFY(!Engine::audioEngine()->isChangeInModelHeld());
 
-		Track::setCreateFaultProbeForTest([] { throw std::bad_alloc(); });
-		bool escaped = false;
-		try { editor->addAutomationTrack(); }
-		catch (const std::bad_alloc&) { escaped = true; }
-		Track::setCreateFaultProbeForTest(nullptr);
+		for (int throwOnProbe : {1, 2})
+		{
+			s_createFaultProbeCalls = 0;
+			s_createFaultProbeThrowsOn = throwOnProbe;
+			Track::setCreateFaultProbeForTest(throwOnSelectedCreateFaultProbe);
+			bool escaped = false;
+			try { editor->addAutomationTrack(); }
+			catch (const std::bad_alloc&) { escaped = true; }
+			Track::setCreateFaultProbeForTest(nullptr);
 
-		QVERIFY2(!escaped, "std::bad_alloc left the Add automation-track slot");
-		QVERIFY2(!Engine::audioEngine()->isChangeInModelHeld(), "the model-change lock was left taken");
-		QCOMPARE(static_cast<int>(store->tracks().size()), storeTracks);
-		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), songTracks);
-		QVERIFY(getGUI()->mainWindow()->statusBar()->currentMessage().contains(QStringLiteral("out of memory")));
+			QVERIFY2(!escaped, "std::bad_alloc left the Add automation-track slot");
+			QVERIFY2(!Engine::audioEngine()->isChangeInModelHeld(), "the model-change lock was left taken");
+			QCOMPARE(static_cast<int>(store->tracks().size()), storeTracks);
+			QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), songTracks);
+			QVERIFY(getGUI()->mainWindow()->statusBar()->currentMessage().contains(QStringLiteral("out of memory")));
+		}
 
 		editor->addAutomationTrack();  // the button works again afterwards
 		QCOMPARE(static_cast<int>(store->tracks().size()), storeTracks + 1);
