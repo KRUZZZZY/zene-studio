@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-29T15:55:04Z",
+  "captured_at": "2026-11-05T11:13:46Z",
   "commands": [
     {
       "args_schema": {
@@ -16001,6 +16001,16 @@
             "minimum": 0,
             "type": "integer"
           },
+          "recur_length": {
+            "maximum": 16,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "recur_mask": {
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
           "slide": {
             "type": "boolean"
           },
@@ -17001,6 +17011,16 @@
           "probability": {
             "type": "number"
           },
+          "recur_length": {
+            "maximum": 16,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "recur_mask": {
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
           "slide": {
             "type": "boolean"
           },
@@ -17362,6 +17382,16 @@
           "position": {
             "type": "number"
           },
+          "recur_length": {
+            "maximum": 16,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "recur_mask": {
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
           "slide": {
             "type": "boolean"
           },
@@ -17690,6 +17720,16 @@
           },
           "position": {
             "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "recur_length": {
+            "maximum": 16,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "recur_mask": {
+            "maximum": 65535,
             "minimum": 0,
             "type": "integer"
           },
@@ -18070,6 +18110,16 @@
           },
           "position": {
             "type": "number"
+          },
+          "recur_length": {
+            "maximum": 16,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "recur_mask": {
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
           },
           "slide": {
             "type": "boolean"
@@ -37469,11 +37519,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-242/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-k4l1reh3/zene.sock",
-    "version": "0.4.0-alpha.5942+68bed50"
+    "source_socket": "/tmp/zctl-run-fepdfp5q/zene.sock",
+    "version": "0.4.0-alpha.5943+2a7fd9f"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

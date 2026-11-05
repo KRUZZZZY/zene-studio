@@ -218,8 +218,10 @@ const ReversibilityRow kRows[] = {
 		"ProjectJournal (Clip checkpoint)",
 		""),
 	R("note.edit", RC::TrueInverse, true,
-		"every field it writes (position, key, length, volume, panning, probability) is part of the "
-		"clip's saved note list, and the whole batch is one checkpoint",
+		"every field it writes (position, key, length, volume, panning, probability, muted, release "
+		"velocity, velocity spread, repeats, recurrence length and pass mask, articulation, group, "
+		"slide, MPE timbre/pressure/pitch) is part of the clip's saved note list, and the whole batch "
+		"is one checkpoint; the recurrence pair is captured together, because a new length cuts the mask",
 		"ProjectJournal (one MidiClip checkpoint for the batch); inverse: note.edit with the previous values",
 		""),
 	RC("mixer.set_volume", RC::TrueInverse, true,

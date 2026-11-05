@@ -38,6 +38,7 @@
 #include "GuiApplication.h"
 #include "MidiClip.h"
 #include "Note.h"
+#include "NoteConditions.h"
 #include "SampleClip.h"
 #include "Song.h"
 #include "SongEditor.h"
@@ -374,6 +375,14 @@ QJsonObject noteState(const Note* note, int index)
 	entry.insert(QStringLiteral("midi_velocity"), note->midiVelocity(127));
 	entry.insert(QStringLiteral("pan"), static_cast<double>(note->getPanning()));
 	entry.insert(QStringLiteral("slide"), note->slide());
+	// Q050-242: the note's recurrence (ED-133), reported for EVERY note so the note editor's
+	// properties box and an agent read back the pair note.edit's recur_length / recur_mask wrote,
+	// and can compare it with the same pair after one control.undo. 0 / 0 is neutral (every pass);
+	// a positive length with mask 0 plays on no pass; bit n of the mask selects pass n of the
+	// pattern (pass % length, NoteConditions::recursOnPass).
+	const NoteConditions& conditions = note->conditions();
+	entry.insert(QStringLiteral("recur_length"), conditions.recurLength);
+	entry.insert(QStringLiteral("recur_mask"), conditions.recurMask);
 	return entry;
 }
 
