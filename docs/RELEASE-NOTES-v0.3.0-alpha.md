@@ -1113,6 +1113,8 @@ config lists back) and one `not_mutating` (`session.command_bindings`, a read) -
 
 **Q050-124** (bus freeze, 2026-11-03): `freeze.bus` and `freeze.unfreeze_bus` add two `true_inverse` rows (action checkpoints on the bus's stable channel id) - `rows=889 true_inverse=436 snapshot=42 irreversible=25 not_mutating=386`.
 
+**Q050-291.1** (CC lane <-> device automation, stage 1, 2026-11-03): `clip.controllers_to_automation` and `clip.controllers_from_automation` add two `true_inverse` rows - `rows=889 true_inverse=436 snapshot=42 irreversible=25 not_mutating=386`. Project files now keep a MIDI clip's `<controllers metadata="1">` lanes (`DataFile::cleanMetaNodes` used to delete them on save).
+
 <!-- A16-HISTOGRAM-BEGIN
      measured: rows=888 true_inverse=434 snapshot=42 irreversible=25 not_mutating=387
      configuration: telemetry.status wasm.load session.get_state stem.get_state

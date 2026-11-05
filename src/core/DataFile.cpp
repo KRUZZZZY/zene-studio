@@ -1164,7 +1164,12 @@ void DataFile::cleanMetaNodes( QDomElement _de )
 		{
 			if( node.isElement() )
 			{
-				if( node.toElement().attribute( "metadata" ).toInt() )
+				// Q050-291.1: a MIDI clip's <controllers metadata="1"> carries its CC / pitch-bend / aftertouch /
+				// program lanes (MidiClipControllers::save). The metadata flag keeps older builds from reading it as a
+				// note; the lanes are project data, so the prune that drops the journal's bookkeeping spares them.
+				const bool clipLanes = node.nodeName() == QLatin1String( "controllers" )
+					&& current.nodeName() == QLatin1String( "midiclip" );
+				if( node.toElement().attribute( "metadata" ).toInt() && !clipLanes )
 				{
 					QDomNode ns = node.nextSibling();
 					current.removeChild( node );

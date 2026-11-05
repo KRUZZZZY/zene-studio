@@ -935,6 +935,8 @@ set(LMMS_TESTS
 	src/core/ClipGainEnvelopeTest.cpp
 	# 0.5.0 L07 ED-130: a MIDI clip's controller lanes as the file carries them.
 	src/core/MidiClipControllersLoadTest.cpp
+	# Q050-291.1: a CC lane converted to a device parameter's automation and back.
+	src/core/ControllerConversionTest.cpp
 	# 0.5.0 L04 ED-038: a clip's non-destructive transpose - command, file, played pitch.
 	src/core/ClipTransposeTest.cpp
 	# 0.5.0 L04 ED-020/043/044: ripple, overlap and edge snapping.
@@ -2539,6 +2541,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "NoteEditingCommandsTest"
 		OR LMMS_TEST_NAME STREQUAL "NoteEditRangeTest"
 		OR LMMS_TEST_NAME STREQUAL "AutomationLanesTest"
+		OR LMMS_TEST_NAME STREQUAL "ControllerConversionTest"
 		OR LMMS_TEST_NAME STREQUAL "AutomationWriteToEndTest"
 		# 0.5.0 L06 (Q050-022): the lane-child tests load a real instrument's parameter.
 		OR LMMS_TEST_NAME STREQUAL "AutomationLaneChildrenTest"
@@ -2655,6 +2658,11 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# Q050-040: the unmute-chase tests play a real instrument (tripleoscillator) on their tracks,
 	# so a targeted build has to bring that module up first.
 	if(LMMS_TEST_NAME STREQUAL "UnmuteChaseTest")
+		add_dependencies(${LMMS_TEST_NAME} tripleoscillator)
+	endif()
+
+	# Q050-291.1: the controller-conversion test puts CC lanes on a real instrument's parameters.
+	if(LMMS_TEST_NAME STREQUAL "ControllerConversionTest" AND TARGET tripleoscillator)
 		add_dependencies(${LMMS_TEST_NAME} tripleoscillator)
 	endif()
 

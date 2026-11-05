@@ -785,6 +785,8 @@ LMMS_EXPORT void registerRangeCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerClipEnvelopeCommands(ControlRegistry& registry);
 //! 0.5.0 L07 (ED-130): clip.controllers_get / set (ControlCommandsClipControllers.cpp).
 LMMS_EXPORT void registerClipControllerCommands(ControlRegistry& registry);
+//! Q050-291.1: clip.controllers_to_automation / controllers_from_automation (ControlCommandsControllerConvert.cpp).
+LMMS_EXPORT void registerClipControllerConvertCommands(ControlRegistry& registry);
 //! 0.5.0 L07 (ED-145/113): track.input_transform_get / set (ControlCommandsInputTransform.cpp).
 LMMS_EXPORT void registerInputTransformCommands(ControlRegistry& registry);
 //! 0.5.0 L07 (ED-137): warp.quantize - quantise audio (ControlCommandsWarpQuantize.cpp).
