@@ -37,6 +37,7 @@
 #include "MidiClip.h"
 #include "MidiPlayback.h"
 #include "MixHelpers.h"
+#include "MpeSynthExpression.h"
 #include "NoteRandom.h"
 #include "PatternStore.h"
 #include "PatternTrack.h"
@@ -300,6 +301,12 @@ void InstrumentTrack::processAudioBuffer( SampleFrame* buf, const f_cnt_t frames
 	{
 		const f_cnt_t offset = n->noteOffset();
 		m_soundShaping.processAudioBuffer( buf + offset, frames - offset, n );
+		// Q050-311: the note's MPE pressure and timbre, heard on the built-in
+		// synthesisers (which never see MIDI). A note without expression is not touched.
+		if( !m_instrument->appliesMpeExpressionItself() )
+		{
+			MpeSynthExpression::applyToNote( *n, buf + offset, frames - offset );
+		}
 		const float vol = ( (float) n->getVolume() * DefaultVolumeRatio );
 		const panning_t pan = std::clamp(n->getPanning(), PanningLeft, PanningRight);
 		StereoVolumeVector vv = panningToVolumeVector( pan, vol );
@@ -1397,6 +1404,23 @@ Instrument * InstrumentTrack::loadInstrument(const QString & _plugin_name,
 
 	return m_instrument;
 }
+
+
+
+#ifdef LMMS_TESTING
+void InstrumentTrack::setInstrumentForTest( Instrument* instrument )
+{
+	silenceAllNotes( true );
+	lock();
+	Engine::audioEngine()->requestChangeInModel();
+	destroyInstrument();
+	m_preservedInstrument = QDomElement();
+	Engine::audioEngine()->doneChangeInModel();
+	m_instrument = instrument;
+	unlock();
+	emit instrumentChanged();
+}
+#endif
 
 
 

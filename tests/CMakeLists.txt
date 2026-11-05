@@ -595,6 +595,8 @@ set(LMMS_TESTS
 	# the route every measured ratio is exactly 1.0 and the test fails;
 	# docs/MPE.md §4 and docs/KNOWN-LIMITATIONS.md carry the claim it backs.
 	src/core/MpePlaybackTest.cpp
+	# Q050-311: MPE pressure (intensity) and CC74 (brightness) heard on a built-in synth (TripleOscillator).
+	src/core/MpeSynthExpressionTest.cpp
 	# The #602 modulation layer: the ENGINE half (the LFO arithmetic, the target
 	# resolver, the per-block relative write and the persistence round trip) and
 	# the SURFACE half (the ten modulator.*/note.expression.* commands, their
@@ -2026,6 +2028,19 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			${CMAKE_SOURCE_DIR}/plugins/Vibed ${CMAKE_BINARY_DIR}/plugins/Vibed)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			PLUGIN_NAME=vibedstrings vibedstrings_EXPORTS)
+	endif()
+	# Q050-311: MpeSynthExpressionTest compiles TripleOscillator's own sources into the test (the
+	# Vibed tests' shape) and installs that instance on its track, so the native-synth render, the live
+	# MPE path and the project round trip run on every platform - a Windows test host cannot load a
+	# plug-in module, and the module route would have to skip there.
+	if(LMMS_TEST_NAME STREQUAL "MpeSynthExpressionTest")
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/TripleOscillator/TripleOscillator.cpp
+			${CMAKE_SOURCE_DIR}/plugins/TripleOscillator/TripleOscillator.h)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/TripleOscillator ${CMAKE_BINARY_DIR}/plugins/TripleOscillator)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			PLUGIN_NAME=tripleoscillator tripleoscillator_EXPORTS)
 	endif()
 	# cluster new-p14-358 / 5451: VestigeMidiHandoffTest compiles the VeSTige plug-in's
 	# own sources into the test (the SlicerT and Vibed tests' shape), so the "Turn off all

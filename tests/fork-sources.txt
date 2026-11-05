@@ -1010,6 +1010,7 @@ include/MonitorMode.h
 include/MpeExpression.h
 include/MpeInputAction.h
 include/MpeStreamSnapshot.h
+include/MpeSynthExpression.h
 include/MpscQueue.h
 include/MultiTrackRecorder.h
 include/MusicalTime.h
@@ -1872,6 +1873,7 @@ src/core/ModulationLayer.cpp
 src/core/ModulationLayerPublisher.cpp
 src/core/ModulationVoices.cpp
 src/core/MpeExpressionStreamPlayback.cpp
+src/core/MpeSynthExpression.cpp
 src/core/MusicalTime.cpp
 src/core/NamespaceRegistry.cpp
 src/core/NoteConditions.cpp
@@ -3439,3 +3441,4 @@ tests/src/gui/MixerBusFreezeMenuTest.cpp
 tests/control-bus-freeze-transcript.py
 docs/050-features/Q050-124.md
 docs/qwen-fixes-2026-10/cluster-Q050-124.md
+tests/src/core/MpeSynthExpressionTest.cpp
