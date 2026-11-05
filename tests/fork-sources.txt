@@ -3306,3 +3306,5 @@ tests/src/core/MixerMaskingReportTest.cpp
 tests/control-masking-report.py
 include/MixerMaskingReport.h
 src/gui/MixerMaskingReport.cpp
+docs/050-features/Q050-231.1.md
+docs/qwen-fixes-2026-10/cluster-Q050-231.1.md
