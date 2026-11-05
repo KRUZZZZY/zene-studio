@@ -3453,3 +3453,4 @@ tests/control-bus-freeze-transcript.py
 docs/050-features/Q050-124.md
 docs/qwen-fixes-2026-10/cluster-Q050-124.md
 tests/src/core/MpeSynthExpressionTest.cpp
+tests/automation-docs-agree.py

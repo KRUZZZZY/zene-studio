@@ -8234,6 +8234,22 @@ if(PYTHON3_EXECUTABLE)
 		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/warp-docs-agree.py)
 endif()
 
+# Q050-362 (docs lane): the automation docs must say which clips are sample-accurate - a
+# Linear/CubicHermite clip ramps per sample by default, a Discrete clip keeps its step,
+# CubicHermite is approximated per tick, each per-block ramp holds 32 knots with the surplus
+# refused and counted, and a clip in a pattern is refused by automation.ramp_set. The old
+# "Automation is not sample-accurate" blanket line may survive only as a dated record.
+# AutomationDocsAgreeSelfTest is the gate's own red/green control: the blanket line back, the
+# 32-knot or pattern-refusal sentence dropped, feature row 9 back at "to build", the manual
+# paragraph gone, or the dated superseded marker removed must each fail the gate.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME AutomationDocsAgree
+		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/automation-docs-agree.py)
+	add_test(NAME AutomationDocsAgreeSelfTest
+		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/automation-docs-agree.py
+			--self-test)
+endif()
+
 # 0.5.0 F1 (MX-040/041/036/061): hardware outputs, interface channels, cue mixes and the hardware
 # insert ping driven end to end on a 4-output Dummy whose loopback carries outputs 3/4.
 if(PYTHON3_EXECUTABLE)
