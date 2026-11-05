@@ -1912,6 +1912,10 @@ list(APPEND LMMS_TESTS src/core/SmfNoteReadTest.cpp)
 # The test compiles the Vibed plug-in's string sources, the same shape as the Vibed tests below.
 list(APPEND LMMS_TESTS src/plugins/VibratingStringTest.cpp)
 
+# cluster new-p15-238: a Vibed note must render when the output device runs below the
+# engine's base rate (VibratingString divided by zero there). The plug-in's sources are
+# compiled into the test below, the same shape as VibedWaveformHandoffTest.
+list(APPEND LMMS_TESTS src/plugins/VibedSubBaseRateTest.cpp)
 # cluster new-p12-278: the Vibed waveform handoff proof - a note's render must
 # depend on the waveform the GUI thread handed off, never on the wave graph model
 # being edited underneath the audio thread. It is registered LAST on purpose: the
@@ -2048,6 +2052,21 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			${CMAKE_SOURCE_DIR}/plugins/Vibed/VibratingString.h)
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE
 			${CMAKE_SOURCE_DIR}/plugins/Vibed)
+	endif()
+	# cluster new-p15-238: VibedSubBaseRateTest compiles the Vibed plug-in's own sources
+	# into the test, so the note path under test is the shipping one.
+	if(LMMS_TEST_NAME STREQUAL "VibedSubBaseRateTest")
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/Vibed/Vibed.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Vibed/Vibed.h
+			${CMAKE_SOURCE_DIR}/plugins/Vibed/NineButtonSelector.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Vibed/NineButtonSelector.h
+			${CMAKE_SOURCE_DIR}/plugins/Vibed/VibratingString.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Vibed/VibratingString.h)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/Vibed ${CMAKE_BINARY_DIR}/plugins/Vibed)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			PLUGIN_NAME=vibedstrings vibedstrings_EXPORTS)
 	endif()
 	# cluster new-p12-278: VibedWaveformHandoffTest compiles the plug-in's own
 	# sources into the test (the SlicerT plug-in tests' shape), so the audio path it
