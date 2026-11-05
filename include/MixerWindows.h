@@ -40,6 +40,8 @@ namespace lmms::gui
  *    (routing.matrix, the same data an agent reads); double-click a cell to send there - since 0.5.0
  *    theme 16 its own file, sparse (MixerRoutingMatrix.h);
  *  - Compare Channel EQ (MX-140): two channels' strip EQ curves over each other (mixer.eq_compare).
+ *  - Masking Report (Q050-231.1): which ticked channels clash in which ranges, with a proposed cut on the
+ *    lower-priority one (mixer.masking_report; MixerMaskingReport.h).
  *  Add their entries to @a menu. */
 LMMS_EXPORT void addMixerWindows(QMenu* menu);
 

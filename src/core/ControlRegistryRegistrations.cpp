@@ -155,6 +155,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerSampleRangeCommands(registry);
 	registerSampleStereoCommands(registry);  // 0.5.0 L05 (Q050-106): sample.split_stereo
 	registerMixerMeterCommands(registry);
+	registerMixerMaskingCommands(registry);  // 0.5.0 L08 (Q050-231.1)
 	registerHardwareIoCommands(registry);  // 0.5.0 F1: audio.io_*, mixer.hardware_*, mixer.cue_*
 	registerTrackMidiOutCommands(registry);
 	registerExternalDeviceCommands(registry);  // 0.5.0 L09 (Q050-252.1): device.external_*

@@ -179,6 +179,7 @@ SET(LMMS_SRCS
 	gui/SampleRangeFields.cpp
 	gui/SampleSelectionView.cpp
 	gui/ControlCommandsSampleEditor.cpp
+	gui/MixerMaskingReport.cpp
 	gui/MixerWindows.cpp
 	gui/InputLevelMeter.cpp
 	gui/PhaseScopeView.cpp

@@ -266,6 +266,7 @@ const ReversibilityRow kDeviceRows[] = {
 	R("routing.matrix", RC::NotMutating, false, "it reads the channels and their sends. Nothing is written", "no write", ""),
 	R("mixer.send_meters", RC::NotMutating, false, "it reads the sends' levels. Nothing is written", "no write", ""),
 	R("mixer.eq_compare", RC::NotMutating, false, "it reads two channels' EQ settings. Nothing is written", "no write", ""),
+	R("mixer.masking_report", RC::NotMutating, false, "it analyses the channels' audio clips and proposes cuts. No EQ is written, no undo step", "no write", ""),
 	R("track.midi_out", RC::TrueInverse, true, "it sets an instrument track's MIDI output ports and channel", "Track journal checkpoint", ""),
 	R("device.external_get_state", RC::NotMutating, false, "it reads an instrument track's External MIDI device. Nothing is written", "no write", ""),
 	R("device.external_set", RC::TrueInverse, true, "it sets the External MIDI device's output port, channel, bank and program",

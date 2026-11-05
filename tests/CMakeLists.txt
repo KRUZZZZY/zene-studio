@@ -989,6 +989,8 @@ set(LMMS_TESTS
 	src/core/MixerToolsTest.cpp
 	# 0.5.0 L09 (Q050-252.1): the External MIDI device - port, channel, bank, program and presets; what reaches the output; save/open; undo.
 	src/core/ExternalMidiDeviceTest.cpp
+	# 0.5.0 L08 (Q050-231.1): mixer.masking_report - deterministic clashes and cut proposals over fixed tones, read only.
+	src/core/MixerMaskingReportTest.cpp
 	# cluster new-p14-29 (BUG 14): order_by_tracks refuses an index that names no channel, observed before the read.
 	src/core/MixerOrderByTracksTest.cpp
 	# 0.5.0 L02 (W3): capture a scene, playlists, setlists, marker actions, release and jump.
@@ -1371,6 +1373,8 @@ set(LMMS_TESTS
 	src/gui/MixerWindowsTest.cpp
 	# Q050-124: the bus strip's Freeze bus / Unfreeze bus entry, driven through the strip's own context menu.
 	src/gui/MixerBusFreezeMenuTest.cpp
+	# Q050-231.1: Mixer View > Masking Report... - tick, prioritise, Report; the clash and its cut, nothing written.
+	src/gui/MixerMaskingReportWindowTest.cpp
 	# Regressions for stale panner fields, route refresh, and ignored non-left clicks.
 	src/gui/SurroundPannerTest.cpp
 	# M0 coverage: a device's menu (insert, replace, copy, A/B, parameters), the channel picker and the picker organiser.
@@ -3693,6 +3697,7 @@ set_tests_properties(PluginControlDialogsTest PROPERTIES ENVIRONMENT "QT_QPA_PLA
 set_tests_properties(GraphWaveformEditorGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MixerWindowsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MixerBusFreezeMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(MixerMaskingReportWindowTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SurroundPannerTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(EffectDeviceMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(EffectPickerOrganiserTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -6474,6 +6479,16 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/control-clip-polarity.py
 			$<TARGET_FILE:zene>)
 	set_tests_properties(ControlClipPolarity PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
+	# Q050-231.1 over the socket: mixer.masking_report names the pair, range and lower-priority target,
+	# repeats byte-identically, follows the priorities and changes no strip EQ and no undo depth.
+	add_test(NAME ControlMaskingReport
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-masking-report.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlMaskingReport PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)

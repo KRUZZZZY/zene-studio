@@ -1538,6 +1538,7 @@ src/core/ControlCommandsMidiReconnectEdit.cpp
 src/core/ControlCommandsMidiReconnectShared.h
 src/core/ControlCommandsMixer.cpp
 src/core/ControlCommandsMixerListen.cpp
+src/core/ControlCommandsMixerMasking.cpp
 src/core/ControlCommandsMixerMeters.cpp
 src/core/ControlCommandsMixerRename.cpp
 src/core/ControlCommandsMixerRoutes.cpp
@@ -3460,3 +3461,11 @@ tests/automation-docs-agree.py
 tests/src/gui/RevisionsDocsTest.cpp
 docs/050-features/Q050-438.md
 docs/qwen-fixes-2026-10/cluster-Q050-438.md
+# Q050-231.1 (2026-11): mixer.masking_report - cross-track masking clashes and cut proposals (fork-NEW).
+tests/src/core/MixerMaskingReportTest.cpp
+tests/control-masking-report.py
+include/MixerMaskingReport.h
+src/gui/MixerMaskingReport.cpp
+docs/050-features/Q050-231.1.md
+docs/qwen-fixes-2026-10/cluster-Q050-231.1.md
+tests/src/gui/MixerMaskingReportWindowTest.cpp
