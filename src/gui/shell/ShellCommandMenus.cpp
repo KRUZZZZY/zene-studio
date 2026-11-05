@@ -25,6 +25,7 @@
 #include "ShellCommandMenus.h"
 
 #include <algorithm>
+#include <utility>
 
 #include <QJsonArray>
 #include <QMenu>
@@ -390,12 +391,10 @@ void viewOptionsMenu(QMenu* menu)
 {
 	QMenu* view = menu->addMenu(tr("Mixer View"));
 	addMixerWindows(view);  // L08/L09 (MX-131, MX-055)
-	choices(view, "Show Sends", "window.mixer_view", "show_sends", {});
-	choices(view, "Show Pan", "window.mixer_view", "show_pan", {});
-	choices(view, "Show Channel Numbers", "window.mixer_view", "show_number", {});
-	choices(view, "Show Meter Line", "window.mixer_view", "show_meter_info", {});
-	choices(view, "Show Inserts", "window.mixer_view", "show_inserts", {});
-	choices(view, "Show Macro Knobs", "window.mixer_view", "show_macros", {});
+	static const std::pair<const char*, const char*> sections[] = {{"Show Sends", "show_sends"}, {"Show Pan", "show_pan"},
+		{"Show Channel Numbers", "show_number"}, {"Show Meter Line", "show_meter_info"}, {"Show Inserts", "show_inserts"},
+		{"Show Macro Knobs", "show_macros"}};
+	for (const auto& section : sections) { choices(view, section.first, "window.mixer_view", section.second, {}); }
 	choices(view, "Show Console Section", "window.mixer_view", "show_console", {});  // Q050-088
 	choices(view, "Strip Width", "window.mixer_view", "strip_width", {});
 	choices(view, "Show Channels", "window.mixer_view", "filter", {});

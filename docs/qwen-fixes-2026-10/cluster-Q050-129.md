@@ -35,6 +35,10 @@ tests, fixed in `tests/src/gui/MixerMeteringTest.cpp` only:
 - `theFollowedFilterSurvivesEmptyAndStaleSelections` read `m_other` from the previous test and failed when run alone; it
   now creates its own manually picked channel.
 
+- **file-length gate:** the one-line Mixer View menu entry took `src/gui/shell/ShellCommandMenus.cpp` from 500 to 501
+  code lines (`feature-check/file-length.log`: "new file over 500 lines"). The six "Show ..." toggle entries in
+  `viewOptionsMenu` are now one table and a loop (same labels, same command keys, same order), which brings it back to 500.
+
 The assertions are unchanged and none was weakened or removed.
 
 | Step | Command (logs in `runs/Q050-129.r7/logs`) | Exit |
