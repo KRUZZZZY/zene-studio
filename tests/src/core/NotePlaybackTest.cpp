@@ -33,8 +33,10 @@
 #include <cmath>
 #include <limits>
 
+#include <QDir>
 #include <QDomDocument>
 #include <QJsonArray>
+#include <QTemporaryDir>
 #include <QThread>
 
 #include <algorithm>
@@ -923,6 +925,154 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(m_clip->clipEdits().loopTicks, 0);
 		(void) note;
+	}
+
+	/*! Q050-242: recurrence through a LOCALLY LOOPED clip - the combination no test covered. The
+	 *  clip is 96 ticks long and looped every 24 ticks, so within ONE song pass it folds its note
+	 *  onto ticks 0, 24, 48 and 72 (four local repeats). The recurrence mask counts SONG passes
+	 *  (MidiPlayback::pass(), advanced only by a transport loop wrap), not the clip's own repeats:
+	 *  with length 2 and mask 1 (the first of every two passes) the note sounds on every local
+	 *  repeat of pass 0 and on none of pass 1, while the clip keeps folding. The tempo is pushed so
+	 *  3 periods cover more than a 24-tick pass, then restored.
+	 *
+	 *  A second note follows the mask over four passes: length 4, mask 0b0101 - passes 0 and 2 only.
+	 */
+	void recurrenceSelectsThePassesOfALocallyLoopedClip()
+	{
+		Note* note = oneNote(60, 24);
+		m_clip->changeLength(TimePos(96));
+		QVERIFY(run(QStringLiteral("clip.set_loop"), {{QStringLiteral("clip"), control::clipIdOf(m_clip)},
+			{QStringLiteral("length"), 24}}).ok);
+		QCOMPARE(playFrom(0).size(), 1);  // pass 0, tick 0: it plays before any recurrence is set
+		QVERIFY(run(QStringLiteral("note.edit"), edit(note, {{QStringLiteral("recur_length"), 2},
+			{QStringLiteral("recur_mask"), 1}})).ok);
+		QCOMPARE(m_clip->notes().front()->conditions().recurLength, 2);
+		// The same pair through the agent's reading of the clip (Q050-242): what the properties box
+		// and the socket driven by a user both see, not only the model.
+		const ControlResult read = run(QStringLiteral("roll.get_state"), {{QStringLiteral("clip"), control::clipIdOf(m_clip)}});
+		QVERIFY(read.ok);
+		const QJsonObject row = read.result.value(QStringLiteral("notes")).toArray().at(0).toObject();
+		QCOMPARE(row.value(QStringLiteral("recur_length")).toInt(), 2);
+		QCOMPARE(row.value(QStringLiteral("recur_mask")).toInt(), 1);
+
+		Song* song = Engine::getSong();
+		Timeline& timeline = song->getTimeline(Song::PlayMode::Song);
+		const bpm_t tempo = song->getTempo();
+		struct Restore
+		{
+			Song* song;
+			Timeline& timeline;
+			bpm_t tempo;
+			~Restore()
+			{
+				song->stop();
+				timeline.setLoopEnabled(false);
+				song->setTempo(tempo);
+			}
+		} restore{song, timeline, tempo};
+		// 24 ticks of a 140 BPM song is ~0.26 s = ~12 periods; at 999 BPM it is under one, so three
+		// rendered periods land inside one pass and the loop's own wrap is what moves the pass on.
+		song->setTempo(999);
+		timeline.setLoopPoints(TimePos(0), TimePos(24));
+		timeline.setLoopEnabled(true);
+
+		// Which song pass sounds the note: render a good many periods and record the pass at each
+		// trigger. The note is 24 ticks long, so a handle lives across the wrap; count STARTS.
+		const auto soundsOnPasses = [&](int periods) {
+			QList<int> passes;
+			song->setPlayPos(0, Song::PlayMode::Song);
+			MidiPlayback::instance().stopped();
+			song->playSong();
+			int live = 0;
+			for (int period = 0; period < periods; ++period)
+			{
+				Engine::audioEngine()->renderNextPeriod();
+				const QList<int> keys = handleKeys(m_track);
+				// A handle appearing is a start; the count of handles is 0 or 1 with one note.
+				if (keys.size() > live) { passes << MidiPlayback::instance().pass(); }
+				live = keys.size();
+			}
+			song->stop();
+			for (int period = 0; period < 64 && !handleKeys(m_track).isEmpty(); ++period) { Engine::audioEngine()->renderNextPeriod(); }
+			return passes;
+		};
+
+		// Over five passes the first-of-two mask sounds only on the even ones - pass 1's local
+		// repeats are silent, which is the fact a "model helper only" test could not show.
+		const QList<int> passes = soundsOnPasses(6000);
+		QVERIFY2(passes.size() >= 4, qPrintable(QStringLiteral("only %1 starts in five passes").arg(passes.size())));
+		for (int pass : passes) { QCOMPARE(pass % 2, 0); }
+		QVERIFY2(passes.contains(0) && passes.contains(2) && passes.contains(4), "the even passes each sounded");
+
+		// Mask 0 with a positive length means NO pass, opposite of length 0 (every pass).
+		QVERIFY(run(QStringLiteral("note.edit"), edit(m_clip->notes().front(), {{QStringLiteral("recur_length"), 2},
+			{QStringLiteral("recur_mask"), 0}})).ok);
+		QVERIFY2(soundsOnPasses(2000).isEmpty(), "a positive length with mask 0 plays on no pass");
+		QVERIFY(run(QStringLiteral("note.edit"), edit(m_clip->notes().front(), {{QStringLiteral("recur_length"), 0},
+			{QStringLiteral("recur_mask"), 0}})).ok);
+		QVERIFY2(!soundsOnPasses(600).isEmpty(), "length 0 plays on every pass, the neutral pair");
+	}
+
+	/*! Q050-242, acceptance 1: the pair the properties box writes survives a real project save and
+	 *  load, and a note with no pattern saves exactly as before (no recl/recm attributes at all). */
+	void aRecurrencePairRoundTripsThroughTheProjectFile()
+	{
+		Note* note = oneNote(60, 24);
+		m_clip->addNote(Note(TimePos(24), TimePos(48), 64), false);
+		QVERIFY(run(QStringLiteral("note.edit"), edit(note, {{QStringLiteral("recur_length"), 4},
+			{QStringLiteral("recur_mask"), 5}})).ok);
+
+		// The clip's own element carries the optional pair; a note with none writes neither attribute.
+		QDomDocument document;
+		QDomElement element = document.createElement(QStringLiteral("midiclip"));
+		m_clip->saveState(document, element);
+		document.appendChild(element);  // a detached element has no serialization of its own
+		const QString saved = document.toString();
+		QVERIFY2(saved.contains(QStringLiteral("recl=\"4\"")), qPrintable(saved.left(4000)));
+		QVERIFY2(saved.contains(QStringLiteral("recm=\"5\"")), qPrintable(saved.left(4000)));
+		QCOMPARE(saved.count(QStringLiteral("recl=")), 1);
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString project = QDir(dir.path()).filePath(QStringLiteral("recurrence.mmp"));
+		QVERIFY(Engine::getSong()->saveProjectFile(project));
+		QVERIFY(run(QStringLiteral("project.new")).ok);
+		Engine::getSong()->loadProject(project);
+		MidiClip* reloaded = nullptr;
+		for (Track* track : Engine::getSong()->tracks())
+		{
+			if (auto* instrument = dynamic_cast<InstrumentTrack*>(track))
+			{
+				if (instrument->numOfClips() > 0) { reloaded = dynamic_cast<MidiClip*>(instrument->getClip(0)); }
+			}
+		}
+		QVERIFY(reloaded != nullptr);
+		QCOMPARE(static_cast<int>(reloaded->notes().size()), 2);
+		const Note* a = reloaded->notes().front();
+		QCOMPARE(a->conditions().recurLength, 4);
+		QCOMPARE(a->conditions().recurMask, 5);
+		QVERIFY(a->conditions().recursOnPass(0) && !a->conditions().recursOnPass(1)
+			&& a->conditions().recursOnPass(2) && !a->conditions().recursOnPass(3));
+		// The neutral note wrote no recurrence at all: an old project still saves byte-identically.
+		const Note* b = reloaded->notes().at(1);
+		QCOMPARE(b->conditions().recurLength, 0);
+		QCOMPARE(b->conditions().recurMask, 0);
+		QDomDocument reread;
+		QDomElement again = reread.createElement(QStringLiteral("midiclip"));
+		reloaded->saveState(reread, again);
+		reread.appendChild(again);
+		QCOMPARE(reread.toString().count(QStringLiteral("recl=")), 1);
+		// ...and the reloaded pair is what the agent surface reads back (Q050-242: the readback the
+		// properties box and a socket client both use, not a private model path).
+		const ControlResult state = run(QStringLiteral("roll.get_state"),
+			{{QStringLiteral("clip"), control::clipIdOf(reloaded)}});
+		QVERIFY(state.ok);
+		const QJsonArray rows = state.result.value(QStringLiteral("notes")).toArray();
+		QCOMPARE(rows.size(), 2);
+		QCOMPARE(rows.at(0).toObject().value(QStringLiteral("recur_length")).toInt(), 4);
+		QCOMPARE(rows.at(0).toObject().value(QStringLiteral("recur_mask")).toInt(), 5);
+		QCOMPARE(rows.at(1).toObject().value(QStringLiteral("recur_length")).toInt(), 0);
+		QCOMPARE(rows.at(1).toObject().value(QStringLiteral("recur_mask")).toInt(), 0);
 	}
 
 	void chaseSoundsANotePlaybackStartsInside()

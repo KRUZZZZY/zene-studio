@@ -291,6 +291,9 @@ private slots:
 		QTest::mouseDClick(m_editor->canvas(), Qt::LeftButton, Qt::NoModifier, point(200, 62));
 		auto* box = m_editor->findChild<NotePropertiesDialog*>(QStringLiteral("noteProperties"));
 		QVERIFY(box != nullptr);
+		// Q050-242: the recurrence controls are there on the gesture's box too.
+		QVERIFY(box->findChild<QSpinBox*>(QStringLiteral("recur_length")) != nullptr);
+		QVERIFY(box->findChild<QCheckBox*>(QStringLiteral("recur_pass_1")) != nullptr);
 		box->findChild<QSpinBox*>(QStringLiteral("velocity"))->setValue(150);
 		box->findChild<QSpinBox*>(QStringLiteral("timbre"))->setValue(90);
 		box->findChild<QCheckBox*>(QStringLiteral("slide"))->setChecked(true);
@@ -311,6 +314,67 @@ private slots:
 		QTest::mouseRelease(m_editor->canvas(), Qt::LeftButton, Qt::NoModifier, point(400, 66));
 		QVERIFY(noteAt(m_clip, 396, 66) != nullptr);
 		QVERIFY(m_editor->findChild<NotePropertiesDialog*>(QStringLiteral("noteProperties")) == nullptr);
+	}
+
+	/*! Q050-242: the properties box exposes the recurrence (ED-133) - the pass pattern's length and
+	 *  one box per pass bit - and reads back what the note saved. A length and mask the note already
+	 *  carries open in the boxes; ticking pass 3 of 4 and OK writes the PAIR through one note.edit
+	 *  (a length alone would cut the mask), one undo restores both, and a box opened again shows the
+	 *  restored pair. The double-click reachability of these controls is asserted by
+	 *  aDoubleClickOpensTheNotesPropertiesAndOkIsOneEdit. */
+	void thePropertiesBoxExposesThePassPatternAndReadsItBack()
+	{
+		const QString clip = control::clipIdOf(m_clip);
+		Note* note = noteAt(m_clip, 192, 62);
+		const QString id = control::noteIdOf(note);
+		// The pair as a project keeps it: every two passes, the first of them.
+		QVERIFY(invoke(QStringLiteral("note.edit"), {{QStringLiteral("clip"), clip}, {QStringLiteral("edits"),
+			QJsonArray{QJsonObject{{QStringLiteral("note"), id}, {QStringLiteral("recur_length"), 2},
+				{QStringLiteral("recur_mask"), 1}}}}}).ok);
+		QCOMPARE(noteAt(m_clip, 192, 62)->conditions().recurLength, 2);
+		QCOMPARE(noteAt(m_clip, 192, 62)->conditions().recurMask, 1);
+
+		// The box opens on the note the gesture names and shows the saved pair.
+		NotePropertiesDialog box(m_editor, *note);
+		auto* length = box.findChild<QSpinBox*>(QStringLiteral("recur_length"));
+		QVERIFY(length != nullptr);
+		QCOMPARE(length->value(), 2);
+		QVERIFY(box.findChild<QCheckBox*>(QStringLiteral("recur_pass_1"))->isChecked());   // pass 0: bit 0
+		QVERIFY(!box.findChild<QCheckBox*>(QStringLiteral("recur_pass_2"))->isChecked());  // pass 1
+		// The box is not shown in this test, so "shown when it is" is isHidden(): a bit past the
+		// length is hidden, the ones inside it are not (the row shows exactly the current pattern).
+		QVERIFY(!box.findChild<QCheckBox*>(QStringLiteral("recur_pass_2"))->isHidden());
+		QVERIFY(box.findChild<QCheckBox*>(QStringLiteral("recur_pass_3"))->isHidden());  // beyond the length
+
+		// Pass 3 of 4 only: length 4 and bit 2 (the third pass) - both fields go in one edit.
+		length->setValue(4);
+		QVERIFY(!box.findChild<QCheckBox*>(QStringLiteral("recur_pass_3"))->isHidden());
+		box.findChild<QCheckBox*>(QStringLiteral("recur_pass_1"))->setChecked(false);
+		box.findChild<QCheckBox*>(QStringLiteral("recur_pass_3"))->setChecked(true);
+		const QJsonObject edit = box.changes();
+		QCOMPARE(edit.value(QStringLiteral("recur_length")).toInt(), 4);
+		QCOMPARE(edit.value(QStringLiteral("recur_mask")).toInt(), 4);
+		box.accept();
+		const Note* applied = noteAt(m_clip, 192, 62);
+		QCOMPARE(applied->conditions().recurLength, 4);
+		QCOMPARE(applied->conditions().recurMask, 4);
+		QVERIFY2(!applied->conditions().recursOnPass(0) && !applied->conditions().recursOnPass(1)
+			&& applied->conditions().recursOnPass(2) && !applied->conditions().recursOnPass(3),
+			"the saved pair plays the third of every four passes");
+		QVERIFY(undo());  // ONE note.edit, the pair together
+		QCOMPARE(noteAt(m_clip, 192, 62)->conditions().recurLength, 2);
+		QCOMPARE(noteAt(m_clip, 192, 62)->conditions().recurMask, 1);
+
+		// A box opened again reads the restored values back; length 0 (every pass) greys the bits out.
+		NotePropertiesDialog reopened(m_editor, *noteAt(m_clip, 192, 62));
+		auto* reopenedLength = reopened.findChild<QSpinBox*>(QStringLiteral("recur_length"));
+		QCOMPARE(reopenedLength->value(), 2);
+		QVERIFY(reopened.findChild<QCheckBox*>(QStringLiteral("recur_pass_1"))->isChecked());
+		QVERIFY(!reopened.findChild<QCheckBox*>(QStringLiteral("recur_pass_2"))->isChecked());
+		reopenedLength->setValue(0);
+		QVERIFY(!reopened.findChild<QCheckBox*>(QStringLiteral("recur_pass_1"))->isEnabled());
+		// Length 0 means every pass: note.edit stores 0 / 0, not a mask that would contradict it.
+		QCOMPARE(reopened.changes().value(QStringLiteral("recur_mask")).toInt(), 0);
 	}
 
 	//! L07 Q050-064: the Draw tool previews the note under the idle pointer, and a draw drag adjusts

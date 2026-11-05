@@ -19,6 +19,8 @@ a user does. This driver starts the REAL `zene` binary headless and proves:
      window.note_editor_set reply; note.add_many adds a batch as one undo step and note.list answers every note;
      note.scale, note.ratchet and note.transform_where change exactly the notes they name;
      groove.quantize takes 'swing'; key_names.* name a track's keys (one undo restores);
+     (Q050-242) a note's recurrence length and pass mask are written by note.edit, read back from
+     roll.get_state, and ONE control.undo restores the pair;
      window.note_editor_set drives the paint tool, the drum view, the colour mode and
      keep-in-scale; a Lua script adds notes through zene.command; clip.controllers_set / get
      write and read a clip's CC lane (one undo step) and the editor shows it as its controller lane;
@@ -168,6 +170,33 @@ def check_batch(session, recorder, clip, notes):
     restored = has_fields(undone.get(notes[0]), {"position": 0, "key": 60}) \
         and has_fields(undone.get(notes[1]), {"length": 48})
     recorder.check("ONE control.undo restores the whole batch", restored, "undone=%r" % undone)
+
+
+def check_recurrence(session, recorder, clip, notes):
+    """Q050-242: the recurrence pair - length 2, mask 1 (the first of every two passes) - as an agent
+    writes it, reads it back from roll.get_state, and gets both original values back from one undo."""
+    target = notes[3]
+    before = roll_notes(session, clip).get(target) or {}
+    recorder.check("a note starts neutral: length 0 plays every pass",
+                   before.get("recur_length") == 0 and before.get("recur_mask") == 0, "note=%r" % before)
+    # A mask without a length is refused (it would mean nothing); the batch changes nothing.
+    error = session.typed_error("note.edit", {"clip": clip, "edits": [{"note": target, "recur_mask": 1}]})
+    recorder.check("a pass mask without a recurrence length is refused, typed",
+                   error.get("kind") == "invalid_args", "error=%r" % error)
+    applied = session.result("note.edit", {"clip": clip, "edits": [
+        {"note": target, "recur_length": 2, "recur_mask": 1}]})
+    after = roll_notes(session, clip).get(target) or {}
+    recorder.check("note.edit writes the recurrence pair and roll.get_state reads it back",
+                   applied.get("edited") == 1 and after.get("recur_length") == 2 and after.get("recur_mask") == 1,
+                   "reply=%r note=%r" % (applied, after))
+    # A length above the model's 16 is refused, not clamped (SPEC A11).
+    error = session.typed_error("note.edit", {"clip": clip, "edits": [{"note": target, "recur_length": 17}]})
+    recorder.check("a recurrence length above 16 is refused, typed", error.get("kind") == "invalid_args",
+                   "error=%r" % error)
+    session.result("control.undo")
+    restored = roll_notes(session, clip).get(target) or {}
+    recorder.check("ONE control.undo restores both original recurrence values",
+                   restored.get("recur_length") == 0 and restored.get("recur_mask") == 0, "note=%r" % restored)
 
 
 def check_atomic(session, recorder, clip, notes):
@@ -333,6 +362,7 @@ def main(argv):
         check_view(session, recorder)
         check_clip_fit(session, recorder)
         check_batch(session, recorder, clip, notes)
+        check_recurrence(session, recorder, clip, notes)
         check_atomic(session, recorder, clip, notes)
         check_lanes(session, recorder, clip, notes)
         check_screenshot(session, recorder, outdir, clip)
