@@ -11,6 +11,26 @@ fall / arch / valley) and a seed; leave the seed out and the project seed is use
 `target` existing re-pitches the notes in scope and keeps their rhythm. Each generation is one MidiClip journal
 checkpoint (`true_inverse`). GUI entry: Notes > Tools > Generate a Melody..., which opens the same command's form.
 
+## Round 2 (review round 1)
+
+- **Merge of `050/m0-train-25`: NOT done.** `git merge 050/m0-train-25` was refused by the lane's guard hook
+  ("bunny-guard: 'git merge 050/m0-train-25' is not allowed in a Bunny lane (AGENTS.md rules 1, 2, 11, 12)"). I did not
+  get around the guard, so the branch still sits on `2a7fd9f9c`. The conflicts named in the brief (README canary,
+  manual, release-notes A16 block, `tests/fork-sources.txt`, `commands_snapshot.json`) are all in text that the train
+  also edits. After the merge, the snapshot must be regenerated live (train-25 measures 917 ids / 78 groups, so 918 with
+  this command), and the canary and A16 histogram must be re-taken from the merged tree.
+- **Complexity FAIL fixed.** `main` in `tests/control-note-melody.py` (CCN 18) is split into `check_refusal`,
+  `check_seeds`, `check_custom_scale` and `check_quit`. The checks themselves are unchanged.
+- **Re-run (logs in `~/.local/share/zene-bunny-fix/qwen/runs/Q050-221.1.r2/logs`).**
+  - Build `zene NoteMelodyTest`: exit 0 [build-1].
+  - `NoteMelodyTest`, `ControlNoteMelody` (9/9 checks), `NoteToolsTest`, `NoteEditorTest`,
+    `ReversibilityContractTest`, `ControlCommandsSnapshot`: exit 0, 6/6 [test-1].
+  - Gates: all 8 PASS, including complexity [feature-check-1, exit 0].
+  - Revert proof, re-done on this round's tree, with the product hunks reversed and `zene` rebuilt (exit 0)
+    [build-revert-1]: `NoteMelodyTest` exit 8 [test-revert-1]; `ControlNoteMelody` exit 8, 7 FAILED lines in its log
+    [test-revert-2].
+  - Restored and rebuilt (exit 0) [build-2]: both tests exit 0 [test-2].
+
 ## Acceptance
 
 | # | Criterion | Test(s) | Command | Exit with change | Exit reverted |
@@ -26,11 +46,12 @@ exit 0, test-8.log exit 0, 6/6 including the neighbours.
 
 ## Self-check
 
-- **Each new test FAILS reverted, PASSES restored.** With the product hunks reversed and the tree rebuilt (exit 0):
+- **Each new test FAILS reverted, PASSES restored.** Round 2: reverted, `NoteMelodyTest` exit 8 and `ControlNoteMelody`
+  exit 8 (r2 test-revert-1 / test-revert-2); restored, both exit 0 (r2 test-2). Round 1: With the product hunks reversed and the tree rebuilt (exit 0):
   `NoteMelodyTest` exited 8, with all 6 test functions failing, `theNoteEditorMenuRunsTheSameCommand` among them
   (test-revert-1.log). `ControlNoteMelody` exited 8, with 6 checks FAILED (test-revert-2.log). Restored and rebuilt:
   both exited 0 (test-6.log, then test-7.log and test-8.log).
-- **Every criterion proven by a test I ran.** Criterion 1: `NoteMelodyTest` (exit 0) and `ControlNoteMelody` (exit 0,
+- **Every criterion proven by a test I ran.** Round 2 re-run: r2 test-1, exit 0. Round 1: Criterion 1: `NoteMelodyTest` (exit 0) and `ControlNoteMelody` (exit 0,
   9/9 checks, e.g. "same seed, same empty clip: identical notes ok" and "another seed: another pitch line ok"). Criterion
   2: the same two tests ("every key in D major ok", "every key in the custom scale ok", "control.undo takes the line
   back out ok", and the QtTest undo-depth and GUI cases). The table above has the logs.
@@ -60,7 +81,8 @@ exit 0, test-8.log exit 0, 6/6 including the neighbours.
 
 - Snapshot regenerated live (`snapshot_live.py`, exit 0, 879 ids / 77 groups). `tests/doc-figures-gate.py` exit 0 after
   the README canary update (docfig-2.log).
-- `submit_check.py` reports "gates (feature_check.py)" as FAIL. The cause: `feature_check.py` tries to create
+- Round 2: `feature_check.py` via the same log-directory-only copy, all 8 gates PASS (r2 feature-check-1, exit 0).
+- Round 1: `submit_check.py` reported "gates (feature_check.py)" as FAIL. The cause: `feature_check.py` tries to create
   `zene-studio-program/zene-feat-q050-221.1-feature-check/`, which is outside this lane's write-jail, and stops with
   PermissionError (feature-check-1.log). I ran a copy that differs only in its log directory, which points into the run
   folder (`/tmp/q221-fc/feature_check.py`). Every gate PASSED: fork-sources, all-sources-reproduce,
