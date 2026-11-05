@@ -13,6 +13,30 @@ Command: `ctest -R '^(ZynAddSubFxInstrumentTest|ZynNoteOffTest|ZynSeparateProces
 | Load a slow preset while sending notes; submission does not block on the plug-in mutex. | `midiSentDuringAPresetLoadDoesNotWaitAndIsDeliveredAfterIt`, `aRefusedNoteOffIsCountedAndTheKeyIsNotStuckAfterwards` | A second thread finishes submitting while a real `loadFile()` holds the mutex. The slowness is simulated by a hook inside the load; no large preset was timed. | 0 |
 | Queued events are delivered or counted as dropped; live processing stays nonblocking. | The same two, `theRecoveryCutFollowsEventsScheduledLaterInThePeriod`, `theEighteenthSameChannelRecoveryCutStaysAfterItsQueuedNote`, and `ZynNoteOffTest::allNotesOffLeavesOtherChannelsRunningNoteCountsAlone` | `playImpl()` consumes nothing during the load. Afterwards the note is consumed and sounds. In the burst, 256 events are consumed, `dropped()` and `recorded()` read 1, and output falls silent. Eighteen cuts of one channel in a drain still end the note queued before the last one, and a cut leaves another channel's count intact. | 0 |
 
+## Integration onto 050/m0-train-25 (round 3)
+
+The accepted patch was `feat/050-Q050-313-oc` @ `415d3dbbbe`. The target was `050/m0-train-25` @ `081630835b`. Logs are in `Q050-313.r3/logs`.
+
+- **Conflicts.** There were two, and both were append-only, so both sides are kept.
+  - `data/manual/index.html`: the train's modulator "Per sample" sentences stay, and this unit's Zyn preset-load paragraph follows them as its own `<p>`.
+  - `tests/upstream-modifications.txt`: the train's rows stay, and the three Q050-313 rows follow them.
+- **No semantic difference from the accepted patch.** `git diff 415d3dbbbe -- <file>` is empty for all five code and test files and both docs. The train did not change `plugins/ZynAddSubFx`, `include/MidiHandoffQueue.h` or `include/AudioPlugin.h` since the patch's base `2a7fd9f9c7`. The only nearby train change is a new defaulted virtual in `include/Instrument.h`, `appliesMpeExpressionItself` from Q050-311. It applies to per-note instruments' MPE handling, and the Zyn handoff path does not use it.
+- **Failure paths re-checked on this base:**
+  - submission while `loadFile()` holds the mutex;
+  - delivery after the load;
+  - counted overflow with all-notes-off recovery;
+  - a recovery cut ordered after events scheduled later in the period;
+  - the eighteenth same-channel cut;
+  - per-channel note counts.
+- **Platform hazards** are unchanged from round 2, because the code is identical. There is no Qt-6-only API, no `std::filesystem` and no `min`/`max` identifier. Only Linux was built; hosted CI was not run.
+- **Build** of `zene zynaddsubfx ZynAddSubFxInstrumentTest ZynNoteOffTest MidiHandoffQueueTest` exited 0 (`build-2.log`). `build-1.log` exited 2 only because ccache's configured temp dir is refused here; it worked with `CCACHE_TEMPDIR=/tmp/ccache-tmp-q313`.
+- **Focused tests.** `ctest -R '^(ZynAddSubFxInstrumentTest|ZynNoteOffTest|MidiHandoffQueueTest)$' --output-on-failure` exited 0 with 3/3 passing (`test-1.log`), and exited 0 again after the restore (`test-3-restored.log`).
+- **Reverted check.** The three `plugins/ZynAddSubFx` product files were set back to train-25 and rebuilt.
+  - `ZynNoteOffTest` no longer compiles: it indexes the per-channel count array the fix adds, and the build exited 2 (`build-3-reverted.log`). Its "Passed" line in `test-2-reverted.log` came from the stale binary, so it is not evidence.
+  - `ZynAddSubFxInstrumentTest` exited 8, with `aRefusedNoteOffIsCountedAndTheKeyIsNotStuckAfterwards`, `theRecoveryCutFollowsEventsScheduledLaterInThePeriod` and `theEighteenthSameChannelRecoveryCutStaysAfterItsQueuedNote` failing (`test-2-reverted.log`, ctest exit 8).
+  - Restored: the build exited 0 (`build-4-restored.log`) and the tests exited 0.
+- **Gates.** `feature_check.py` was run, unchanged, through `/tmp/q313-fc-wrap.py`, which only redirects its log directory to `/tmp` because the jail refuses `../*-feature-check`. It exited 0 with all 8 rows PASS (`gates-1.log`). `python3 tests/rt-safety-sweep.py --check` exited 0 (`rt-1.log`).
+
 ## Round 2
 
 - **The review's blocking point.** The scheduled list now holds 256 + 16 × 257 = 4368 entries, and `theEighteenthSameChannelRecoveryCutStaysAfterItsQueuedNote` keeps the late-cut regression. With the size back at 256 + 16, `ctest -R '^ZynAddSubFxInstrumentTest$'` exited 8, and this case failed (`test-3-mut-capacity.log`). Restored, the focused suite exited 0.
@@ -21,7 +45,9 @@ Command: `ctest -R '^(ZynAddSubFxInstrumentTest|ZynNoteOffTest|ZynSeparateProces
 
 ## Self-check
 
-**Tests fail without the change.** Each change was reversed on its own, rebuilt and run; each `ctest` exited 8. With everything restored it exited 0.
+**Round 3 (integration).** On train-25 with the product files reverted, `ZynAddSubFxInstrumentTest` exited 8 and `ZynNoteOffTest` failed to compile (build exit 2). With them restored, the build and the three focused tests exited 0. Gates passed 8/8 (exit 0), and the RT sweep exited 0. The evidence for every other item below carries over unchanged, because the code is byte-identical to the accepted patch.
+
+**Tests fail without the change (round 2).** Each change was reversed on its own, rebuilt and run; each `ctest` exited 8. With everything restored it exited 0.
 - Clearing the running counts: `test-final-mut-A.log`.
 - Placing the cut at the latest frame: `test-final-mut-B.log`.
 - The 256 list size: `test-final-mut-C.log`.
