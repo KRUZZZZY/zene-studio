@@ -5556,3 +5556,18 @@ src/core/AudioResampler.cpp	cluster test-ControlExportSettings: use the private 
 src/CMakeLists.txt	cluster test-ControlExportSettings: link the private namespaced libsamplerate backend alongside the system reference dependency.
 tests/CMakeLists.txt	cluster test-ControlExportSettings: register the full-pool first-use/numerical regression and transcript child-cleanup test.
 tests/control-export-settings.py	cluster test-ControlExportSettings: adopt the reviewed POSIX child watchdog and cleanup from bugs/qwen-test-ControlExportSettings.
+
+# SRC converter memory fix: private vendored backend provenance (test-ControlExportSettings).
+src/3rdparty/libsamplerate/COPYING	cluster test-ControlExportSettings: upstream libsamplerate 0.2.2 BSD-2-Clause license retained and installed with the private SRC backend.
+src/3rdparty/libsamplerate/README.zene	cluster test-ControlExportSettings: document origin, licensing, private symbols, deferred history clearing and resource/latency limits for the vendored SRC backend.
+src/3rdparty/libsamplerate/common.h	cluster test-ControlExportSettings: upstream libsamplerate 0.2.2 internal declarations for the private namespaced SRC backend (BSD-2-Clause).
+src/3rdparty/libsamplerate/fastest_coeffs.h	cluster test-ControlExportSettings: upstream libsamplerate 0.2.2 SincFastest coefficient data retained for numerical compatibility (BSD-2-Clause).
+src/3rdparty/libsamplerate/high_qual_coeffs.h	cluster test-ControlExportSettings: upstream libsamplerate 0.2.2 SincBest coefficient data retained for numerical compatibility (BSD-2-Clause).
+src/3rdparty/libsamplerate/mid_qual_coeffs.h	cluster test-ControlExportSettings: upstream libsamplerate 0.2.2 SincMedium coefficient data retained for numerical compatibility (BSD-2-Clause).
+src/3rdparty/libsamplerate/prefix.h	cluster test-ControlExportSettings: prefix the vendored SRC API and internal globals so the private backend cannot interpose on the system library used by plug-ins and reference tests.
+src/3rdparty/libsamplerate/samplerate.c	cluster test-ControlExportSettings: upstream libsamplerate 0.2.2 API implementation for the private namespaced SRC backend (BSD-2-Clause).
+src/3rdparty/libsamplerate/samplerate.h	cluster test-ControlExportSettings: upstream libsamplerate 0.2.2 public declarations for the private namespaced SRC backend (BSD-2-Clause).
+src/3rdparty/libsamplerate/src_linear.c	cluster test-ControlExportSettings: upstream libsamplerate 0.2.2 Linear converter retained in the private namespaced backend (BSD-2-Clause).
+src/3rdparty/libsamplerate/src_sinc.c	cluster test-ControlExportSettings: reserve the original sinc buffer capacity without touching unused pages; reset invalidates indices and first input clears readable history; full-pool first-use and system-library bit-comparison regressions cover this memory fix.
+src/3rdparty/libsamplerate/src_zoh.c	cluster test-ControlExportSettings: upstream libsamplerate 0.2.2 zero-order-hold converter retained in the private namespaced backend (BSD-2-Clause).
+src/3rdparty/libsamplerate/zene_samplerate.h	cluster test-ControlExportSettings: apply private symbol prefixes before including the vendored API in AudioResampler; the system API remains separate for reference tests and plug-ins.
