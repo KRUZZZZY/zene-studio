@@ -1117,8 +1117,10 @@ config lists back) and one `not_mutating` (`session.command_bindings`, a read) -
 
 **Q050-231.1** (cross-track masking report, stage 1, 2026-11-05): `mixer.masking_report` adds one `not_mutating` row - `rows=888 true_inverse=434 snapshot=42 irreversible=25 not_mutating=387`.
 
+**M0 merge train 25** (`050/m0-train-25`, 2026-11-05, automatic): `ReversibilityContractTest` on the merged tree measures `rows=926 true_inverse=457 snapshot=42 irreversible=25 not_mutating=402`.
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=888 true_inverse=434 snapshot=42 irreversible=25 not_mutating=387
+     measured: rows=926 true_inverse=457 snapshot=42 irreversible=25 not_mutating=402
      configuration: telemetry.status wasm.load session.get_state stem.get_state
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5
