@@ -32,13 +32,17 @@ everything; `TouchContacts::cancel(id)` releases exactly one contact.
 | Releasing or cancelling one contact leaves the others held | `releasingOneContactLeavesTheOtherHeld`, `cancellingOneContactLeavesTheOtherHeld`, `aSequenceCancelReleasesEveryContact`, `twoContactsOnOneKeyHoldOneNote`, `slidingOneContactMovesOnlyItsOwnNote` | same | 0 (red 8) |
 | Existing mouse and computer-keyboard input still works | `theMouseStillPlaysTheKeyboard`, `theComputerKeyboardStillPlaysTheKeyboard` | same | 0 (mutation control 8) |
 
-Red proof: with `wireTouch()`'s `setAttribute` and the `event()` touch branch reverted (test kept
-and compiling against the same API), `ctest -R '^TouchInstrumentSurfaceTest$'` exits 8 and the
-seven touch cases fail at `playingNote()`; restored, it exits 0. Because reverting a touch feature
-cannot break the mouse/keyboard paths, the "existing input" criterion has its own control: an
-`event()` that swallows `MouseButtonPress/Release`, `MouseMove`, `KeyPress` and `KeyRelease` makes
-exactly `theMouseStillPlaysTheKeyboard` and `theComputerKeyboardStillPlaysTheKeyboard` fail
-(exit 8). Logs: `build/qwen-logs/red-test.log`, `mutation-test.log`, `test-final.log`.
+Red proof (run against the final commit, `c58ff43a3d`): with `wireTouch()`'s `setAttribute` and
+the `event()` touch branch reverted (the test kept and compiling against the same API), the build
+exits 0 and `ctest -R '^TouchInstrumentSurfaceTest$'` exits 8 with exactly the seven touch cases
+failing at `playingNote()`; restored, the build exits 0 and the same command exits 0 (11 pass).
+Because reverting a touch feature cannot break the mouse/keyboard paths, the "existing input"
+criterion has its own control: an `event()` that swallows `MouseButtonPress/Release`,
+`MouseMove`, `KeyPress` and `KeyRelease` makes exactly `theMouseStillPlaysTheKeyboard` and
+`theComputerKeyboardStillPlaysTheKeyboard` fail (build 0, `ctest` 8, 10 pass). Logs:
+`build/qwen-logs/red-build-final.log` (0) and `red-test-final.log` (8),
+`mutation-build-final.log` (0) and `mutation-test-final.log` (8),
+`build-final3.log` (0) and `test-final3.log` (0).
 
 No new agent command: a touch contact is transient live MIDI input, not a project edit, so there is
 no command to register, no undo step and no reversibility row. GUI and agent therefore share no new
@@ -84,5 +88,11 @@ command path. The manual (`data/manual/index.html`, Devices) documents the gestu
   `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <copy> Q050-321.1` → every row PASS
   except the expected "no command file changed" WARN, `RESULT: PASS - submit`, exit 0.
 - **Existing tests.** `PianoViewFocusTest` (the one other test that constructs a `PianoView`) still
-  passes; the constructor's `wireTouch()` call is inert without the attribute being needed, and
-  the focus-out path gains only the empty `releaseTouchNotes()` call.
+  passes (exit 0, run beside the new test), and `TakeLanesPanelTest` — the other fork test that
+  drives real `QTest::touchEvent` sequences — also passes (exit 0). The constructor's `wireTouch()`
+  call only sets the attribute and connects the surface; the focus-out path gains only the empty
+  `releaseTouchNotes()` call.
+- **One value, two files.** The keyboard's drawing base moved to `PianoView::KeyAreaTop`, and the
+  inherited `PIANO_BASE` is now derived from it instead of a second literal `11`, so the touch
+  half and the painter cannot drift apart. That reflow keeps the inherited file's code-line count
+  at 611, the number the whole-tree file-length ratchet has for it.
