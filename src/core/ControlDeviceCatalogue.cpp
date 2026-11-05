@@ -172,7 +172,7 @@ QString controlDeviceVendor(const ControlDeviceEntry& entry)
 	{
 		maker = pluginvendors::vendorOf(entry.file, entry.className);
 	}
-	else if (entry.format == QLatin1String("clap"))
+	else if (entry.format == QLatin1String("clap") || entry.format == QLatin1String("vst2"))
 	{
 		maker = pluginvendors::vendorOf(entry.file, entry.name);
 	}
@@ -197,6 +197,7 @@ QList<ControlDeviceEntry> controlDeviceCatalogue()
 	controlVst3DeviceEntries(&out);
 	controlClapDeviceEntries(&out);
 	controlAuDeviceEntries(&out);  // Q050-491: macOS builds only, after every format already there
+	controlVst2DeviceEntries(&out);  // Q050-481.1: VST2 through Carla, after every format already there
 	return out;
 }
 
@@ -264,6 +265,15 @@ QJsonObject controlDeviceJson(const ControlDeviceEntry& entry, int index)
 		// way.
 		out.insert(QStringLiteral("file"), entry.file);
 		out.insert(QStringLiteral("clap_id"), entry.name);
+	}
+	if (entry.format == QLatin1String("vst2"))
+	{
+		// Q050-481.1: the binary, the plug-in's VST2 unique id, and how Carla reaches it: in process
+		// ("native") or through its Wine bridge ("win64"/"win32", then 'bridged' is true).
+		out.insert(QStringLiteral("file"), entry.file);
+		out.insert(QStringLiteral("unique_id"), entry.vst2Id);
+		out.insert(QStringLiteral("binary"), entry.vst2Binary);
+		out.insert(QStringLiteral("bridged"), entry.vst2Binary != QLatin1String("native"));
 	}
 	if (entry.format == QLatin1String("au"))
 	{

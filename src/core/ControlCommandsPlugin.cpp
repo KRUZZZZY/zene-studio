@@ -81,6 +81,7 @@ QStringList pluginListFormats()
 	QStringList formats{QStringLiteral("builtin"), QStringLiteral("ladspa"), QStringLiteral("lv2"),
 		QStringLiteral("vst3"), QStringLiteral("clap")};
 	if (controlAuHostingBuilt()) { formats << QStringLiteral("au"); }
+	formats << QStringLiteral("vst2");  // Q050-481.1: listed after every format, like its entries
 	return formats;
 }
 
@@ -101,7 +102,11 @@ void registerPluginList(ControlRegistry& registry)
 		"VST3, then CLAP, then AU, so adding a host does not renumber the ids of the formats that were "
 		"already there. macOS builds also list Audio Units (format 'au', from the system component "
 		"registry; each entry carries its 'component' type:subtype:manufacturer and the "
-		"'scan_cache_path' its quarantine entry uses); other builds have no 'au' format.");
+		"'scan_cache_path' its quarantine entry uses); other builds have no 'au' format. VST2 instruments "
+		"(format 'vst2', Q050-481.1) come last: hosted through Carla, found by Carla's own out-of-process "
+		"discovery under ZENE_VST2_PATH or else VST_PATH, the VST directory setting and ~/.vst; each carries "
+		"its 'file', VST2 'unique_id', 'binary' (native, win64, win32) and 'bridged' (a Windows binary run "
+		"through Carla's Wine bridge). None are listed when no Carla runtime is installed.");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("format"), enumProperty(pluginListFormats())},
 		{QStringLiteral("kind"), QJsonObject{{QStringLiteral("type"), QStringLiteral("string")},

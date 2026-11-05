@@ -68,6 +68,7 @@ QString formatOf(const QString& moduleName)
 		{QStringLiteral("vst3instrument"), QStringLiteral("vst3")}, {QStringLiteral("vst3effect"), QStringLiteral("vst3")},
 		{QStringLiteral("clapinstrument"), QStringLiteral("clap")}, {QStringLiteral("clapeffect"), QStringLiteral("clap")},
 		{QStringLiteral("auinstrument"), QStringLiteral("au")}, {QStringLiteral("aueffect"), QStringLiteral("au")},  // Q050-491
+		{QStringLiteral("carlavst2"), QStringLiteral("vst2")},  // Q050-481.1: VST2 through Carla
 		{QStringLiteral("lv2instrument"), QStringLiteral("lv2")}, {QStringLiteral("lv2effect"), QStringLiteral("lv2")}};
 	return formats.value(moduleName.toLower(), QStringLiteral("native"));
 }
@@ -155,6 +156,11 @@ Named namedFor(const QString& format, const QDomElement& original, const QString
 		identity << QStringLiteral("component=") + component;
 		const QString name = attrs.value(QStringLiteral("name"));
 		return {name.isEmpty() ? component : name, pluginvendors::vendorOf(QStringLiteral("au"), component)};
+	}
+	if (format == QLatin1String("vst2"))  // Q050-481.1: the binary and the plug-in name the key carries
+	{
+		identity << QStringLiteral("file=") + attrs.value(QStringLiteral("file"));
+		return {attrs.value(QStringLiteral("name")), attrs.value(QStringLiteral("maker"))};
 	}
 	if (format == QLatin1String("lv2")) { return namedLv2(attrs); }
 	if (format == QLatin1String("vst")) { return namedVst(original, moduleName, identity); }

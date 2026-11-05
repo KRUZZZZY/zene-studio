@@ -3396,3 +3396,24 @@ src/core/ControlCommandsSlicerSlices.cpp
 tests/src/gui/SlicerTSliceControlsTest.cpp
 docs/050-features/Q050-263.md
 docs/qwen-fixes-2026-10/cluster-Q050-263.md
+# Q050-481.1 (2026-11): VST2 instruments hosted through Carla (stage 1 of Q050-481) - the carlavst2 module, the vst2
+# half of the device catalogue, the in-tree VST2 test instrument (native and a Wine PE build), its hosting test, the
+# script that builds a real Carla runtime from the submodule, and the unit's feature record and report (fork-NEW).
+plugins/CarlaVst2/CMakeLists.txt
+plugins/CarlaVst2/CarlaVst2.cpp
+plugins/CarlaVst2/CarlaVst2Discovery.cpp
+plugins/CarlaVst2/CarlaVst2Discovery.h
+plugins/CarlaVst2/CarlaVst2Instrument.h
+plugins/CarlaVst2/CarlaVst2Renderer.cpp
+plugins/CarlaVst2/CarlaVst2Renderer.h
+plugins/CarlaVst2/logo.png
+src/core/ControlDeviceVst2.cpp
+tests/data/vst2-test-instrument/BuildWineFixture.cmake
+tests/data/vst2-test-instrument/CMakeLists.txt
+tests/data/vst2-test-instrument/vst2-test-instrument.c
+tests/data/vst2-test-instrument/zene_vst2_abi.h
+tests/src/gui/CarlaVst2HostingTest.cpp
+tests/src/gui/CarlaVst2TestSupport.h
+tools/build-carla-runtime.sh
+docs/050-features/Q050-481.1.md
+docs/qwen-fixes-2026-10/cluster-Q050-481.1.md

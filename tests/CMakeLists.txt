@@ -1360,6 +1360,10 @@ set(LMMS_TESTS
 	# hosted and that a component that cannot instantiate is refused, typed; the macos jobs run the rest against
 	# Apple's built-in AUBandpass, AUDistortion and DLSMusicDevice.
 	src/gui/AuHostingTest.cpp
+	# Q050-481.1: VST2 instruments through Carla - plugin.list/plugin.load, the device card's Replace
+	# Instrument, parameters, automation, presets, the plug-in's own editor and project state, against
+	# the in-tree VST2 fixture, native and through Carla's Wine bridge (needs a real Carla runtime).
+	src/gui/CarlaVst2HostingTest.cpp
 	# M0 coverage: the reference project's window and its track / clip / device copies.
 	src/gui/ReferenceProjectPanelTest.cpp
 	# M0 coverage: the telemetry consent window, File > Import AAF..., track header icons and the level meter.
@@ -2439,6 +2443,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "PluginGestureUndoTest"
 		# Q050-491: plugin.list and plugin.load reach the build's aueffect / auinstrument modules (macOS).
 		OR LMMS_TEST_NAME STREQUAL "AuHostingTest"
+		# Q050-481.1: the carlavst2 module hosts the VST2 fixture; the device card's swap starts from tripleoscillator.
+		OR LMMS_TEST_NAME STREQUAL "CarlaVst2HostingTest"
 		OR LMMS_TEST_NAME STREQUAL "ReferenceProjectPanelTest"
 		# The LV2 state round trip loads the host's real LV2 effects.
 		OR LMMS_TEST_NAME STREQUAL "Lv2StateTest"
@@ -3635,6 +3641,28 @@ set_tests_properties(PluginGestureUndoTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFO
 set_tests_properties(AuHostingTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 if(TARGET aueffect AND TARGET auinstrument)
 	add_dependencies(AuHostingTest aueffect auinstrument)
+endif()
+# Q050-481.1: the VST2 fixture (native and, where winegcc can build PE, Windows), the Carla runtime
+# tools/build-carla-runtime.sh puts in <build>/carla-runtime/lib (ahead of the weak stand-in on the
+# loader path), and a Wine prefix of the build's own. Without the runtime every case reports Skipped.
+set(ZENE_CARLA_RUNTIME_DIR "${CMAKE_BINARY_DIR}/carla-runtime/lib" CACHE PATH
+	"A real Carla runtime (libcarla_native-plugin, libcarla_host-plugin, bridges) for CarlaVst2HostingTest")
+set_tests_properties(CarlaVst2HostingTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 900)
+add_subdirectory(data/vst2-test-instrument)
+target_compile_definitions(CarlaVst2HostingTest PRIVATE
+	CARLA_VST2_NATIVE_FIXTURE_DIR="${LMMS_VST2_TEST_NATIVE_DIR}"
+	CARLA_VST2_WINE_FIXTURE_DIR="${LMMS_VST2_TEST_WINE_DIR}"
+	ZENE_TEST_WINEPREFIX="${CMAKE_BINARY_DIR}/carla-runtime/wineprefix"
+	ZENE_CARLA_RUNTIME_DIR="${ZENE_CARLA_RUNTIME_DIR}")
+add_dependencies(CarlaVst2HostingTest vst2-test-instrument)
+foreach(module carlavst2 tripleoscillator vst2-test-instrument-wine)
+	if(TARGET ${module})
+		add_dependencies(CarlaVst2HostingTest ${module})
+	endif()
+endforeach()
+if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.22)
+	set_tests_properties(CarlaVst2HostingTest PROPERTIES
+		ENVIRONMENT_MODIFICATION "LD_LIBRARY_PATH=path_list_prepend:${ZENE_CARLA_RUNTIME_DIR}")
 endif()
 set_tests_properties(ReferenceProjectPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TelemetryConsentDialogTest AafImportMenuTest TrackIconsLevelBarTest ArrangerKeysNavigatorTest NoteBackgroundAudioTest ArrangerOverlaysVideoLaneTest VideoClipsGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
