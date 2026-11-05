@@ -121,3 +121,10 @@ unchanged.
   at `-j4`.
 - `git status` is clean; the commits are the product change, the tests + feature record, and this
   report.
+- The pre-submit check prints one WARN, "canary figures (README) updated - new command ids:
+  clip.set_loop, control.undo, note.edit, project.new, recurrence.mmp". It is a false positive:
+  its regex reads every added quoted dotted string as a command id, and those five are existing
+  command ids in test code (`clip.set_loop`, `control.undo`, `note.edit`, `project.new`) plus the
+  temp project file name `recurrence.mmp`. This unit registers **no** new command - the live
+  snapshot is 878 ids / 77 groups, unchanged - so README's canary figure and the A16 histogram do
+  not move, and `tests/doc-figures-gate.py` passes (exit 0).
