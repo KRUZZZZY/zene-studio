@@ -1032,6 +1032,10 @@ void AudioEngine::renderStageNoteSetup()
 		m_periodSongPlaying = song->isPlaying() && song->playMode() == Song::PlayMode::Song;
 		m_periodStartFrame = static_cast<double>(song->getFrames());
 		m_periodStartTick = song->getPlayPos(Song::PlayMode::Song).getTicks();  // Q050-074.1
+		// Q050-124: where a frozen bus's take plays from. An export plays the song too (isPlaying() is false while
+		// exporting), so a frozen bus is heard in render.render and in a bus-freeze render of a bus downstream of it.
+		busfreeze::setPeriod((song->isPlaying() || song->isExporting()) && song->playMode() == Song::PlayMode::Song,
+			song->getFrames());
 	}
 
 	// Retry engine-list additions deferred by capacity in the previous period.

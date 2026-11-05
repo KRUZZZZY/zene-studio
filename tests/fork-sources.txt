@@ -3426,3 +3426,14 @@ include/AudioDeviceDiagnostics.h
 src/core/AudioDeviceDiagnostics.cpp
 tests/src/core/AudioDeviceDiagnosticsTest.cpp
 tests/control-device-diagnostics.py
+# Q050-124 (2026-11): freeze a mixer bus - the take on the MixerChannel, its commands, the strip menu entry, tests (fork-NEW).
+include/MixerBusFreeze.h
+include/MixerBusFreezeMenu.h
+src/core/ControlCommandsBusFreeze.cpp
+src/core/MixerBusFreeze.cpp
+src/gui/MixerBusFreezeMenu.cpp
+tests/src/core/MixerBusFreezeTest.cpp
+tests/src/gui/MixerBusFreezeMenuTest.cpp
+tests/control-bus-freeze-transcript.py
+docs/050-features/Q050-124.md
+docs/qwen-fixes-2026-10/cluster-Q050-124.md

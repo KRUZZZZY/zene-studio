@@ -552,6 +552,8 @@ set(LMMS_TESTS
 	src/core/FrozenTakeHandoffTest.cpp
 	src/core/FrozenTakeRoundTwoTest.cpp
 	src/core/FreezeRegionRepairTest.cpp
+	# Q050-124: a frozen mixer bus - capture, substitution, commands, undo, save/load, failures, allocation probe.
+	src/core/MixerBusFreezeTest.cpp
 	src/core/AudioBusPlayHandleQueueTest.cpp
 	src/core/AutomationRenderAllocationTest.cpp
 	src/core/SlicerTPlayheadTest.cpp
@@ -1355,6 +1357,8 @@ set(LMMS_TESTS
 	src/gui/GraphWaveformEditorGuiTest.cpp
 	# M0 coverage: the mixer's windows (routing matrix, large meters, EQ compare), hardware / surround menus, the surround panner.
 	src/gui/MixerWindowsTest.cpp
+	# Q050-124: the bus strip's Freeze bus / Unfreeze bus entry, driven through the strip's own context menu.
+	src/gui/MixerBusFreezeMenuTest.cpp
 	# Regressions for stale panner fields, route refresh, and ignored non-left clicks.
 	src/gui/SurroundPannerTest.cpp
 	# M0 coverage: a device's menu (insert, replace, copy, A/B, parameters), the channel picker and the picker organiser.
@@ -3640,6 +3644,7 @@ set_tests_properties(FollowActionEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATF
 set_tests_properties(PluginControlDialogsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(GraphWaveformEditorGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MixerWindowsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(MixerBusFreezeMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SurroundPannerTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(EffectDeviceMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(EffectPickerOrganiserTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -6261,6 +6266,18 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	set_tests_properties(ControlFreezeCommandsTranscript PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 900
+	)
+	# Q050-124: freeze.bus / freeze.unfreeze_bus over the socket - the real child render capturing the bus, the take
+	# matching the live reference with the source deleted, save/open, one-step undo, refusals. 77 (Skipped) when
+	# this build has no loadable instrument to make the fixture audible.
+	add_test(NAME ControlBusFreezeTranscript
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-bus-freeze-transcript.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlBusFreezeTranscript PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 900
+		SKIP_RETURN_CODE 77
 	)
 	# transport.punch_* (0.3.0, punch in/out): set the region, assert the GATE
 	# flips with the transport position on both sides of both boundaries, and

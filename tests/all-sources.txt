@@ -600,6 +600,8 @@ include/MissingDevices.h
 include/MissingDevicesNotice.h
 include/MixHelpers.h
 include/Mixer.h
+include/MixerBusFreeze.h
+include/MixerBusFreezeMenu.h
 include/MixerChannelLcdSpinBox.h
 include/MixerChannelView.h
 include/MixerGroups.h
@@ -1619,6 +1621,7 @@ src/core/ControlCommandsBrowserMedia.cpp
 src/core/ControlCommandsBrowserNavigation.cpp
 src/core/ControlCommandsBrowserTags.cpp
 src/core/ControlCommandsBus.cpp
+src/core/ControlCommandsBusFreeze.cpp
 src/core/ControlCommandsChain.cpp
 src/core/ControlCommandsChainEdit.cpp
 src/core/ControlCommandsChord.cpp
@@ -2071,6 +2074,7 @@ src/core/MidiPlayback.cpp
 src/core/MissingDevices.cpp
 src/core/MixHelpers.cpp
 src/core/Mixer.cpp
+src/core/MixerBusFreeze.cpp
 src/core/MixerGroups.cpp
 src/core/MixerListen.cpp
 src/core/MixerOptions.cpp
@@ -2441,6 +2445,7 @@ src/gui/MidiLearnGui.cpp
 src/gui/MidiReconnectAction.cpp
 src/gui/MidiSetupWidget.cpp
 src/gui/MissingDevicesNotice.cpp
+src/gui/MixerBusFreezeMenu.cpp
 src/gui/MixerChannelView.cpp
 src/gui/MixerHardwareMenu.cpp
 src/gui/MixerModeBar.cpp
@@ -2953,6 +2958,7 @@ tests/src/core/MidiWorkflowBindingsTest.cpp
 tests/src/core/MissingDevicesPreserveTest.cpp
 tests/src/core/MissingDevicesRound2Test.cpp
 tests/src/core/MixerAbRegressionTest.cpp
+tests/src/core/MixerBusFreezeTest.cpp
 tests/src/core/MixerChannelPanTest.cpp
 tests/src/core/MixerConcurrencyTest.cpp
 tests/src/core/MixerListenTest.cpp
@@ -3279,6 +3285,7 @@ tests/src/gui/MidiControllerMenuTest.cpp
 tests/src/gui/MidiLearnGuiTest.cpp
 tests/src/gui/MidiReconnectActionTest.cpp
 tests/src/gui/MidiWorkflowBindingsGuiTest.cpp
+tests/src/gui/MixerBusFreezeMenuTest.cpp
 tests/src/gui/MixerInsertLatencyTest.cpp
 tests/src/gui/MixerLatencyTextTest.cpp
 tests/src/gui/MixerMeteringTest.cpp

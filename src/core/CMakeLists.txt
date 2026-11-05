@@ -504,6 +504,9 @@ set(LMMS_SRCS
 	# signal-graph submode (get_state / enable / disable) and its engine seam.
 	core/ControlCommandsFeedback.cpp
 	core/ControlCommandsFreeze.cpp
+	# Q050-124: freeze.bus / freeze.unfreeze_bus and the bus's frozen take.
+	core/ControlCommandsBusFreeze.cpp
+	core/MixerBusFreeze.cpp
 	# The session tempo/phase sync model and its wire (D11 "Ableton Link sync"):
 	# the model, the transport seam, the UDP multicast transport, and the
 	# link.* commands that make the whole of it drivable. See docs/LINK-SYNC.md.
