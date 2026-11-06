@@ -51,6 +51,7 @@
 #include "Engine.h"
 #include "Mixer.h"
 #include "ParameterAliases.h"
+#include "ParameterControls.h"
 #include "Plugin.h"
 #include "ProjectJournal.h"
 #include "Rack.h"
@@ -183,6 +184,52 @@ const Plugin::Descriptor AliasCollisionEffect::s_descriptor
 	"aliascollisiontest",
 	"Alias key collision effect",
 	"Three same-named parameters, one naming itself the generated key",
+	"LMMS",
+	0x0100,
+	Plugin::Type::Effect,
+	nullptr,
+	nullptr,
+	nullptr
+};
+
+//! A device whose ParameterControls list registers two models under one save key. Saving writes
+//! each model under that key, so the second write used to overwrite the first one's value.
+class RepeatedSaveKeyControls : public ParameterControls
+{
+public:
+	explicit RepeatedSaveKeyControls(Effect* effect) : ParameterControls(effect, QStringLiteral("RepeatedSaveKeyControls")) {}
+	using ParameterControls::addParameter;
+	gui::EffectControlDialog* createView() override { return nullptr; }
+};
+
+class RepeatedSaveKeyEffect : public Effect
+{
+public:
+	explicit RepeatedSaveKeyEffect(Model* parent) : Effect{&s_descriptor, parent, nullptr}, m_controls{this}
+	{
+		m_controls.addParameter(&m_first, QStringLiteral("gain"));
+		m_controls.addParameter(&m_second, QStringLiteral("gain"));
+	}
+
+	EffectControls* controls() override { return &m_controls; }
+
+protected:
+	ProcessStatus processImpl(SampleFrame*, const f_cnt_t) override { return ProcessStatus::Continue; }
+
+public:
+	FloatModel m_first{0.f, 0.f, 1.f, 0.01f, this, QStringLiteral("First")};
+	FloatModel m_second{0.f, 0.f, 1.f, 0.01f, this, QStringLiteral("Second")};
+
+private:
+	RepeatedSaveKeyControls m_controls;
+	static const Plugin::Descriptor s_descriptor;
+};
+
+const Plugin::Descriptor RepeatedSaveKeyEffect::s_descriptor
+{
+	"repeatedsavekeytest",
+	"Repeated save key effect",
+	"Two parameters registered under one save key",
 	"LMMS",
 	0x0100,
 	Plugin::Type::Effect,
@@ -652,6 +699,23 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);  // undoes the Volume write: the no-op took no step of its own
 		QCOMPARE(parameterValue(ch(3), amp, QStringLiteral("Volume")), 100.0);
 		channel(3)->m_fxChain.clear();
+	}
+
+	//! A device saves its list through Effect::saveSettings and reads it back through loadSettings. With two
+	//! models under one key the saved value must be the first model's: the second is refused at registration.
+	void aRepeatedSaveKeyKeepsTheFirstModelsValueThroughTheDeviceSave()
+	{
+		RepeatedSaveKeyEffect effect(nullptr);
+		effect.m_first.setValue(0.3f);
+		effect.m_second.setValue(0.7f);
+		QDomDocument doc;
+		QDomElement saved = doc.createElement(QStringLiteral("effect"));
+		effect.saveSettings(doc, saved);
+
+		RepeatedSaveKeyEffect restored(nullptr);
+		restored.loadSettings(saved);
+		QCOMPARE(restored.m_first.value(), 0.3f);
+		QCOMPARE(restored.m_second.value(), 0.f);  // not registered, so not loaded
 	}
 };
 

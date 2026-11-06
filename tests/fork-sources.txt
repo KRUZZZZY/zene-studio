@@ -3040,6 +3040,8 @@ tests/src/plugins/TripleOscillatorUserWaveTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p12-275.md
 # cluster new-p12-279 (2026-10): EffectControls audio-thread visibility atomic-regression test (fork-NEW).
 tests/src/core/EffectControlsVisibilityTest.cpp
+# cluster new-p10-284 (2026-10): a ParameterControls key names one parameter in the save file (fork-NEW).
+tests/src/core/ParameterControlsTest.cpp
 # review-43592d093 (2026-10): ALREADY-FIXED report for the VCA advertised-inverse also:true finding.
 docs/qwen-fixes-2026-10/cluster-review-43592d093.md
 

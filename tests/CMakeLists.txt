@@ -90,6 +90,9 @@ set(LMMS_TESTS
 	# cluster new-p12-279: EffectControls::m_viewVisible must be atomic because
 	# processImpl() reads it on the audio thread while the GUI writes it.
 	src/core/EffectControlsVisibilityTest.cpp
+	# cluster new-p10-284: a ParameterControls key names one parameter in the save file, so a
+	# duplicate key is refused at registration and never overwrites another model's saved value.
+	src/core/ParameterControlsTest.cpp
 	src/core/AutomationModesTest.cpp
 	# Q050-037: the pre-first-point contract of an automation clip - times
 	# before the first node read the authored parameter's initial value (or an
