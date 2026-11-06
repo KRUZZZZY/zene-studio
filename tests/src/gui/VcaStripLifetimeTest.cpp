@@ -259,6 +259,34 @@ private slots:
 		editor.grab();  // must not read through the null
 	}
 
+	void anUnboundEditorIgnoresWheelAndPassesItOn()
+	{
+		// InstrumentTrackWindow clears a knob's model with setModel(nullptr) and leaves the widget enabled.
+		// A wheel that reaches such a control must not read through the null: wheelEvent -> nudge read
+		// model() unguarded. Like the keyboard path, the event passes on to the parent.
+		FloatModelEditorBase editor;
+		editor.setModel(nullptr);
+		QVERIFY(editor.model() == nullptr);
+		QVERIFY(editor.isEnabled());
+		const QPointF at{20., 100.};
+		QWheelEvent wheel{at, at, QPoint{}, QPoint{0, 120}, Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false};
+		QCoreApplication::sendEvent(&editor, &wheel);
+		QVERIFY(editor.model() == nullptr);
+		QVERIFY(!wheel.isAccepted());
+	}
+
+	void aLiveEditorStillTakesWheelInput()
+	{
+		FloatModel model(1.f, 0.f, 2.f, 0.01f);
+		FloatModelEditorBase editor;
+		editor.setModel(&model);
+		const QPointF at{20., 100.};
+		QWheelEvent wheel{at, at, QPoint{}, QPoint{0, 120}, Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false};
+		QCoreApplication::sendEvent(&editor, &wheel);
+		QVERIFY(model.value() > 1.f);  // the guard must not swallow normal wheel input
+		QVERIFY(wheel.isAccepted());
+	}
+
 private:
 	QTemporaryDir m_home;
 };
