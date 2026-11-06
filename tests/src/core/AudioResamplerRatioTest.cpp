@@ -171,6 +171,30 @@ private slots:
 		QCOMPARE(std::ranges::distance(dynamicEnd, dynamicBegin), std::ptrdiff_t{-3});
 	}
 
+	void framesViewOfNullDataIsEmpty()
+	{
+		// Null data is empty() even with non-zero counts. framesView() must agree and must not
+		// form `null + channels * frames`, which is undefined behaviour.
+		float* nullData = nullptr;
+		const InterleavedBufferView<float, 2> staticNull{nullData, 4};
+		QVERIFY(staticNull.empty());
+		QCOMPARE(std::ranges::distance(staticNull.framesView()), std::ptrdiff_t{0});
+
+		const InterleavedBufferView<float> dynamicNull{nullData, 2, 4};
+		QVERIFY(dynamicNull.empty());
+		QCOMPARE(std::ranges::distance(dynamicNull.framesView()), std::ptrdiff_t{0});
+
+		// A default-constructed view has no frames
+		InterleavedBufferView<float, 2> defaulted{};
+		QVERIFY(defaulted.empty());
+		QCOMPARE(std::ranges::distance(defaulted.framesView()), std::ptrdiff_t{0});
+
+		// A valid view still iterates every frame
+		float samples[8]{};
+		InterleavedBufferView<float, 2> valid{samples, 4};
+		QCOMPARE(std::ranges::distance(valid.framesView()), std::ptrdiff_t{4});
+	}
+
 	// -----------------------------------------------------------------------
 	// 1. THE CONVENTION, measured at the boundary where it can be inverted.
 	// -----------------------------------------------------------------------

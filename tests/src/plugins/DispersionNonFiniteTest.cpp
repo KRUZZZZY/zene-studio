@@ -146,6 +146,7 @@ private slots:
 	void attributeFormNonFiniteResonanceRendersLikeTheDefault();
 	void attributeFormNonFiniteFeedbackRendersLikeTheDefault();
 	void finiteFrequencyStillDrivesTheFilter();
+	void nullBufferWithFramesIsNotRead();
 };
 
 void DispersionNonFiniteTest::initTestCase()
@@ -268,6 +269,19 @@ void DispersionNonFiniteTest::finiteFrequencyStillDrivesTheFilter()
 	QCOMPARE(nonFiniteSampleCount(movedRender), 0);
 	QVERIFY2(largestDifference(movedRender, referenceRender) > FilterEffectThreshold,
 		"a finite frequency no longer changes the filter output");
+}
+
+void DispersionNonFiniteTest::nullBufferWithFramesIsNotRead()
+{
+	// A view with null data reports empty(), so the effect must not read it.
+	// Before the framesView() fix the process loop began at the null data
+	// pointer and dereferenced it, so this slot crashes on the unfixed code.
+	const auto effect = loadedEffect(QString{});
+	float* nullData = nullptr;
+	lmms::InterleavedBufferView<float, 2> nullView{nullData, FrameCount};
+	QVERIFY2(nullView.empty(), "a view with null data must report empty()");
+	effect->processImpl(nullView);
+	QVERIFY(nullView.empty());
 }
 
 QTEST_MAIN( DispersionNonFiniteTest )
