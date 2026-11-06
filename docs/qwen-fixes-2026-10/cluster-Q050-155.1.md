@@ -46,7 +46,12 @@ identifiers, no std::filesystem). Only GCC/Qt6 was built here.
 - **Old projects; round-trip.** `SurroundTest` (stereo projects unchanged) and `ProjectStateTest` exit 0;
   `wideDiscreteLayoutsSurviveASaveAndLoad` exit 0.
 - **Portability.** The integration added no code; see round 1 below. Only GCC/Qt6 compiled locally.
-- **Gates.** See the feature_check result recorded below this section.
+- **Gates.** `feature_check.py` cannot create its log directory (`<worktree>-feature-check`, outside my write jail:
+  `PermissionError`, feature-check-1.log). I ran a copy at `/tmp/q155-fc2/feature_check.py` whose only changes are
+  `ROOT` pinned to the original `qwen/` directory and the log directory set to `/tmp/q155-fc2/logs` (two-line diff):
+  exit 0, every row PASS - fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology,
+  doc-figures, complexity and file-length (no new item) - feature-check-2.log, run on commit `432ef3627`.
+  `submit_check.py` therefore still reports `FAIL gates` in this sandbox for the same reason.
 - **Build note.** The worktree's ccache config points its temp dir outside my write jail; I built with
   `CCACHE_TEMPDIR=/tmp/q155-ccache-tmp` (build-1 failed on exactly that, build-2 onward exit 0).
 
