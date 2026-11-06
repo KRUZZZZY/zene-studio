@@ -5737,3 +5737,5 @@ plugins/ZynAddSubFx/ZynAddSubFx.cpp	Q050-313: the recovery all-notes-off is plac
 tests/control-mixing-routing.py	# Follow arranger selection in the mixer
 tests/src/gui/MixerMeteringTest.cpp	# Follow arranger selection in the mixer
 tests/src/core/WarpMarkersTest.cpp	# Author warp markers with on-clip preview
+src/core/AutomationClip.cpp	cluster new-p10-510 (BUG 19): writeBlockRamp() refuses a non-finite framesPerTick (std::isfinite added to the existing <= 0.0 guard) so a NaN never reaches the tick loop or the int knot conversions; regression AutomationPreFirstValueTest::aNonFiniteFramesPerTickBuildsNoRamp.
+src/core/Song.cpp	cluster new-p10-510 (BUG 19): buildAutomationRamps() applies the same non-finite framesPerTick refusal as its <= 0.0 check before it builds any ramp; regression AutomationPreFirstValueTest::aNonFiniteFramesPerTickBuildsNoRamp.

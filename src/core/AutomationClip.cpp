@@ -1078,7 +1078,9 @@ void AutomationClip::writeBlockRamp( AutomationRamp & ramp, const TimePos & bloc
 
 	if( firstNodeFrame != nullptr ) { *firstNodeFrame = 0; }
 	ramp.reset( frames );
-	if( m_timeMap.isEmpty() || frames == 0 || framesPerTick <= 0.0 )
+	// BUG 19 (new-p10-510): a NaN passes "<= 0.0" and then never ends the tick
+	// loop below, so the framesPerTick must be finite as well as positive.
+	if( m_timeMap.isEmpty() || frames == 0 || !std::isfinite( framesPerTick ) || framesPerTick <= 0.0 )
 	{
 		return;
 	}
