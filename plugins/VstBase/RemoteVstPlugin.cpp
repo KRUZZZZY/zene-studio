@@ -1099,12 +1099,16 @@ void RemoteVstPlugin::process( const float* _in, float* _out )
 
 	if( !tryLockShm() )
 	{
+		vst::silenceOutputPlanes( _out, RemotePluginClient::outputCount(),
+								static_cast<std::size_t>( bufferSize() ) );
 		return;
 	}
 
 	if( !isShmValid() )
 	{
 		unlockShm();
+		vst::silenceOutputPlanes( _out, RemotePluginClient::outputCount(),
+								static_cast<std::size_t>( bufferSize() ) );
 		return;
 	}
 

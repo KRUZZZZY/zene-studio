@@ -34,6 +34,8 @@
 #include <cstdint>
 #include <vector>
 
+#include <QFile>
+
 #include "../../../plugins/VstBase/VstMidiEventBatch.h"
 
 #include "AllocationProbe.h"
@@ -137,6 +139,77 @@ private slots:
 		// The newest events are the ones dropped: the first capacity arrivals are kept.
 		QCOMPARE(queue.back().tag, static_cast<int>(capacity - 1));
 		QCOMPARE(allocations, std::uint64_t{0});
+	}
+
+	//! cluster new-p17-148: a period that cannot fetch audio must silence the
+	//! caller's output planes, not hand back the caller's stale samples.
+	void silenceZeroesOutputPlanes()
+	{
+		constexpr std::size_t frames = 96;
+		std::vector<float> out(3 * frames, 7.0f);
+		// Stale samples: without silencing the caller would hear the previous period.
+		QVERIFY(out[0] != 0.0f);
+
+		const auto allocations = countAllocations([&] {
+			lmms::vst::silenceOutputPlanes(out.data(), 3, frames);
+		});
+
+		for (const auto s : out)
+		{
+			QCOMPARE(s, 0.0f);
+		}
+		QCOMPARE(allocations, std::uint64_t{0});
+	}
+
+	//! A cached count of zero, a null buffer, or zero frames must touch nothing;
+	//! a silent zeroing of unbacked planes would corrupt the input block next to it.
+	void silenceIgnoresDegenerateInputs()
+	{
+		constexpr std::size_t frames = 16;
+		std::vector<float> out(frames, 5.0f);
+		lmms::vst::silenceOutputPlanes(out.data(), 0, frames);
+		QCOMPARE(out[0], 5.0f);
+		lmms::vst::silenceOutputPlanes(out.data(), -1, frames);
+		QCOMPARE(out[0], 5.0f);
+		lmms::vst::silenceOutputPlanes(out.data(), 1, 0);
+		QCOMPARE(out[0], 5.0f);
+		lmms::vst::silenceOutputPlanes(nullptr, 2, frames);
+		// Only the requested planes are silenced; the rest of the block is untouched.
+		std::vector<float> withTail(4 * frames, 9.0f);
+		lmms::vst::silenceOutputPlanes(withTail.data(), 2, frames);
+		QCOMPARE(withTail[0], 0.0f);
+		QCOMPARE(withTail[2 * frames], 9.0f);
+	}
+
+	//! The integration check for new-p17-148: the early returns in
+	//! RemoteVstPlugin::process() must call the silence helper. The client
+	//! cannot run in-process, so this pins that both paths clear the output
+	//! block (the helper above is what they call).
+	void processEarlyReturnsSilenceOutputs()
+	{
+		QFile f(QStringLiteral("plugins/VstBase/RemoteVstPlugin.cpp"));
+		if (!f.exists())
+		{
+			f.setFileName(QStringLiteral("../../plugins/VstBase/RemoteVstPlugin.cpp"));
+		}
+		if (!f.exists())
+		{
+			f.setFileName(QStringLiteral("../../../plugins/VstBase/RemoteVstPlugin.cpp"));
+		}
+		QVERIFY2(f.exists(), "RemoteVstPlugin.cpp not found from the test working directory");
+		QVERIFY(f.open(QIODevice::ReadOnly | QIODevice::Text));
+		const auto text = QString::fromUtf8(f.readAll());
+		// isolate process(): from its signature to the next top-level method.
+		const auto begin = text.indexOf(QStringLiteral("void RemoteVstPlugin::process"));
+		QVERIFY(begin >= 0);
+		const auto end = text.indexOf(QStringLiteral("void RemoteVstPlugin::processMidiEvent"), begin);
+		QVERIFY(end > begin);
+		const auto body = text.mid(begin, end - begin);
+		// Both early returns (tryLockShm, isShmValid) must silence with the cached count.
+		QVERIFY2(body.count(QStringLiteral("silenceOutputPlanes")) >= 2,
+			"process() must silence outputs on both early returns");
+		QVERIFY2(body.count(QStringLiteral("RemotePluginClient::outputCount")) >= 2,
+			"silencing must use the cached output count, not the live plugin count");
 	}
 };
 
