@@ -211,6 +211,50 @@ private slots:
 		QVERIFY2(body.count(QStringLiteral("RemotePluginClient::outputCount")) >= 2,
 			"silencing must use the cached output count, not the live plugin count");
 	}
+
+	//! cluster new-p14-240: the dispatch scratch must be per-instance, not a
+	//! function-local static shared by every RemoteVstPlugin instance.
+	void midiScratchIsPerInstance()
+	{
+		// Two per-instance scratch buffers never alias, so parallel processing
+		// cannot make one plugin's dispatch overwrite the other's events.
+		struct Scratch
+		{
+			char eventsBuffer[64];
+			Event scratch[8];
+		};
+		Scratch a{};
+		Scratch b{};
+		QVERIFY(+a.eventsBuffer != +b.eventsBuffer);
+		QVERIFY(&a.scratch[0] != &b.scratch[0]);
+		a.scratch[0].tag = 99;
+		a.eventsBuffer[0] = 1;
+		QVERIFY(b.scratch[0].tag != 99);
+		QVERIFY(b.eventsBuffer[0] != 1);
+
+		// The product check: process() must not declare shared static scratch.
+		QFile f(QStringLiteral("plugins/VstBase/RemoteVstPlugin.cpp"));
+		if (!f.exists())
+		{
+			f.setFileName(QStringLiteral("../../plugins/VstBase/RemoteVstPlugin.cpp"));
+		}
+		if (!f.exists())
+		{
+			f.setFileName(QStringLiteral("../../../plugins/VstBase/RemoteVstPlugin.cpp"));
+		}
+		QVERIFY2(f.exists(), "RemoteVstPlugin.cpp not found from the test working directory");
+		QVERIFY(f.open(QIODevice::ReadOnly | QIODevice::Text));
+		const auto text = QString::fromUtf8(f.readAll());
+		const auto begin = text.indexOf(QStringLiteral("void RemoteVstPlugin::process"));
+		QVERIFY(begin >= 0);
+		const auto end = text.indexOf(QStringLiteral("void RemoteVstPlugin::processMidiEvent"), begin);
+		QVERIFY(end > begin);
+		const auto body = text.mid(begin, end - begin);
+		QVERIFY2(!body.contains(QStringLiteral("static char eventsBuffer")),
+			"process() must not use a shared static events buffer");
+		QVERIFY2(!body.contains(QStringLiteral("static VstMidiEvent vme")),
+			"process() must not use shared static MIDI scratch");
+	}
 };
 
 QTEST_APPLESS_MAIN(VstMidiEventBatchTest)
