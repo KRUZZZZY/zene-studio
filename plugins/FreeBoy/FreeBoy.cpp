@@ -456,39 +456,55 @@ void FreeBoyInstrument::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame>
 	int data = 0;
 	int freq = nph->frequency();
 
+	const auto initInitialRegisters = [this](GbApuWrapper* papu) {
+		int d = 0;
+		// Master sound circuitry power control
+		papu->writeRegister(0xff26, 0x80);
+
+		d = m_ch1VolumeModel.value();
+		d = d << 1;
+		d += m_ch1VolSweepDirModel.value();
+		d = d << 3;
+		d += m_ch1SweepStepLengthModel.value();
+		papu->writeRegister(0xff12, d);
+
+		d = m_ch2VolumeModel.value();
+		d = d << 1;
+		d += m_ch2VolSweepDirModel.value();
+		d = d << 3;
+		d += m_ch2SweepStepLengthModel.value();
+		papu->writeRegister(0xff17, d);
+
+		//channel 4 - noise
+		d = m_ch4VolumeModel.value();
+		d = d << 1;
+		d += m_ch4VolSweepDirModel.value();
+		d = d << 3;
+		d += m_ch4SweepStepLengthModel.value();
+		papu->writeRegister(0xff21, d);
+	};
+
 	if (!nph->m_pluginData)
 	{
 		auto voice = acquireFreeBoyVoice(m_voicePool);
 		// The fixed 1024-voice scan is bounded per render attempt; unassigned notes retry next period.
 		if (!voice) { return; }
-		auto papu = &voice->apu;
-
-		// Master sound circuitry power control
-		papu->writeRegister(0xff26, 0x80);
-
-		data = m_ch1VolumeModel.value();
-		data = data << 1;
-		data += m_ch1VolSweepDirModel.value();
-		data = data << 3;
-		data += m_ch1SweepStepLengthModel.value();
-		papu->writeRegister(0xff12, data);
-
-		data = m_ch2VolumeModel.value();
-		data = data << 1;
-		data += m_ch2VolSweepDirModel.value();
-		data = data << 3;
-		data += m_ch2SweepStepLengthModel.value();
-		papu->writeRegister(0xff17, data);
-
-		//channel 4 - noise
-		data = m_ch4VolumeModel.value();
-		data = data << 1;
-		data += m_ch4VolSweepDirModel.value();
-		data = data << 3;
-		data += m_ch4SweepStepLengthModel.value();
-		papu->writeRegister(0xff21, data);
-
+		initInitialRegisters(&voice->apu);
 		nph->m_pluginData = voice;
+	}
+	else
+	{
+		auto* const oldVoice = static_cast<FreeBoyVoicePool::Voice*>(nph->m_pluginData);
+		if (oldVoice->pool != m_voicePool.load(std::memory_order_relaxed))
+		{
+			auto* const newVoice = acquireFreeBoyVoice(m_voicePool);
+			if (newVoice != nullptr)
+			{
+				initInitialRegisters(&newVoice->apu);
+				FreeBoyVoicePool::release(oldVoice);
+				nph->m_pluginData = newVoice;
+			}
+		}
 	}
 
 	auto papu = &static_cast<FreeBoyVoicePool::Voice*>(nph->m_pluginData)->apu;
