@@ -422,7 +422,7 @@ void Rack::loadSettings(const QDomElement& element)
 	// children and both load empty, which is what a rack with neither already
 	// is. Both clear themselves first, so a reload never accumulates.
 	m_macros.loadSettings(rack);
-	m_zones.loadSettings(rack);
+	m_zones.loadSettings(rack, chainCount());
 	rebuildRoutingGraph();
 }
 
