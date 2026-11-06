@@ -51,12 +51,14 @@ class SampleFrame;
  *  The engine's audio path stays stereo: a channel's buffer, its devices, its meters, the sends' PDC
  *  delay lines, the listen bus, the cue mixes and the recorder all carry L/R. A channel set to a surround
  *  format keeps its other speakers (centre, LFE, the surrounds) in a SIDE buffer next to its stereo one,
- *  allocated once with the channel for the largest layout (8 channels), so changing the format never
- *  allocates. Its devices process L/R only; the side channels pass by them with the channel's trim, VCA
+ *  allocated with the channel for the largest named layout (8 channels). Q050-155.1: a wider discrete
+ *  layout (up to 64 channels) grows that buffer when the format is set - on the control thread, under the
+ *  change lock, never on the audio path - and it never shrinks, so going back to a narrower format does not
+ *  allocate. Its devices process L/R only; the side channels pass by them with the channel's trim, VCA
  *  gain, its pan as a balance on each left/right pair, its fader and mute.
  *
  *  - Formats: stereo (the default), LCR, quad, 5.1, 7.1, in the WAVE channel order
- *    (L R C LFE Ls Rs; 7.1: L R C LFE Lrs Rrs Ls Rs), mono (one M role) and discrete-2..discrete-8,
+ *    (L R C LFE Ls Rs; 7.1: L R C LFE Lrs Rrs Ls Rs), mono (one M role) and discrete-2..discrete-64,
  *    whose channels have no speaker roles: channel i is routed to output i by index, never folded or
  *    reordered by speaker. A discrete channel name carries its count ("discrete-5"), so a save and a
  *    load keep both the layout and how many channels it has.
@@ -84,9 +86,14 @@ class SampleFrame;
 namespace surround
 {
 
-//! The largest layout's channels, and those beyond the stereo pair a side buffer holds.
-constexpr int MaxChannels = 8;
+//! The largest layout's channels (the widest discrete bus, Q050-155.1), and those beyond the stereo pair
+//! a side buffer can hold.
+constexpr int MaxChannels = 64;
 constexpr int SideChannels = MaxChannels - 2;
+//! The largest NAMED speaker layout (7.1): the downmix matrices and the panner's gains cover this many
+//! channels. A discrete layout never needs either - it is routed by index (isDiscrete()).
+constexpr int MaxSpeakers = 8;
+constexpr int SpeakerSideChannels = MaxSpeakers - 2;
 
 enum class Format : int
 {
@@ -102,11 +109,16 @@ enum class Format : int
 	Discrete5,
 	Discrete6,
 	Discrete7,
-	Discrete8
+	Discrete8,
+	// Q050-155.1: Discrete9 .. Discrete64 follow in count order (Discrete2 + N - 2); discreteFormat() names
+	// them. Only the landmarks are spelled out.
+	Discrete16 = Discrete2 + 14,
+	Discrete32 = Discrete2 + 30,
+	Discrete64 = Discrete2 + 62
 };
-constexpr int FormatCount = 13;
+constexpr int FormatCount = static_cast<int>(Format::Discrete64) + 1;
 
-//! The discrete layouts' count range: Mono is the one-channel layout, Discrete2..Discrete8 the rest.
+//! The discrete layouts' count range: Mono is the one-channel layout, Discrete2..Discrete64 the rest.
 constexpr int MinDiscreteChannels = 2;
 constexpr int MaxDiscreteChannels = MaxChannels;
 
@@ -138,9 +150,10 @@ struct DownmixOptions
 	bool operator==(const DownmixOptions&) const = default;
 };
 
-//! One receiver channel from each sender channel: [to][from].
-using Matrix = std::array<std::array<float, MaxChannels>, MaxChannels>;
-using Gains = std::array<float, MaxChannels>;
+//! One receiver channel from each sender channel: [to][from]. A named layout's speakers only; a discrete
+//! layout's channels beyond the first MaxSpeakers are routed by index, never through a matrix.
+using Matrix = std::array<std::array<float, MaxSpeakers>, MaxSpeakers>;
+using Gains = std::array<float, MaxSpeakers>;
 
 LMMS_EXPORT int channelCount(Format format);
 LMMS_EXPORT Role roleOf(Format format, int channel);
@@ -149,11 +162,11 @@ LMMS_EXPORT int channelOf(Format format, Role role);
 LMMS_EXPORT QString formatName(Format format);
 LMMS_EXPORT bool formatFromName(const QString& name, Format* format);
 LMMS_EXPORT QStringList formatNames();
-//! Whether @a format is one of the role-less discrete layouts (Discrete2..Discrete8).
+//! Whether @a format is one of the role-less discrete layouts (Discrete2..Discrete64).
 LMMS_EXPORT bool isDiscrete(Format format);
-//! @a format's discrete channel count (2..8), or -1 when it is not discrete.
+//! @a format's discrete channel count (2..64), or -1 when it is not discrete.
 LMMS_EXPORT int discreteChannels(Format format);
-//! The discrete layout with @a channels (2..8), or Stereo when the count is outside the range.
+//! The discrete layout with @a channels (2..64), or Stereo when the count is outside the range.
 LMMS_EXPORT Format discreteFormat(int channels);
 //! "L", "R", "C", "LFE", "Ls", ...: @a format's speakers in channel order. Empty for a discrete layout:
 //! its channels have no speaker roles.
@@ -164,8 +177,11 @@ LMMS_EXPORT QStringList channelLabels(Format format);
 LMMS_EXPORT void speakerPoint(Format format, int channel, float* x, float* y);
 
 //! The panner's gains for @a pan over @a format's channels (unit power over the speakers, plus the LFE send).
+//! All zero for a discrete layout: the panner does not act on one.
 LMMS_EXPORT Gains panGains(Format format, const PanPosition& pan);
-//! The mix from @a from into @a to with the current downmix options (built when they change).
+//! The mix from @a from into @a to with the current downmix options (built when they change). Either
+//! side discrete: the identity over the first MaxSpeakers channels; the render path routes discrete
+//! channels by index (channel i to channel i) and does not read the matrix for them.
 LMMS_EXPORT const Matrix& matrix(Format from, Format to);
 
 LMMS_EXPORT const DownmixOptions& downmixOptions();
@@ -182,8 +198,11 @@ struct LMMS_EXPORT ChannelSurround
 
 	surround::Format format() const { return m_format; }
 	bool isSurround() const { return m_format != surround::Format::Stereo; }
-	//! Control thread, under the change lock. The side buffer is cleared.
+	//! Control thread, under the change lock. The side buffer is cleared, and grown first when @a format
+	//! has more channels than it holds (a wide discrete layout); it never shrinks.
 	void setFormat(surround::Format format);
+	//! How many channels the side buffer holds now, its stereo pair included (8 .. 64).
+	int capacity() const;
 
 	const surround::PanPosition& pan() const { return m_pan; }
 	//! Control thread, under the change lock: the panner and its gains for every format.
@@ -191,7 +210,7 @@ struct LMMS_EXPORT ChannelSurround
 	//! The panner's gains into a receiver of @a format.
 	const surround::Gains& gains(surround::Format format) const { return m_gains[static_cast<std::size_t>(format)]; }
 
-	//! Side channel @a channel (2..7) of the period: frames() floats.
+	//! Side channel @a channel (2 .. channelCount(format()) - 1) of the period: frames() floats.
 	float* plane(int channel) { return m_side.data() + static_cast<std::size_t>(channel - 2) * m_frames; }
 	const float* plane(int channel) const { return m_side.data() + static_cast<std::size_t>(channel - 2) * m_frames; }
 	f_cnt_t frames() const { return m_frames; }

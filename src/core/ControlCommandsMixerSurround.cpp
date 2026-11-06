@@ -308,10 +308,11 @@ void registerSurroundCommands(ControlRegistry& registry)
 {
 	defineCommand(registry, QStringLiteral("mixer.channel_format"), QStringLiteral("Set a channel's speaker format: 'stereo' (the "
 		"default), 'lcr', 'quad', '5.1', '7.1' (WAVE channel order: L R C LFE Ls Rs; 7.1 L R C LFE Lrs Rrs Ls Rs), 'mono' (one "
-		"M role), or a role-less discrete layout 'discrete-2' .. 'discrete-8'. A surround channel keeps its speakers beyond L/R "
+		"M role), or a role-less discrete layout 'discrete-2' .. 'discrete-64'. A surround channel keeps its speakers beyond L/R "
 		"next to its stereo signal: its devices process L/R only, the other speakers pass with its trim, VCA gain, pan (a balance "
 		"on each left/right pair), fader and mute. Into a stereo channel - the master, usually - a named layout is downmixed "
-		"(mixer.downmix_options), while a discrete channel i goes to output i with no speaker folding or reordering. Its hardware "
+		"(mixer.downmix_options), while a discrete channel i goes to channel or output i with no speaker folding or reordering (a "
+		"receiver with fewer channels drops the rest). Its hardware "
 		"output names its first output and it takes as many as it has channels, or the stereo downmix where the device lacks them. "
 		"mixer.get_state names the format, its channel count and the channel roles (empty speakers, indices 1..N, for discrete). "
 		"Saved with the project - the count is part of the format name; one undo step."),
