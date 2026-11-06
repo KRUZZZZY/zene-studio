@@ -1729,6 +1729,10 @@ IF(LMMS_HAVE_ABLETON_LINK)
 		# Link's ESP32 service runner against a FreeRTOS stand-in (host-only, see
 		# esp32-freertos-host/): a failed task creation must be reported.
 		src/core/AbletonLinkEsp32RunnerTest.cpp
+		# The vendored asio's work_dispatcher, moved through its TS-executor
+		# specialisation (the header is asio's, so the test needs ableton_link's
+		# include directories and ASIO_STANDALONE definitions).
+		src/core/AbletonLinkWorkDispatcherTest.cpp
 	)
 ENDIF()
 
@@ -7710,6 +7714,7 @@ IF(LMMS_HAVE_ABLETON_LINK)
 	target_link_libraries(AbletonLinkEsp32RunnerTest PRIVATE ableton_link)
 	target_include_directories(AbletonLinkEsp32RunnerTest PRIVATE
 		"${CMAKE_CURRENT_SOURCE_DIR}/src/core/esp32-freertos-host")
+	target_link_libraries(AbletonLinkWorkDispatcherTest PRIVATE ableton_link)
 ENDIF()
 # The browser.* group: BrowserCatalogTest drives libsndfile and the config
 # manager's working directory, ControlBrowserCommandsTest constructs a full

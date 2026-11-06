@@ -2744,6 +2744,7 @@ tests/src/core/AbletonLinkAllocatorTest.cpp
 tests/src/core/AbletonLinkEsp32RunnerTest.cpp
 tests/src/core/AbletonLinkInteropTest.cpp
 tests/src/core/AbletonLinkSessionTest.cpp
+tests/src/core/AbletonLinkWorkDispatcherTest.cpp
 tests/src/core/AllocationProbe.cpp
 tests/src/core/AllocationProbe.h
 tests/src/core/AllocationProbeTest.cpp
