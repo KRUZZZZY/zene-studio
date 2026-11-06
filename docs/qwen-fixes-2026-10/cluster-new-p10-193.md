@@ -75,8 +75,10 @@ this platform; the seam test can and does.
 | GREEN (fix applied) | `cmake --build build --target LadspaManagerTest -j4 > .../logs/build-4.log 2>&1; echo EXIT=$?` then `ctest -R '^LadspaManagerTest$' --output-on-failure > .../logs/test-4.log 2>&1; echo EXIT=$?` | build **EXIT=0**; ctest **EXIT=0** - 1/1 target passed |
 | Affected family | `cmake --build build --target LadspaPortDialogTest LadspaGlobalLinkTest -j4 > .../logs/build-6.log 2>&1; echo EXIT=$?` then `ctest -R 'Ladspa' --output-on-failure > .../logs/test-6.log 2>&1; echo EXIT=$?` | build **EXIT=0**; ctest **EXIT=0** - **4 ctest targets executed, 4/4 passed** (`LadspaChannelCountsTest`, `LadspaManagerTest`, `LadspaPortDialogTest`, `LadspaGlobalLinkTest`) |
 | Production build (header change, no `LMMS_TESTING`) | `cmake --build build --target zene -j4 > .../logs/build-7.log 2>&1; echo EXIT=$?` | **EXIT=0** |
-| Step 4b revert | `git diff -- include/LadspaManager.h src/core/LadspaManager.cpp > .../logs/fix.patch; echo EXIT=$?` (**EXIT=0**), `git apply -R .../logs/fix.patch; echo EXIT=$?` (**EXIT=0**), `cmake --build build --target LadspaManagerTest -j4 > .../logs/build-8-revert.log 2>&1; echo EXIT=$?` | revert **EXIT=0**; rebuild **EXIT=2** - `error: 'class lmms::LadspaManager' has no member named 'isLibraryLoaded'`, so the regression cannot pass without the product change |
+| Step 4b full revert (builder evidence) | `git diff -- include/LadspaManager.h src/core/LadspaManager.cpp > .../logs/fix.patch; echo EXIT=$?` (**EXIT=0**), `git apply -R .../logs/fix.patch; echo EXIT=$?` (**EXIT=0**), `cmake --build build --target LadspaManagerTest -j4 > .../logs/build-8-revert.log 2>&1; echo EXIT=$?` | revert **EXIT=0**; rebuild **EXIT=2** - `isLibraryLoaded` was removed with the test seam, so this compile failure alone is not runtime RED evidence |
 | Step 4b restore | `git apply .../logs/fix.patch; echo EXIT=$?` (**EXIT=0**), `cmake --build build --target LadspaManagerTest -j4 > .../logs/build-9.log 2>&1; echo EXIT=$?` (**EXIT=0**), `ctest -R '^LadspaManagerTest$' --output-on-failure > .../logs/test-9.log 2>&1; echo EXIT=$?` | **EXIT=0** - 1/1 target passed |
+| Independent QA runtime RED (2026-11-06) | Temporarily removed only `m_loadedLibraries.push_back(plugin_lib)` while keeping the test seam; `cmake --build build --target zene LadspaManagerTest -j12 > .../logs/qa-build-12-red.log 2>&1; echo EXIT=$?`, then `cd build/tests && ctest -R '^LadspaManagerTest$' --output-on-failure > .../logs/qa-test-12-red.log 2>&1; echo EXIT=$?` | build **EXIT=0**; ctest **EXIT=8** - the runtime assertion `manager.isLibraryLoaded(probe)` failed (5 passed / 1 failed) |
+| Independent QA restore (2026-11-06) | `git checkout -- include/LadspaManager.h src/core/LadspaManager.cpp` (**EXIT=0**), `cmake --build build --target zene LadspaManagerTest LadspaPortDialogTest LadspaGlobalLinkTest LadspaChannelCountsTest -j12 > .../logs/qa-build-13-restore.log 2>&1; echo EXIT=$?`, then `cd build/tests && ctest -R 'Ladspa' --output-on-failure > .../logs/qa-test-13-restore.log 2>&1; echo EXIT=$?` | build **EXIT=0**; ctest **EXIT=0** - all 4 LADSPA-family tests passed |
 | Gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-new-p10-193 > .../logs/gates-2.log 2>&1; echo EXIT=$?` | **EXIT=0** - PASS on all rows; complexity and file-length "no new item in your files" |
 
 Files committed: `include/LadspaManager.h`, `src/core/LadspaManager.cpp`,
@@ -85,11 +87,13 @@ Files committed: `include/LadspaManager.h`, `src/core/LadspaManager.cpp`,
 
 ## Self-check
 
-- The regression test FAILS with the product change reverted and PASSES
-  with it (exit codes): runtime RED is `logs/test-3.log` EXIT=8
-  (`isLibraryLoaded` FALSE with the seam present but no retention);
-  step 4b full revert is `logs/build-8-revert.log` EXIT=2 (no seam member),
-  restore is `logs/test-9.log` EXIT=0. Both are recorded above.
+- The builder's full step 4b revert (`logs/build-8-revert.log`, EXIT=2)
+  removed the test seam, so its compile error was not runtime RED evidence.
+  Independent QA removed only the owner insertion while retaining the seam:
+  `logs/qa-build-12-red.log` EXIT=0 and `logs/qa-test-12-red.log` EXIT=8
+  at the expected ownership assertion. Restoring both product files and
+  rebuilding gave `logs/qa-build-13-restore.log` EXIT=0 and
+  `logs/qa-test-13-restore.log` EXIT=0 (4/4 LADSPA-family tests).
 - The test is deterministic: no wall-clock timing, sleeps or races. It
   uses the `LMMS_TESTING` seam `LadspaManager::isLibraryLoaded()`
   (`include/LadspaManager.h`, `src/core/LadspaManager.cpp`), which
