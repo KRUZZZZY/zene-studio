@@ -3,9 +3,13 @@
 #include <QFile>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <new>
 #include <vector>
+#if defined(_MSC_VER)
+#include <malloc.h>
+#endif
 #include "sfizz/effects/Disto.h"
 #include "sfizz/Synth.h"
 #include "sfizz/AudioSpan.h"
@@ -49,8 +53,12 @@ void *operator new(std::size_t s, std::align_val_t a)
 	noteA();
 	auto align = static_cast<std::size_t>(a);
 	auto bytes = s != 0 ? s : 1;
+#if defined(_MSC_VER)
+	if (void *p = _aligned_malloc(bytes, align < sizeof(void *) ? sizeof(void *) : align)) { return p; }
+#else
 	void *p = nullptr;
 	if (posix_memalign(&p, align < sizeof(void *) ? sizeof(void *) : align, bytes) == 0) { return p; }
+#endif
 	throw std::bad_alloc();
 }
 void *operator new[](std::size_t s, std::align_val_t a) { return ::operator new(s, a); }
@@ -71,7 +79,11 @@ void operator delete[](void *p, std::nothrow_t) noexcept { ::operator delete(p);
 void operator delete(void *p, std::align_val_t) noexcept
 {
 	noteF(p);
+#if defined(_MSC_VER)
+	_aligned_free(p);
+#else
 	std::free(p);
+#endif
 }
 void operator delete[](void *p, std::align_val_t a) noexcept { ::operator delete(p, a); }
 void operator delete(void *p, std::size_t, std::align_val_t a) noexcept { ::operator delete(p, a); }
