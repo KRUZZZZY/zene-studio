@@ -505,6 +505,50 @@ subprocess.Popen(
 			qPrintable(QStringLiteral("a relative path is still refused typed: ") + relative.errorMessage));
 	}
 
+	/* A UNC form is absolute only when it names a server AND a share. `\\server`
+	 * has no share, and on a Unix host QDir reads it as a relative file name, so
+	 * a client could make the writer create files under the working directory.
+	 * The backslash forms are refused on every host. Windows also refuses
+	 * incomplete forward-slash UNC forms; Unix keeps `//...` as absolute. */
+	void testValidatorRefusesIncompleteUncPaths()
+	{
+		const QString name = QStringLiteral("out");
+		const QString incomplete[] = {
+			QStringLiteral("\\\\server"),
+			QStringLiteral("\\\\server\\"),
+			QStringLiteral("\\\\\\share\\mix"),
+			QStringLiteral("\\\\s") };
+		for (const QString& path : incomplete)
+		{
+			QVERIFY2(!control::stemRequireAbsolutePath(path, name).isEmpty(),
+				qPrintable(QStringLiteral("incomplete UNC path refused: ") + path));
+		}
+	#if defined(Q_OS_WIN)
+		const QString incompleteSlashUnc[] = {
+			QStringLiteral("//server"), QStringLiteral("//server/"),
+			QStringLiteral("/\\\\server"), QStringLiteral("/\\\\server/") };
+		for (const QString& path : incompleteSlashUnc)
+		{
+			QVERIFY2(!control::stemRequireAbsolutePath(path, name).isEmpty(),
+				qPrintable(QStringLiteral("incomplete slash UNC path refused: ") + path));
+		}
+	#else
+		QVERIFY2(control::stemRequireAbsolutePath(QStringLiteral("//server"), name).isEmpty(),
+			"a POSIX double-slash absolute path stays accepted");
+	#endif
+
+		const QString complete[] = {
+			QStringLiteral("\\\\server\\share"),
+			QStringLiteral("\\\\server\\share\\"),
+			QStringLiteral("\\\\server\\share\\stems"),
+			QStringLiteral("//server/share") };
+		for (const QString& path : complete)
+		{
+			QVERIFY2(control::stemRequireAbsolutePath(path, name).isEmpty(),
+				qPrintable(QStringLiteral("complete UNC path accepted: ") + path));
+		}
+	}
+
 	/* The GUI action and the agent surface take the SAME registered command,
 	 * materialise the four stems as ONE undo step, and one control.undo removes
 	 * all four together. This is the "shared command + one undo step" contract
