@@ -489,7 +489,7 @@ void SampleClip::setSampleFile(const QString& sf)
 		// A different source: the markers were anchored to frames of the old
 		// one, so they go with it. `setSampleFile("")` (the copy constructor)
 		// deliberately keeps them - the source has not changed.
-		m_warp.clear();
+		publishWarp(WarpMarkers{});
 		setLeadFrames(0);  // ED-021: the lead was a frame of the old source too
 		m_sample = Sample(SampleBuffer::fromFile(sf));
 		resetWindowToFullBuffer();
@@ -600,6 +600,21 @@ void SampleClip::setLeadFrames(f_cnt_t frames)
 
 f_cnt_t SampleClip::leadOutputFramesAt(TimePos at) const
 {
+	// Q050-063: a warped clip is heard where its map says. The pass starts at sourceFrameAt(at), which the map
+	// clamps to the window's start; when the map puts that frame later than `at` (the first marker dragged past
+	// the audio's natural place), the silence before it is owed here, as a frame-exact lead is. A clip's lead is
+	// linear-only (a warped clip's frame edits are refused), so the two never combine. Pure arithmetic on the pass's
+	// generation of the map (SampleTrack::play holds it, Clip::WarpPassScope): audio-thread safe.
+	if (!passWarp().empty())
+	{
+		const float framesPerTick = clipFramesPerTick();
+		if (framesPerTick <= 0.0f) { return 0; }
+		const tick_t relative = at.getTicks() - startPosition().getTicks() - startTimeOffset().getTicks();
+		const tick_t arrives = passWarp().timelineOffsetAt(m_window.sourceIn, m_window.sourceIn, framesPerTick);
+		if (arrives <= relative) { return 0; }
+		return static_cast<f_cnt_t>(std::llround(static_cast<double>(arrives - relative)
+			* Engine::framesPerTick(Engine::audioEngine()->outputSampleRate())));
+	}
 	const f_cnt_t lead = leadFrames();
 	if (lead == 0) { return 0; }
 	const double framesPerTick = clipFramesPerTick();
@@ -631,12 +646,12 @@ int SampleClip::windowTicksFor(const SampleWindow& window) const
 	// behaviour. The same rule leadOutputFramesAt() and restoreState() already
 	// apply to this value.
 	if (framesPerTick <= 0.0f) { return 0; }
-	if (m_warp.empty())
+	if (passWarp().empty())
 	{
 		return static_cast<int>(window.length() / framesPerTick);
 	}
-	return m_warp.timelineOffsetAt(window.sourceOut, window.sourceIn, framesPerTick)
-		- m_warp.timelineOffsetAt(window.sourceIn, window.sourceIn, framesPerTick);
+	return passWarp().timelineOffsetAt(window.sourceOut, window.sourceIn, framesPerTick)
+		- passWarp().timelineOffsetAt(window.sourceIn, window.sourceIn, framesPerTick);
 }
 
 
@@ -658,12 +673,15 @@ float SampleClip::clipFramesPerTick() const
 
 bool SampleClip::setWarpMarkers(std::span<const WarpMarker> markers)
 {
-	if (!m_warp.set(markers))
+	// Validated off to the side: a refused set changes nothing and never waits for the audio thread.
+	WarpMarkers candidate;
+	if (!candidate.set(markers))
 	{
 		Engine::getSong()->collectError(tr("Warp markers rejected: the set is not "
 			"strictly increasing in source frame and timeline position."));
 		return false;
 	}
+	publishWarp(candidate);
 	Engine::getSong()->setModified();
 	emit sampleChanged();
 	return true;
@@ -672,8 +690,8 @@ bool SampleClip::setWarpMarkers(std::span<const WarpMarker> markers)
 
 void SampleClip::clearWarpMarkers()
 {
-	if (m_warp.empty()) { return; }
-	m_warp.clear();
+	if (passWarp().empty()) { return; }
+	publishWarp(WarpMarkers{});
 	Engine::getSong()->setModified();
 	emit sampleChanged();
 }
@@ -909,7 +927,7 @@ f_cnt_t SampleClip::sourceFrameAt(TimePos timelinePos) const
 	const auto originTicks = startPosition().getTicks() + startTimeOffset().getTicks();
 	const auto relativeTicks = timelinePos.getTicks() - originTicks;
 
-	if (m_warp.empty())
+	if (passWarp().empty())
 	{
 		const auto elapsed = relativeTicks > 0
 			? TimePos(relativeTicks).frames(framesPerTick)
@@ -920,7 +938,7 @@ f_cnt_t SampleClip::sourceFrameAt(TimePos timelinePos) const
 		return std::clamp(m_window.sourceIn + relative, m_window.sourceIn, m_window.sourceOut);
 	}
 
-	return m_warp.sourceFrameAt(relativeTicks, m_window.sourceIn, m_window.sourceOut, framesPerTick);
+	return passWarp().sourceFrameAt(relativeTicks, m_window.sourceIn, m_window.sourceOut, framesPerTick);
 }
 
 
@@ -976,13 +994,13 @@ TimePos SampleClip::timelinePosAt(f_cnt_t sourceFrame) const
 	// window's edge - the same rule the rest of the clip model reads the direction by.
 	const auto frame = playFrameFor(sourceFrame);
 
-	if (m_warp.empty())
+	if (passWarp().empty())
 	{
 		return TimePos(originTicks
 			+ static_cast<int>(TimePos::fromFrames(frame - m_window.sourceIn + leadFrames(), framesPerTick)));
 	}
 
-	return TimePos(originTicks + m_warp.timelineOffsetAt(frame, m_window.sourceIn, framesPerTick));
+	return TimePos(originTicks + passWarp().timelineOffsetAt(frame, m_window.sourceIn, framesPerTick));
 }
 
 

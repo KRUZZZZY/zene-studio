@@ -316,6 +316,7 @@ SET(LMMS_SRCS
 	gui/clips/MidiClipView.cpp
 	gui/clips/PatternClipView.cpp
 	gui/clips/SampleClipOverlays.cpp
+	gui/clips/SampleClipWarpEdit.cpp
 	gui/clips/SampleClipView.cpp
 
 	gui/editors/AutomationEditor.cpp

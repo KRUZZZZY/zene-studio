@@ -162,7 +162,7 @@ public:
 	float clipFramesPerTick() const;
 
 	//! The clip's warp map. Empty means "no warp": the linear map is the answer.
-	const WarpMarkers& warpMarkers() const { return m_warp; }
+	const WarpMarkers& warpMarkers() const { return passWarp(); }
 
 	/*! Authors the marker set (control thread). Returns false — leaving the
 	 *  previous set intact — for a set that is not strictly increasing in both
@@ -232,7 +232,7 @@ public:
 	 *  keep the historical length arithmetic bit for bit. */
 	bool rendersLinearly() const
 	{
-		return m_warp.empty() && m_tempoMode == WarpTempoMode::FollowProject;
+		return passWarp().empty() && m_tempoMode == WarpTempoMode::FollowProject;
 	}
 
 	void setStartTimeOffset(const TimePos& startTimeOffset) override;
@@ -251,7 +251,8 @@ public:
 	f_cnt_t leadFrames() const { return m_leadFrames.load(std::memory_order_relaxed); }
 	void setLeadFrames(f_cnt_t frames);
 	/*! The OUTPUT frames of silence still owed before the audio starts when a pass begins at @a at - what
-	 *  SampleTrack adds to the play handle's offset. 0 without a lead, or once the lead has passed. */
+	 *  SampleTrack adds to the play handle's offset. 0 without a lead, or once the lead has passed. A warped
+	 *  clip owes the silence before its map reaches the window's start (Q050-063: the first marker moved later). */
 	f_cnt_t leadOutputFramesAt(TimePos at) const;
 
 	gui::ClipView * createView( gui::TrackView * _tv ) override;
