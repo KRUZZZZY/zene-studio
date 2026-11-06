@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-11-05T13:22:06Z",
+  "captured_at": "2026-11-06T14:56:55Z",
   "commands": [
     {
       "args_schema": {
@@ -14343,7 +14343,63 @@
               "discrete-5",
               "discrete-6",
               "discrete-7",
-              "discrete-8"
+              "discrete-8",
+              "discrete-9",
+              "discrete-10",
+              "discrete-11",
+              "discrete-12",
+              "discrete-13",
+              "discrete-14",
+              "discrete-15",
+              "discrete-16",
+              "discrete-17",
+              "discrete-18",
+              "discrete-19",
+              "discrete-20",
+              "discrete-21",
+              "discrete-22",
+              "discrete-23",
+              "discrete-24",
+              "discrete-25",
+              "discrete-26",
+              "discrete-27",
+              "discrete-28",
+              "discrete-29",
+              "discrete-30",
+              "discrete-31",
+              "discrete-32",
+              "discrete-33",
+              "discrete-34",
+              "discrete-35",
+              "discrete-36",
+              "discrete-37",
+              "discrete-38",
+              "discrete-39",
+              "discrete-40",
+              "discrete-41",
+              "discrete-42",
+              "discrete-43",
+              "discrete-44",
+              "discrete-45",
+              "discrete-46",
+              "discrete-47",
+              "discrete-48",
+              "discrete-49",
+              "discrete-50",
+              "discrete-51",
+              "discrete-52",
+              "discrete-53",
+              "discrete-54",
+              "discrete-55",
+              "discrete-56",
+              "discrete-57",
+              "discrete-58",
+              "discrete-59",
+              "discrete-60",
+              "discrete-61",
+              "discrete-62",
+              "discrete-63",
+              "discrete-64"
             ],
             "type": "string"
           }
@@ -14354,7 +14410,7 @@
         ],
         "type": "object"
       },
-      "description": "Set a channel's speaker format: 'stereo' (the default), 'lcr', 'quad', '5.1', '7.1' (WAVE channel order: L R C LFE Ls Rs; 7.1 L R C LFE Lrs Rrs Ls Rs), 'mono' (one M role), or a role-less discrete layout 'discrete-2' .. 'discrete-8'. A surround channel keeps its speakers beyond L/R next to its stereo signal: its devices process L/R only, the other speakers pass with its trim, VCA gain, pan (a balance on each left/right pair), fader and mute. Into a stereo channel - the master, usually - a named layout is downmixed (mixer.downmix_options), while a discrete channel i goes to output i with no speaker folding or reordering. Its hardware output names its first output and it takes as many as it has channels, or the stereo downmix where the device lacks them. mixer.get_state names the format, its channel count and the channel roles (empty speakers, indices 1..N, for discrete). Saved with the project - the count is part of the format name; one undo step.",
+      "description": "Set a channel's speaker format: 'stereo' (the default), 'lcr', 'quad', '5.1', '7.1' (WAVE channel order: L R C LFE Ls Rs; 7.1 L R C LFE Lrs Rrs Ls Rs), 'mono' (one M role), or a role-less discrete layout 'discrete-2' .. 'discrete-64'. A surround channel keeps its speakers beyond L/R next to its stereo signal: its devices process L/R only, the other speakers pass with its trim, VCA gain, pan (a balance on each left/right pair), fader and mute. Into a stereo channel - the master, usually - a named layout is downmixed (mixer.downmix_options), while a discrete channel i goes to channel or output i with no speaker folding or reordering (a receiver with fewer channels drops the rest). Its hardware output names its first output and it takes as many as it has channels, or the stereo downmix where the device lacks them. mixer.get_state names the format, its channel count and the channel roles (empty speakers, indices 1..N, for discrete). Saved with the project - the count is part of the format name; one undo step.",
       "group": "mixer",
       "id": "mixer.channel_format",
       "mutating": true,
@@ -16932,6 +16988,16 @@
             "minimum": 0,
             "type": "integer"
           },
+          "recur_length": {
+            "maximum": 16,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "recur_mask": {
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
           "slide": {
             "type": "boolean"
           },
@@ -17584,6 +17650,97 @@
           "clip": {
             "type": "string"
           },
+          "contour": {
+            "enum": [
+              "walk",
+              "rise",
+              "fall",
+              "arch",
+              "valley"
+            ],
+            "type": "string"
+          },
+          "count": {
+            "maximum": 256,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "high": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "length": {
+            "maximum": 3072,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "low": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scope": {
+            "enum": [
+              "clip",
+              "selection"
+            ],
+            "type": "string"
+          },
+          "seed": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "spread": {
+            "maximum": 12,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "start": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "step": {
+            "maximum": 3072,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "target": {
+            "enum": [
+              "new",
+              "existing"
+            ],
+            "type": "string"
+          },
+          "velocity": {
+            "maximum": 200,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "Generate a melodic line in the active scale (scale.set; custom scales too): every key is one of the scale's keys in 'low'..'high' (48..72 when left out). 'contour' walk (a random walk, steps of 1..'spread' degrees), rise, fall, arch or valley (the shape, moved up to 'spread' degrees either way; 2 when left out, 0 = the bare shape). 'target' new writes 'count' notes (16) 'step' ticks (24) apart from 'start', 'length' ticks long, at 'velocity'; existing re-pitches the notes in 'scope' and keeps their rhythm. The same 'seed' (the project's seed when left out) and the same clip give the same notes. Refused when no scale is set. One undo step.",
+      "group": "note",
+      "id": "note.generate_melody",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
           "scope": {
             "enum": [
               "clip",
@@ -17931,6 +18088,16 @@
           },
           "probability": {
             "type": "number"
+          },
+          "recur_length": {
+            "maximum": 16,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "recur_mask": {
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
           },
           "slide": {
             "type": "boolean"
@@ -18293,6 +18460,16 @@
           "position": {
             "type": "number"
           },
+          "recur_length": {
+            "maximum": 16,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "recur_mask": {
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
           "slide": {
             "type": "boolean"
           },
@@ -18621,6 +18798,16 @@
           },
           "position": {
             "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "recur_length": {
+            "maximum": 16,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "recur_mask": {
+            "maximum": 65535,
             "minimum": 0,
             "type": "integer"
           },
@@ -19133,6 +19320,16 @@
           },
           "position": {
             "type": "number"
+          },
+          "recur_length": {
+            "maximum": 16,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "recur_mask": {
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
           },
           "slide": {
             "type": "boolean"
@@ -32171,7 +32368,8 @@
               "pattern",
               "sample",
               "automation",
-              "folder"
+              "folder",
+              "neutral"
             ],
             "type": "string"
           }
@@ -32179,7 +32377,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Append a track of the given type (default instrument) and return its stable trk-<n> id. An instrument or sample track can name its destination: `output` is a ch-<n> id (mixer.get_state lists them; a parallel bus takes no track input and is refused). Without `output`, the preference app/autotrackchannel (settings.set, \"1\" on) gives the track its own mixer channel, named after it and kept in step when either is renamed; off, the track plays into the master as before. `instrument` loads that plug-in. Undo removes the track and any channel made for it; redo recreates both, the track with a fresh stable trk-<n> id.",
+      "description": "Append a track of the given type (default instrument; 'neutral' is a row that holds no clips and is given an audio input or an instrument later) and return its stable trk-<n> id. An instrument or sample track can name its destination: `output` is a ch-<n> id (mixer.get_state lists them; a parallel bus takes no track input and is refused). Without `output`, the preference app/autotrackchannel (settings.set, \"1\" on) gives the track its own mixer channel, named after it and kept in step when either is renamed; off, the track plays into the master as before. `instrument` loads that plug-in. Undo removes the track and any channel made for it; redo recreates both, the track with a fresh stable trk-<n> id.",
       "group": "track",
       "id": "track.add",
       "mutating": true,
@@ -37960,6 +38158,9 @@
             ],
             "type": "string"
           },
+          "follow_selection": {
+            "type": "boolean"
+          },
           "meter_falloff": {
             "enum": [
               "fast",
@@ -38040,7 +38241,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "The mixer view's modes, set and answered: 'sends_on_faders' (a ch-<n> return, or empty for the channel faders) makes every channel's fader drive its send to that return - a banner across the mixer names it, every fader is labelled with what it drives, and a channel with no send there keeps a dimmed, still 'No send' fader in place; the answer adds 'sends_on_faders_name' (the return's name) and 'faders' (per channel, what its fader drives: volume, send or no_send - the return's own fader and the master's stay volume); 'folded' answers the channel strips a collapsed folder hides (track.folder_set_collapsed folds). MX-005: 'selected_channels' (ch-<n> ids, never the master) are the channels the 'selected' filter shows - interface state, never saved, forgotten when the mixer is cleared for another project; a Ctrl+click on a strip adds or removes its channel, and the mode bar's 'Pick...' chooses them; the answer lists them in mixer order. The view options, kept in the config file (ui/mixerview): 'show_sends', 'show_pan', 'show_number', 'show_meter_info', 'show_inserts', 'show_macros' (a strip's sections - the meter line is the gain reduction and the clip light, the inserts are listed by name, the macros are the rack's first four as knobs), 'show_console' (Q050-088: the Console section - knobs and switches for the channel's trim, polarity, EQ and its Console's drive and glue compressor, each running mixer.console_strip; off by default, hidden in the routing view and the compact density), 'strip_width' (narrow / normal / wide), 'filter' (all / instruments / audio / returns / used - the channels a track plays into or a send reaches -, selected), 'meter_mode' (peak - after the fader -, rms, pre_fader) and 'meter_scale' (db42 - the default range -, db60, db24, linear); MX-128, the meters' ballistics: 'meter_falloff' (fast - the default, about 116 dB/s -, medium - about 26 dB/s -, slow - about 12 dB/s, a peak programme meter's fall) and 'peak_hold' (how long the peak line holds: off, 1.5s - the default -, 3s, 6s). Theme 16: 'view' (mix - levels, pan and processing, the default -, routing - each strip lists where its signal comes from and goes by name, the sends row always shown, inserts and macros left to the mix view) and 'density' (expanded - the default, every section the options show -, compact - no inserts, no macros, in the mix view no sends row, routing on one line); a mode bar across the mixer shows and sets both, the filter and the modes. The answer adds 'strips': per channel its 'type' (master, return, group, track, channel), 'format' (stereo, LCR, Quad, 5.1, 7.1), 'inputs' and 'outputs' (by name; each output with amount, pre_fader, enabled), 'hardware' (its hardware output's label, empty for none) and 'states' (afl, pfl, solo_safe, surround_pan, cue, hardware_insert). Interface state: nothing is journalled.",
+      "description": "The mixer view's modes, set and answered: 'sends_on_faders' (a ch-<n> return, or empty for the channel faders) makes every channel's fader drive its send to that return - a banner across the mixer names it, every fader is labelled with what it drives, and a channel with no send there keeps a dimmed, still 'No send' fader in place; the answer adds 'sends_on_faders_name' (the return's name) and 'faders' (per channel, what its fader drives: volume, send or no_send - the return's own fader and the master's stay volume); 'folded' answers the channel strips a collapsed folder hides (track.folder_set_collapsed folds). MX-005: 'selected_channels' (ch-<n> ids, never the master) are the channels the 'selected' filter shows - interface state, never saved, forgotten when the mixer is cleared for another project; a Ctrl+click on a strip adds or removes its channel, and the mode bar's 'Pick...' chooses them; the answer lists them in mixer order. MX-021: 'follow_selection' makes the 'selected' filter show the focused arranger track's (or clip owner's) mixer channel instead, keeping the manual set for when it is turned off; it is saved in the config file (ui/followchannel, off when absent), and the answer adds it with 'visible_channels' (the channels the filter shows now, master included). The view options, kept in the config file (ui/mixerview): 'show_sends', 'show_pan', 'show_number', 'show_meter_info', 'show_inserts', 'show_macros' (a strip's sections - the meter line is the gain reduction and the clip light, the inserts are listed by name, the macros are the rack's first four as knobs), 'show_console' (Q050-088: the Console section - knobs and switches for the channel's trim, polarity, EQ and its Console's drive and glue compressor, each running mixer.console_strip; off by default, hidden in the routing view and the compact density), 'strip_width' (narrow / normal / wide), 'filter' (all / instruments / audio / returns / used - the channels a track plays into or a send reaches -, selected), 'meter_mode' (peak - after the fader -, rms, pre_fader) and 'meter_scale' (db42 - the default range -, db60, db24, linear); MX-128, the meters' ballistics: 'meter_falloff' (fast - the default, about 116 dB/s -, medium - about 26 dB/s -, slow - about 12 dB/s, a peak programme meter's fall) and 'peak_hold' (how long the peak line holds: off, 1.5s - the default -, 3s, 6s). Theme 16: 'view' (mix - levels, pan and processing, the default -, routing - each strip lists where its signal comes from and goes by name, the sends row always shown, inserts and macros left to the mix view) and 'density' (expanded - the default, every section the options show -, compact - no inserts, no macros, in the mix view no sends row, routing on one line); a mode bar across the mixer shows and sets both, the filter and the modes. The answer adds 'strips': per channel its 'type' (master, return, group, track, channel), 'format' (stereo, LCR, Quad, 5.1, 7.1), 'inputs' and 'outputs' (by name; each output with amount, pre_fader, enabled), 'hardware' (its hardware output's label, empty for none) and 'states' (afl, pfl, solo_safe, surround_pan, cue, hardware_insert). Interface state: nothing is journalled.",
       "group": "window",
       "id": "window.mixer_view",
       "mutating": false,
@@ -38071,6 +38272,9 @@
           },
           "folded": {
             "type": "array"
+          },
+          "follow_selection": {
+            "type": "boolean"
           },
           "meter_falloff": {
             "enum": [
@@ -38153,6 +38357,54 @@
               "routing"
             ],
             "type": "string"
+          },
+          "visible_channels": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "dock": {
+            "type": "string"
+          },
+          "live": {
+            "type": "boolean"
+          },
+          "reset": {
+            "type": "boolean"
+          },
+          "sizes": {
+            "type": "object"
+          },
+          "zones": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Q050-227.1: where the mixer's regions are docked and how wide their separators leave them, set and answered. The regions are 'master' (the master strip), 'channels' (the scrolling channel area), 'vca' (the VCA strips) and 'rack' (the effect rack). 'channels' is always 'middle'; 'master', 'vca' and 'rack' dock 'left' or 'right' of it. 'dock' takes one side region, either alone (put it on the other side) or as '<region>=<left|right>', and 'zones' takes the whole arrangement as an object ({region: dock}). 'sizes' sets a region's width in pixels (24..4000); dragging a separator in the interface sends the same 'sizes' back through this very command, with 'live': true, so the interface's own resize and an agent's are one path ('live' takes only 'sizes' and never re-lays the splitter, which is what makes it safe mid-gesture). 'reset' puts the default arrangement back: master left, channels middle, VCA and rack right. The answer is what the mixer shows now: 'zones' and 'sizes' (the portable arrangement), and 'mixer_zones', the one object window.layout_project_save keeps inside the project's window layout, so saving that layout and reopening the project brings the arrangement and the widths back. Projects and layouts saved before this feature carry no 'mixer_zones' and open with the default arrangement. Interface state, kept with the layout: this command writes no project data of its own and records no undo step (the layout save is the step).",
+      "group": "window",
+      "id": "window.mixer_zones",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "mixer_zones": {
+            "type": "object"
+          },
+          "sizes": {
+            "type": "object"
+          },
+          "zones": {
+            "type": "object"
           }
         },
         "required": [],
@@ -39299,23 +39551,23 @@
       }
     }
   ],
-  "count": 922,
+  "count": 924,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-integrate-Q050-501-081630835b/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-71nxjnib/zene.sock",
-    "version": "0.4.0-alpha.6170+0816308"
+    "source_socket": "/tmp/zctl-run-an6tkf3w/zene.sock",
+    "version": "0.4.0-alpha.6311+c4eb4b6"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 78,
-    "id_count": 922,
-    "ids_sha256": "68322bf9d179149c18b6b381011314b22e6755b6bebc9c7169cf01747eb6fe1f"
+    "id_count": 924,
+    "ids_sha256": "fac3b27d98cbc91933c63f6608d20739a9d2d1000608af46ee5823a0c47077e1"
   }
 }
