@@ -5719,3 +5719,5 @@ src/gui/modals/SetupDialog.cpp	Q050-501: Settings > General > Updates, two check
 include/SetupDialog.h	Q050-501: declares the two Updates check boxes for Settings > General.
 data/manual/index.html	Q050-501: the Access section's help paragraphs describe the update check, exactly what it sends, and that installation stays manual.
 docs/KNOWN-LIMITATIONS.md	Q050-501: the update check's limits, exactly what is sent, and that installation stays manual.
+src/gui/tracks/TrackGrip.cpp	Q050-442: the movement handle is drawn from tokens::palette().text as pixel-aligned dots instead of a fixed 6 x 25 bitmap scaled down from a 24 px glyph (whose dots reached the row at a fraction of the role's opacity); it therefore follows the high-contrast palette and a theme's 'text' override from the next start, and its rendered contrast is audited at 3:1 in the standard and high-contrast palettes; held by tests/src/gui/TrackGripContrastTest.cpp.
+include/TrackGrip.h	Q050-442: the grip no longer holds the two static QPixmap pointers (the artwork they cached is gone), so the class draws from the palette and the class declaration no longer forward-declares QPixmap.

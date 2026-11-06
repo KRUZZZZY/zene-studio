@@ -1403,6 +1403,9 @@ set(LMMS_TESTS
 	src/gui/TelemetryConsentDialogTest.cpp
 	src/gui/AafImportMenuTest.cpp
 	src/gui/TrackIconsLevelBarTest.cpp
+	# Q050-442: the track movement handle is drawn from the palette, meets 3:1 in the standard and
+	# high-contrast palettes, and a changed foreground role reaches it on the next start.
+	src/gui/TrackGripContrastTest.cpp
 	# M0 coverage: the arranger's clip keys and the navigator strip.
 	src/gui/ArrangerKeysNavigatorTest.cpp
 	# M0 coverage: the audio waveform drawn behind a MIDI clip's notes.
@@ -3777,7 +3780,7 @@ if(ZENE_UPDATE_CHECK_ENABLED)
 	set_tests_properties(UpdateCheckWindowsTest UpdateCheckHiddenTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
 set_tests_properties(ReferenceProjectPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-set_tests_properties(TelemetryConsentDialogTest AafImportMenuTest TrackIconsLevelBarTest ArrangerKeysNavigatorTest NoteBackgroundAudioTest ArrangerOverlaysVideoLaneTest VideoClipsGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(TelemetryConsentDialogTest AafImportMenuTest TrackIconsLevelBarTest TrackGripContrastTest ArrangerKeysNavigatorTest NoteBackgroundAudioTest ArrangerOverlaysVideoLaneTest VideoClipsGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(NoteTransformActionsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MpeInputActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TempoMapPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
