@@ -1119,6 +1119,8 @@ config lists back) and one `not_mutating` (`session.command_bindings`, a read) -
 
 **M0 merge train 25** (`050/m0-train-25`, 2026-11-05, automatic): `ReversibilityContractTest` on the merged tree measures `rows=926 true_inverse=457 snapshot=42 irreversible=25 not_mutating=402`.
 
+**Q050-221.1** (seeded melodic contours, 2026-11-05): `note.generate_melody` adds one `true_inverse` row (a MidiClip journal checkpoint, as `note.generate`) - `rows=888 true_inverse=435 snapshot=42 irreversible=25 not_mutating=386`.
+
 <!-- A16-HISTOGRAM-BEGIN
      measured: rows=926 true_inverse=457 snapshot=42 irreversible=25 not_mutating=402
      configuration: telemetry.status wasm.load session.get_state stem.get_state
