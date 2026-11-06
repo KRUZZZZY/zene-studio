@@ -153,6 +153,15 @@ IF(ZENE_TELEMETRY)
 	SET(ZENE_TELEMETRY_ENABLED 1)
 ENDIF()
 
+# Update check (Q050-501): off at run time until the user says yes. A packager whose
+# builds are updated by something else sets -DZENE_UPDATE_CHECK=OFF: the checker, its
+# commands and its menu entry are then not compiled at all (a Flatpak or Snap copy
+# hides them at run time instead). Independent of ZENE_TELEMETRY.
+option(ZENE_UPDATE_CHECK "Compile the opt-in check for a newer release (OFF for builds updated by something else)" ON)
+IF(ZENE_UPDATE_CHECK)
+	SET(ZENE_UPDATE_CHECK_ENABLED 1)
+ENDIF()
+
 # Peer-to-peer collaboration and remote control (WF-050/WF-052, 0.5.0 F6): no server, TLS-PSK over
 # Qt Network, off at runtime until collab.host / collab.join. OFF compiles the transport out; the
 # collab.* ids still register and refuse 'unavailable'.
@@ -399,6 +408,11 @@ IF(ZENE_TELEMETRY_ENABLED)
 	# The telemetry transport is the only other Qt Network user. With the kill
 	# switch off this package is not required and no networking code from the
 	# telemetry client is compiled.
+	FIND_PACKAGE(Qt${QT_VERSION_MAJOR} COMPONENTS Network REQUIRED)
+	LIST(APPEND QT_LIBRARIES Qt${QT_VERSION_MAJOR}::Network)
+ENDIF()
+
+IF(ZENE_UPDATE_CHECK_ENABLED)
 	FIND_PACKAGE(Qt${QT_VERSION_MAJOR} COMPONENTS Network REQUIRED)
 	LIST(APPEND QT_LIBRARIES Qt${QT_VERSION_MAJOR}::Network)
 ENDIF()

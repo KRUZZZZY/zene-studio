@@ -11,6 +11,7 @@
 				"Themes: a light palette beside dark and high contrast, your own colours (Customise > Theme), and a roomier or touch-sized layout density.",
 				"The Window menu: a track manager, a large clock, a tuner, memory locations, saved selections, keep-on-top and window tidying.",
 				"Help > Ask: type a question and get the manual sections and commands that answer it - offline.",
+				"Help > Check for Updates: with your consent, Zene tells you when a newer version exists and takes you to its download page. Nothing is downloaded or installed for you.",
 				"Settings presets, search and backup (Customise > Settings).",
 				"Every action is a named command an agent, a Lua script or a controller can run too, and every edit can be undone."
 			]

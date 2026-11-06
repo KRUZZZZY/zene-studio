@@ -89,6 +89,11 @@ ENDIF()
 # The telemetry.* command group is the client's agent surface, so it travels with
 # the client (SPEC A15). Kept in its own variable so the big source list below
 # keeps the position it has always had.
+# Q050-501: the update check, with its own packager switch (not telemetry's).
+SET(LMMS_UPDATE_CHECK_SRCS)
+IF(ZENE_UPDATE_CHECK_ENABLED)
+	LIST(APPEND LMMS_UPDATE_CHECK_SRCS core/UpdateCheck.cpp core/ControlCommandsUpdateCheck.cpp)
+ENDIF()
 SET(LMMS_TELEMETRY_COMMAND_SRCS)
 IF(ZENE_TELEMETRY_ENABLED)
 	LIST(APPEND LMMS_TELEMETRY_COMMAND_SRCS core/ControlCommandsTelemetry.cpp)
@@ -536,6 +541,7 @@ set(LMMS_SRCS
 	# ControlCommandsArrangement.cpp is at the file-length ratchet.
 	core/ControlCommandsStructure.cpp
 	${LMMS_TELEMETRY_COMMAND_SRCS}
+	${LMMS_UPDATE_CHECK_SRCS}
 	core/ControlCommandsTransport.cpp
 	core/ControlCommandsTrackChannel.cpp
 	core/ControlCommandsTrackRouting.cpp

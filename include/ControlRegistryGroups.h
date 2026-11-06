@@ -936,6 +936,10 @@ LMMS_EXPORT void registerTrackLookCommands(ControlRegistry& registry);
 //! notes are on screen: this version's notes count as shown.
 LMMS_EXPORT void registerAssistantCommands(ControlRegistry& registry);
 LMMS_EXPORT void markWhatsNewSeen();
+//! Q050-501: app.update_check_get / _set / _run and window.update_check / update_download_page. Defined and registered
+//! only with ZENE_UPDATE_CHECK_ENABLED, and registering nothing where something else updates the program.
+LMMS_EXPORT void registerUpdateCheckCommands(ControlRegistry& registry);
+LMMS_EXPORT void registerUpdateCheckWindowCommands(ControlRegistry& registry);
 //! window.stay_on_top / tidy / large_clock / tuner / ask / whats_new / focus_panel / accessibility_report and
 //! view.crosshair (src/gui/ControlCommandsWorkspace.cpp).
 LMMS_EXPORT void registerWorkspaceCommands(ControlRegistry& registry);

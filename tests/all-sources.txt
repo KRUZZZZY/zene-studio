@@ -954,6 +954,8 @@ include/UnattendedRun.h
 include/UnclaimedElements.h
 include/UndoHistory.h
 include/UndoHistoryPanel.h
+include/UpdateCheck.h
+include/UpdateCheckWindows.h
 include/ValueBuffer.h
 include/VcaGroup.h
 include/VcaStripView.h
@@ -1859,6 +1861,7 @@ src/core/ControlCommandsTransportMap.cpp
 src/core/ControlCommandsTuner.cpp
 src/core/ControlCommandsUndo.cpp
 src/core/ControlCommandsUndoHistory.cpp
+src/core/ControlCommandsUpdateCheck.cpp
 src/core/ControlCommandsVca.cpp
 src/core/ControlCommandsVcaEdit.cpp
 src/core/ControlCommandsVcaEditMore.cpp
@@ -2281,6 +2284,7 @@ src/core/TunerTap.cpp
 src/core/UnattendedRun.cpp
 src/core/UnclaimedElements.cpp
 src/core/UndoHistory.cpp
+src/core/UpdateCheck.cpp
 src/core/UpgradeExtendedNoteRange.cpp
 src/core/UpgradeExtendedNoteRange.h
 src/core/ValueBuffer.cpp
@@ -2538,6 +2542,7 @@ src/gui/TrackPinStrip.cpp
 src/gui/TrackRenderMenu.cpp
 src/gui/UiConfigStore.cpp
 src/gui/UndoHistoryPanel.cpp
+src/gui/UpdateCheckWindows.cpp
 src/gui/ValueAnnouncementState.h
 src/gui/VcaStripView.cpp
 src/gui/VideoLane.cpp
@@ -3202,6 +3207,8 @@ tests/src/core/UndoHistoryTestSupport.h
 tests/src/core/UndoHonestyStateTest.cpp
 tests/src/core/UndoHonestyTest.cpp
 tests/src/core/UnmuteChaseTest.cpp
+tests/src/core/UpdateCheckTest.cpp
+tests/src/core/UpdateFeedFixture.h
 tests/src/core/UpgradeExtendedNoteRangeTest.cpp
 tests/src/core/UpnpMapperFakeRouterTest.cpp
 tests/src/core/VcaGroupTest.cpp
@@ -3400,6 +3407,8 @@ tests/src/gui/TrackRenderMenuTest.cpp
 tests/src/gui/TrackRouteDropTest.cpp
 tests/src/gui/TrackViewDeferredLifetimeTest.cpp
 tests/src/gui/UndoHistoryPanelTest.cpp
+tests/src/gui/UpdateCheckHiddenTest.cpp
+tests/src/gui/UpdateCheckWindowsTest.cpp
 tests/src/gui/VcaStripLifetimeTest.cpp
 tests/src/gui/VcaStripViewTest.cpp
 tests/src/gui/VersionedSaveDialogTest.cpp

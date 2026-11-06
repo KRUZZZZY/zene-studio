@@ -1093,6 +1093,8 @@ config lists back) and one `not_mutating` (`session.command_bindings`, a read) -
 
 **The L15 control-surface batch** (`feat/050-Q050-161-oc`: Q050-205 OSC server, Q050-081 controller scripts, 2026-10-28) adds six `not_mutating` rows - `osc.start`, `osc.stop`, `osc.get_state` and `controller.script_start`, `controller.script_stop`, `controller.script_state` (device state, the `surface.mcu_connect` precedent; what they run records as itself) - `rows=886 true_inverse=434 snapshot=42 irreversible=25 not_mutating=385`.
 
+**The update check** (`feat/050-Q050-501-oc`, 2026-10-30) adds five rows, one `true_inverse` (`app.update_check_set`) and four `not_mutating` (`app.update_check_get`, `app.update_check_run`, `window.update_check`, `window.update_download_page`), and they leave with `-DZENE_UPDATE_CHECK=OFF`: `rows=892 true_inverse=435 snapshot=42 irreversible=25 not_mutating=390`.
+
 **M0 merge train 22** (`050/m0-train-22`, 2026-10-28, automatic): `ReversibilityContractTest` on the merged tree measures `rows=887 true_inverse=434 snapshot=42 irreversible=25 not_mutating=386`.
 
 **Q050-093** (loop import tempo and key, integrated onto `050/m0-train-22`, 2026-10-30): `clip.source_get_state` adds one `not_mutating` row - `rows=888 true_inverse=434 snapshot=42 irreversible=25 not_mutating=387`.
@@ -1122,12 +1124,13 @@ config lists back) and one `not_mutating` (`session.command_bindings`, a read) -
 **Q050-221.1** (seeded melodic contours, 2026-11-05): `note.generate_melody` adds one `true_inverse` row (a MidiClip journal checkpoint, as `note.generate`) - `rows=888 true_inverse=435 snapshot=42 irreversible=25 not_mutating=386`.
 
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=926 true_inverse=457 snapshot=42 irreversible=25 not_mutating=402
-     configuration: telemetry.status wasm.load session.get_state stem.get_state
+     measured: rows=931 true_inverse=458 snapshot=42 irreversible=25 not_mutating=406
+     configuration: telemetry.status wasm.load session.get_state stem.get_state app.update_check_get
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5
      option session.get_state rows=18 true_inverse=7 not_mutating=11
      option stem.get_state rows=8 true_inverse=1 not_mutating=7
+     option app.update_check_get rows=5 true_inverse=1 not_mutating=4
      A16-HISTOGRAM-END -->
 
 **The figure checks itself (board card #677).** It used to be a constant in
