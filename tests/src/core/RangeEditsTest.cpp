@@ -82,8 +82,15 @@ private slots:
 		Engine::destroy();
 	}
 
+	//! The arranger's modes go back after every case, a failing one included.
+	void cleanup()
+	{
+		arrangement::setModes(m_modes);
+	}
+
 	void init()
 	{
+		m_modes = arrangement::modes();
 		Engine::getSong()->clearProject();
 		m_track = Track::create(Track::Type::Instrument, Engine::getSong());
 		Clip* clip = m_track->createClip(TimePos(0));
@@ -110,6 +117,24 @@ private slots:
 		QCOMPARE(spans(m_track), (QList<QPair<int, int>>{{0, Bar}, {Bar, 2 * Bar}}));
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(spans(m_track), (QList<QPair<int, int>>{{0, 3 * Bar}}));
+	}
+
+	//! Review: a range whose track is removed covers no track any more (its stored id matches none).
+	//! With ripple 'all' its delete used to shift every other track left although it cut nothing.
+	void rippleAllOverANoTrackRangeShiftsNothing()
+	{
+		Track* other = Track::create(Track::Type::Instrument, Engine::getSong());
+		Clip* clip = other->createClip(TimePos(3 * Bar));
+		clip->changeLength(TimePos(Bar));
+		clip->setAutoResize(false);
+		arrangement::Modes ripple = arrangement::modes();
+		ripple.ripple = arrangement::Ripple::All;
+		arrangement::setModes(ripple);
+		QVERIFY(run(QStringLiteral("track.remove"), {{QStringLiteral("track"), control::trackIdOf(m_track)}}).ok);
+		const ControlResult deleted = run(QStringLiteral("range.delete"));
+		QVERIFY2(deleted.ok, qPrintable(deleted.errorMessage));
+		QCOMPARE(deleted.result.value(QStringLiteral("removed")).toInt(), 0);
+		QCOMPARE(spans(other), (QList<QPair<int, int>>{{3 * Bar, 4 * Bar}}));
 	}
 
 	void cropAndInsertTime()
@@ -286,6 +311,7 @@ private slots:
 
 private:
 	Track* m_track = nullptr;
+	arrangement::Modes m_modes;
 };
 
 QTEST_MAIN(RangeEditsTest)
