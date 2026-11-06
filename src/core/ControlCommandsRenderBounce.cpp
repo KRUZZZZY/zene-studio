@@ -188,6 +188,11 @@ QJsonObject applyFreeze(const std::shared_ptr<BounceContext>& context,
 	const QString path = rendered.path;
 	const tick_t start = context->wholeTrack ? 0 : context->range.start;
 	const tick_t end = rendered.range.end;
+	if (!context->wholeTrack && !Track::isValidRegionWindow(start, end))
+	{
+		*error = QStringLiteral("the rendered region does not end past its start; no edit was applied");
+		return {};
+	}
 	// One Track checkpoint BEFORE the cuts and the freeze, exactly as freeze.region does: one control.undo
 	// puts back the pre-cut arrangement and takes the freeze off (a redo re-freezes), in a single journal step.
 	source->addJournalCheckPoint();

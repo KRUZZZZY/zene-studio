@@ -1318,6 +1318,11 @@ bar_t Track::length() const
 bool Track::freezeTo(const QString& path, tick_t startTicks, tick_t endTicks,
 		const std::vector<FrozenTake::MutedClip>& mutedClips, QString* error, bool region)
 {
+	if (region && !isValidRegionWindow(startTicks, endTicks))
+	{
+		if (error != nullptr) { *error = QStringLiteral("a region must end past its start"); }
+		return false;
+	}
 	if (path.isEmpty())
 	{
 		if (error != nullptr) { *error = QStringLiteral("the take names no audio file"); }
@@ -1421,6 +1426,13 @@ void Track::loadFrozenTake(const QDomElement& element)
 	m_frozen.region = element.hasAttribute(QStringLiteral("frozenRegion"))
 		? element.attribute(QStringLiteral("frozenRegion")).toInt() != 0
 		: (m_frozen.startTicks > 0 || !m_frozen.mutedClips.empty());
+	if (m_frozen.region && !isValidRegionWindow(m_frozen.startTicks, m_frozen.endTicks))
+	{
+		// A region that ends before it starts is refused like an unparseable tick: the track keeps its own
+		// clips, and loadTrack() releases the clips this rejected take muted.
+		m_frozen = FrozenTake{};
+		return;
+	}
 
 	// The clips the file carries are already muted (the freeze saved them that
 	// way), so the record is NOT replayed here: a load must not write to the

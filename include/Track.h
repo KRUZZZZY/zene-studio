@@ -271,6 +271,10 @@ public:
 	 *  file cannot be opened - in which case nothing is changed. */
 	bool freezeTo(const QString& path, tick_t startTicks, tick_t endTicks,
 			const std::vector<FrozenTake::MutedClip>& mutedClips, QString* error, bool region = false);
+	/*! A region take covers [startTicks, endTicks) and must end past its start: an inverted or empty window
+	 *  has no end boundary, so the source would stay silent from its start onward. freezeTo() refuses one,
+	 *  and so does the project load; the freeze verbs check it before they cut any clip. */
+	static bool isValidRegionWindow(tick_t startTicks, tick_t endTicks) noexcept { return endTicks > startTicks; }
 	//! Test seam called after any load work and immediately before the frozen-take render lock.
 #ifdef LMMS_TESTING
 	static void setFrozenTakeLockProbeForTest(void (*probe)());

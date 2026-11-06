@@ -157,6 +157,19 @@ ControlResult bounceInPlace(const QJsonObject& args)
 // freeze.track / freeze.region
 // ---------------------------------------------------------------------------
 
+//! Why a freeze verb refuses the render, or empty when it may install the take. A region whose rendered
+//! window does not end past its start is refused here, before the checkpoint and the cuts (Track::freezeTo
+//! would refuse it too, but only after the cuts had been made).
+QString renderRefusal(const BounceInPlace::Result& rendered, const BounceInPlace::Range& range, bool wholeTrack)
+{
+	if (!rendered.ok) { return rendered.error; }
+	if (!wholeTrack && !Track::isValidRegionWindow(range.start, rendered.range.end))
+	{
+		return QStringLiteral("the rendered region does not end past its start; no edit was applied");
+	}
+	return QString();
+}
+
 //! The shared body of the two freeze verbs: render, then install the take.
 //! \a regionRequired tells the two apart (freeze.region needs 'start'/'end',
 //! freeze.track refuses them as a range and freezes the whole track).
@@ -189,9 +202,10 @@ ControlResult freezeRange(const QJsonObject& args, bool regionRequired)
 		resolveOutPath(args, track,
 			wholeTrack ? QStringLiteral("frozen") : QStringLiteral("frozen-region"), range),
 		range);
-	if (!rendered.ok)
+	const QString refusal = renderRefusal(rendered, range, wholeTrack);
+	if (!refusal.isEmpty())
 	{
-		return ControlResult::failure(ControlErrorKind::Refused, rendered.error);
+		return ControlResult::failure(ControlErrorKind::Refused, refusal);
 	}
 
 	QJsonArray overlapping;
