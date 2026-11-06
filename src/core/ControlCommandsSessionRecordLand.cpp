@@ -46,6 +46,7 @@
  * one clip per completed launch and a transaction carries one inverse.
  */
 
+#include <cstddef>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -87,19 +88,14 @@ namespace
 
 QString trackTypeName(Track::Type type)
 {
-	switch (type)
-	{
-	case Track::Type::Instrument: return QStringLiteral("instrument");
-	case Track::Type::Pattern: return QStringLiteral("pattern");
-	case Track::Type::Sample: return QStringLiteral("sample");
-	case Track::Type::Event: return QStringLiteral("event");
-	case Track::Type::Video: return QStringLiteral("video");
-	case Track::Type::Automation: return QStringLiteral("automation");
-	case Track::Type::HiddenAutomation: return QStringLiteral("hidden automation");
-	case Track::Type::Folder: return QStringLiteral("folder");
-	case Track::Type::Count: break;
-	}
-	return QStringLiteral("unknown");
+	// A table (see control::trackTypeNameOf); this reader's own wording for the hidden lane has a space.
+	static const char* const names[] = {"instrument", "pattern", "sample", "event", "video", "automation",
+		"hidden automation", "folder", "neutral"};
+	static_assert(sizeof(names) / sizeof(names[0]) == static_cast<std::size_t>(Track::Type::Count),
+		"every Track::Type needs a name");
+	const int index = static_cast<int>(type);
+	if (index < 0 || index >= static_cast<int>(Track::Type::Count)) { return QStringLiteral("unknown"); }
+	return QString::fromLatin1(names[index]);
 }
 
 ControlResult validateOpenStarts(const OpenStart* open, int openCount)

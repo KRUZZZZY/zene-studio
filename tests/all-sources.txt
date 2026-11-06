@@ -645,6 +645,8 @@ include/MultiTrackRecorder.h
 include/MusicalTime.h
 include/NStateButton.h
 include/NamespaceRegistry.h
+include/NeutralTrack.h
+include/NeutralTrackView.h
 include/NoCopyNoMove.h
 include/Note.h
 include/NoteBackgroundAudio.h
@@ -2661,6 +2663,7 @@ src/gui/tracks/AutomationTrackView.cpp
 src/gui/tracks/FadeButton.cpp
 src/gui/tracks/FolderSummaryLane.cpp
 src/gui/tracks/InstrumentTrackView.cpp
+src/gui/tracks/NeutralTrackView.cpp
 src/gui/tracks/PatternTrackView.cpp
 src/gui/tracks/SampleTrackView.cpp
 src/gui/tracks/TakeLaneRows.cpp
@@ -2706,6 +2709,7 @@ src/tracks/AutomationTrack.cpp
 src/tracks/InstrumentTrack.cpp
 src/tracks/InstrumentTrackNotes.cpp
 src/tracks/MidiClip.cpp
+src/tracks/NeutralTrack.cpp
 src/tracks/PatternTrack.cpp
 src/tracks/SampleTrack.cpp
 src/tracks/TrackFolder.cpp
@@ -2919,6 +2923,7 @@ tests/src/core/GrooveTemplateTest.cpp
 tests/src/core/GrooveTestSupport.h
 tests/src/core/HardwareIoTest.cpp
 tests/src/core/HardwareOutputBusTest.cpp
+tests/src/core/HybridTrackRoundTripTest.cpp
 tests/src/core/HydrogenImportTest.cpp
 tests/src/core/ImportDetectionTest.cpp
 tests/src/core/ImportFilterTest.cpp
@@ -3299,6 +3304,7 @@ tests/src/gui/GraphWaveformEditorGuiTest.cpp
 tests/src/gui/GrooveMenuTest.cpp
 tests/src/gui/GuiTestApplication.h
 tests/src/gui/HelpAccessTest.cpp
+tests/src/gui/HybridTrackGuiTest.cpp
 tests/src/gui/InstrumentSetupUiTest.cpp
 tests/src/gui/ItemListButtonsTest.cpp
 tests/src/gui/ItemListPanelTest.cpp

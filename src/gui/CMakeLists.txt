@@ -372,6 +372,7 @@ SET(LMMS_SRCS
 	gui/tracks/AutomationTrackView.cpp
 	gui/tracks/FadeButton.cpp
 	gui/tracks/FolderSummaryLane.cpp
+	gui/tracks/NeutralTrackView.cpp
 	gui/tracks/TakeLaneRows.cpp
 	gui/tracks/InstrumentTrackView.cpp
 	gui/tracks/PatternTrackView.cpp

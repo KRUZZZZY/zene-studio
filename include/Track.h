@@ -109,6 +109,11 @@ public:
 		 *  element, resolved after the load walk (Song::resolveTrackFolders).
 		 */
 		Folder,
+		/*! A NEUTRAL ROW (0.5.0 Q050-283.1): an arrangement row that is not yet an audio or
+		 *  an instrument track. It goes after Folder and still before Count for the same reason
+		 *  Folder does: every earlier value keeps its persisted integer, and only Count moves.
+		 *  An older build reading type=8 drops the row like it would an unknown type. */
+		Neutral,
 		Count
 	} ;
 

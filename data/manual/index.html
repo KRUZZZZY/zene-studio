@@ -261,6 +261,15 @@ Each audio block's ramp holds 32 knots; a block that needs more has the surplus 
 <code>sample_accurate</code> attribute or <code>automation.ramp_set</code> is the only way to set it; there is
 no interface toggle.</p>
 
+<p id="neutral-track"><b>Neutral tracks.</b> Click <b>Add neutral track</b> in the Song Editor's track actions to add a row before you decide what it will
+be. A neutral track has a name, a position in the arrangement, mute, solo, a colour and a place in a folder like any other row, and it keeps its stable
+<code>trk-&lt;n&gt;</code> id for as long as it exists - moving it changes its position, not its id. It plays nothing and holds no clips yet: this version
+adds the row and saves it, and giving it an audio input or an instrument comes in later versions. One click is one undo step (undo removes the row,
+redo brings it back), and the row is saved with the project and drawn again, in the same place, when you open it. Clone Track makes another neutral
+row. Agents make the same row with <code>track.add</code> and <code>type</code> <code>neutral</code>, move it with <code>track.move</code>, and read it
+back with <code>track.list</code> or <code>track.get_state</code> (<code>type</code> is <code>neutral</code>); <code>clip.add</code> on it is refused.
+A Zene Studio build older than this one does not know the row: it opens the project without it.</p>
+
 <h2 id="notes">Editing notes</h2>
 <p>Double-click a MIDI clip to open it in the note editor. Opening a clip fits its length to the view and its used pitches with a little room; a very wide range stays centred at the smallest readable row, and an empty clip opens around C5. With Draw, a translucent note previews the click under the pointer, and dragging up or down while drawing moves the preview, the audition and the note to that pitch. The note area's cursor names the next action (draw, erase, slice or play), and choosing a tool from the toolbar or its letter shows it at once. The tools follow FL Studio's piano roll: P draw, B paint, D delete, T mute, C slice, E select, Y play, Z zooms to the selection (1-7 also pick them). With any tool the right button deletes every note it crosses (one undo step); a double-click on a note opens its properties, including <b>Recurrence (passes)</b> - the length of the note's pass pattern and a tick box for each pass it plays on, so length 2 with pass 1 ticked plays the first of every two passes of the loop (0 passes means every pass, and no pass ticked means none; a pass is a loop wrap, not a seek or a MIDI clip's own repeat); Ctrl selects (Ctrl+Shift adds), Shift and Ctrl lock pitch and timing while dragging, Alt bypasses the grid and Alt+wheel changes velocity; a new note takes the last note's length; Ctrl+C, X, V and B copy, cut, paste and duplicate; the lanes
 below edit velocity, pan, chance, timbre, pressure, micro-pitch, release velocity, velocity spread and repeats, and the

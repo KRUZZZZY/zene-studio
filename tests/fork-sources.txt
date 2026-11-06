@@ -3506,3 +3506,12 @@ docs/050-features/Q050-231.1.md
 docs/qwen-fixes-2026-10/cluster-Q050-231.1.md
 tests/src/gui/MixerMaskingReportWindowTest.cpp
 tests/control-note-melody.py
+# Q050-283.1 (2026-11, R-workflow-286): the neutral arrangement track (stage 1 of 3) - class, row, tests and report (fork-NEW).
+include/NeutralTrack.h
+include/NeutralTrackView.h
+src/tracks/NeutralTrack.cpp
+src/gui/tracks/NeutralTrackView.cpp
+tests/src/core/HybridTrackRoundTripTest.cpp
+tests/src/gui/HybridTrackGuiTest.cpp
+tests/control-hybrid-track-transcript.py
+docs/qwen-fixes-2026-10/cluster-Q050-283.1.md

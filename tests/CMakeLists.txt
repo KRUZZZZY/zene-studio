@@ -949,6 +949,8 @@ set(LMMS_TESTS
 	src/core/AutomationLanesTest.cpp
 	# 0.5.0 L06 (Q050-022): automation lanes as track children - ownership, folding, delete-with-owner.
 	src/core/AutomationLaneChildrenTest.cpp
+	# 0.5.0 L04 (Q050-283.1): the neutral track - track.add, move, undo, save/load, clone, no clips.
+	src/core/HybridTrackRoundTripTest.cpp
 	# ED-201: automation.write_to_end holds a value from a tick to the song's end.
 	src/core/AutomationWriteToEndTest.cpp
 	# ED-187: thinning keeps custom-segment endpoints and preserves the evaluated curve.
@@ -1358,6 +1360,8 @@ set(LMMS_TESTS
 	src/gui/FolderSummaryLaneTest.cpp
 	# 0.5.0 L06 (Q050-022): a lane is drawn as a collapsible child under its owner in the arranger.
 	src/gui/AutomationLaneChildGuiTest.cpp
+	# 0.5.0 L04 (Q050-283.1): the Song Editor's Add neutral track button makes a drawn neutral row.
+	src/gui/HybridTrackGuiTest.cpp
 	# 0.5.0 theme 22: the main window opens where, and as large as, it was left (ui/main.geometry).
 	src/gui/MainWindowGeometryTest.cpp
 	# BUG new-p11-96: clicking the envelope graph turns a negative amount off.
@@ -3741,6 +3745,7 @@ set_tests_properties(TrackRouteDropTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=
 set_tests_properties(DrumRackPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(FolderSummaryLaneTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(AutomationLaneChildGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(HybridTrackGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MainWindowGeometryTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(UndoHistoryPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ExportQualityControlsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -7575,9 +7580,16 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/control-transient-repeat-transcript.py
 			$<TARGET_FILE:zene>
 	)
+	# Q050-283.1: the neutral track over the real socket - the same JSON-RPC surface MCP exposes.
+	add_test(NAME ControlHybridTrackTranscript
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-hybrid-track-transcript.py
+			$<TARGET_FILE:zene>
+	)
 	set_tests_properties(ControlShutdown ControlReadiness ControlNoAudioDevice
 		ControlNegativeControl ControlStableIdsSlice2 ControlStableIds
-		ControlReversibilityTranscript ControlMediaAgentTranscript ControlTransientRepeatTranscript PROPERTIES
+		ControlReversibilityTranscript ControlMediaAgentTranscript ControlTransientRepeatTranscript
+		ControlHybridTrackTranscript PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 420
 		SKIP_RETURN_CODE 77

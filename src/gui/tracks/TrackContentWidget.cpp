@@ -531,6 +531,8 @@ bool TrackContentWidget::pasteSelection( TimePos clipPos, const QMimeData * md, 
 		if (offset == 0 && initialTrackIndex == currentTrackIndex) { pos += shift; }
 
 		Clip * clip = t->createClip( pos );
+		// A folder or neutral row holds no clips (createClip answers null): skip it, do not dereference.
+		if( clip == nullptr ) { continue; }
 		clip->restoreState( clipElement );
 		// A pasted clip is independent of the source take group. Keeping the
 		// copied group/lane would leave it with no active-lane mirror when

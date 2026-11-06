@@ -43,6 +43,7 @@
 #include "ConfigManager.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
+#include "NeutralTrack.h"
 #include "MidiClip.h"
 #include "Mixer.h"
 #include "PatternClip.h"
@@ -508,6 +509,8 @@ Track * Track::create( Type tt, TrackContainer * tc )
 		// `default: break` below and drops the row - the forward-compatibility
 		// cost TRACK-FOLDER-DESIGN.md section 4.4 states rather than hides.
 		case Type::Folder: t = new class TrackFolder( tc ); break;
+		// A neutral row (Q050-283.1): type=8, one more row of the same flat list.
+		case Type::Neutral: t = new class NeutralTrack( tc ); break;
 		default: break;
 	}
 

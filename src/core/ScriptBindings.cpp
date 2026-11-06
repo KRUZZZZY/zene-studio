@@ -718,7 +718,7 @@ QString LuaTrack::type() const
 		QStringLiteral("instrument"), QStringLiteral("pattern"),
 		QStringLiteral("sample"), QStringLiteral("event"), QStringLiteral("video"),
 		QStringLiteral("automation"), QStringLiteral("hidden_automation"),
-		QStringLiteral("folder"),
+		QStringLiteral("folder"), QStringLiteral("neutral"),
 	};
 	const int index = static_cast<int>(m_track->type());
 	if (index >= 0 && index < static_cast<int>(Track::Type::Count)) { return names[index]; }
