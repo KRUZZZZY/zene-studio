@@ -1182,6 +1182,175 @@ private slots:
 		QCOMPARE(ab.silenceFlags()[2], true);  // updated!
 		QCOMPARE(ab.silenceFlags()[3], true);  // updated!
 	}
+
+	//! Verifies that move assignment between buffers backed by different memory
+	//! resources rebinds every group pointer and every access-buffer entry to
+	//! the destination's own storage, so no group dangles into the moved-from
+	//! access table or source storage. Cluster new-p9-557.
+	void MoveAssignment_AcrossResources_RebindsGroupsAndAccessBuffer()
+	{
+		constexpr lmms::f_cnt_t frames = 16;
+		alignas(16) std::array<std::byte, 8192> srcStorage{};
+		alignas(16) std::array<std::byte, 8192> dstStorage{};
+		std::pmr::monotonic_buffer_resource srcRes{
+			srcStorage.data(), srcStorage.size(), std::pmr::null_memory_resource()};
+		std::pmr::monotonic_buffer_resource dstRes{
+			dstStorage.data(), dstStorage.size(), std::pmr::null_memory_resource()};
+
+		auto groupVisitor = [](lmms::group_cnt_t idx, AudioBuffer::ChannelGroup&) {
+			switch (idx)
+			{
+				case 0: return 2; // 1st group has 2 channels
+				case 1: return 4; // 2nd group has 4 channels
+				default: return 0;
+			}
+		};
+
+		auto src = AudioBuffer{frames, 6, 2, &srcRes, groupVisitor};
+		src.allocateInterleavedBuffer();
+		for (lmms::ch_cnt_t ch = 0; ch < src.totalChannels(); ++ch)
+		{
+			for (lmms::f_cnt_t f = 0; f < frames; ++f)
+			{
+				src.buffer(ch)[f] = static_cast<float>(ch * 1000 + f);
+			}
+		}
+		const auto srcAccessBefore = static_cast<const void*>(src.allBuffers().data());
+		const auto srcCh0Before = static_cast<const void*>(src.buffer(0).data());
+		const auto srcCh5Before = static_cast<const void*>(src.buffer(5).data());
+
+		// Destination with a different shape backed by a different resource.
+		auto dst = AudioBuffer{frames, 2, &dstRes};
+		dst = std::move(src);
+
+		QCOMPARE(dst.groupCount(), 2);
+		QCOMPARE(dst.totalChannels(), 6);
+		QCOMPARE(dst.frames(), frames);
+		QCOMPARE(dst.group(0).channels(), 2);
+		QCOMPARE(dst.group(1).channels(), 4);
+		QCOMPARE(dst.hasInterleavedBuffer(), true);
+		// Moved-from buffer empties but stays valid.
+		QCOMPARE(src.totalChannels(), 0);
+		QCOMPARE(src.groupCount(), 0);
+
+		// Every group must point into the destination's own access table.
+		QCOMPARE(static_cast<const void*>(dst.group(0).buffers()),
+			static_cast<const void*>(dst.allBuffers().data()));
+		QCOMPARE(static_cast<const void*>(dst.group(1).buffers()),
+			static_cast<const void*>(dst.allBuffers().data() + 2));
+		QVERIFY2(static_cast<const void*>(dst.group(0).buffers()) != srcAccessBefore,
+			"moved group still points into the source access table");
+
+		// Every channel view must point into the destination's new source
+		// storage (the vectors copy when resources differ instead of stealing).
+		QVERIFY2(static_cast<const void*>(dst.buffer(0).data()) != srcCh0Before,
+			"moved channel still points into the source storage");
+		QVERIFY2(static_cast<const void*>(dst.buffer(5).data()) != srcCh5Before,
+			"moved channel still points into the source storage");
+		for (lmms::ch_cnt_t ch = 1; ch < dst.totalChannels(); ++ch)
+		{
+			QCOMPARE(static_cast<const void*>(dst.buffer(ch).data()),
+				static_cast<const void*>(dst.buffer(0).data() + ch * frames));
+		}
+		// Group views alias the same storage as the direct channel views.
+		QCOMPARE(static_cast<const void*>(dst.group(0).buffer(0)),
+			static_cast<const void*>(dst.buffer(0).data()));
+		QCOMPARE(static_cast<const void*>(dst.group(1).buffer(2)),
+			static_cast<const void*>(dst.buffer(4).data()));
+		// Values survive the move and are reachable through group pointers.
+		QCOMPARE(dst.group(0).buffer(1)[3], 1003.f);
+		QCOMPARE(dst.group(1).buffer(2)[5], 4005.f);
+		dst.group(1).buffer(2)[5] = 4242.f;
+		QCOMPARE(dst.buffer(4)[5], 4242.f);
+	}
+
+	//! Verifies that move assignment between buffers sharing one memory
+	//! resource keeps every group pointer valid and the data intact.
+	void MoveAssignment_SameResource_PreservesGroupsAndData()
+	{
+		constexpr lmms::f_cnt_t frames = 16;
+		alignas(16) std::array<std::byte, 8192> storage{};
+		std::pmr::monotonic_buffer_resource res{
+			storage.data(), storage.size(), std::pmr::null_memory_resource()};
+
+		auto groupVisitor = [](lmms::group_cnt_t idx, AudioBuffer::ChannelGroup&) {
+			switch (idx)
+			{
+				case 0: return 2; // 1st group has 2 channels
+				case 1: return 3; // 2nd group has 3 channels
+				default: return 0;
+			}
+		};
+
+		auto src = AudioBuffer{frames, 5, 2, &res, groupVisitor};
+		for (lmms::ch_cnt_t ch = 0; ch < src.totalChannels(); ++ch)
+		{
+			for (lmms::f_cnt_t f = 0; f < frames; ++f)
+			{
+				src.buffer(ch)[f] = static_cast<float>(ch * 100 + f);
+			}
+		}
+		auto dst = AudioBuffer{frames, 2, &res};
+		dst = std::move(src);
+
+		QCOMPARE(dst.groupCount(), 2);
+		QCOMPARE(dst.totalChannels(), 5);
+		QCOMPARE(dst.frames(), frames);
+		QCOMPARE(dst.group(0).channels(), 2);
+		QCOMPARE(dst.group(1).channels(), 3);
+		QCOMPARE(static_cast<const void*>(dst.group(0).buffers()),
+			static_cast<const void*>(dst.allBuffers().data()));
+		QCOMPARE(static_cast<const void*>(dst.group(1).buffers()),
+			static_cast<const void*>(dst.allBuffers().data() + 2));
+		QCOMPARE(dst.group(0).buffer(1)[3], 103.f);
+		QCOMPARE(dst.group(1).buffer(2)[5], 405.f);
+		dst.group(0).buffer(0)[0] = 999.f;
+		QCOMPARE(dst.buffer(0)[0], 999.f);
+	}
+
+	//! Verifies that move construction keeps every group pointer valid,
+	//! so returning an AudioBuffer by value (or moving it into a
+	//! vector<AudioBuffer>) never leaves a group dangling.
+	void MoveConstructor_MovesGroups()
+	{
+		constexpr lmms::f_cnt_t frames = 16;
+		alignas(16) std::array<std::byte, 8192> storage{};
+		std::pmr::monotonic_buffer_resource res{
+			storage.data(), storage.size(), std::pmr::null_memory_resource()};
+
+		auto groupVisitor = [](lmms::group_cnt_t idx, AudioBuffer::ChannelGroup&) {
+			switch (idx)
+			{
+				case 0: return 2; // 1st group has 2 channels
+				case 1: return 3; // 2nd group has 3 channels
+				default: return 0;
+			}
+		};
+
+		auto src = AudioBuffer{frames, 5, 2, &res, groupVisitor};
+		for (lmms::ch_cnt_t ch = 0; ch < src.totalChannels(); ++ch)
+		{
+			for (lmms::f_cnt_t f = 0; f < frames; ++f)
+			{
+				src.buffer(ch)[f] = static_cast<float>(ch * 100 + f);
+			}
+		}
+		auto dst = std::move(src);
+
+		QCOMPARE(dst.groupCount(), 2);
+		QCOMPARE(dst.totalChannels(), 5);
+		QCOMPARE(dst.frames(), frames);
+		QCOMPARE(static_cast<const void*>(dst.group(0).buffers()),
+			static_cast<const void*>(dst.allBuffers().data()));
+		QCOMPARE(static_cast<const void*>(dst.group(1).buffers()),
+			static_cast<const void*>(dst.allBuffers().data() + 2));
+		QCOMPARE(dst.group(1).buffer(2)[5], 405.f);
+		dst.group(1).buffer(2)[5] = 777.f;
+		QCOMPARE(dst.buffer(4)[5], 777.f);
+		// Moved-from buffer empties but stays valid.
+		QCOMPARE(src.totalChannels(), 0);
+		QCOMPARE(src.groupCount(), 0);
+	}
 };
 
 QTEST_GUILESS_MAIN(AudioBufferTest)
