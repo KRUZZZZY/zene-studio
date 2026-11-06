@@ -171,6 +171,7 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 		SampleClip* clip;
 		SampleWindow window;
 		f_cnt_t lead = 0;  //!< 0.5.0 ED-021: output frames before a frame-exact clip's audio starts
+		WarpSnapshot warp;  //!< Q050-063: the one warp generation this pass's window, lead and handle come from
 	};
 	// Fixed storage: the audio thread never grows it. The cap is on the clips that START in one
 	// pass, not on overlaps: overlapping clips are allowed (a script can stack many on one track).
@@ -198,7 +199,7 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 		{
 			return false;
 		}
-		clips[clipCount++] = {sClip, sClip->sampleWindow()};
+		clips[clipCount++] = {sClip, sClip->sampleWindow(), 0, sClip->snapshotWarp()};
 		if (trackContainer() == Engine::patternStore())
 		{
 			auto bufferFramesPerTick = Engine::framesPerTick(sClip->sample().sampleRate());
@@ -221,6 +222,9 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 		{
 			Clip * clip = getClip( i );
 			auto sClip = dynamic_cast<SampleClip*>(clip);
+			// Q050-063: one generation of the map for all of this clip's pass, whatever the control thread commits.
+			WarpSnapshot warp = sClip->snapshotWarp();
+			const Clip::WarpPassScope warpPass(*sClip, warp);
 
 			// 0.5.0 ED-179: a clip with pre-fades sounds from before its start to after its end; every
 			// other clip's span, and the window below, are exactly its own (ClipPreFades.h).
@@ -248,7 +252,7 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 					{
 						if( clipCount < clips.size() )
 						{
-							clips[clipCount++] = {sClip, { windowStart, windowEnd }, sClip->leadOutputFramesAt( _start )};
+							clips[clipCount++] = {sClip, { windowStart, windowEnd }, sClip->leadOutputFramesAt( _start ), std::move( warp )};
 							sClip->setIsPlaying( true );
 							nowPlaying = true;
 						}
@@ -296,6 +300,7 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 			}
 			else
 			{
+				const Clip::WarpPassScope warpPass(*st, scheduled.warp);
 				auto smpHandle = new SamplePlayHandle(st, scheduled.window);
 				smpHandle->setPatternTrack(pattern_track);
 				smpHandle->setClipEffects(st);  // Q050-111: the clip's own effects, before the track's sum

@@ -27,9 +27,14 @@
 #include "ClipEdits.h"
 
 #include <algorithm>
+#include <array>
+#include <cmath>
+#include <limits>
+#include <span>
 
 #include <QApplication>
 #include <QHashFunctions>
+#include <QActionGroup>
 #include <QMenu>
 #include <QPainter>
 
@@ -53,6 +58,7 @@
 #include "SampleClip.h"
 #include "SampleThumbnail.h"
 #include "Song.h"
+#include "SongEditor.h"
 #ifdef LMMS_HAVE_STEM_SPLIT
 #include "StemSplitController.h"
 #endif
@@ -140,6 +146,8 @@ void SampleClipView::constructContextMenu(QMenu* cm)
 	// Split to stems at a chosen quality (stem.job_start's `quality`, Q050-062.2).
 	StemSplitController::addSplitToStemsMenu(cm, m_clip);
 #endif
+	// Author warp markers directly over the waveform (warp.add / warp.move / warp.remove).
+	addWarpEditMenu(cm);
 
 }
 
@@ -394,6 +402,7 @@ void SampleClipView::mouseMoveEvent(QMouseEvent* me)
 	}
 	if (m_fadeDrag == FadeHandle::None)
 	{
+		if (m_warpDrag >= 0) { dragWarpMarker(me); return; }
 		ClipView::mouseMoveEvent(me);
 		// Over a fade handle the pointer shows that it drags sideways, as over a resize edge (UX ux06 #27);
 		// over the clip-gain handle or an envelope point it shows that it drags a level.
@@ -423,6 +432,7 @@ void SampleClipView::mouseMoveEvent(QMouseEvent* me)
 
 void SampleClipView::mousePressEvent( QMouseEvent * _me )
 {
+	if (startWarpDrag(_me)) { return; }
 	if (startFadeDrag(_me)) { return; }
 	// The Smart tool already owns a left press in a clip's upper half for range selection. Let its
 	// hand-off run before the new gain handle and envelope targets can consume that same press.
@@ -504,6 +514,11 @@ void SampleClipView::mouseReleaseEvent(QMouseEvent *_me)
 		update();
 		return;
 	}
+	if (m_warpDrag >= 0)
+	{
+		finishWarpDrag();
+		return;
+	}
 	if( _me->button() == Qt::MiddleButton && !_me->modifiers() )
 	{
 		auto sClip = dynamic_cast<SampleClip*>(getClip());
@@ -518,9 +533,17 @@ void SampleClipView::mouseReleaseEvent(QMouseEvent *_me)
 
 
 
-void SampleClipView::mouseDoubleClickEvent( QMouseEvent * )
+void SampleClipView::mouseDoubleClickEvent( QMouseEvent * me )
 {
 	if (m_trackView->trackContainerView()->knifeMode()) { return; }
+
+	if (m_warpEditing)
+	{
+		if (me->button() != Qt::LeftButton) { return; }
+		if (warpGuideAt(warpGuides(m_clip->warpMarkers(), warpShift()), overlayFrame(0), me->pos()) >= 0) { removeWarpMarkerAt(me->pos()); }
+		else { addWarpMarkerAt(me->pos().x()); }
+		return;
+	}
 
 	const QString selectedAudioFile = FileDialog::openAudioFile();
 
@@ -632,7 +655,8 @@ void SampleClipView::paintEvent( QPaintEvent * pe )
 			.gainAt = [this](float t) { return gainAtNormalised(t); }
 		};
 
-		m_sampleThumbnail.visualize(param, p);
+		// Q050-063: a warped clip draws each stretch between markers at its own width (SampleClipWarpEdit.cpp).
+		if (!paintWarpedWaveform(p, viewPortRect, spacing, -m_paintPixmapXPosition)) { m_sampleThumbnail.visualize(param, p); }
 	}
 	// The gain envelope, the clip-gain line and handle, the fades and their handles (SampleClipOverlays.cpp).
 	const ClipOverlayFrame frame = overlayFrame(static_cast<int>(-m_paintPixmapXPosition));
@@ -641,6 +665,7 @@ void SampleClipView::paintEvent( QPaintEvent * pe )
 	paintFades(p, shownEdits(), m_clip->length().getTicks(), frame, textColor());
 	if (arrangement::modes().showTransients) { paintTransients(p, transientTicks(), frame, textColor()); }
 	paintSnapPoint(p, shownEdits(), frame, textColor());  // ED-022
+	paintWarpGuides(p, shownWarpGuides(), frame, QColor(0xff, 0xb0, 0x00), m_warpDrag);  // Q050-063
 
 	QString name = PathUtil::cleanName(m_clip->m_sample.sampleFile());
 	paintTextLabel(name, p);
@@ -724,6 +749,160 @@ void SampleClipView::setAutomationGhost()
 	auto aEditor = gui::getGUI()->automationEditor();
 	aEditor->setGhostSample(m_clip);
 	gui::getGUI()->mainWindow()->revealPanel(QStringLiteral("automation"));
+}
+
+int SampleClipView::warpShift() const
+{
+	return m_clip->startTimeOffset().getTicks();
+}
+
+void SampleClipView::setWarpEditing(bool editing)
+{
+	m_warpEditing = editing;
+	m_warpDrag = -1;
+	setNeedsUpdate(true);
+	update();
+}
+
+WarpMarkers SampleClipView::shownWarpMap() const
+{
+	WarpMarkers shown = m_clip->warpMarkers();
+	if (m_warpDrag < 0 || m_warpDrag >= shown.size()) { return shown; }
+	std::array<WarpMarker, WarpMarkers::MaxMarkers> moved{};
+	for (int i = 0; i < shown.size(); ++i) { moved[static_cast<std::size_t>(i)] = shown[i]; }
+	moved[static_cast<std::size_t>(m_warpDrag)].offsetTicks = m_warpDragOffset;
+	WarpMarkers preview;
+	// The drag keeps the marker between its neighbours, so this holds; if it ever did not, the committed map is shown.
+	return preview.set(std::span<const WarpMarker>(moved.data(), static_cast<std::size_t>(shown.size()))) ? preview : shown;
+}
+
+std::vector<WarpGuide> SampleClipView::shownWarpGuides() const
+{
+	return warpGuides(shownWarpMap(), warpShift());
+}
+
+std::vector<WarpWaveformSegment> SampleClipView::shownWarpSegments(int xOrigin)
+{
+	const WarpMarkers map = shownWarpMap();
+	if (map.empty() || m_clip->sample().reversed()) { return {}; }
+	const SampleWindow window = m_clip->sampleWindow();
+	ClipOverlayFrame frame = overlayFrame(xOrigin);
+	return warpWaveformSegments(map, window.sourceIn, window.sourceOut, static_cast<f_cnt_t>(m_clip->sample().sampleSize()),
+		m_clip->clipFramesPerTick(), warpShift(), frame);
+}
+
+bool SampleClipView::paintWarpedWaveform(QPainter& p, const QRect& viewPortRect, int spacing, int xOrigin)
+{
+	const std::vector<WarpWaveformSegment> segments = shownWarpSegments(xOrigin);
+	if (segments.empty()) { return false; }
+	const auto& sample = m_clip->m_sample;
+	for (const WarpWaveformSegment& segment : segments)
+	{
+		// The whole buffer's rectangle at this stretch's scale; the viewport cuts out the stretch itself.
+		const double whole = (segment.x1 - segment.x0) / (segment.end - segment.start);
+		if (whole > 1.0e8) { continue; }  // a few frames stretched across the clip: nothing to draw but a smear
+		const int left = segment.x0 - static_cast<int>(std::lround(segment.start * whole));
+		const auto param = SampleThumbnail::VisualizeParameters{
+			.sampleRect = QRect(left, spacing, static_cast<int>(std::lround(whole)), height() - spacing),
+			.viewportRect = QRect(segment.x0, viewPortRect.y(), segment.x1 - segment.x0, viewPortRect.height()),
+			.amplification = sample.amplification(),
+			.reversed = false
+		};
+		m_sampleThumbnail.visualize(param, p);
+	}
+	return true;
+}
+
+void SampleClipView::addWarpEditMenu(QMenu* cm)
+{
+	QMenu* warp = cm->addMenu(tr("Warp markers"));
+	QAction* editing = warp->addAction(tr("Edit warp markers"));
+	editing->setCheckable(true);
+	editing->setChecked(m_warpEditing);
+	editing->setToolTip(tr("Double-click the waveform to add a marker, drag one to move it, double-click one to remove it"));
+	connect(editing, &QAction::toggled, this, &SampleClipView::setWarpEditing);
+
+	warp->addSeparator();
+	auto* group = new QActionGroup(warp);
+	const std::pair<QString, WarpSnap> choices[] = {
+		{tr("Snap to grid"), WarpSnap::Grid}, {tr("Snap to transients"), WarpSnap::Transient}, {tr("No snap"), WarpSnap::Off}};
+	for (const auto& [text, snap] : choices)
+	{
+		QAction* action = warp->addAction(text);
+		action->setCheckable(true);
+		action->setChecked(m_warpSnap == snap);
+		group->addAction(action);
+		connect(action, &QAction::triggered, this, [this, snap = snap]() { m_warpSnap = snap; });
+	}
+}
+
+bool SampleClipView::startWarpDrag(QMouseEvent* me)
+{
+	if (!m_warpEditing || me->button() != Qt::LeftButton || EditLocks::instance().locks(m_clip)) { return false; }
+	const std::vector<WarpGuide> guides = warpGuides(m_clip->warpMarkers(), warpShift());
+	const int index = warpGuideAt(guides, overlayFrame(0), me->pos());
+	if (index < 0) { return false; }
+	m_warpDrag = index;
+	m_warpDragFrame = guides[static_cast<std::size_t>(index)].sourceFrame;
+	m_warpDragStart = m_warpDragOffset = guides[static_cast<std::size_t>(index)].offsetTicks;
+	setNeedsUpdate(true);
+	update();
+	return true;
+}
+
+void SampleClipView::dragWarpMarker(QMouseEvent* me)
+{
+	const WarpMarkers& committed = m_clip->warpMarkers();
+	// A marker stays strictly between its neighbours in timeline position - warp.move's own rule.
+	const tick_t low = m_warpDrag > 0 ? committed[m_warpDrag - 1].offsetTicks + 1 : std::numeric_limits<tick_t>::min();
+	const tick_t high = m_warpDrag + 1 < committed.size() ? committed[m_warpDrag + 1].offsetTicks - 1
+		: std::numeric_limits<tick_t>::max();
+	const ClipOverlayFrame frame = overlayFrame(0);
+	const tick_t wanted = warpOffsetAtX(me->pos().x(), frame, warpShift());
+	// Alt drags without snapping, as it does for a clip's own move.
+	const WarpSnap snap = me->modifiers() & Qt::AltModifier ? WarpSnap::Off : m_warpSnap;
+	const float snapBars = getGUI()->songEditor()->m_editor->getSnapSize();
+	const int gridTicks = std::max(1, static_cast<int>(std::lround(snapBars * TimePos::ticksPerBar())));
+	const tick_t origin = m_clip->startPosition().getTicks() + warpShift();
+	const int reach = static_cast<int>(8 / std::max(0.001f, frame.pixelsPerTick));  // eight pixels
+	m_warpDragOffset = snapWarpOffset(wanted, snap, origin, gridTicks, snap == WarpSnap::Transient ? transientTicks() : std::vector<int>(),
+		reach, low, high);
+	setNeedsUpdate(true);
+	update();
+}
+
+void SampleClipView::finishWarpDrag()
+{
+	const tick_t offset = m_warpDragOffset;
+	const bool moved = offset != m_warpDragStart;
+	// Keep showing the dragged position until the command has landed: the map it writes is the one shown.
+	if (moved)
+	{
+		ControlRegistry::instance()->invoke(QStringLiteral("warp.move"), {{QStringLiteral("clip"), control::clipIdOf(m_clip)},
+			{QStringLiteral("source_frame"), static_cast<qint64>(m_warpDragFrame)}, {QStringLiteral("offset_ticks"), static_cast<qint64>(offset)}});
+	}
+	m_warpDrag = -1;
+	setNeedsUpdate(true);
+	update();
+}
+
+void SampleClipView::addWarpMarkerAt(int x)
+{
+	if (EditLocks::instance().locks(m_clip)) { return; }
+	// The marker pins the frame heard at the click, where it is heard: adding changes no sound, dragging then does.
+	const tick_t offset = warpOffsetAtX(x, overlayFrame(0), warpShift());
+	const f_cnt_t frame = m_clip->sourceFrameAt(TimePos(m_clip->startPosition().getTicks() + warpShift() + static_cast<int>(offset)));
+	ControlRegistry::instance()->invoke(QStringLiteral("warp.add"), {{QStringLiteral("clip"), control::clipIdOf(m_clip)},
+		{QStringLiteral("source_frame"), static_cast<qint64>(frame)}, {QStringLiteral("offset_ticks"), static_cast<qint64>(offset)}});
+}
+
+void SampleClipView::removeWarpMarkerAt(const QPoint& pos)
+{
+	const std::vector<WarpGuide> guides = warpGuides(m_clip->warpMarkers(), warpShift());
+	const int index = warpGuideAt(guides, overlayFrame(0), pos);
+	if (index < 0 || EditLocks::instance().locks(m_clip)) { return; }
+	ControlRegistry::instance()->invoke(QStringLiteral("warp.remove"), {{QStringLiteral("clip"), control::clipIdOf(m_clip)},
+		{QStringLiteral("source_frame"), static_cast<qint64>(guides[static_cast<std::size_t>(index)].sourceFrame)}});
 }
 
 } // namespace lmms::gui

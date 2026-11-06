@@ -180,6 +180,8 @@ set(LMMS_TESTS
 	# Engine and no socket, so it runs wherever a binary runs.
 	src/core/WriteRefusalGateTest.cpp
 	src/core/ClipWarpPersistenceTest.cpp
+	# Q050-063: warp markers authored over the waveform - double-click adds, drag moves with snap and a live preview.
+	src/gui/Warp/SampleClipWarpEditTest.cpp
 	src/core/ConfigMigrationTest.cpp
 	src/core/ControlAutomationScriptTest.cpp
 	# The automation MODES' own proof (feature-list rows 10 and 63, board task
@@ -3724,6 +3726,7 @@ set_tests_properties(MixerSendsOnFadersTest PROPERTIES ENVIRONMENT "QT_QPA_PLATF
 set_tests_properties(ArrangerTimelineTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ArrangerTakePunchTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ArrangerFileDropTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(SampleClipWarpEditTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MidiClipLinkedEditTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MidiClipStepMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(XyPadPairTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

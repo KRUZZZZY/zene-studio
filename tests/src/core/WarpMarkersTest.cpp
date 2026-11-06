@@ -41,6 +41,11 @@
 // could not pass.
 
 #include <QtTest>
+#include <QThread>
+
+#include <atomic>
+#include <memory>
+#include <vector>
 
 #include <array>
 #include <cmath>
@@ -50,6 +55,7 @@
 
 #include "LmmsTypes.h"
 #include "WarpMarkers.h"
+#include "WarpPublication.h"
 
 using namespace lmms;
 
@@ -106,6 +112,57 @@ class WarpMarkersTest : public QObject
 private slots:
 	//! A set that is not strictly increasing in both coordinates is not a
 	//! mapping. It is refused outright, and the previous set is left alone.
+	//! Q050-063: a reader always holds one whole generation while a publisher replaces it thousands of times;
+	//! what was replaced is freed by the publisher once nobody can hold it.
+	void aPublishedGenerationIsWholeAndFreedOnlyWhenUnheld()
+	{
+		const auto stamped = [](int stamp) {
+			std::vector<WarpMarker> markers;
+			for (int i = 0; i < 64; ++i) { markers.push_back({static_cast<f_cnt_t>(i), stamp + i}); }
+			WarpMarkers map;
+			map.set(markers);
+			return map;
+		};
+		WarpPublication publication;
+		publication.publish(stamped(0));
+		std::atomic<bool> stop{false};
+		std::atomic<int> torn{0};
+		std::atomic<int> reads{0};
+		std::unique_ptr<QThread> reader(QThread::create([&] {
+			while (!stop)
+			{
+				const WarpSnapshot generation(publication);
+				if (generation.map() == nullptr) { ++torn; continue; }
+				const WarpMarkers& map = *generation.map();
+				if (map.size() != 64) { ++torn; }
+				for (int i = 0; i < map.size(); ++i) { if (map[i].offsetTicks != map[0].offsetTicks + i) { ++torn; } }
+				++reads;
+			}
+		}));
+		reader->start();
+		for (int stamp = 1; stamp <= 20000; ++stamp) { publication.publish(stamped(stamp)); }
+		while (reads.load() < 100) { QThread::msleep(1); }
+		stop = true;
+		reader->wait();
+		QCOMPARE(torn.load(), 0);
+
+		// With the reader gone, one publish frees whatever the race left waiting.
+		publication.publish(stamped(40000));
+		QCOMPARE(publication.retiredCount(), std::size_t{0});
+
+		// A generation held across a publish survives it, whole; the next publish with nobody holding frees it.
+		{
+			const WarpSnapshot held(publication);
+			const WarpMarkers kept = *held.map();
+			publication.publish(stamped(50000));
+			QCOMPARE(publication.retiredCount(), std::size_t{1});
+			QVERIFY(*held.map() == kept);
+		}
+		publication.publish(WarpMarkers{});
+		QCOMPARE(publication.retiredCount(), std::size_t{0});
+		QVERIFY(WarpSnapshot(publication).map() == nullptr);
+	}
+
 	void nonMonotonicSetsAreRejected()
 	{
 		WarpMarkers markers = makeFixture();

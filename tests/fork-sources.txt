@@ -2184,6 +2184,11 @@ src/gui/clips/ClipLockFeedback.cpp
 src/gui/clips/ClipViewTheme.cpp
 src/gui/clips/SampleClipOverlays.cpp
 src/gui/editors/AddTrackMenu.cpp
+include/SampleClipWarpEdit.h
+include/WarpPublication.h
+src/gui/clips/SampleClipWarpEdit.cpp
+tests/src/gui/Warp/SampleClipWarpEditTest.cpp
+tests/src/gui/Warp/SampleClipWarpEditTestSupport.h
 src/gui/editors/AutomationEditorFades.cpp
 src/gui/editors/AutomationEditorKeys.cpp
 src/gui/editors/AutomationPointEdit.cpp

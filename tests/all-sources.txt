@@ -799,6 +799,7 @@ include/SampleBufferResample.h
 include/SampleClip.h
 include/SampleClipOverlays.h
 include/SampleClipView.h
+include/SampleClipWarpEdit.h
 include/SampleDecoder.h
 include/SampleEditorDialog.h
 include/SampleFrame.h
@@ -973,6 +974,7 @@ include/VisibilitySetMenu.h
 include/VstSyncController.h
 include/VstSyncData.h
 include/WarpMarkers.h
+include/WarpPublication.h
 include/WaveformData.h
 include/WaveformPreview.h
 include/WcagContrast.h
@@ -2562,6 +2564,7 @@ src/gui/clips/MidiClipView.cpp
 src/gui/clips/PatternClipView.cpp
 src/gui/clips/SampleClipOverlays.cpp
 src/gui/clips/SampleClipView.cpp
+src/gui/clips/SampleClipWarpEdit.cpp
 src/gui/editors/AddTrackMenu.cpp
 src/gui/editors/AutomationEditor.cpp
 src/gui/editors/AutomationEditorFades.cpp
@@ -3415,6 +3418,8 @@ tests/src/gui/VcaStripViewTest.cpp
 tests/src/gui/VersionedSaveDialogTest.cpp
 tests/src/gui/VideoClipsGuiTest.cpp
 tests/src/gui/VisibilitySetMenuTest.cpp
+tests/src/gui/Warp/SampleClipWarpEditTest.cpp
+tests/src/gui/Warp/SampleClipWarpEditTestSupport.h
 tests/src/gui/WcagContrastTest.cpp
 tests/src/gui/WindowSelectStartupTest.cpp
 tests/src/gui/WorkflowFeedbackTest.cpp
