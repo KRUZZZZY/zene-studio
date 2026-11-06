@@ -398,6 +398,9 @@ its own (sin(2*pi*t), tri(t) * rand(x)...) and restart on every note a track pla
 parameter a modulator drives has a Per sample switch (agent: <code>modulator.per_sample_set</code>): on, the parameter
 moves smoothly inside each audio block, so a fast LFO does not zipper; off, it moves once per block. It is saved with
 the project, and Undo restores it.</p>
+<p>You can keep playing ZynAddSubFX while it loads a preset. Notes wait in a queue of 256 events and play as soon as the load
+finishes; the instrument is silent during the load. If more arrive than the queue holds, the extra events are dropped and
+the instrument ends the notes it is holding, so none stays stuck: play the key again to continue.</p>
 <p>A rack can split its input between its parallel chains (Rack &gt; Split the Input): by frequency band, mid and side,
 or left and right - the chains add back to the whole. A device's menu finds, renames and randomises its parameters
 (a renamed parameter keeps its own name for macros and modulators), blends its A and B settings, folds its card to

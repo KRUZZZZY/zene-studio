@@ -380,9 +380,14 @@ auto ZynAddSubFxInstrument::processImpl(PlanarBufferView<const float, 0> in, Pla
 
 void ZynAddSubFxInstrument::forwardQueuedMidi()
 {
+	// A cut has to follow the events queued before the refusal. Those can be waiting at a later frame of
+	// this period, and a cut applied at once would end nothing and leave their notes stuck, so it is placed
+	// at the latest frame forwarded so far.
+	f_cnt_t latestOffset = 0;
 	drainMidi(m_midiHandoff, m_midiOverflow, m_midiHandoff.capacity(),
-		[this](const HandoffMidiEvent& queued) -> bool
+		[this, &latestOffset](const HandoffMidiEvent& queued) -> bool
 		{
+			if (static_cast<f_cnt_t>(queued.offset) > latestOffset) { latestOffset = static_cast<f_cnt_t>(queued.offset); }
 			const MidiEvent event(static_cast<MidiEventTypes>(queued.type), queued.channel, queued.param1, queued.param2);
 #ifdef LMMS_TESTING
 			m_testLastForwardedOffset = static_cast<int>(queued.offset);
@@ -394,11 +399,11 @@ void ZynAddSubFxInstrument::forwardQueuedMidi()
 			else { m_localPlugin->processMidiEvent(event, queued.offset); }
 			return true;
 		},
-		[this](int channel) -> bool
+		[this, &latestOffset](int channel) -> bool
 		{
 			const MidiEvent allNotesOff(MidiControlChange, static_cast<int8_t>(channel), 123, 0);
-			if (m_remotePlugin) { m_remotePlugin->processMidiEvent(allNotesOff, 0); }
-			else { m_localPlugin->processMidiEvent(allNotesOff); }
+			if (m_remotePlugin) { m_remotePlugin->processMidiEvent(allNotesOff, latestOffset); }
+			else { m_localPlugin->processMidiEvent(allNotesOff, latestOffset); }
 			return true;
 		});
 }

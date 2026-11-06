@@ -28,6 +28,10 @@
  *     hand-off. The queue used to drop it (offset 0), so every event was applied at
  *     the period start instead of at its scheduled position.
  *
+ * Three more cases cover MIDI sent during a preset load (Q050-313): the sender does not wait for
+ * the mutex, a period gives up at once, and what the full queue refuses is counted and recovered
+ * without leaving a note stuck. They do use a timeout, which only runs out when the sender blocks.
+ *
  * HOW THE CASES ARE DETERMINISTIC
  *
  * No case waits for a wall-clock outcome, none of them sleeps and none of them races:
@@ -57,8 +61,14 @@
 
 #include <QtTest>
 
+#include <QSemaphore>
+
+#include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
+#include <span>
+#include <thread>
 #include <vector>
 
 #include "AudioBufferView.h"
@@ -67,6 +77,7 @@
 #include "InstrumentTrack.h"
 #include "LocalZynAddSubFx.h"
 #include "MidiEvent.h"
+#include "SampleFrame.h"
 #include "Song.h"
 #include "ZynAddSubFx.h"
 
@@ -85,6 +96,8 @@ public:
 	using ZynAddSubFxInstrument::forwardQueuedMidi;
 	using ZynAddSubFxInstrument::processImpl;
 	using ZynAddSubFxInstrument::m_midiHandoff;
+	using ZynAddSubFxInstrument::m_midiOverflow;
+	using ZynAddSubFxInstrument::playImpl;
 	using ZynAddSubFxInstrument::m_pluginMutex;
 	using ZynAddSubFxInstrument::processLock;
 	using ZynAddSubFxInstrument::renderIsExporting;
@@ -344,6 +357,169 @@ private slots:
 		const auto first = firstDifference(reference, withNote, 0, frames);
 		QVERIFY2(first < block + block,
 			"the note started in the block after the one it was scheduled on");
+	}
+
+	//! Runs the host's audio entry point for one period: the lock attempt, the drain and the render.
+	static void playPeriod(TestInstrument& instrument)
+	{
+		std::vector<SampleFrame> period(Engine::audioEngine()->framesPerPeriod());
+		instrument.playImpl(std::span<SampleFrame>{period});
+	}
+
+	//! The loudest sample of the instrument's output after about two seconds of rendering: a released
+	//! note has decayed by then, a held one has not.
+	static float peakAfterTwoSeconds(TestInstrument& instrument)
+	{
+		const auto frames = Engine::audioEngine()->framesPerPeriod();
+		const auto periods = 2 * Engine::audioEngine()->outputSampleRate() / frames;
+		for (f_cnt_t period = 0; period < periods; ++period) { renderPeriod(instrument, frames); }
+
+		float peak = 0.f;
+		for (const auto& plane : renderPeriod(instrument, frames))
+		{
+			for (const float sample : plane) { peak = std::max(peak, std::fabs(sample)); }
+		}
+		return peak;
+	}
+
+	//! Fills what is left of the queue with harmless events, so the next event is refused.
+	static void fillTheHandoff(TestInstrument& instrument, f_cnt_t offset)
+	{
+		const MidiEvent centredBend{MidiPitchBend, 0, 8192, 0};
+		while (instrument.m_midiHandoff.enqueued() < instrument.m_midiHandoff.capacity())
+		{
+			instrument.handleMidiEvent(centredBend, TimePos(), offset);
+		}
+	}
+
+	//! Q050-313: a real preset load holds the plug-in mutex, and a note sent meanwhile neither waits for
+	//! it nor gets lost, while the audio period gives up at once and processes nothing.
+	void midiSentDuringAPresetLoadDoesNotWaitAndIsDeliveredAfterIt()
+	{
+		InstrumentTrack track{Engine::getSong()};
+		TestInstrument instrument{&track};
+
+		QSemaphore submitted;
+		std::thread sender;
+		bool mutexHeld = false;
+		bool sentWhileLoading = false;
+		std::uint64_t queuedWhileLoading = 0;
+		std::uint64_t consumedWhileLoading = 0;
+
+		// The hook runs inside loadFile(), under the mutex, just before the preset is read: for as long
+		// as it runs, this is a preset that takes that long. The sender is a separate thread, like the
+		// MIDI input thread. The timeout only runs out if handleMidiEvent() waits for the mutex.
+		instrument.m_testHook = [&]
+			{
+				mutexHeld = !instrument.m_pluginMutex.tryLock(0);
+				if (!mutexHeld) { instrument.m_pluginMutex.unlock(); }
+
+				sender = std::thread{[&]
+					{
+						instrument.handleMidiEvent(MidiEvent{MidiNoteOn, 0, 60, 100}, TimePos(), 0);
+						submitted.release();
+					}};
+				sentWhileLoading = submitted.tryAcquire(1, 5000);
+				queuedWhileLoading = instrument.m_midiHandoff.enqueued();
+
+				playPeriod(instrument);
+				consumedWhileLoading = instrument.m_midiHandoff.consumed();
+			};
+
+		instrument.loadFile(QStringLiteral("/nonexistent/zyn-preset.xmz"));
+		sender.join();
+		instrument.m_testHook = nullptr;
+
+		QVERIFY(mutexHeld);
+		QVERIFY2(sentWhileLoading, "handleMidiEvent() waited for the mutex the preset load holds");
+		QCOMPARE(queuedWhileLoading, std::uint64_t{1});
+		QVERIFY2(consumedWhileLoading == 0, "the audio period used the plug-in during the preset load");
+
+		// The first period after the load delivers the note, and it sounds.
+		playPeriod(instrument);
+		QCOMPARE(instrument.m_midiHandoff.consumed(), std::uint64_t{1});
+		QVERIFY2(peakAfterTwoSeconds(instrument) > 1e-3f, "the note queued during the load never sounded");
+	}
+
+	//! Q050-313: what the full queue refuses is counted and its channel is cut, and the key plays normally
+	//! afterwards. A refused note-off used to leave the key's running count behind, so the next note on
+	//! that key lost its note-off and never ended.
+	void aRefusedNoteOffIsCountedAndTheKeyIsNotStuckAfterwards()
+	{
+		InstrumentTrack track{Engine::getSong()};
+		TestInstrument instrument{&track};
+
+		// The whole burst arrives from the MIDI thread while the plug-in mutex is held, as during a preset
+		// load. The timeout only runs out if submitting waits for the mutex.
+		QSemaphore submitted;
+		instrument.m_pluginMutex.lock();
+		std::thread sender{[&]
+			{
+				instrument.handleMidiEvent(MidiEvent{MidiNoteOn, 0, 60, 100}, TimePos(), 0);
+				fillTheHandoff(instrument, 0);
+				instrument.handleMidiEvent(MidiEvent{MidiNoteOff, 0, 60, 0}, TimePos(), 0);
+				submitted.release();
+			}};
+		const bool sentWhileHeld = submitted.tryAcquire(1, 5000);
+		instrument.m_pluginMutex.unlock();
+		sender.join();
+
+		QVERIFY2(sentWhileHeld, "submitting a burst waited for the plug-in mutex");
+		QCOMPARE(instrument.m_midiHandoff.dropped(), std::uint64_t{1});
+		QCOMPARE(instrument.m_midiOverflow.recorded(), std::uint64_t{1});
+
+		// Everything accepted is delivered, and the cut ends the note whose note-off was refused.
+		playPeriod(instrument);
+		QCOMPARE(instrument.m_midiHandoff.consumed(), instrument.m_midiHandoff.capacity());
+		QVERIFY2(peakAfterTwoSeconds(instrument) < 1e-3f, "the note whose note-off was refused did not end");
+
+		// The same key, played normally after the recovery, sounds while held and ends when released.
+		QVERIFY(instrument.handleMidiEvent(MidiEvent{MidiNoteOn, 0, 60, 100}, TimePos(), 0));
+		QVERIFY2(peakAfterTwoSeconds(instrument) > 1e-3f, "the held note is silent, so the next check proves nothing");
+		QVERIFY(instrument.handleMidiEvent(MidiEvent{MidiNoteOff, 0, 60, 0}, TimePos(), 0));
+		QVERIFY2(peakAfterTwoSeconds(instrument) < 1e-3f, "the note played after the recovery stayed stuck");
+	}
+
+	//! Q050-313: the cut follows the events queued before the refusal, also when those wait at a later
+	//! frame of the period. Applied at once, it ended nothing and the note they started never stopped.
+	void theRecoveryCutFollowsEventsScheduledLaterInThePeriod()
+	{
+		InstrumentTrack track{Engine::getSong()};
+		TestInstrument instrument{&track};
+
+		QVERIFY(instrument.handleMidiEvent(MidiEvent{MidiNoteOn, 0, 60, 100}, TimePos(), 100));
+		fillTheHandoff(instrument, 100);
+		QVERIFY(instrument.handleMidiEvent(MidiEvent{MidiNoteOff, 0, 60, 0}, TimePos(), 100));
+		QCOMPARE(instrument.m_midiHandoff.dropped(), std::uint64_t{1});
+
+		QVERIFY2(peakAfterTwoSeconds(instrument) < 1e-3f, "the cut landed before the note it had to end");
+	}
+
+	//! Q050-313: one drain can carry repeated cuts of a channel at different queue positions, so the
+	//! scheduled list has to hold more than one cut per channel. The eighteenth cut here used to find it
+	//! full and was applied at once, ahead of the note queued before its refusal.
+	void theEighteenthSameChannelRecoveryCutStaysAfterItsQueuedNote()
+	{
+		InstrumentTrack track{Engine::getSong()};
+		TestInstrument instrument{&track};
+
+		fillTheHandoff(instrument, 100);
+		for (int cut = 0; cut < 18; ++cut)
+		{
+			instrument.handleMidiEvent(MidiEvent{MidiNoteOff, 0, 60, 0}, TimePos(), 100);
+			QCOMPARE(instrument.m_midiHandoff.dropped(), static_cast<std::uint64_t>(cut + 1));
+			QCOMPARE(instrument.m_midiOverflow.recorded(), static_cast<std::uint64_t>(cut + 1));
+
+			// One slot opens, the next event goes last in the queue, and the next refusal's cut is
+			// due after it. The note-on goes in before the last refusal, so only that cut can end it.
+			HandoffMidiEvent discarded;
+			QVERIFY(instrument.m_midiHandoff.pop(discarded));
+			const auto refill = cut == 16 ? MidiEvent{MidiNoteOn, 0, 60, 100} : MidiEvent{MidiPitchBend, 0, 8192, 0};
+			QVERIFY(instrument.handleMidiEvent(refill, TimePos(), 100));
+		}
+
+		playPeriod(instrument);
+		QVERIFY2(peakAfterTwoSeconds(instrument) < 1e-3f, "the late recovery cut was applied before its queued note");
 	}
 
 private:

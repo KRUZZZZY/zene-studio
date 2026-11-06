@@ -261,35 +261,38 @@ void LocalZynAddSubFx::processMidiEvent( const MidiEvent& event, f_cnt_t offset 
 
 void LocalZynAddSubFx::applyMidiEvent( const MidiEvent& event )
 {
+	const bool validChannel = event.channel() >= 0 && event.channel() < static_cast<int>( m_runningNotes.size() );
 	switch( event.type() )
 	{
 		case MidiNoteOn:
 			if( event.velocity() > 0 )
 			{
-				if( event.key() < 0 || event.key() > MidiMaxKey )
+				if( !validChannel || event.key() < 0 || event.key() > MidiMaxKey )
 				{
 					break;
 				}
-				if( m_runningNotes[event.key()] > 0 )
+				auto& runningNotes = m_runningNotes[static_cast<std::size_t>( event.channel() )];
+				if( runningNotes[event.key()] > 0 )
 				{
 					m_master->noteOff( event.channel(), event.key() );
 				}
-				++m_runningNotes[event.key()];
+				++runningNotes[event.key()];
 				m_master->noteOn( event.channel(), event.key(), event.velocity() );
 				break;
 			}
 		case MidiNoteOff:
 		{
-			if( event.key() < 0 || event.key() > MidiMaxKey )
+			if( !validChannel || event.key() < 0 || event.key() > MidiMaxKey )
 			{
 				break;
 			}
-			const auto runningNotes = m_runningNotes[event.key()];
-			if( runningNotes == 1 )
+			auto& runningNotes = m_runningNotes[static_cast<std::size_t>( event.channel() )];
+			const auto count = runningNotes[event.key()];
+			if( count == 1 )
 			{
 				m_master->noteOff( event.channel(), event.key() );
 			}
-			m_runningNotes[event.key()] = std::max( 0, runningNotes - 1 );
+			runningNotes[event.key()] = std::max( 0, count - 1 );
 			break;
 		}
 		case MidiPitchBend:
@@ -297,6 +300,14 @@ void LocalZynAddSubFx::applyMidiEvent( const MidiEvent& event )
 			break;
 		case MidiControlChange:
 			m_master->setController( event.channel(), event.controllerNumber(), event.controllerValue() );
+			// These controllers end every note of their channel, so no key is running there any more. A
+			// count left behind would swallow the key's next note-off (see MidiNoteOff above) and leave that
+			// note stuck, which is what happened when the handoff queue refused a note-off and cut the
+			// channel. Other channels keep their counts: their notes still need their note-offs.
+			if( validChannel && ( event.controllerNumber() == C_allnotesoff || event.controllerNumber() == C_allsoundsoff ) )
+			{
+				m_runningNotes[static_cast<std::size_t>( event.channel() )].fill( 0 );
+			}
 			break;
 		default:
 			break;

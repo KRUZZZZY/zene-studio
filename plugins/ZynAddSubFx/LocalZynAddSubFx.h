@@ -105,16 +105,22 @@ protected:
 
 	std::string m_presetsDir;
 
-	std::array<int, NumKeys> m_runningNotes = {};
+	//! How many notes run on each key, per MIDI channel: an all-notes-off ends only its own channel's.
+	std::array<std::array<int, NumKeys>, 16> m_runningNotes = {};
 	Master * m_master;
 	NulEngine* m_ioEngine;
 
 	//! The number of frames the host renders per period (the transport block).
 	int m_transportSize = 256;
 
-	//! The events that wait for their frame in the period that is rendered next. The
-	//! array is a member, so queueing an event allocates nothing.
-	std::array<ScheduledEvent, 256> m_scheduled{};
+	//! The events that wait for their frame in the period that is rendered next. The array is a
+	//! member, so queueing an event allocates nothing. One drain of the instrument's handoff queue
+	//! takes 256 events, and one all-notes-off per channel can fall due at each of the 257 queue
+	//! boundaries around them. All of them fit: an event that finds the list full is applied at once,
+	//! which would put a recovery cut ahead of the notes it has to end.
+	static constexpr std::size_t MaxQueuedEventsPerDrain = 256;
+	static constexpr std::size_t MaxCutsPerBoundary = 16;
+	std::array<ScheduledEvent, MaxQueuedEventsPerDrain + MaxCutsPerBoundary * (MaxQueuedEventsPerDrain + 1)> m_scheduled{};
 	std::size_t m_scheduledCount = 0;
 
 } ;
