@@ -21,7 +21,7 @@ Evidence before the fix: `plugins/VstBase/RemoteVstPlugin.cpp:1100-1109` returne
 
 ### 3434: ALREADY-FIXED
 
-No product change. The finding (`std::stable_sort` allocates on the period path) was fixed by `ca5b95981d fix(vst-client): cap the per-period MIDI queue and sort it without allocating (cluster 3433, 3434)`. On this branch the period path uses `vst::sortByDeltaFrames` (`RemoteVstPlugin.cpp:1082`, header `VstMidiEventBatch.h:47`), an in-place stable insertion sort documented as allocation-free; a search for `stable_sort` in `RemoteVstPlugin.cpp` returns no matches. The existing slots `sortAllocatesNothing` and `controlStableSortAllocates` in `tests/src/core/VstMidiEventBatchTest.cpp` prove the property and that the probe sees `std::stable_sort`'s buffer. No new test was added for this cluster.
+No product change. The finding (`std::stable_sort` allocates on the period path) was fixed by `ca5b95981d fix(vst-client): cap the per-period MIDI queue and sort it without allocating (cluster 3433, 3434)`. On this branch the period path uses `vst::sortByDeltaFrames` (`RemoteVstPlugin.cpp:1082`, header `VstMidiEventBatch.h:47`), an in-place stable insertion sort documented as allocation-free; a search for `stable_sort` in `RemoteVstPlugin.cpp` returns no matches. The existing slots `sortAllocatesNothing` and `controlStableSortAllocates` prove the helper property and that the probe sees `std::stable_sort`'s buffer. Independent QA added `processUsesAllocationFreeMidiSort` to pin the production call site; see the QA supplement below.
 
 ### new-p14-240: REAL, fixed
 
@@ -37,7 +37,7 @@ The client is an out-of-process executable that cannot run in-process, so the he
 | new-p17-148 | `silenceIgnoresDegenerateInputs` | null, non-positive count, zero frames touch nothing; only requested planes are zeroed (tail stays `9.0f`) |
 | new-p17-148 | `processEarlyReturnsSilenceOutputs` | both early returns call `silenceOutputPlanes` with `RemotePluginClient::outputCount` |
 | new-p14-240 | `midiScratchIsPerInstance` | two per-instance scratch buffers alias nothing and are independent; `process()` has no `static char eventsBuffer` / `static VstMidiEvent vme` |
-| 3434 | existing `sortIsChronologicalAndStable`, `sortAllocatesNothing`, `controlStableSortAllocates`, `queueCapsAndCountsDrops` | unchanged, re-run as the family |
+| 3434 | existing `sortIsChronologicalAndStable`, `sortAllocatesNothing`, `controlStableSortAllocates`, `queueCapsAndCountsDrops`; `processUsesAllocationFreeMidiSort` | helper properties plus the `process()` call site |
 
 ## Evidence
 
@@ -65,7 +65,11 @@ Logs in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p17-148.r1/log
 | batch | `zene` rebuild | `cmake --build build --target zene` | 0 | `build-zene-final.log` |
 | batch | gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 | `feature-check-silence.log`, `feature-check-final.log`: `RESULT: PASS` |
 
-Affected family: `ctest -R VstMidiEventBatchTest` (1 ctest entry, 10 QTest functions). After both fixes: 10 passed, 0 failed.
+Affected family: `ctest -R VstMidiEventBatchTest` (1 ctest entry, 11 QtTest results including init/cleanup). After the batch and QA regression: 11 passed, 0 failed.
+
+### Independent QA supplement (2026-11-06)
+
+The helper tests above did not detect a regression that changed only `RemoteVstPlugin::process()` back to `std::stable_sort`; the focused CTest still passed with that mutation (EXIT 0). Added `processUsesAllocationFreeMidiSort` to pin the client call site to the tested helper. With the process call temporarily changed to `std::stable_sort`, `cmake --build build --target zene VstMidiEventBatchTest NativeLinuxRemoteVstPlugin64 -j12` exited 0 and `ctest -R VstMidiEventBatchTest --output-on-failure` exited 8 at that assertion (`qa-review-test-3434-red-1.log`). Restored the branch product file with `git checkout -- plugins/VstBase/RemoteVstPlugin.cpp`, rebuilt the same targets (EXIT 0), and reran the same CTest (EXIT 0; one CTest entry, 11 QtTest results: 11 passed, 0 failed). The independently rerun feature gate exited 0; complexity and file-length reported no new item in the touched files (`qa-review-feature-check-1.log`). Full command logs are under `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p17-148.r1/logs/`.
 
 ### Commits
 
@@ -80,7 +84,7 @@ Registration: no new files. `VstMidiEventBatch.h` and the test were already in `
 
 - new-p17-148: reverted the `RemoteVstPlugin.cpp` hunk via `fix-silence-integration.patch` and ran `ctest -R VstMidiEventBatchTest --output-on-failure` from `build/tests`: EXIT 8, `test-red-silence.log` (1 failed: `processEarlyReturnsSilenceOutputs`). Restored with `git apply fix-silence-integration.patch` and the same ctest: EXIT 0, `test-green-silence2.log` (1/1 passed, 9 functions). The pre-fix RED was `test-1.log` EXIT 8 with the same failing assertion.
 - new-p14-240: reverted the `RemoteVstPlugin.cpp` hunk via `fix-scratch.patch` (`git apply -R fix-scratch.patch`), rebuilt, `ctest -R VstMidiEventBatchTest --output-on-failure`: EXIT 8, `test-red-scratch-proof.log` (1 failed: `midiScratchIsPerInstance`). Restored and the same ctest: EXIT 0, `test-green-scratch-proof.log` (1/1 passed, 10 functions). The pre-fix RED was `test-red-scratch2.log` EXIT 8.
-- 3434: ALREADY-FIXED, no product change to revert; existing `sortAllocatesNothing` + `controlStableSortAllocates` pass (in every run above).
+- 3434: ALREADY-FIXED, no batch product change to revert; `processUsesAllocationFreeMidiSort` fails with the processing call replaced by `std::stable_sort` (EXIT 8), then passes after restoring the branch source (EXIT 0).
 
 ### The test is deterministic: no wall-clock timing, sleeps or races (name the seam or injected values it uses).
 

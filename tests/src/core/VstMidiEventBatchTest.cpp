@@ -212,6 +212,32 @@ private slots:
 			"silencing must use the cached output count, not the live plugin count");
 	}
 
+	//! cluster 3434: bind the tested allocation-free sort to the client's period path.
+	void processUsesAllocationFreeMidiSort()
+	{
+		QFile f(QStringLiteral("plugins/VstBase/RemoteVstPlugin.cpp"));
+		if (!f.exists())
+		{
+			f.setFileName(QStringLiteral("../../plugins/VstBase/RemoteVstPlugin.cpp"));
+		}
+		if (!f.exists())
+		{
+			f.setFileName(QStringLiteral("../../../plugins/VstBase/RemoteVstPlugin.cpp"));
+		}
+		QVERIFY2(f.exists(), "RemoteVstPlugin.cpp not found from the test working directory");
+		QVERIFY(f.open(QIODevice::ReadOnly | QIODevice::Text));
+		const auto text = QString::fromUtf8(f.readAll());
+		const auto begin = text.indexOf(QStringLiteral("void RemoteVstPlugin::process"));
+		QVERIFY(begin >= 0);
+		const auto end = text.indexOf(QStringLiteral("void RemoteVstPlugin::processMidiEvent"), begin);
+		QVERIFY(end > begin);
+		const auto body = text.mid(begin, end - begin);
+		QVERIFY2(body.contains(QStringLiteral("vst::sortByDeltaFrames")),
+			"process() must use the tested allocation-free MIDI sort");
+		QVERIFY2(!body.contains(QStringLiteral("stable_sort")),
+			"process() must not allocate a stable_sort buffer per period");
+	}
+
 	//! cluster new-p14-240: the dispatch scratch must be per-instance, not a
 	//! function-local static shared by every RemoteVstPlugin instance.
 	void midiScratchIsPerInstance()
