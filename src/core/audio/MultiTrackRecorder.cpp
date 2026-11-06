@@ -48,9 +48,10 @@ MultiTrackRecorder::MultiTrackRecorder(int routeCapacity, int inputChannelCapaci
 	// The prototype's default mapping survives: route k starts on channel k
 	// when the selectable range reaches that far, and on the last selectable
 	// channel when it does not (a 2-route recorder over a 1-channel input).
+	const int lastChannel = std::max(0, this->inputChannelCapacity() - 1);
 	for (int i = 0; i < routes; ++i)
 	{
-		m_tracks[static_cast<std::size_t>(i)]->setInputChannel(i);
+		m_tracks[static_cast<std::size_t>(i)]->setInputChannel(std::min(i, lastChannel));
 	}
 }
 
