@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-11-05T10:51:23Z",
+  "captured_at": "2026-11-06T13:36:30Z",
   "commands": [
     {
       "args_schema": {
@@ -32116,7 +32116,8 @@
               "pattern",
               "sample",
               "automation",
-              "folder"
+              "folder",
+              "neutral"
             ],
             "type": "string"
           }
@@ -32124,7 +32125,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Append a track of the given type (default instrument) and return its stable trk-<n> id. An instrument or sample track can name its destination: `output` is a ch-<n> id (mixer.get_state lists them; a parallel bus takes no track input and is refused). Without `output`, the preference app/autotrackchannel (settings.set, \"1\" on) gives the track its own mixer channel, named after it and kept in step when either is renamed; off, the track plays into the master as before. `instrument` loads that plug-in. Undo removes the track and any channel made for it; redo recreates both, the track with a fresh stable trk-<n> id.",
+      "description": "Append a track of the given type (default instrument; 'neutral' is a row that holds no clips and is given an audio input or an instrument later) and return its stable trk-<n> id. An instrument or sample track can name its destination: `output` is a ch-<n> id (mixer.get_state lists them; a parallel bus takes no track input and is refused). Without `output`, the preference app/autotrackchannel (settings.set, \"1\" on) gives the track its own mixer channel, named after it and kept in step when either is renamed; off, the track plays into the master as before. `instrument` loads that plug-in. Undo removes the track and any channel made for it; redo recreates both, the track with a fresh stable trk-<n> id.",
       "group": "track",
       "id": "track.add",
       "mutating": true,
@@ -39217,11 +39218,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-integrate-Q050-283.1-081630835b/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-d5foro6x/zene.sock",
-    "version": "0.4.0-alpha.6169+74099e0"
+    "source_socket": "/tmp/zctl-run-alvh35a0/zene.sock",
+    "version": "0.4.0-alpha.6170+0816308"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

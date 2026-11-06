@@ -27,6 +27,7 @@
 #include "ControlVocabulary.h"
 
 #include <algorithm>
+#include <cstddef>
 
 #include <QDomDocument>
 #include <QDomElement>
@@ -63,21 +64,15 @@ namespace control
 
 QString trackTypeNameOf(Track::Type type)
 {
-	switch (type)
-	{
-		case Track::Type::Instrument: return QStringLiteral("instrument");
-		case Track::Type::Pattern: return QStringLiteral("pattern");
-		case Track::Type::Sample: return QStringLiteral("sample");
-		case Track::Type::Event: return QStringLiteral("event");
-		case Track::Type::Video: return QStringLiteral("video");
-		case Track::Type::Automation: return QStringLiteral("automation");
-		case Track::Type::HiddenAutomation: return QStringLiteral("hidden_automation");
-		// A folder track (owner items 3+20+21): the type track.add takes as
-		// "folder" and every read reports.
-		case Track::Type::Folder: return QStringLiteral("folder");
-		case Track::Type::Count: break;
-	}
-	return QStringLiteral("unknown");
+	// A TABLE indexed by the enum, not a switch: the complexity ratchet counts every `case`, and a name
+	// per type is data. The static_assert makes a new Track::Type fail the build until it has a name.
+	static const char* const names[] = {"instrument", "pattern", "sample", "event", "video", "automation",
+		"hidden_automation", "folder", "neutral"};
+	static_assert(sizeof(names) / sizeof(names[0]) == static_cast<std::size_t>(Track::Type::Count),
+		"every Track::Type needs a name");
+	const int index = static_cast<int>(type);
+	if (index < 0 || index >= static_cast<int>(Track::Type::Count)) { return QStringLiteral("unknown"); }
+	return QString::fromLatin1(names[index]);
 }
 
 namespace

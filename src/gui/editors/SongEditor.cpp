@@ -65,6 +65,7 @@
 #include "LcdSpinBox.h"
 #include "MainWindow.h"
 #include "MeterDialog.h"
+#include "NeutralTrackView.h"
 #include "Oscilloscope.h"
 #include "PianoRoll.h"
 #include "PositionLine.h"
@@ -979,6 +980,18 @@ SongEditorWindow::SongEditorWindow(Song* song) :
 	trackActionsToolBar->addAction(addFolderTrackAction);
 	// Q050-212: an instrument or sample track with its destination chosen, or several on a new bus.
 	trackActionsToolBar->addWidget(makeAddTrackButton(trackActionsToolBar));
+
+	// Q050-283.1: a neutral row - the row to add before choosing an audio input or an instrument - through
+	// track.add like an agent's.
+	auto* addNeutralTrackAction = new QAction(NeutralTrackView::icon(), tr("Add neutral track"), this);
+	addNeutralTrackAction->setObjectName(QStringLiteral("addNeutralTrackAction"));
+	addNeutralTrackAction->setToolTip(tr("Add a neutral track: a row you give an audio input or an instrument later"));
+	addNeutralTrackAction->setData(QStringLiteral("track.add"));
+	connect(addNeutralTrackAction, &QAction::triggered, this, [] {
+		ControlRegistry::instance()->invoke(QStringLiteral("track.add"),
+			{{QStringLiteral("type"), QStringLiteral("neutral")}, {QStringLiteral("name"), tr("Neutral track")}});
+	});
+	trackActionsToolBar->addAction(addNeutralTrackAction);
 
 
 	// Edit actions

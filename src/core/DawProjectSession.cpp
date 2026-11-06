@@ -127,6 +127,7 @@ Track::Type trackTypeFromName(const QString& typeName)
 		return Track::Type::HiddenAutomation;
 	}
 	if (is("folder")) { return Track::Type::Folder; }
+	if (is("neutral")) { return Track::Type::Neutral; }
 	if (is("video")) { return Track::Type::Video; }
 	return Track::Type::Instrument;
 }

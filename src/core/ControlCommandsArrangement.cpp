@@ -70,6 +70,8 @@ Track::Type trackTypeForName(const QString& typeName)
 	// path goes through createTrackOfType with this same value, so the two
 	// cannot disagree about what "folder" created.
 	if (typeName == QLatin1String("folder")) { return Track::Type::Folder; }
+	// A neutral row (Q050-283.1): the row a musician adds before choosing audio input or instrument.
+	if (typeName == QLatin1String("neutral")) { return Track::Type::Neutral; }
 	return Track::Type::Instrument;
 }
 
@@ -168,7 +170,8 @@ void registerTrackAdd(ControlRegistry& registry)
 	cmd.id = QStringLiteral("track.add");
 	cmd.group = QStringLiteral("track");
 	cmd.verb = QStringLiteral("add");
-	cmd.description = QStringLiteral("Append a track of the given type (default instrument) and return "
+	cmd.description = QStringLiteral("Append a track of the given type (default instrument; 'neutral' is a row that holds "
+		"no clips and is given an audio input or an instrument later) and return "
 		"its stable trk-<n> id. An instrument or sample track can name its destination: `output` is a "
 		"ch-<n> id (mixer.get_state lists them; a parallel bus takes no track input and is refused). Without "
 		"`output`, the preference app/autotrackchannel (settings.set, \"1\" on) gives the track its own mixer "
@@ -178,7 +181,8 @@ void registerTrackAdd(ControlRegistry& registry)
 	cmd.argsSchema = control::objectSchema({
 		{QStringLiteral("type"), QJsonObject{{QStringLiteral("type"), QStringLiteral("string")},
 			{QStringLiteral("enum"), QJsonArray{QStringLiteral("instrument"), QStringLiteral("pattern"),
-				QStringLiteral("sample"), QStringLiteral("automation"), QStringLiteral("folder")}}}},
+				QStringLiteral("sample"), QStringLiteral("automation"), QStringLiteral("folder"),
+				QStringLiteral("neutral")}}}},
 		{QStringLiteral("name"), control::stringProperty()},
 		{QStringLiteral("output"), control::stringProperty()},
 		{QStringLiteral("instrument"), control::stringProperty()},
