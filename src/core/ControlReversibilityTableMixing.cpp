@@ -52,6 +52,10 @@ const ReversibilityRow kMixingRows[] = {
 		"action checkpoint: the recorded undo step puts the send's previous pan back", ""),
 	R("window.mixer_view", RC::NotMutating, false, "the mixer view's modes and options are interface state (the options "
 		"are kept in the ui/mixerview setting), not the project", "no project write (set the previous options to restore)", ""),
+	R("window.mixer_zones", RC::NotMutating, false,
+		"the mixer's docked regions and separator widths are interface state and live in the window layout the project keeps "
+		"(window.layout_project_save's `mixer_zones`); this command writes no project data of its own",
+		"no write of its own (drag the separator back, or send the previous 'zones'/'sizes'; the layout save is the undo step)", ""),
 	R("window.phase_scope", RC::NotMutating, false, "it opens the stereo phase view on a channel: a display", "no write", ""),
 	R("mixer.set_many", RC::TrueInverse, true, "it mutes or solos several channels",
 		"action checkpoint: the recorded undo step puts every channel's mute and solo back", ""),

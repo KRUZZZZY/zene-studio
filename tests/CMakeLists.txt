@@ -1320,6 +1320,8 @@ set(LMMS_TESTS
 	src/gui/MixerMeteringTest.cpp
 	# MixerStripFeaturesTest: the strip's Console section, its meter mode, the delay entries and the input meters (Q050-088/108/339/340).
 	src/gui/MixerStripFeaturesTest.cpp
+	# Q050-227.1: the mixer's dockable regions and separator drags, and the layout a project saves of them.
+	src/gui/MixerZonesTest.cpp
 	# The selected mixer channel follows its identity through a removal, a removal of itself, and a reorder.
 	src/gui/MixerSelectionIdentityTest.cpp
 	# Q050-089.1: a hardware insert's effective latency (measured, then typed) in pdc.report and the strip tooltip.
@@ -3639,6 +3641,7 @@ set_tests_properties(AudioDeviceDiagnosticsTest PROPERTIES ENVIRONMENT "QT_QPA_P
 set_tests_properties(MixerInsertLatencyTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(RealtimeExportMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 300)
 set_tests_properties(MixerStripFeaturesTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(MixerZonesTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(DevicePanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(EffectRackAddTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PatcherCanvasTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

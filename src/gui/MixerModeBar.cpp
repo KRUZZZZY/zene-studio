@@ -46,6 +46,7 @@
 #include "MixerOverlays.h"
 #include "MixerRoutingMatrix.h"
 #include "MixerStrip.h"
+#include "MixerZones.h"
 #include "MixerViewOptions.h"
 
 namespace lmms::gui
@@ -128,6 +129,7 @@ MixerModeBar::MixerModeBar(QWidget* parent) :
 	m_solo = addChip(layout, QStringLiteral("mixerModeSolo"), tr("The solo mode: whether a solo unsolos the others"), &MixerModeBar::fillSolo);
 	m_listen = addChip(layout, QStringLiteral("mixerModeListen"), tr("The listen bus: the channels heard in place of the mix, after or before their faders"), &MixerModeBar::fillListen);
 	m_master = addChip(layout, QStringLiteral("mixerModeMaster"), tr("Where the master plays (its hardware output) and its speaker format"), &MixerModeBar::fillMaster);
+	m_zones = addChip(layout, QStringLiteral("mixerModeZones"), tr("Where the mixer's regions are docked and how wide their separators leave them"), &MixerModeBar::fillZones);
 	auto* matrix = new QPushButton(tr("Routing Matrix..."), this);
 	matrix->setObjectName(QStringLiteral("mixerModeMatrix"));
 	matrix->setMinimumHeight(tokens::targetSize());
@@ -245,6 +247,34 @@ void MixerModeBar::fillMaster(QMenu* menu)
 	addSurroundMenu(menu, master);
 }
 
+void MixerModeBar::fillZones(QMenu* menu)
+{
+	const QString kZonesCommand = QStringLiteral("window.mixer_zones");
+	const auto run = [menu](const QJsonObject& args) {
+		runCommand(menu->parentWidget(), CommandCall{QStringLiteral("window.mixer_zones"), args, {}, QString(), false});
+	};
+	for (const QString& id : mixerzones::sideRegionIds())
+	{
+		QMenu* region = menu->addMenu(mixerzones::regionTitle(id));
+		region->setProperty("controlCommand", kZonesCommand);
+		const gui::mixerzones::Layout& layout = mixerzones::MixerZoneState::instance()->layout();
+		for (const QString& dock : {QStringLiteral("left"), QStringLiteral("right")})
+		{
+			QAction* action = region->addAction(mixerzones::dockTitle(dock));
+			action->setProperty("controlCommand", kZonesCommand);
+			action->setCheckable(true);
+			action->setChecked(layout.docks.value(id) == dock);
+			connect(action, &QAction::triggered, menu, [run, id, dock] {
+				run({{QStringLiteral("dock"), id + QLatin1Char('=') + dock}});
+			});
+		}
+	}
+	menu->addSeparator();
+	QAction* reset = menu->addAction(tr("Reset the Layout"));
+	reset->setProperty("controlCommand", kZonesCommand);
+	connect(reset, &QAction::triggered, menu, [run] { run({{QStringLiteral("reset"), true}}); });
+}
+
 void MixerModeBar::refresh(const mixerstripinfo::Context& context)
 {
 	const mixerviewoptions::Options& options = mixerviewoptions::options();
@@ -272,6 +302,16 @@ void MixerModeBar::refreshChips(const mixerstripinfo::Context& context)
 	const mixerstripinfo::StripInfo master = mixerstripinfo::describe(*mixer, 0, context);
 	setChip(m_master, master.format.isEmpty() ? tr("Master: %1").arg(master.hardware)
 		: tr("Master: %1, %2").arg(master.hardware, master.format), false);
+	const gui::mixerzones::Layout& zones = mixerzones::MixerZoneState::instance()->layout();
+	const auto side = [&zones](const QString& dock) {
+		QStringList names;
+		for (const QString& id : mixerzones::sideRegionIds())
+		{
+			if (zones.docks.value(id) == dock) { names << mixerzones::regionTitle(id); }
+		}
+		return names.isEmpty() ? tr("none") : names.join(QStringLiteral(", "));
+	};
+	setChip(m_zones, tr("Zones: %1 | %2").arg(side(QStringLiteral("left")), side(QStringLiteral("right"))), false);
 }
 
 } // namespace lmms::gui

@@ -996,6 +996,7 @@ include/MixerPostInserts.h
 include/MixerRoutingMatrix.h
 include/MixerSendPan.h
 include/MixerSendsBanner.h
+include/MixerZones.h
 include/MixerSnapshots.h
 include/MixerStrip.h
 include/MixerStripInfo.h
@@ -2111,6 +2112,7 @@ src/gui/MixerModeBar.cpp
 src/gui/MixerOverlays.cpp
 src/gui/MixerRoutingMatrix.cpp
 src/gui/MixerSendsBanner.cpp
+src/gui/MixerZones.cpp
 src/gui/MixerStripInfo.cpp
 src/gui/MixerStripTags.cpp
 src/gui/MixerViewOptions.cpp
@@ -2919,6 +2921,7 @@ tests/src/gui/LmmsStyleTest.cpp
 tests/src/gui/PianoRollRecordTest.cpp
 tests/src/gui/FollowActionEditorTest.cpp
 tests/src/gui/MixerSelectionIdentityTest.cpp
+tests/src/gui/MixerZonesTest.cpp
 tests/src/gui/MixerInsertLatencyTest.cpp
 tests/src/gui/RealtimeExportMenuTest.cpp
 tests/src/gui/MixerStripFeaturesTest.cpp

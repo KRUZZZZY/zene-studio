@@ -70,6 +70,13 @@ public:
 	QToolButton* soloButton() const { return m_solo; }
 	QToolButton* listenButton() const { return m_listen; }
 	QToolButton* masterButton() const { return m_master; }
+	//! Q050-227.1: the button naming the mixer's dock layout, whose menu docks and un-docks its regions
+	//! through window.mixer_zones.
+	QToolButton* zonesButton() const { return m_zones; }
+	//! Q050-227.1: fill @a menu with the mixer's dock layout - one submenu per side region with its two
+	//! supported sides (the one in force checked), then Reset the Layout. Every entry runs
+	//! window.mixer_zones, so the menu and an agent take the same path.
+	void fillZones(QMenu* menu);
 
 signals:
 	void changed();
@@ -85,6 +92,7 @@ private:
 	void fillSolo(QMenu* menu);
 	void fillListen(QMenu* menu);
 	void fillMaster(QMenu* menu);
+
 	void pickSelected();  //!< MX-005
 	void refreshChips(const mixerstripinfo::Context& context);
 
@@ -95,6 +103,7 @@ private:
 	QToolButton* m_solo = nullptr;
 	QToolButton* m_listen = nullptr;
 	QToolButton* m_master = nullptr;
+	QToolButton* m_zones = nullptr;  //!< Q050-227.1: the dock layout
 };
 
 } // namespace lmms::gui
