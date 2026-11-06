@@ -1,8 +1,9 @@
-# Cluster new-p9-378 (same-file batch: new-p9-378, 5244, new-p16-178)
-
+FIXED
 new-p9-378: FIXED
 5244: FIXED
 new-p16-178: FIXED
+
+# Cluster new-p9-378 (same-file batch: new-p9-378, 5244, new-p16-178)
 
 ## Verdicts
 
@@ -27,49 +28,28 @@ No new control command, no undo change, no realtime-path change (all edits stay 
 - `projectZoneNamingAMissingChainIsDiscarded()` (5244): loads a 2-chain rack through `Rack::loadSettings()` with zones `chain="99"` (keys 0–127) and `chain="1"` (keys 60–72); expects `zoneCount()==1`, `zone(0)->chain==1`, `resolve(65,100)==0`.
 - `invalidFirstZoneDoesNotHideAValidLaterZone()` (new-p16-178): loads a 2-chain rack with two overlapping zones (keys 36–60), first `chain="999"`, then `chain="1"`; expects `zoneCount()==1`, `resolve(40,100)==0` with `chain==1`.
 
-## Evidence: RED / GREEN / 4b
+## Evidence: RED / GREEN / 4b (r3 re-proof of the committed fix)
 
-Logs: `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-378.r1/logs/`. All commands run from the worktree unless noted (`build/tests` for ctest).
+Logs: `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-378.r3/logs/`. All build commands run from the worktree; test binaries/ctest run from `build/tests`. The product fix is already committed (`b49dac66a7`); the r3 run re-proves it per bug by reversing only that bug's product patch, then re-applying it. Patches: `guard.patch` (only the `edit()` hunk in `src/core/RackZones.cpp`) and `load.patch` (header + `loadSettings` signature/body + the three caller chain-count arguments), both in the same log folder; `git apply -R --check` on both returned `0` before the cycles.
 
-Initial RED (tests added, no product fix), `EXIT=8`:
+GREEN on the committed tree:
 
-- `cmake --build build --target RackZonesTest > .../logs/build-red-tests.log 2>&1; echo EXIT=$?` → `EXIT=0`
-- `ctest -R '^RackZonesTest$' --output-on-failure > .../logs/test-red-all.log 2>&1` (from `build/tests`) → `EXIT=8`
-  - `FAIL! ... throwingEditReleasesTheModelChangeGuard() '!heldAfterAlongside' returned FALSE. (edit left the model-change guard held after the alongside step threw)` (`RackZonesTest.cpp:525`)
-  - `FAIL! ... projectZoneNamingAMissingChainIsDiscarded() Actual (rack.zones().zoneCount()): 2 Expected (1)` (`:570`)
-  - `FAIL! ... invalidFirstZoneDoesNotHideAValidLaterZone() Actual (rack.zones().zoneCount()): 2 Expected (1)` (`:596`)
-  - 9 passed, 3 failed.
+- `cmake --build build --target zene RackZonesTest InstrumentLayerZonePublishTest RackZoneFeedRunTest > 01-build-green.log 2>&1` → `BUILD_EXIT=0` (log 01)
+- `ctest -R '^RackZonesTest$|^InstrumentLayerZonePublishTest$|^RackZoneFeedRunTest$' --output-on-failure > 02-test-green-family.log 2>&1` (from `build/tests`) → `EXIT=0` (3/3 passed; log 02)
 
-Guard GREEN (only the `edit()` fix), `EXIT=8` overall (load still unfixed, as intended):
+4b new-p9-378 (guard only):
 
-- `cmake --build build --target RackZonesTest > .../logs/build-green-guard.log 2>&1` → `EXIT=0`
-- `./RackZonesTest throwingEditReleasesTheModelChangeGuard projectZoneNamingAMissingChainIsDiscarded invalidFirstZoneDoesNotHideAValidLaterZone > .../logs/test-green-guard.log 2>&1` → `EXIT=8`; guard slot `PASS`, both load slots still `FAIL` (2 vs 1). The full `ctest -R '^RackZonesTest$'` run is in the same log: 10 passed, 2 failed.
+- RED: `git apply -R guard.patch; echo APPLY_R_EXIT=$?` → `APPLY_R_EXIT=0`; `cmake --build build --target RackZonesTest > 03-build-4b-guard-red.log 2>&1` → `BUILD_EXIT=0`; `./RackZonesTest throwingEditReleasesTheModelChangeGuard projectZoneNamingAMissingChainIsDiscarded invalidFirstZoneDoesNotHideAValidLaterZone > 04-test-4b-guard-red.log 2>&1` → `TEST_EXIT=1`. Guard slot `FAIL! ... '!heldAfterAlongside' returned FALSE. (RackZonesTest.cpp:525)`; both load slots `PASS`. Totals: 4 passed, 1 failed.
+- GREEN: `git apply guard.patch; echo REAPPLY_EXIT=$?` → `REAPPLY_EXIT=0`; `cmake --build build --target RackZonesTest > 05-build-4b-guard-green.log 2>&1` → `BUILD_EXIT=0`; `./RackZonesTest throwingEditReleasesTheModelChangeGuard projectZoneNamingAMissingChainIsDiscarded invalidFirstZoneDoesNotHideAValidLaterZone > 06-test-4b-guard-green.log 2>&1` → `TEST_EXIT=0`. Totals: 5 passed, 0 failed.
 
-Load GREEN (all fixes), `EXIT=0`:
+4b 5244 + new-p16-178 (shared load fix, each slot proved separately):
 
-- `cmake --build build --target zene > .../logs/build-green-load.log 2>&1` → `EXIT=0`
-- `cmake --build build --target RackZonesTest InstrumentLayerZonePublishTest RackZoneFeedRunTest > .../logs/build-tests-green-load.log 2>&1` → `EXIT=0`
-- `ctest -R '^RackZonesTest$|^InstrumentLayerZonePublishTest$|^RackZoneFeedRunTest$' --output-on-failure > .../logs/test-green-load.log 2>&1` (from `build/tests`) → `EXIT=0` (3/3 passed)
-- `./RackZonesTest > .../logs/test-green-verbose.log 2>&1` → `EXIT=0`; `Totals: 12 passed, 0 failed`.
-
-4b (per-bug isolation; patches split by hunk so each reversal touches only that bug's product code):
-
-- new-p9-378. `git diff -- src/core/RackZones.cpp > .../logs/combined-rackzones.patch`; split hunks into `.../logs/guard.patch` (only the `edit()` hunk) and `.../logs/load.patch` (remaining hunks + `include/RackZones.h`, `src/core/Rack.cpp`, `src/core/InstrumentLayers.cpp`, `src/core/InstrumentMidiParts.cpp`). `git apply -R --check` both → `0`.
-  - RED: `git apply -R .../logs/guard.patch; echo APPLY_R_EXIT=$?` (0), `cmake --build build --target RackZonesTest > .../logs/build-4b-guard-red.log 2>&1` (0), `./RackZonesTest throwingEditReleasesTheModelChangeGuard projectZoneNamingAMissingChainIsDiscarded invalidFirstZoneDoesNotHideAValidLaterZone > .../logs/test-4b-guard-red.log 2>&1` → `EXIT=1`; guard slot `FAIL` (guard held), load slots `PASS`. Totals: 4 passed, 1 failed.
-  - GREEN: `git apply .../logs/guard.patch; echo REAPPLY_EXIT=$?` (0), build (0), `./RackZonesTest ... > .../logs/test-4b-guard-green.log 2>&1` → `EXIT=0`; `Totals: 5 passed, 0 failed`.
-- 5244 and new-p16-178 share one fix (one `load.patch`); each test is proved against it separately.
-  - RED: `git apply -R .../logs/load.patch; echo APPLY_R_EXIT=$?` (0), build (0), `./RackZonesTest throwingEditReleasesTheModelChangeGuard projectZoneNamingAMissingChainIsDiscarded invalidFirstZoneDoesNotHideAValidLaterZone > .../logs/test-4b-5244-red.log 2>&1` → `EXIT=2`; guard slot `PASS`, `projectZoneNamingAMissingChainIsDiscarded` `FAIL` (zoneCount 2 vs 1, `:570`), `invalidFirstZoneDoesNotHideAValidLaterZone` `FAIL` (zoneCount 2 vs 1, `:596`). Totals: 3 passed, 2 failed. The new-p16-178 RED is in the same run, against the two overlapping zones: the stored first zone is `chain=999`.
-  - GREEN: `git apply .../logs/load.patch; echo REAPPLY_EXIT=$?` (0), build (0), `./RackZonesTest ... > .../logs/test-4b-load-green.log 2>&1` → `EXIT=0`; all three slots `PASS`. Totals: 5 passed, 0 failed.
-
-Sibling rebuild (header changed):
-
-- `cmake --build build --target RackZoneRoutingTest RackMacrosTest InstrumentRoutingTest InstrumentSetupUiTest MidiInputTransformTest > .../logs/build-siblings.log 2>&1` → `EXIT=0`
-- `ctest -R '^RackZoneRoutingTest$|^RackMacrosTest$|^InstrumentRoutingTest$' > .../logs/test-siblings.log 2>&1` → `EXIT=0`
-- `ctest -R '^InstrumentSetupUiTest$|^MidiInputTransformTest$' > .../logs/test-siblings2.log 2>&1` → `EXIT=0`
+- RED: `git apply -R load.patch; echo APPLY_R_EXIT=$?` → `APPLY_R_EXIT=0`; `cmake --build build --target RackZonesTest > 07-build-4b-load-red.log 2>&1` → `BUILD_EXIT=0`; `./RackZonesTest throwingEditReleasesTheModelChangeGuard projectZoneNamingAMissingChainIsDiscarded invalidFirstZoneDoesNotHideAValidLaterZone > 08-test-4b-load-red.log 2>&1` → `TEST_EXIT=2`. Guard slot `PASS`; `projectZoneNamingAMissingChainIsDiscarded` `FAIL` (`Actual (rack.zones().zoneCount()): 2 Expected (1)`, `RackZonesTest.cpp:570`); `invalidFirstZoneDoesNotHideAValidLaterZone` `FAIL` (2 vs 1, `:596`). Totals: 3 passed, 2 failed.
+- GREEN: `git apply load.patch; echo REAPPLY_EXIT=$?` → `REAPPLY_EXIT=0`; `cmake --build build --target zene RackZonesTest InstrumentLayerZonePublishTest RackZoneFeedRunTest > 09-build-4b-load-green.log 2>&1` → `BUILD_EXIT=0`; `./RackZonesTest throwingEditReleasesTheModelChangeGuard projectZoneNamingAMissingChainIsDiscarded invalidFirstZoneDoesNotHideAValidLaterZone > 10-test-4b-load-green.log 2>&1` → `TEST_EXIT=0` (5 passed, 0 failed); `ctest -R '^RackZonesTest$|^InstrumentLayerZonePublishTest$|^RackZoneFeedRunTest$' --output-on-failure > 11-test-green-family-rerun.log 2>&1` → `CTEST_EXIT=0` (3/3 passed). `git status --short` after re-apply: clean.
 
 ## Gates
 
-`python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > .../logs/gates.log 2>&1` → `EXIT=0`, `RESULT: PASS` (fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length all PASS; no new complexity/file-length item in the changed files).
+`python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > 12-gates.log 2>&1` → `GATES_EXIT=0`, `RESULT: PASS` (fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length all PASS; no new complexity/file-length item in the changed files). `submit_check.py` pre-commit (`13-submit-check-precommit.log`, `SUBMIT_EXIT=1`): report `PASS`, sole `FAIL` is `working tree clean` for this uncommitted report edit — cleared by committing it.
 
 ## Files committed
 
@@ -77,27 +57,35 @@ Sibling rebuild (header changed):
 - `include/RackZones.h` — `loadSettings(..., int chainCount = 64)` declaration.
 - `src/core/Rack.cpp`, `src/core/InstrumentLayers.cpp`, `src/core/InstrumentMidiParts.cpp` — pass their chain count.
 - `tests/src/core/RackZonesTest.cpp` — 3 regression slots.
-- `docs/qwen-fixes-2026-10/cluster-new-p9-378.md` — this report.
+- `docs/qwen-fixes-2026-10/cluster-new-p9-378.md` — this report (format/evidence updated in the follow-up commit naming cluster new-p9-378).
 
 ## Self-check
 
-### Decisions with evidence
+### Regression test FAILS without the fix and PASSES with it (exit codes)
 
-- `new-p9-378` REAL: pre-fix `src/core/RackZones.cpp:96-100` bracket points. The RAII fix matches the tree's guard idiom (`RequestChangesGuard`, `include/AudioEngine.h:100-151`, `requestChangesGuard()` at `:603-606`).
-- `5244` REAL: pre-fix `loadSettings()` (`src/core/RackZones.cpp:254-263`) checked ranges only; no chain check anywhere on the load path (the command path does check via `isValidRackZone`, `src/core/ControlCommandsRackZones.cpp:138`). Chain discarded only now.
-- `new-p16-178` REAL: pre-fix `resolve()` first-match-wins (`src/core/RackZones.cpp:143-156`) plus `chainFor()` single-shot reject (`src/core/RackZoneFeed.cpp:76-82`) hides a later valid zone; discarding at load removes the hiding.
+- new-p9-378: RED `TEST_EXIT=1` (log 04, guard slot FAIL at `RackZonesTest.cpp:525`) with only `guard.patch` reversed; GREEN `TEST_EXIT=0` (log 06) after re-applying it. Build exits `0` in both (logs 03, 05).
+- 5244: RED `TEST_EXIT=2` (log 08, `projectZoneNamingAMissingChainIsDiscarded` FAIL 2 vs 1 at `:570`) with only `load.patch` reversed; GREEN `TEST_EXIT=0` (log 10) after re-applying it. Build exit `0` (logs 07, 09).
+- new-p16-178: same RED run (log 08, `invalidFirstZoneDoesNotHideAValidLaterZone` FAIL 2 vs 1 at `:596`, stored first zone is `chain=999` so it hides the valid one) and same GREEN (log 10). Affected-family rerun: `CTEST_EXIT=0`, 3/3 passed (log 11; also log 02 before the cycles).
 
-### Regression proof
+### Deterministic: no wall-clock timing, sleeps or races
 
-- Each new slot FAILS without its fix and PASSES with it: initial RED (see table), guard-only GREEN, load GREEN, and both isolated 4b reversals re-proved. No wall-clock, sleeps, or races: the guard test reads the synchronous `isChangeInModelHeld()` seam; the load tests use fixed XML and direct `resolve()`/counts.
+- Guard slot uses the synchronous `LMMS_TESTING` seam `AudioEngine::isChangeInModelHeld()` (`include/AudioEngine.h:618-623`) read immediately after the caught throw; fixed `std::runtime_error` throws; no sleep, no thread, no clock.
+- Load slots use fixed XML documents and direct `zoneCount()`/`resolve()` assertions on the control thread. Injected values: `chain="99"` / `chain="999"` against a 2-chain rack.
 
-### Cause, completeness, collateral
+### Fix is at the cause and complete: every caller and sibling checked
 
-- Single-pass load validation: the invalid zone is never swapped into `m_zones`, so workers never see it (stronger than post-load filtering).
-- Callers checked: every `RackZones::loadSettings` caller (`Rack`, `InstrumentLayers`, `InstrumentMidiParts`) and every `addZone` side (commands validate through `isValidRackZone` before calling; `addZone` itself is unchanged and behavior outside the bugs is identical — valid saved data loads byte-for-byte the same).
-- Ranges: old projects with only key/velocity ranges load exactly as before (`isValidRackZone` range rules equal the previous `isValidRange` calls). A zone with a negative chain is now also discarded (previously stored; it could never route).
-- Realtime/undo: `edit()` still runs entirely under the model-change guard with the same nesting; no new allocation, lock, wait, or log on audio paths; no new control command.
+- `edit()`: RAII guard at the single bracketing point; every mutation path (`addZone`, `insertZone`, `removeZone`, `assign`, `clear`, `reindexChains`, `loadSettings` swap) funnels through `edit()`, so all of them get the exception-safe release. Nesting semantics unchanged (recursive mutex, same guard object type used by `Track`/`EffectChain`).
+- `loadSettings()`: every `RackZones::loadSettings` caller was checked and passes its owner's chain count — `Rack` (`chainCount()`, `src/core/Rack.cpp:425`, chains already loaded at `:410-417`), `InstrumentLayers` (`layerCount() + 1`, matching `ControlCommandsRackLayers.cpp:297`), `InstrumentMidiParts` (`Channels`, matching `ControlCommandsPluginParts.cpp:166`). The only remaining no-argument caller is the existing test at `tests/src/core/RackZonesTest.cpp:140` (`chain=0`, valid under the default 64). Command-side validation already used `isValidRackZone` (`ControlCommandsRackZones.cpp:138`); loading now uses the same rule. Header and definition changed together; `zene` and all three family test targets rebuilt (logs 01, 09).
 
-### Registration
+### No collateral damage: old projects and saved data still load as before
 
-- All touched product files are already in `tests/fork-sources.txt`; `feature_check.py` passes (no new file, no new complexity item), so no registration change is needed.
+- Valid saved data loads identically: `isValidRackZone` range rules equal the previous `isValidRange` calls, and the only newly refused zones are those naming a chain the owner does not have (or a negative chain), which could never route. The existing suite's load/round-trip slots pass unchanged (3/3 family, log 11).
+- No realtime/undo change: `edit()` still runs entirely under the model-change guard with the same nesting; no new allocation, lock, wait, or log on audio paths; no new control command; no undo step added.
+
+### ALREADY-FIXED / FALSE-POSITIVE code citation
+
+- Not applicable: all three verdicts are FIXED (REAL). Pre-fix evidence: `src/core/RackZones.cpp:96-100` (manual guard bracketing with no exception path), `:254-263` (load checked ranges only, no chain check), `resolve()` first-match-wins (`:143-156`) plus `RackZoneFeed::chainFor()` single-shot reject (`src/core/RackZoneFeed.cpp:76-82`) for the hiding case.
+
+### Registration and gates
+
+- All touched product files are already in `tests/fork-sources.txt`; no new file was created, so no registration change. `feature_check.py` → `GATES_EXIT=0`, `RESULT: PASS` (log 12). Report format: verdict `FIXED` is now line 1 and the three `<cluster>: <VERDICT>` lines follow (lines 2-4), satisfying `submit_check.py`'s first-lines and one-line-per-batch-unit checks (pre-commit log 13: both `PASS`; the only FAIL was the dirty tree for this edit). This section answers each ASK item above.
