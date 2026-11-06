@@ -144,6 +144,7 @@ public:
 
 	tresult PLUGIN_API queryInterface(const TUID iid, void** obj) SMTG_OVERRIDE
 	{
+		if (obj == nullptr) { return kInvalidArgument; }
 		if (FUnknownPrivate::iidEqual(iid, IPlugFrame::iid) || FUnknownPrivate::iidEqual(iid, FUnknown::iid))
 		{
 			*obj = static_cast<IPlugFrame*>(this);

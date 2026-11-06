@@ -37,6 +37,7 @@
 
 #include "../core/AllocationProbe.h"
 #include "Midi.h"
+#include "PluginWindowSystem.h"
 #include "Vst3ComponentHandler.h"
 #include "Vst3EditorSession.h"
 #include "Vst3Host.h"
@@ -135,6 +136,53 @@ public:
 	}
 };
 
+//! A stand-in editor view that keeps the frame the host gives it, so a case can question that frame
+//! the way a faulty editor would. The case owns it, not the session: its reference count is fixed.
+class FrameProbeView : public Steinberg::IPlugView
+{
+public:
+	Steinberg::tresult PLUGIN_API queryInterface(const Steinberg::TUID iid, void** obj) override
+	{
+		if (Steinberg::FUnknownPrivate::iidEqual(iid, Steinberg::IPlugView::iid)
+			|| Steinberg::FUnknownPrivate::iidEqual(iid, Steinberg::FUnknown::iid))
+		{
+			*obj = static_cast<Steinberg::IPlugView*>(this);
+			return Steinberg::kResultOk;
+		}
+		*obj = nullptr;
+		return Steinberg::kNoInterface;
+	}
+	Steinberg::uint32 PLUGIN_API addRef() override { return 1; }
+	Steinberg::uint32 PLUGIN_API release() override { return 1; }
+	Steinberg::tresult PLUGIN_API isPlatformTypeSupported(Steinberg::FIDString) override { return Steinberg::kResultTrue; }
+	Steinberg::tresult PLUGIN_API attached(void*, Steinberg::FIDString) override { return Steinberg::kResultOk; }
+	Steinberg::tresult PLUGIN_API removed() override { return Steinberg::kResultOk; }
+	Steinberg::tresult PLUGIN_API onWheel(float) override { return Steinberg::kResultFalse; }
+	Steinberg::tresult PLUGIN_API onKeyDown(Steinberg::char16, Steinberg::int16, Steinberg::int16) override { return Steinberg::kResultFalse; }
+	Steinberg::tresult PLUGIN_API onKeyUp(Steinberg::char16, Steinberg::int16, Steinberg::int16) override { return Steinberg::kResultFalse; }
+	Steinberg::tresult PLUGIN_API getSize(Steinberg::ViewRect*) override { return Steinberg::kResultFalse; }
+	Steinberg::tresult PLUGIN_API onSize(Steinberg::ViewRect*) override { return Steinberg::kResultOk; }
+	Steinberg::tresult PLUGIN_API onFocus(Steinberg::TBool) override { return Steinberg::kResultOk; }
+	Steinberg::tresult PLUGIN_API setFrame(Steinberg::IPlugFrame* frame) override { m_frame = frame; return Steinberg::kResultOk; }
+	Steinberg::tresult PLUGIN_API canResize() override { return Steinberg::kResultFalse; }
+	Steinberg::tresult PLUGIN_API checkSizeConstraint(Steinberg::ViewRect*) override { return Steinberg::kResultFalse; }
+
+	//! The frame the last setFrame() gave this view; the session clears it when the editor closes.
+	Steinberg::IPlugFrame* frame() const { return m_frame; }
+
+private:
+	Steinberg::IPlugFrame* m_frame = nullptr;
+};
+
+//! A controller whose editor is the probe view: the session asks the controller for it.
+class FrameProbeController : public MappingController
+{
+public:
+	Steinberg::IPlugView* PLUGIN_API createView(Steinberg::FIDString) override { return &m_view; }
+
+	FrameProbeView m_view;
+};
+
 //! The queue @a changes holds for parameter @a id, or nullptr.
 auto queueFor(Steinberg::Vst::IParameterChanges& changes, Steinberg::Vst::ParamID id) -> Steinberg::Vst::IParamValueQueue*
 {
@@ -184,6 +232,7 @@ private slots:
 	void testRebuildingControllerMapClearsDeferredPoints();
 	void testPrepareRejectsInvalidRequests();
 	void testComponentHandlerAnswersInterfaceQueries();
+	void testEditorFrameRefusesANullOutPointer();
 	void testNonFiniteParameterValuesAreRefused();
 	void testReprepareGateQuiescesAllActiveAudioCalls();
 	void testDroppedOutputCounterUsesAtomicAccess();
@@ -566,6 +615,37 @@ void Vst3HostTest::testComponentHandlerAnswersInterfaceQueries()
 
 	// the reference count the successful queries took is still owned here
 	handler->release();
+}
+
+/*! BUG 6 (new-p12-290): a faulty editor that asks the host's frame for an interface through a null
+ *  out-pointer is refused with kInvalidArgument, as the component handler refuses it. The frame's
+ *  queryInterface() stored through the null pointer and crashed the host. The frame is reached the
+ *  way an editor reaches it: the session hands it to the view, and the view keeps it. */
+void Vst3HostTest::testEditorFrameRefusesANullOutPointer()
+{
+	FrameProbeController controller;
+	Vst3EditorSession session(&controller);
+	session.setWindowSystem(PluginWindowSystem::X11);
+	QString error;
+	QVERIFY2(session.open(reinterpret_cast<void*>(1), &error), qPrintable(error));
+	auto* frame = controller.m_view.frame();
+	QVERIFY(frame != nullptr);
+
+	QCOMPARE(frame->queryInterface(Steinberg::IPlugFrame::iid, nullptr), Steinberg::kInvalidArgument);
+	QCOMPARE(frame->queryInterface(Steinberg::FUnknown::iid, nullptr), Steinberg::kInvalidArgument);
+
+	// a valid query still answers with the frame, and the reference it takes is the caller's to release
+	void* queried = nullptr;
+	QCOMPARE(frame->queryInterface(Steinberg::IPlugFrame::iid, &queried), Steinberg::kResultOk);
+	QCOMPARE(queried, static_cast<void*>(frame));
+	frame->release();
+
+	// an interface the frame does not implement still reports kNoInterface and leaves no pointer behind
+	queried = reinterpret_cast<void*>(0x1);
+	QCOMPARE(frame->queryInterface(Steinberg::IPlugView::iid, &queried), Steinberg::kNoInterface);
+	QVERIFY(queried == nullptr);
+
+	session.close();
 }
 
 /*! Luna cluster 3625: a plug-in or a caller that reports a value with no
