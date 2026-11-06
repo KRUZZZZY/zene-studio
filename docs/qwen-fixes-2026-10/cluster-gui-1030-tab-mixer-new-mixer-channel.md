@@ -68,7 +68,10 @@ About the gates: `feature_check.py` as shipped writes its logs to `<worktree>/..
 outside the write-jail (`20-feature-check.log`: `PermissionError`, EXIT=1). I ran a copy
 that differs only in two lines: `ROOT` points at the original qwen folder, and `logs` points at the LOG
 folder. The `diff` is recorded at the top of `21-feature-check.log`. The gates, baselines and checks are
-the shipped ones.
+the shipped ones. On the committed tree (`b9fd86a209`) the shipped script again exits 1 with the same
+`PermissionError` (`23-feature-check-shipped.log`), and the redirected copy exits 0 with RESULT: PASS
+(`24-feature-check-committed.log`). For the same reason, `submit_check.py` shows its "gates" row as FAIL
+in this lane: it calls the shipped script. Its other rows are PASS.
 
 Files committed: `src/gui/MixerView.cpp`, `tests/src/gui/MixerZonesTest.cpp`,
 `tests/upstream-modifications.txt`, this report.
