@@ -101,3 +101,29 @@ entry is needed.
 - `include/MixerModeBar.h`
 - `tests/src/gui/MixerModesTest.cpp`
 - `docs/qwen-fixes-2026-10/cluster-gui-1030-tab-mixer-routing-matrix.md`
+
+## Self-check
+
+- **Fails with the product change reverted, passes with it:** `git apply -R logs/fix.patch` (EXIT=0) → build
+  EXIT=0 → `ctest -R '^MixerModesTest$'` **EXIT=8** (`mixerModeFilter is squeezed to 45 of its 129 px in a 805-wide
+  mixer`, `18-test-4b-red.log`). Then `git apply logs/fix.patch` (EXIT=0) → build EXIT=0 →
+  `ctest -R '^Mixer(Modes|Zones|Metering)Test$'` **EXIT=0**, 3/3 passed (`20-test-4b-green.log`).
+- **Deterministic:** no timers, sleeps, event loop or shown window. The test sets explicit geometries on an
+  unshown host (`host.layout()->setGeometry(QRect(0, 0, width, 800))`) and runs the bar's layout pass itself
+  (`modes->layout()->setGeometry(modes->rect())`). Its only inputs are the widths ½, ⅓ and 1× of the bar's own
+  `sizeHint()`, and it compares integer geometries.
+- **At the cause and complete:** the cause is the one-row `QHBoxLayout` in the bar's constructor, and that
+  layout is what was replaced. Its only users are `addSegment`/`addChip`, which now take `QLayout*`; header
+  and source changed together. Nothing else reaches the bar's layout (`rg "modeBar\(\)->layout|m_modeBar->layout"`:
+  no hits). The header's other includers (`MixerView.cpp`, `MixerZonesTest`, `MixerMeteringTest`) were rebuilt
+  and pass. The spacer keeps the wide-bar look, and the test checks it at the one-row width.
+- **No collateral damage:** layout only. No saved data, project format, command, undo step or audio-thread
+  code is touched. The only limit that changes is the bar's minimum width, which now falls from the whole
+  row to the widest single control. That lowers a constraint and adds none. Wide mixers still get one row
+  with the same right-aligned modes.
+- **ALREADY-FIXED / FALSE-POSITIVE evidence:** not applicable; the verdict is FIXED.
+- **submit_check "gates (feature_check.py)" FAIL:** `feature_check.py` exits 1 with `PermissionError`
+  creating `<worktree>/../zene-qwen-gui-1030-tab-mixer-routing-matrix-feature-check`, outside this lane's
+  write-jail, so its gate rows never ran from here. It is not a gate failure. I ran a copy with only the log
+  dir changed: all six simple gates PASS. The two ratchet gates, run directly, list no item in my files (see
+  "Gates" above). The loop's own run of the check outside the jail should give the real table.
