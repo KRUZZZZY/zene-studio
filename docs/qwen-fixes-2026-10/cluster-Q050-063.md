@@ -2,6 +2,21 @@ IMPLEMENTED
 
 # Q050-063 - Author warp markers with on-clip preview
 
+## Round 6 - integration onto `050/m0-train-25` (`081630835b`)
+
+The integration was done on branch `integration/Q050-063-081630835b` (commit `a5b9059de2`). Logs are in `runs/Q050-063.r6/logs`.
+
+- **What I applied.** I discarded the driver's working state: it had 101 conflicted files, because it applied the feature branch's whole history, including the train-24 merge (`driver-conflict-state.txt`). I then three-way applied only the accepted delta: `git diff 2a7fd9f9c7 a627615a3f`, which is train-24 (feat's merge base) to the accepted tip, 21 files. Four conflicts remained, each additive on both sides, and I resolved each by keeping both sides:
+  - `include/Clip.h`: train-25's `TransientRepeat.h` include sits next to the patch's `WarpPublication.h`.
+  - `tests/fork-sources.txt` and `tests/upstream-modifications.txt`: union of both sides.
+  - `tests/all-sources.txt`: re-derived with the recipe in its header; `tests/all-sources-reproduce.sh` prints REPRODUCES, exit 0.
+- **No semantic difference from the accepted patch.** The sorted `+`/`-` lines of `git diff 081630835b HEAD` are identical to those of the accepted diff: `diff` exit 0, empty output in `semantic-diff.txt`. Nothing was redesigned.
+- **Hazards from train-25.** Q050-162 (Repeat/Gate) adds `m_transientRate` beside the warp state, plus a play-handle read of the map in `SamplePlayHandle::snapshotTransientRepeat` (`src/core/TransientRepeat.cpp:316`). That function reads the handle's own `m_warp`, which `src/core/SamplePlayHandle.cpp:161` copies inside `SampleTrack::play`'s `WarpPassScope`, so it uses the same generation as the pass. A grep for `m_warp` finds no new writer that bypasses `Clip::publishWarp`. The other audio-path reader is `ClipPreFades.cpp:107` `sourceFrameAt`, which already existed and is inside the scope.
+- **Build and tests.** I built `zene`, the nine suites below and `tripleoscillator` (`build-3.log`, EXIT=0). The nine focused suites passed, 9/9, EXIT=0 (`test-1.log`): SampleClipWarpEditTest, WarpMarkersTest, ControlWarpCommandsTest, SampleClipWarpTest, ClipEditsMenuTest, ClipFadesRenderTest, SampleClipWindowTest, ArrangingCatchUpTest and ClipWarpPersistenceTest. Train-25's own warp tests also passed, 5/5, EXIT=0 (`build-4.log`, `test-2.log`): LoopImportWarpTest, LoopDropWarpTest, SampleClipWarpModeMenuTest, SampleClipTransientRepeatTest and SampleClipTransientRepeatSafetyTest.
+- **Negative control on the integrated tree** (`mutation.diff`). I made two product changes: `passWarp` always returns `m_warp`, and the first-marker lead is disabled. After a rebuild, `SampleClipWarpEditTest` exited 8. `theRenderFollowsAMovedFirstMarker` and `aPassKeepsOneMapWhileACommitLands` failed; the other 10 passed (`test-3-mutated.log`). After restoring both files and rebuilding (`build-6-restored.log`, 0), the test exited 0 (`test-4-restored.log`).
+- **Gates.** `feature_check.py` cannot create its sibling `-feature-check` log folder from this sandbox (PermissionError, `feature-1.log`). I made a `/tmp` copy that differs only in its log folder and in `ROOT` pointing at the real script directory (`feature-check-copy.diff`). It reported RESULT: PASS with exit 0 for all 8 gates: fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity and file-length (`feature-2.log`, `feature-check-logs/`). Because of the same folder error, `submit_check.py` reports "gates FAIL" (`submit-1.log`); that line is not a gate result.
+- **Commands, undo and projects.** No command or metadata changed, so the snapshot, canary and A16 histogram need no regeneration. `doc-figures` passes. The `<warp>` format is unchanged; `ClipWarpPersistenceTest` and `SampleClipWarpTest` pass.
+
 Branch `feat/050-Q050-063-oc`. Feature record: `docs/050-features/Q050-063.md` (design, per-criterion table, known limits).
 Round 2 fix: a moved FIRST marker now moves the audio too. The play handle chains rates from the first source frame of
 the pass and the pass used to start at the clip's start whatever the first marker said; `SampleClip::leadOutputFramesAt`
