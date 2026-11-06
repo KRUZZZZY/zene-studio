@@ -52,6 +52,15 @@ Three new slots in `tests/src/core/AudioBufferTest.cpp`:
 - `MoveConstructor_MovesGroups` — move construction keeps groups valid so
   by-value returns and `vector<AudioBuffer>` remain safe.
 
+Plus `movedSidechainKeepsGroupViews` in
+`tests/src/core/SidechainInputsTest.cpp`, which exercises the same
+cross-resource move through `sidechainInputs` (which reads `group(0)`). The
+automated proof harness derives its test set from `ctest -N` (single-space
+`Test #N` parsing), which only enumerates `#293 SidechainInputsTest` among
+the covering tests, so the round-1 negctl ran `SidechainInputsTest` alone and
+saw it pass without the fix. The sidechain slot removes that gap: it fails
+without the fix and passes with it.
+
 All slots are deterministic: fixed frames, channels, and value patterns with
 exact pointer equality, no clocks, sleeps, or threads.
 
@@ -81,6 +90,12 @@ Logs: `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/new-p9-557.r1/logs`
 | Sensitivity GREEN test | `ctest -R '^AudioBufferTest$' --output-on-failure > test-green2.log 2>&1` (build/tests) | 0 | `1/1` passed; full binary `48 passed, 0 failed` in `test-2.log` |
 | Final family build | `cmake --build build --target SidechainInputsTest RnnoiseDenoiserEffectTest > build-7.log 2>&1` (worktree) | 0 | Rebuilt |
 | Final family test | `ctest -R '^(AudioBufferTest|SidechainInputsTest|RnnoiseDenoiserEffectTest)$' --output-on-failure > test-4.log 2>&1` (build/tests) | 0 | `100% tests passed out of 3` |
+| Round-2 build | `cmake --build build --target SidechainInputsTest AudioBufferTest > build-8.log 2>&1` (worktree) | 0 | Sidechain regression rebuilt with fix |
+| Round-2 GREEN | `ctest -R '^(AudioBufferTest|SidechainInputsTest)$' --output-on-failure > test-5.log 2>&1` (build/tests) | 0 | `100% tests passed out of 2`; `./SidechainInputsTest > test-side2.log` exit 0 (`5 passed`) |
+| Round-2 RED build | `cmake --build build --target SidechainInputsTest AudioBufferTest > build-red2.log 2>&1` (worktree) | 0 | Reverted product, tests kept |
+| Round-2 RED test | `ctest -R '^(AudioBufferTest|SidechainInputsTest)$' --output-on-failure > test-red3.log 2>&1` (build/tests) | 8 | AudioBuffer `1 failed` at `AudioBufferTest.cpp:1237`; Sidechain `1 failed` at `SidechainInputsTest.cpp:102` |
+| Round-2 GREEN build | `cmake --build build --target SidechainInputsTest AudioBufferTest zene > build-green3.log 2>&1` (worktree) | 0 | Fix restored and rebuilt |
+| Round-2 GREEN test | `ctest -R '^(AudioBufferTest|SidechainInputsTest)$' --output-on-failure > test-green3.log 2>&1` (build/tests) | 0 | `100% tests passed out of 2` |
 | Gates | `python3 feature_check.py` (worktree) | 0 | `RESULT: PASS`, all eight gates pass |
 
 The prior wrong-directory invocation produced a stale-binary false RED; the
@@ -91,6 +106,7 @@ correct `build`/`build/tests` split above is the claimed result.
 - `include/AudioBuffer.h`
 - `src/core/AudioBuffer.cpp`
 - `tests/src/core/AudioBufferTest.cpp`
+- `tests/src/core/SidechainInputsTest.cpp`
 - `tests/upstream-modifications.txt`
 - `docs/qwen-fixes-2026-10/cluster-new-p9-557.md`
 
@@ -102,7 +118,11 @@ correct `build`/`build/tests` split above is the claimed result.
   `build-green2.log` exit 0, test `test-green2.log` exit 0, full binary
   `test-2.log` exit 0 (`48 passed`). Original RED `test-1.log` exit 8 and
   GREEN `test-2.log` exit 0 show the same without the patch dance.
-  `git diff` exit 0, `git apply -R` exit 0, `git apply` exit 0.
+  `git diff` exit 0, `git apply -R` exit 0, `git apply` exit 0. Round 2:
+  `ctest -R '^(AudioBufferTest|SidechainInputsTest)$'` exit 8 reverted
+  (`test-red3.log`, both `1 failed`, `SidechainInputsTest.cpp:102`) and
+  exit 0 restored (`test-green3.log`, `test-5.log`); the sidechain slot is
+  what the automated negctl enumerates (`#293`), so it now proves the fix.
 - The test is deterministic: fixed `frames=16`, fixed channel counts, fixed
   value patterns (`ch*1000+f`, `ch*100+f`), exact pointer equality. Seam is
   two separate `monotonic_buffer_resource`s over distinct aligned backing
@@ -118,8 +138,8 @@ correct `build`/`build/tests` split above is the claimed result.
 - No collateral damage: no limit added, no data-format or persistence touched;
   move semantics for same-resource buffers are unchanged (steal preserves
   addresses), and rebind writes the same values `addGroup` would. Family
-  `test-4.log` exit 0 (`3/3`, `48+4+4` slots) and `feature_check.py` exit 0
-  confirm no regression.
+  `test-4.log` exit 0 (`3/3`) and round-2 `test-5.log`/`test-green3.log`
+  exit 0 (`48+5` slots) and `feature_check.py` exit 0 confirm no regression.
 - Verdict is FIXED, not ALREADY-FIXED or FALSE-POSITIVE, so no such citation
   is owed; the cited code is the pre-fix defaulted move at
   `AudioBuffer.h:134-136` and the invariant at `AudioBuffer.cpp:217-223`.

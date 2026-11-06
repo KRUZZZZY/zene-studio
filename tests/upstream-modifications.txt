@@ -5707,3 +5707,4 @@ src/core/Track.cpp	cluster new-p16-307 (2026-10-28): playFrozenTake maps every p
 include/AudioBuffer.h	cluster new-p9-557: replace defaulted move ctor/assignment with custom ones that rebind group pointers after moving; covered by AudioBufferTest MoveAssignment_AcrossResources_RebindsGroupsAndAccessBuffer.
 src/core/AudioBuffer.cpp	cluster new-p9-557: implement AudioBuffer move ctor/assignment + rebindAfterMove() that rebuilds the access table and rebinds every ChannelGroup after a move, so cross-resource moves no longer dangle; covered by AudioBufferTest.
 tests/src/core/AudioBufferTest.cpp	cluster new-p9-557: regressions for cross-resource move assignment (groups/access rebind), same-resource move assignment, and move construction.
+tests/src/core/SidechainInputsTest.cpp	cluster new-p9-557: movedSidechainKeepsGroupViews regression for cross-resource AudioBuffer move assignment feeding sidechainInputs.
