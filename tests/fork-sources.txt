@@ -3518,3 +3518,4 @@ tests/src/core/HybridTrackRoundTripTest.cpp
 tests/src/gui/HybridTrackGuiTest.cpp
 tests/control-hybrid-track-transcript.py
 docs/qwen-fixes-2026-10/cluster-Q050-283.1.md
+tests/src/gui/LadspaDescriptionTest.cpp

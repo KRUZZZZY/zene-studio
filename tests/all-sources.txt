@@ -3311,6 +3311,7 @@ tests/src/gui/InstrumentSetupUiTest.cpp
 tests/src/gui/ItemListButtonsTest.cpp
 tests/src/gui/ItemListPanelTest.cpp
 tests/src/gui/KnobKeyboardTest.cpp
+tests/src/gui/LadspaDescriptionTest.cpp
 tests/src/gui/LadspaPortDialogTest.cpp
 tests/src/gui/LaneReadoutTest.cpp
 tests/src/gui/LfoGraphTest.cpp

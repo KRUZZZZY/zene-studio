@@ -5744,3 +5744,4 @@ src/core/Track.cpp	new-p14-352: freezeTo() refuses a region whose end is not pas
 include/BasicFilters.h	cluster new-p9-592 (2026-10-28): initialise m_type to LowPass in the constructor so calcFilterCoeffs and update() never read an indeterminate FilterType before setFilterType(); regression BasicFiltersSampleRateTest::unsetTypeDefaultsToLowpass.
 tests/CMakeLists.txt	cluster new-p10-284: register ParameterControlsTest (duplicate-key refusal regression test).
 tests/src/core/AudioBufferTest.cpp	cluster new-p16-289: pin zero-frame AudioBuffer{0} default-channel construction (finding judged FALSE-POSITIVE; no product change).
+plugins/LadspaBrowser/LadspaDescription.cpp	new-p14-130: rowChanged ignores a row outside the key list (the -1 the list reports when its current item is cleared), keeping the last selection; regression LadspaDescriptionTest::clearingTheRowKeepsTheLastSelection.

@@ -1263,6 +1263,8 @@ set(LMMS_TESTS
 	src/gui/CrossfadeEditorTest.cpp
 	# LADSPA Ports renders sample-rate-dependent ranges and their displayed defaults.
 	src/gui/LadspaPortDialogTest.cpp
+	# LADSPA browser: the plug-in list's selection, including the cleared row (-1) and rows outside the key list.
+	src/gui/LadspaDescriptionTest.cpp
 	# 0.5.0 theme 1: the note editor follows FL Studio's piano roll.
 	src/gui/NoteEditorFlTest.cpp
 	# 0.5.0 lane 3: the shell selection, the Inspector and the Device panel's cards and
@@ -2192,6 +2194,17 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			"LADSPA_PORT_DIALOG_FIXTURE_FILE=\"$<TARGET_FILE_NAME:SampleRateDependentLadspa>\"")
 		add_dependencies(${LMMS_TEST_NAME} SampleRateDependentLadspa)
 	endif()
+	if(LMMS_TEST_NAME STREQUAL "LadspaDescriptionTest")
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/LadspaBrowser/LadspaDescription.cpp
+			${CMAKE_SOURCE_DIR}/plugins/LadspaBrowser/LadspaDescription.h)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/LadspaBrowser)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			"LADSPA_DESCRIPTION_FIXTURE_DIR=\"$<TARGET_FILE_DIR:SampleRateDependentLadspa>\""
+			"LADSPA_DESCRIPTION_FIXTURE_FILE=\"$<TARGET_FILE_NAME:SampleRateDependentLadspa>\"")
+		add_dependencies(${LMMS_TEST_NAME} SampleRateDependentLadspa)
+	endif()
 	# cluster new-p15-95: LadspaGlobalLinkTest compiles the LADSPA plug-in's control
 	# model into the test (the SlicerT plug-in tests' shape), so the global stereo link
 	# the test drives is the shipping one. LMMS_TESTING is the define that compiles the
@@ -2234,6 +2247,10 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES TIMEOUT 10)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "LadspaPortDialogTest")
+		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES
+			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "LadspaDescriptionTest")
 		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES
 			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	endif()
