@@ -529,6 +529,21 @@ private slots:
 			QCOMPARE( static_cast<int>( loaded.length().getTicks() ), pair.second );
 		}
 	}
+
+	//! A malformed project key of -1 loads as key 0. A legacy tone of -1 also gives -1, so the loader's
+	//! max() keeps the negative and only the clamp on load floors it. scale.detect indexes by key % 12.
+	void negativeProjectKeyLoadsAsKeyZero()
+	{
+		QDomDocument doc;
+		QDomElement element = doc.createElement( "note" );
+		element.setAttribute( "key", "-1" );
+		element.setAttribute( "tone", "-1" );
+		element.setAttribute( "pos", "0" );
+		element.setAttribute( "len", "24" );
+		Note loaded;
+		loaded.restoreState( element );
+		QCOMPARE( loaded.key(), 0 );
+	}
 };
 
 QTEST_GUILESS_MAIN(MidiProbabilityPersistenceTest)
