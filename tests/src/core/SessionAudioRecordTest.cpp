@@ -525,6 +525,19 @@ private slots:
 		}
 	}
 
+	//! The engine half of the audio-record null-engine finding: armAndLaunch() reads Engine::audioEngine() and is reached
+	//! only through ControlRegistry's requiresEngine gate, so with the engine not addressable the command is refused
+	//! before anything is armed. Pins that gate; the test passes on the unmodified tree (no product change to revert).
+	void aRecordingIsRefusedBeforeTheEngineIsAddressable()
+	{
+		ControlRegistry::setReady(false);
+		const ControlResult refused = run(QStringLiteral("session.record_slot"), {{QStringLiteral("track"), m_column},
+			{QStringLiteral("scene"), 0}});
+		ControlRegistry::setReady(true);  // restored before any assertion, so a failure cannot leave the registry not ready
+		QCOMPARE(refused.errorKind, ControlErrorKind::Busy);
+		QCOMPARE(state(), QStringLiteral("idle"));  // nothing was armed
+	}
+
 private:
 	//! One period: the next input frames are staged, then rendered; notes the period the column took over in.
 	void period()
