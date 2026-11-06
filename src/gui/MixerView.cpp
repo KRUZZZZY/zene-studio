@@ -79,6 +79,7 @@
 #include "PatternStore.h"
 #include "SampleTrack.h"
 #include "SendButtonIndicator.h"
+#include "ShellSelection.h"
 #include "Song.h"
 #include "SubWindow.h"
 #include "TrackContainer.h" // For TrackContainer::TrackList typedef
@@ -112,6 +113,8 @@ MixerView::MixerView(Mixer* mixer) :
 	outer->setSpacing(0);
 	m_modeBar = new MixerModeBar(this);
 	connect(m_modeBar, &MixerModeBar::changed, this, &MixerView::syncWithMixer, Qt::QueuedConnection);
+	// MX-021: with following on, a new arranger selection re-lays the Selected filter's strips.
+	connect(ShellSelection::instance(), &ShellSelection::changed, this, &MixerView::syncWithMixer, Qt::QueuedConnection);
 	outer->addWidget(m_modeBar);
 	m_sendsBanner = new MixerSendsBanner(this);
 	outer->addWidget(m_sendsBanner);

@@ -46,6 +46,7 @@
 #include "MixerChannelView.h"
 #include "ConsoleStripSection.h"
 #include "ControlMeterSupport.h"
+#include "ShellSelection.h"
 #include "Song.h"
 #include "StripMeters.h"
 #include "Track.h"
@@ -64,6 +65,9 @@ QSet<int> s_selectedIds;  //!< MX-005: MixerChannel::id()s
 
 const QString kSection = QStringLiteral("ui");
 const QString kKey = QStringLiteral("mixerview");
+const QString kFollowKey = QStringLiteral("followchannel");
+bool s_followLoaded = false;
+bool s_follow = false;
 
 QString pick(const QJsonObject& args, const char* key, const QStringList& names, const QString& current, QString* error)
 {
@@ -339,6 +343,33 @@ QJsonArray selectionJson()
 	return ids;
 }
 
+bool followSelection()
+{
+	if (!s_followLoaded)
+	{
+		s_followLoaded = true;
+		// MX-021: an older configuration has no key, which reads as off.
+		s_follow = ConfigManager::inst()->value(kSection, kFollowKey).toInt() != 0;
+	}
+	return s_follow;
+}
+
+void setFollowSelection(bool follow)
+{
+	s_follow = follow;
+	s_followLoaded = true;
+	ConfigManager::inst()->setValue(kSection, kFollowKey, follow ? QStringLiteral("1") : QStringLiteral("0"));
+	++s_generation;  // the Selected filter re-lays its strips
+}
+
+int followedChannel()
+{
+	Track* track = ShellSelection::instance()->track();
+	if (track == nullptr) { return -1; }
+	IntModel* model = track->mixerChannelModel();
+	return model != nullptr ? model->value() : -1;
+}
+
 void toggleSelected(QWidget* origin, int index)
 {
 	if (index <= 0) { return; }  // the master always shows: it is never in the selection
@@ -354,7 +385,13 @@ bool shows(int index)
 {
 	const QString& filter = options().filter;
 	if (index == 0 || filter == QLatin1String("all")) { return true; }
-	if (filter == QLatin1String("selected")) { return isSelected(index); }
+	if (filter == QLatin1String("selected"))
+	{
+		// MX-021: following shows the focused arranger track's channel. The manual set is kept as it
+		// was, so turning following off brings it back unchanged.
+		if (followSelection()) { return followedChannel() == index; }
+		return isSelected(index);
+	}
 	MixerChannel* channel = Engine::mixer()->mixerChannel(index);
 	if (filter == QLatin1String("returns")) { return channel->isBus(); }
 	QSet<int> instruments;

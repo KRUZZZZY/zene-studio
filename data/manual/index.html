@@ -307,7 +307,10 @@ lock; a clip's menu has Move With Edit Group.... Solo can be exclusive or
 additive (Mixer View &gt; Solo Mode). A return's Mixer View menu has Show Sends to Here on Faders: every channel's fader then sets its send to that return
 (Channel Faders goes back). A strip can swap its left and right sides; a send can be switched off and on
 again and keeps its level; Create a Return makes a bus fed by the channel; Adjust Channels Together moves several faders
-by the same amount. Project &gt; Pan Law chooses how much a centred signal is cut (none, 3, 4.5 or 6 dB), Control Room &gt;
+by the same amount. With Show set to Selected, Follow Selection makes the mixer show the focused arranger track's
+channel (or the channel of the track a focused clip is on) and the master; the channels you picked for Selected are kept
+while it follows and come back when you turn it off. The setting is remembered between sessions, while projects are
+unchanged. Project &gt; Pan Law chooses how much a centred signal is cut (none, 3, 4.5 or 6 dB), Control Room &gt;
 Mono Check folds what you hear to mono, Order the Mixer by Tracks lines the channels up with the tracks, and Find a Channel searches the
 names. Each send in the Inspector has a meter beside it, and instrument and sample track headers show their level. Mixer View &gt;
 Compare Channel EQ draws two channels' EQ over each other. Mixer View &gt; Masking Report finds where channels fight over the same frequencies: tick two or more channels, give each a priority (Front, Middle or Back), and press Report. Each clash names the two channels, the frequency range they share and a proposed cut (1 to 6 dB) on the lower-priority channel; at equal priority the channel that is quieter in that range gets the cut. The report reads the audio clips on the tracks playing into each channel, through that channel's own EQ (instrument tracks are not analysed yet), and gives the same answer for the same audio and priorities. Reporting changes nothing: apply a cut yourself with the channel's EQ (Show Console Section) and undo it as usual. Agents use <code>mixer.masking_report</code>. The Control Room (Project menu) switches between three sets of

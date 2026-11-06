@@ -5724,3 +5724,5 @@ include/TrackGrip.h	Q050-442: the grip no longer holds the two static QPixmap po
 plugins/ZynAddSubFx/LocalZynAddSubFx.cpp	Q050-313: running-note counts are per MIDI channel, and all-notes-off and all-sounds-off clear the addressed channel's counts, so a key whose note-off the handoff queue refused is not stuck afterwards and other channels' notes keep their note-offs.
 plugins/ZynAddSubFx/LocalZynAddSubFx.h	Q050-313: the scheduled-event list holds a 256-event queue drain plus one cut per channel at each of its 257 queue boundaries, so a recovery cut is never applied ahead of the notes it has to end.
 plugins/ZynAddSubFx/ZynAddSubFx.cpp	Q050-313: the recovery all-notes-off is placed at the latest frame forwarded in the drain, after the events queued before the refusal.
+tests/control-mixing-routing.py	# Follow arranger selection in the mixer
+tests/src/gui/MixerMeteringTest.cpp	# Follow arranger selection in the mixer
