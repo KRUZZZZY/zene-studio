@@ -33,7 +33,7 @@
 
 class QButtonGroup;
 class QComboBox;
-class QHBoxLayout;
+class QLayout;
 class QMenu;
 class QPushButton;
 class QToolButton;
@@ -84,10 +84,10 @@ signals:
 
 private:
 	//! A labelled row of exclusive buttons, one per value of window.mixer_view's @a key.
-	QHash<QString, QPushButton*> addSegment(QHBoxLayout* layout, const QString& label, const char* key,
+	QHash<QString, QPushButton*> addSegment(QLayout* layout, const QString& label, const char* key,
 		const QStringList& values, const QStringList& captions);
 	//! A button naming a mode's state (@a hint says what it is) whose menu @a fill builds each time it opens.
-	QToolButton* addChip(QHBoxLayout* layout, const QString& objectName, const QString& hint, void (MixerModeBar::*fill)(QMenu*));
+	QToolButton* addChip(QLayout* layout, const QString& objectName, const QString& hint, void (MixerModeBar::*fill)(QMenu*));
 	void setOption(const QString& key, const QJsonValue& value);
 	void fillFaders(QMenu* menu);
 	void fillSolo(QMenu* menu);

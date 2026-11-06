@@ -45,6 +45,7 @@
 #include <QSet>
 #include <QTimer>
 #include <QToolButton>
+#include <QVBoxLayout>
 
 #include "AutomatableButton.h"
 #include "AutomatableModel.h"
@@ -262,6 +263,52 @@ private slots:
 		QCOMPARE(mixerviewoptions::options().filter, QStringLiteral("returns"));
 		emit filter->activated(filter->findData(QStringLiteral("all")));
 		QCOMPARE(mixerviewoptions::options().filter, QStringLiteral("all"));
+	}
+
+	//! gui-1030: a mixer narrower than the bar's one row wraps its controls onto more rows - every one,
+	//! Routing Matrix... last, stays inside the mixer, whole (never squeezed below the width its words
+	//! need) and clear of the others - and a wide one keeps them
+	//! on one row with the modes pushed to the right edge, as before.
+	void theModeBarWrapsInsteadOfClippingWhenNarrow()
+	{
+		QWidget host;  // the mixer's column: the bar on top of the strips, as MixerView lays it out
+		auto* column = new QVBoxLayout(&host);
+		column->setContentsMargins(0, 0, 0, 0);
+		auto* modes = new MixerModeBar(&host);
+		column->addWidget(modes);
+		column->addStretch(1);
+		auto* matrix = modes->findChild<QPushButton*>(QStringLiteral("mixerModeMatrix"));
+		QVERIFY(matrix != nullptr);
+		const int oneRow = modes->sizeHint().width();
+		for (const int width : {oneRow / 2, oneRow / 3, oneRow})
+		{
+			host.layout()->setGeometry(QRect(0, 0, width, 800));  // a parent that gives the column this much
+			modes->layout()->setGeometry(modes->rect());  // what the bar's resize event does once it is shown
+			const QRect given(0, 0, width, 800);
+			QList<QPair<QString, QRect>> taken;
+			for (QWidget* control : modes->findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly))
+			{
+				if (control->isHidden() || control->isWindow()) { continue; }
+				const QString name = control->objectName().isEmpty()
+					? control->property("text").toString() + control->accessibleName() : control->objectName();
+				const QRect onHost(control->mapTo(&host, QPoint(0, 0)), control->size());
+				QVERIFY2(given.contains(onHost), qPrintable(QStringLiteral("%1 ends at %2, past a %3-wide mixer")
+					.arg(name).arg(onHost.right()).arg(width)));
+				QVERIFY2(control->width() >= control->sizeHint().width(), qPrintable(QStringLiteral("%1 is squeezed to %2 of its %3 px in a %4-wide mixer")
+					.arg(name).arg(control->width()).arg(control->sizeHint().width()).arg(width)));
+				for (const auto& [otherName, other] : taken)
+				{
+					QVERIFY2(!other.intersects(control->geometry()), qPrintable(QStringLiteral("%1 overlaps %2 in a %3-wide bar")
+						.arg(name, otherName).arg(width)));
+				}
+				taken.append({name, control->geometry()});
+			}
+			if (width == oneRow)
+			{
+				QCOMPARE(modes->height(), modes->sizeHint().height());  // one row
+				QCOMPARE(matrix->geometry().right(), modes->rect().right() - modes->layout()->contentsMargins().right());
+			}
+		}
 	}
 
 	//! Acceptance 1: the fader and the mute/solo (LED) buttons are Tab stops, answer their keys, and
