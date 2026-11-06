@@ -347,10 +347,15 @@ inserts it played; if an insert's send or return is beyond what the interface op
 refuses and writes nothing - it never falls back to a dry render. Agents run the same <code>render.realtime</code>
 command. Interface Channels names your interface's inputs and outputs and pairs them;
 the names are kept per device, not per project. Its Surround &gt; Format menu sets a channel to LCR, quad, 5.1, 7.1,
-Mono, or a Discrete layout of 2 to 8 channels: the Surround Panner places a channel's sends into a speaker layout on a 2-D
+Mono, or a Discrete layout of 2 to 64 channels (Discrete 2 to 8 are on the Format menu itself; 9 to 64 are grouped in
+its Discrete 9-16, 17-32, 33-48 and 49-64 submenus): the Surround Panner places a channel's sends into a speaker layout on a 2-D
 room with an LFE send and spread, and a stereo master or a stereo export gets the standard downmix. Mono has one M channel.
 A Discrete layout has no speaker positions at all: channel 1 goes to the first output, channel 2 to the next, and so on, with
-no speaker folding or reordering, and its channels are numbered rather than named. Extra channels need a backend with more
+no speaker folding or reordering, and its channels are numbered rather than named. A Discrete channel sending into
+another Discrete channel carries channel i to channel i at the send's level; a receiver with fewer channels drops the
+ones it lacks, and a stereo receiver takes the first pair only. For now the extra channels come from another surround or
+Discrete channel's send (a 7.1 bus fed by the Surround Panner, say); a track or a device still feeds a channel its first
+pair only. Extra channels need a backend with more
 than two outputs (JACK or ALSA). With a surround master, the WAV export's Channels row can write it as it is - Surround: one
 channel per speaker (6 for 5.1, 8 for 7.1) in the standard WAV order with its speaker mask; Stereo, the default, folds it
 with the downmix.</p>

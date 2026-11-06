@@ -50,15 +50,17 @@ struct Speaker
 struct Layout
 {
 	int count;
-	std::array<Speaker, MaxChannels> speakers;
+	std::array<Speaker, MaxSpeakers> speakers;
 	const char* name;
 };
 
-//! The formats in the WAVE channel order, each speaker at its point of the panner's square room: the
-//! front pair at the front corners, the surrounds at the back corners (7.1: its side pair at the sides).
-//! Mono has one M role. A discrete layout's channels carry Role::None: they have no speaker position
-//! and are addressed by index alone, so the downmix maps channel i to channel i.
-const std::array<Layout, FormatCount> kLayouts{{
+//! The named formats (Stereo .. Mono) in the WAVE channel order, each speaker at its point of the panner's
+//! square room: the front pair at the front corners, the surrounds at the back corners (7.1: its side
+//! pair at the sides). Mono has one M role. The discrete layouts are not in the table: their channels
+//! carry Role::None, have no speaker position and are addressed by index alone (Q050-155.1: up to 64 of
+//! them), so their count and name follow from the format (discreteChannels()).
+constexpr int NamedFormatCount = static_cast<int>(Format::Mono) + 1;
+const std::array<Layout, NamedFormatCount> kLayouts{{
 	{2, {{{Role::L, -1.f, 1.f}, {Role::R, 1.f, 1.f}}}, "stereo"},
 	{3, {{{Role::L, -1.f, 1.f}, {Role::R, 1.f, 1.f}, {Role::C, 0.f, 1.f}}}, "lcr"},
 	{4, {{{Role::L, -1.f, 1.f}, {Role::R, 1.f, 1.f}, {Role::Ls, -1.f, -1.f}, {Role::Rs, 1.f, -1.f}}}, "quad"},
@@ -67,17 +69,6 @@ const std::array<Layout, FormatCount> kLayouts{{
 	{8, {{{Role::L, -1.f, 1.f}, {Role::R, 1.f, 1.f}, {Role::C, 0.f, 1.f}, {Role::Lfe, 0.f, 0.f}, {Role::Lrs, -1.f, -1.f},
 		{Role::Rrs, 1.f, -1.f}, {Role::Ls, -1.f, 0.f}, {Role::Rs, 1.f, 0.f}}}, "7.1"},
 	{1, {{{Role::M, 0.f, 1.f}}}, "mono"},
-	{2, {{{Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}}}, "discrete-2"},
-	{3, {{{Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}}}, "discrete-3"},
-	{4, {{{Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}}}, "discrete-4"},
-	{5, {{{Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f},
-		{Role::None, 0.f, 1.f}}}, "discrete-5"},
-	{6, {{{Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f},
-		{Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}}}, "discrete-6"},
-	{7, {{{Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f},
-		{Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}}}, "discrete-7"},
-	{8, {{{Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f},
-		{Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}, {Role::None, 0.f, 1.f}}}, "discrete-8"},
 }};
 
 const std::array<const char*, 10> kRoleNames{"L", "R", "C", "LFE", "Ls", "Rs", "Lrs", "Rrs", "M", ""};
@@ -85,9 +76,16 @@ const std::array<const char*, 10> kRoleNames{"L", "R", "C", "LFE", "Ls", "Rs", "
 constexpr float TwoPi = 2.f * std::numbers::pi_v<float>;
 constexpr float HalfPi = 0.5f * std::numbers::pi_v<float>;
 
+//! A role-less discrete layout: its channel i is channel i of the receiver, nothing else.
+bool discrete(Format format)
+{
+	return format >= Format::Discrete2 && format <= Format::Discrete64;
+}
+
+//! A named format's layout (a discrete one is not in the table: callers ask discrete() first).
 const Layout& layoutOf(Format format)
 {
-	return kLayouts[static_cast<std::size_t>(std::clamp(static_cast<int>(format), 0, FormatCount - 1))];
+	return kLayouts[static_cast<std::size_t>(std::clamp(static_cast<int>(format), 0, NamedFormatCount - 1))];
 }
 
 //! An angle in [0, 2 pi).
@@ -212,18 +210,12 @@ void addRole(Matrix& m, Format to, int from, Role role, float gain, const Downmi
 	}
 }
 
-//! A role-less discrete layout: its channel i is channel i of the receiver, nothing else.
-bool discrete(Format format)
-{
-	return format >= Format::Discrete2 && format <= Format::Discrete8;
-}
-
 //! A discrete layout is addressed by index, not by speaker role: channel i goes to channel i, and a
 //! channel the receiver does not have is dropped rather than folded into a speaker it never named.
 Matrix discreteMatrix(Format from, Format to)
 {
 	Matrix m{};
-	const int count = std::min(channelCount(from), channelCount(to));
+	const int count = std::min({channelCount(from), channelCount(to), MaxSpeakers});
 	for (int c = 0; c < count; ++c) { m[static_cast<std::size_t>(c)][static_cast<std::size_t>(c)] = 1.f; }
 	return m;
 }
@@ -262,14 +254,17 @@ Matrix buildMatrix(Format from, Format to, const DownmixOptions& options)
 	return m;
 }
 
-using MatrixTable = std::array<std::array<Matrix, FormatCount>, FormatCount>;
+//! The named formats and the eight-channel discrete ones: every wider discrete layout shares
+//! Discrete8's entries, which are the identity over the first MaxSpeakers channels either way.
+constexpr int MatrixFormatCount = static_cast<int>(Format::Discrete8) + 1;
+using MatrixTable = std::array<std::array<Matrix, MatrixFormatCount>, MatrixFormatCount>;
 
 MatrixTable buildMatrices(const DownmixOptions& options)
 {
 	MatrixTable table{};
-	for (int from = 0; from < FormatCount; ++from)
+	for (int from = 0; from < MatrixFormatCount; ++from)
 	{
-		for (int to = 0; to < FormatCount; ++to)
+		for (int to = 0; to < MatrixFormatCount; ++to)
 		{
 			table[static_cast<std::size_t>(from)][static_cast<std::size_t>(to)] =
 				buildMatrix(static_cast<Format>(from), static_cast<Format>(to), options);
@@ -294,6 +289,7 @@ float attribute(const QDomElement& element, const char* name, float fallback, fl
 
 int channelCount(Format format)
 {
+	if (discrete(format)) { return MinDiscreteChannels + static_cast<int>(format) - static_cast<int>(Format::Discrete2); }
 	return layoutOf(format).count;
 }
 
@@ -315,6 +311,7 @@ Format discreteFormat(int channels)
 
 Role roleOf(Format format, int channel)
 {
+	if (discrete(format)) { return Role::None; }
 	const Layout& layout = layoutOf(format);
 	return layout.speakers[static_cast<std::size_t>(std::clamp(channel, 0, layout.count - 1))].role;
 }
@@ -332,6 +329,7 @@ int channelOf(Format format, Role role)
 
 QString formatName(Format format)
 {
+	if (discrete(format)) { return QStringLiteral("discrete-%1").arg(channelCount(format)); }
 	return QString::fromLatin1(layoutOf(format).name);
 }
 
@@ -341,12 +339,12 @@ bool formatFromName(const QString& name, Format* format)
 	const QString wanted = name.trimmed();
 	for (int k = 0; k < FormatCount; ++k)
 	{
-		if (wanted.compare(QString::fromLatin1(kLayouts[static_cast<std::size_t>(k)].name), Qt::CaseInsensitive) != 0) { continue; }
+		if (wanted.compare(formatName(static_cast<Format>(k)), Qt::CaseInsensitive) != 0) { continue; }
 		*format = static_cast<Format>(k);
 		return true;
 	}
 	// The count is part of the name; take the forms a hand-written project or a script may use
-	// ("discrete-5", "discrete5", "discrete 5") and nothing outside the 2..8 range.
+	// ("discrete-5", "discrete5", "discrete 5") and nothing outside the 2..64 range.
 	QString rest = wanted.toLower();
 	if (!rest.startsWith(QLatin1String("discrete"))) { return false; }
 	rest = rest.mid(8).trimmed();
@@ -365,7 +363,7 @@ bool formatFromName(const QString& name, Format* format)
 QStringList formatNames()
 {
 	QStringList names;
-	for (const Layout& layout : kLayouts) { names.append(QString::fromLatin1(layout.name)); }
+	for (int k = 0; k < FormatCount; ++k) { names.append(formatName(static_cast<Format>(k))); }
 	return names;
 }
 
@@ -391,6 +389,12 @@ QStringList channelLabels(Format format)
 
 void speakerPoint(Format format, int channel, float* x, float* y)
 {
+	if (discrete(format))
+	{
+		*x = 0.f;  // no position: the front centre, as the eight-channel table placed them
+		*y = 1.f;
+		return;
+	}
 	const Layout& layout = layoutOf(format);
 	const Speaker& speaker = layout.speakers[static_cast<std::size_t>(std::clamp(channel, 0, layout.count - 1))];
 	*x = speaker.x;
@@ -399,6 +403,7 @@ void speakerPoint(Format format, int channel, float* x, float* y)
 
 Gains panGains(Format format, const PanPosition& pan)
 {
+	if (discrete(format)) { return Gains{}; }  // no speaker positions to pan between (panTakesSend refuses it)
 	const Layout& layout = layoutOf(format);
 	const float x = std::clamp(pan.x, -1.f, 1.f);
 	const float y = std::clamp(pan.y, -1.f, 1.f);
@@ -415,8 +420,8 @@ Gains panGains(Format format, const PanPosition& pan)
 
 const Matrix& matrix(Format from, Format to)
 {
-	const auto f = static_cast<std::size_t>(std::clamp(static_cast<int>(from), 0, FormatCount - 1));
-	const auto t = static_cast<std::size_t>(std::clamp(static_cast<int>(to), 0, FormatCount - 1));
+	const auto f = static_cast<std::size_t>(std::clamp(static_cast<int>(from), 0, MatrixFormatCount - 1));
+	const auto t = static_cast<std::size_t>(std::clamp(static_cast<int>(to), 0, MatrixFormatCount - 1));
 	return s_matrices[f][t];
 }
 
@@ -465,14 +470,30 @@ void resetMixer()
 
 void ChannelSurround::init(f_cnt_t frames)
 {
+	// Keep a buffer already grown for a wide discrete layout as wide (only a re-init could find one).
+	const std::size_t planes = std::max<std::size_t>(static_cast<std::size_t>(capacity() - 2),
+		static_cast<std::size_t>(surround::SpeakerSideChannels));
 	m_frames = std::max<f_cnt_t>(frames, 1);
-	m_side.assign(static_cast<std::size_t>(surround::SideChannels) * m_frames, 0.f);
+	m_side.assign(planes * m_frames, 0.f);
 	m_written = false;
 	setPan(m_pan);
 }
 
+int ChannelSurround::capacity() const
+{
+	return m_frames > 0 ? 2 + static_cast<int>(m_side.size() / m_frames) : 2;
+}
+
 void ChannelSurround::setFormat(surround::Format format)
 {
+	// Q050-155.1: a wide discrete layout needs more planes than a channel is built with. The control
+	// thread grows the buffer here, under the change lock (the commands and a project load call this):
+	// no render or worker reads it meanwhile, and the audio path never allocates.
+	const int needed = surround::channelCount(format);
+	if (needed > capacity() && m_frames > 0)
+	{
+		m_side.resize(static_cast<std::size_t>(needed - 2) * m_frames);
+	}
 	m_format = format;
 	std::fill(m_side.begin(), m_side.end(), 0.f);
 	m_written = false;

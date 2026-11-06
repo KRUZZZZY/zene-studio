@@ -127,9 +127,21 @@ void mixSideChannel(MixerChannel& receiver, const Matrix& m, int from, const flo
 	}
 }
 
+//! Sender side channel @a c into the receiver's channel @a c, nothing else: a discrete layout on
+//! either side is index-addressed (Q050-155.1: up to 64 channels, no matrix).
+void carrySideChannel(MixerChannel& receiver, int c, const float* in, const SendGain& gain, f_cnt_t frames)
+{
+	ChannelSurround& to = receiver.m_surround;
+	addInto(to.plane(c), in, 1.f, gain, frames);
+	to.markWritten();
+}
+
 //! @a s's side channels folded to stereo into @a out, at @a fader.
 void foldInto(SampleFrame* out, const ChannelSurround& s, const FrameGain& fader, f_cnt_t frames)
 {
+	// A discrete layout is index-addressed: a stereo receiver has channels 0 and 1, which the pair
+	// already carries, so its side channels are dropped rather than folded into speakers it never named.
+	if (isDiscrete(s.format())) { return; }
 	const Matrix& m = matrix(s.format(), Format::Stereo);
 	const SendGain gain{FrameGain{}, fader};
 	for (int c = 2; c < channelCount(s.format()); ++c)
@@ -210,7 +222,7 @@ void panSend(MixerRoute& route, const SampleFrame* src, f_cnt_t frames)
 	ChannelSurround& to = receiver.m_surround;
 	const Gains& g = route.sender()->m_surround.gains(to.format());
 	const SendGain gain = stereoSendGain(route);
-	const int count = channelCount(to.format());
+	const int count = std::min(channelCount(to.format()), MaxSpeakers);  // a named layout (panTakesSend)
 	const f_cnt_t n = std::min(frames, to.frames());
 	bool leftWritten = false;
 	bool rightWritten = false;
@@ -235,9 +247,18 @@ void addSideChannels(MixerRoute& route, f_cnt_t frames)
 	const ChannelSurround& from = route.sender()->m_surround;
 	if (!from.isSurround() || !from.written() || route.feedback()) { return; }
 	MixerChannel& receiver = *route.receiver();
-	const Matrix& m = matrix(from.format(), receiver.m_surround.format());
+	const Format to = receiver.m_surround.format();
 	const SendGain gain = sideSendGain(route);
 	const f_cnt_t n = std::min(frames, std::min(from.frames(), receiver.m_surround.frames()));
+	if (isDiscrete(from.format()) || isDiscrete(to))
+	{
+		// Channel i into channel i; one the receiver lacks is dropped (the discrete matrix's rule, for
+		// every count up to 64 without a 64 x 64 table).
+		const int count = std::min(channelCount(from.format()), channelCount(to));
+		for (int c = 2; c < count; ++c) { carrySideChannel(receiver, c, from.plane(c), gain, n); }
+		return;
+	}
+	const Matrix& m = matrix(from.format(), to);
 	for (int c = 2; c < channelCount(from.format()); ++c) { mixSideChannel(receiver, m, c, from.plane(c), gain, n); }
 }
 

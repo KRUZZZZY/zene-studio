@@ -2759,6 +2759,7 @@ tests/control-video-clips-mcp.py
 tests/src/core/VstSubPluginFeaturesTest.cpp
 tests/src/core/W3EngineTest.cpp
 tests/src/core/WarpQuantizeTest.cpp
+tests/src/core/WideDiscreteBusTest.cpp
 tests/src/core/WriteRefusalGateTest.cpp
 tests/src/gui/MidiWorkflowBindingsGuiTest.cpp
 tests/src/tracks/HeadlessGuiGuardTest.cpp
