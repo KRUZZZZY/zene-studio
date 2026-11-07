@@ -21,10 +21,11 @@ this clamps it into the `availableGeometry()` of its anchor's screen. It runs in
 A float that already fits on screen is not moved, so every message that was visible before shows exactly where it did.
 GUI thread only. Nothing on the audio thread, no undo change, no new command.
 
-Siblings checked: `TextFloat::moveGlobal` (`include/TextFloat.h:56`) is only called from `displayMessage`, so all
-~30 `displayMessage` callers get the fix. `SimpleTextFloat::moveGlobal` (knob, fader and clip value floats) is a
-different class. Those floats sit beside small widgets, not the window, and are left unchanged (out of scope, and not
-covered by this regression).
+All `displayMessage` callers use the clamped placement, including the Help accessibility path. `TextFloat::moveGlobal`
+(`include/TextFloat.h:56`) also has direct callers in `ClipView` and `SongEditor` for clip and master-control readouts;
+they do not use `displayMessage`, so this finding's fix does not change those placements. `SimpleTextFloat::moveGlobal`
+(knob, fader and piano-roll value floats) is a separate class and is unchanged. Those widget-anchored readouts are
+outside this finding and are not covered by this regression.
 
 ## Regression
 
