@@ -83,3 +83,39 @@ The gates and their inputs are unchanged.
 
 Files committed: `src/core/ControlCommandsCollab.cpp`, `tests/src/gui/CollabPanelTest.cpp`, `tests/CMakeLists.txt`
 (comment only), `tests/upstream-modifications.txt` (one line for `tests/CMakeLists.txt`), this report.
+
+## Self-check
+
+- **Fails without the fix, passes with it:** with `src/core/ControlCommandsCollab.cpp` reverted
+  (`git apply -R LOGS/fix.patch`, EXIT=0) and zene + CollabPanelTest rebuilt (EXIT=0),
+  `ctest -R '^CollabPanelTest$'` gave EXIT=8 with 2 failures (`09-test-unfixed.log`). After `git apply LOGS/fix.patch`
+  (EXIT=0) and a rebuild (EXIT=0) it gave EXIT=0 (`12-test-refixed.log`). The first RED run (`03-test-red.log`, EXIT=8)
+  and GREEN run (`05-test-green.log`, EXIT=0) agree.
+- **Deterministic:** both slots are synchronous. They call `ControlRegistry::setHeadless(true)`, the registry's own
+  test seam that stands in for `isUnattendedRun()`, then `ControlRegistry::invoke` or `QAction::trigger()`, and
+  read the widget tree straight away. No sleeps, no timers, no QTRY in the new or changed assertions.
+  (`joinKeepsInviteWhenConnectionFails` already had a QTRY; I did not touch it.)
+- **At the cause and complete:** the refusal came from the command's own declaration
+  (`ControlCommandsCollab.cpp:200`, checked at `ControlRegistry.cpp:233`), so that is where I fixed it, not in the
+  menu. Both callers were checked: `MainWindow.cpp:418` (Edit menu, `dispatchShellCommand`) and
+  `ShellToolsMenu.cpp:83` (Tools footer, `runCommand` -> `invoke`). Both now open the panel. The menu test drives the
+  first; the direct invoke covers the shared registry path. I did not change the registry's `display` logic, so the
+  other commands that declare `display` are unaffected (listed in the report).
+- **No collateral damage:** no project, save or settings code is touched, so old projects load as before. No limit
+  or check was added; one was removed for one command. A run with no main window still gets a typed `requires`
+  (`CollabPanel.cpp:83`). `commands_list` changes only this command's `requires` array. The id and group counts
+  (snapshot canary) stay the same. ControlCollab, CollabPolicyTest and ReversibilityContractTest pass. The two family
+  failures reproduce without the fix (`10-test-unfixed-unrelated.log`).
+- **ALREADY-FIXED / FALSE-POSITIVE evidence:** not applicable; the verdict is FIXED (REAL).
+- **Sibling commands in ControlCommandsCollab.cpp:** `collab.host`, `collab.stop`, `collab.invite`, `collab.join`,
+  `collab.leave`, `collab.get_state`, `collab.set_role` and `collab.resync` are registered through `add()` ->
+  `defineCommandWithSchema` (`ControlCommandsCollab.cpp:154-158`) and never declared `display`, so they are
+  unaffected. `collab.host`'s consent prompt is still gated by `personPresent()` (`ControlCommandsCollab.cpp:92`),
+  so an unattended session still never gets a modal box, with or without the panel. `collab.show_panel` is the
+  command this fix changes.
+- **Gates row in submit_check:** `submit_check.py:117` runs the shipped `feature_check.py`. In this lane that exits 1
+  with `PermissionError: ... zene-qwen-gui-1106-menu-edit-collaborate-feature-check` (`13-feature-check.log`):
+  the script's `mkdir` targets the worktree's parent directory, which is outside this session's write-jail. It is not a
+  gate result. The same gates run with only the log directory moved (`LOGS/feature_check_logdir.py`) gave EXIT=0, all
+  8 rows PASS (`14-feature-check.log`). I expect the loop's own run, which does not have this restriction, to pass;
+  I did not see it.
