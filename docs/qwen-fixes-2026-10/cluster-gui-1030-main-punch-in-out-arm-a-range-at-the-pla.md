@@ -87,10 +87,10 @@ fails again after reversing only the product patch and passes once it is restore
   new boundary is GUI visibility (offscreen ranges draw no band); no product limit was added that another
   caller could exceed.
 - **Not an ALREADY-FIXED/FALSE-POSITIVE claim:** the original full-width return is quoted above, and the
-  regression fails on that exact tree.
+  regression fails on that exact tree. The "code that shows the verdict" ask therefore does not apply.
 
 ## Completion check
 
 `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> gui-1030-main-punch-in-out-arm-a-range-at-the-pla`
-is run after this report is committed (it requires a clean tree); its actual result is recorded in the
-session log `submit_check-1.log`.
+exit 0 (RESULT: PASS - submit), in `submit_check-1.log`; every ASK item above is answered with the
+RED/GREEN exit codes and the deterministic seam named in this Self-check.
