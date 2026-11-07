@@ -54,9 +54,31 @@ Files committed: `src/gui/widgets/TextFloat.cpp`, `tests/src/gui/GrooveMenuTest.
 
 ## Self-check
 
-- Decision with evidence: REAL. Cause traced from `WorkspaceMenus.cpp:165` through `CommandRun.cpp:49,95` to `TextFloat.cpp:113` (base).
-- Regression fails without the fix and passes with it: yes, see the 4b rows (EXIT 8 → 0).
-- Fix at the cause and complete: placement is clamped inside `displayMessage` for both branches, and every caller goes through it.
-- No collateral damage: floats that fit are not moved. No saved-data, undo or command change. ControlCommandsSnapshot is untouched.
-- Realtime: GUI-only code.
-- Registration: `tests/upstream-modifications.txt` has the new reason line (file ends with a newline). No new files besides this report.
+- **Gates (submit_check FAIL row):** `submit_check.py:117` runs `feature_check.py` directly. That script writes its
+  logs to `<worktree>/../<name>-feature-check`, which is outside this lane's write-jail, so it fails with
+  `PermissionError` before any gate runs (`gates-3-direct.log`, EXIT=1). This is not a gate failure. The same script,
+  run with only its log dir moved into the run folder (`runs/…r1/feature_check_runner.py`), passes all 8 rows on the
+  committed tree (`gates-4.log`, EXIT=0). Running `feature_check.py` from outside the jail should give the same PASS.
+- **The regression fails with the product change reverted and passes with it:** yes.
+  `git apply -R LOGS/fix.patch` (EXIT 0), then rebuild (EXIT 0), then `ctest -R '^GrooveMenuTest$'`: EXIT 8, with
+  `report at 1604,2 290x196 is not inside the screen 0,0 800x800`. Then `git apply LOGS/fix.patch` (EXIT 0), rebuild
+  (EXIT 0), and the same ctest: EXIT 0, 1/1 passed.
+- **The test is deterministic:** it has no wall-clock timing, sleeps or races. The values are fixed by the test: the
+  window geometry is set to `screen->availableGeometry()` (offscreen platform, 800x800). The real menu `QAction` is
+  triggered synchronously, and `announce()` builds the float inside `trigger()`. One `QCoreApplication::processEvents()`
+  runs the shell's queued zero-delay menu install (`Shell.cpp:145-151`), which is an event-loop sync point, not a timer
+  wait. The report's 8 s auto-close timer never fires while the test runs, and the test closes the report itself.
+- **The fix is at the cause and complete:** placement happens only in `TextFloat::displayMessage`, and both branches
+  now clamp. `TextFloat::moveGlobal` has no other caller (searched with `rg -n "moveGlobal\("`). Every
+  `displayMessage` caller (≈30, including `CommandRun.cpp:95`, `MainWindow.cpp:2029`, `ControllerTemplateMenu.cpp:71`)
+  goes through it. `SimpleTextFloat` is a separate class for value floats beside small widgets and was deliberately
+  left alone.
+- **No collateral damage:** the clamp moves a float only when part of it is outside the available screen area, so any
+  float that was fully visible before is placed exactly as before. There is no saved-data, project-load, undo or
+  command change (ControlCommandsSnapshot is untouched). The fix adds no limit that other callers could exceed. If the
+  float is bigger than the screen, `std::max` pins it to the top-left instead of giving `std::clamp` an inverted range.
+- **ALREADY-FIXED / FALSE-POSITIVE evidence:** not applicable. The verdict is FIXED, and the cause is traced from
+  `WorkspaceMenus.cpp:165` through `CommandRun.cpp:49,95` to `TextFloat.cpp:113` (base).
+- Realtime: GUI-thread-only code.
+- Registration: `tests/upstream-modifications.txt` has the new reason line (the file ends with a newline). No new
+  source files.
