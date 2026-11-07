@@ -14,27 +14,44 @@ return QRect(m_xOffset, height() - bandHeight, std::max(0, width() - m_xOffset),
 The punch in/out ticks were only used for the handles (`punchBeginHandleRect()` / `punchEndHandleRect()`),
 so arming a one-bar punch range drew a full-width band instead of one that bounds that bar. The band is now
 clamped to the punch markers and to the visible ruler
-(`src/gui/editors/TimeLineWidget.cpp:284-297`):
+(`src/gui/editors/TimeLineWidget.cpp:284-309`):
 
 ```cpp
+const int rangeBeginX = markerX(TimePos(m_timeline->punchBegin()));
+const int rangeEndX = markerX(TimePos(m_timeline->punchEnd()));
+const double pixelsPerTick = static_cast<double>(m_ppb) / TimePos::ticksPerBar();
+const double rangeEndPosition = m_xOffset + (m_timeline->punchEnd() - m_begin.getTicks()) * pixelsPerTick;
 const int visibleRight = std::max(m_xOffset, width());
-const int beginX = std::clamp(markerX(TimePos(m_timeline->punchBegin())), m_xOffset, visibleRight);
-const int endX = std::clamp(markerX(TimePos(m_timeline->punchEnd())), m_xOffset, visibleRight);
-return QRect(beginX, height() - bandHeight, std::max(0, endX - beginX), bandHeight);
+const int beginX = std::clamp(rangeBeginX, m_xOffset, visibleRight);
+const int endX = std::clamp(rangeEndX, m_xOffset, visibleRight);
+int bandWidth = std::max(0, endX - beginX);
+if (bandWidth == 0 && m_xOffset < width()
+	&& beginX < width() && rangeEndPosition > m_xOffset)
+{
+	bandWidth = 1;
+}
+return QRect(beginX, height() - bandHeight, bandWidth, bandHeight);
 ```
+
+At the current zoom, a valid one-tick range can map both markers to the same pixel. The band keeps a
+one-pixel width when that range intersects the visible ruler, so its handle remains available; a
+range fully outside the ruler still has no band (`TimeLineWidget.cpp:296-306`). Covered by
+`ArrangerTakePunchTest::aSubpixelPunchRangeKeepsAVisibleBandAndHandle`.
 
 The sibling path had to follow: `getPunchAction()` used `band.contains()` for its horizontal gate, and after
 narrowing, a press on the out handle (whose centre is the band's right edge) fell outside the half-open
 rectangle and stopped dragging the range. It now requires the band's row, then applies the existing
-nearest-handle rules (`src/gui/editors/TimeLineWidget.cpp:357-375`). The handle rectangles themselves are
+nearest-handle rules (`src/gui/editors/TimeLineWidget.cpp:370-388`). The handle rectangles themselves are
 unchanged and still centred on the markers. Rendering callers (`paintEvent`, which also reserves the loop
 brace's room) need no change: they use the returned rectangle directly.
 
-The regression is in `ArrangerTakePunchTest::thePunchRangeHasItsOwnHandlesAndArmControl`
-(`tests/src/gui/ArrangerTakePunchTest.cpp:189-192`, `:204-205`, `:220-221`, `:238-239`, `:246`). It asserts
-the band's left/right map to the in/out markers after arming, after each handle drag, after undo and after a
-`transport.punch_set`, and that a range entirely beyond the visible ruler has no band. The drag assertions
-also prove the out/in handles still grab the range.
+The regressions are in `ArrangerTakePunchTest::aSubpixelPunchRangeKeepsAVisibleBandAndHandle`
+(`tests/src/gui/ArrangerTakePunchTest.cpp:150-163`) and
+`ArrangerTakePunchTest::thePunchRangeHasItsOwnHandlesAndArmControl` (`:168-271`). The first pins a valid
+one-tick range whose endpoints map to the same pixel. The second asserts the band's left/right map to the
+in/out markers after arming, after each handle drag and after a `transport.punch_set`; it checks the range
+after undo and confirms a range entirely beyond the visible ruler has no band. The drag assertions also
+prove the out/in handles still grab the range.
 
 ## RED/GREEN proof
 
@@ -58,9 +75,25 @@ Logs are in
 | GREEN restored | `cd build/tests && ctest -R '^ArrangerTakePunchTest$' --output-on-failure` (`test-7-refix.log`) | 0 |
 | Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (`feature_check-1.log`) | 0 (RESULT: PASS) |
 
-The RED assertion was `Actual (band.left()): 338` versus `Expected (ruler->markerX(TimePos(3 * Bar))): 458`
-at `ArrangerTakePunchTest.cpp:191` (338 is `m_xOffset`; 458 is three bars at 40 px/bar). The same assertion
-fails again after reversing only the product patch and passes once it is restored.
+### Independent QA verification after the subpixel correction
+
+QA logs are in `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1030-main-punch-in-out-arm-a-range-at-the-pla.r1/qa-logs/`.
+
+| Step | Command | Exit |
+|------|---------|------|
+| Build affected targets | `cmake --build build --target zene ArrangerTakePunchTest ArrangerTimelineTest VideoClipsGuiTest ArrangerOverlaysVideoLaneTest -j12` (`qa-logs/build-restored.log`) | 0 |
+| Focused family restored | `cd build/tests && ctest -R '^(ArrangerTakePunchTest|ArrangerTimelineTest|VideoClipsGuiTest|ArrangerOverlaysVideoLaneTest)$' --output-on-failure` (`qa-logs/test-restored.log`) | 0 (4/4) |
+| Reverse product hunks from base | `git diff af010bc3cc055d477045a54e2d866f59a95017d7 -- src/gui/editors/TimeLineWidget.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1030-main-punch-in-out-arm-a-range-at-the-pla.r1/qa-logs/qa-product.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1030-main-punch-in-out-arm-a-range-at-the-pla.r1/qa-logs/qa-product.patch` | 0 |
+| Build with product hunks reversed | `cmake --build build --target zene ArrangerTakePunchTest -j12` (`qa-logs/build-reverted.log`) | 0 |
+| Regression red with product hunks reversed | `cd build/tests && ctest -R '^ArrangerTakePunchTest$' --output-on-failure` (`qa-logs/test-reverted.log`) | 8 |
+| Restore staged product hunks | `git checkout -- src/gui/editors/TimeLineWidget.cpp` | 0 |
+| Rebuild restored targets | `cmake --build build --target zene ArrangerTakePunchTest ArrangerTimelineTest VideoClipsGuiTest ArrangerOverlaysVideoLaneTest -j12` (`qa-logs/build-restored.log`) | 0 |
+| Focused family passes after restore | `cd build/tests && ctest -R '^(ArrangerTakePunchTest|ArrangerTimelineTest|VideoClipsGuiTest|ArrangerOverlaysVideoLaneTest)$' --output-on-failure` (`qa-logs/test-restored.log`) | 0 (4/4) |
+| Feature gate | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-gui-1030-main-punch-in-out-arm-a-range-at-the-pla` | 0 (RESULT: PASS) |
+
+With product hunks reversed, the new one-tick check reports `band.width(): 862` versus expected `1` at
+`ArrangerTakePunchTest.cpp:160`; the original geometry check reports `band.left(): 338` versus marker `458`
+at `:206` (338 is `m_xOffset`; 458 is three bars at 40 px/bar).
 
 ## Scope and safety
 

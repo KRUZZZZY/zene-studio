@@ -290,10 +290,22 @@ QRect TimeLineWidget::punchBandRect() const
 	const int bandHeight = std::min(std::clamp(height() / 3, PUNCH_MIN_BAND_HEIGHT, PUNCH_MAX_BAND_HEIGHT), roomForLoop);
 	// The band spans the punch range itself, between its in and out markers, clipped to the
 	// visible ruler, so its extent shows exactly which bars capture.
+	const int rangeBeginX = markerX(TimePos(m_timeline->punchBegin()));
+	const int rangeEndX = markerX(TimePos(m_timeline->punchEnd()));
+	const double pixelsPerTick = static_cast<double>(m_ppb) / TimePos::ticksPerBar();
+	const double rangeEndPosition = m_xOffset + (m_timeline->punchEnd() - m_begin.getTicks()) * pixelsPerTick;
 	const int visibleRight = std::max(m_xOffset, width());
-	const int beginX = std::clamp(markerX(TimePos(m_timeline->punchBegin())), m_xOffset, visibleRight);
-	const int endX = std::clamp(markerX(TimePos(m_timeline->punchEnd())), m_xOffset, visibleRight);
-	return QRect(beginX, height() - bandHeight, std::max(0, endX - beginX), bandHeight);
+	const int beginX = std::clamp(rangeBeginX, m_xOffset, visibleRight);
+	const int endX = std::clamp(rangeEndX, m_xOffset, visibleRight);
+	int bandWidth = std::max(0, endX - beginX);
+	// A positive tick range can be narrower than one pixel at the current zoom. Keep it visible
+	// when it intersects the ruler; a range wholly beyond either edge still has no band.
+	if (bandWidth == 0 && m_xOffset < width()
+		&& beginX < width() && rangeEndPosition > m_xOffset)
+	{
+		bandWidth = 1;
+	}
+	return QRect(beginX, height() - bandHeight, bandWidth, bandHeight);
 }
 
 QRect TimeLineWidget::punchBeginHandleRect() const

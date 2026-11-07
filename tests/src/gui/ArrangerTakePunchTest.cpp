@@ -147,6 +147,21 @@ private slots:
 		QCoreApplication::processEvents();
 	}
 
+	void aSubpixelPunchRangeKeepsAVisibleBandAndHandle()
+	{
+		TimeLineWidget* ruler = m_editor->timeLine();
+		ruler->resize(std::max(1200, ruler->width()), 32);
+		QVERIFY(run(QStringLiteral("transport.punch_set"), {{QStringLiteral("start"), 1},
+			{QStringLiteral("end"), 2}, {QStringLiteral("enabled"), true}}).ok);
+
+		const int beginX = ruler->markerX(TimePos(1));
+		QCOMPARE(beginX, ruler->markerX(TimePos(2)));
+		const QRect band = ruler->punchBandRect();
+		QCOMPARE(band.width(), 1);
+		QCOMPARE(band.left(), beginX);
+		QCOMPARE(ruler->punchBeginHandleRect().center().x(), beginX);
+	}
+
 	//! 0.5.0 L03 (Q050-147): the punch range has its own band and handles under the loop brace,
 	//! and the toolbar's arm control arms/disarms it without ever reading the loop markers. A drag
 	//! is one transport.punch_set - one undo step - and leaves the loop exactly as it was.
