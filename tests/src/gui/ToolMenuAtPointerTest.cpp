@@ -89,7 +89,7 @@ private slots:
 		m_headless = ControlRegistry::instance()->isHeadless();
 		ControlRegistry::instance()->setHeadless(false);
 		getGUI()->mainWindow()->show();
-		QVERIFY(QTest::qWaitForWindowExposed(getGUI()->mainWindow()));
+		QCoreApplication::processEvents();
 		m_navigate = installNavigateMenu(getGUI()->mainWindow()->menuBar());
 		QVERIFY(m_navigate != nullptr);
 	}
@@ -114,8 +114,8 @@ private:
 		const QPoint title = bar->mapTo(getGUI()->mainWindow(), bar->actionGeometry(m_navigate->menuAction()).center());
 		QTest::mouseMove(main, title);
 		QTest::mouseClick(main, Qt::LeftButton, {}, title);
-		QTRY_VERIFY(m_navigate->isVisible());
-		QVERIFY(QTest::qWaitForWindowExposed(m_navigate));
+		QCoreApplication::processEvents();
+		QVERIFY(m_navigate->isVisible());
 	}
 
 private slots:
@@ -147,7 +147,8 @@ private slots:
 		QAction* item = test::menuAction(m_navigate, {QStringLiteral("Tool Menu at Pointer")});
 		QVERIFY(item != nullptr);
 		m_navigate->popup(QPoint(40, 40));
-		QVERIFY(QTest::qWaitForWindowExposed(m_navigate));
+		QCoreApplication::processEvents();
+		QVERIFY(m_navigate->isVisible());
 		m_navigate->setActiveAction(item);
 		QTest::keyClick(m_navigate, Qt::Key_Return);
 		QCoreApplication::processEvents();

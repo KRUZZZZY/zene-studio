@@ -62,9 +62,10 @@ is itself unattended (offscreen), not the reported bug, and that run is what poi
 | Step | Command | Exit | Log |
 | --- | --- | --- | --- |
 | build (unmodified product + test) | `cmake --build build --target zene ToolMenuAtPointerTest ArrangerKeysNavigatorTest -j4` | 0 | `28-build-final.log` |
-| build final test | `cmake --build build --target ToolMenuAtPointerTest -j4` | 0 | `30-build-final.log` |
-| tests (from build/tests) | `ctest -R '^(ToolMenuAtPointerTest\|ArrangerKeysNavigatorTest)$' -V` | 0 | `31-test-final.log`: 2/2 tests; ToolMenuAtPointerTest 6 passed / 0 failed, ArrangerKeysNavigatorTest 14 passed / 0 failed |
-| gates | `python3 …/scripts/feature_check_logdir.py <worktree>` | 0 | `34-feature-check.log`: 8/8 PASS |
+| build final test (bounded waits removed) | `cmake --build build --target ToolMenuAtPointerTest -j4` | 0 | `37-build-final.log` |
+| tests, 3 runs (from build/tests) | `ctest -R '^(ToolMenuAtPointerTest\|ArrangerKeysNavigatorTest)$' -V` | 0, 0, 0 | `38-test-final-{1,2,3}.log`: 2 tests run each time; ToolMenuAtPointerTest 6 passed / 0 failed, ArrangerKeysNavigatorTest 14 passed / 0 failed |
+| gates (log-folder copy) | `python3 …r1/scripts/feature_check_logdir.py <worktree>` | 0 | `39-feature-check.log`: 8/8 PASS |
+| gates (original script) | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 1 | `40-feature-check-original.log`: PermissionError creating `<worktree>-feature-check`, before any gate runs |
 
 Note on the gate command. `feature_check.py` writes its logs to `<worktree>-feature-check`, a sibling of the
 worktree, and this lane cannot write there (PermissionError, `32-feature-check.log`, exit 1). I ran a copy that
@@ -79,15 +80,32 @@ Files committed: `tests/src/gui/ToolMenuAtPointerTest.cpp`, `tests/CMakeLists.tx
 
 ## Self-check
 
-- Regression test fails without the fix and passes with it: not applicable. The verdict is FALSE-POSITIVE and there is
-  no product change. The guard test passes on the unmodified product (`31-test-final.log`, exit 0). The live evidence
-  (runs 1–4 above) shows that the deferral fix makes no difference and that a person's launch already works.
-- Fix at the cause, and callers and siblings checked: no product change. The one caller of `window.tool_menu` from the
-  interface is `src/gui/MenuBarExtras.cpp:146`. The handler is the only `popup(` in `src/gui/ControlCommands*.cpp`.
-  The headless rule is shared on purpose (`CommandRun.cpp:90`, `ControlCommandsTheme.cpp:301`, `WorkflowRun.cpp:146`).
-- No collateral damage, realtime, undo, commands: nothing in the product changed. No command added; the snapshot is
-  unchanged.
-- A GUI test drives that GUI path: yes. `ToolMenuAtPointerTest` clicks the real Navigate menu in the real main window.
-- Gates: 8/8 PASS (`34-feature-check.log`, exit 0), run through the log-folder copy described above.
-- Suggestion for the sweep (not done here; outside this lane): judge interface-only popups in an agent instance as
-  "headless by design", or launch the sweep's instance without `--control-socket` for this item.
+- **The regression test FAILS with your product change reverted and PASSES with it (exit codes):** not applicable.
+  The verdict is FALSE-POSITIVE, so there is no product change to revert and step 4b cannot apply. The guard test
+  passes on the unmodified product (`38-test-final-{1,2,3}.log`, exit 0 three times). I checked the suggested product
+  change live instead: it made no difference (run 2 vs run 1), and a person's launch of the unmodified code already
+  works (run 4).
+- **The test is deterministic:** no sleeps, no `QTRY_*`, no `qWait*` (I removed the bounded waits before committing).
+  It uses synchronous `QTest::mouseClick` / `keyClick` on the menus' `QWindow` / `QMenu`, then
+  `QCoreApplication::processEvents()`. The seam is `ControlRegistry::setHeadless()`, which sets a display (false) or an
+  agent instance (true) explicitly instead of inferring it from the platform. The pointer position comes from the
+  synthetic click.
+- **The fix is at the cause and complete (callers and siblings):** no product change. The one interface caller of
+  `window.tool_menu` is `src/gui/MenuBarExtras.cpp:146`. The handler is the only `popup(` in
+  `src/gui/ControlCommands*.cpp`. The headless rule it follows is shared on purpose: `src/gui/CommandRun.cpp:90`,
+  `src/gui/ControlCommandsTheme.cpp:301`, `src/gui/WorkflowRun.cpp:146`.
+- **No collateral damage:** nothing in the product changed, so projects and saved data load as before. No limit or
+  check added, no command added, and the commands snapshot is unchanged.
+- **FALSE-POSITIVE evidence (file:line / contract):** `src/gui/ControlCommandsArrangerView.cpp:335-336` shows the
+  popup only when not headless. `src/core/ControlRegistry.cpp:159` sets headless = `isUnattendedRun()`.
+  `src/core/UnattendedRun.cpp:76-79` and `src/core/main.cpp:1264` make every `--control-socket` instance unattended
+  (contract: `include/UnattendedRun.h`). `tests/control_socket_harness.py:257-259` shows that the sweep's launcher
+  always passes `--control-socket`. Live runs 1–4 above (screenshots in the LOG FOLDER) confirm all of this.
+- **A GUI test drives that GUI path:** yes. `ToolMenuAtPointerTest` clicks the real Navigate menu (opened from the
+  real main window's menu bar) and uses the keyboard.
+- **Gates:** 8/8 PASS with the log-folder copy (`39-feature-check.log`, exit 0). The original script cannot create its
+  sibling log folder from this lane (`40-feature-check-original.log`, exit 1, PermissionError). For that reason
+  `submit_check.py` reports "gates (feature_check.py)" as FAIL with no gate named. That FAIL is the lane's write
+  restriction, not a gate result.
+- **Suggestion for the sweep (outside this lane, not done):** treat interface-only popups in an agent instance as
+  headless by design, or launch the sweep's instance without `--control-socket` for this item.
