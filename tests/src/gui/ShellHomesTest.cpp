@@ -199,6 +199,32 @@ private slots:
 		QVERIFY(tabs->tabIds().contains(QStringLiteral("devices")));
 	}
 
+	void aMouseClickOnATabOpensItsPanelAfterTheSidePanelsPopOut()
+	{
+		// gui-1105-main-devices: the sweep popped out the Browser and the Inspector, then clicked the bottom tabs.
+		// The tabs move left with the empty left region and still open their panel on a real click.
+		World world;
+		QVERIFY(QTest::qWaitForWindowExposed(&world.shell));
+		ShellRegionTabs* tabs = world.shell.regionTabs(ShellRegion::Bottom);
+		QTabBar* bar = tabs->bar();
+		const auto devicesRect = [&] {
+			return bar->tabRect(static_cast<int>(tabs->tabIds().indexOf(QStringLiteral("devices"))));
+		};
+		const int docked = bar->mapTo(&world.shell, devicesRect().center()).x();
+		QVERIFY(world.shell.detachPanel(QStringLiteral("browser")));
+		QVERIFY(world.shell.detachPanel(QStringLiteral("inspector")));
+		QCoreApplication::processEvents();
+		QVERIFY(bar->mapTo(&world.shell, devicesRect().center()).x() < docked);  // where the sweep's click went
+		QCOMPARE(tabs->currentId(), QStringLiteral("detail"));
+		QTest::mouseClick(bar, Qt::LeftButton, Qt::NoModifier, devicesRect().center());
+		QCOMPARE(tabs->currentId(), QStringLiteral("devices"));
+		QVERIFY(world.shell.model().isVisible(QStringLiteral("devices")));
+		QVERIFY(world.content.value(QStringLiteral("devices"))->isVisible());
+		QVERIFY(!world.shell.model().isVisible(QStringLiteral("detail")));
+		QVERIFY(world.shell.attachPanel(QStringLiteral("inspector")));
+		QVERIFY(world.shell.attachPanel(QStringLiteral("browser")));
+	}
+
 	void aRowLabelsThenCompactsThenOverflows()
 	{
 		QWidget host;  // no layout: the test sets the row's width itself
