@@ -186,6 +186,10 @@ private slots:
 		QVERIFY(band.height() >= 2);
 		QVERIFY(band.height() < ruler->height());
 		QCOMPARE(band.bottom(), ruler->height() - 1);
+		// The band bounds the punch range itself, from the in marker to the out marker, rather
+		// than the whole visible ruler.
+		QCOMPARE(band.left(), ruler->markerX(TimePos(3 * Bar)));
+		QCOMPARE(band.right() + 1, ruler->markerX(TimePos(4 * Bar)));
 		QCOMPARE(ruler->punchBeginHandleRect().center().x(), ruler->markerX(TimePos(3 * Bar)));
 		QCOMPARE(ruler->punchEndHandleRect().center().x(), ruler->markerX(TimePos(4 * Bar)));
 
@@ -197,6 +201,8 @@ private slots:
 		QTest::mouseRelease(ruler, Qt::LeftButton, Qt::NoModifier, to);
 		QCOMPARE(timeline.punchBegin(), tick_t{3 * Bar});
 		QCOMPARE(timeline.punchEnd(), tick_t{5 * Bar});
+		QCOMPARE(ruler->punchBandRect().left(), ruler->markerX(TimePos(3 * Bar)));
+		QCOMPARE(ruler->punchBandRect().right() + 1, ruler->markerX(TimePos(5 * Bar)));
 		QCOMPARE(timeline.loopBegin().getTicks(), loopBegin);
 		QCOMPARE(timeline.loopEnd().getTicks(), loopEnd);
 		QCOMPARE(timeline.loopEnabled(), loopEnabled);
@@ -211,6 +217,8 @@ private slots:
 		QTest::mouseRelease(ruler, Qt::LeftButton, Qt::NoModifier, to);
 		QCOMPARE(timeline.punchBegin(), tick_t{2 * Bar});
 		QCOMPARE(timeline.punchEnd(), tick_t{4 * Bar});
+		QCOMPARE(ruler->punchBandRect().left(), ruler->markerX(TimePos(2 * Bar)));
+		QCOMPARE(ruler->punchBandRect().right() + 1, ruler->markerX(TimePos(4 * Bar)));
 		QCOMPARE(timeline.loopBegin().getTicks(), loopBegin);
 		QCOMPARE(timeline.loopEnd().getTicks(), loopEnd);
 
@@ -227,8 +235,15 @@ private slots:
 		QCOMPARE(arm->isChecked(), true);
 		QCOMPARE(timeline.punchBegin(), tick_t{1 * Bar});
 		QCOMPARE(timeline.punchEnd(), tick_t{2 * Bar});
+		QCOMPARE(ruler->punchBandRect().left(), ruler->markerX(TimePos(1 * Bar)));
+		QCOMPARE(ruler->punchBandRect().right() + 1, ruler->markerX(TimePos(2 * Bar)));
 		QCOMPARE(timeline.loopBegin().getTicks(), loopBegin);
 		QCOMPARE(timeline.loopEnd().getTicks(), loopEnd);
+
+		// A range entirely beyond the visible ruler has no band extent to draw.
+		QVERIFY(run(QStringLiteral("transport.punch_set"), {{QStringLiteral("start"), 100 * Bar},
+			{QStringLiteral("end"), 101 * Bar}, {QStringLiteral("enabled"), true}}).ok);
+		QVERIFY(ruler->punchBandRect().isEmpty());
 
 		QVERIFY(clear->isEnabled());
 		clear->trigger();
