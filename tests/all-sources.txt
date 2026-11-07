@@ -3410,6 +3410,7 @@ tests/src/gui/TaskIndicatorTest.cpp
 tests/src/gui/TelemetryConsentDialogTest.cpp
 tests/src/gui/TempoMapPanelTest.cpp
 tests/src/gui/ThemeContrastTest.cpp
+tests/src/gui/ToolMenuAtPointerTest.cpp
 tests/src/gui/TouchInstrumentSurfaceTest.cpp
 tests/src/gui/TouchLayoutTest.cpp
 tests/src/gui/TouchWorkspaceTest.cpp
