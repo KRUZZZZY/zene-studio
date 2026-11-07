@@ -36,6 +36,7 @@
 #include <QJsonObject>
 #include <QLabel>
 #include <QMenu>
+#include <QMenuBar>
 #include <QTemporaryDir>
 
 #include "ControlRegistry.h"
@@ -45,6 +46,7 @@
 #include "GuiTestApplication.h"
 #include "InstrumentTrack.h"
 #include "MainWindow.h"
+#include "MenuBarExtras.h"
 #include "MidiClip.h"
 #include "Note.h"
 #include "Song.h"
@@ -169,6 +171,32 @@ private slots:
 		QVERIFY2(!shown.isEmpty(), "the refused groove.extract was shown to nobody");
 		QVERIFY2(shown.contains(QStringLiteral("groove")), qPrintable(shown));
 		delete menu;
+	}
+
+	void aMessageOverTheMainWindowLandsInsideIt()
+	{
+		// gui-1105: a Navigate menu command is announced with the main window as the anchor, and
+		// TextFloat put an anchored message at the anchor's right edge plus two pixels - outside the
+		// window, so Fit Selection's "nothing selected" refusal was never seen.
+		MainWindow* window = getGUI()->mainWindow();
+		QMenu* navigate = installNavigateMenu(window->menuBar());  // what Shell.cpp does at start-up
+		for (TextFloat* old : window->findChildren<TextFloat*>()) { delete old; }
+		QAction* fit = named(navigate, QMenu::tr("Fit Selection"));
+		QVERIFY(fit != nullptr);
+		fit->trigger();
+		const QList<TextFloat*> shown = window->findChildren<TextFloat*>();
+		QVERIFY2(shown.size() == 1, "Fit Selection with nothing selected showed no refusal");
+		const QRect area(window->mapToGlobal(QPoint(0, 0)), window->size());
+		const QRect message = shown.first()->geometry();
+		QVERIFY2(area.contains(message.topLeft()), qPrintable(QStringLiteral("message at (%1,%2) is outside the window %3x%4+%5+%6")
+			.arg(message.x()).arg(message.y()).arg(area.width()).arg(area.height()).arg(area.x()).arg(area.y())));
+
+		// A small anchor (a knob, a clip) keeps the message beside it, as before.
+		QWidget child(window);
+		child.setGeometry(10, 10, 40, 20);
+		TextFloat* beside = TextFloat::displayMessage(QStringLiteral("t"), QStringLiteral("m"), QPixmap(), 0, &child);
+		QCOMPARE(beside->pos(), child.mapToGlobal(QPoint(child.width() + 2, 0)));
+		delete beside;
 	}
 };
 
