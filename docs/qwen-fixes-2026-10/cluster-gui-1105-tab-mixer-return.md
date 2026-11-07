@@ -45,3 +45,21 @@ command. The existing tests call `syncMixer()` twice, which is why they never sa
   (`feature_check_local.py`); the gate list and logic are identical. Result exit 0, `logs/gates-2.log`.
 - Files committed: src/gui/MixerView.cpp, tests/src/gui/MixerSelectionIdentityTest.cpp, tests/upstream-modifications.txt,
   this report.
+
+## Self-check
+
+- **Test fails reverted, passes fixed:** reverted run exit 8 (`typeBadge()->text()` is `""`), fixed run exit 0; see the 4b rows above
+  (`logs/test-4b-revert.log`, `logs/test-4b-reapply.log`).
+- **Deterministic:** no timer, sleep or wall clock. It calls `syncWithMixer()` directly (the seam the button's own handler uses) and
+  clicks the button with `QTest::mouseClick`; the 500 ms timer never has to fire.
+- **Cause and callers:** the only early exit in `syncWithMixer` was the one removed (MixerView.cpp:530-545). Callers: timer
+  (:298), `ShellSelection::changed` and `MixerModeBar::changed` (:115-117), the Return handler (:241) - all want the full pass. The
+  sibling path `addNewChannel` (:415-433) already calls `updateMixerChannel` and records the signature, so the next pass has no
+  rebuild and tags it as before. `engineDeletedChannel` -> `refreshDisplay` is followed by the timer's pass and was not part of the
+  finding; left unchanged.
+- **Collateral:** view-only change; no saved data, project loading, command or model is touched. The extra work after a rebuild
+  (overlays, strip info, tags) is what every non-rebuild pass already does, and the loop guards null channels/views.
+- **Gates:** `feature_check.py` and therefore `submit_check.py`'s gates row exit 1 inside this session because the script writes
+  `<worktree>-feature-check/` outside the write jail (PermissionError, `logs/gates-1.log`). The same gates through a copy with the
+  log dir moved passed 8/8 (`logs/gates-2.log`). Please re-run `submit_check.py` outside the jail.
+- **Verdict is FIXED**, not ALREADY-FIXED/FALSE-POSITIVE.
