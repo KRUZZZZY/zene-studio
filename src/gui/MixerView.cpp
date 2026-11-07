@@ -57,7 +57,6 @@
 #include <QKeyEvent>
 #include <QStackedLayout>
 #include <QStackedWidget>
-#include <utility>
 
 #include "EffectRackView.h"
 #include "AudioEngine.h"
@@ -116,7 +115,8 @@ protected:
 	void resizeEvent(QResizeEvent* event) override
 	{
 		QScrollArea::resizeEvent(event);
-		if (std::exchange(m_scrolls, scrolls()) != m_scrolls) { updateGeometry(); }
+		const bool scrollsNow = scrolls();
+		if (m_scrolls != scrollsNow) { m_scrolls = scrollsNow; updateGeometry(); }
 	}
 
 private:
