@@ -533,9 +533,10 @@ void MixerView::syncWithMixer()
 		|| m_channelOrderSignature != channelOrderSignatureOf(getMixer()))
 	{
 		// A reorder keeps the count but moves the channels, and each strip binds its solo, mute,
-		// pan and volume models to the channel at its own number: rebuild them.
+		// pan and volume models to the channel at its own number: rebuild them. The pass goes on to
+		// the overlays, strip info and type badges, so a strip made now (a new Return) is labelled
+		// at once rather than at the next timer pass.
 		refreshDisplay();
-		return;
 	}
 	if (vcaSignatureOf(getMixer()) != m_vcaSignature) { refreshVcaStrips(); }
 	// 0.5.0 L09 (MX-066, MX-049): folded folders' strips hidden, faders on one send (MixerOverlays.cpp).
