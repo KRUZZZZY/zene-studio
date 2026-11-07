@@ -45,3 +45,18 @@ I did not reproduce in a full `MainWindow` (the test shell is standalone, so `to
 `m_shell->togglePanel` branch, not `dispatchWindowToggle`); the dispatch branch is covered by reading
 `ControlCommandsWindow.cpp:132-144` and by the footer switch working in the same sweep. The fix belongs to the
 sweep's click-coordinate source (the main-view layout shifted ~242 px between inventory and click), not to the shell.
+
+## Self-check
+- Regression FAILS with the product change reverted and PASSES with it: not applicable, no product change (FALSE-POSITIVE).
+  The added test passes on the unmodified code (`ctest -R '^ShellHomesTest$'`, EXIT=0). It is extra coverage only.
+- Deterministic: yes. It uses `QTest::mouseClick` at `tabRect(index).center()` on an exposed offscreen shell
+  (`qWaitForWindowExposed`); no sleeps, timers or wall-clock values.
+- Fix complete / siblings: nothing changed. The sibling findings (Devices, Automation tabs) share the same ~242 px
+  click offset in `results.jsonl` (x 245/348 vs inventory 487/590); all go through `ShellRegionTabs::choose`.
+- Collateral damage: none; only a test was added. Saved data and projects are untouched.
+- FALSE-POSITIVE contract: `src/gui/shell/ShellRegionTabs.cpp:205-217` (tab change -> `choose` -> `toggle`),
+  `src/gui/ControlCommandsWindow.cpp:132-144` (`window.toggle` -> `togglePanel`), plus the click-vs-inventory table
+  above and `shots/0013-before.png` (click marker at the window's left edge).
+- Gates: `feature_check.py` could not run here (EXIT=1, PermissionError creating
+  `<worktree>-feature-check/` outside the write-jail). Not run, not claimed as passing. The change is a test only (no new
+  product function), so the complexity and file-length ratchets cannot be hit by product code.
