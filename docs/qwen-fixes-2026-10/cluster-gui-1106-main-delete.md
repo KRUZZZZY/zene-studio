@@ -99,6 +99,11 @@ committed.
   floating) with shot 0023 shows the floating Inspector over the editor. `NoteEditorToolbar.cpp:113-119` and
   `:161-180`, `NoteEditor.cpp:278-287`, `ShellChrome.cpp:136-144,161-164` and `ShellIcons.cpp:313` show that the
   checked state is synced and painted.
+- **submit_check.py** (`18-submit-check.log`, EXIT=1): every row passes except "gates (feature_check.py)". That row
+  fails only because `submit_check.py` runs `feature_check.py` directly, which hits the write-jail `PermissionError`
+  on `<worktree>-feature-check` (`19-feature-check-direct.log`, EXIT=1, no gate ran). The same gates, run on the
+  committed tree through the log-dir wrapper, pass 8/8 (`20-feature-check.log`, EXIT=0, RESULT: PASS). The pipeline
+  can run them outside the jail.
 - **Not checked:** I did not replay the full sweep against a live instance. The floating-window explanation rests on
   the screenshots, the inventory geometry and the "Dock" label contract cited above.
 
