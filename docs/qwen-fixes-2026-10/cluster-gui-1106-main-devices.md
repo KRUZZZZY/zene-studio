@@ -45,6 +45,9 @@ click). Otherwise every main-view control under the floating Inspector gets a fa
 | gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 1 (PermissionError: the script creates `<worktree>-feature-check` next to the worktree, outside the write jail: `logs/gates-1.log`) |
 | gates | same script, unchanged except its log directory points at `logs/feature-check` (run with `exec` of the script source and that one path replaced) `> logs/gates-3.log` | 0 (all 8 rows PASS, RESULT: PASS) |
 
+| gates after commit | same as above `> logs/gates-4.log` | 0 (1 changed file; all 8 rows PASS) |
+| submit check | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> gui-1106-main-devices > logs/submit-1.log` | 1. Its only FAIL is "gates (feature_check.py)": it runs the gate script unmodified, which hits the same PermissionError on `<worktree>-feature-check` in this write-jailed lane. The identical gate logic passes (`gates-4.log`). Every other row PASSes. |
+
 No product file and no test file changed, so there is no RED/GREEN pair. The FALSE-POSITIVE verdict rests on the run
 artefacts and the code/test cited above.
 
