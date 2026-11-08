@@ -24,6 +24,7 @@
 
 #include <QtTest>
 
+#include <QActionGroup>
 #include <QComboBox>
 #include <QImage>
 #include <QJsonArray>
@@ -392,6 +393,33 @@ private slots:
 		select({m_clip->notes()[1]});
 		QTest::keyClick(m_editor->canvas(), Qt::Key_Delete);
 		QCOMPARE(m_clip->notes().size(), std::size_t{1});
+	}
+
+	//! cluster gui-1105-main-delete: a left click on a toolbar tool button (Delete among them) checks that
+	//! button, unchecks the one before it and picks its tool - the click path, not only the keys.
+	void aClickOnAToolButtonSelectsItInTheToolbar()
+	{
+		auto* bar = m_editor->findChild<QWidget*>(QStringLiteral("noteEditorToolbar"));
+		QVERIFY(bar != nullptr);
+		int tools = 0;
+		for (QToolButton* button : bar->findChildren<QToolButton*>())
+		{
+			QAction* action = button->defaultAction();
+			if (action == nullptr || action->property("controlCommand").toString() != QStringLiteral("window.note_editor_set")
+				|| !action->isCheckable() || action->actionGroup() == nullptr || !action->actionGroup()->isExclusive())
+			{
+				continue;
+			}
+			++tools;
+			const QPoint centre = button->rect().center();
+			QVERIFY2(bar->childAt(button->mapTo(bar, centre)) == button, qPrintable(action->text() + " is covered"));
+			QTest::mouseClick(button, Qt::LeftButton, Qt::NoModifier, centre);
+			QVERIFY2(button->isChecked(), qPrintable(action->text() + " did not become selected"));
+			QCOMPARE(static_cast<int>(m_editor->state().tool), action->data().toInt());
+			QCOMPARE(action->actionGroup()->checkedAction(), action);
+		}
+		QCOMPARE(tools, 7);
+		QCOMPARE(m_editor->state().tool, NoteTool::Audition);  // the last button, Play
 	}
 
 	void noteEditIsValidatedWholeBeforeAnythingIsWritten()
