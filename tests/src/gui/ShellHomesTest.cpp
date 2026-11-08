@@ -176,6 +176,24 @@ private slots:
 		QVERIFY(!world.shell.findChild<QWidget*>(QStringLiteral("shellBottom"))->isVisible());
 	}
 
+	//! A real left-click on the Pattern Editor tab's own rectangle opens its panel (finding gui-1106-main-pattern-editor:
+	//! the sweep's click had landed outside the strip, not on the tab).
+	void aMouseClickOnThePatternEditorTabOpensIt()
+	{
+		World world;
+		QVERIFY(QTest::qWaitForWindowExposed(&world.shell));
+		ShellRegionTabs* tabs = world.shell.regionTabs(ShellRegion::Bottom);
+		QCOMPARE(tabs->currentId(), QStringLiteral("detail"));
+		const int index = static_cast<int>(tabs->tabIds().indexOf(QStringLiteral("pattern")));
+		QVERIFY(index >= 0);
+		QCOMPARE(tabs->bar()->tabText(index), QStringLiteral("Pattern Editor"));
+		QTest::mouseClick(tabs->bar(), Qt::LeftButton, Qt::NoModifier, tabs->bar()->tabRect(index).center());
+		QVERIFY(world.shell.model().isVisible(QStringLiteral("pattern")));
+		QVERIFY(world.content.value(QStringLiteral("pattern"))->isVisible());
+		QCOMPARE(tabs->currentId(), QStringLiteral("pattern"));
+		QCOMPARE(world.shell.model().openIn(ShellRegion::Bottom), QStringLiteral("pattern"));
+	}
+
 	void aRegionWithOnePanelShowsNoTabs()
 	{
 		World world;
