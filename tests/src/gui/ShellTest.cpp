@@ -397,6 +397,25 @@ private slots:
 		QVERIFY(!world.shell.isDetached(id));
 	}
 
+	// gui-1106: the Devices header's "Pop out the Devices panel" button floats Devices in a window titled
+	// "Devices - Zene Studio" (the GUI sweep's click had missed it, off-screen) and the same button docks it.
+	void theDevicesPopOutButtonFloatsAndDocksDevices()
+	{
+		World world;
+		const QString id = QStringLiteral("devices");
+		auto* button = world.shell.panel(id)->findChild<QToolButton*>(QStringLiteral("panelFloat"));
+		QVERIFY(button != nullptr);
+		QCOMPARE(button->accessibleName(), Shell::tr("Pop out the %1 panel").arg(QStringLiteral("Devices")));
+		QVERIFY(!world.shell.isDetached(id));
+		button->click();
+		QVERIFY(world.shell.isDetached(id));
+		QVERIFY(world.shell.floatingWindow(id) != nullptr);
+		QCOMPARE(world.shell.floatingWindow(id)->windowTitle(), QStringLiteral("Devices - Zene Studio"));
+		QCOMPARE(button->accessibleName(), Shell::tr("Dock the %1 panel").arg(QStringLiteral("Devices")));
+		button->click();
+		QVERIFY(!world.shell.isDetached(id));
+	}
+
 	void aSavedLayoutRemembersItsFloatingPanels()
 	{
 		World world;
