@@ -64,6 +64,18 @@ Files committed: `src/gui/editors/TimeLineWidget.cpp`, `tests/src/gui/ArrangerTa
 
 ## Self-check
 
+- submit_check `gates (feature_check.py)` FAIL (`LOG/17-submit-check.log`, EXIT=1): this is the
+  sandbox, not a gate. submit_check runs `feature_check.py` as a subprocess (`submit_check.py:117`),
+  and that subprocess dies on `PermissionError` making `<worktree>-feature-check`
+  (`feature_check.py:70-71`, `LOG/15-feature-check.log`). That path is outside this lane's write
+  jail. The same script with only its log dir redirected ran all 8 gates: PASS, EXIT=0
+  (`LOG/16-feature-check.log`). Run outside the jail, it should pass.
+- Fails without the fix, passes with it: 4b revert, then `ctest -R '^ArrangerTakePunchTest$'` gave
+  EXIT=8 (failure at `:278`, `LOG/12`). After reapplying, EXIT=0 (`LOG/14`).
+- Deterministic: no timers, sleeps or threads. Its inputs are fixed values: zoom 40 px/bar (fixture
+  `init()`), ruler resized to 1200x32, play position 0, loop moved to 20..24 bars and disabled. It
+  compares two synchronous `QWidget::grab()` renders at fixed pixels.
+- Verdict is FIXED, so the ALREADY-FIXED/FALSE-POSITIVE item does not apply.
 - Callers/siblings: `punchBandRect()` is used by `paintEvent` (layout reservation and paint),
   `punchBegin/EndHandleRect()` and `getPunchAction()`. Only the paint and the handle rects changed.
   The hit test is unchanged on purpose: a press anywhere in the row near a handle, or between the
