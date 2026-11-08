@@ -86,3 +86,8 @@ Files committed: `tests/src/gui/EffectRackAddTest.cpp` (new slot), this report. 
   `inventory.py:58`, `sweep.py:216-217`, `shots/0116-before.png`). The code path is
   `EffectRackView.cpp:76` → `:252-257` → `DevicePicker.cpp:277-282`. Live stack proof is in LOGS/04-test.log.
 - **Realtime / undo / commands:** nothing changed in product code; no command added.
+- **submit_check.py** (LOGS/21-submit.log, exit 1): every row PASSes except "gates (feature_check.py)". That row
+  fails only because `submit_check.py` calls `feature_check.py` directly, and `feature_check.py:70-71` does `mkdir`
+  outside this lane's write-jail (`LOGS/22-gates-direct.log`: `PermissionError`, exit 1). The same gates on the
+  committed tree with the log directory redirected: `LOGS/23-gates.log`, exit 0, all 8 rows PASS. A run from
+  outside the jail should show the gate row green.
