@@ -96,3 +96,17 @@ Files committed: `src/gui/ControlCommandsArrangerView.cpp`, `tests/src/gui/Arran
   (`value >= max` with step>0, or `value <= min` with step<0). Steps that move, including ones clamped to the bound, and absolute zooms are unchanged. No schema,
   command id or description changed, so the commands snapshot does not move.
 - **Verdict ALREADY-FIXED or FALSE-POSITIVE.** Does not apply: the verdict is FIXED (REAL), shown by the RED run.
+- **Sibling commands in `ControlCommandsArrangerView.cpp`.** Only `arrangement.zoom`'s step branch changed.
+  - `zoom_back` / `zoom_forward` / `zoom_toggle` already refuse a no-op (NotFound when nothing to walk). The new refusal follows the same pattern, so they are consistent and unchanged.
+  - `arrangement.zoom` with pixels_per_bar, span (`start`/`end`) or `fit` is unchanged. An absolute target is something the caller asked for by value; it is not a relative step that cannot move.
+  - `fit_tracks`, `get_state`, `modes`, `modifier_tools`, `navigator`, `next_transient`, `nudge`, `ruler_lanes`, `scroll`, `select_clip` and `set_tool` do not go through `zoom()`, `requestedZoom()` or `stepBoundProblem()`, so they are not affected.
+  - `get_state`'s zoom fields come from `zoomState()`, which is untouched.
+
+## Gate status at HEAD (after commit)
+
+- The stock `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` exits 1 (`24-feature-check-stock.log`) with
+  `PermissionError` on `mkdir <worktree>-feature-check`. That directory sits outside this lane's write-jail, so `submit_check.py` reports
+  "gates FAIL" with no gate named. This is BLOCKED by the environment, not by a gate result.
+- The same script with only its logs path redirected into the run folder (`feature_check_jail.py`) exits 0 at HEAD
+  (`25-feature-check-jail.log`): all 8 gates PASS.
+- A run with write access to the worktree's parent directory (for example the parent loop) will reproduce the stock check.
