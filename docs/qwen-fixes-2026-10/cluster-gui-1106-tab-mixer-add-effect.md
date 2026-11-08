@@ -53,3 +53,18 @@ a false positive). The existing test is the regression proof for the behaviour t
 
 ## Files committed
 - `docs/qwen-fixes-2026-10/cluster-gui-1106-tab-mixer-add-effect.md` (this report) only.
+
+## Self-check
+- RED/GREEN with the product change reverted: not applicable. Verdict is FALSE-POSITIVE and no product file changed, so
+  there is no fix to revert. The existing `EffectRackAddTest::addEffectPicksFromTheDevicePicker` passes on the
+  unchanged tree (ctest EXIT=0, `logs/test-2.log`; 4 passed, 0 skipped, `logs/test-3.log`).
+- Determinism: nothing was added. The existing test drives the click with `QTest::mouseClick` and dismisses the modal
+  from a 10 ms `QTimer` poll for `activeModalWidget()` (`EffectRackAddTest.cpp:68-75`); it asserts no timing.
+- Fix at the cause / siblings: no fix. The sibling path `ClipEffectsDialog::addEffect` (`src/gui/ClipEffectsDialog.cpp:241`)
+  is a different dialog and is not in this finding.
+- Collateral damage: none; no code or saved data touched.
+- Code showing FALSE-POSITIVE: `src/gui/EffectRackView.cpp:76` (connect), `:252-257` (`addEffect` opens `DevicePicker::pick`
+  first, no guard), `tests/src/gui/EffectRackAddTest.cpp:127` (modal class is `lmms::gui::DevicePicker`); and the click was
+  off-screen: `terra-pilot/buttons/sweep.py:59` (1600x1000) vs `runs/m0-train-26/results.jsonl` line 113 (x=1655, y=1133).
+- Gates: `feature_check.py` could not run under the write jail (see Gates above); this is why submit_check shows
+  "FAIL gates". Not a result about the code.
