@@ -68,6 +68,7 @@
 #include "PanelShortcuts.h"
 #include "PerformView.h"
 #include "Shell.h"
+#include "ShellChrome.h"
 #include "Song.h"
 #include "SongEditor.h"
 
@@ -412,6 +413,29 @@ private slots:
 		QTRY_COMPARE(QApplication::focusWidget(), static_cast<QWidget*>(arranger));
 		QTest::keyClick(arranger, Qt::Key_K, Qt::ControlModifier | Qt::AltModifier);
 		QCOMPARE(arranger->editMode(), SongEditor::EditMode::Select);
+	}
+
+	//! gui-1106-main-mix: a real click on each footer view word switches the real shell's view (the Mix word
+	//! dispatches window.set_view; the sweep's "Mix leaves Arrange showing" was a click outside the screen).
+	void aFooterViewWordSwitchesTheView()
+	{
+		Shell* shell = getGUI()->mainWindow()->shell();
+		QVERIFY(run(QStringLiteral("window.set_view"), {{QStringLiteral("view"), QStringLiteral("arrange")}}).ok);
+		const QList<QAction*> views = shell->viewActions();
+		QCOMPARE(views.size(), 3);
+		const std::pair<int, ShellView> order[] = {{1, ShellView::Mix}, {2, ShellView::Edit}, {0, ShellView::Arrange}};
+		for (const auto& [index, view] : order)
+		{
+			ShellButton* word = nullptr;
+			for (ShellButton* b : shell->findChildren<ShellButton*>())
+			{
+				if (b->defaultAction() == views.at(index)) { word = b; }
+			}
+			QVERIFY2(word != nullptr, "the footer has no button for the view word");
+			QTest::mouseClick(word, Qt::LeftButton);
+			QCOMPARE(shell->model().view(), view);
+			QVERIFY(views.at(index)->isChecked());
+		}
 	}
 
 private:
