@@ -36,6 +36,7 @@
 #include <QJsonArray>
 #include <QPushButton>
 #include <QSpinBox>
+#include <QToolButton>
 #include <QWheelEvent>
 
 #include "ControlRegistry.h"
@@ -420,6 +421,27 @@ private slots:
 		QCOMPARE(m_clip->notes().size(), std::size_t{4});
 		QVERIFY(undo());
 		QCOMPARE(m_clip->notes().size(), std::size_t{3});
+	}
+
+	//! gui-1106-main-slice: a real left-click on the Slice button of the toolbar selects the tool and the
+	//! button shows it (checked, painted differently), as the sweep expects.
+	void aClickOnTheSliceButtonSelectsItAndShowsIt()
+	{
+		QWidget* bar = m_editor->findChild<QWidget*>(QStringLiteral("noteEditorToolbar"));
+		QVERIFY(bar != nullptr);
+		QToolButton* slice = nullptr;
+		for (QToolButton* b : bar->findChildren<QToolButton*>())
+		{
+			if (b->defaultAction() == toolAction(NoteTool::Slice)) { slice = b; }
+		}
+		QVERIFY2(slice != nullptr, "no Slice button on the toolbar");
+		QVERIFY2(slice->isVisible() && slice->width() > 0, "the Slice button is not shown");
+		const QImage before = slice->grab().toImage();
+		QTest::mouseClick(slice, Qt::LeftButton, Qt::NoModifier, slice->rect().center());
+		QCOMPARE(m_editor->state().tool, NoteTool::Slice);
+		QVERIFY2(slice->isChecked(), "the Slice button is not checked after its click");
+		QVERIFY2(slice->grab().toImage() != before, "the Slice button looks the same after its click");
+		QVERIFY2(bar->isVisible(), "the toolbar vanished after the click");
 	}
 
 	//! L07 Q050-064: each tool shows its own cursor at once (a toolbar action, no pointer move), and the
