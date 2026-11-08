@@ -5748,3 +5748,4 @@ tests/src/core/AudioBufferTest.cpp	cluster new-p16-289: pin zero-frame AudioBuff
 plugins/LadspaBrowser/LadspaDescription.cpp	new-p14-130: rowChanged ignores a row outside the key list (the -1 the list reports when its current item is cleared), keeping the last selection; regression LadspaDescriptionTest::clearingTheRowKeepsTheLastSelection.
 tests/src/core/SessionAudioRecordTest.cpp	# audio-recording arm dereferences a possibly-null audio engine
 include/AudioBufferView.h	new-p10-495: framesView() returns an empty range when empty() is true (null data with any counts, or zero counts) instead of offsetting a null pointer by channels*frames; valid views unchanged; covered by AudioResamplerRatioTest framesViewOfNullDataIsEmpty
+tests/src/gui/ShellHomesTest.cpp	# Hide button click leaves the lower panel open
