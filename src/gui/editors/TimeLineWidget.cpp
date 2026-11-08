@@ -56,6 +56,29 @@ namespace
 	constexpr int PUNCH_MIN_BAND_HEIGHT = 4;
 	constexpr int PUNCH_MAX_BAND_HEIGHT = 14;
 	constexpr int PUNCH_BAND_GAP = 2;
+
+	//! gui-1106: the part of the punch band's row between the punch bounds, cut to the band (the
+	//! visible content area). Empty when the range is scrolled out of view.
+	QRect punchIntervalRect(const QRect& band, int beginX, int endX)
+	{
+		const int left = std::max(band.left(), beginX);
+		const int right = std::min(band.left() + band.width(), endX);
+		return QRect(left, band.top(), std::max(0, right - left), band.height());
+	}
+
+	//! gui-1106: a handle centred on x, kept wholly inside the band so the in handle of a range
+	//! starting at the content edge is not half clipped away. A bound scrolled out of view keeps
+	//! its handle out of view too.
+	QRect punchHandleRect(const QRect& band, int x)
+	{
+		int left = x - PUNCH_HANDLE_WIDTH / 2;
+		if (x >= band.left() && x <= band.right())
+		{
+			left = std::clamp(left, band.left(),
+				std::max(band.left(), band.left() + band.width() - PUNCH_HANDLE_WIDTH));
+		}
+		return QRect(left, band.top(), PUNCH_HANDLE_WIDTH, band.height());
+	}
 }
 
 TimeLineWidget::TimeLineWidget(const int xoff, const int yoff, const float ppb, Timeline& timeline,
@@ -224,15 +247,19 @@ void TimeLineWidget::paintEvent( QPaintEvent * )
 	// 0.5.0 L03 (Q050-147): the punch band. It is drawn apart from the loop brace, filled when
 	// armed and only outlined when disarmed (the bounds stay for another pass), with a handle
 	// at each end. A short range keeps the handles inside the band.
+	// gui-1106: the band is the row the range lives in; only the interval between the punch
+	// bounds is filled, outlined and labelled, so the range is visible against the rest of the row.
 	if (!punchBand.isEmpty())
 	{
 		const bool armed = m_timeline->punchArmed();
 		QColor fill = armed ? QColor(198, 84, 62, 190) : QColor(198, 84, 62, 60);
 		QColor edge = armed ? QColor(236, 132, 104) : QColor(198, 84, 62, 180);
-		p.fillRect(punchBand, fill);
+		const QRect interval = punchIntervalRect(punchBand, markerX(TimePos(m_timeline->punchBegin())),
+			markerX(TimePos(m_timeline->punchEnd())));
+		p.fillRect(interval, fill);
 		p.setPen(edge);
 		p.setBrush(Qt::NoBrush);
-		p.drawRect(punchBand.adjusted(0, 0, -1, -1));
+		if (!interval.isEmpty()) { p.drawRect(interval.adjusted(0, 0, -1, -1)); }
 
 		const QRect beginHandle = punchBeginHandleRect();
 		const QRect endHandle = punchEndHandleRect();
@@ -244,8 +271,8 @@ void TimeLineWidget::paintEvent( QPaintEvent * )
 		bandFont.setPointSizeF(std::max(6.0, bandFont.pointSizeF() - 2.0));
 		bandFont.setBold(armed);
 		p.setFont(bandFont);
-		const QRect textRect(punchBand.left() + 4, punchBand.top(), std::max(0, punchBand.width() - 8),
-			punchBand.height());
+		const QRect textRect(interval.left() + 4, interval.top(), std::max(0, interval.width() - 8),
+			interval.height());
 		p.drawText(textRect, Qt::AlignVCenter | Qt::AlignLeft, armed ? tr("PUNCH") : tr("punch"));
 		p.setFont(font);
 	}
@@ -295,16 +322,14 @@ QRect TimeLineWidget::punchBeginHandleRect() const
 {
 	const QRect band = punchBandRect();
 	if (band.isEmpty()) { return {}; }
-	return QRect(markerX(TimePos(m_timeline->punchBegin())) - PUNCH_HANDLE_WIDTH / 2, band.top(),
-		PUNCH_HANDLE_WIDTH, band.height());
+	return punchHandleRect(band, markerX(TimePos(m_timeline->punchBegin())));
 }
 
 QRect TimeLineWidget::punchEndHandleRect() const
 {
 	const QRect band = punchBandRect();
 	if (band.isEmpty()) { return {}; }
-	return QRect(markerX(TimePos(m_timeline->punchEnd())) - PUNCH_HANDLE_WIDTH / 2, band.top(),
-		PUNCH_HANDLE_WIDTH, band.height());
+	return punchHandleRect(band, markerX(TimePos(m_timeline->punchEnd())));
 }
 
 auto TimeLineWidget::getClickedTime(const int xPosition) const -> TimePos
