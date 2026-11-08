@@ -59,3 +59,12 @@ Complexity and file-length were not compared against the cached base listing. Th
 
 - `tests/src/gui/NoteEditorFlTest.cpp` (+22: one test, one `#include <QToolButton>`)
 - `docs/qwen-fixes-2026-10/cluster-gui-1106-main-slice.md`
+
+## Self-check
+
+- **RED/GREEN with the product change reverted:** not applicable. No product file changed (FALSE-POSITIVE), so there is nothing to revert. The guard test passes on the original code (`test-4.log`, `test-5.log`, EXIT 0), which is the evidence for the verdict. It is not claimed as a bug-catching regression.
+- **Deterministic:** the test uses no sleeps, timers or clocks. It sends a synthetic `QTest::mouseClick` to the button's own rect centre and compares widget grabs and state after the click. The editor is shown and `qWaitForWindowExposed` returns before the click, like every other test in the file.
+- **Fix at the cause and complete:** no fix. I checked the sibling paths for the tool state: the toolbar action trigger (`NoteEditorToolbar.cpp:175`), the key letters and 1..7 aliases (`:94-106`, `:379`) and the control command (`ControlCommandsNoteEditor.cpp:90`) all end in `NoteEditor::setTool` (`NoteEditor.cpp:278`), which checks the action. The existing `theToolsCursorsFollowTheToolbarAndSurviveAGesture` covers the trigger path and `drawIsTheDefaultAndTheLettersPickFlsTools` the key path.
+- **No collateral damage:** the only change is one new test and one report file, so nothing in saved data, limits or behaviour moves.
+- **FALSE-POSITIVE evidence:** `NoteEditorToolbar.cpp:161-177` (checkable actions in an exclusive group, `setDefaultAction`), `NoteEditor.cpp:278-287`, `ShellChrome.cpp:141,164` (the painter reads `isChecked()`), the passing click test, fresh-app screenshots with Slice at the inventory's (512, 742), and the sweep's own mismatch of inventory x=512 against click x=270 in a half-built layout.
+- **Gates:** `feature_check.py` cannot run in this write-jail (it creates a directory next to the worktree). The six simple gates passed when run by hand (table above). `submit_check.py` therefore reports FAIL on its "gates (feature_check.py)" row; that is the sandbox, not a gate result. The two ratchet gates are red on the train on purpose and list nothing in my file.
