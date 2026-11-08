@@ -3250,6 +3250,7 @@ tests/src/gui/ArrangerKeysNavigatorTest.cpp
 tests/src/gui/ArrangerOverlaysVideoLaneTest.cpp
 tests/src/gui/ArrangerTakePunchTest.cpp
 tests/src/gui/ArrangerTimelineTest.cpp
+tests/src/gui/ArrangerZoomBoundTest.cpp
 tests/src/gui/ArticulationMapEditorTest.cpp
 tests/src/gui/AuHostingTest.cpp
 tests/src/gui/AutomationClipDisconnectTest.cpp
