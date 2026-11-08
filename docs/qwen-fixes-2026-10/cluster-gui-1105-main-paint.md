@@ -1,4 +1,4 @@
-gui-1105-main-paint: FALSE-POSITIVE
+FALSE-POSITIVE
 
 # Cluster gui-1105-main-paint - "Paint tool click does not select Paint" (Terra sweep m0-train-25)
 
@@ -75,4 +75,27 @@ No product file changed. Nothing touches the audio thread, undo or control comma
 
 ## Self-check
 
-(Answers to `submit_check.py`; see below.)
+These answer `submit_check.py`'s questions.
+
+- **Gates row FAIL in `submit_check.py`:** the check runs the stock `feature_check.py`. Inside this session's write-jail
+  that script dies with `PermissionError` while creating `<worktree>-feature-check` beside the worktree
+  (`LOGS/gates-1.log`), before any gate runs. The log-path-only copy runs the same gates against the same
+  baselines and exits 0 with all 8 rows PASS (`LOGS/gates-2.log`). I did not edit the shared script. Outside the jail the
+  stock invocation should behave the same, as it did for Luna on the gui-1030 duplicate.
+- **The test FAILS without the change and PASSES with it:** there is no product change, because the verdict is
+  FALSE-POSITIVE. The negative control removes the cause the finding names: `NoteEditorToolbar.cpp:175`'s handler
+  becomes a no-op. ctest `-R '^NoteEditorTest$'` then gives EXIT=8, with both new tests FAILED and 41 passed. After
+  `git apply -R LOGS/mutant.patch` and a rebuild it gives EXIT=0 (1/1; the direct binary had 43 passed).
+- **Deterministic:** no sleeps, timers or wall-clock time. The tests use `QTest::mouseClick` on the button,
+  `qWaitForWindowExposed`, and one `QCoreApplication::processEvents()` for the shell's synchronous reflow. The shell size
+  is fixed at 1600x1000, and the floor size of the floating panel comes from `ShellFloating.cpp:193-196`.
+- **At the cause, siblings checked:** no product code changed. The six other tool buttons (Draw, Delete, Mute, Slice,
+  Select, Play) go through the same loop at `NoteEditorToolbar.cpp:165-177`. The keyboard path (`Key_6`) is already
+  covered by `theNewViewFieldsAreDrivableOverTheSocket`, and the socket path `window.note_editor_set` ends in the same
+  `setTool`. The sibling sweep findings for Delete/Mute/Slice (gui-1030) share this mechanism.
+- **No collateral damage:** only tests and docs changed. No product file, saved data, limits or commands.
+- **FALSE-POSITIVE evidence:** the wiring is at `NoteEditorToolbar.cpp:169-176`, with no clip guard. The sweep record
+  `results.jsonl` lines 13 and 21-23 show the Inspector pop-out before the click at (180,742), while `inv-main.jsonl` line 88
+  originally had Paint at x=422. `shots/0022-after.png` shows the pointer on the floating Inspector, which spans x 0..480.
+  The floor size and in-place opening come from `ShellFloating.cpp:193-196, 248, 260`. The test
+  `thePoppedOutInspectorCoversThePaintButtonTheSweepClicked` reproduces the overlap.
