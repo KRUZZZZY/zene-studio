@@ -25,7 +25,7 @@ No product code was changed. A regression test that pins the button path was add
   `('automation', True, ...)`. Mixer, devices, pattern, detail and arranger gave the same result. Script:
   `logs/probe.py`, output `logs/probe-1.log`.
 - **Button path, in-process:** the new `ShellTest::theAutomationPopOutButtonFloatsItAndDocksItBack`
-  (`tests/src/gui/ShellTest.cpp:307`) does three things:
+  (`tests/src/gui/ShellTest.cpp:308`) does three things:
   - finds the button by its accessible name "Pop out the Automation panel" and clicks it once;
   - asserts the panel is detached, its window is visible and titled "Automation - Zene Studio";
   - clicks again ("Dock") and asserts it is docked. It passes.
@@ -89,5 +89,10 @@ Files committed: `tests/src/gui/ShellTest.cpp`,
 - **Registration:** no new file. `ShellTest.cpp` is already registered (`tests/CMakeLists.txt:1232`), and the gates
   pass (fork-sources, all-sources-reproduce).
 - **GUI path tested:** yes, `tests/src/gui/ShellTest.cpp` drives the actual pop-out button.
+- **Gates row in `submit_check.py`:** it reports FAIL because it calls the original `feature_check.py`. That script
+  `mkdir`s `<worktree>-feature-check`, a sibling of the worktree outside this session's write jail, and dies with
+  `PermissionError` before running any gate (`LOGS/gates-4.log`, EXIT 1). The same script with only its log dir
+  moved into LOGS passes all 8 rows on the committed tree (`LOGS/gates-3.log`, EXIT 0, `RESULT: PASS`). This is an
+  environment limit, not a gate failure. Re-run the original once the directory can be created.
 - **Not checked:** the GUI sweep was not re-run with the current `sweep.py`. The full ctest suite was not run, only
   the `^Shell` family.
