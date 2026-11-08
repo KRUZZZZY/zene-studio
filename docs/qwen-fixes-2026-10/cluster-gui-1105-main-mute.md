@@ -46,3 +46,20 @@ complexity and file-length gates cannot report anything new. This was not verifi
 
 - `tests/src/gui/NoteEditorFlTest.cpp` (one test and the `QToolButton` include)
 - `docs/qwen-fixes-2026-10/cluster-gui-1105-main-mute.md`
+
+## Self-check
+
+- **Regression test fails with the change reverted and passes with it:** not applicable. The verdict is FALSE-POSITIVE and no product
+  file changed. The test is characterisation coverage: it passes on the unmodified code (`ctest -R NoteEditorFlTest` EXIT=0,
+  `./NoteEditorFlTest clickingAToolButtonSelectsThatTool` EXIT=0, 3 passed), which is the evidence that the bug does not exist.
+- **Deterministic:** yes. It uses `QTest::mouseClick` on the real toolbar buttons of an offscreen `NoteEditor` and compares
+  state. It has no timers, sleeps or waits beyond the fixture's existing `qWaitForWindowExposed`.
+- **Fix at the cause, siblings checked:** no fix is needed. All seven tools are built in one loop (`NoteEditorToolbar.cpp:165-177`),
+  and the test clicks all seven. The Delete and Slice sibling findings have the same sweep-coordinate cause, and every tool is covered
+  by the same test.
+- **No collateral damage:** nothing in product code, saved data or commands changed.
+- **Code and contract showing FALSE-POSITIVE:** `NoteEditorToolbar.cpp:165-178` (action per tool, `triggered` -> `setTool`),
+  `NoteEditor.cpp:278-287` (`setTool` sets the state and checks the action). Sweep evidence: `controls.jsonl` Mute button at x=482,
+  `results.jsonl` click at x=240 (see the evidence section above).
+- **Gates:** `feature_check.py` exit 1 because it cannot create `<worktree>-feature-check` in this write-jailed run (PermissionError).
+  The check was not run. The change is one test function and a report, with no product code.
