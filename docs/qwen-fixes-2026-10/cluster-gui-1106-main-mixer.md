@@ -61,3 +61,29 @@ Registration: no new files and no new commands; `tests/CMakeLists.txt` and the s
 ## Note for the sweep harness (not changed here)
 Clicks on a QTabBar tab should use the tab's screen rect (the inventory x/y), not the bar-local rect. Other
 "page tab" findings from the same run (`main|page tab|...`) are likely the same artifact.
+
+## Self-check
+- Regression FAILS with the product change reverted and PASSES with it: not applicable. The verdict is
+  FALSE-POSITIVE and there is no product change. The new slot passes on the unmodified product code
+  (`ctest -R '^MainWindowTest$'` exit 0; `./MainWindowTest -v1` exit 0, 5 passed). It is a guard for the real dispatch
+  path, not proof of a fix. No RED run exists, and I did not claim one.
+- Deterministic: the slot uses no timers, waits or sleeps. It calls `setView`, `revealPanel` and
+  `QTabBar::setCurrentIndex` synchronously on the UI thread, where `window.toggle` also runs in place
+  (`ControlRegistry::runOnUiThread` runs the handler directly on the app thread, ControlRegistry.cpp:253-259).
+  The fixture is a throwaway home from `guitest::startGui`.
+- Fix at the cause / siblings: no code changed. I read every sibling of the path. `ShellRegionTabs::choose`
+  (:205), the list menu's action (:234), the hide button (:122) and `ShellFloating.cpp:181` all go through
+  `toggle` / `dispatchWindowToggle`, and `window.toggle` -> `Shell::togglePanel` -> `ShellLayout::toggle`
+  (ShellLayout.cpp:281) opens the panel in its home region.
+- Collateral damage: none. Only a test slot and this report are committed; no saved-data, limit or check
+  changes.
+- FALSE-POSITIVE code/contract: ShellRegionTabs.cpp:194-211; ControlCommandsWindow.cpp:132-144 and :198;
+  Shell.cpp:397-409; ShellLayout.cpp:239-254 and :281-292 (the Arrange view offers mixer, so `open` inserts it as
+  the Bottom region's open panel). Sweep inputs: `inv-main.jsonl` (tab at x=286) against `results.jsonl:14`
+  (click at x=44), `shots/0013-pair.png`.
+- Gates (`feature_check.py`): the script exits 1 here with PermissionError creating
+  `zene-qwen-gui-1106-main-mixer-feature-check/`, a directory outside the write-jail, before it runs any gate. The
+  submit check's "gates" row therefore cannot pass from this lane. I ran the script's eight gate commands by
+  hand instead: fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology and
+  doc-figures all exit 0. Complexity and file-length exit 1 on items in files I did not change
+  (`ArrangerTimelineTest.cpp`, `followActionFromJson`). Needs NEEDS-CONTEXT from the loop owner: the script's log directory.
