@@ -58,3 +58,25 @@ Logs: `~/.local/share/zene-bunny-fix/qwen/runs/gui-1106-main-pop-out-the-arrange
 
 Files committed: `tests/src/gui/ShellTest.cpp`, `docs/qwen-fixes-2026-10/cluster-gui-1106-main-pop-out-the-arranger-panel.md`.
 No new files need registering. ShellTest.cpp is an existing fork test, and the report sits with the other cluster reports.
+
+## Self-check
+
+- **Fails without the fix, passes with it:** does not apply, because there is no product change to revert (FALSE-POSITIVE).
+  The test passes on the unchanged product code: `ShellTest thePopOutClickFloatsTheArrangerOverItsOwnPlace`, EXIT=0
+  (test-3.log); `ctest -R '^ShellTest$'`, EXIT=0 (test-2.log). It pins the contract that explains the screenshot.
+- **Deterministic:** yes. It uses no timers, sleeps or event-loop waits. `QToolButton::click()` emits `clicked`
+  synchronously. With no `MainWindow`, `dispatchFloat` calls `detachPanel` directly (`ShellFloating.cpp:222-227`), and the
+  geometry it compares is computed from the same frame before the click. Platform: offscreen.
+- **Fix at the cause, complete:** nothing in the product changed. I checked every path into `dispatchFloat`: the panel
+  button (`ShellFloating.cpp:424`), the Ctrl+Shift+F action (`ShellFloating.cpp:210-216`), tear-off drag and double-click
+  and the context menu (`ShellTearOff.cpp:235, 340-342, 395`). All of them go through `window.detach`, then `detachPanel`
+  (`ControlCommandsLayouts.cpp:219-243`), which floats the panel as described above.
+- **No collateral damage:** the only change is one new test case, so saved data and other behaviour are unaffected.
+- **FALSE-POSITIVE evidence:** see "Verdict and evidence". The "after" shot shows "Dock", which `syncFloatButton` sets only
+  when the panel is detached (`ShellFloating.cpp:430-434`, `include/Shell.h:130`). The window opens at the panel's own
+  place and size (`ShellFloating.cpp:246-248, 260, 193-196`).
+- **Gates row (FAIL in submit_check):** `feature_check.py` itself cannot run in this lane. It raises `PermissionError`
+  making `<worktree>/../<name>-feature-check`, which is outside the write sandbox. I did not change the script. I ran
+  each of its gate commands from the worktree instead: 6/6 simple gates EXIT=0. Complexity and file-length are EXIT=1, but
+  none of their REGRESSION lines names `ShellTest.cpp` (logs `gate-*.log`). An unsandboxed rerun of `feature_check.py`
+  is still needed.
