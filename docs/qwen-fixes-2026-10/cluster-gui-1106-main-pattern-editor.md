@@ -56,3 +56,20 @@ need no entry (the test file is already registered or untracked by those lists -
 The sweep screenshot shows the shell in a layout with the Inspector and centre misplaced after earlier splitter drags in the same
 run. If that distorted layout is reproducible from a normal user's drag, it is a separate layout bug; this run did not reproduce
 it from a fresh project and the finding's repro (fresh project, left-click the tab) works.
+
+## Self-check
+
+- **Test fails with the change reverted and passes with it:** not applicable - the verdict is FALSE-POSITIVE, there is no product
+  change. The guard test passes on the original code (`ctest -R '^ShellHomesTest$'` from `build/tests`, EXIT=0, 1 test run, 1 passed).
+- **Deterministic:** yes. No timers or sleeps; one `QTest::mouseClick` at the tab's own `tabRect(index).center()` in a fresh `World`.
+  `qWaitForWindowExposed` is the synchronisation point, and the assertions read model and widget state synchronously.
+- **Fix at the cause, callers and siblings checked:** no fix made. The callers of `dispatchWindowToggle` were all read
+  (`ShellRegionTabs.cpp:202`, `Shell.cpp:275`, `ShellFloating.cpp:181`, `MainWindow.cpp:155,1375`); they share one handler
+  (`ControlCommandsWindow.cpp:132-144`), which opens the panel in a live instance (evidence 2 above).
+- **No collateral damage:** nothing outside one test function changed; no saved data, command, limit or audio-thread code touched.
+- **FALSE-POSITIVE contract and code:** see Evidence 1-3 above - the click point (x=468) is outside the bottom region (starts at x=480)
+  while the tab is at x=710 (`inv-main.jsonl`); `ShellRegionTabs.cpp:194-211`, `ControlCommandsWindow.cpp:132-144`,
+  `Shell.cpp:397-409`.
+- **Gates:** the stock `feature_check.py` cannot create its log directory in this sandbox (`gates-1.log`, exit 1, PermissionError),
+  so `submit_check`'s own gate row fails here for that environmental reason. The unchanged copy with the log path moved passes 8/8
+  (`gates-2.log`, EXIT=0).
