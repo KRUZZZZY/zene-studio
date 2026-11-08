@@ -397,6 +397,24 @@ private slots:
 		QVERIFY(!world.shell.isDetached(id));
 	}
 
+	// gui-1105: View > Note Editor is a toggle. With another lower panel showing (the sweep had just clicked
+	// Mixer) the click opens the Note Editor in its place; only a second click closes it.
+	void theViewMenuNoteEditorEntryTogglesTheLowerRegion()
+	{
+		World world;
+		const QString detail = QStringLiteral("detail");
+		const QString mixer = QStringLiteral("mixer");
+		QVERIFY(world.shell.model().view() == ShellView::Arrange);
+		world.shell.togglePanel(mixer);
+		QVERIFY(world.shell.model().isVisible(mixer));
+		QVERIFY(!world.shell.model().isVisible(detail));
+		QVERIFY(world.shell.togglePanel(detail));  // opens, replacing the Mixer
+		QVERIFY(world.shell.model().isVisible(detail));
+		QVERIFY(!world.shell.model().isVisible(mixer));
+		QVERIFY(!world.shell.togglePanel(detail));  // a second click closes it
+		QVERIFY(!world.shell.model().isVisible(detail));
+	}
+
 	void aSavedLayoutRemembersItsFloatingPanels()
 	{
 		World world;
