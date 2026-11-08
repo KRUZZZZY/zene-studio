@@ -60,6 +60,9 @@ LOG = `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1106-tab-mixer-p
 | Test family | `cd build/tests && ctest -R '^ShellTest$' --output-on-failure > LOG/06-ctest-shelltest.log 2>&1` | 0 (1 ctest, 24 QTest cases passed, 0 failed) |
 | Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py $PWD > LOG/07-feature-check.log` | 1 (PermissionError: it creates `<worktree>-feature-check` beside the worktree, outside the write-jail) |
 | Gates | `python3 LOG/run_feature_check.py $PWD > LOG/08-feature-check.log 2>&1` (the same script, with only its log folder moved into LOG) | 0 (all 8 rows PASS) |
+| Gates after the report commit | `python3 LOG/run_feature_check.py $PWD > LOG/10-feature-check-after-commit.log 2>&1` | 0 (all 8 rows PASS, 1 changed file) |
+| Gates, direct | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py $PWD > LOG/11-feature-check-direct.log 2>&1` | 1 (the same PermissionError, which comes from the write-jail and not from a gate) |
+| Completion check | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py $PWD gui-1106-tab-mixer-pop-out-the-mixer-panel > LOG/09-submit-check.log 2>&1` | 1. Its only FAIL is "gates (feature_check.py)". It runs the direct script, which cannot create its log folder from this lane. The gates themselves pass (row above). |
 
 ## Self-check
 - **The regression test fails with the product change reverted and passes with it:** not applicable. There is no
