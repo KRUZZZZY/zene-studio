@@ -75,12 +75,28 @@ call.
 
 ## Self-check
 
-- Verdict with evidence: FALSE-POSITIVE. The click coordinates (inventory 1300 vs clicked 1582) and the screenshot
-  show the button was not clicked. The code path is cited above.
-- Regression test: added. It passes on the unchanged code; with no product change there is no fix.patch to revert.
-- Fix at cause / callers / siblings: no product change. The no-MainWindow and the `window.toggle` paths both end in
-  `Shell::togglePanel` (cited above).
-- Collateral: none. Only a test function was added (ShellHomesTest.cpp is now 474 lines, under 500).
+Answers to `submit_check.py` (log 10, EXIT=1):
+
+- **gates (feature_check.py) FAIL.** This is not a gate failure. `submit_check.py:117` runs `feature_check.py`, which
+  crashes with `PermissionError` at `feature_check.py:71`. It is creating `<worktree>-feature-check` beside the
+  worktree, which is outside this lane's write-jail (log 07, same traceback). No FAIL row is printed. The identical
+  gate logic, with only the log folder moved into the LOG folder, returns EXIT=0 with all 8 rows PASS (log 08). The
+  loop's own run of the check, outside the jail, should see that PASS.
+- **Test FAILS with the product change reverted, PASSES with it.** Not applicable: the verdict is FALSE-POSITIVE and
+  no product file changed (`git show --stat HEAD` lists only the test and this report). The test passes on the
+  unchanged code (log 06 EXIT=0; log 09 `Totals: 18 passed, 0 failed`), and that pass is the evidence.
+- **Deterministic.** There are no sleeps, timers or wall-clock reads. `qWaitForWindowExposed` (also used by the
+  existing `theBottomRegionNamesItsPanelsAsTabs`) waits for the offscreen expose event. `QTest::mouseClick` delivers
+  the click synchronously, and `Shell::togglePanel`/`apply()` run synchronously in the clicked slot. The fixed
+  first-run layout comes from `init()`, which clears `shell.layout`.
+- **Fix at the cause / callers / siblings.** No product change. The no-MainWindow and the `window.toggle` paths both
+  end in `Shell::togglePanel` (`ShellRegionTabs.cpp:194-203`, `ControlCommandsWindow.cpp:138`,
+  `MainWindow.cpp:1278`).
+- **No collateral damage.** Only a test function was added (ShellHomesTest.cpp is now 474 lines, under 500). No
+  saved data or limits were touched.
+- **FALSE-POSITIVE evidence.** The code: `ShellRegionTabs.cpp:122-124,175-191`, `ControlCommandsWindow.cpp:84,132-144`,
+  `Shell.cpp:397-409`. The harness: inventory x=1300 vs clicked x=1582 (`controls.jsonl`, `results.jsonl`), and
+  `shots/0018-pair.png`.
 - Realtime / undo / commands: untouched. No new control command.
 - Registration: no new files besides this report. ShellHomesTest.cpp is already registered. Gates PASS (log 08).
 - Not checked: the sweep harness's coordinate bug itself (terra-pilot) is outside this worktree. It should be fixed
