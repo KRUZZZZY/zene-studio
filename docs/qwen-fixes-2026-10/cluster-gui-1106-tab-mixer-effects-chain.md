@@ -77,3 +77,28 @@ Notes:
 - `data/themes/zene/zene.qss`: the fix. It is already registered in `tests/upstream-modifications.txt:1289`.
 - `tests/src/gui/EffectRackAddTest.cpp`: the regression slot. It is already a registered fork test.
 - `docs/qwen-fixes-2026-10/cluster-gui-1106-tab-mixer-effects-chain.md`: this report.
+
+## Self-check
+
+- **Fails reverted / passes restored:** yes. `git apply -R logs/fix.patch` (EXIT 0), then a rebuild of
+  `zene EffectRackAddTest` (EXIT 0) and `./EffectRackAddTest effectsChainLedTogglesOnClick`: **EXIT 1**
+  (`the LED's centre is covered by QWidget`, log 13). After `git apply logs/fix.patch` (EXIT 0), a rebuild (EXIT 0) and
+  the same run: **EXIT 0** (3 passed, log 15).
+- **Deterministic:** yes. There are no sleeps, timers or wall-clock waits. The test reads widget geometry with
+  `QWidget::childAt`, sends synthetic `QTest::mouseClick` events on the window and compares two `QWidget::grab()` images.
+  The only wait is `QTest::qWaitForWindowExposed` on the offscreen platform, which is a synchronisation hook and not a timeout race.
+- **At the cause and complete:** the cause is the theme rule `QPushButton { padding; min-height }`
+  (`zene.qss:122-130`) applied to a hand-placed pixmap LED. The model/click path was proven correct by a direct click on
+  unfixed code. The new rule covers every GroupBox LED: all 12 `new GroupBox` sites share `GroupBox.cpp:43-46`.
+  It also covers the one other PixmapButton that is a direct GroupBox child, the microtuner edit button
+  (`InstrumentTuningView.cpp:88-100`), which goes back to its coded `setFixedSize(16, 16)`.
+  PixmapButtons outside group boxes are not touched by the selector.
+- **No collateral damage:** the change is stylesheet-only. No model, serialisation, command, undo or audio code changed,
+  so old projects load byte-for-byte as before. No limit or check was added. The tests in the family and the related
+  tests pass: `EffectRackAddTest` and `RackDeferredLifetimeTest` 2/2 (log 17), `DesignTokensTest` and
+  `TakeLanesPanelTest` 2/2 (log 20), and `tests/scripted/check-strings` 0 errors (log 19).
+- **Not-real verdict:** n/a. The verdict is FIXED (REAL).
+- **Gates row in submit_check:** submit_check runs the original `feature_check.py`. That script exits 1 with
+  `PermissionError: ... zene-qwen-gui-1106-tab-mixer-effects-chain-feature-check` (log 21) because it creates its log
+  directory beside the worktree, outside this lane's write-jail. The same checks, run with only the log directory
+  redirected, all PASS with EXIT 0 (log 22, table above). This is an environment limitation and not a gate failure in the change.
