@@ -45,6 +45,11 @@ LMMS_EXPORT void setAgentInstance(bool agent);
 //! usable (task #625, measured on the base commit 6b01b98eb).
 LMMS_EXPORT bool isUnattendedRun();
 
+//! True when Qt runs on a platform with no display at all (offscreen/minimal/vnc).
+//! Narrower than isUnattendedRun(): an agent instance on a desktop is unattended
+//! (no modal) but does have a display, so a window can still be shown on it.
+LMMS_EXPORT bool isDisplaylessPlatform();
+
 } // namespace lmms
 
 #endif // LMMS_UNATTENDED_RUN_H

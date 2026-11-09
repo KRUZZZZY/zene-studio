@@ -167,9 +167,13 @@ public:
 	//! Payload of control.commands_list.
 	QJsonObject describeAll() const;
 
-	//! True when no display is available (offscreen/minimal/vnc platform).
+	//! True when nobody can answer a dialog (an agent instance or a displayless
+	//! platform): GUI feedback is suppressed. The "display" requirement follows
+	//! the narrower isDisplaylessPlatform(): an agent on a desktop still has a display.
 	bool isHeadless() const { return m_headless; }
-	void setHeadless(bool headless) { m_headless = headless; }
+	//! Test seam: pretend an unattended, displayless instance (true) or an
+	//! attended one on a display (false) - sets both flags.
+	void setHeadless(bool headless) { m_headless = headless; m_noDisplay = headless; }
 
 	//! True once the GUI is fully constructed and the initial project exists.
 	//! Commands return the typed 'busy' refusal until then, so a client cannot
@@ -378,6 +382,7 @@ private:
 	int m_recordedBytes = 0;
 	int m_evicted = 0;
 	bool m_headless;
+	bool m_noDisplay;
 };
 
 //! Register every command of the first control-surface slice (SPEC A12/A16).
