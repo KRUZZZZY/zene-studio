@@ -195,3 +195,8 @@ Two problems with the environment, not the code, came up during the run. Neither
   RED/GREEN reversal was repeated on a fresh build: `L/04-test-red.log` EXIT=8 with `window minimum width 2000`,
   then `L/06-test-restored.log` EXIT=0. The family run `L/13-test-family.log` passed 22/22 and the gates
   `L/14-feature-check.log` returned EXIT=0 PASS. The round-3 section above covers the environment workarounds.
+- **submit_check in this session**: `submit_check.py` (`L/16-submit-check.log`, EXIT=1) passed every row except
+  `gates (feature_check.py)`, and that row lists no failing gate. It calls the unmodified `feature_check.py`
+  (`submit_check.py:117`), which hits the same `PermissionError` when it writes logs outside the lane's write-jail
+  (`L/09-feature-check.log`). The same gates with only the log directory moved pass (`L/14-feature-check.log`,
+  EXIT=0). Without the jail, the loop's own run should see PASS. That is expected, not verified here.
