@@ -24,12 +24,15 @@
 
 #include "TextFloat.h"
 
+#include <algorithm>
+
 #include <QTimer>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QLabel>
 
 #include <QRegularExpression>
+#include <QScreen>
 
 #include "AccessibleWidgets.h"
 #include "GuiApplication.h"
@@ -37,6 +40,24 @@
 
 namespace lmms::gui
 {
+
+namespace
+{
+
+//! Keeps a message on the screen its anchor is on: anchored to the right edge of a window that fills the
+//! screen (the main window, which every menu refusal is anchored to) it would land beyond the screen's edge.
+void keepOnScreen(QWidget* message, const QWidget* anchor)
+{
+	const QScreen* screen = anchor->screen();
+	if (screen == nullptr) { return; }
+	const QRect area = screen->availableGeometry();
+	const QSize size = message->frameSize();
+	const int x = std::max(area.left(), std::min(message->x(), area.right() + 1 - size.width()));
+	const int y = std::max(area.top(), std::min(message->y(), area.bottom() + 1 - size.height()));
+	message->move(x, y);
+}
+
+} // namespace
 
 
 TextFloat::TextFloat() :
@@ -111,6 +132,7 @@ TextFloat * TextFloat::displayMessage(const QString & title,
 	if(parent != nullptr)
 	{
 		tf->moveGlobal(parent, QPoint(parent->width() + 2, 0));
+		keepOnScreen(tf, parent);
 	}
 	else
 	{

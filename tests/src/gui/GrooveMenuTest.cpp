@@ -36,6 +36,7 @@
 #include <QJsonObject>
 #include <QLabel>
 #include <QMenu>
+#include <QScreen>
 #include <QTemporaryDir>
 
 #include "ControlRegistry.h"
@@ -169,6 +170,21 @@ private slots:
 		QVERIFY2(!shown.isEmpty(), "the refused groove.extract was shown to nobody");
 		QVERIFY2(shown.contains(QStringLiteral("groove")), qPrintable(shown));
 		delete menu;
+	}
+
+	void aMessageOverTheMainWindowIsOnScreen()
+	{
+		// A message anchored to a window that fills its screen (the main window, maximised - what every
+		// menu refusal is anchored to) used to be placed at the window's right edge + 2, i.e. off the screen.
+		MainWindow* window = getGUI()->mainWindow();
+		window->setGeometry(window->screen()->availableGeometry());
+		const TextFloat* message = TextFloat::displayMessage(QStringLiteral("Title"), QStringLiteral("No clip is selected"),
+			QPixmap(), 0, window);
+		const QRect screen = window->screen()->availableGeometry();
+		const QRect shown(message->mapToGlobal(QPoint(0, 0)), message->size());
+		QVERIFY2(screen.contains(shown), qPrintable(QStringLiteral("message %1,%2 %3x%4 is outside the screen %5,%6 %7x%8")
+			.arg(shown.x()).arg(shown.y()).arg(shown.width()).arg(shown.height())
+			.arg(screen.x()).arg(screen.y()).arg(screen.width()).arg(screen.height())));
 	}
 };
 
