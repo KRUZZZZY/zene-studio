@@ -108,3 +108,43 @@ uses the offscreen platform geometry.
 - **Verdict is FIXED**, so the ALREADY-FIXED/FALSE-POSITIVE item does not apply.
 - **Gates:** the stock `feature_check.py` ran unmodified and reports 8/8 PASS, RESULT: PASS (`gates-1.log`, EXIT 0). The
   round-1 sandbox limitation (the gate's sibling log directory) did not recur.
+
+## Integration re-check (round 3, 2026-11-09)
+
+The round-3 brief's opening says Luna's round-2 QA review asked for changes. The actual round-2 review
+(`~/.local/share/zene-bunny-fix/qwen/qa/reviews/gui-1106-menu-navigate-next-marker.r2.md`) is **ACCEPT** with
+`blocking: []`, `notes: []` and `rework_instructions: ""`; `qa/done/gui-1106-menu-navigate-next-marker.r2.json` records
+`outcome: ACCEPT`. No change was requested, so the round-3 job is the integration re-verification itself.
+
+The round-2 commit `840987ee8d` is the integration of the accepted patch; this round-3 worktree was already at it
+(`git status` clean, `git log af010bc3cc..HEAD` = one commit). I re-checked instead of re-applying:
+
+- `git diff --quiet 23ff7a64a7 -- src/gui/widgets/TextFloat.cpp tests/src/gui/GrooveMenuTest.cpp tests/upstream-modifications.txt`
+  exits **0**: the integrated product/test files are byte-identical to the accepted branch, so the accepted design is
+  retained with no semantic difference.
+- No conflict markers, no redesign, no new files. The claimed "merge conflict with the newer line" is stale boilerplate
+  carried over from the round-2 request: the source base equals the target base (`af010bc3cc`), and the patch hunk's
+  context matches the base exactly.
+- Affected failure paths: `parent == main window` -> inside (fixed); `parent == nullptr` -> unchanged; any other parent ->
+  beside it, unchanged. Platform hazards: none (pointer comparison plus a declaration move; portable Qt; no audio
+  thread, undo, command or saved-data change).
+
+### Evidence (round 3; logs in `~/.local/share/zene-bunny-fix/qwen/runs/gui-1106-menu-navigate-next-marker.r3/logs`)
+
+| Step | Command | EXIT | Result |
+|---|---|---|---|
+| Build | `CCACHE_DISABLE=1 cmake --build build --target zene GrooveMenuTest PluginShortcutsTest CommandFormTest AccessibilityHelperTest -j4` (`build-1.log`) | 0 | built |
+| GREEN | `cd build/tests && ctest -R '^GrooveMenuTest$' --output-on-failure` (`test-green-1.log`) | 0 | 1/1 passed |
+| Family | `ctest -R '^(GrooveMenuTest\|PluginShortcutsTest\|CommandFormTest\|AccessibilityHelperTest)$'` (`test-family-1.log`) | 0 | 4/4 passed |
+| 4b patch | `git diff af010bc3cc..HEAD -- src/gui/widgets/TextFloat.cpp > logs/fix.patch` | 0 | 23-line product patch |
+| 4b revert | `git apply -R logs/fix.patch` | 0 | product change removed |
+| 4b rebuild | `CCACHE_DISABLE=1 cmake --build build --target zene GrooveMenuTest -j4` (`build-2-reverted.log`) | 0 | built |
+| 4b RED | `ctest -R '^GrooveMenuTest$' --output-on-failure` (`test-red-1.log`) | 8 | `aRefusalOverTheMainWindowLandsInsideIt`: "notice at 1602,0 158x76 is outside the main window 0,0 1600x1000" |
+| 4b re-apply | `git apply logs/fix.patch` | 0 | fix restored |
+| 4b rebuild | `CCACHE_DISABLE=1 cmake --build build --target zene GrooveMenuTest PluginShortcutsTest CommandFormTest AccessibilityHelperTest -j4` (`build-3-reapplied.log`) | 0 | built |
+| 4b GREEN | `ctest -R '^GrooveMenuTest$' --output-on-failure` (`test-green-2.log`) | 0 | 1/1 passed |
+| Family recheck | same family ctest (`test-family-2.log`) | 0 | 4/4 passed |
+| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (`gates-1.log`) | 0 | 8/8 PASS, RESULT: PASS |
+| Completion | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> gui-1106-menu-navigate-next-marker` (`submit-1.log`) | 0 | RESULT: PASS - submit |
+
+Files committed this round: this report only (`src/` and `tests/` unchanged from round 2).
