@@ -15,7 +15,7 @@ A QSplitter propagates children's minimums upward, so nothing is clipped inside 
 
 ## The fix ([MixerView.cpp](src/gui/MixerView.cpp))
 
-1. New local `ModeBarArea` (a `QScrollArea`) holds the mode bar. Its minimum width is 0, its height is the bar's height plus the horizontal scroll bar's height only while the bar is wider than the viewport. A narrow panel scrolls the bar sideways; all 13 controls stay reachable; a wide panel looks as before (same height, no scroll bar). The bar object, its parent chain to `MixerView`, `modeBar()` and every child's object name are unchanged.
+1. New local `ModeBarArea` (a `QScrollArea`) holds the mode bar. Its minimum width is 0, its height is the bar's height plus the horizontal scroll bar's height only while the bar is wider than the viewport. A narrow panel scrolls the bar sideways; all 13 controls stay reachable; a wide panel looks as before (same height, no scroll bar). The bar object, `modeBar()` accessor and every child's object name are unchanged; its direct parent is now the `QScrollArea` viewport under `MixerView`.
 2. The channel area keeps `MinVisibleStrips = 2` strips in view instead of 6 (it already scrolls). The splitter minimum becomes 582 px (VCA region visible), which fits the 600 px budget; 3 strips gave 646 px and failed.
 
 Result: the main window minimum is now at most 1024 (the test resizes to 1024 and it takes it; before the fix it stayed at 2000).
