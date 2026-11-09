@@ -1,10 +1,56 @@
-FIXED
+BLOCKED
 
 # cluster gui-1030-tab-mixer-density-compact: "Compact density choice is clipped in a narrow Mixer panel"
 
 Branch `bugs/qwen-gui-1030-tab-mixer-density-compact`, base `af010bc3cc`.
 LOG FOLDERS: round 1 `~/.local/share/zene-bunny-fix/qwen/runs/gui-1030-tab-mixer-density-compact.r1/logs`,
 round 2 `….r2/logs` (abbreviated `r2/logs` below).
+
+## Round 4: verdict BLOCKED for the newer line (train-27); the patch itself is sound on its pinned target
+
+**Verdict in one line.** On the pinned target `050/m0-train-26` (`af010bc3cc`) this patch is clean and
+verified (rounds 2-4 below). The conflict the driver reports is against `050/m0-train-27`
+(`a1a98b67b2`), which already fixes this finding with a different design. Merging both needs a design
+choice (`MixerModeBarLayout` vs `WrapLayout`), so I report BLOCKED and did not pick one.
+**Recommendation: drop this patch on train-27 and later; `55a36358f7` already fixes the finding.**
+Log folder `….r4/logs` (`r4/logs` below).
+
+**The conflict is real and is read-only reproducible.** `git merge-tree --write-tree --name-only HEAD
+050/m0-train-27` reports CONFLICT (content) in `include/MixerModeBar.h`, `src/gui/MixerModeBar.cpp`,
+`tests/src/gui/MixerModesTest.cpp` and `tests/upstream-modifications.txt`. `git merge-base HEAD
+050/m0-train-27` is `af010bc3cc`. The only train-27 commit touching `src/gui/MixerModeBar.cpp` is
+`55a36358f7` (cluster `gui-1030-tab-mixer-routing-matrix`): a private `WrapLayout` in that .cpp, and
+`QHBoxLayout*` became `QLayout*` in `addSegment`/`addChip` (`include/MixerModeBar.h`).
+
+**New evidence this round (round 3 left it unchecked): train-27's fix already fixes this finding.**
+I put train-27's `include/MixerModeBar.h` and `src/gui/MixerModeBar.cpp` into my worktree
+(`git checkout 050/m0-train-27 -- <both>`), kept this cluster's regression test, rebuilt and ran it.
+It passed: `MixerModesTest::aNarrowPanelKeepsEveryModeControlOnScreen` PASS, 27 passed / 0 failed
+(`r4/logs/03-modes-verbose-train27.log:22,49`). So the 300 px panel keeps Density: Compact on screen, clickable
+and at its `minimumSizeHint` on train-27's code too. On train-27+ the finding is already fixed.
+The swap was scratch only: I restored both files with `git checkout HEAD -- <both>`, and
+`git status` is clean. Nothing from train-27 is committed.
+Caveat: only these two product files were swapped, on my train-26 tree. I did not build the full train-27 tree.
+
+**Failure paths and platform hazards (unchanged from the accepted patch):** a 300 px panel wraps and every
+control keeps its `minimumSizeHint`; a 2400 px panel keeps one row with Routing Matrix... at the right
+margin; `heightForWidth` needs a parent column that honours it (the Mixer's `QVBoxLayout` does). Nothing
+runs on the audio thread; no command, schema or saved data changed; only Qt Widgets API is used. Only
+Linux offscreen was built and tested; macOS and Windows were not checked.
+
+| Step (round 4) | Command | Result |
+| --- | --- | --- |
+| Build with train-27's product files | `CCACHE_DISABLE=1 cmake --build build --target zene MixerModesTest -j4 > r4/logs/01-build-train27-product.log 2>&1` | **EXIT=0** |
+| This cluster's test on train-27's layout | from `build/tests`: `ctest -R '^MixerModesTest$' --output-on-failure > r4/logs/02-test-train27-product.log 2>&1`; `./MixerModesTest > r4/logs/03-modes-verbose-train27.log 2>&1` | ctest **EXIT=0**, 1/1; binary **EXIT=0**, 27 passed 0 failed |
+| Restore, rebuild my patch | `git checkout HEAD -- include/MixerModeBar.h src/gui/MixerModeBar.cpp`; `CCACHE_DISABLE=1 cmake --build build --target zene MixerModesTest MixerZonesTest MixerMeteringTest -j4 > r4/logs/04-build-restored.log 2>&1` | **EXIT=0** |
+| GREEN, Mixer family, my patch | `ctest -R '^Mixer(Modes|Zones|Metering)Test$' --output-on-failure > r4/logs/05-test-restored.log 2>&1` | **EXIT=0**, 3/3 passed |
+| Gates, direct | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > r4/logs/06-feature-check.log 2>&1` | EXIT=1: the same write-jail `PermissionError` on `<worktree>-feature-check/fork-sources.log` |
+| Gates, log folder redirected | `python3 r4/logs/fc_wrap.py r4/logs/07-feature-check-logs <worktree> > r4/logs/07-feature-check.log 2>&1` | **EXIT=0**, 8/8 PASS, `RESULT: PASS` |
+
+RED/GREEN 4b with the product change reversed was not repeated: no product line changed this round. The
+round 3 proof stands (`r3/logs/04-test-red.log:24`, ctest EXIT=8, then 3/3 GREEN `r3/logs/06-test-green.log`).
+`fc_wrap.py` is the round 2 and 3 wrapper, copied unchanged; gates, limits and baselines are untouched.
+Files committed this round: this report only.
 
 ## Round 3: integration onto `050/m0-train-26` (`af010bc3cc`)
 
@@ -138,6 +184,12 @@ which agrees with this run. The direct failure comes from my sandbox.
 - this report
 
 ## Self-check
+
+- **Round 4:** the verdict is BLOCKED, not FIXED, because merging onto train-27 needs a design choice.
+  The newer line's own fix passes this cluster's regression (`r4/logs/03-modes-verbose-train27.log:22`), so
+  the finding is already fixed there. The patch on train-26 is unchanged and re-verified (Mixer family
+  3/3 EXIT=0, `r4/logs/05-test-restored.log`; gates 8/8 via the wrapper, EXIT=0, `r4/logs/07-feature-check.log`;
+  direct gate run EXIT=1 for the write-jail `PermissionError` only, `r4/logs/06-feature-check.log`).
 
 - **Round 3 (integration):**
   - Reverse-apply 4b gave EXIT=0, rebuild EXIT=0 and ctest **EXIT=8** (`r3/logs/04-test-red.log:24`).
