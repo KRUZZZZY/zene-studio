@@ -59,15 +59,28 @@ Source `bugs/qwen-gui-1105-menu-help-help-for-this @ 744720eeec` (fix 904b381 + 
 ControlRegistry.cpp `75caadc34f`, UnattendedRun.h `08a9f4b2f4`, UnattendedRun.cpp `5923c967c1`,
 ControlRegistryNestingTest.cpp `aa166e8567`), so the accepted patch applies with no conflict:
 `git merge-tree --write-tree --merge-base=af010bc3cc af010bc3cc 744720eeec` exits 0 and its tree `58a7a9a4b1` equals
-`744720eeec^{tree}`; `git diff 744720eeec -- <the six files>` is empty. The driver's three-way merge fell back to direct
-application (integration-apply.log: all six files "cleanly"); the fallback is exact, not a re-resolution. No design
-change was needed and none was made: the accepted design and its regression test are retained byte-for-byte.
+`744720eeec^{tree}`. The five product/test files at HEAD are blob-identical to the accepted patch's
+(`git diff 744720eeec HEAD -- include/ControlRegistry.h include/UnattendedRun.h src/core/ControlRegistry.cpp
+src/core/UnattendedRun.cpp tests/src/core/ControlRegistryNestingTest.cpp` is empty; ControlRegistry.h `0b0584f4ba`,
+ControlRegistry.cpp `21fa088a7d`, UnattendedRun.h `3818a2ceb5`, UnattendedRun.cpp `a145f23285`,
+ControlRegistryNestingTest.cpp `5e25b9cffc` on both sides). The only delta is this report, which is the accepted
+report plus the integration sections below. The driver's three-way merge fell back to direct application
+(integration-apply.log: all files "cleanly"); the fallback is exact, not a re-resolution. No design change was
+needed and none was made: the accepted design and its regression test are retained byte-for-byte.
+
+The driver's flagged "newer line" in `include/ControlRegistry.h` and `src/core/ControlRegistry.cpp` is not a second
+line against the pin: `git merge-base af010bc3cc 744720eeec` is `af010bc3cc` itself, and `git merge-tree --write-tree
+af010bc3cc 2e07fb6a26` exits 0. It is the cumulative overlap with the sibling Help-menu fixes that patch the same
+predicate (`gui-1105-menu-help-manual` `3d9466fbb9`/`102ced752d`, `gui-1105-menu-help-command-reference`
+`175efd764c`/`a863fadb94`): `git merge-tree` of this branch with those conflicts in `src/core/ControlRegistry.cpp`
+(and `include/ControlRegistry.h` for the command-reference sibling). That is a train-level selection matter, not a
+conflict against the pinned target, so this lane has nothing to resolve.
 
 ## Evidence (integration worktree; all logs in the run LOG FOLDER)
 | step | command | exit |
 |---|---|---|
 | merge check | `git merge-tree --write-tree --merge-base=af010bc3cc055d477045a54e2d866f59a95017d7 af010bc3cc055d477045a54e2d866f59a95017d7 744720eeec0ba38dee34ebeb2dcfb9d0595a7024` | 0; tree `58a7a9a4b1` == accepted tree |
-| accepted diff empty | `git diff 744720eeec0ba38dee34ebeb2dcfb9d0595a7024 -- include/ControlRegistry.h include/UnattendedRun.h src/core/ControlRegistry.cpp src/core/UnattendedRun.cpp tests/src/core/ControlRegistryNestingTest.cpp docs/qwen-fixes-2026-10/cluster-gui-1105-menu-help-help-for-this.md` | 0 (no output) |
+| accepted product/test diff empty | `git diff 744720eeec0ba38dee34ebeb2dcfb9d0595a7024 HEAD -- include/ControlRegistry.h include/UnattendedRun.h src/core/ControlRegistry.cpp src/core/UnattendedRun.cpp tests/src/core/ControlRegistryNestingTest.cpp` | 0 (no output); the report file differs (accepted report + integration sections) |
 | GREEN build | `cmake --build build --target zene ControlRegistryTest ControlRegistryNestingTest StartHubTest HelpAccessTest -j4` (logs/build-1.log) | 0 |
 | GREEN family | `cd build/tests && ctest -R '^(ControlRegistryTest\|ControlRegistryNestingTest\|StartHubTest\|HelpAccessTest)$' --output-on-failure` (logs/test-1-green.log) | 0: 4/4 passed |
 | RED revert | `git diff HEAD -- include src > logs/fix.patch && git apply -R logs/fix.patch` -> rebuild `ControlRegistryNestingTest` (logs/build-2-red.log) -> `ctest -R '^ControlRegistryNestingTest$' --output-on-failure` (logs/test-2-red.log) | REVERT=0, BUILD=0, CTEST=8: `FAIL! displayRequirementIgnoresAgentInstance() 'result.ok' returned FALSE. (command 'test.agent_display' requires a display (headless instance))`, 17 passed 1 failed |
@@ -77,6 +90,31 @@ change was needed and none was made: the accepted design and its regression test
 
 The stock gate runs in this worktree (the round-1 PermissionError creating `<worktree>-feature-check` is gone: the
 parent directory is writable and the gate created its log directory normally).
+
+## Round 3 — re-verification (no code change)
+
+The round-3 brief lists no new review point beyond the integration job text, so I re-verified the committed
+integration on the same tree (HEAD `2e07fb6a26`, base `af010bc3cc`) and changed no product or test code. The
+driver's three-way merge has no conflict to resolve against the pin: `git merge-base af010bc3cc 744720eeec` is
+`af010bc3cc`, and `git merge-tree --write-tree af010bc3cc 2e07fb6a26` exits 0. The five product/test blobs at HEAD
+equal the accepted patch's blobs. The flagged "newer line" is the cumulative overlap with the sibling Help-menu
+fixes that patch the same predicate (Integration section above), not a second line against the target. Logs:
+`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-help-for-this.r3/logs`.
+
+| Step | Command | EXIT |
+|---|---|---|
+| GREEN build | `cmake --build build --target zene ControlRegistryTest ControlRegistryNestingTest StartHubTest HelpAccessTest -j4` (logs/build-1.log) | 0 |
+| GREEN family | `cd build/tests && ctest -R '^(ControlRegistryTest\|ControlRegistryNestingTest\|StartHubTest\|HelpAccessTest)$' --output-on-failure` (logs/test-1.log) | 0: 4/4 passed |
+| 4b patch | `git diff af010bc3cc HEAD -- include/ControlRegistry.h include/UnattendedRun.h src/core/ControlRegistry.cpp src/core/UnattendedRun.cpp > logs/fix.patch` | 0 |
+| 4b revert | `git apply -R logs/fix.patch` | 0 |
+| 4b RED build | `cmake --build build --target zene ControlRegistryNestingTest -j4` (logs/build-2-red.log) | 0 |
+| 4b RED | `ctest -R '^ControlRegistryNestingTest$' --output-on-failure` (logs/test-2-red.log) | 8: `FAIL! displayRequirementIgnoresAgentInstance() 'result.ok' returned FALSE. (command 'test.agent_display' requires a display (headless instance))`, 17 passed 1 failed |
+| 4b re-apply | `git apply logs/fix.patch` | 0 |
+| 4b GREEN build | `cmake --build build --target zene ControlRegistryNestingTest -j4` (logs/build-3-green.log) | 0 |
+| 4b GREEN | `ctest -R '^ControlRegistryNestingTest$' --output-on-failure` (logs/test-3-green.log) | 0 |
+| family re-run | same ctest as GREEN family (logs/test-4-family.log) | 0: 4/4 passed |
+| gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (logs/gates-2.log, post-report-edit; logs/gates-1.log is the same run before it) | 0: 8/8 rows PASS, RESULT PASS |
+| completion | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> gui-1105-menu-help-help-for-this` (logs/submit-1.log) | 0: RESULT PASS - submit |
 
 Files committed: include/ControlRegistry.h, include/UnattendedRun.h, src/core/ControlRegistry.cpp,
 src/core/UnattendedRun.cpp, tests/src/core/ControlRegistryNestingTest.cpp, this report.
@@ -98,6 +136,29 @@ src/core/UnattendedRun.cpp, tests/src/core/ControlRegistryNestingTest.cpp, this 
 - **Collateral:** no saved-data or project-format change. Offscreen/minimal/vnc and `setHeadless(true)` still refuse
   display commands (ControlRegistryTest::displayRequirementFollowsHeadlessState passes); `human` is still always
   refused. No limit or check was added.
-- **Integration faithfulness:** the merged tree equals the accepted branch tree exactly (merge-tree evidence above), so
-  there is no semantic difference from the accepted patch to verify beyond identity.
+- **Integration faithfulness:** the five product/test files at HEAD are blob-identical to the accepted patch's
+  (`git diff 744720eeec HEAD -- <the five files>` is empty); the only delta is this report (the accepted report plus
+  the integration sections), so there is no semantic difference in product or test code.
 - **Gates:** the stock `feature_check.py` passes all 8 rows from this worktree (logs/gates-1.log, exit 0).
+
+### Round 3 (re-verification)
+
+- **Fails reverted / passes with the fix:** 4b above: reverted → `ControlRegistryNestingTest` EXIT 8
+  (`'result.ok' returned FALSE. (command 'test.agent_display' requires a display (headless instance))`,
+  logs/test-2-red.log); re-applied → EXIT 0 (logs/test-3-green.log; family logs/test-4-family.log, 4/4).
+- **Deterministic:** no wall-clock, sleeps, threads or races. The seams are `QT_QPA_PLATFORM=xcb` (read by
+  `platformHasNoDisplay()` at registry construction), `setAgentInstance(true)`, and `ControlRegistry::destroy()` to
+  build a fresh registry; all restored at the end of the slot (tests/src/core/ControlRegistryNestingTest.cpp:608-616).
+- **At the cause and complete:** the single consumer of the `display` requirement is
+  `ControlRegistry::checkRequires` (src/core/ControlRegistry.cpp:238); every command declaring it goes through it.
+  The other `isHeadless()` readers (WorkflowRun.cpp:146, ControlCommandsTheme.cpp:301,
+  ControlCommandsArrangerView.cpp:335, CommandRun.cpp:90, CommandMetadata.cpp:446) mean "no human to answer /
+  show a dialog" and intentionally keep the unattended predicate. The accepted design and the regression test are
+  retained: the five product/test blobs at HEAD equal the accepted patch's.
+- **No collateral damage:** no project, save or config format is touched, so old projects load as before. No limit
+  or check was added. Offscreen/minimal/vnc and `setHeadless(true)` still refuse display commands
+  (`ControlRegistryTest::displayRequirementFollowsHeadlessState` passes); `human` is still always refused.
+- **Semantic difference from the accepted patch:** none in product or test code (blob-identical). The only delta is
+  this report (the accepted report plus the integration sections).
+- **Verdict:** REAL, and the accepted fix is present and verified; this round is a re-verification of the
+  already-committed integration, not an ALREADY-FIXED or FALSE-POSITIVE case.
