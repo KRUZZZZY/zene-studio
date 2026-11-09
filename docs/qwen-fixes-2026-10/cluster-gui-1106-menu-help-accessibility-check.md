@@ -8,11 +8,13 @@ FIXED
 
 - Source: `bugs/qwen-gui-1106-menu-help-accessibility-check` @ `4fc8a8ce8f6debe1944de23479756a1c0d879e8a`.
 - Target: `050/m0-train-26` @ `af010bc3cc055d477045a54e2d866f59a95017d7` (HEAD of this worktree).
+- The round-1 QA review of the accepted fix was ACCEPT with no blocking items and no notes (r1 `qa-session.log`,
+  final JSON: `"verdict": "ACCEPT", "blocking": []`), so this run's only task is the integration re-verification below.
 - `git merge-base af010bc3cc055d477045a54e2d866f59a95017d7 4fc8a8ce8f6debe1944de23479756a1c0d879e8a`
   prints `af010bc3cc055d477045a54e2d866f59a95017d7` (EXIT=0). The source branch is a direct descendant of the target,
   so no line of the target is newer than the source branch and the accepted patch has no textual conflict.
-  The driver's three-way attempt still fell back to direct application (`integration-apply.log`: "Applied patch to
-  'src/gui/widgets/TextFloat.cpp' cleanly."), which is the expected result for a descendant.
+  The driver's log shows it fell back to direct application (`integration-apply.log`), which then applied the patch
+  cleanly to all four files.
 - The applied working-tree diff for `src/gui/widgets/TextFloat.cpp`, `tests/src/gui/GrooveMenuTest.cpp` and
   `tests/upstream-modifications.txt` is byte-identical to `git diff af010bc3cc 4fc8a8ce8f` for those files:
   `diff -u logs/08-accepted-source-diff.patch logs/09-applied-diff.patch` EXIT=0 (log 10-diff-comparison.log).
