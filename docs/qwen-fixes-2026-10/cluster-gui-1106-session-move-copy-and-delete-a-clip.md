@@ -76,6 +76,25 @@ ccache's default temp dir is outside the write jail, so every build ran with
 | GREEN | `ctest -R '^ArrangerClipboardKeysTest$' --output-on-failure` (09) | 0; 100% of 1 |
 | gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (10) | 0; all 8 rows PASS, RESULT: PASS |
 
+### r3 re-verification (logs in ~/.local/share/zene-bunny-fix/qwen/runs/gui-1106-session-move-copy-and-delete-a-clip.r3/logs)
+The r2 QA reviews (`r2/qa-session.log`, `r2/qa-session-2.log`) both returned `"verdict": "ACCEPT"` with
+`"blocking": []`, so round 3 had no review point to address. The integrated commit `53e6ef3a4d` was re-checked
+unchanged; no product or test file was edited in r3.
+
+| Step | Command | EXIT / result |
+|---|---|---|
+| semantic identity | `git diff af010bc3cc HEAD -- . ':!docs'` vs `git diff af010bc3cc 2b33505d64 -- . ':!docs'`, `diff -q` | 0 (identical apart from this report) |
+| build | `cmake --build build --target zene ArrangerClipboardKeysTest VisibilitySetMenuTest HybridTrackGuiTest -j4` (01) | 0 |
+| GREEN family | `ctest -R '^(ArrangerClipboardKeysTest\|VisibilitySetMenuTest\|HybridTrackGuiTest)$' --output-on-failure` (02) | 0; 100% of 3 |
+| 4b revert | `git diff af010bc3cc HEAD -- include/ArrangerClipKeys.h src/gui/ArrangerClipKeys.cpp > logs/fix.patch && git apply -R logs/fix.patch` | 0 |
+| 4b rebuild | `cmake --build build --target ArrangerClipboardKeysTest -j4` (03) | 0 |
+| RED | `ctest -R '^ArrangerClipboardKeysTest$' --output-on-failure` (04) | 8; `FAIL! ctrlVPastesACopiedClipAtThePlayPosition … Actual (startsOn(track)) : std::vector(0)`, `FAIL! ctrlCCopiesAndCtrlVFollowsTheSelectedTrack` |
+| 4b reapply | `git apply logs/fix.patch` | 0 |
+| 4b rebuild | `cmake --build build --target zene ArrangerClipboardKeysTest -j4` (05) | 0 |
+| GREEN | `ctest -R '^ArrangerClipboardKeysTest$' --output-on-failure` (06) | 0; 100% of 1 |
+| gates (as shipped) | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (07) | 1; `PermissionError` writing `<worktree>-feature-check/fork-sources.log` (that folder, hard-coded at `feature_check.py:70`, is outside this run's write jail), before any gate result |
+| gates (log folder moved) | the same script run in memory with only line 70 changed to `logs = Path(sys.argv[2])` (gate logs → `r3/logs/gate-logs`) (08) | 0; all 8 rows PASS, RESULT: PASS |
+
 ### r1 evidence (accepted patch provenance; logs in ~/.local/share/zene-bunny-fix/qwen/runs/gui-1106-session-move-copy-and-delete-a-clip.r1/logs)
 The accepted branch was developed on the same base `af010bc3c`; its own RED/GREEN/family/gate runs were:
 RED `ctest -R '^ArrangerClipboardKeysTest$'` EXIT 8 (3 failed); GREEN EXIT 0 (1/1); family EXIT 0 (6/6);
@@ -107,5 +126,9 @@ directly and passed (10-feature-check.log), so that environment limitation no lo
   ignored them. A clipboard without clips is ignored (test 4). Six related GUI tests pass (05-test-family.log).
 - **ALREADY-FIXED / FALSE-POSITIVE:** not applicable (the verdict is FIXED). The gain-curve part is by design;
   see `SampleClipView.cpp:449-454` in the r1 report.
-- **`submit_check.py` gates row:** the original `feature_check.py` now runs directly in this worktree
-  (10-feature-check.log, EXIT 0, RESULT: PASS); the r1 PermissionError workaround is not needed here.
+- **`submit_check.py` gates row:** in r2 the original `feature_check.py` ran directly (10-feature-check.log, EXIT 0,
+  RESULT: PASS). In r3 it could not create its hard-coded log folder outside the jail (07-gates.log, EXIT 1,
+  PermissionError before any gate ran). The same gate code, with only its log folder moved, passed
+  (08-gates.log, EXIT 0, 8/8 PASS). No gate, limit or baseline was changed.
+- **r3 review points:** none. Both r2 QA verdicts were ACCEPT with no blocking items, and the r3 re-run reproduced
+  RED (EXIT 8) and GREEN (EXIT 0) on the unchanged integrated commit.
