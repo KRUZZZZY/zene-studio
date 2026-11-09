@@ -119,3 +119,30 @@ Files committed: `src/gui/widgets/TextFloat.cpp`, `tests/src/gui/GrooveMenuTest.
   confirm it. Round 2 (integration) repeats this exactly: r2 log 07 shows the original's `PermissionError` (EXIT=1),
   log 08 shows the path-only copy at RESULT: PASS (EXIT=0, 8/8), and `submit_check.py` (r2 log 09) shows the same lone
   `FAIL gates` line. Every other item passes there.
+
+## Integration re-check (round 3, 2026-11-09)
+
+The round-3 brief lists no point beyond the integration job itself, so this round re-verified the whole claim on
+the tree as committed (`4cbc05053d` on `af010bc3cc`). No source change was needed: `git diff --quiet 42c566a498 --
+src/gui/widgets/TextFloat.cpp tests/src/gui/GrooveMenuTest.cpp` exits 0, so the integrated files are byte-identical to
+the accepted patch and there is no semantic difference. The target has no other edit to `TextFloat.cpp` (see round 2).
+Hazards: none platform-specific (`isWindow()`/`moveGlobal` are portable Qt); no audio thread, undo or command change.
+
+Logs in `~/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-navigate-next-marker.r3/logs` (`CCACHE_DISABLE=1`, -j4;
+log 01/02 are the first attempt without it: ccache `Permission denied` in the write-jail, build EXIT=2, ctest "Not Run").
+
+| Step | Command | EXIT |
+| --- | --- | --- |
+| Build | `CCACHE_DISABLE=1 cmake --build build --target zene GrooveMenuTest PluginShortcutsTest -j4` (03) | 0 |
+| GREEN family | `cd build/tests && ctest -R '^(GrooveMenuTest\|PluginShortcutsTest)$' --output-on-failure` (04): 100% passed out of 2 | 0 |
+| 4b reverse | `git diff af010bc3cc HEAD -- src/gui/widgets/TextFloat.cpp > logs/fix.patch && git apply -R logs/fix.patch` | 0 |
+| 4b RED | build (05) EXIT=0; `ctest -R '^GrooveMenuTest$'` (06): `FAIL! aRefusalFromTheMainWindowIsShownInsideIt … float at 802,0 158x76 is outside the main window 800x600` | 8 |
+| 4b re-apply | `git apply logs/fix.patch` | 0 |
+| 4b GREEN | build (07) EXIT=0; `ctest -R '^GrooveMenuTest$'` (08): 100% passed out of 1 | 0 |
+| Gates (original) | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (09): `PermissionError` creating `<worktree>-feature-check` (write-jail) | 1 |
+| Gates (path-only copy) | `python3 logs/feature_check_copy.py <worktree>` (10): 8/8 PASS, RESULT: PASS | 0 |
+
+The copy differs from the original in lines 19 (`ROOT` pinned to the original's directory) and 70 (log folder in the
+LOG FOLDER) only; the gates, baselines and comparison logic are unchanged.
+
+Files committed this round: this report only (`src/` and `tests/` unchanged from round 2).
