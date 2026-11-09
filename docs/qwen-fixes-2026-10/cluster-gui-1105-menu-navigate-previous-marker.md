@@ -65,6 +65,39 @@ Registration: `tests/upstream-modifications.txt` gets a `src/gui/widgets/TextFlo
 Files committed: `src/gui/widgets/TextFloat.cpp`, `tests/src/gui/GrooveMenuTest.cpp`,
 `tests/upstream-modifications.txt`, this report.
 
+## Round 3 re-verification (2026-11-09, logs in `runs/gui-1105-menu-navigate-previous-marker.r3/logs/`)
+
+The round-3 brief repeats the integration job; the integration commit `6f54236c15` was already on this branch, so
+nothing was re-merged. Semantic check against the accepted patch: the changed `+`/`-` lines of
+`git diff af010bc3cc HEAD` and of the accepted branch's diff from the same base (`af010bc3cc`) are identical for
+`src/gui/widgets/TextFloat.cpp` and `tests/src/gui/GrooveMenuTest.cpp` (`diff` of the two printed nothing). No new
+design; accepted tests retained unchanged.
+
+Affected failure paths and platform hazards (together): (1) window parent - every `runCommand` announcement from a
+main-menu or window-level menu (`CommandRun.cpp:95`), the bug path, now inside the window; (2) widget parent - knobs,
+faders, clips, file browser: unchanged right-of placement (guarded by `aMessageOverAChildWidgetStaysBesideIt`);
+(3) no parent - unchanged (main window lower left). Platform: pure Qt geometry (`isWindow`, `height`, `moveGlobal`),
+no platform-specific API; on Wayland, where a top-level cannot be positioned globally, both old and new placements
+are equally advisory (general Qt behaviour, not verified here). Not checked on macOS/Windows hosts (no hosted matrix run here).
+
+| Step | Command | Exit | Result |
+|---|---|---|---|
+| build | `CCACHE_TEMPDIR=<logs>/cctmp cmake --build build --target zene GrooveMenuTest PluginShortcutsTest -j4` (`build-1.log`) | 0 | |
+| family | `cd build/tests && ctest -R '^(GrooveMenuTest\|PluginShortcutsTest)$' --output-on-failure` (`test-1-family.log`) | 0 | 2/2 passed |
+| 4b revert | `git diff af010bc3cc HEAD -- src/gui/widgets/TextFloat.cpp > fix.patch && git apply -R fix.patch` | 0 | |
+| 4b build | `cmake --build build --target zene GrooveMenuTest -j4` (`build-2-reverted.log`) | 0 | |
+| 4b RED | `ctest -R '^GrooveMenuTest$' --output-on-failure` (`test-2-red.log`) | 8 | FAIL `aMessageOverTheMainWindowIsShownInsideIt`: message 1602,0 158x76 is outside the window -2,-2 1604x1004 |
+| 4b reapply | `git apply fix.patch` | 0 | |
+| 4b build | `cmake --build build --target zene GrooveMenuTest -j4` (`build-3-fixed.log`) | 0 | |
+| 4b GREEN | `ctest -R '^GrooveMenuTest$' --output-on-failure` (`test-3-green.log`) | 0 | 1/1 passed |
+| gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (`gates-1.log`) | 1 | PermissionError writing `<worktree>-feature-check/fork-sources.log` (write jail), no gate ran |
+| gates | `python3 runs/.../gatecopy/feature_check_copy.py <worktree>` (`gates-3.log`) | 0 | RESULT: PASS, 8/8 rows PASS (base af010bc3c, 4 changed files) |
+| submit | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> gui-1105-menu-navigate-previous-marker` (`submit-1.log`) | 1 | only FAIL is the gates row (same PermissionError) |
+
+`feature_check_copy.py` differs from the original in exactly two lines (`diff` shown in the session): `ROOT` points at
+the original `qwen/` directory (so `FIX-BASE` and the `gate-baselines` cache are the original ones) and the log
+directory is `<logs>/feature-check`. Same gate commands and pass rules.
+
 ## Self-check
 
 - **RED with the fix reverted, GREEN with it (exit codes):** reverted (`git apply -R fix.patch`) -> rebuilt -> `ctest -R '^GrooveMenuTest$'` EXIT=8 (`test-red.log`, same assertion "message 1602,0 158x76 is outside the window -2,-2 1604x1004"); reapplied -> rebuilt -> EXIT=0 (`test-green2.log`).
@@ -73,3 +106,4 @@ Files committed: `src/gui/widgets/TextFloat.cpp`, `tests/src/gui/GrooveMenuTest.
 - **No collateral damage:** UI placement only. No project/save data, no command, no header, no audio thread, no undo. Widget-parented floats keep the exact old position (guarded by `aMessageOverAChildWidgetStaysBesideIt`). The new position uses the same offsets the no-parent branch already used.
 - **ALREADY-FIXED / FALSE-POSITIVE:** not applicable (verdict FIXED).
 - **Gate row of `submit_check.py`:** it calls `feature_check.py`, which cannot create `<worktree>-feature-check/` in this sandbox (PermissionError, `submit-1.log` / `gates-1.log`). The identical gates run through the log-dir-only copy of the script all PASS (`gates-2.log`, EXIT=0).
+- **Round 3:** RED EXIT=8 (`test-2-red.log`) / GREEN EXIT=0 (`test-3-green.log`), family 2/2 EXIT=0 (`test-1-family.log`), gates 8/8 PASS through the copy EXIT=0 (`gates-3.log`); the original `feature_check.py` and `submit_check.py` gate row still fail only on the write-jail PermissionError (`gates-1.log`, `submit-1.log`).
