@@ -2,6 +2,47 @@ FIXED
 
 # Cluster gui-1105-main-loop-points: Loop points does not respond to accessibility activation
 
+## Integration re-verification (round 3, 2026-11-09)
+
+State on entry: HEAD `4a3cdd9cd2` sits directly on the pinned target `af010bc3cc` (`git merge-base
+--is-ancestor af010bc3cc HEAD`: true). No conflict markers in `include/NStateButton.h`,
+`src/gui/widgets/NStateButton.cpp` or `tests/src/gui/NStateButtonActivationTest.cpp`. The train-side
+change in the conflicting region, `setAccessibleName(toolTip())` in `changeState`
+(`src/gui/widgets/NStateButton.cpp:81`), is kept. No product code changed in round 3: this round
+only re-ran the evidence and resolved the gate failure.
+
+Semantic difference from the accepted branch (`bugs/qwen-gui-1105-main-loop-points` @ `5436456d8`,
+`git diff 5436456d8 HEAD -- include src tests/src`): `m_advancedOnPress` (set at press, cleared at
+release) became `m_suppressReleaseClick`, set only while `ToolButton::mouseReleaseEvent` runs
+(`NStateButton.cpp:106-113`, `onClicked` at `:115`). The accepted design is unchanged: mouse
+advances at press time, every non-mouse `clicked()` advances once. The one behaviour difference is the
+fix for the disabled-during-press hazard, held by the eighth test
+`disabledDuringMousePressDoesNotSwallowTheNextClick`.
+
+Failure paths covered (one test each in `NStateButtonActivationTest`): `QAbstractButton::click()`,
+the accessibility press action, keyboard Space, a mouse click (advances once, at press), a press
+released off the button, the button disabled between press and release, a right click, and the
+empty-state button. Platform hazards: Qt API only, same on Linux/macOS/Windows; GUI thread only, no
+audio-thread code; no save format, undo or control command touched.
+
+Round-3 evidence (logs in `~/.local/share/zene-bunny-fix/qwen/runs/gui-1105-main-loop-points.r3/logs/`):
+
+| Step | Command | EXIT |
+| --- | --- | --- |
+| Build | `cmake --build build --target zene NStateButtonActivationTest AccessibilityWalkTest RevisionTimelineTest TimelineTest ArrangerTimelineTest -j4` (03) | 0 |
+| Family GREEN | `cd build/tests && ctest -R 'NStateButtonActivationTest\|AccessibilityWalkTest\|Timeline\|TimeLine' --output-on-failure` (04) | 0, 5/5 tests passed |
+| 4b revert | `git diff af010bc3cc HEAD -- include/NStateButton.h src/gui/widgets/NStateButton.cpp > logs/fix.patch && git apply -R logs/fix.patch`; `cmake --build build --target NStateButtonActivationTest -j4` (05) | 0 / 0 |
+| 4b RED | `cd build/tests && ctest -R '^NStateButtonActivationTest$' --output-on-failure` (06) | **8**: `Totals: 5 passed, 5 failed` (programmaticClick, accessiblePressAction, spaceKey, pressReleasedOffTheButton…, disabledDuringMousePress…) |
+| 4b reapply | `git apply logs/fix.patch`; `cmake --build build --target zene NStateButtonActivationTest -j4` (07) | 0 / 0 |
+| 4b GREEN | `cd build/tests && ctest -R '^NStateButtonActivationTest$' --output-on-failure` (08) | 0, `Totals: 10 passed, 0 failed` (8 cases + init/cleanup) |
+| Stock gate | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (01) | 1: `PermissionError` writing `<worktree>-feature-check/fork-sources.log` (outside this lane's write area; no gate ran) |
+| Gate, logs redirected | `python3 runs/gui-1105-main-loop-points.r3/fc/fc_logredirect.py <worktree>` (02; per-gate logs in `logs/fc-gate-logs/`) | 0, RESULT: PASS, 8/8 rows; complexity and file-length: no new item in my files |
+
+`fc_logredirect.py` imports the stock `feature_check` module unchanged and wraps only its `run()` so
+that per-gate log files go to the log folder. Gate commands, the baseline (cached
+`gate-baselines/af010bc3cc….json`) and the pass logic are the stock ones. `submit_check.py` calls the
+stock script itself, so its "gates" row stays FAIL for this lane's sandbox, not for any gate.
+
 ## Integration onto 050/m0-train-26 (round 2)
 
 The accepted patch (`bugs/qwen-gui-1105-main-loop-points` @ `5436456d8`) was applied to the train tip
@@ -125,6 +166,13 @@ those 2 lines only. The gate commands and the PASS logic are unchanged. Results:
 - `docs/qwen-fixes-2026-10/cluster-gui-1105-main-loop-points.md`
 
 ## Self-check
+
+Round 3 (current code, r3 logs): reverted product → `ctest -R '^NStateButtonActivationTest$'` EXIT 8,
+5 of 8 cases fail (logs/06); reapplied → EXIT 0, all pass (logs/08); family 5/5 EXIT 0 (logs/04);
+gates EXIT 0 via the log-redirect wrapper, stock script EXIT 1 on the PermissionError only (logs/01,
+02). Release suppression is now scoped to `mouseReleaseEvent` (`NStateButton.cpp:106-113`), so a
+press dragged off the button leaves no flag behind (no `clicked()`, flag reset on return). The
+round-2 bullets below are kept as history.
 
 - **The test fails with the fix reverted and passes with it.**
   - Reverted (`git apply -R logs/fix.patch`, EXIT 0; rebuild EXIT 0):
