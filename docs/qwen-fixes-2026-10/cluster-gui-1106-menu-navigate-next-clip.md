@@ -125,3 +125,6 @@ Files committed this round: this report. The integrated patch (`src/gui/widgets/
 - **Conflict:** none against the pinned target `050/m0-train-26` (`git merge-tree` EXIT=0, no conflict file). The newer line
   the driver names is on `050/m0-train-27`, which is not the pinned target and carries a different fix for the same bug.
 - **ALREADY-FIXED / FALSE-POSITIVE:** not claimed; verdict FIXED (RED reproduced on this target).
+- **submit_check.py:** `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree>
+  gui-1106-menu-navigate-next-clip > LOGS/14-submit-check.log 2>&1` EXIT=0, `RESULT: PASS - submit` (all 5 mechanical rows
+  PASS; the 5 ASK items are answered above).
