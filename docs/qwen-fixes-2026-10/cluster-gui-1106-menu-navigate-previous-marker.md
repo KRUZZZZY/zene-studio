@@ -146,3 +146,10 @@ message is visible on a real display (offscreen platform only).
   `runs/gui-1106-menu-navigate-previous-marker.r3/logs`: RED 06-test-red.log EXIT=8 (same assertion, same geometry), GREEN
   08-test-green.log EXIT=0 (2/2 tests executed), gates 10-feature-check.log EXIT=0 (log path redirected, see "Integration
   round 3"). Committed files this round: this report only; the product/test/registration files are unchanged from `a2bd6c038e`.
+- **Completion check (round 3):** `submit_check.py <worktree> gui-1106-menu-navigate-previous-marker` gave EXIT=1
+  (11-submit-check.log). Commits, clean tree, report and test rows PASS. The one FAIL is "gates (feature_check.py)":
+  `submit_check.py:117` runs the original `feature_check.py`, which writes to `<worktree>-feature-check/`
+  (`feature_check.py:70`). That folder is outside this lane's write jail, so it fails with PermissionError before any gate
+  runs (09-feature-check.log). The same gate script, changed only to write its logs in the log folder, gives RESULT: PASS
+  with all 8 rows PASS (10-feature-check.log, EXIT=0). An unconfined run of the check, such as the loop's, should not hit
+  this. Every "?" item is answered above.
