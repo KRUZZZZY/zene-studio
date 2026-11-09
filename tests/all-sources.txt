@@ -612,6 +612,7 @@ include/MixerLatencyText.h
 include/MixerListen.h
 include/MixerMaskingReport.h
 include/MixerModeBar.h
+include/MixerModeBarLayout.h
 include/MixerOptions.h
 include/MixerOverlays.h
 include/MixerPostInserts.h
@@ -2471,6 +2472,7 @@ src/gui/MixerChannelView.cpp
 src/gui/MixerHardwareMenu.cpp
 src/gui/MixerMaskingReport.cpp
 src/gui/MixerModeBar.cpp
+src/gui/MixerModeBarLayout.cpp
 src/gui/MixerOverlays.cpp
 src/gui/MixerRoutingMatrix.cpp
 src/gui/MixerSendsBanner.cpp

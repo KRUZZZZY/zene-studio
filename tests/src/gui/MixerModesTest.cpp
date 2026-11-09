@@ -42,9 +42,11 @@
 #include <QPointer>
 #include <QMenu>
 #include <QPushButton>
+#include <QScopeGuard>
 #include <QSet>
 #include <QTimer>
 #include <QToolButton>
+#include <QVBoxLayout>
 
 #include "AutomatableButton.h"
 #include "AutomatableModel.h"
@@ -262,6 +264,56 @@ private slots:
 		QCOMPARE(mixerviewoptions::options().filter, QStringLiteral("returns"));
 		emit filter->activated(filter->findData(QStringLiteral("all")));
 		QCOMPARE(mixerviewoptions::options().filter, QStringLiteral("all"));
+	}
+
+	//! gui-1030: in a narrow Mixer panel (a shell column held at 300 px) the bar wraps instead of
+	//! clipping or crushing its controls, so Density: Compact and every other mode control stays whole,
+	//! on screen and clickable.
+	void aNarrowPanelKeepsEveryModeControlOnScreen()
+	{
+		const auto restore = qScopeGuard([] {  // the density a click below sets, even if a check fails
+			run(QStringLiteral("window.mixer_view"), {{QStringLiteral("density"), QStringLiteral("expanded")}});
+			syncMixer();
+		});
+		QWidget host;
+		auto* column = new QVBoxLayout(&host);
+		column->setContentsMargins(0, 0, 0, 0);
+		auto* narrow = new MixerModeBar(&host);
+		column->addWidget(narrow);
+		column->addStretch(1);
+		host.setFixedSize(300, 600);  // the panel is this wide whatever the bar asks for
+		host.show();
+		column->activate();
+		QCoreApplication::processEvents();
+		QCOMPARE(host.width(), 300);
+		const auto onScreen = [&](QWidget* control) {
+			const QRect r(control->mapTo(&host, QPoint(0, 0)), control->size());
+			// whole and uncrushed: a squeezed row shrinks a button below its caption, clipping it
+			const QSize whole = control->minimumSizeHint();
+			return host.rect().contains(r) && narrow->geometry().contains(r) && host.childAt(r.center()) == control
+				&& r.width() >= whole.width() && r.height() >= whole.height();
+		};
+		QPushButton* compact = narrow->densityButton(QStringLiteral("compact"));
+		QVERIFY2(onScreen(compact), "Density: Compact is clipped in a 300 px panel");
+		for (QWidget* control : narrow->findChildren<QWidget*>())
+		{
+			const bool interactive = qobject_cast<QAbstractButton*>(control) != nullptr || qobject_cast<QComboBox*>(control) != nullptr;
+			if (!interactive || !control->isVisibleTo(&host)) { continue; }
+			QVERIFY2(onScreen(control), qPrintable(control->objectName()));
+		}
+		QVERIFY(narrow->height() > compact->height() * 2);  // it wrapped onto more rows
+		QTest::mouseClick(compact, Qt::LeftButton);  // and Compact answers a click there
+		QCOMPARE(mixerviewoptions::options().density, QStringLiteral("compact"));
+		// A wide panel keeps one row with Routing Matrix... at its right end, as before.
+		host.setFixedSize(2400, 600);
+		column->activate();
+		QCoreApplication::processEvents();
+		QWidget* matrix = narrow->findChild<QWidget*>(QStringLiteral("mixerModeMatrix"));
+		QVERIFY(matrix != nullptr);
+		QVERIFY(onScreen(compact));
+		QVERIFY(onScreen(matrix));
+		QCOMPARE(narrow->width() - 1 - matrix->geometry().right(), narrow->layout()->contentsMargins().right());
+		QVERIFY(qAbs(matrix->geometry().center().y() - compact->geometry().center().y()) <= 2);
 	}
 
 	//! Acceptance 1: the fader and the mute/solo (LED) buttons are Tab stops, answer their keys, and
