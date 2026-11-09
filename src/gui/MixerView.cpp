@@ -50,6 +50,8 @@
 #include <QPushButton>
 #include <QVBoxLayout>
 #include <QScrollArea>
+#include <QScrollBar>
+#include <QResizeEvent>
 #include <QSplitter>
 #include <QStyle>
 #include <QKeyEvent>
@@ -88,6 +90,55 @@
 namespace lmms::gui
 {
 
+namespace
+{
+
+//! The mode bar's home: one row that scrolls sideways when the panel is narrower than the row, and takes the
+//! scroll bar's height only then. The row is wider than a 1600-pixel screen once the Inspector and the Browser
+//! share it, and as the panel's minimum it pushed the main window past the screen's edge, taking the footer's
+//! view switches with it (gui-1106-main-edit).
+class ModeBarScroller : public QScrollArea
+{
+public:
+	ModeBarScroller(QWidget* bar, QWidget* parent) :
+		QScrollArea(parent)
+	{
+		setObjectName(QStringLiteral("mixerModeScroller"));
+		setFrameShape(QFrame::NoFrame);
+		setWidgetResizable(true);
+		setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+		setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+		setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+		setWidget(bar);
+		fitHeight();
+	}
+
+protected:
+	void resizeEvent(QResizeEvent* event) override
+	{
+		QScrollArea::resizeEvent(event);
+		fitHeight();
+	}
+
+	bool eventFilter(QObject* watched, QEvent* event) override
+	{
+		const bool handled = QScrollArea::eventFilter(watched, event);
+		// A chip's new text changes the row's width: the scroll bar may come or go without a resize of this.
+		if (watched == widget() && event->type() == QEvent::LayoutRequest) { fitHeight(); }
+		return handled;
+	}
+
+private:
+	void fitHeight()
+	{
+		if (widget() == nullptr) { return; }
+		const bool scrolls = widget()->minimumSizeHint().width() > width();
+		const int height = widget()->sizeHint().height() + (scrolls ? horizontalScrollBar()->sizeHint().height() : 0);
+		if (minimumHeight() != height || maximumHeight() != height) { setFixedHeight(height); }
+	}
+};
+
+} // namespace
 
 MixerView::MixerView(Mixer* mixer) :
 	QWidget(),
@@ -115,7 +166,7 @@ MixerView::MixerView(Mixer* mixer) :
 	connect(m_modeBar, &MixerModeBar::changed, this, &MixerView::syncWithMixer, Qt::QueuedConnection);
 	// MX-021: with following on, a new arranger selection re-lays the Selected filter's strips.
 	connect(ShellSelection::instance(), &ShellSelection::changed, this, &MixerView::syncWithMixer, Qt::QueuedConnection);
-	outer->addWidget(m_modeBar);
+	outer->addWidget(new ModeBarScroller(m_modeBar, this));
 	m_sendsBanner = new MixerSendsBanner(this);
 	outer->addWidget(m_sendsBanner);
 

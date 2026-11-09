@@ -42,6 +42,8 @@
 #include <QPointer>
 #include <QMenu>
 #include <QPushButton>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QSet>
 #include <QTimer>
 #include <QToolButton>
@@ -803,6 +805,27 @@ private slots:
 			QColorDialog::setStandardColor(i, original[i]);
 		}
 		QCOMPARE(restored, original);
+	}
+
+	//! gui-1106-main-edit: with the Mixer open, the mode bar's full row (1576 px) made the main window's minimum
+	//! width 2000 px, so on a 1600-px screen the window grew past the edge and took the footer's Arrange/Mix/Edit
+	//! switches and the Browser switch with it - a click on Edit landed off the screen. The bar scrolls sideways
+	//! instead, keeping every mode control, and the window fits the screen.
+	void anOpenMixerKeepsTheMainWindowOnA1600PixelScreen()
+	{
+		MainWindow* window = getGUI()->mainWindow();
+		window->revealPanel(QStringLiteral("mixer"));
+		QVERIFY(getGUI()->mixerView()->isVisible());
+		QVERIFY2(window->minimumSizeHint().width() <= 1600,
+			qPrintable(QStringLiteral("main window minimum width %1").arg(window->minimumSizeHint().width())));
+		auto* scroller = qobject_cast<QScrollArea*>(bar()->parentWidget() != nullptr ? bar()->parentWidget()->parentWidget() : nullptr);
+		QVERIFY(scroller != nullptr);
+		QCOMPARE(scroller->widget(), bar());
+		// Every control is still in the bar, reachable by scrolling: narrow the scroller and the bar keeps its row.
+		scroller->resize(400, scroller->height());
+		QVERIFY(bar()->width() >= bar()->minimumSizeHint().width());
+		QVERIFY(scroller->horizontalScrollBar()->maximum() > 0);
+		QVERIFY(bar()->findChild<QPushButton*>(QStringLiteral("mixerModeMatrix")) != nullptr);
 	}
 
 private:
