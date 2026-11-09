@@ -2,6 +2,20 @@ FIXED
 
 # gui-1106-menu-navigate-nudge-clip-left - refusal float placed outside the app window
 
+## Integration round 3 (re-verification on 050/m0-train-26 @ af010bc3cc)
+Round-2 QA verdict was ACCEPT-NOTE with no blocking items (r2 `qa-session-2.log`). Its one note was about the gate-log workaround. This round's source is this branch at 56e6b7d0ec, and the target is pinned at af010bc3cc. `git merge-base --is-ancestor af010bc3cc HEAD` gave EXIT=0, so the branch already sits on the target: no conflict was left, and nothing was re-resolved. The `+`/`-` lines of `git diff af010bc3cc -- src tests` match the r2 `accepted.patch` exactly. The only lines that differ are in this report (docs/), which I left out of the comparison on purpose. Failure paths and platform hazards are unchanged from round 2 (listed below). No header changed, nothing touches the audio thread, and no command was added.
+
+| Step (logs in /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1106-menu-navigate-nudge-clip-left.r3/logs) | Command | Result |
+| --- | --- | --- |
+| Build | `CCACHE_DISABLE=1 cmake --build build --target zene GrooveMenuTest PluginShortcutsTest -j4 > 01-build.log 2>&1` | EXIT=0 |
+| GREEN, family | `cd build/tests && ctest -R '^(GrooveMenuTest\|PluginShortcutsTest)$' --output-on-failure > 02-test-green.log 2>&1` | EXIT=0, 100% of 2 tests passed |
+| 4b revert | `git diff af010bc3cc -- src/gui/widgets/TextFloat.cpp > fix.patch && git apply -R fix.patch` (EXIT=0); `CCACHE_DISABLE=1 cmake --build build --target GrooveMenuTest -j4 > 03-build-reverted.log` (EXIT=0); `ctest -R '^GrooveMenuTest$' --output-on-failure > 04-test-reverted.log` | **EXIT=8**: `FAIL! GrooveMenuTest::aFloatOverTheMainWindowStaysInsideIt() 'bounds.contains(placed)' returned FALSE. (float 1602,0 142x76 outside window 0,0 1600x1000)` |
+| 4b reapply | `git apply fix.patch` (EXIT=0); `CCACHE_DISABLE=1 cmake --build build --target zene GrooveMenuTest -j4 > 05-build-reapplied.log` (EXIT=0); `ctest -R '^GrooveMenuTest$' --output-on-failure > 06-test-reapplied.log` | EXIT=0, 100% of 1 test passed; `git status` clean afterwards |
+| Gates (as shipped) | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > 07-gates.log 2>&1` | EXIT=1: `PermissionError` writing `<worktree>-feature-check/fork-sources.log` (a sibling of the worktree, outside this lane's write jail; not a gate failure) |
+| Gates (log dir redirected) | `python3 -I <r3>/gatecopy/feature_check.py <worktree> > 08-gates.log 2>&1`. `diff` against the original shows exactly two changed lines: `ROOT` is pinned to the original qwen dir, and `logs` points to r3 logs/gate-logs | EXIT=0, RESULT: PASS, 8/8 (fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length) |
+
+Files committed this round: this report only. The product, test and registration files are unchanged since 150b8e73fe.
+
 ## Integration (round 2) onto 050/m0-train-26 @ af010bc3cc
 Accepted source `bugs/qwen-gui-1106-menu-navigate-nudge-clip-left` @ d290a9c0de. The driver's three-way merge reported a conflict in `src/gui/widgets/TextFloat.cpp`, then fell back to direct application, which applied all three files cleanly (`integration-apply.log`: "Applied patch to 'src/gui/widgets/TextFloat.cpp' cleanly"). No conflict needed resolving by hand. **No semantic difference from the accepted patch:** the `+`/`-` lines of the staged diff (logs/01-staged.patch) are identical to `accepted.patch` (`diff` of the two line sets: no output, EXIT=0). On this line the only parent-taking caller is still `announce()` (src/gui/CommandRun.cpp:95-96). I re-checked all 30 `displayMessage(` call sites in src/ and plugins/: every other one ends at the timeout argument, for example ArrangerFileDrop.cpp:138, ClipLockFeedback.cpp:159, MainWindow.cpp:2030 and VstEffect.cpp:150. the no-parent branch (`TextFloat.cpp:147`, `moveGlobal(mw, QPoint(32, ...))`) and `TextFloat::moveGlobal` (include/TextFloat.h:56) are unchanged.
 
