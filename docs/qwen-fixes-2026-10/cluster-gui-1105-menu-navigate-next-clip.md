@@ -158,3 +158,22 @@ at the real `qwen/` folder (real FIX-BASE `050/m0-train-26` and its already-cach
 
 Files committed: `src/gui/widgets/TextFloat.cpp`, `tests/src/gui/GrooveMenuTest.cpp`, `tests/upstream-modifications.txt`
 (reason line for the inherited `TextFloat.cpp`; `GrooveMenuTest.cpp` line), this report.
+
+## Self-check (round 2, integration)
+
+- **Test FAILS with the product change reverted and PASSES with it:** RED `LOGS/test-2-red.log` EXIT=8
+  (`aMessageOverAWindowFillingTheScreenStaysOnScreen` FAIL, `'fitsOnAScreen' returned FALSE`); GREEN `LOGS/test-3-green.log`
+  EXIT=0 (1/1). Family `LOGS/test-1.log` EXIT=0 (2/2).
+- **Deterministic:** unchanged test; no timers, sleeps or event-loop waits. Seam: geometry is set explicitly to the
+  offscreen screen's available geometry, timeout 0 means no `QTimer::singleShot`, the float is read synchronously and deleted.
+- **At the cause and complete:** the integrated code is identical to the accepted tip (`git diff --cached f9150e8918` empty
+  before commit). The only `displayMessage` caller in the finding's path is `src/gui/CommandRun.cpp:95`; every
+  `announce()`/`runCommand()` path goes through `TextFloat.cpp:155-156`. Sibling knob/fader floats (`moveGlobal`) are out
+  of scope as argued in round 1.
+- **No collateral damage:** GUI placement only; no saved data, project format, command, undo or audio-thread change; the
+  clamp is a no-op whenever the float already fits on a screen.
+- **ALREADY-FIXED / FALSE-POSITIVE:** not claimed; verdict FIXED (RED reproduced on this target).
+- **submit_check.py:** `LOGS/submit-1.log` EXIT=1; its only FAIL is `gates (feature_check.py)`, because the stock script
+  dies with `PermissionError` creating `<worktree>-feature-check` beside the worktree, outside this lane's write-jail
+  (`LOGS/gates-3-stock-committed.log` STOCK_EXIT=1, no gate ran). The same gates via the logdir-only copy on the
+  committed tree: `LOGS/gates-4-committed.log` EXIT=0, `RESULT: PASS`. The loop's own run, which can write there, should match.
