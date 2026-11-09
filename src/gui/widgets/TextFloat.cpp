@@ -30,6 +30,9 @@
 #include <QLabel>
 
 #include <QRegularExpression>
+#include <QScreen>
+
+#include <algorithm>
 
 #include "AccessibleWidgets.h"
 #include "GuiApplication.h"
@@ -37,6 +40,37 @@
 
 namespace lmms::gui
 {
+
+namespace
+{
+
+/*! Where a float whose frame is \a size goes when it is meant to go at \a at beside \a anchor: there, if it fits on
+ *  any virtual sibling screen, otherwise moved just enough to fit on one. The virtual desktop's bounding rectangle can
+ *  include gaps between staggered screens. "Just right of the anchor" suits a knob, but an anchor reaching the screen's
+ *  right edge - a maximised main window, which menu commands pass to CommandRun's announce() - put the message beyond
+ *  the edge, where nobody saw it (gui-1105). */
+QPoint onScreen(const QWidget* anchor, QPoint at, QSize size)
+{
+	const QScreen* screen = anchor->screen();
+	if (screen == nullptr) { return at; }
+	const auto screens = screen->virtualSiblings();
+	const QRect frame(at, size);
+	for (const QScreen* candidate : screens)
+	{
+		if (candidate->availableGeometry().contains(frame)) { return at; }
+	}
+	const QScreen* target = screen;
+	for (const QScreen* candidate : screens)
+	{
+		if (candidate->availableGeometry().contains(at)) { target = candidate; break; }
+	}
+	const QRect area = target->availableGeometry();
+	const int x = std::clamp(at.x(), area.left(), std::max(area.left(), area.right() + 1 - size.width()));
+	const int y = std::clamp(at.y(), area.top(), std::max(area.top(), area.bottom() + 1 - size.height()));
+	return QPoint(x, y);
+}
+
+} // namespace
 
 
 TextFloat::TextFloat() :
@@ -118,6 +152,8 @@ TextFloat * TextFloat::displayMessage(const QString & title,
 		QWidget * mw = getGUI()->mainWindow();
 		tf->moveGlobal(mw, QPoint(32, mw->height() - tf->height() - 8));
 	}
+	const QWidget* anchor = parent != nullptr ? parent : getGUI()->mainWindow();
+	tf->move(onScreen(anchor, tf->pos(), tf->frameGeometry().size()));
 
 	// 0.5.0 (theme 17): a status message is spoken too, once, after what the screen reader is saying (the float's
 	// name carries it for a Qt without announcement events, AccessibleWidgets.h).

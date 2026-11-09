@@ -32,10 +32,12 @@
 
 #include <QtTest>
 
+#include <algorithm>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QLabel>
 #include <QMenu>
+#include <QScreen>
 #include <QTemporaryDir>
 
 #include "ControlRegistry.h"
@@ -169,6 +171,25 @@ private slots:
 		QVERIFY2(!shown.isEmpty(), "the refused groove.extract was shown to nobody");
 		QVERIFY2(shown.contains(QStringLiteral("groove")), qPrintable(shown));
 		delete menu;
+	}
+
+	void aMessageOverAWindowFillingTheScreenStaysOnScreen()
+	{
+		// gui-1105: a menu command's refusal floats "just right of" its parent, and the parent is often
+		// the main window; maximised, that is beyond the screen's right edge and nobody sees it.
+		MainWindow* window = getGUI()->mainWindow();
+		const QRect area = window->screen()->availableVirtualGeometry();
+		window->setGeometry(area);
+		window->show();
+		TextFloat* message = TextFloat::displayMessage(QStringLiteral("Next Clip"), QStringLiteral("No clip is selected."),
+			QPixmap(), 0, window);
+		const QRect placed = message->frameGeometry();
+		const auto screens = window->screen()->virtualSiblings();
+		const bool fitsOnAScreen = std::any_of(screens.cbegin(), screens.cend(), [&placed](const QScreen* screen) {
+			return screen->availableGeometry().contains(placed);
+		});
+		delete message;
+		QVERIFY2(fitsOnAScreen, "message does not fit within any screen's available geometry");
 	}
 };
 
