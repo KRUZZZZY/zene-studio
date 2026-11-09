@@ -120,9 +120,12 @@ macOS and MSVC/Windows CI builds.
 
 ## Self-check
 
-- **Regression fails reverted, passes restored**: RED `ctest -R '^MixerSelectionIdentityTest$'` EXIT=8 with
-  `window minimum width 2000` (`logs/test-2-red.log`); after re-applying the product patch the same command
-  EXIT=0, 1/1 passed (`logs/test-3-green.log`). The product patch itself is `logs/fix.patch`.
+- **Regression fails reverted, passes restored**: integration round - `git diff HEAD -- src/gui/MixerView.cpp
+  src/gui/MixerModeBar.cpp > logs/fix.patch` EXIT=0, `git apply -R logs/fix.patch` EXIT=0, rebuild EXIT=0,
+  then RED `ctest -R '^MixerSelectionIdentityTest$'` EXIT=8 with `window minimum width 2000`
+  (`logs/04-test-red-integrated.log`); `git apply logs/fix.patch` EXIT=0, rebuild EXIT=0, then the same
+  command EXIT=0, 1/1 passed (`logs/06-test-green-restored.log`). Accepted round: RED EXIT=8
+  (`logs/test-2-red.log`), GREEN EXIT=0 (`logs/test-3-green.log`). The product patch itself is `logs/fix.patch`.
 - **Deterministic**: no sleeps or wall-clock timing. The test drives the real GUI path (`shell()->setView`,
   `revealPanel`, `resize`) and waits only on Qt's posted `LayoutRequest` events; the assertion is on
   `minimumSizeHint()` and on mapped rects after those layout passes.
