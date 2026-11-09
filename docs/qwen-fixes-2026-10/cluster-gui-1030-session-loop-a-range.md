@@ -179,6 +179,26 @@ listing is computed in a checkout outside the write-jail, which I did not do. My
 
 ## Self-check
 
+### Integration run r3 (2026-11-09)
+
+`submit_check.py` (`11-submit-check.log`, EXIT=1): PASS commits, working tree clean, report, tests changed; **FAIL
+gates (feature_check.py)** only because the installed script cannot create `<worktree>-feature-check/` in this
+write-jail (`09-feature-check.log`, `PermissionError`). With only that log path moved the same gates give 8/8 PASS,
+`RESULT: PASS`, EXIT=0 (`10-feature-check-redirected.log`).
+
+- **Fails reverted / passes applied:** reverted `06-test-red.log` EXIT=8 (`the ruler has 0 px of layout height`);
+  reapplied `08-test-green2.log` EXIT=0; family 5/5 `03-test-green.log` EXIT=0; also green at `QT_SCALE_FACTOR=0.8`
+  (`04-test-scale08.log`, EXIT=0).
+- **Deterministic:** one geometry read after `QCoreApplication::processEvents()` (`ArrangerTimelineTest.cpp:419-424`
+  region); no sleep, timer, `QTRY_*` or random input. The offscreen layout is synchronous, so no seam is needed.
+- **At the cause, complete:** the ruler's minimum is set on the single `m_timeLine` object (`SongEditor.cpp:166`) that
+  both train inserts (`:132`, `:167`) place; `TimeLineWidget.cpp` sets no height. Siblings: `PianoRoll`/`AutomationEditor`
+  have no layout (unchanged by design); `PatternEditor.cpp:62-67` has the same pattern, not changed and not verified
+  (outside this finding).
+- **No collateral:** no saved data, format, command, undo or audio-thread path touched; no limit added. Visible effect
+  (intended): the track area starts one scaled 32 px lower.
+- **ALREADY-FIXED / FALSE-POSITIVE:** not applicable; verdict FIXED.
+
 ### Integration run r2 (2026-11-09, onto 050/m0-train-26)
 
 `submit_check.py` (r2 log `15-submit-check.log`, EXIT=1): PASS commits on the branch; PASS working tree clean; PASS
