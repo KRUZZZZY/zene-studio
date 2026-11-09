@@ -180,3 +180,23 @@ Independent review, after preserving the previous wide-mixer alignment:
 - **Original lane gate attempt:** `feature_check.py` couldn't finish inside that session's write-jail. Its logs directory
   `<worktree>/../*-feature-check` is unwritable, and the guard refuses its baseline-tree `git checkout`.
   The independent review rerun above completed the required gate table successfully.
+
+### Self-check, round 2 (integration onto af010bc3cc)
+
+`python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> gui-1030-tab-mixer-density-expanded` (r2 `logs/submit-1.log`)
+exited 1. Its only FAIL row is "gates (feature_check.py)", and that comes from the lane's write-jail, not from any gate.
+The stock script's first action is `mkdir <worktree>-feature-check` next to the worktree, and that raises
+`PermissionError` (r2 `logs/gates-1.log`) before any gate runs. The same script with only its log dir moved
+(`logs/gatescript/feature_check_jail.py`; the `diff` is in the table above) was re-run on the committed HEAD:
+EXIT 0, RESULT: PASS, all 8 rows PASS (r2 `logs/gates-3.log`). Run outside the jail, the stock check should pass the same way.
+That run has not been seen; it is unverified.
+
+- **Fails with the fix reverted, passes with it:** `git apply -R logs/fix.patch` → rebuild EXIT 0 → `ctest -R '^MixerModesTest$'`
+  EXIT 8 (squeeze assertion, MixerModesTest.cpp(284)); `git apply logs/fix.patch` → rebuild EXIT 0 → EXIT 0, 1/1.
+- **Deterministic:** fixed widths (320 px and sizeHint+120 px), no shown window, timers or sleeps. The seam is `QLayout::invalidate()` + `activate()`.
+- **At the cause and complete:** unchanged from the accepted patch (identical tree). `WrapLayout` replaces the single `QHBoxLayout`
+  (`src/gui/MixerModeBar.cpp:98,210`). The only users of the layout are `addSegment`/`addChip` (private, `include/MixerModeBar.h:87,90`,
+  constructor-only), and both changed together. All 10 mixer GUI targets were rebuilt and pass 10/10.
+- **No collateral damage:** layout only. No saved data, command, schema, audio-thread or undo path is touched, and no limit was added.
+  The wide-mixer single row and right alignment are asserted by the test.
+- **ALREADY-FIXED / FALSE-POSITIVE:** not applicable (verdict FIXED).
