@@ -128,6 +128,8 @@ patch's blobs. The "newer line" in the three files is the patch's own context.
 | family re-run | same ctest as test-1 (test-4-family.log): 100% of 5 | 0 |
 | gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (gates-1.log): 8/8 rows PASS, RESULT PASS | 0 |
 | completion | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> gui-1105-menu-help-manual` (submit-1.log): RESULT PASS - submit | 0 |
+| post-commit gates | same `feature_check.py` run after the report commit (gates-2.log): 8/8 rows PASS, RESULT PASS | 0 |
+| post-commit completion | same `submit_check.py` run after the report commit (submit-2.log): RESULT PASS - submit | 0 |
 
 The focused-family selector is written with `\|` in the table only to keep the Markdown cell intact; the shell form is
 `^(ControlRegistryTest|ControlRegistryNestingTest|StartHubTest|CommandPaletteTest|HelpAccessTest)$`.
