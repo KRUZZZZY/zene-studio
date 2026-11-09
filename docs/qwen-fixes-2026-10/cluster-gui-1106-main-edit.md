@@ -129,18 +129,80 @@ synchronously and reads the scroll bar's range - no platform-specific API.
 | 4b test | `ctest -R '^MixerModesTest$' --output-on-failure > 09-test-reapplied.log` | 0 | 1/1 passed |
 | Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py . > 10-gates.log` | 0 | all 8 PASS, RESULT: PASS |
 
+## Round 3 — re-verification on the pinned target
+
+Round 3 is a re-queue of the same integration: the source is now the round-2 integration branch
+(`integration/gui-1106-main-edit-af010bc3cc` @ `38dcfdbe43`) and the target is still pinned at
+`050/m0-train-26` @ `af010bc3cc`. The driver's `integration_jobs.apply()` computes the patch as
+`git diff af010bc3cc..38dcfdbe43` and applies it to a worktree whose HEAD is already `38dcfdbe43`, so it
+returns without changing anything (`if head != target: return`). The integrated result is therefore the
+round-2 tree, and this round re-verifies it.
+
+### The "newer line" conflict is on train-27, not on the pinned target
+
+The request's reason ("merge conflict with the newer line in: src/gui/MixerView.cpp") comes from the train
+driver's forward merge of the integration branch into `050/m0-train-27` (`a1a98b67b2`), not from the pinned
+target:
+
+- `git merge-tree --write-tree --messages a1a98b67b2 38dcfdbe43` reports
+  `CONFLICT (content): Merge conflict in src/gui/MixerView.cpp` and
+  `CONFLICT (content): Merge conflict in tests/upstream-modifications.txt` (`12-conflict-analysis.log`).
+- Train-27's `MixerView.cpp` carries a *different* fix for the same cause: `ModeBarStrip` (4 occurrences, from
+  the gui-1030/gui-1105 mixer merges) and `outer->addWidget(new ModeBarStrip(this, m_modeBar));`. It has no
+  `ModeBarScroller`.
+- The pinned target `af010bc3cc` has neither: its line 118 is still `outer->addWidget(m_modeBar);`. The
+  accepted patch's only deletion is that line; it adds the `ModeBarScroller` class and two includes.
+
+So on the pinned target the accepted patch applies cleanly and no target-side line is lost. The train-27
+conflict is a duplicate-fix collision between `ModeBarScroller` (this cluster) and `ModeBarStrip`
+(gui-1030/gui-1105); resolving it would require merging train-27 into this branch, which the job's pinned
+target and the no-merge rule both forbid. It is reported here rather than silently dropped.
+
+### Integration identity re-check (this tree)
+
+- `git diff --stat af010bc3cc HEAD` = 4 files, 244 insertions, 1 deletion (the report, `MixerView.cpp`,
+  `MixerModesTest.cpp`, `upstream-modifications.txt`).
+- Blob equality with the accepted branch `c1965faa4f`: `src/gui/MixerView.cpp` `544130dab5`,
+  `tests/src/gui/MixerModesTest.cpp` `1cd1e0ca52`, `tests/upstream-modifications.txt` `d71f201088` — all identical.
+- The accepted fix commit's parent is `af010bc3cc` and its `MixerView.cpp` blob is `30aadfb983`, exactly the
+  target's blob: the accepted patch's preimage is the pinned target, so it applies cleanly.
+
+### Round-3 evidence (logs in `~/.local/share/zene-bunny-fix/qwen/runs/gui-1106-main-edit.r3/logs/`)
+
+| Step | Command | EXIT | Result |
+| --- | --- | --- | --- |
+| GREEN build | `CCACHE_DISABLE=1 cmake --build build --target zene MixerModesTest -j4 > 01-build-green.log` | 0 | |
+| GREEN test | `ctest -R '^MixerModesTest$' --output-on-failure > 02-test-green.log` | 0 | 1/1 passed |
+| Family build | `cmake --build build --target <23 Mixer*/ShellTest targets> -j4 > 04-build-family.log` | 0 | |
+| Family test | `ctest -R 'Mixer|^ShellTest$' -j4 --output-on-failure > 05-test-family.log` | 0 | 23/23 passed |
+| 4b revert | `git diff af010bc3cc HEAD -- src/gui/MixerView.cpp > fix.patch && git apply -R fix.patch` | 0 | 1 insertion, 52 deletions |
+| 4b rebuild | `CCACHE_DISABLE=1 cmake --build build --target zene MixerModesTest -j4 > 06-build-reverted.log` | 0 | |
+| 4b test | `ctest -R '^MixerModesTest$' --output-on-failure > 07-test-reverted.log` | 8 | `FAIL! ... 'window->minimumSizeHint().width() <= 1600' returned FALSE. (main window minimum width 2000)` at `MixerModesTest.cpp:819` |
+| 4b reapply | `git apply fix.patch` | 0 | |
+| 4b rebuild | `CCACHE_DISABLE=1 cmake --build build --target zene MixerModesTest -j4 > 08-build-restored.log` | 0 | |
+| 4b test | `ctest -R '^MixerModesTest$' --output-on-failure > 09-test-restored.log` | 0 | 1/1 passed |
+| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py . > 10-gates.log` | 0 | all 8 PASS, RESULT: PASS |
+| Completion | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py . gui-1106-main-edit > 11-submit-check.log` | 0 | RESULT: PASS - submit |
+| Conflict analysis | `git merge-tree --write-tree --messages a1a98b67b2 38dcfdbe43 > 12-conflict-analysis.log` | 0 | 2 conflicts (MixerView.cpp, upstream-modifications.txt) |
+
+Note: `03-test-family.log` is the first family attempt, which exited 8 only because the other 22 test
+executables were not built yet; `04-build-family.log` builds them and `05-test-family.log` passes 23/23.
+
 ## Self-check
 
-Answers to the submit_check ASK items, with the round-2 evidence (logs in
-`~/.local/share/zene-bunny-fix/qwen/runs/gui-1106-main-edit.r2/logs/`):
+Answers to the submit_check ASK items. Round 3 re-ran the same proof on this exact tree (logs in
+`~/.local/share/zene-bunny-fix/qwen/runs/gui-1106-main-edit.r3/logs/`); the round-2 evidence is in
+`~/.local/share/zene-bunny-fix/qwen/runs/gui-1106-main-edit.r2/logs/`:
 
-1. **The regression test FAILS with the product change reverted and PASSES with it.** On this exact integrated
-   tree: `git diff --cached -- src/gui/MixerView.cpp > fix.patch && git apply -R fix.patch` (EXIT 0), rebuild
-   `zene` + `MixerModesTest` (EXIT 0, `06-build-reverted.log`), `ctest -R '^MixerModesTest$'` gave **EXIT 8**:
-   `'window->minimumSizeHint().width() <= 1600' returned FALSE. (main window minimum width 2000)`
-   (`07-test-reverted.log`). `git apply fix.patch` (EXIT 0), rebuild (EXIT 0, `08-build-reapplied.log`), same
-   ctest gave **EXIT 0**, 1/1 passed (`09-test-reapplied.log`). The round-1 negctl proof (`r1/negctl`) is the same
-   result on the same source/test content.
+1. **The regression test FAILS with the product change reverted and PASSES with it.** Round 3 re-ran this on the
+   exact integrated tree: `git diff af010bc3cc HEAD -- src/gui/MixerView.cpp > fix.patch && git apply -R fix.patch`
+   (EXIT 0; 1 insertion, 52 deletions), rebuild `zene` + `MixerModesTest` (EXIT 0, `06-build-reverted.log`),
+   `ctest -R '^MixerModesTest$'` gave **EXIT 8**: `'window->minimumSizeHint().width() <= 1600' returned FALSE.
+   (main window minimum width 2000)` at `MixerModesTest.cpp:819` (`07-test-reverted.log`). `git apply fix.patch`
+   (EXIT 0), rebuild (EXIT 0, `08-build-restored.log`), same ctest gave **EXIT 0**, 1/1 passed
+   (`09-test-restored.log`). The round-2 proof is the same result on the same source/test content
+   (`r2/logs/07-test-reverted.log`, `r2/logs/09-test-reapplied.log`), and the round-1 negctl proof (`r1/negctl`)
+   predates it.
 2. **The test is deterministic.** It only reads layout size hints (`QWidget::minimumSizeHint`), resizes one widget
    synchronously, and reads the scroll bar's range. It has no timer, sleep, wait or event-loop race. The panel is
    opened with the synchronous `MainWindow::revealPanel`. No timestamps are involved, so there is no injected value
@@ -163,5 +225,10 @@ Answers to the submit_check ASK items, with the round-2 evidence (logs in
   worktree) did not recur, so the jail-safe copy is no longer needed for this report.
 - **Integration is byte-identical to the accepted patch.** `git diff --cached c1965faa4f` over the four files is
   empty and the index blobs match the accepted commit's blobs; the target's `MixerView.cpp` differs from the
-  accepted branch only by this fix, so no target-side line was lost. The round-2 RED/GREEN reversal was re-run on
-  this exact tree: EXIT 8 without the product change, EXIT 0 with it (`07-test-reverted.log`, `09-test-reapplied.log`).
+  accepted branch only by this fix, so no target-side line was lost. The round-3 RED/GREEN reversal was re-run on
+  this exact tree: EXIT 8 without the product change, EXIT 0 with it (`07-test-reverted.log`, `09-test-restored.log`).
+- **The train-27 conflict is reported, not hidden.** The "newer line" is train-27's `ModeBarStrip`
+  (`a1a98b67b2`), a different fix for the same cause; the pinned target `af010bc3cc` has neither fix, so the
+  accepted patch applies cleanly there. `git merge-tree --write-tree --messages a1a98b67b2 38dcfdbe43`
+  (`12-conflict-analysis.log`) shows the two forward-merge conflicts; resolving them needs a merge that the
+  job's pinned target and the no-merge rule forbid, so the conflict is documented instead.
