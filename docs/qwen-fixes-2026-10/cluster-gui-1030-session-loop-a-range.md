@@ -179,6 +179,28 @@ listing is computed in a checkout outside the write-jail, which I did not do. My
 
 ## Self-check
 
+### Integration run r2 (2026-11-09, onto 050/m0-train-26)
+
+`submit_check.py` (r2 log `15-submit-check.log`, EXIT=1): PASS commits on the branch; PASS working tree clean; PASS
+report; PASS tests added or changed; **FAIL gates (feature_check.py)**. The cause is the environment again:
+`submit_check.py:117` runs the installed `feature_check.py`, which creates `<worktree>-feature-check/`
+(`feature_check.py:70-71`) outside this lane's write-jail (`13-feature-check.log`: `PermissionError`, EXIT=1). The
+same script run with only its log directory moved (`14-feature-check.log`, see the integration section) gives
+RESULT PASS, all 8 rows, EXIT=0. I could not make the installed script's row green from inside the jail.
+
+- **Fails reverted / passes applied (r2):** reverted `06-test-red.log` EXIT=8 (`the ruler has 0 px of layout
+  height`); reapplied `08-test-green2.log` (ArrangerTimelineTest Passed) and `10-test-family.log` 4/4 EXIT=0;
+  `03-test-green.log` EXIT=0 before the revert.
+- **Deterministic:** unchanged test; it reads one geometry value after `QCoreApplication::processEvents()`, no sleep,
+  timer, `QTRY_*` or random input.
+- **At the cause, complete:** the hunk is identical to the accepted one; on the train the ruler's insert is
+  `SongEditor.cpp:132` and `:167`, the minimum at `:166` covers the same widget object for both. The train's changes to
+  `SongEditor.cpp` do not touch the ruler. Ruler-height neighbours pass (`12-test-siblings.log`, 3/3).
+- **No collateral:** no saved data, format, command, undo or audio path touched; no limit added.
+- **ALREADY-FIXED / FALSE-POSITIVE:** not applicable; verdict FIXED (RED on the train without the fix).
+
+### Accepted patch's run
+
 `submit_check.py` (log `submit-check-1.log`, EXIT=1): PASS commits on the branch; PASS working tree clean; PASS report
 present; PASS tests added or changed; **FAIL gates (feature_check.py)**. The gates row is blocked by the environment, not
 by the code: `feature_check.py` creates `<worktree>-feature-check/` next to the worktree (`feature_check.py:70-71`),
