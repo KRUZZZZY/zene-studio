@@ -135,3 +135,32 @@ Not checked: other `ctest` families beyond GrooveMenuTest and PluginShortcutsTes
 
 Gates: log 07-feature-check.log has RESULT PASS, EXIT=0, with all 8 rows green and no new complexity or file-length
 item.
+
+## Round 3: QA note addressed (comment only)
+
+Round-2 QA was ACCEPT-NOTE with no blocking items. Its one note: the `onScreen` doc comment
+(`src/gui/widgets/TextFloat.cpp:47`) said the float "stays" on the screen's available area, but a float larger than that
+area can't fit there. Its origin is pinned to the area's left/top edge, and it overflows right/bottom. I reworded the comment at
+`TextFloat.cpp:47-48` to say exactly that. There is no code change: the clamp expressions at `TextFloat.cpp:54-55` are
+byte-identical, so placement and the regression test behave as before.
+
+Logs in `~/.local/share/zene-bunny-fix/qwen/runs/gui-1106-menu-help-accessibility-check.r3/logs`. Logs 01-06 are a
+first attempt in which ccache could not create its temp file (`ccache: error: failed to create temporary file ...
+Permission denied`, log 01). The build failed (EXIT=2), and ctest reported the tests as "Not Run" (EXIT=8). That run
+says nothing about the fix. Every build below ran with `CCACHE_DISABLE=1`.
+
+| Step | Command | EXIT |
+| --- | --- | --- |
+| build | `cmake --build build --target zene GrooveMenuTest PluginShortcutsTest -j4 > logs/07-build.log 2>&1` | 0 |
+| family | `ctest -R '^(GrooveMenuTest\|PluginShortcutsTest)$' --output-on-failure > logs/08-test-family.log 2>&1` (from `build/tests`) | 0 (2/2 passed) |
+| 4b revert | `git diff af010bc3cc -- src/gui/widgets/TextFloat.cpp > logs/fix.patch && git apply -R logs/fix.patch` | 0 |
+| 4b build | `cmake --build build --target zene GrooveMenuTest -j4 > logs/09-build-reverted.log 2>&1` | 0 |
+| 4b test (no fix) | `ctest -R '^GrooveMenuTest$' --output-on-failure > logs/10-test-reverted.log 2>&1` | 8 (`'over.contains(shownAt)' returned FALSE. (report at 1241,2 294x200 is outside the window -2,-2 1241x804)`) |
+| 4b re-apply | `git apply logs/fix.patch` | 0 |
+| 4b build | `cmake --build build --target zene GrooveMenuTest -j4 > logs/11-build-restored.log 2>&1` | 0 |
+| 4b family (fix) | `ctest -R '^(GrooveMenuTest\|PluginShortcutsTest)$' --output-on-failure > logs/12-test-restored.log 2>&1` | 0 (2/2 passed) |
+| gates (as given) | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > logs/13-feature-check.log 2>&1` | 1: `PermissionError` writing its per-gate logs to `<worktree>/../<name>-feature-check/` (`feature_check.py:70`), which is outside this lane's write-jail. No gate ran. |
+| gates (log-path copy) | `python3 -I logs/fc-script/feature_check.py <worktree> > logs/15-feature-check.log 2>&1`. This copy is the original with two lines changed (`logs/14-feature-check-copy.diff`): `ROOT` is the real `~/.local/share/zene-bunny-fix/qwen` (same baselines and FIX-BASE), and the per-gate log folder is `logs/feature-check`. The gate commands, limits and baselines are unchanged. | 0: RESULT PASS, 8/8 (fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length) |
+
+Files committed in round 3: `src/gui/widgets/TextFloat.cpp` (comment only),
+`docs/qwen-fixes-2026-10/cluster-gui-1106-menu-help-accessibility-check.md`.

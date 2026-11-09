@@ -44,7 +44,8 @@ namespace lmms::gui
 namespace
 {
 
-//! @a at moved just enough that a float of @a size there stays on @a anchor's screen (its available area).
+//! @a at moved just enough that a float of @a size there fits on @a anchor's screen (its available area). A float
+//! wider or taller than that area cannot fit: it is pinned to the area's left/top edge and overflows right/bottom.
 QPoint onScreen(QPoint at, const QSize& size, const QWidget* anchor)
 {
 	const QScreen* screen = anchor->screen();
