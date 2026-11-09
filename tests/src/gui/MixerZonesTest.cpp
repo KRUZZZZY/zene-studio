@@ -371,6 +371,37 @@ private slots:
 		}
 	}
 
+	//! gui-1030: on a 1024x768 screen, Mix view with the Inspector and the Browser open, the New mixer
+	//! channel and Return buttons are on screen - the channel strips scroll, the columns beside them do not.
+	void theAddButtonsStayOnScreenInANarrowMixView()
+	{
+		MainWindow* window = getGUI()->mainWindow();
+		window->shell()->setView(ShellView::Mix);
+		window->revealPanel(QStringLiteral("inspector"));
+		window->revealPanel(QStringLiteral("browser"));
+		window->resize(1024, 768);
+		QCoreApplication::processEvents();
+		MixerView* view = getGUI()->mixerView();
+		QVERIFY2(window->width() <= 1024, qPrintable(QStringLiteral("the window is forced %1 px wide").arg(window->width())));
+		for (const char* name : {"newChannelBtn", "newReturnBtn"})
+		{
+			auto* button = view->findChild<QWidget*>(QLatin1String(name));
+			QVERIFY(button != nullptr);
+			// The part of the button its ancestors (the panel, the window) leave on screen.
+			QRect shown(button->mapTo(window, QPoint(0, 0)), button->size());
+			for (QWidget* w = button->parentWidget(); w != nullptr && w != window; w = w->parentWidget())
+			{
+				shown &= QRect(w->mapTo(window, QPoint(0, 0)), w->size());
+			}
+			shown &= window->rect();
+			QVERIFY2(shown.width() == button->width(), qPrintable(QStringLiteral("%1: %2 of %3 px on screen")
+				.arg(QLatin1String(name)).arg(shown.width()).arg(button->width())));
+		}
+		window->shell()->setView(ShellView::Arrange);
+		window->revealPanel(QStringLiteral("mixer"));
+		window->resize(1400, 900);
+	}
+
 private:
 	QTemporaryDir m_home;
 	int m_channel = 0;
