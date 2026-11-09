@@ -152,6 +152,13 @@ int requestedZoom(gui::SongEditor* editor, const QJsonObject& args)
 	return static_cast<int>(std::clamp(value, static_cast<long long>(model->minValue()), static_cast<long long>(model->maxValue())));
 }
 
+//! gui-1106: a zoom step pinned at the model's bound (Zoom Out at the minimum, Zoom In at the maximum) zooms nothing.
+bool stepAtBound(gui::SongEditor* editor, const QJsonObject& args)
+{
+	return !args.contains(QStringLiteral("pixels_per_bar")) && args.value(QStringLiteral("step")).toInt(1) != 0
+		&& requestedZoom(editor, args) == editor->zoomingModel()->value();
+}
+
 ControlResult zoom(const QJsonObject& args)
 {
 	gui::SongEditor* editor = arranger();
@@ -178,6 +185,7 @@ ControlResult zoom(const QJsonObject& args)
 		}
 		fitSpan(editor, begin, end);
 	}
+	else if (stepAtBound(editor, args)) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("already at the zoom limit")); }
 	else
 	{
 		anchor = zoomAnchor(editor, args);
