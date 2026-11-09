@@ -3,8 +3,10 @@ FIXED
 # Cluster gui-1105-menu-help-accessibility-check: Accessibility Check result is positioned beyond the main window
 
 Integration of the already accepted patch (`bugs/qwen-gui-1105-menu-help-accessibility-check` @ `09817c599`) onto
-`050/m0-train-26` @ `af010bc3cc`. Round-1 fix evidence is in `.../gui-1105-menu-help-accessibility-check.r1/logs/`; the
-integration evidence below is in `.../gui-1105-menu-help-accessibility-check.r2/logs/` (`$L`).
+`050/m0-train-26` @ `af010bc3cc`. Round-1 fix evidence is in
+`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-accessibility-check.r1/logs/`; the
+integration evidence below is in
+`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-accessibility-check.r2/logs/`.
 
 ## Integration
 
@@ -64,33 +66,39 @@ which looked for the installed action, failed for that reason: `test-1-red.log`.
 
 | Step | Command | EXIT |
 | --- | --- | --- |
-| build, integrated | `CCACHE_TEMPDIR=$L/ccache-tmp cmake --build build --target zene GrooveMenuTest PluginShortcutsTest -j4 > $L/build-1.log 2>&1` | 0 |
-| GREEN | `cd build/tests && ctest -R '^(GrooveMenuTest\|PluginShortcutsTest)$' --output-on-failure > $L/test-1-green.log 2>&1` | 0 - 100% tests passed out of 2 |
-| 4b revert | `git diff --cached -- src/gui/CommandRun.cpp > $L/fix.patch && git apply -R $L/fix.patch` | 0 |
-| 4b rebuild (reverted) | `cmake --build build --target zene GrooveMenuTest -j4 > $L/build-2-reverted.log 2>&1` | 0 |
-| RED | `ctest -R '^GrooveMenuTest$' --output-on-failure > $L/test-2-red.log 2>&1` | 8 - `FAIL! aMenuBarCommandsAnswerIsShownOverTheMainWindow() 'over.contains(shown->geometry())' (the report at (1604,2 290x196) is not over the main window (2,2 1600x1000))`, GrooveMenuTest.cpp:201 |
-| 4b reapply | `git apply $L/fix.patch` | 0 |
-| 4b rebuild + test (reapplied) | `cmake --build build --target zene GrooveMenuTest PluginShortcutsTest -j4 > $L/build-3-reapplied.log 2>&1` (EXIT 0); `ctest -R '^(GrooveMenuTest\|PluginShortcutsTest)$' > $L/test-3-reapplied.log 2>&1` | 0 - 100% passed out of 2 |
-| gates | `python3 -I $L/feature_check_local.py <worktree> > $L/gates-2.log 2>&1` | 0 - all 8 rows PASS (fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length) |
+| build, integrated | `CCACHE_TEMPDIR=/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-accessibility-check.r2/logs/ccache-tmp cmake --build build --target zene GrooveMenuTest PluginShortcutsTest -j4 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-accessibility-check.r2/logs/build-1.log 2>&1` | 0 |
+| GREEN | `cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-integrate-gui-1105-menu-help-accessibility-check-af010bc3cc/build/tests && ctest -R '^(GrooveMenuTest|PluginShortcutsTest)$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-accessibility-check.r2/logs/test-1-green.log 2>&1` | 0 - 100% tests passed out of 2 |
+| 4b revert | `git diff --cached -- src/gui/CommandRun.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-accessibility-check.r2/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-accessibility-check.r2/logs/fix.patch` | 0 |
+| 4b rebuild (reverted) | `cmake --build build --target zene GrooveMenuTest -j4 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-accessibility-check.r2/logs/build-2-reverted.log 2>&1` | 0 |
+| RED | `cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-integrate-gui-1105-menu-help-accessibility-check-af010bc3cc/build/tests && ctest -R '^GrooveMenuTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-accessibility-check.r2/logs/test-2-red.log 2>&1` | 8 - `FAIL! aMenuBarCommandsAnswerIsShownOverTheMainWindow() 'over.contains(shown->geometry())' (the report at (1604,2 290x196) is not over the main window (2,2 1600x1000))`, GrooveMenuTest.cpp:201 |
+| 4b reapply | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-accessibility-check.r2/logs/fix.patch` | 0 |
+| 4b rebuild + test (reapplied) | `cmake --build build --target zene GrooveMenuTest PluginShortcutsTest -j4 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-accessibility-check.r2/logs/build-3-reapplied.log 2>&1` (EXIT 0); `cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-integrate-gui-1105-menu-help-accessibility-check-af010bc3cc/build/tests && ctest -R '^(GrooveMenuTest|PluginShortcutsTest)$' > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-accessibility-check.r2/logs/test-3-reapplied.log 2>&1` | 0 - 100% passed out of 2 |
+| gates | `python3 -I /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-accessibility-check.r2/logs/feature_check_local.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-integrate-gui-1105-menu-help-accessibility-check-af010bc3cc > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-accessibility-check.r2/logs/gates-2.log 2>&1` | 0 - all 8 rows PASS (fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length) |
+
+Independent QA rerun on the integrated tree:
+
+| Step | Command | EXIT |
+| --- | --- | --- |
+| build | `CCACHE_TEMPDIR=/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-accessibility-check.r2/logs/ccache-qa cmake --build build --target zene GrooveMenuTest PluginShortcutsTest -j4 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-accessibility-check.r2/logs/qa-build.log 2>&1` | 0 |
+| focused tests | `cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-integrate-gui-1105-menu-help-accessibility-check-af010bc3cc/build/tests && ctest -R '^(GrooveMenuTest|PluginShortcutsTest)$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-accessibility-check.r2/logs/qa-ctest.log 2>&1` | 0 - 2/2 passed |
+| direct feature gate | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-integrate-gui-1105-menu-help-accessibility-check-af010bc3cc > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-accessibility-check.r2/logs/qa-feature-check.log 2>&1` | 0 - all 8 rows PASS |
 
 The wider 8-test command/menu family was run in round 1 (r1 `test-6-family.log`, 8/8); in this integration I ran the
 two tests that cover the changed file (2/2, above), not the other six.
 
-`$L` is the r2 LOG FOLDER.
-
 Environment workaround: `feature_check.py` exits 1 here (`gates-1.log`, PermissionError creating the sibling
-directory `<worktree>-feature-check`, outside the write-jail). `$L/feature_check_local.py` is the same script with two
+directory `/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-integrate-gui-1105-menu-help-accessibility-check-af010bc3cc-feature-check`, outside the write-jail). The local `feature_check_local.py` in the r2 LOG FOLDER is the same script with two
 lines changed: `ROOT` pinned to the original's directory (same FIX-BASE and baseline cache) and logs written to
-`$L/gate-logs`. Gate commands and pass rules are unchanged.
+`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-accessibility-check.r2/logs/gate-logs`. Gate commands and pass rules are unchanged. The direct feature gate also passed during independent QA above.
 
 Files committed: `src/gui/CommandRun.cpp`, `tests/src/gui/GrooveMenuTest.cpp`, `tests/upstream-modifications.txt`, this
 report. `CommandRun.cpp` is already in `tests/fork-sources.txt` (a fork file); no new product files.
 
 ## Self-check
 
-- **The test fails with the fix reverted and passes with it:** yes. Reverted (`git apply -R $L/fix.patch`, EXIT 0;
+- **The test fails with the fix reverted and passes with it:** yes. Reverted (`git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-accessibility-check.r2/logs/fix.patch`, EXIT 0;
   rebuild EXIT 0): `ctest -R '^GrooveMenuTest$'` EXIT 8, failing on
-  `over.contains(shown->geometry())` with the report at (1604,2). Reapplied (`git apply $L/fix.patch`, EXIT 0;
+  `over.contains(shown->geometry())` with the report at (1604,2). Reapplied (`git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-accessibility-check.r2/logs/fix.patch`, EXIT 0;
   rebuild EXIT 0): EXIT 0, 2/2 passed. Logs: `test-2-red.log`, `test-3-reapplied.log` (r2).
 - **The test is deterministic:** no timers, sleeps or wall-clock reads. The entry is triggered synchronously
   (`QAction::trigger` → `runCommand` → `announce` → `TextFloat::displayMessage` all run in that call). The test then
