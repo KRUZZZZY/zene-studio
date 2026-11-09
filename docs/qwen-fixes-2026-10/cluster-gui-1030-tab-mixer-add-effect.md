@@ -78,11 +78,11 @@ This is the integration of accepted commit `096c85c163ad5eb8dd320bdae038eedbf478
 (`qwen/qa/reviews/gui-1030-tab-mixer-add-effect.r1.md`) returned ACCEPT with empty `blocking`, `notes` and
 `rework_instructions`, so there were no review change requests to apply on top of the accepted patch. The
 accepted commit's parent is that exact target commit, so the driver's three-way application had no
-conflicting hunk to resolve; `integration-apply.log` records the five files applied cleanly. `git diff 096c85c163ad -- src/gui/MixerModeBar.cpp
-src/gui/MixerView.cpp tests/src/gui/MixerSelectionIdentityTest.cpp tests/upstream-modifications.txt
-docs/qwen-fixes-2026-10/cluster-gui-1030-tab-mixer-add-effect.md` is empty (EXIT=0), so the integrated
-product code is semantically identical to the accepted patch. No design change, no new conflict resolution
-and no new command was needed.
+conflicting hunk to resolve; `integration-apply.log` records the four code, test and registration paths applied
+cleanly. The issue report is the fifth changed file and includes this integration section. `git diff --exit-code
+096c85c163ad -- src/gui/MixerModeBar.cpp src/gui/MixerView.cpp tests/src/gui/MixerSelectionIdentityTest.cpp
+tests/upstream-modifications.txt` is empty (EXIT=0), so the integrated product code and regression test are
+identical to the accepted patch. No design change, no new conflict resolution and no new command was needed.
 
 Failure paths checked for the integrated change:
 
@@ -104,7 +104,7 @@ macOS and MSVC/Windows CI builds.
 
 | Step | Command (from the worktree unless noted) | Result |
 | --- | --- | --- |
-| identity with accepted commit | `git diff 096c85c163ad -- <five committed files>` | EXIT=0, empty |
+| identity with accepted commit | `git diff --exit-code 096c85c163ad -- src/gui/MixerModeBar.cpp src/gui/MixerView.cpp tests/src/gui/MixerSelectionIdentityTest.cpp tests/upstream-modifications.txt` | EXIT=0, empty |
 | build integrated | `cmake --build build --target zene MixerSelectionIdentityTest -j"$(nproc)" > .../logs/01-build-integrated.log 2>&1` | EXIT=0 |
 | GREEN | `cd build/tests && ctest -R '^MixerSelectionIdentityTest$' --output-on-failure > .../logs/02-test-green-integrated.log 2>&1` | EXIT=0, 1/1 passed |
 | fix patch | `git diff HEAD -- src/gui/MixerView.cpp src/gui/MixerModeBar.cpp > .../logs/fix.patch` | EXIT=0, 80 lines |
@@ -138,13 +138,15 @@ macOS and MSVC/Windows CI builds.
   same add column and remain inside the window (family run).
 - **No collateral damage**: no saved property, project field, zone width or command changed; the channel
   scroll area still scrolls its strips, and the mode bar is unchanged at normal widths (no scroll bar, same
-  height). The only new widget is a transparent scroll container around the existing row, so every control's
-  parent for the accessibility walk is still inside the `mixerModeBar` widget. Old projects load through the
-  same `mixer_zones` / shell layout fields, untouched.
+  height). The mode bar uses a frameless scroll area and row container around its existing controls; the
+  controls remain descendants of `mixerModeBar` for the accessibility walk. Old projects load through the same
+  `mixer_zones` / shell layout fields, untouched.
 - **Not ALREADY-FIXED / FALSE-POSITIVE**: the bug reproduces on this branch; the reverted build's test run
   records the 2000 px minimum, so the verdict is REAL and the fix is in this commit.
 - **Integration preserved the accepted design**: the integrated tree is byte-identical to accepted commit
-  `096c85c163ad` for all five committed files (`git diff 096c85c163ad -- <files>` EXIT=0, empty). The pinned
+  `096c85c163ad` for the four code, test and registration files (`git diff --exit-code 096c85c163ad --
+  src/gui/MixerModeBar.cpp src/gui/MixerView.cpp tests/src/gui/MixerSelectionIdentityTest.cpp
+  tests/upstream-modifications.txt` EXIT=0, empty); this report includes the round-2 evidence. The pinned
   target `af010bc3cc` is the accepted commit's parent, so the driver's three-way application had no conflict
   to resolve; the RED/GREEN reversal was repeated on the integrated tree and gave the same 2000 px failure
   (EXIT=8) and pass (EXIT=0). The 21-test `Mixer` family and all feature gates pass.
