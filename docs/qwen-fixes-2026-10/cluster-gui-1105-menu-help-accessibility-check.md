@@ -131,3 +131,21 @@ report. `CommandRun.cpp` is already in `tests/fork-sources.txt` (a fork file); n
 - **submit_check "gates" row:** `submit_check.py` runs `feature_check.py` unmodified. It cannot write its sibling
   log directory from this lane's write-jail (`gates-1.log`: PermissionError, EXIT 1). The same gates, run with
   only the log directory moved, all PASS (`gates-2.log`, EXIT 0).
+
+## Round 3 re-verification (no code change)
+
+The round-3 brief lists no new review point beyond the integration job text, so I re-verified the committed
+integration on the same tree (HEAD `804aad43b8`, base `af010bc3cc`) and changed no product or test code.
+Logs: `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-accessibility-check.r3/logs/`.
+
+| Step | Command | EXIT |
+| --- | --- | --- |
+| build | `cmake --build build --target zene GrooveMenuTest PluginShortcutsTest -j4 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-accessibility-check.r3/logs/build-1.log 2>&1` | 0 |
+| GREEN | `cd build/tests && ctest -R '^(GrooveMenuTest\|PluginShortcutsTest)$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-accessibility-check.r3/logs/test-1-green.log 2>&1` | 0 - 2/2 passed |
+| 4b revert | `git diff af010bc3cc HEAD -- src/gui/CommandRun.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-accessibility-check.r3/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-accessibility-check.r3/logs/fix.patch`; rebuild `build-2-reverted.log` | 0; 0 |
+| RED | `cd build/tests && ctest -R '^GrooveMenuTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-accessibility-check.r3/logs/test-2-red.log 2>&1` | 8 - `'over.contains(shown->geometry())'` (the report at (1604,2 290x196) is not over the main window (2,2 1600x1000)), GrooveMenuTest.cpp:201 |
+| 4b reapply | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-accessibility-check.r3/logs/fix.patch`; rebuild `build-3-reapplied.log`; same ctest as GREEN, `test-3-reapplied.log` | 0; 0; 0 - 2/2 passed |
+| gates, stock | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-accessibility-check.r3/logs/gates-1.log 2>&1` | 1 - PermissionError writing the sibling `-feature-check` log directory outside the write-jail (not a gate failure) |
+| gates, log dir moved | `python3 -I /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-accessibility-check.r3/logs/feature_check_local.py <worktree> > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-accessibility-check.r3/logs/gates-2.log 2>&1` (same script, only `ROOT` and the log directory changed) | 0 - all 8 rows PASS |
+
+Semantic difference from the accepted patch: none. `git status` clean after the 4b reapply.
