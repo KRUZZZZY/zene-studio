@@ -108,14 +108,16 @@ TextFloat * TextFloat::displayMessage(const QString & title,
 	// Show the widget so that the correct height is calculated in the code that follows
 	tf->show();
 
-	if(parent != nullptr)
+	// A parent is a widget to float beside (its right edge). The main window itself has no beside: that spot is
+	// past the window's edge, off the screen when it fills it, so it takes the placement of "no parent" (inside).
+	QWidget * mw = getGUI()->mainWindow();
+	if(parent != nullptr && parent != mw)
 	{
 		tf->moveGlobal(parent, QPoint(parent->width() + 2, 0));
 	}
 	else
 	{
 		// If no parent is given move the window to the lower left area of the main window
-		QWidget * mw = getGUI()->mainWindow();
 		tf->moveGlobal(mw, QPoint(32, mw->height() - tf->height() - 8));
 	}
 
