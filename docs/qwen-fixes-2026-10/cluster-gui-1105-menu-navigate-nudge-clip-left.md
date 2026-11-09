@@ -55,8 +55,35 @@ script directory, and the logs dir moved into the run's logs folder. Gate logic 
 Files committed: src/gui/widgets/TextFloat.cpp, tests/src/gui/GrooveMenuTest.cpp, tests/upstream-modifications.txt,
 this report.
 
+## Round 3 (re-verification on ff6117d2a6; logs in runs/gui-1105-menu-navigate-nudge-clip-left.r3/logs)
+The review asked again for the integration evidence. No product or test code changed in this round. `git diff af010bc3cc HEAD --stat`
+still lists only the four files above, and TextFloat.cpp differs from the target only by the accepted `keepOnScreen` hunk.
+The only failing submit_check row was `gates`. The cause is again the write-jail: the shipped script raises PermissionError
+writing `<worktree>-feature-check/fork-sources.log` (gates-1.log). The first build attempt in this round failed because
+ccache's temp dir is also outside the jail (build-1.log/build-2.log, exit 2: `ccache: error: failed to create temporary file`).
+I redid the builds with CCACHE_DISABLE=1.
+
+| step | command | exit |
+| --- | --- | --- |
+| gates (as shipped) | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (gates-1.log) | 1: PermissionError (write-jail) |
+| gates (log destination redirected) | `python3 logs/fc_wrap.py <worktree> logs/feature-check` (gates-2.log) | 0: 8/8 PASS, RESULT: PASS |
+| 4b revert | `git diff af010bc3cc HEAD -- src/gui/widgets/TextFloat.cpp > logs/fix.patch && git apply -R logs/fix.patch` | 0 |
+| 4b RED | `CCACHE_DISABLE=1 cmake --build build --target zene GrooveMenuTest PluginShortcutsTest -j4` (build-3-red.log); `cd build/tests && ctest -R '^GrooveMenuTest$' --output-on-failure` (test-3-red.log) | build 0, ctest 8: `FAIL! GrooveMenuTest::aMessageOverTheMainWindowIsOnScreen() 'screen.contains(shown)' returned FALSE. (message 804,2 144x76 is outside the screen 0,0 800x800)` |
+| 4b reapply | `git apply logs/fix.patch` | 0 |
+| 4b GREEN, affected family | same build (build-4-green.log); `ctest -R '^(GrooveMenuTest\|PluginShortcutsTest)$' --output-on-failure` (test-4-green.log) | build 0, ctest 0, 2/2 passed |
+
+`fc_wrap.py` imports the shipped `feature_check.py` without editing it. It wraps only `run()` so that each gate's log is written
+into the logs folder rather than the out-of-jail sibling directory. Gate commands, baselines and the PASS/FAIL logic are the shipped ones.
+After the reapply, `git status --short` was empty.
+
 ## Self-check
 - Reverted/applied: the test FAILS without the fix (ctest exit 8, test-2-red.log) and PASSES with it (exit 0, test-3-green.log).
+  Round 3 reproduced this: r3 test-3-red.log exit 8, test-4-green.log exit 0 (2/2).
+- Seam: `displayMessage(..., timeout 0, window)` places the message synchronously. The test sizes the window to
+  `screen()->availableGeometry()` rather than relying on the platform's maximise, so there are no timers, sleeps or event-loop waits.
+- Only one site places a message at a parent's right edge: `TextFloat.cpp:134`, the anchored branch. The no-parent branch
+  (`TextFloat.cpp:141`, inside the main window) is unchanged. `displayMessage` has callers in 20 files under src/ and plugins/,
+  and they all reach this one placement.
 - Deterministic: no timers, waits or sleeps; the message is positioned synchronously inside displayMessage.
 - Cause and callers: the only placement at a parent's right edge is `displayMessage` (TextFloat.cpp:134). All callers
   (CommandRun.cpp:95, ClipView, TimeLineWidget, MainWindow, Vestige/VstEffect, ...) go through it, so the clamp covers
