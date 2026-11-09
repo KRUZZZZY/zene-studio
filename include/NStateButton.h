@@ -62,12 +62,17 @@ signals:
 
 protected:
 	void mousePressEvent(QMouseEvent* me) override;
+	void mouseReleaseEvent(QMouseEvent* me) override;
 
 private:
+	void advanceState();
+	void onClicked();
+
 	QVector<QPair<QPixmap, QString>> m_states;
 	QString m_generalToolTip;
 
 	int m_curState;
+	bool m_advancedOnPress = false; //!< the current mouse press already advanced the state
 };
 
 } // namespace lmms::gui

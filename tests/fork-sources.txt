@@ -3519,3 +3519,6 @@ tests/src/gui/HybridTrackGuiTest.cpp
 tests/control-hybrid-track-transcript.py
 docs/qwen-fixes-2026-10/cluster-Q050-283.1.md
 tests/src/gui/LadspaDescriptionTest.cpp
+# cluster gui-1105-main-loop-points (2026-11): n-state button activation regression test and its report (fork-NEW).
+tests/src/gui/NStateButtonActivationTest.cpp
+docs/qwen-fixes-2026-10/cluster-gui-1105-main-loop-points.md

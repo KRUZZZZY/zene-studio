@@ -37,6 +37,9 @@ NStateButton::NStateButton( QWidget * _parent ) :
 	m_generalToolTip( "" ),
 	m_curState( -1 )
 {
+	// An activation without a mouse press (QAbstractButton::click() from an accessibility
+	// press action or automation, a keyboard Space press) only emits clicked(); advance there too.
+	connect(this, &NStateButton::clicked, this, &NStateButton::onClicked);
 }
 
 
@@ -82,13 +85,40 @@ void NStateButton::changeState(int state)
 	}
 }
 
+void NStateButton::advanceState()
+{
+	if (!m_states.empty())
+	{
+		changeState((m_curState + 1) % m_states.size());
+	}
+}
+
 void NStateButton::mousePressEvent(QMouseEvent* me)
 {
 	if (me->button() == Qt::LeftButton && !m_states.empty())
 	{
-		changeState((m_curState + 1) % m_states.size());
+		// A mouse click keeps advancing at press time; its clicked() must not advance again.
+		m_advancedOnPress = true;
+		advanceState();
 	}
 	ToolButton::mousePressEvent(me);
+}
+
+void NStateButton::mouseReleaseEvent(QMouseEvent* me)
+{
+	ToolButton::mouseReleaseEvent(me); // emits clicked() when released over the button
+	// Released off the button there is no clicked(): drop the mark so the next activation counts.
+	m_advancedOnPress = false;
+}
+
+void NStateButton::onClicked()
+{
+	if (m_advancedOnPress)
+	{
+		m_advancedOnPress = false;
+		return;
+	}
+	advanceState();
 }
 
 } // namespace lmms::gui
