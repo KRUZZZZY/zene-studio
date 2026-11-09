@@ -116,4 +116,6 @@ Files committed: `src/gui/widgets/TextFloat.cpp`, `tests/src/gui/GrooveMenuTest.
   It runs the original `feature_check.py`, which cannot create `<worktree>-feature-check` from inside this lane's
   write-jail (log 12: `PermissionError`, EXIT=1). The path-only copy, run on the committed tree, passes all 8 gates
   (log 13: RESULT: PASS, EXIT=0). This is an environment limit, not a gate result. A run from outside the jail should
-  confirm it.
+  confirm it. Round 2 (integration) repeats this exactly: r2 log 07 shows the original's `PermissionError` (EXIT=1),
+  log 08 shows the path-only copy at RESULT: PASS (EXIT=0, 8/8), and `submit_check.py` (r2 log 09) shows the same lone
+  `FAIL gates` line. Every other item passes there.
