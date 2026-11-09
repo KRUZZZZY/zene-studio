@@ -45,6 +45,14 @@ LMMS_EXPORT void setAgentInstance(bool agent);
 //! usable (task #625, measured on the base commit 6b01b98eb).
 LMMS_EXPORT bool isUnattendedRun();
 
+//! True when Qt runs on a platform with no display a window could appear on
+//! (offscreen/minimal/vnc).  Unlike isUnattendedRun() this does not look at
+//! --control-socket: an agent instance on a visible display still has a
+//! display, so a command that only needs one (ControlRegistry's "display"
+//! requirement, e.g. app.help) may run there; one that needs a person to
+//! answer it declares "human" instead.
+LMMS_EXPORT bool isDisplayless();
+
 } // namespace lmms
 
 #endif // LMMS_UNATTENDED_RUN_H

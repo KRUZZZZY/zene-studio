@@ -153,10 +153,11 @@ ControlRegistry::ControlRegistry(QObject* parent) :
 	m_transactions(),
 	m_headless(false)
 {
-	// Headless = no display a human could answer a dialog on. One place decides
-	// (UnattendedRun.h), because MainWindow asks the same question before the
-	// registry exists.
-	m_headless = isUnattendedRun();  // one predicate for one concept: agent instance or no display
+	// Headless = no display a window could appear on (the "display" requirement).
+	// Not isUnattendedRun(): an agent instance on a visible display has a display,
+	// so Help > Manual (app.help) must open there; commands that need a person
+	// declare "human". UnattendedRun.h owns the platform test.
+	m_headless = isDisplayless();
 }
 
 ControlRegistry* ControlRegistry::instance()
