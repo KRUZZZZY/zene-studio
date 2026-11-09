@@ -49,6 +49,7 @@
 #include "NoteEditor.h"
 #include "NotePlayHandle.h"
 #include "NoteProperties.h"
+#include "ShellChrome.h"
 #include "Song.h"
 
 using namespace lmms;
@@ -142,6 +143,32 @@ private slots:
 		QVERIFY(claimed(Qt::Key_C, Qt::ControlModifier));
 		QVERIFY(claimed(Qt::Key_B, Qt::ControlModifier));
 		QVERIFY2(!claimed(Qt::Key_Q, Qt::NoModifier), "a key the editor does not use stays the window's");
+	}
+
+	void clickingAToolButtonSelectsItAndShowsIt()
+	{
+		ShellButton* paint = nullptr;
+		ShellButton* draw = nullptr;
+		for (ShellButton* b : m_editor->findChildren<ShellButton*>())
+		{
+			if (b->text() == QStringLiteral("Paint")) { paint = b; }
+			if (b->text() == QStringLiteral("Draw")) { draw = b; }
+		}
+		QVERIFY(paint != nullptr && draw != nullptr);
+		QVERIFY(draw->isChecked());
+		QVERIFY(!paint->isChecked());
+		QTest::mouseClick(paint, Qt::LeftButton, Qt::NoModifier, paint->rect().center());
+		QCOMPARE(m_editor->state().tool, NoteTool::Paint);
+		QVERIFY2(paint->isChecked(), "the clicked Paint button shows as selected");
+		QVERIFY2(!draw->isChecked(), "and the tool it replaced no longer does");
+		// What the user sees: the checked button paints a different face from the idle one.
+		QImage on(paint->size(), QImage::Format_ARGB32);
+		QImage off(paint->size(), QImage::Format_ARGB32);
+		paint->render(&on);
+		draw->setChecked(false);
+		paint->setChecked(false);
+		paint->render(&off);
+		QVERIFY2(on != off, "a checked tool button looks different from an unchecked one");
 	}
 
 	void zZoomsToTheSelection()
