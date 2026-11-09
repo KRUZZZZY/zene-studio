@@ -5772,3 +5772,4 @@ tests/src/gui/GrooveMenuTest.cpp	# Fit Selection refusal notification is positio
 tests/CMakeLists.txt	cluster gui-1106-menu-edit-collaborate: the CollabPanelTest registration comment no longer says collab.show_panel requires a display; it now covers Edit > Collaborate... in a headless session
 tests/src/gui/ShellHomesTest.cpp	# Mixer tab click leaves the Note Editor panel open
 tests/src/gui/ShellHomesTest.cpp	# Devices tab click leaves the Note Editor panel open
+tests/src/gui/ShellHomesTest.cpp	# Automation tab click leaves the Note Editor panel open
