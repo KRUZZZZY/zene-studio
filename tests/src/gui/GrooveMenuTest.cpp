@@ -36,10 +36,10 @@
 #include <QJsonObject>
 #include <QLabel>
 #include <QMenu>
+#include <QMenuBar>
 #include <QRect>
 #include <QTemporaryDir>
 
-#include "CommandForm.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "GrooveMenu.h"
@@ -51,6 +51,7 @@
 #include "Note.h"
 #include "Song.h"
 #include "TextFloat.h"
+#include "WorkspaceMenus.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -104,6 +105,19 @@ QRect globalRect(const QWidget* widget) { return QRect(widget->mapToGlobal(QPoin
 
 //! The first floating message over the main window (they are children of it).
 TextFloat* firstMessage() { return getGUI()->mainWindow()->findChild<TextFloat*>(); }
+
+//! The product's Window menu, installed the way the product installs it (WorkspaceMenus.cpp installWorkspaceMenus,
+//! which the shell runs when the main window is first shown). The Channel Load entry's host is then the main window -
+//! the same host the person's click resolves to - so triggering the entry is the person's path, not a direct call.
+QMenu* windowMenu(MainWindow* window)
+{
+	installWorkspaceMenus(window->menuBar());
+	for (QAction* top : window->menuBar()->actions())
+	{
+		if (top->menu() != nullptr && top->menu()->objectName() == QStringLiteral("workspaceMenu")) { return top->menu(); }
+	}
+	return nullptr;
+}
 
 } // namespace
 
@@ -215,15 +229,22 @@ private slots:
 		delete beside;
 	}
 
-	//! The user's path: Window > Channel Load runs mixer.cpu_load through the menu's host (the main window) with its
-	//! result to be shown (WorkspaceMenus.cpp fillWindowMenu) - the readout it floats must lie inside the app.
+	//! The user's path: Main menu > Window > Channel Load. The entry the product builds (WorkspaceMenus.cpp
+	//! fillWindowMenu) runs mixer.cpu_load through the menu's host (the main window) with its result to be shown;
+	//! triggering that entry - not calling runCommand directly - is what the person does, and the readout it
+	//! floats must lie inside the app.
 	void channelLoadFromTheWindowMenuShowsInsideTheApp()
 	{
 		MainWindow* window = getGUI()->mainWindow();
 		window->resize(900, 600);
 		qDeleteAll(window->findChildren<TextFloat*>());
-		const ControlResult result = runCommand(window, CommandCall{QStringLiteral("mixer.cpu_load"), {}, {}, QString(), false, true});
-		QVERIFY2(result.ok, qPrintable(result.errorMessage));
+		QMenu* menu = windowMenu(window);
+		QVERIFY2(menu != nullptr, "the Window menu is not installed");
+		QAction* action = named(menu, QObject::tr("Channel Load"));
+		QVERIFY2(action != nullptr, "the Window menu has no Channel Load entry");
+		QVERIFY2(action->isEnabled(), "the Channel Load entry is disabled");
+		QCOMPARE(action->property("controlCommand").toString(), QStringLiteral("mixer.cpu_load"));
+		action->trigger();
 		const TextFloat* message = firstMessage();
 		QVERIFY2(message != nullptr, "Channel Load showed no readout");
 		QVERIFY2(globalRect(window).contains(message->frameGeometry()), "the Channel Load readout lies outside the app");
