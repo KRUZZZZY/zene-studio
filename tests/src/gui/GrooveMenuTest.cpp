@@ -170,6 +170,33 @@ private slots:
 		QVERIFY2(shown.contains(QStringLiteral("groove")), qPrintable(shown));
 		delete menu;
 	}
+
+	void aRefusalFromTheMainMenuIsPlacedInsideTheMainWindow()
+	{
+		// gui-1106: Navigate > Previous Marker with no marker refuses; the refusal floats with the main
+		// window as its parent. A float beside a small widget sits to its right, but beside a WINDOW that is
+		// off its right edge - the person sees no message at all. It must lie within the window it is over.
+		MainWindow* window = getGUI()->mainWindow();
+		window->resize(900, 600);
+		window->show();
+		QVERIFY(QTest::qWaitForWindowExposed(window));
+		auto* navigate = window->findChild<QMenu*>(QStringLiteral("navigateMenu"));
+		QVERIFY2(navigate != nullptr, "the main window has no Navigate menu");
+		QAction* previous = named(navigate, QMenu::tr("Previous Marker"));
+		QVERIFY2(previous != nullptr && previous->isEnabled(), "Navigate has no usable Previous Marker");
+		const QList<TextFloat*> before = window->findChildren<TextFloat*>();
+		previous->trigger();
+		TextFloat* shown = nullptr;
+		for (TextFloat* message : window->findChildren<TextFloat*>())
+		{
+			if (!before.contains(message)) { shown = message; }
+		}
+		QVERIFY2(shown != nullptr && shown->isVisible(), "the refused marker.jump was shown to nobody");
+		const QRect inside(window->mapToGlobal(QPoint(0, 0)), window->size());
+		QVERIFY2(inside.contains(shown->geometry().topLeft()),
+			qPrintable(QStringLiteral("refusal at (%1,%2), window spans %3,%4 %5x%6").arg(shown->x()).arg(shown->y())
+				.arg(inside.x()).arg(inside.y()).arg(inside.width()).arg(inside.height())));
+	}
 };
 
 QTEST_MAIN(GrooveMenuTest)
