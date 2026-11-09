@@ -29,6 +29,8 @@
 #include <QVBoxLayout>
 #include <QLabel>
 
+#include <algorithm>
+
 #include <QRegularExpression>
 
 #include "AccessibleWidgets.h"
@@ -37,6 +39,27 @@
 
 namespace lmms::gui
 {
+
+namespace
+{
+
+/*! Where a float of `size` goes next to `anchor` without leaving `bounds` (all global coordinates): to its
+ *  right if that fits, else to its left, else (an anchor that fills the window, such as the main window
+ *  itself) over the lower left of the anchor. The top follows the anchor but stays inside `bounds`. */
+QPoint besideWithin(const QRect& anchor, const QRect& bounds, const QSize& size)
+{
+	const int top = std::clamp(anchor.top(), bounds.top(), std::max(bounds.top(), bounds.bottom() + 1 - size.height()));
+	const int right = anchor.right() + 1 + 2;
+	if (right + size.width() <= bounds.right() + 1) { return {right, top}; }
+	const int left = anchor.left() - 2 - size.width();
+	if (left >= bounds.left()) { return {left, top}; }
+	const QRect inner = anchor.intersected(bounds);
+	const int x = std::clamp(inner.left() + 32, bounds.left(), std::max(bounds.left(), bounds.right() + 1 - size.width()));
+	const int y = std::max(bounds.top(), inner.bottom() + 1 - size.height() - 8);
+	return {x, y};
+}
+
+} // namespace
 
 
 TextFloat::TextFloat() :
@@ -110,7 +133,12 @@ TextFloat * TextFloat::displayMessage(const QString & title,
 
 	if(parent != nullptr)
 	{
-		tf->moveGlobal(parent, QPoint(parent->width() + 2, 0));
+		// Beside the widget, but never outside the window it is in: next to the main window itself there is no
+		// room, and a float placed at its width + 2 is off the app (nobody sees the message).
+		const QWidget* window = parent->window();
+		const QRect anchor(parent->mapToGlobal(QPoint(0, 0)), parent->size());
+		const QRect bounds(window->mapToGlobal(QPoint(0, 0)), window->size());
+		tf->move(besideWithin(anchor, bounds, tf->size()));
 	}
 	else
 	{

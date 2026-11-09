@@ -170,6 +170,35 @@ private slots:
 		QVERIFY2(shown.contains(QStringLiteral("groove")), qPrintable(shown));
 		delete menu;
 	}
+
+	/*! The nudge refusal ("no clip is selected") floats over the main window it was run from, so the
+	 *  float must be INSIDE that window: placed at the window's width + 2 it lands beyond its right
+	 *  edge and no screenshot or person looking at the app ever sees it. */
+	void aFloatOverTheMainWindowStaysInsideIt()
+	{
+		QWidget* window = getGUI()->mainWindow();
+		const QRect bounds(window->mapToGlobal(QPoint(0, 0)), window->size());
+		QVERIFY2(bounds.width() > 400 && bounds.height() > 200, qPrintable(QString::number(bounds.width())));
+		TextFloat* message = TextFloat::displayMessage(QStringLiteral("Nudge"), QStringLiteral("no clip is selected"),
+			QPixmap(), 0, window);
+		const QRect placed(message->pos(), message->size());
+		QVERIFY2(bounds.contains(placed), qPrintable(QStringLiteral("float %1,%2 %3x%4 outside window %5,%6 %7x%8")
+			.arg(placed.x()).arg(placed.y()).arg(placed.width()).arg(placed.height())
+			.arg(bounds.x()).arg(bounds.y()).arg(bounds.width()).arg(bounds.height())));
+		delete message;
+	}
+
+	//! A small widget well inside the window keeps the float beside it, as before.
+	void aFloatBesideASmallWidgetStaysBesideIt()
+	{
+		QWidget* window = getGUI()->mainWindow();
+		auto* anchor = new QWidget(window);
+		anchor->setGeometry(20, 40, 50, 30);
+		TextFloat* message = TextFloat::displayMessage(QStringLiteral("Hint"), QStringLiteral("beside"), QPixmap(), 0, anchor);
+		QCOMPARE(message->pos(), anchor->mapToGlobal(QPoint(anchor->width() + 2, 0)));
+		delete message;
+		delete anchor;
+	}
 };
 
 QTEST_MAIN(GrooveMenuTest)
