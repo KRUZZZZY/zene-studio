@@ -104,6 +104,25 @@ Other `displayMessage` callers and the `moveGlobal` float users (knobs, faders, 
 
 ## Self-check
 
+Round 2 (integration on af010bc3cc, r2 logs):
+
+- **RED/GREEN on the integrated tree:** `git apply -R fix.patch` (REVERT=0) → `ctest -R '^GrooveMenuTest$'` RED_EXIT=8
+  (`message 802,0 152x80 is outside the screen 0,0 800x800`, test-2-red.log); `git apply fix.patch` (REAPPLY=0) →
+  GREEN_EXIT=0 (test-3-green.log). Family `GrooveMenuTest|PluginShortcutsTest`: EXIT=0, 2/2 (test-1-green.log).
+- **Deterministic:** unchanged test; fixed geometry (main window set to the screen's `availableGeometry()`), timeout 0
+  so no timer, no sleeps or event-loop waits.
+- **Cause/complete:** integration changed nothing in the accepted design; the clamp still follows both placement
+  branches in `displayMessage`, so every `displayMessage` caller is covered (round-1 audit below still holds).
+- **No collateral damage:** the train's theme-17 announcement code after the placement is untouched; no data, command,
+  header or audio-thread change.
+- **Gates:** `submit_check.py` reports `FAIL gates (feature_check.py)` (submit-1.log) because it runs the original
+  `feature_check.py`, which dies with `PermissionError` creating `<worktree>-feature-check` outside the write-jail
+  (gates-1.log, EXIT=1, no gate executed). The two-line-diff copy (fc-copy.diff) runs every gate: EXIT=0, 8/8 PASS
+  (gates-2.log). This row cannot go green from inside this sandbox.
+- **Verdict FIXED** (not ALREADY-FIXED/FALSE-POSITIVE).
+
+Round 1:
+
 - **RED/GREEN with the product change reverted:** reverted `TextFloat.cpp` → `ctest -R '^GrooveMenuTest$'` EXIT=8
   (`message 802,0 152x80 is outside the screen 0,0 800x800`, test-3-reverted.log); reapplied → EXIT=0
   (test-4-reapplied.log).
