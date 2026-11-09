@@ -118,6 +118,47 @@ macOS and MSVC/Windows CI builds.
 | family | `cd build/tests && ctest -R '^Mixer' --output-on-failure > .../logs/08-test-mixer-family.log 2>&1` | EXIT=0, 21/21 passed |
 | gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > .../logs/09-feature-check.log 2>&1` | EXIT=0, RESULT: PASS |
 
+## Integration re-run (round 3)
+
+Source `integration/gui-1030-tab-mixer-add-effect-af010bc3cc` @ `98bfe3b063`, target pinned at `050/m0-train-26`
+@ `af010bc3cc`. The round-2 QA review (`runs/gui-1030-tab-mixer-add-effect.r2/qa-session-2.log`) returned
+`ACCEPT-FIXED` with empty `blocking`, `notes` and `rework_instructions`, and its only change was the report
+correction `98bfe3b063`. That leaves no review points to address. The target is already an ancestor of the source
+(`git merge-base --is-ancestor af010bc3cc HEAD` EXIT=0), and `096c85c163^` is `af010bc3cc` itself. So the conflict
+the job names in `src/gui/MixerModeBar.cpp`/`src/gui/MixerView.cpp` has no hunk left to resolve on this tree. The
+product code and test match both the accepted commit and the round-2 tip: `git diff --exit-code 096c85c163 --
+src/gui/MixerModeBar.cpp src/gui/MixerView.cpp tests/src/gui/MixerSelectionIdentityTest.cpp
+tests/upstream-modifications.txt` EXIT=0, and `git diff --exit-code 98bfe3b063 -- src tests` EXIT=0. No code change
+in this round. Every failure path and platform hazard listed for round 2 is unchanged. The proof was repeated from
+scratch on a fresh build, with logs in `runs/gui-1030-tab-mixer-add-effect.r3/logs` (`L`):
+
+| Step | Command (from the worktree unless noted) | Result |
+| --- | --- | --- |
+| build | `cmake --build build --target zene MixerSelectionIdentityTest -j4 > L/01-build-green.log 2>&1` | EXIT=0 |
+| GREEN | `cd build/tests && ctest -R '^MixerSelectionIdentityTest$' --output-on-failure > L/02-test-green.log 2>&1` | EXIT=0, 1/1 passed |
+| fix patch + reverse | `git diff af010bc3cc HEAD -- src/gui/MixerModeBar.cpp src/gui/MixerView.cpp > L/fix.patch && git apply -R L/fix.patch` | EXIT=0, 80 lines |
+| build reverted | `cmake --build build --target zene MixerSelectionIdentityTest -j4 > L/03-build-reverted.log 2>&1` | EXIT=0 |
+| RED | `cd build/tests && ctest -R '^MixerSelectionIdentityTest$' --output-on-failure > L/04-test-red.log 2>&1` | EXIT=8, `FAIL! : ...theAddEffectButtonStaysOnAThousandPixelScreen() 'win->minimumSizeHint().width() <= 1024' returned FALSE. (window minimum width 2000)` |
+| re-apply | `git apply L/fix.patch` | EXIT=0, `git status` clean |
+| rebuild | `cmake --build build --target zene MixerSelectionIdentityTest -j4 > L/05-build-restored.log 2>&1` | EXIT=0 |
+| GREEN again | `cd build/tests && ctest -R '^MixerSelectionIdentityTest$' --output-on-failure > L/06-test-restored.log 2>&1` | EXIT=0, 1/1 passed |
+| family build | `CCACHE_TEMPDIR=build/ccache-tmp cmake --build build --target zene <the 22 targets matching ^(Mixer\|VcaStripLifetimeTest$)> -j4 > L/12-build-family.log 2>&1` | EXIT=0 |
+| family | `cd build/tests && ctest -R '^(Mixer\|VcaStripLifetimeTest$)' --output-on-failure > L/13-test-family.log 2>&1` | EXIT=0, 22/22 passed (21 `Mixer*` + `VcaStripLifetimeTest`) |
+| gates | `python3 L/feature_check_logdir.py <worktree> > L/14-feature-check.log 2>&1` | EXIT=0, all 8 rows PASS, RESULT: PASS |
+
+Two problems with the environment, not the code, came up during the run. Neither is hidden:
+
+- The first family build attempts failed. `L/07-build-family.log` (EXIT=2) failed because zsh did not split the
+  target list. `L/10-build-family.log` (EXIT=2) failed with `ccache: error: failed to create temporary file for
+  .../dsh/home/ccache-tmp-r6/...: Permission denied`, because the lane's write-jail excludes that directory. Their
+  ctest runs `L/08`/`L/11` show only "Not Run" for unbuilt targets. Pointing `CCACHE_TEMPDIR` into the build tree
+  fixed the build (`L/12`, EXIT=0).
+- The unmodified `qwen/feature_check.py` (`L/09-feature-check.log`, EXIT=1) raised `PermissionError` while writing
+  its per-gate logs to `<worktree>/../<name>-feature-check/`, which is outside the write-jail. No gate result was
+  reported. `L/feature_check_logdir.py` is a byte copy with two lines changed: `ROOT` is pinned to the original
+  `qwen/` directory (for `FIX-BASE` and `gate-baselines`), and the log directory is `L/feature-check-gates`
+  (`diff` recorded in this session). The gate commands, baselines and pass rules are unchanged.
+
 ## Self-check
 
 - **Regression fails reverted, passes restored**: integration round - `git diff HEAD -- src/gui/MixerView.cpp
@@ -150,3 +191,7 @@ macOS and MSVC/Windows CI builds.
   target `af010bc3cc` is the accepted commit's parent, so the driver's three-way application had no conflict
   to resolve; the RED/GREEN reversal was repeated on the integrated tree and gave the same 2000 px failure
   (EXIT=8) and pass (EXIT=0). The 21-test `Mixer` family and all feature gates pass.
+- **Round 3**: no review change requests (round-2 QA `ACCEPT-FIXED`, empty `blocking`) and no code change. The
+  RED/GREEN reversal was repeated on a fresh build: `L/04-test-red.log` EXIT=8 with `window minimum width 2000`,
+  then `L/06-test-restored.log` EXIT=0. The family run `L/13-test-family.log` passed 22/22 and the gates
+  `L/14-feature-check.log` returned EXIT=0 PASS. The round-3 section above covers the environment workarounds.
