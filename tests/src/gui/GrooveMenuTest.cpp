@@ -36,8 +36,10 @@
 #include <QJsonObject>
 #include <QLabel>
 #include <QMenu>
+#include <QRect>
 #include <QTemporaryDir>
 
+#include "CommandForm.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "GrooveMenu.h"
@@ -96,6 +98,12 @@ QString messagesShown()
 	}
 	return text;
 }
+
+//! Where the window a floating message floats over sits (the message's own place is its frameGeometry()).
+QRect globalRect(const QWidget* widget) { return QRect(widget->mapToGlobal(QPoint(0, 0)), widget->size()); }
+
+//! The first floating message over the main window (they are children of it).
+TextFloat* firstMessage() { return getGUI()->mainWindow()->findChild<TextFloat*>(); }
 
 } // namespace
 
@@ -169,6 +177,56 @@ private slots:
 		QVERIFY2(!shown.isEmpty(), "the refused groove.extract was shown to nobody");
 		QVERIFY2(shown.contains(QStringLiteral("groove")), qPrintable(shown));
 		delete menu;
+	}
+
+	//! gui-1105: a command's result floated over the main window (Window > Channel Load) was put at the window's
+	//! right edge + 2 px - outside the app, so nobody saw it. It must lie over the window it floats over.
+	void aResultFloatedOverTheMainWindowLiesOverIt()
+	{
+		MainWindow* window = getGUI()->mainWindow();
+		window->resize(900, 600);
+		const QRect app = globalRect(window);
+		const TextFloat* message = TextFloat::displayMessage(QStringLiteral("Channel Load"), QStringLiteral("CPU 3 %"),
+			QPixmap(), 8000, window);
+		QVERIFY(message != nullptr);
+		QVERIFY2(app.contains(message->frameGeometry()), qPrintable(QStringLiteral("float %1,%2 %3x%4 is not inside the window %5,%6 %7x%8")
+			.arg(message->frameGeometry().x()).arg(message->frameGeometry().y()).arg(message->frameGeometry().width()).arg(message->frameGeometry().height())
+			.arg(app.x()).arg(app.y()).arg(app.width()).arg(app.height())));
+		delete message;
+	}
+
+	//! The same for a message beside a widget that is flush with the window's right edge, and the beside-a-widget
+	//! placement is kept where it already lies inside the window.
+	void aMessageBesideAWidgetStaysOverTheWindow()
+	{
+		MainWindow* window = getGUI()->mainWindow();
+		window->resize(900, 600);
+		const QRect app = globalRect(window);
+		QWidget flush(window);
+		flush.setGeometry(window->width() - 100, 40, 100, 50);
+		const TextFloat* edge = TextFloat::displayMessage(QStringLiteral("t"), QStringLiteral("m"), QPixmap(), 8000, &flush);
+		QVERIFY2(app.contains(edge->frameGeometry()), "a message beside a widget at the right edge is outside the window");
+		delete edge;
+
+		QWidget inner(window);
+		inner.setGeometry(50, 40, 100, 50);
+		const TextFloat* beside = TextFloat::displayMessage(QStringLiteral("t"), QStringLiteral("m"), QPixmap(), 8000, &inner);
+		QCOMPARE(beside->pos(), inner.mapToGlobal(QPoint(inner.width() + 2, 0)));
+		delete beside;
+	}
+
+	//! The user's path: Window > Channel Load runs mixer.cpu_load through the menu's host (the main window) with its
+	//! result to be shown (WorkspaceMenus.cpp fillWindowMenu) - the readout it floats must lie inside the app.
+	void channelLoadFromTheWindowMenuShowsInsideTheApp()
+	{
+		MainWindow* window = getGUI()->mainWindow();
+		window->resize(900, 600);
+		qDeleteAll(window->findChildren<TextFloat*>());
+		const ControlResult result = runCommand(window, CommandCall{QStringLiteral("mixer.cpu_load"), {}, {}, QString(), false, true});
+		QVERIFY2(result.ok, qPrintable(result.errorMessage));
+		const TextFloat* message = firstMessage();
+		QVERIFY2(message != nullptr, "Channel Load showed no readout");
+		QVERIFY2(globalRect(window).contains(message->frameGeometry()), "the Channel Load readout lies outside the app");
 	}
 };
 

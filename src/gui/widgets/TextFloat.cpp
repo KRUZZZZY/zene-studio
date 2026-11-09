@@ -24,6 +24,8 @@
 
 #include "TextFloat.h"
 
+#include <algorithm>
+
 #include <QTimer>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
@@ -37,6 +39,23 @@
 
 namespace lmms::gui
 {
+
+namespace
+{
+
+//! @a at moved, if it must be, so a float whose frame is @a size lies inside the window @a anchor is in: a message put beside a
+//! widget that is flush with the window's right edge (or beside the window itself - Window > Channel Load) would
+//! otherwise sit outside the app, where nobody sees it. A position already inside the window is returned as it is.
+QPoint insideWindowOf(const QWidget* anchor, const QPoint& at, const QSize& size)
+{
+	const QWidget* window = anchor->window();
+	const QRect bounds(window->mapToGlobal(QPoint(0, 0)), window->size());
+	const int x = std::max(bounds.left(), std::min(at.x(), bounds.right() + 1 - size.width()));
+	const int y = std::max(bounds.top(), std::min(at.y(), bounds.bottom() + 1 - size.height()));
+	return QPoint(x, y);
+}
+
+} // namespace
 
 
 TextFloat::TextFloat() :
@@ -110,7 +129,8 @@ TextFloat * TextFloat::displayMessage(const QString & title,
 
 	if(parent != nullptr)
 	{
-		tf->moveGlobal(parent, QPoint(parent->width() + 2, 0));
+		const QPoint beside = parent->mapToGlobal(QPoint(parent->width() + 2, 0));
+		tf->move(insideWindowOf(parent, beside, tf->frameSize()));
 	}
 	else
 	{
