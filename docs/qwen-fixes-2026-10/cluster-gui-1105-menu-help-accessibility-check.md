@@ -141,7 +141,7 @@ Logs: `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-a
 | Step | Command | EXIT |
 | --- | --- | --- |
 | build | `cmake --build build --target zene GrooveMenuTest PluginShortcutsTest -j4 > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-accessibility-check.r3/logs/build-1.log 2>&1` | 0 |
-| GREEN | `cd build/tests && ctest -R '^(GrooveMenuTest\|PluginShortcutsTest)$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-accessibility-check.r3/logs/test-1-green.log 2>&1` | 0 - 2/2 passed |
+| GREEN | `cd build/tests && ctest -R '^(GrooveMenuTest|PluginShortcutsTest)$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-accessibility-check.r3/logs/test-1-green.log 2>&1` | 0 - 2/2 passed |
 | 4b revert | `git diff af010bc3cc HEAD -- src/gui/CommandRun.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-accessibility-check.r3/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-accessibility-check.r3/logs/fix.patch`; rebuild `build-2-reverted.log` | 0; 0 |
 | RED | `cd build/tests && ctest -R '^GrooveMenuTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-accessibility-check.r3/logs/test-2-red.log 2>&1` | 8 - `'over.contains(shown->geometry())'` (the report at (1604,2 290x196) is not over the main window (2,2 1600x1000)), GrooveMenuTest.cpp:201 |
 | 4b reapply | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-accessibility-check.r3/logs/fix.patch`; rebuild `build-3-reapplied.log`; same ctest as GREEN, `test-3-reapplied.log` | 0; 0; 0 - 2/2 passed |
