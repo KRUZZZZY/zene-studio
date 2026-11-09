@@ -40,7 +40,19 @@ Accepted patch from `bugs/qwen-gui-1106-menu-navigate-previous-clip` @ ff0780bae
 `TextFloat.cpp:111-122` is identical to the accepted design. Nothing was redesigned. The evidence below was re-measured on
 this integrated tree (the round-1 numbers are not reused).
 
-## Evidence (logs in ~/.local/share/zene-bunny-fix/qwen/runs/gui-1106-menu-navigate-previous-clip.r2/logs)
+## Integration (round 3: same target, re-verified on this tree)
+
+The round-2 commit `cfc0308d5d` is the integration of the accepted patch; the round-3 worktree was already at it
+(`git status` clean, `git log` = `af010bc3cc` -> `cfc0308d5d`). I re-checked the integration instead of re-applying it:
+
+- `git diff af010bc3cc..HEAD` was compared with `accepted.patch` (round 2): the `src/gui/widgets/TextFloat.cpp`,
+  `tests/src/gui/GrooveMenuTest.cpp` and `tests/upstream-modifications.txt` hunks are byte-identical; only this report
+  differs (the integration report replaced the accepted one). The `TextFloat.cpp` blob hashes match the accepted
+  patch's index line exactly (`225e365013..5df6509fca`), so the accepted design is retained with no semantic difference.
+- No conflict markers, no redesign, no new files. The round-2 gates row (a `feature_check.py` PermissionError from the
+  lane write-jail) was the only outstanding item; in this run the prescribed script runs and passes (below).
+
+## Evidence (round 2: logs in ~/.local/share/zene-bunny-fix/qwen/runs/gui-1106-menu-navigate-previous-clip.r2/logs)
 
 | Step | Command | EXIT |
 | --- | --- | --- |
@@ -56,6 +68,22 @@ this integrated tree (the round-1 numbers are not reused).
 
 `feature_check_logpath.py` differs from `feature_check.py` by exactly two lines (`ROOT` fixed to the script folder, `logs` = `logs/fc`
 in the LOG FOLDER); checks, limits and baselines are unchanged.
+
+## Evidence (round 3: logs in ~/.local/share/zene-bunny-fix/qwen/runs/gui-1106-menu-navigate-previous-clip.r3/logs)
+
+| Step | Command | EXIT |
+| --- | --- | --- |
+| build | `CCACHE_DISABLE=1 cmake --build build --target zene GrooveMenuTest PluginShortcutsTest -j4 > build-1.log` | 0 |
+| GREEN + family | `ctest -R '^(GrooveMenuTest\|PluginShortcutsTest)$' --output-on-failure > test-1-green.log` (from build/tests) | 0: 100% tests passed out of 2 |
+| 4b patch | `git diff af010bc3cc..HEAD -- src/gui/widgets/TextFloat.cpp > logs/fix.patch` | 0 |
+| 4b revert | `git apply -R logs/fix.patch` | 0 |
+| 4b rebuild | `CCACHE_DISABLE=1 cmake --build build --target zene GrooveMenuTest -j4 > build-2-reverted.log` | 0 |
+| RED (fix reverted) | `ctest -R '^GrooveMenuTest$' --output-on-failure > test-2-red.log` (from build/tests) | 8: `FAIL! aRefusalFromAMainMenuIsShownInsideTheWindow ... float at 906,4 142x76 is outside the window 2,2 900x600`; 0 of 1 passed |
+| 4b reapply | `git apply logs/fix.patch` | 0 |
+| rebuild | `CCACHE_DISABLE=1 cmake --build build --target zene GrooveMenuTest PluginShortcutsTest -j4 > build-3-green.log` | 0 |
+| GREEN + family | `ctest -R '^(GrooveMenuTest\|PluginShortcutsTest)$' --output-on-failure > test-3-green.log` | 0: 100% tests passed out of 2 |
+| gates (as given) | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > gates-1.log` | 0: all 8 rows PASS, RESULT: PASS |
+| completion | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> gui-1106-menu-navigate-previous-clip > submit-1.log` | 0: RESULT: PASS - submit |
 
 ## Files committed
 
@@ -85,8 +113,10 @@ in the LOG FOLDER); checks, limits and baselines are unchanged.
 - **No collateral damage:** this is a placement-only GUI change. No saved data, file format, undo, control command or audio-thread
   code is touched, and no limit or check was added. The no-parent placement is unchanged.
 - **ALREADY-FIXED / FALSE-POSITIVE:** not applicable. The verdict is FIXED, and the RED run reproduced the bug.
-- **Gate row in submit_check:** `submit_check.py` runs the original `feature_check.py`. That script creates
-  `<worktree>-feature-check` beside the worktree, which is outside this lane's write-jail, so it fails with PermissionError
-  (`logs/gates-1.log`, `logs/submit-1.log`). The same checks, run with only the log directory moved
-  (`logs/feature_check_logpath.py`), pass with EXIT=0 and RESULT: PASS (`gates-2.log`, run on this integrated tree).
-  The loop's own run outside the jail should give the same result. That has not been verified from here.
+- **Gate row in submit_check:** in round 2 `submit_check.py` ran the original `feature_check.py`, which creates
+  `<worktree>-feature-check` beside the worktree; that was outside the lane write-jail and failed with PermissionError
+  (round-2 `logs/gates-1.log`, `logs/submit-1.log`). The same checks with only the log directory moved
+  (`logs/feature_check_logpath.py`) passed with EXIT=0 and RESULT: PASS. In round 3 the prescribed
+  `feature_check.py` runs in this environment and passes with EXIT=0 (all 8 rows PASS, `gates-1.log`), and
+  `submit_check.py` reports RESULT: PASS - submit (`submit-1.log`). The round-2 PermissionError was environmental,
+  not a gate failure.
