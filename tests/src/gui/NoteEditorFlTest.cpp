@@ -125,6 +125,34 @@ private slots:
 		m_clip = nullptr;
 	}
 
+	//! Cluster gui-1106-main-delete: a click on the toolbar's Delete button selects the tool, checks that button,
+	//! unchecks Draw, and both buttons repaint differently - the selection is visible on the button itself.
+	void aClickOnTheDeleteButtonShowsItSelected()
+	{
+		ShellButton* draw = nullptr;
+		ShellButton* erase = nullptr;
+		for (ShellButton* button : m_editor->findChildren<ShellButton*>())
+		{
+			const QAction* action = button->defaultAction();
+			if (action == nullptr) { continue; }
+			if (action->toolTip().startsWith(QStringLiteral("Delete tool"))) { erase = button; }
+			if (action->toolTip().startsWith(QStringLiteral("Draw tool"))) { draw = button; }
+		}
+		QVERIFY(draw != nullptr && erase != nullptr);
+		QVERIFY(erase->isVisible() && erase->isEnabled());
+		QVERIFY(draw->isChecked());
+		QVERIFY(!erase->isChecked());
+		const QImage drawBefore = draw->grab().toImage();
+		const QImage eraseBefore = erase->grab().toImage();
+		QTest::mouseClick(erase, Qt::LeftButton);
+		QCOMPARE(m_editor->state().tool, NoteTool::Erase);
+		QVERIFY(erase->isChecked());
+		QVERIFY(erase->defaultAction()->isChecked());
+		QVERIFY(!draw->isChecked());
+		QVERIFY2(erase->grab().toImage() != eraseBefore, "the Delete button looks the same once selected");
+		QVERIFY2(draw->grab().toImage() != drawBefore, "the Draw button still looks selected");
+	}
+
 	void drawIsTheDefaultAndTheLettersPickFlsTools()
 	{
 		QCOMPARE(m_editor->state().tool, NoteTool::Draw);
