@@ -2,6 +2,79 @@ FIXED
 
 # Cluster gui-1030-tab-mixer-density-expanded - Expanded density choice is clipped in a narrow Mixer panel
 
+## Round 3: the reported conflict is train-27's duplicate WrapLayout (2026-11-09)
+
+The driver re-queued this cluster with reason "merge conflict with the newer line in: src/gui/MixerModeBar.cpp".
+The pinned target is still `050/m0-train-26 @ af010bc3cc`; the worktree is the same integration branch
+(`31cd7b263e` from round 2) plus this report.
+
+**The integration onto the pinned target is clean and byte-identical to the accepted patch.**
+- `git merge-base af010bc3cc 31cd7b263e` = `af010bc3cc`; `git log af010bc3cc..31cd7b263e` = the two integration
+  commits (`48ec28c3ac`, `31cd7b263e`).
+- `git diff d3d77ccbcc HEAD -- src/gui/MixerModeBar.cpp include/MixerModeBar.h tests/src/gui/MixerModesTest.cpp
+  tests/upstream-modifications.txt` is **empty**: the product files, the regression test and the registry line are
+  identical to the accepted patch. The only difference in the whole tree is this report
+  (`git diff --stat d3d77ccbcc HEAD` = 1 file, the report).
+- No conflict marker in the worktree (`grep -c '<<<<<<<\|>>>>>>>'` = 0 in all three changed sources).
+- The driver's own apply (`git apply --3way` of `af010bc3cc..31cd7b263e`) is clean: `git apply --check --reverse`
+  of that patch on the integrated tree exits 0, and `48ec28c3ac` is a commit whose parent is `af010bc3cc` and
+  whose tree is the patch result.
+
+**Where the reported conflict actually comes from: the newer line `050/m0-train-27`.** Train-27
+(`a1a98b67b2`) already carries `55a36358f7` ("mode bar wraps its controls instead of clipping them in a narrow
+Mixer", cluster `gui-1030-tab-mixer-routing-matrix`). That commit fixes the **same root cause with a different
+design**: its own private `WrapLayout` class in `src/gui/MixerModeBar.cpp`
+(`~WrapLayout() override { while (QLayoutItem* item = takeAt(0)) { delete item; } }`, `Row rowAt(...)`), plus its
+own regression `MixerModesTest::theModeBarWrapsInsteadOfClippingWhenNarrow`. This patch adds a different
+`WrapLayout` (`qDeleteAll(m_items)`, `shown()`, `placeRow`, `alignRightFrom`) and its own regression
+`aNarrowModeBarKeepsEveryControlOnScreen`. Merging this branch into train-27 conflicts:
+
+```
+$ git merge-tree --write-tree 050/m0-train-27 HEAD
+EXIT=1
+CONFLICT (content): Merge conflict in src/gui/MixerModeBar.cpp
+CONFLICT (content): Merge conflict in tests/src/gui/MixerModesTest.cpp
+CONFLICT (content): Merge conflict in tests/upstream-modifications.txt
+```
+
+The sibling branches `gui-1030-tab-mixer-density-compact` (`MixerModeBarLayout`, `addUnit`/`pushRight`),
+`...-pick-the-channels-to-show` and `...-routing-matrix` change the same lines with yet other designs.
+
+**This is a duplicate fix, not a conflict resolution.** Merging this patch on top of train-27 would mean
+choosing one wrapping design and dropping the other - a new design decision, which this integration job is not
+asked to make ("retain the accepted design and regression tests"). So I did not resolve it. **For train-27 and
+later this cluster is a duplicate of `gui-1030-tab-mixer-routing-matrix`:** whoever integrates there should pick
+one layout. I did not check whether this cluster's regression passes on train-27's `WrapLayout`; that needs a
+train-27 build, which I did not make.
+
+**Affected failure paths and supported-platform hazards (unchanged from the accepted patch):**
+- Narrow mixer (< 1610 px single row): controls wrap onto further rows at their size hints. Covered by the 320 px
+  half of the regression test.
+- Wide mixer: one row, mode chips plus Routing Matrix right-aligned as before (`alignRightFrom`,
+  `src/gui/MixerModeBar.cpp:256`). Covered by the wide half of the test.
+- Hidden items are skipped (`shown()`); `minimumSize()` is the widest control, so the panel cannot be narrowed
+  below one control.
+- Height-for-width: the host `QVBoxLayout` in `MixerView` honours `hasHeightForWidth`, so wrapped rows get their
+  height.
+- Header change (`include/MixerModeBar.h:36,87,90`, `QLayout*`): all 10 mixer GUI test targets that include it
+  were rebuilt and pass.
+- Platforms: only standard Qt6 `QLayout` API; no platform code, no new files, no new dependencies. No
+  audio-thread, saved-data, command or undo surface.
+
+| Step (round 3; logs in `~/.local/share/zene-bunny-fix/qwen/runs/gui-1030-tab-mixer-density-expanded.r3/logs`) | Command | EXIT |
+| --- | --- | --- |
+| build (ccache off) | `CCACHE_DISABLE=1 cmake --build build --target zene MixerModesTest MixerZonesTest MixerMeteringTest VcaStripLifetimeTest AccessibilityWalkTest MixerInsertLatencyTest MixerBusFreezeMenuTest MixerStripFeaturesTest MixerSendsOnFadersTest MixerSelectionIdentityTest -j4 > logs/build-2-family.log` | 0 |
+| family GREEN | from `build/tests`: `ctest -R '^(MixerModesTest\|VcaStripLifetimeTest\|AccessibilityWalkTest\|MixerInsertLatencyTest\|MixerBusFreezeMenuTest\|MixerZonesTest\|MixerStripFeaturesTest\|MixerSendsOnFadersTest\|MixerSelectionIdentityTest\|MixerMeteringTest)$' --output-on-failure > logs/test-3-family.log` | 0 - 100% tests passed out of 10 |
+| 4b patch | `git diff af010bc3cc..HEAD -- src/gui/MixerModeBar.cpp include/MixerModeBar.h > logs/fix.patch` | 0 |
+| 4b reverse | `git apply -R logs/fix.patch` | 0 |
+| 4b rebuild reverted | `CCACHE_DISABLE=1 cmake --build build --target zene MixerModesTest -j4 > logs/build-3-reverted.log` | 0 |
+| 4b RED | `ctest -R '^MixerModesTest$' --output-on-failure > logs/test-4-red.log` | 8 - `FAIL! aNarrowModeBarKeepsEveryControlOnScreen() 'expanded->width() >= expanded->minimumSizeHint().width()' returned FALSE. (Density: Expanded is squeezed out of sight)` |
+| 4b reapply | `git apply logs/fix.patch` | 0 |
+| 4b rebuild reapplied | `CCACHE_DISABLE=1 cmake --build build --target zene MixerModesTest -j4 > logs/build-4-reapplied.log` | 0 |
+| 4b GREEN | `ctest -R '^MixerModesTest$' --output-on-failure > logs/test-5-green.log` | 0 - 100% tests passed out of 1 |
+| gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > logs/gates-1.log` | 0 - RESULT: PASS, all 8 rows PASS |
+| submit check | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> gui-1030-tab-mixer-density-expanded > logs/submit-2.log` | 0 - RESULT: PASS |
+
 ## Integration onto 050/m0-train-26 (round 2, 2026-11-09)
 
 Integration job: the accepted patch `bugs/qwen-gui-1030-tab-mixer-density-expanded @ d3d77ccbcc` onto
@@ -200,3 +273,24 @@ That run has not been seen; it is unverified.
 - **No collateral damage:** layout only. No saved data, command, schema, audio-thread or undo path is touched, and no limit was added.
   The wide-mixer single row and right alignment are asserted by the test.
 - **ALREADY-FIXED / FALSE-POSITIVE:** not applicable (verdict FIXED).
+
+### Self-check, round 3 (the reported conflict)
+
+- **The regression test fails with the fix reverted and passes with it:** `git apply -R logs/fix.patch` (EXIT 0)
+  rebuild EXIT 0, `ctest -R '^MixerModesTest$'` **EXIT 8** ("Density: Expanded is squeezed out of sight");
+  `git apply logs/fix.patch` (EXIT 0) rebuild EXIT 0, same command **EXIT 0**, 1/1.
+- **Deterministic:** fixed widths (320 px and sizeHint+120 px), no shown window, timers or sleeps. The seam is
+  `QLayout::invalidate()` + `activate()`.
+- **At the cause and complete:** unchanged from the accepted patch (the product tree is identical to
+  `d3d77ccbcc`). `WrapLayout` replaces the single `QHBoxLayout` (`src/gui/MixerModeBar.cpp:98,210`); the only users
+  of the layout are the private `addSegment`/`addChip` (`include/MixerModeBar.h:87,90`), both changed together, and
+  all 10 mixer GUI targets were rebuilt and pass 10/10.
+- **No collateral damage:** layout only; no saved data, command, schema, audio-thread or undo path is touched, and
+  no limit was added. The wide-mixer single row and right alignment are asserted by the test.
+- **The reported conflict:** the pinned target `af010bc3cc` has no such line, so the integration there is clean and
+  identical to the accepted patch. The conflict the driver names is with `050/m0-train-27`, which already carries
+  the routing-matrix `WrapLayout` (`55a36358f7`) - a different design of the same fix. Choosing between the two
+  designs is a new design decision, so it is reported here rather than resolved; the accepted design and its
+  regression test are retained unchanged on the pinned target.
+- **Gates:** `feature_check.py` EXIT 0, all 8 rows PASS (`logs/gates-1.log`); `submit_check.py` EXIT 0, RESULT: PASS
+  (`logs/submit-2.log`).
