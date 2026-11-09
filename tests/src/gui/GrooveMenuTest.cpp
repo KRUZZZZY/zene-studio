@@ -36,6 +36,8 @@
 #include <QJsonObject>
 #include <QLabel>
 #include <QMenu>
+#include <QMenuBar>
+#include <QScreen>
 #include <QTemporaryDir>
 
 #include "ControlRegistry.h"
@@ -45,6 +47,7 @@
 #include "GuiTestApplication.h"
 #include "InstrumentTrack.h"
 #include "MainWindow.h"
+#include "MenuBarExtras.h"
 #include "MidiClip.h"
 #include "Note.h"
 #include "Song.h"
@@ -169,6 +172,32 @@ private slots:
 		QVERIFY2(!shown.isEmpty(), "the refused groove.extract was shown to nobody");
 		QVERIFY2(shown.contains(QStringLiteral("groove")), qPrintable(shown));
 		delete menu;
+	}
+
+	void aMenuRefusalOverAFullScreenWindowStaysOnScreen()
+	{
+		// gui-1105: Navigate > Nudge Clip Right with no clip selected is refused, and the menu
+		// reports it over the main window (CommandRun's parent). With that window covering the
+		// screen, the message was placed past the window's right edge - off the screen.
+		MainWindow* window = getGUI()->mainWindow();
+		const QRect screen = window->screen()->availableGeometry();
+		window->setGeometry(screen);
+		window->show();
+		// The window reaches the screen's right edge, as a maximized one does (its minimum width may
+		// even exceed a small screen).
+		QVERIFY(window->geometry().right() >= screen.right());
+		for (TextFloat* old : window->findChildren<TextFloat*>()) { delete old; }
+		QMenu* navigate = installNavigateMenu(window->menuBar()); // the shell installs it in the app
+		QVERIFY2(navigate != nullptr, "the main window has no Navigate menu");
+		QAction* nudge = named(navigate, QObject::tr("Nudge Clip Right"));
+		QVERIFY2(nudge != nullptr, "Navigate has no Nudge Clip Right");
+		nudge->trigger();
+		const QList<TextFloat*> shown = window->findChildren<TextFloat*>();
+		QCOMPARE(shown.size(), 1);
+		const QRect placed = shown.first()->frameGeometry();
+		QVERIFY2(screen.contains(placed), qPrintable(QStringLiteral("refusal placed at %1,%2 %3x%4, screen %5,%6 %7x%8")
+			.arg(placed.x()).arg(placed.y()).arg(placed.width()).arg(placed.height())
+			.arg(screen.x()).arg(screen.y()).arg(screen.width()).arg(screen.height())));
 	}
 };
 

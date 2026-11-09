@@ -30,6 +30,9 @@
 #include <QLabel>
 
 #include <QRegularExpression>
+#include <QScreen>
+
+#include <algorithm>
 
 #include "AccessibleWidgets.h"
 #include "GuiApplication.h"
@@ -37,6 +40,24 @@
 
 namespace lmms::gui
 {
+
+namespace
+{
+
+//! gui-1105: keep @a tf inside the available area of @a anchor's screen. A message placed beside a
+//! window that fills the screen (maximized) would otherwise land past its edge, where nobody sees it.
+void keepOnScreen(QWidget* tf, const QWidget* anchor)
+{
+	const QScreen* screen = anchor->screen();
+	if (screen == nullptr) { return; }
+	const QRect area = screen->availableGeometry();
+	const QSize size = tf->frameGeometry().size(); // move() places the frame, so the frame must fit
+	const int x = std::clamp(tf->x(), area.left(), std::max(area.left(), area.right() + 1 - size.width()));
+	const int y = std::clamp(tf->y(), area.top(), std::max(area.top(), area.bottom() + 1 - size.height()));
+	tf->move(x, y);
+}
+
+} // namespace
 
 
 TextFloat::TextFloat() :
@@ -118,6 +139,7 @@ TextFloat * TextFloat::displayMessage(const QString & title,
 		QWidget * mw = getGUI()->mainWindow();
 		tf->moveGlobal(mw, QPoint(32, mw->height() - tf->height() - 8));
 	}
+	keepOnScreen(tf, parent != nullptr ? parent : getGUI()->mainWindow());
 
 	// 0.5.0 (theme 17): a status message is spoken too, once, after what the screen reader is saying (the float's
 	// name carries it for a Qt without announcement events, AccessibleWidgets.h).
