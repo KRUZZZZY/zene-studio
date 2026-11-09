@@ -199,6 +199,30 @@ RESULT PASS, all 8 rows, EXIT=0. I could not make the installed script's row gre
 - **No collateral:** no saved data, format, command, undo or audio path touched; no limit added.
 - **ALREADY-FIXED / FALSE-POSITIVE:** not applicable; verdict FIXED (RED on the train without the fix).
 
+### Integration run r3 (2026-11-09, re-verification on the same integrated tip)
+
+The r3 brief listed no specific review points (the r2 QA verdict was ACCEPT-NOTE, no blocking items; its only note
+is `VideoClipsGuiTest` failing at `QT_SCALE_FACTOR=0.8` at `VideoClipsGuiTest.cpp:185`, with and without this fix).
+No code changed in r3; the tip is r2's. Everything was re-run from scratch (logs in
+`~/.local/share/zene-bunny-fix/qwen/runs/gui-1030-session-loop-a-range.r3/logs/`):
+
+| Step | Command | EXIT |
+| --- | --- | --- |
+| Build | `cmake --build build --target zene ArrangerTimelineTest ArrangerTakePunchTest VisibilitySetMenuTest HybridTrackGuiTest TrackViewDeferredLifetimeTest -j4` (`01-build.log`) | 2 (ccache temp dir not writable, no compile error) |
+| Build, ccache off | same with `CCACHE_DISABLE=1` (`02-build.log`) | 0 |
+| GREEN family | `ctest -R '^(ArrangerTimelineTest\|ArrangerTakePunchTest\|VisibilitySetMenuTest\|HybridTrackGuiTest\|TrackViewDeferredLifetimeTest)$' --output-on-failure` from `build/tests` (`03-test-green.log`): 5/5 passed | 0 |
+| GREEN at 0.8 scale | `QT_SCALE_FACTOR=0.8 ctest -R '^ArrangerTimelineTest$' --output-on-failure` (`04-test-scale08.log`) | 0 |
+| Revert product fix | `git diff af010bc3cc HEAD -- src/gui/editors/SongEditor.cpp > logs/fix.patch && git apply -R logs/fix.patch` | 0 |
+| Rebuild without fix | `CCACHE_DISABLE=1 cmake --build build --target zene ArrangerTimelineTest -j4` (`05-build-red.log`) | 0 |
+| RED | `ctest -R '^ArrangerTimelineTest$' --output-on-failure` (`06-test-red.log`): `FAIL! : ArrangerTimelineTest::theRulerHasAUsableLayoutHeight() 'ruler->height() >= scaledPixels(32)' returned FALSE. (the ruler has 0 px of layout height)`, `Totals: 44 passed, 1 failed` | 8 |
+| Reapply fix, rebuild | `git apply logs/fix.patch`; same build (`07-build-green2.log`) | 0, 0 |
+| GREEN | `ctest -R '^ArrangerTimelineTest$' --output-on-failure` (`08-test-green2.log`) | 0 |
+| Gates, installed script | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (`09-feature-check.log`): `PermissionError` creating `<worktree>-feature-check/` (outside the write-jail) | 1 |
+| Gates, log dir moved | same script with only `ROOT` and the log directory changed (`fc-tool/feature_check_logs_redirected.py`; `10-feature-check-redirected.log`): 8/8 rows PASS, `RESULT: PASS` | 0 |
+
+Semantic difference from the accepted patch: none (the SongEditor hunk is the accepted one, three lines at
+`SongEditor.cpp:164-166`). `git status` is clean after the reapply.
+
 ### Accepted patch's run
 
 `submit_check.py` (log `submit-check-1.log`, EXIT=1): PASS commits on the branch; PASS working tree clean; PASS report
