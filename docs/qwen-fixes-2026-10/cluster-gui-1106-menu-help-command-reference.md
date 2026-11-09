@@ -18,7 +18,7 @@ re-opens an existing window in `src/gui` pairs `raise()` with `activateWindow()`
 `src/gui/HelpCenter.cpp:243`: `s_center->activateWindow();` after `raise()`. Nothing else changes. `GuidedTour::raise()`
 (:410) is a different widget (an overlay child of the main window), not in scope.
 
-## Integration (r2: target 050/m0-train-26 @ af010bc3cc)
+## Integration (r2/r3: target 050/m0-train-26 @ af010bc3cc)
 
 The accepted patch (`bugs/qwen-gui-1106-menu-help-command-reference` @ b515308) was applied here with a three-way
 merge. Its merge base with the pinned target is af010bc3cc itself, so the merge is clean: the working tree is
@@ -28,11 +28,11 @@ changed a line and no semantic difference from the accepted patch was introduced
 The driver's stated conflict - "the newer line in src/gui/HelpCenter.cpp" - is real on the newer train
 (050/m0-train-27), which already carries an equivalent fix at the same spot with a different comment:
 
-```diff
-+	// Raise AND activate: an already-open centre behind other open windows (About, Keyboard Shortcuts) stays
-+	// behind them when only raised, so Help > Manual seemed to do nothing (gui-1106).
- 	s_center->raise();
-+	s_center->activateWindow();
+```cpp
+	// Raise AND activate: an already-open centre behind other open windows (About, Keyboard Shortcuts) stays
+	// behind them when only raised, so Help > Manual seemed to do nothing (gui-1106).
+	s_center->raise();
+	s_center->activateWindow();
 ```
 
 Merging the accepted patch into train-27 would conflict textually there, but the pinned target is train-26,
@@ -98,17 +98,38 @@ baselines are unchanged.
 Gate note (r2): the unmodified `feature_check.py` was run here; the parent directory is writable, so it created its
 sibling log folder and exited 0, 8/8 PASS (gates-1.log). No path-redirected copy was needed for r2.
 
+## Integration evidence (logs in /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1106-menu-help-command-reference.r3/logs)
+
+| Step | Command | EXIT | Result |
+|---|---|---|---|
+| GREEN build (fix) | `cmake --build build --target zene HelpAccessTest -j4` (build-1.log) | 0 | zene + HelpAccessTest built (ccache usable again; no `CCACHE_DISABLE` needed) |
+| GREEN test | `cd build/tests && ctest -R '^HelpAccessTest$' --output-on-failure` (test-1.log) | 0 | 1/1 passed (19 test functions) |
+| 4b product patch | `git diff af010bc3cc HEAD -- src/gui/HelpCenter.cpp > logs/fix.patch` | 0 | 12-line patch, one added line |
+| 4b revert | `git apply -R logs/fix.patch` | 0 | `activateWindow` gone from HelpCenter.cpp |
+| 4b RED build | `cmake --build build --target zene HelpAccessTest -j4` (build-2.log) | 0 | rebuilt without the fix |
+| 4b RED test | `ctest -R '^HelpAccessTest$' --output-on-failure` (test-2.log) | 8 | FAIL! theHelpCenterIsActivatedOverOpenDialogs: Compared QObject pointers are not the same; 0% tests passed, 1 failed out of 1 |
+| 4b re-apply | `git apply logs/fix.patch` | 0 | fix restored at HelpCenter.cpp:243 |
+| 4b GREEN build | `cmake --build build --target zene HelpAccessTest -j4` (build-3.log) | 0 | rebuilt with the fix |
+| 4b GREEN test | `ctest -R '^HelpAccessTest$' --output-on-failure` (test-3.log) | 0 | 1/1 passed |
+| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (gates-1.log) | 0 | 8/8 PASS, RESULT PASS |
+
+Gate note (r3): the unmodified `feature_check.py` was run here; it created its sibling log folder and exited 0,
+8/8 PASS (gates-1.log). No path-redirected copy was needed.
+
 Registration: `src/gui/HelpCenter.cpp` is already in `tests/fork-sources.txt:2090`; `HelpAccessTest.cpp` already has
 entries in `tests/upstream-modifications.txt`; `fork-sources` and `no-upstream-regression` gates pass.
 
 Files committed: `src/gui/HelpCenter.cpp`, `tests/src/gui/HelpAccessTest.cpp`,
-`docs/qwen-fixes-2026-10/cluster-gui-1106-menu-help-command-reference.md`.
+`docs/qwen-fixes-2026-10/cluster-gui-1106-menu-help-command-reference.md` (r2 integration commit 19b7786e44; r3
+report update on top).
 
 ## Self-check
 
-- **RED/GREEN with the product change reverted/applied (r2):** `git apply -R logs/fix.patch` -> rebuild -> ctest exit 8,
+- **RED/GREEN with the product change reverted/applied (r3):** `git apply -R logs/fix.patch` -> rebuild -> ctest exit 8,
   "Compared QObject pointers are not the same" (test-2.log); `git apply logs/fix.patch` -> rebuild -> ctest exit 0
-  (test-3.log). The r1 session saw the same pair (test-red2.log / test-green2.log).
+  (test-3.log). The r2 session saw the same pair (r2 test-2.log / test-3.log) and r1 before that
+  (test-red2.log / test-green2.log). The r3 patch was taken from the pinned target
+  (`git diff af010bc3cc HEAD -- src/gui/HelpCenter.cpp`), because the integration commit already contains the fix.
 - **Deterministic:** no sleeps, timers or clock values. The only wait is `QTRY_COMPARE` on `QApplication::activeWindow()`,
   which polls for the window-system activation event rather than a fixed delay; the setup is explicit
   (`show()` + `activateWindow()` on the stand-in dialog, then verified active before the call under test).
@@ -118,8 +139,12 @@ Files committed: `src/gui/HelpCenter.cpp`, `tests/src/gui/HelpAccessTest.cpp`,
 - **No collateral damage:** one `activateWindow()` call on a UI dialog; no saved data, project format, command,
   audio-thread code or undo is touched, and no limit or check was added.
 - **Verdict is FIXED (not ALREADY-FIXED / FALSE-POSITIVE):** evidence in "Verdict: REAL" above.
-- **Integration:** the working tree is byte-identical to the accepted branch head (`git diff b515308 --stat` empty);
+- **Integration:** the working tree is byte-identical to the accepted branch head for the product and test files
+  (`git diff b515308 -- src/gui/HelpCenter.cpp tests/src/gui/HelpAccessTest.cpp` is empty; only this report differs);
   the train-27 "newer line" is an equivalent fix at the same spot, and the pinned train-26 target does not have it,
   so the merge is clean and the accepted design is retained. See "Integration" above.
-- **Gates (r2):** the unmodified `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` exited 0,
+- **Gates (r3):** the unmodified `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` exited 0,
   8/8 PASS (gates-1.log).
+- **QA note (r2) addressed:** the r2 review's `git diff --check` note was a leading space before a tab in this
+  report's fenced diff at line 34. The block is now a `cpp` code block with no space-before-tab;
+  `git diff --check af010bc3cc HEAD` is clean.
