@@ -2,7 +2,38 @@ FIXED
 
 # cluster gui-1106-menu-navigate-previous-marker: Navigate refusal notices are placed outside the main window
 
-## Integration (this round)
+## Integration round 3 (2026-11-09, Claude lane)
+
+Source `integration/gui-1106-menu-navigate-previous-marker-af010bc3cc` @ `a2bd6c038e` onto target `050/m0-train-26` @
+`af010bc3cc`. The source is this branch's own tip, whose parent is the pinned target, so there is nothing new to merge.
+Round-2 QA (`runs/...r2/qa-session-2.log`) returned `"verdict":"ACCEPT","blocking":[]` — no rework points existed; this
+round re-verifies and re-records evidence only. No product or test change was made in round 3.
+
+- `git merge-base --is-ancestor af010bc3cc HEAD` EXIT=0; `git merge-tree --write-tree af010bc3cc a2bd6c038e` EXIT=0 with
+  tree `d1d3fa6449b1`, identical to `git rev-parse HEAD^{tree}` — clean merge, no conflict in `TextFloat.cpp`, and no
+  semantic difference from the accepted patch (`git diff af010bc3cc HEAD -- src` is exactly the accepted 7-line hunk at
+  `src/gui/widgets/TextFloat.cpp:111-121`).
+
+Evidence (logs in `~/.local/share/zene-bunny-fix/qwen/runs/gui-1106-menu-navigate-previous-marker.r3/logs`):
+
+| Step | Command | EXIT |
+| --- | --- | --- |
+| product patch | `git diff af010bc3cc HEAD -- src/gui/widgets/TextFloat.cpp > logs/fix.patch && git apply -R logs/fix.patch` | 0 |
+| RED build | `cmake --build build --target zene GrooveMenuTest PluginShortcutsTest -j4` (05-build-red.log) | 0 |
+| RED test | `ctest -R '^(GrooveMenuTest\|PluginShortcutsTest)$' --output-on-failure` from `build/tests` (06-test-red.log) | **8** — `GrooveMenuTest::aRefusalFromTheMainMenuIsPlacedInsideTheMainWindow` FAIL: `refusal at (1604,2), window spans 2,2 1600x1000`; Totals 4 passed 1 failed; PluginShortcutsTest passed |
+| reapply | `git apply logs/fix.patch` | 0 |
+| GREEN build | same build command (07-build-green.log) | 0 |
+| GREEN test | same ctest command (08-test-green.log) | **0** — 100% tests passed out of 2 |
+| gates | `feature_check.py <worktree>` (10-feature-check.log) | **0** — RESULT: PASS, all 8 rows PASS |
+
+Environment notes (honest, not patch issues): (1) the first build attempt (01-/03-build-*.log, EXIT=2) failed because the
+inherited `CCACHE_TEMPDIR` (`~/.local/share/zene-bunny-fix/dsh/home/ccache-tmp-r6`) is not writable from this sandbox;
+those runs' test results (02-/04-) are discarded. The rerun set `CCACHE_TEMPDIR` to a scratch folder inside the log folder
+(deleted afterwards). (2) `feature_check.py:70` writes its logs to a sibling of the worktree, outside this lane's write
+jail (09-feature-check.log: PermissionError, EXIT=1, no gate ran). The gate was rerun by exec'ing the unchanged script
+source with only that one line's log path replaced by `logs/feature-check`; gate commands and limits were not touched.
+
+## Integration (round 2)
 
 Source `bugs/qwen-gui-1106-menu-navigate-previous-marker` @ `1400f46e7bd106f2d9f9574810cec3a7c57a33da` onto target
 `050/m0-train-26` @ `af010bc3cc055d477045a54e2d866f59a95017d7`. The accepted fix was written on top of this same target
@@ -111,3 +142,7 @@ message is visible on a real display (offscreen platform only).
 - **ALREADY-FIXED / FALSE-POSITIVE evidence:** does not apply. The verdict is FIXED, and the bug was reproduced as RED first.
 - **Gates:** the original `feature_check.py` ran to completion this round (EXIT=0, RESULT: PASS, 05-gates.log); the round-1
   write-jail issue creating `<worktree>-feature-check/` did not recur.
+- **Round 3 re-verification:** the bullets above cite round-2 logs. Round 3 reproduced them at -j4 in
+  `runs/gui-1106-menu-navigate-previous-marker.r3/logs`: RED 06-test-red.log EXIT=8 (same assertion, same geometry), GREEN
+  08-test-green.log EXIT=0 (2/2 tests executed), gates 10-feature-check.log EXIT=0 (log path redirected, see "Integration
+  round 3"). Committed files this round: this report only; the product/test/registration files are unchanged from `a2bd6c038e`.
