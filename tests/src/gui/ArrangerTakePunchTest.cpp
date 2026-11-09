@@ -329,6 +329,49 @@ private slots:
 		QCOMPARE(timeline.loopEnd().getTicks(), loopEnd);
 	}
 
+	//! gui-1106: arming the punch range in a fresh project (play position at tick zero) paints a
+	//! one-bar interval on the ruler. The band's row is reserved across the ruler, but only the
+	//! interval between the punch bounds is filled, and the in handle is not clipped away at the
+	//! content edge.
+	void theArmedPunchRangeIsPaintedOnlyBetweenItsBounds()
+	{
+		Timeline& timeline = Engine::getSong()->getTimeline(Song::PlayMode::Song);
+		auto* arm = getGUI()->songEditor()->findChild<QAction*>(QStringLiteral("punchAction"));
+		QVERIFY2(arm != nullptr, "the song editor has no punch arm action");
+		// Keep the loop brace out of the sampled columns, so only the punch band can paint there.
+		timeline.setLoopEnabled(false);
+		timeline.setLoopPoints(TimePos(20 * Bar), TimePos(24 * Bar));
+
+		TimeLineWidget* ruler = m_editor->timeLine();
+		ruler->resize(std::max(1200, ruler->width()), 32);
+		const int xOutside = ruler->markerX(TimePos(5 * Bar)) + 20;
+		const int xInside = ruler->markerX(TimePos(Bar / 2));
+		QVERIFY(xOutside < ruler->width());
+		const int y = ruler->height() - 3;
+		const QImage before = ruler->grab().toImage();
+
+		Engine::getSong()->setPlayPos(TimePos(0), Song::PlayMode::Song);
+		arm->trigger();
+		QVERIFY(timeline.punchArmed());
+		QCOMPARE(timeline.punchBegin(), tick_t{0});
+		QCOMPARE(timeline.punchEnd(), tick_t{Bar});
+		const QRect band = ruler->punchBandRect();
+		QVERIFY(!band.isEmpty());
+		QVERIFY(band.contains(QPoint(xInside, y)));
+		const QImage after = ruler->grab().toImage();
+
+		// The interval itself is painted ...
+		QVERIFY2(after.pixel(xInside, y) != before.pixel(xInside, y),
+			"the armed punch range is not painted between its bounds");
+		// ... and the ruler past its end is not, so the one-bar range is discernible.
+		QVERIFY2(after.pixel(xOutside, y) == before.pixel(xOutside, y),
+			"the punch band is painted past the punch range's end, across the whole ruler");
+		// The in handle sits wholly inside the content area, not half under the track headers.
+		QVERIFY(ruler->punchBeginHandleRect().left() >= ruler->markerX(TimePos(0)));
+		QCOMPARE(ruler->punchEndHandleRect().center().x(), ruler->markerX(TimePos(Bar)));
+		arm->trigger();
+	}
+
 
 	//! 0.5.0 L03 (Q050-123): a sample track with take lanes shows one row per lane, every take at
 	//! its own place on the same mapping as the bar ruler - at two zoom levels - and its waveform
