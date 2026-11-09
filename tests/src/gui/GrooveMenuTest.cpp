@@ -170,6 +170,32 @@ private slots:
 		QVERIFY2(shown.contains(QStringLiteral("groove")), qPrintable(shown));
 		delete menu;
 	}
+
+	void aMessageOverTheMainWindowIsShownInsideIt()
+	{
+		// Navigate > Previous Marker with no marker answers "no marker to jump to" through a float
+		// parented on the main window. Placed "right of the parent" it sat 2 px outside the window,
+		// where nobody looking at the project could see it.
+		MainWindow* window = getGUI()->mainWindow();
+		TextFloat* message = TextFloat::displayMessage(QStringLiteral("Previous Marker"),
+			QStringLiteral("no marker to jump to"), QPixmap(), 0, window);
+		const QRect frame = window->frameGeometry();
+		QVERIFY2(frame.contains(message->geometry()),
+			qPrintable(QStringLiteral("message %1,%2 %3x%4 is outside the window %5,%6 %7x%8")
+				.arg(message->x()).arg(message->y()).arg(message->width()).arg(message->height())
+				.arg(frame.x()).arg(frame.y()).arg(frame.width()).arg(frame.height())));
+		delete message;
+	}
+
+	void aMessageOverAChildWidgetStaysBesideIt()
+	{
+		// Knobs, faders and clips float their value to the right of themselves: unchanged.
+		QWidget child(getGUI()->mainWindow());
+		child.resize(40, 20);
+		TextFloat* message = TextFloat::displayMessage(QStringLiteral("Value"), QStringLiteral("1"), QPixmap(), 0, &child);
+		QCOMPARE(message->pos(), child.mapToGlobal(QPoint(child.width() + 2, 0)));
+		delete message;
+	}
 };
 
 QTEST_MAIN(GrooveMenuTest)
