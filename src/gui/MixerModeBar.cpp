@@ -27,7 +27,7 @@
 
 #include <QButtonGroup>
 #include <QComboBox>
-#include <QHBoxLayout>
+#include <QLayout>
 #include <QJsonArray>
 #include <QLabel>
 #include <QMenu>
@@ -93,6 +93,112 @@ QStringList listeningNames(const mixerstripinfo::Context& context)
 	return names;
 }
 
+//! gui-1030: lays the bar's controls out left to right and wraps them onto another row when the mixer is
+//! too narrow for one, so none is squeezed or pushed past the bar's edge (after Qt's flow layout example).
+class WrapLayout : public QLayout
+{
+public:
+	explicit WrapLayout(QWidget* parent) : QLayout(parent) {}
+	~WrapLayout() override { qDeleteAll(m_items); }
+	void addItem(QLayoutItem* item) override { m_items.append(item); }
+	void alignRightFrom(QWidget* widget) { m_rightAlignedFrom = widget; }
+	int count() const override { return static_cast<int>(m_items.size()); }
+	QLayoutItem* itemAt(int index) const override { return m_items.value(index); }
+	QLayoutItem* takeAt(int index) override
+	{
+		return index >= 0 && index < m_items.size() ? m_items.takeAt(index) : nullptr;
+	}
+	Qt::Orientations expandingDirections() const override { return {}; }
+	bool hasHeightForWidth() const override { return true; }
+	int heightForWidth(int width) const override { return arrange(QRect(0, 0, width, 0), false); }
+	void setGeometry(const QRect& rect) override
+	{
+		QLayout::setGeometry(rect);
+		arrange(rect, true);
+	}
+	//! One row: what the bar asks for when there is room.
+	QSize sizeHint() const override
+	{
+		QSize row;
+		for (QLayoutItem* item : shown())
+		{
+			row.rwidth() += item->sizeHint().width() + (row.width() > 0 ? spacing() : 0);
+			row.setHeight(std::max(row.height(), item->sizeHint().height()));
+		}
+		return row.grownBy(contentsMargins());
+	}
+	//! The widest control alone, so the mixer can be narrowed down to it.
+	QSize minimumSize() const override
+	{
+		QSize widest;
+		for (QLayoutItem* item : shown()) { widest = widest.expandedTo(item->sizeHint()); }
+		return widest.grownBy(contentsMargins());
+	}
+
+private:
+	QList<QLayoutItem*> shown() const
+	{
+		QList<QLayoutItem*> items;
+		for (QLayoutItem* item : m_items) { if (!item->isEmpty()) { items << item; } }
+		return items;
+	}
+	//! Fill rows inside @a rect (placing the items if @a apply); the height they take.
+	int arrange(const QRect& rect, bool apply) const
+	{
+		const QRect area = rect.marginsRemoved(contentsMargins());
+		const QList<QLayoutItem*> items = shown();
+		int y = area.y();
+		for (int first = 0; first < items.size();)
+		{
+			int last = first;
+			int width = items.at(first)->sizeHint().width();
+			while (last + 1 < items.size() && width + spacing() + items.at(last + 1)->sizeHint().width() <= area.width())
+			{
+				width += spacing() + items.at(++last)->sizeHint().width();
+			}
+			const QList<QLayoutItem*> row = items.mid(first, last - first + 1);
+			const bool alignRight = last + 1 == items.size() && std::any_of(row.begin(), row.end(), [this](QLayoutItem* item) {
+				return item->widget() == m_rightAlignedFrom;
+			});
+			const int height = placeRow(row, area, y, apply, alignRight);
+			y += height + spacing();
+			first = last + 1;
+		}
+		const int used = items.isEmpty() ? 0 : y - spacing() - area.y();
+		return used + contentsMargins().top() + contentsMargins().bottom();
+	}
+	int rightAlignedGroupWidth(const QList<QLayoutItem*>& row) const
+	{
+		const auto first = std::find_if(row.begin(), row.end(), [this](QLayoutItem* item) {
+			return item->widget() == m_rightAlignedFrom;
+		});
+		int width = 0;
+		int count = 0;
+		for (auto item = first; item != row.end(); ++item) { width += (*item)->sizeHint().width(); ++count; }
+		return width + std::max(0, count - 1) * spacing();
+	}
+	//! One row from @a x at @a y, each item centred in its height; the row's height.
+	int placeRow(const QList<QLayoutItem*>& row, const QRect& area, int y, bool apply, bool alignRight) const
+	{
+		int height = 0;
+		for (QLayoutItem* item : row) { height = std::max(height, item->sizeHint().height()); }
+		int x = area.x();
+		int rightAlignedGroupX = x;
+		if (alignRight) { rightAlignedGroupX = area.x() + area.width() - rightAlignedGroupWidth(row); }
+		for (QLayoutItem* item : row)
+		{
+			if (alignRight && item->widget() == m_rightAlignedFrom) { x = std::max(x, rightAlignedGroupX); }
+			const QSize size = item->sizeHint();
+			if (apply) { item->setGeometry(QRect(QPoint(x, y + (height - size.height()) / 2), size)); }
+			x += size.width() + spacing();
+		}
+		return height;
+	}
+
+	QList<QLayoutItem*> m_items;
+	QWidget* m_rightAlignedFrom = nullptr;
+};
+
 } // namespace
 
 MixerModeBar::MixerModeBar(QWidget* parent) :
@@ -101,7 +207,7 @@ MixerModeBar::MixerModeBar(QWidget* parent) :
 {
 	setObjectName(QStringLiteral("mixerModeBar"));
 	setAccessibleName(tr("Mixer modes"));
-	auto* layout = new QHBoxLayout(this);
+	auto* layout = new WrapLayout(this);  // gui-1030: wraps in a narrow mixer
 	layout->setContentsMargins(tokens::space::sm, tokens::space::xs, tokens::space::sm, tokens::space::xs);
 	layout->setSpacing(tokens::space::sm);
 	m_viewButtons = addSegment(layout, tr("View"), "view", mixerviewoptions::viewNames(), {tr("Mix"), tr("Routing")});
@@ -136,7 +242,6 @@ MixerModeBar::MixerModeBar(QWidget* parent) :
 		setOption(QStringLiteral("follow_selection"), on);
 	});
 	layout->addWidget(m_follow);
-	layout->addStretch(1);
 	m_faders = addChip(layout, QStringLiteral("mixerModeFaders"), tr("What every fader drives: its channel's volume, or its send to one return"), &MixerModeBar::fillFaders);
 	m_solo = addChip(layout, QStringLiteral("mixerModeSolo"), tr("The solo mode: whether a solo unsolos the others"), &MixerModeBar::fillSolo);
 	m_listen = addChip(layout, QStringLiteral("mixerModeListen"), tr("The listen bus: the channels heard in place of the mix, after or before their faders"), &MixerModeBar::fillListen);
@@ -148,10 +253,11 @@ MixerModeBar::MixerModeBar(QWidget* parent) :
 	matrix->setProperty("controlCommand", QStringLiteral("routing.matrix"));
 	connect(matrix, &QPushButton::clicked, this, [] { showRoutingMatrix(); });
 	layout->addWidget(matrix);
+	layout->alignRightFrom(m_faders);  // keep the mode chips and matrix at the right on a wide mixer
 	refresh(mixerstripinfo::buildContext());
 }
 
-QHash<QString, QPushButton*> MixerModeBar::addSegment(QHBoxLayout* layout, const QString& label, const char* key,
+QHash<QString, QPushButton*> MixerModeBar::addSegment(QLayout* layout, const QString& label, const char* key,
 	const QStringList& values, const QStringList& captions)
 {
 	auto* caption = new QLabel(label + QLatin1Char(':'), this);
@@ -177,7 +283,7 @@ QHash<QString, QPushButton*> MixerModeBar::addSegment(QHBoxLayout* layout, const
 	return buttons;
 }
 
-QToolButton* MixerModeBar::addChip(QHBoxLayout* layout, const QString& objectName, const QString& hint,
+QToolButton* MixerModeBar::addChip(QLayout* layout, const QString& objectName, const QString& hint,
 	void (MixerModeBar::*fill)(QMenu*))
 {
 	auto* chip = new QToolButton(this);
