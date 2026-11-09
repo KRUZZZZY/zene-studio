@@ -100,8 +100,9 @@ used `CCACHE_TEMPDIR` in the log folder. This does not change the compiled outpu
 Verdict unchanged: **FIXED**. This is an integration of the accepted patch (source `63cbed3a21`) onto
 `050/m0-train-26` @ `af010bc3cc`; no new design. The driver's three-way merge reported a conflict in
 `src/gui/MixerModeBar.cpp`, but its fallback direct application applied all four patch files cleanly
-(`integration-apply.log`); no conflict marker is in any file. The staged diff is exactly the accepted patch (5 files,
-247 insertions, 11 deletions). Semantic difference from the accepted patch: none. The only other `layout->` users in
+(`integration-apply.log`); no conflict marker is in any file. The staged diff is exactly the accepted patch; base to
+tip (`git diff --shortstat af010bc3cc HEAD`) is 5 files, 279 insertions, 11 deletions, this report included
+(corrected in round 3: an earlier version said 247). Semantic difference from the accepted patch: none. The only other `layout->` users in
 `MixerModeBar.cpp` are `addWidget`/`addStretch`/`setContentsMargins`/`setSpacing`, all supported by `WrapLayout`, and
 `MixerModeBar.h` is included by `MixerView.cpp`, `MixerZonesTest.cpp`, `MixerMeteringTest.cpp`, `MixerModesTest.cpp`
 only (all rebuilt).
@@ -124,5 +125,39 @@ Files committed: `docs/qwen-fixes-2026-10/cluster-gui-1030-tab-mixer-pick-the-ch
 `include/MixerModeBar.h`, `src/gui/MixerModeBar.cpp`, `tests/src/gui/MixerModesTest.cpp`,
 `tests/upstream-modifications.txt`.
 
-Not done: no manual run of the real app; ctest ran for the three Mixer GUI families only. Luna's round-1 request
-carried no itemised points, so there was nothing further to address beyond re-verifying on the current line.
+Not done: no manual run of the real app; ctest ran for the three Mixer GUI families only. Luna's round-1 review asked
+for the wide-panel alignment to be preserved and tested: when the whole bar fits on one row, the mode chips and
+Routing Matrix... stay at the right edge (the stretch marker in `WrapLayout`). That alignment is asserted in the
+regression at 3000 px (corrected in round 3: an earlier version said that review had no itemised points).
+
+## Integration re-verification (round 3)
+
+Verdict unchanged: **FIXED**. Luna's round-2 QA said ACCEPT-NOTE and listed two report-only notes: the stale
+"no itemised request" wording and the stale 247-insertion figure. Both are corrected above. No product or test code
+changed in this round. The branch tip already has the accepted patch on `050/m0-train-26` @ `af010bc3cc`. No file has
+a conflict marker (`grep` for `<<<<<<<`/`>>>>>>>` in the three code files found nothing). The code diff is identical
+to the accepted patch: the `+`/`-` lines of `git diff af010bc3cc HEAD -- include src tests` match the non-doc hunks
+of `r2/accepted.patch` (`diff` EXIT=0, `logs/semantic-diff.log`). Also, `git apply --check -R --exclude='docs/*'
+accepted.patch` returned EXIT=0.
+
+Failure paths and platform hazards considered: wide panel (one row, chips right-aligned: asserted); narrow panel
+(wraps, minimum width = widest item: asserted); parent layout must honour height-for-width (`MixerView` uses a
+`QVBoxLayout`); header change (`MixerModeBar.h`) means every includer has to be rebuilt (zene + three tests, built
+below). The fix is pure Qt widget layout with no platform-specific API, and it does not touch the audio thread,
+saved data, undo or commands.
+
+| Step | Command (logs in the r3 run's `logs/`) | EXIT / result |
+|---|---|---|
+| build | `cmake --build build --target zene MixerModesTest MixerZonesTest MixerMeteringTest -j4 > build-1.log` | EXIT=0 |
+| GREEN family | `cd build/tests && ctest -R '^(MixerModesTest\|MixerZonesTest\|MixerMeteringTest)$' --output-on-failure > test-green-1.log` | EXIT=0, 100% passed out of 3 |
+| 4b revert | `git diff af010bc3cc HEAD -- src/gui/MixerModeBar.cpp include/MixerModeBar.h > fix.patch && git apply -R fix.patch` | EXIT=0 |
+| 4b RED | `cmake --build build --target MixerModesTest -j4 > build-2-red.log` (EXIT=0); `ctest -R '^MixerModesTest$' --output-on-failure > test-red-1.log` | EXIT=8: `'probe.minimumSizeHint().width() <= narrow' returned FALSE. (the bar needs 1610px at least)` |
+| 4b re-apply | `git apply fix.patch`; `cmake --build build --target zene MixerModesTest MixerZonesTest MixerMeteringTest -j4 > build-3.log` | apply EXIT=0, build EXIT=0 |
+| GREEN after re-apply | `ctest -R '^(MixerModesTest\|MixerZonesTest\|MixerMeteringTest)$' --output-on-failure > test-green-2.log` | EXIT=0, 100% passed out of 3 |
+| gates (shipped) | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > gates-1.log` | EXIT=1, `PermissionError` creating `<worktree>-feature-check` (outside the write area); no gate ran |
+| gates (log path moved) | `python3 logs/feature_check_local.py <worktree> > gates-2.log` | EXIT=0, all 8 PASS, base `af010bc3c`, complexity and file-length "no new item in your files" |
+
+`feature_check_local.py` changes only two lines of the shipped script (`feature_check_local.diff`): `ROOT` points at the
+real directory, and logs are written to the run's log folder. The gate commands are the same.
+
+Files committed this round: `docs/qwen-fixes-2026-10/cluster-gui-1030-tab-mixer-pick-the-channels-to-show.md` only.
