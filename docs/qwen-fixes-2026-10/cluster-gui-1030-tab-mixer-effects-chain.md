@@ -64,9 +64,37 @@ Failure paths and platform hazards I checked together:
 | Gates, original script | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > 07-feature-check.log 2>&1` | EXIT=1: `PermissionError` creating `<worktree>-feature-check` (sibling directory outside the write jail); no gate ran |
 | Gates, redirected copy | `python3 logs/feature_check_local.py <worktree> > 08-feature-check.log 2>&1`. The only change from the original is the log directory, plus a pinned `ROOT` so the baselines resolve to the original location. | EXIT=0, 8/8 PASS (complexity and file-length: "no new item in your files") |
 
+## Integration round 4 (source `3f260c3825`, target `af010bc3cc`)
+
+The accepted source commit `3f260c382540062332c856bf36a7140fc4fdfb3c` (`integration/gui-1030-tab-mixer-effects-chain-af010bc3cc`) has target `af010bc3cc055d477045a54e2d866f59a95017d7` as its direct base, so the accepted patch is already present on the target line and the integration needed no hand resolution in this round. Luna's round-3 review was `ACCEPT-FIXED`: its only change was the report sentence about the mode bar's parentage (commit `3f260c3825`), and it left no rework instruction. No product/test hunk changed in this round.
+
+Semantic difference from the accepted patch: **none**. The product/test hunks of `git diff af010bc3cc..HEAD` are byte-identical to the non-doc hunks of the accepted patch; the comparison of the two patch files exits 0 with no output.
+
+| Step (logs in `.../gui-1030-tab-mixer-effects-chain.r4/logs/`) | Command | Result |
+| --- | --- | --- |
+| Accepted-patch comparison | `git diff af010bc3cc..HEAD -- src/gui/MixerView.cpp tests/src/gui/MixerZonesTest.cpp tests/upstream-modifications.txt > integrated-product-test.patch`; extract the same three files from the r3 `accepted.patch` into `accepted-product-test.patch`; `diff -u` the two | EXIT=0, no output (byte-identical) |
+| Build | `CCACHE_DISABLE=1 cmake --build build --target zene MixerZonesTest MixerModesTest MixerMeteringTest MixerSelectionIdentityTest MixerInsertLatencyTest MixerBusFreezeMenuTest MixerSendsOnFadersTest MixerStripFeaturesTest -j4 > 01-build-green.log 2>&1` | EXIT=0 |
+| Family run, 8 tests | `ctest -R '^(MixerZonesTest\|MixerModesTest\|MixerMeteringTest\|MixerSelectionIdentityTest\|MixerInsertLatencyTest\|MixerBusFreezeMenuTest\|MixerSendsOnFadersTest\|MixerStripFeaturesTest)$' --output-on-failure > 02-test-family-green.log 2>&1` | EXIT=0, 100% passed out of 8 |
+| 4b revert | `git diff af010bc3cc..HEAD -- src/gui/MixerView.cpp > fix.patch` (EXIT=0); `git apply -R fix.patch` (EXIT=0) | product change removed from the working tree |
+| 4b RED | rebuild `zene MixerZonesTest` (`03-build-4b-red.log`, EXIT=0); `ctest -R '^MixerZonesTest$' --output-on-failure > 04-test-4b-red.log 2>&1` | EXIT=8: `FAIL! theMixerFitsAMainWindowOf1024Pixels() 'window->width() <= 1024' returned FALSE. (the window could not shrink below 2000 px)` |
+| 4b re-apply | `git apply fix.patch` | EXIT=0; `git status --short` empty |
+| 4b GREEN | rebuild (`05-build-4b-green.log`, EXIT=0); `ctest -R '^MixerZonesTest$' --output-on-failure > 06-test-4b-green.log 2>&1` | EXIT=0, 100% passed out of 1 |
+| Gates, original script | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > 07-feature-check.log 2>&1` | EXIT=0, 8/8 PASS (complexity and file-length: "no new item in your files") |
+
+Failure paths and supported-platform hazards, unchanged from the accepted patch and re-checked here:
+- **Narrow panel (the finding's 1024x768):** the window shrinks to 1024, the rack's right edge stays inside it, and the mode bar's horizontal scroll maximum is above 0, so every control remains reachable.
+- **Wide panel:** no horizontal scroll bar; `fitHeight()` adds the scroll bar's height only while the bar actually scrolls, so the previous layout height is kept.
+- **Sends-on-faders banner:** minimum 382 px, below the new splitter floor; untouched.
+- **VCA region shown:** the floor is 582 px against the roughly 600 px budget; unchanged.
+- **Saved data:** mixer zone JSON and `window.mixer_zones` are untouched; nothing new is serialised.
+- **Font/metrics:** desktop metrics differ from offscreen; the 18 px margin (582 vs 600) is the test's documented limitation.
+- **Platforms:** Qt Widgets only, no platform `#ifdef`; `QScrollBar` is the only added include. This machine verifies the Linux/Qt 6 build and the offscreen test; MSVC, macOS and Qt 5.15 remain hosted-CI concerns, and the code uses only portable Qt APIs (`QScrollArea`, `QScrollBar`, `QResizeEvent`, `minimumSizeHint`/`sizeHint`).
+- **Realtime/undo:** nothing on the audio thread, no undo step, no command added.
+
 ## Self-check
 
-- **RED with the product change reverted, GREEN with it:** reverted `fix.patch` -> `ctest -R '^MixerZonesTest$'` EXIT=8 (window floor 2000 px); re-applied -> EXIT=0.
+- **RED with the product change reverted, GREEN with it:** round 4 reverted `fix.patch` from the target (`git apply -R`, EXIT=0) -> rebuild EXIT=0 -> `ctest -R '^MixerZonesTest$'` EXIT=8 (window floor 2000 px, `04-test-4b-red.log`); re-applied (`git apply`, EXIT=0) -> rebuild EXIT=0 -> `ctest -R '^MixerZonesTest$'` EXIT=0 (`06-test-4b-green.log`).
+- **Round-4 integration:** the source `3f260c3825` has `af010bc3cc` as its direct base, so the accepted patch is already on the target line; the integrated product/test hunks are byte-identical to the accepted patch (`diff -u` EXIT=0, no output), and the focused family and gates were rerun from a fresh build (8/8 tests, 8/8 gates, both EXIT=0). No semantic difference.
 - **Deterministic:** the test uses fixed sizes only (`resize(1024, 768)`, then `processEvents`), asserts on layout minimums and geometry, never a timer, sleep or wall-clock value; it restores `resize(1400, 900)` at the end for later slots. The seam is the real main window and the real `MixerView`.
 - **Cause and completeness:** checked the two things that set the panel minimum: the mode bar (1576 px, now in a scroll area, min width 0) and the strip minimum (6 -> 2). Remaining panel minimum (582 px with the VCA region shown) = master 64 + channel area 2x64 + add column 64 + rack 245 + handles + VCA ~75, all fixed-width regions the user can also resize with the zone separators. Siblings: `MixerModeBar` itself is unchanged, so `modeBar()` users (MixerModesTest, MixerZonesTest, MixerMeteringTest) still pass; the sends banner (min 382, hidden by default) is narrower than the new floor in the mode where it shows and was not changed.
 - **No collateral damage:** GUI layout only; nothing is saved or loaded differently (mixer zone layout JSON, widths and `window.mixer_zones` untouched), no command added (canary unchanged, `doc-figures` PASS). Wide windows look the same: the scroll bar appears only when the bar is wider than the panel. A user who relied on 6 strips being guaranteed visible in a narrow panel now sees 2 and scrolls; the area was already a scroll area and still scrolls.
