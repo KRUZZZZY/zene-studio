@@ -7,7 +7,8 @@ FIXED
 ## Integration
 
 - Source: `bugs/qwen-gui-1106-menu-help-accessibility-check` @ `4fc8a8ce8f6debe1944de23479756a1c0d879e8a`.
-- Target: `050/m0-train-26` @ `af010bc3cc055d477045a54e2d866f59a95017d7` (HEAD of this worktree).
+- Target: `050/m0-train-26` @ `af010bc3cc055d477045a54e2d866f59a95017d7` (the base this integration branch
+  was pinned to; `git merge-base HEAD FIX-BASE` resolves to it).
 - The round-1 QA review of the accepted fix was ACCEPT with no blocking items and no notes (r1 `qa-session.log`,
   final JSON: `"verdict": "ACCEPT", "blocking": []`), so this run's only task is the integration re-verification below.
 - `git merge-base af010bc3cc055d477045a54e2d866f59a95017d7 4fc8a8ce8f6debe1944de23479756a1c0d879e8a`
@@ -19,8 +20,9 @@ FIXED
   `tests/upstream-modifications.txt` is byte-identical to `git diff af010bc3cc 4fc8a8ce8f` for those files:
   `diff -u logs/08-accepted-source-diff.patch logs/09-applied-diff.patch` EXIT=0 (log 10-diff-comparison.log).
   There is no conflict resolution and no semantic difference from the accepted patch.
-- The target file at HEAD is exactly the pre-fix file the patch was generated against (`git show HEAD:src/gui/widgets/TextFloat.cpp`),
-  so the "newer line" named in the job reason is not present relative to this merge base.
+- `git show af010bc3cc055d477045a54e2d866f59a95017d7:src/gui/widgets/TextFloat.cpp` is exactly the pre-fix file
+  the patch was generated against, so the "newer line" named in the job reason is not present relative to this merge
+  base.
 
 ## Path of the finding, verified in this tree
 
