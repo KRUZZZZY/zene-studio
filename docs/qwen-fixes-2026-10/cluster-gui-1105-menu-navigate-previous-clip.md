@@ -104,6 +104,37 @@ Other `displayMessage` callers and the `moveGlobal` float users (knobs, faders, 
 
 ## Self-check
 
+Round 3 (re-verification of the integration on af010bc3cc at ff29ad69bb; logs in
+`~/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-navigate-previous-clip.r3/logs/`). Round 2 was reviewed
+ACCEPT-NOTE with no blocking points, and the round-3 brief adds no new review points, so no product or test code
+changed this round. The only note was Wayland, recorded below as not checked.
+
+- **Same as the accepted patch:** the `src/` and `tests/` diff `af010bc3cc..HEAD` matches the `TextFloat.cpp`,
+  `GrooveMenuTest.cpp` and `upstream-modifications.txt` hunks of the accepted patch line for line (`diff` of the +/- lines,
+  DIFF=0). The clamp `keepOnScreen` is defined at `src/gui/widgets/TextFloat.cpp:50` and called once at
+  `src/gui/widgets/TextFloat.cpp:146`, after both placement branches and before the theme-17 announcement.
+- **Build:** `cmake --build build --target zene GrooveMenuTest PluginShortcutsTest -j4` BUILD=0 (01-build.log).
+- **Family:** `ctest -R '^(GrooveMenuTest|PluginShortcutsTest)$' --output-on-failure` from `build/tests` TEST=0, 2/2
+  passed (02-test-green.log).
+- **RED/GREEN, product change reverted:** `git diff af010bc3cc HEAD -- src/gui/widgets/TextFloat.cpp > logs/fix.patch &&
+  git apply -R logs/fix.patch` REVERT=0; rebuild BUILD=0 (03-build-reverted.log); `ctest -R '^GrooveMenuTest$'`
+  TEST_RED=8, `FAIL! GrooveMenuTest::aMessageOverAMaximisedWindowStaysOnScreen() ... (message 802,0 152x80 is outside
+  the screen 0,0 800x800)` (04-test-red.log). `git apply logs/fix.patch` REAPPLY=0; rebuild BUILD=0
+  (05-build-reapplied.log); TEST_GREEN=0 (06-test-green.log). `git status` was clean afterwards.
+- **Deterministic:** the test is unchanged. It uses fixed geometry: the main window is set to the screen's
+  `availableGeometry()`. Timeout 0 means no timer is armed, and there are no sleeps, event-loop waits or timestamps.
+- **Cause/complete, no collateral damage:** the round-1 and round-2 audits still hold, because the code is unchanged. Every
+  `displayMessage` caller goes through the clamp. A float that is already on screen is not moved. Nothing changes in
+  saved data, commands, headers or the audio thread.
+- **Gates:** `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` GATES=1, `PermissionError`
+  creating `<worktree>-feature-check` outside the write-jail, so no gate ran (07-gates.log). That makes
+  `submit_check.py` show `FAIL gates` (09-submit.log, SUBMIT=1); every other row is PASS. A copy with only the `ROOT`
+  path and the log folder changed (fc-copy.diff, 4 changed lines) gives GATES=0: all 8 rows PASS, with complexity and
+  file-length showing "no new item in your files" (08-gates-copy.log).
+- **Not checked:** Wayland and real multi-monitor setups, where the compositor may ignore a global move. Only the offscreen
+  platform was run.
+- **Verdict FIXED** (not ALREADY-FIXED/FALSE-POSITIVE).
+
 Round 2 (integration on af010bc3cc, r2 logs):
 
 - **RED/GREEN on the integrated tree:** `git apply -R fix.patch` (REVERT=0) → `ctest -R '^GrooveMenuTest$'` RED_EXIT=8
