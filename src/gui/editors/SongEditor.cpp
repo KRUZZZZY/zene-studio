@@ -161,6 +161,9 @@ SongEditor::SongEditor( Song * song ) :
 	m_mpsStatus = nullptr;
 
 
+	// The column lays the ruler out and nothing else sizes it: a plain widget has no minimum, so it got 0 px
+	// and its bar numbers and loop brace could not be seen or clicked. A track row's height is the ruler's.
+	m_timeLine->setMinimumHeight(scaledPixels(32));
 	static_cast<QVBoxLayout *>( layout() )->insertWidget( 0, m_timeLine );
 
 	m_leftRightScroll = new QScrollBar( Qt::Horizontal, this );

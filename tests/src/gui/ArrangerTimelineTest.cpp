@@ -74,6 +74,7 @@
 #include "ProjectJournal.h"
 #include "ShellSelection.h"
 #include "DesignTokens.h"
+#include "DpiHelper.h"
 #include "Engine.h"
 #include "EditLocks.h"
 #include "GuiApplication.h"
@@ -408,6 +409,18 @@ private slots:
 		QCOMPARE(run(QStringLiteral("arrangement.ruler_lanes")).result.value(QStringLiteral("tempo")).toBool(), false);
 		QVERIFY(run(QStringLiteral("arrangement.ruler_lanes"), {{QStringLiteral("tempo"), true}}).ok);
 		QCOMPARE(lanes->height(), sections.height() + markers.height() + tempo.height());
+	}
+
+	//! The ruler is laid out by the arranger's column and nothing else sizes it: a plain widget has no minimum, so
+	//! the column used to give it no height and its bar numbers and loop brace were not visible or clickable.
+	//! Checked with no test-side resize (the punch-band test below resizes the ruler itself to get a height).
+	void theRulerHasAUsableLayoutHeight()
+	{
+		TimeLineWidget* ruler = m_editor->timeLine();
+		QCoreApplication::processEvents();
+		QVERIFY(ruler->isVisible());
+		QVERIFY2(ruler->height() >= scaledPixels(32),
+			qPrintable(QStringLiteral("the ruler has %1 px of layout height").arg(ruler->height())));
 	}
 
 	//! 0.5.0 E23: the chord track has a lane under Tempo - it takes room only while the chord track holds a
