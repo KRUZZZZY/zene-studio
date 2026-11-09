@@ -164,3 +164,19 @@ says nothing about the fix. Every build below ran with `CCACHE_DISABLE=1`.
 
 Files committed in round 3: `src/gui/widgets/TextFloat.cpp` (comment only),
 `docs/qwen-fixes-2026-10/cluster-gui-1106-menu-help-accessibility-check.md`.
+
+### Round-3 self-check
+
+- **The regression test FAILS when the product change is reverted, and PASSES with it.** Yes. Re-measured on the round-3 tree: reverted build EXIT=0, then
+  `ctest -R '^GrooveMenuTest$'` EXIT=8 on `'over.contains(shownAt)' returned FALSE` (log 10). Restored build EXIT=0, then
+  the family passed 2/2 with EXIT=0 (log 12).
+- **The test is deterministic.** Unchanged from round 2 (see Self-check above): the float is created synchronously inside
+  `QAction::trigger()`, the window geometry is set explicitly, and there are no sleeps or timers.
+- **The fix is at the cause and complete.** Unchanged. Round 3 changes only a comment, so callers and siblings are as audited above.
+- **No collateral damage.** Round 3 changes no executable code; the 2-test family passes (logs 08 and 12).
+- **ALREADY-FIXED / FALSE-POSITIVE.** Not applicable (FIXED).
+- **Pre-submit check.** The original `submit_check.py` gave EXIT=1 (log 17). Its only FAIL was the gates row, because it runs
+  the original `feature_check.py`, and that hits the write-jail `PermissionError` described above. A copy that runs the
+  log-path gate copy (`logs/18-submit-check-copy.diff`: `ROOT`, `sys.path` and the gate script path only) gave
+  `RESULT: PASS - submit` with EXIT=0 (log 19). The loop's own unjailed run of the original scripts should match. That is
+  not verified from this lane.
