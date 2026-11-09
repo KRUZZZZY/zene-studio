@@ -36,6 +36,8 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QMenu>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QSignalSpy>
 #include <QSplitter>
 #include <QToolButton>
@@ -53,6 +55,7 @@
 #include "MenuTestSupport.h"
 #include "Mixer.h"
 #include "MixerModeBar.h"
+#include "EffectRackView.h"
 #include "MixerView.h"
 #include "MixerZones.h"
 #include "Shell.h"
@@ -369,6 +372,37 @@ private slots:
 		{
 			QCOMPARE(action->property("controlCommand").toString(), QStringLiteral("window.mixer_zones"));
 		}
+	}
+
+	//! gui-1030: the Mix panel's minimum width must not force the main window wider than a 1024 px
+	//! display (Inspector and Browser at their minimum widths included). The effects chain at the
+	//! panel's right edge must then lie inside the window, and the mode bar's controls, which no longer
+	//! set the panel's width floor, are reached by scrolling the bar.
+	void theMixerFitsAMainWindowOf1024Pixels()
+	{
+		MainWindow* window = getGUI()->mainWindow();
+		window->resize(1024, 768);
+		QCoreApplication::processEvents();
+		QVERIFY2(window->width() <= 1024, qPrintable(QStringLiteral("the window could not shrink below %1 px").arg(window->width())));
+
+		EffectRackView* rack = nullptr;
+		for (EffectRackView* candidate : getGUI()->mixerView()->findChildren<EffectRackView*>())
+		{
+			if (candidate->isVisible()) { rack = candidate; }
+		}
+		QVERIFY(rack != nullptr);
+		const int right = rack->mapTo(window, QPoint(0, 0)).x() + rack->width();
+		QVERIFY2(right <= window->width(), qPrintable(QStringLiteral("the effects chain ends at %1 of %2").arg(right).arg(window->width())));
+
+		QScrollArea* barArea = nullptr;
+		for (QWidget* up = getGUI()->mixerView()->modeBar()->parentWidget(); up != nullptr && barArea == nullptr; up = up->parentWidget())
+		{
+			barArea = qobject_cast<QScrollArea*>(up);
+		}
+		QVERIFY(barArea != nullptr);
+		QVERIFY(barArea->horizontalScrollBar()->maximum() > 0);  // the bar is wider than the panel, so it scrolls
+		window->resize(1400, 900);
+		QCoreApplication::processEvents();
 	}
 
 private:

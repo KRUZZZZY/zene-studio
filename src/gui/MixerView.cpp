@@ -50,6 +50,7 @@
 #include <QPushButton>
 #include <QVBoxLayout>
 #include <QScrollArea>
+#include <QScrollBar>
 #include <QSplitter>
 #include <QStyle>
 #include <QKeyEvent>
@@ -89,6 +90,50 @@ namespace lmms::gui
 {
 
 
+namespace
+{
+
+//! The strips the channel area always keeps in view; it scrolls the rest. Few enough that the master, this
+//! and the rack fit beside the Inspector and the Browser on a 1024 px display (gui-1030).
+constexpr int MinVisibleStrips = 2;
+
+//! Holds the mode bar so its 13 controls do not set the Mix panel's minimum width (and so the main window's):
+//! a narrower panel scrolls the bar sideways instead of pushing the rack off a small display.
+class ModeBarArea : public QScrollArea
+{
+public:
+	ModeBarArea(QWidget* bar, QWidget* parent) : QScrollArea(parent)
+	{
+		setWidgetResizable(true);
+		setFrameStyle(QFrame::NoFrame);
+		setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+		setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+		setWidget(bar);
+		fitHeight();
+	}
+	QSize minimumSizeHint() const override { return {0, height()}; }
+	QSize sizeHint() const override { return {widget()->sizeHint().width(), height()}; }
+
+protected:
+	void resizeEvent(QResizeEvent* event) override
+	{
+		QScrollArea::resizeEvent(event);
+		fitHeight();
+	}
+
+private:
+	//! The bar's own height, plus the scroll bar's only while the bar is wider than the viewport.
+	void fitHeight()
+	{
+		const bool scrolls = widget()->minimumSizeHint().width() > width();
+		const int wanted = widget()->sizeHint().height() + (scrolls ? horizontalScrollBar()->sizeHint().height() : 0);
+		if (wanted != minimumHeight()) { setFixedHeight(wanted); }
+	}
+};
+
+} // namespace
+
+
 MixerView::MixerView(Mixer* mixer) :
 	QWidget(),
 	ModelView(nullptr, this),
@@ -113,9 +158,10 @@ MixerView::MixerView(Mixer* mixer) :
 	outer->setSpacing(0);
 	m_modeBar = new MixerModeBar(this);
 	connect(m_modeBar, &MixerModeBar::changed, this, &MixerView::syncWithMixer, Qt::QueuedConnection);
+	auto* modeBarArea = new ModeBarArea(m_modeBar, this);
 	// MX-021: with following on, a new arranger selection re-lays the Selected filter's strips.
 	connect(ShellSelection::instance(), &ShellSelection::changed, this, &MixerView::syncWithMixer, Qt::QueuedConnection);
-	outer->addWidget(m_modeBar);
+	outer->addWidget(modeBarArea);
 	m_sendsBanner = new MixerSendsBanner(this);
 	outer->addWidget(m_sendsBanner);
 
@@ -200,7 +246,7 @@ MixerView::MixerView(Mixer* mixer) :
 	channelArea->setWidget(m_channelAreaWidget);
 	channelArea->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 	channelArea->setFrameStyle(QFrame::NoFrame);
-	channelArea->setMinimumWidth(mixerChannelSize.width() * 6);
+	channelArea->setMinimumWidth(mixerChannelSize.width() * MinVisibleStrips);
 	channelArea->setWidgetResizable(true);
 
 	int const scrollBarExtent = style()->pixelMetric(QStyle::PM_ScrollBarExtent);
