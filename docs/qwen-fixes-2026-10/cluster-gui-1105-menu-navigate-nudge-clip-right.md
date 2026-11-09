@@ -124,3 +124,11 @@ Files committed: `src/gui/widgets/TextFloat.cpp`, `tests/src/gui/GrooveMenuTest.
   write jail (`19-gates.log`: PermissionError, EXIT 1). The unchanged gate source, run with only the log
   directory redirected, passes 8/8 with EXIT 0 (`20-gates.log`). The loop's own run outside the jail should be
   able to create that directory.
+- **Round 2 (integration) self-check:** the regression is RED with the fix reverted (`06-test-red.log`, EXIT 8,
+  GrooveMenuTest.cpp:198) and GREEN with it (`08-test-green.log`, EXIT 0). The test is still deterministic: it is
+  the same test as in round 1, with no timing. The integrated code is byte-identical to the accepted patch
+  (`01-diff-vs-accepted.txt`, empty), so the caller and sibling analysis above still holds. The TextFloat family
+  passed 4/4 (`12-test-family.log`). `submit_check.py` again reports FAIL for the gates row (`13-submit-check.log`)
+  only because the direct `feature_check.py` run cannot create `<worktree>-feature-check` inside the jail
+  (`09-feature-check.log`: PermissionError, EXIT 1). The same gate source, with only the log directory
+  redirected, gave EXIT 0, 8/8 PASS (`10-feature-check.log`).
