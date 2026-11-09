@@ -94,6 +94,13 @@ used `CCACHE_TEMPDIR` in the log folder. This does not change the compiled outpu
 - **Verdict is FIXED**, not ALREADY-FIXED / FALSE-POSITIVE, so no not-real evidence applies.
 - **Gates:** independent review ran the required `feature_check.py` command successfully; all eight checks passed,
   including complexity and file-length with no new items in changed files.
+- **Round 3:** the evidence for the items above was re-run on the integrated tip (table in "Integration
+  re-verification (round 3)"): RED EXIT=8 with the product fix reverted, GREEN EXIT=0 restored, family 3/3. In this
+  lane, `submit_check.py` reports `FAIL gates (feature_check.py)` with an empty detail
+  (`r3/logs/submit-check-1.log`, EXIT=1). It calls the shipped `feature_check.py`, which fails before any gate runs
+  with the same `PermissionError` on `<worktree>-feature-check` (`gates-1.log`). The same gates, with only the log path
+  moved, all PASS (`gates-2.log`, EXIT=0). This lane cannot make that check pass. The loop's own run outside the write
+  jail should show the real result.
 
 ## Integration onto 050/m0-train-26 (round 2)
 
