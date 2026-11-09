@@ -240,6 +240,7 @@ HelpCenter* HelpCenter::showHelp(const QString& topic, bool reference)
 	s_center->m_tabs->setCurrentIndex(reference ? 1 : 0);
 	s_center->QDialog::show();
 	s_center->raise();
+	s_center->activateWindow();  // raise() alone leaves it behind the About / shortcuts windows that hold focus
 	return s_center;
 }
 
