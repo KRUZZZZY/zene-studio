@@ -97,8 +97,7 @@ void NStateButton::mousePressEvent(QMouseEvent* me)
 {
 	if (me->button() == Qt::LeftButton && !m_states.empty())
 	{
-		// A mouse click keeps advancing at press time; its clicked() must not advance again.
-		m_advancedOnPress = true;
+		// Preserve the existing mouse behavior: the state changes at press time.
 		advanceState();
 	}
 	ToolButton::mousePressEvent(me);
@@ -106,16 +105,18 @@ void NStateButton::mousePressEvent(QMouseEvent* me)
 
 void NStateButton::mouseReleaseEvent(QMouseEvent* me)
 {
+	// Suppress the clicked() emitted by the base release handler. Keep this scoped to the
+	// handler so a release swallowed while the button is disabled cannot poison a later click.
+	m_suppressReleaseClick = true;
 	ToolButton::mouseReleaseEvent(me); // emits clicked() when released over the button
-	// Released off the button there is no clicked(): drop the mark so the next activation counts.
-	m_advancedOnPress = false;
+	m_suppressReleaseClick = false;
 }
 
 void NStateButton::onClicked()
 {
-	if (m_advancedOnPress)
+	if (m_suppressReleaseClick)
 	{
-		m_advancedOnPress = false;
+		m_suppressReleaseClick = false;
 		return;
 	}
 	advanceState();

@@ -72,7 +72,7 @@ private:
 	QString m_generalToolTip;
 
 	int m_curState;
-	bool m_advancedOnPress = false; //!< the current mouse press already advanced the state
+	bool m_suppressReleaseClick = false; //!< the base mouse-release handler emits the already-counted click
 };
 
 } // namespace lmms::gui

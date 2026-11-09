@@ -129,6 +129,24 @@ private slots:
 		QCOMPARE(button.state(), 0);
 	}
 
+	// If the button is disabled before release, QAbstractButton consumes that event without
+	// calling mouseReleaseEvent(); the interrupted mouse gesture must not poison the next click.
+	void disabledDuringMousePressDoesNotSwallowTheNextClick()
+	{
+		NStateButton button(nullptr);
+		addTwoStates(button);
+		button.resize(20, 20);
+
+		QTest::mousePress(&button, Qt::LeftButton, {}, QPoint(5, 5));
+		QCOMPARE(button.state(), 1);
+		button.setEnabled(false);
+		QTest::mouseRelease(&button, Qt::LeftButton, {}, QPoint(5, 5));
+		button.setEnabled(true);
+
+		button.click();
+		QCOMPARE(button.state(), 0);
+	}
+
 	// A right click does not advance on any path.
 	void rightClickDoesNotAdvance()
 	{

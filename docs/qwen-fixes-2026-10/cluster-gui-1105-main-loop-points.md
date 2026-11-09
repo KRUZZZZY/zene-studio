@@ -8,10 +8,11 @@ The accepted patch (`bugs/qwen-gui-1105-main-loop-points` @ `5436456d8`) was app
 `af010bc3cc` by the driver (`integration-apply.log`: every hunk "applied cleanly" on the fallback
 direct application; no conflict markers remain in any file). The one line the newer tree changed,
 `setAccessibleName(toolTip())` in `NStateButton::changeState` (`NStateButton.cpp:81`), is outside the
-patch hunks and is kept. The design, the `.cpp`/`.h` change and the seven regression cases are the
-accepted ones, unchanged: no new design was needed and nothing was re-implemented. Semantic difference
-from the accepted patch: none. The only difference is the `tests/upstream-modifications.txt` line,
-which now extends the train's R8.5 reason instead of the pre-train text.
+patch hunks and is kept. QA retained the accepted activation logic and refined the mouse suppression
+to last only while the base mouse-release handler runs. This prevents a release consumed while the
+button is disabled from leaving stale state that swallows the next non-mouse activation. An eighth
+regression case covers that path. The only integration metadata difference remains the
+`tests/upstream-modifications.txt` line, which extends the train's R8.5 reason.
 
 Round-2 evidence (logs in `~/.local/share/zene-bunny-fix/qwen/runs/gui-1105-main-loop-points.r2/logs/`):
 
@@ -48,13 +49,15 @@ QAccessible press action and Space all left `state()` at 0.
 - `src/gui/widgets/NStateButton.cpp:42`: the constructor connects `clicked` to `onClicked()`.
 - `src/gui/widgets/NStateButton.cpp:88`: `advanceState()` holds the old "next state, wrap around" step.
 - `src/gui/widgets/NStateButton.cpp:97-104`: `mousePressEvent` still advances at press time, as
-  before, and sets `m_advancedOnPress`.
-- `src/gui/widgets/NStateButton.cpp:107-112`: the new `mouseReleaseEvent` calls the base, which
-  emits `clicked()` when the release is over the button, then clears the flag. A press released off
-  the button therefore does not swallow the next activation.
-- `src/gui/widgets/NStateButton.cpp:114-122`: `onClicked()` skips the click that follows a mouse
-  press (it was already counted) and advances on every other activation.
-- `include/NStateButton.h:64-75`: the matching declarations and the flag (default `false`).
+  before.
+- `src/gui/widgets/NStateButton.cpp:107-114`: `mouseReleaseEvent` scopes the suppression flag
+  around the base handler, which emits `clicked()` when the release is over the button. If release
+  is delivered while the button is disabled, Qt consumes it before this override runs, and no
+  stale suppression remains for the next activation.
+- `src/gui/widgets/NStateButton.cpp:116-123`: `onClicked()` skips the `clicked()` emitted by the
+  base mouse-release handler and advances on every other activation.
+- `include/NStateButton.h:64-75`: the matching declarations and the scoped suppression flag
+  (default `false`).
 
 Behaviour kept: a left mouse click advances exactly once, at press time. A right click never
 advances, because `QAbstractButton` ignores non-left presses and never emits `clicked()`. A button
@@ -72,6 +75,7 @@ CPULoadWidgetTest, offscreen environment, and in `tests/fork-sources.txt`) cover
 - the Space key
 - a mouse click advancing exactly once
 - a press released off the button not swallowing the next `click()`
+- a release consumed while disabled not swallowing the next `click()`
 - a right click not advancing
 - an empty button ignoring activation
 
@@ -148,7 +152,7 @@ those 2 lines only. The gate commands and the PASS logic are unchanged. Results:
 - **No collateral damage.** No serialization, model, undo, control command or audio-thread code
   changed. Loop state is still stored by `Timeline`, so old projects load as before.
   - No limit or check was added. The flag only suppresses the `clicked()` that pairs with a mouse
-    press that already advanced the state.
+    release handler whose press already advanced the state.
   - AccessibilityWalkTest, which holds the earlier R8.5 accessible-name change to this file, and the
     Timeline, ArrangerTimeline and RevisionTimeline tests pass (5/5, logs/15).
 - **ALREADY-FIXED / FALSE-POSITIVE evidence:** not applicable, the verdict is FIXED (REAL). The RED
@@ -156,3 +160,24 @@ those 2 lines only. The gate commands and the PASS logic are unchanged. Results:
 - **Gates:** `submit_check.py` re-runs the stock `feature_check.py`, which cannot create its log
   directory outside this lane's write area (PermissionError, logs/16). The redirected-log copy
   (same gate commands and logic) reports RESULT: PASS with EXIT 0 (logs/17-feature-check.log).
+
+## QA follow-up (2026-11-09)
+
+Independent review found one stale-suppression path: if the button was disabled after a mouse press,
+Qt consumed the release before `NStateButton::mouseReleaseEvent`, leaving `m_advancedOnPress` set.
+The next programmatic/accessibility activation was then swallowed. The added deterministic test
+`disabledDuringMousePressDoesNotSwallowTheNextClick` reproduced it against the submitted code:
+
+| Step | Command | EXIT |
+| --- | --- | --- |
+| Reproduce submitted issue | `cmake --build build --target NStateButtonActivationTest -j12`; `cd build/tests && ctest -R '^NStateButtonActivationTest$' --output-on-failure` | 0 / 8; the new test reported actual state 1, expected 0 |
+| Product fix and GUI family build | `cmake --build build --target zene NStateButtonActivationTest AccessibilityWalkTest RevisionTimelineTest TimelineTest ArrangerTimelineTest -j12` | 0 |
+| Focused GUI family | `cd build/tests && ctest -R 'NStateButtonActivationTest|AccessibilityWalkTest|Timeline|TimeLine' --output-on-failure` | 0, 5/5 |
+| Full product reversal | `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-main-loop-points.r2/negctl/full-product-current.patch`; `cmake --build build --target zene NStateButtonActivationTest -j12`; `cd build/tests && ctest -R '^NStateButtonActivationTest$' --output-on-failure` | 0 / 0 / 8; five activation assertions failed, including the original click/accessibility/Space paths and the disabled-release case |
+| Restore product paths | `git checkout -- include/NStateButton.h src/gui/widgets/NStateButton.cpp`; `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-main-loop-points.r2/negctl/qa-fix.patch`; `cmake --build build --target zene NStateButtonActivationTest AccessibilityWalkTest RevisionTimelineTest TimelineTest ArrangerTimelineTest -j12` | 0 / 0 / 0 |
+| Stock feature gate | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-integrate-gui-1105-main-loop-points-af010bc3cc` | 0, all 8 rows PASS; no new complexity or file-length items |
+
+The final implementation scopes `m_suppressReleaseClick` to the base mouse-release handler, which
+keeps the original press-time mouse behavior and prevents a release that Qt consumes while the
+button is disabled from poisoning the next non-mouse activation. The regression suite now has eight
+cases, and the worktree was rebuilt and tested after restoring the patch.
