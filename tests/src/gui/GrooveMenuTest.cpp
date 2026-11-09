@@ -36,8 +36,10 @@
 #include <QJsonObject>
 #include <QLabel>
 #include <QMenu>
+#include <QMenuBar>
 #include <QTemporaryDir>
 
+#include "CommandForm.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "GrooveMenu.h"
@@ -169,6 +171,38 @@ private slots:
 		QVERIFY2(!shown.isEmpty(), "the refused groove.extract was shown to nobody");
 		QVERIFY2(shown.contains(QStringLiteral("groove")), qPrintable(shown));
 		delete menu;
+	}
+
+	//! gui-1105: Help > Accessibility Check floats its report. The Help menu belongs to the menu bar, so the
+	//! message was placed beside the bar's right edge - past the main window, often off-screen. It must sit
+	//! over the main window, where the person who asked can read it.
+	void aMenuBarCommandsAnswerIsShownOverTheMainWindow()
+	{
+		MainWindow* window = getGUI()->mainWindow();
+		window->resize(1000, 700);
+		window->show();
+		QVERIFY(QTest::qWaitForWindowExposed(window));
+		// The entry the Help menu has (WorkspaceMenus fillHelpMenu): a show-result run of the command, on a menu
+		// of the main window's menu bar.
+		const QString id = QStringLiteral("window.accessibility_report");
+		QMenu* help = window->menuBar()->addMenu(QStringLiteral("Help (gui-1105)"));
+		QAction* check = addCommandAction(help, QStringLiteral("Accessibility Check"), id,
+			[id] { return CommandCall{id, {}, {}, QString(), false, true}; });
+		QVERIFY2(check->isEnabled(), "window.accessibility_report is not registered");
+		const QList<TextFloat*> before = window->findChildren<TextFloat*>();
+		check->trigger();
+		TextFloat* shown = nullptr;
+		for (TextFloat* message : window->findChildren<TextFloat*>())
+		{
+			if (!before.contains(message)) { shown = message; }
+		}
+		QVERIFY2(shown != nullptr, "the Accessibility Check answer was shown to nobody");
+		const QRect over = window->geometry();
+		QVERIFY2(over.contains(shown->geometry()), qPrintable(QStringLiteral("the report at (%1,%2 %3x%4) is not over "
+			"the main window (%5,%6 %7x%8)").arg(shown->x()).arg(shown->y()).arg(shown->width()).arg(shown->height())
+			.arg(over.x()).arg(over.y()).arg(over.width()).arg(over.height())));
+		shown->close();
+		delete help;
 	}
 };
 
