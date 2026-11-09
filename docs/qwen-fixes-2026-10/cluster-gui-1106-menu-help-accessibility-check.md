@@ -80,7 +80,8 @@ Test matrix:
 
 ## Commands and results (logs in ~/.local/share/zene-bunny-fix/qwen/runs/gui-1106-menu-help-accessibility-check.r2/logs)
 
-All builds ran with `CCACHE_DISABLE=1` (the lane's ccache temp directory is not writable, as in round 1).
+The logged builds ran with `CCACHE_DISABLE=1` (the round-1 workaround); a control rebuild without it also passed
+(log 15, EXIT=0), so ccache is not a blocker in this lane.
 
 | Step | Command | EXIT |
 | --- | --- | --- |
@@ -95,6 +96,8 @@ All builds ran with `CCACHE_DISABLE=1` (the lane's ccache temp directory is not 
 | 4b family (fix) | `ctest -R '^(GrooveMenuTest\|PluginShortcutsTest)$' --output-on-failure > logs/06b-test-family-restored.log 2>&1` | 0 (2/2 passed) |
 | gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > logs/07-feature-check.log 2>&1` | 0: RESULT PASS (8/8 rows: fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length) |
 | integration equality | `diff -u logs/08-accepted-source-diff.patch logs/09-applied-diff.patch > logs/10-diff-comparison.log` | 0 (no difference) |
+| ccache control build | `cmake --build build --target zene GrooveMenuTest -j4 > logs/15-build-ccache-check.log 2>&1` (no `CCACHE_DISABLE`) | 0 |
+| ccache control family | `ctest -R '^(GrooveMenuTest\|PluginShortcutsTest)$' --output-on-failure > logs/16-test-after-ccache-check.log 2>&1` | 0 (2/2 passed) |
 
 Files committed: `src/gui/widgets/TextFloat.cpp`, `tests/src/gui/GrooveMenuTest.cpp`,
 `tests/upstream-modifications.txt` (a new line for TextFloat.cpp with its reason),
