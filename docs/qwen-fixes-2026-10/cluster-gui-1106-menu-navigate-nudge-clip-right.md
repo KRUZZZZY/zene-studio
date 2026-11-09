@@ -141,3 +141,22 @@ your files) and file-length (no new item in your files) all PASS.
 
 Files committed: `src/gui/widgets/TextFloat.cpp`, `tests/src/gui/GrooveMenuTest.cpp`,
 `tests/upstream-modifications.txt`, this report.
+
+## Self-check (round r2, integration)
+
+- **Fails without the fix, passes with it:** r2 run on the integrated tree. Revert gives EXIT=8 (`04-test-reverted.log`,
+  float at `1002,0 142x76` outside `0,0 1000x700`); reapply gives EXIT=0 (`06-test-fixed.log`, 1/1).
+- **Deterministic:** the test triggers the real Navigate menu action synchronously and reads the float's geometry
+  right away. It uses no timer, sleep or event-loop wait. The window size is fixed (`resize(1000, 700)`) and the
+  shell selection is cleared through `ShellSelection::instance()->setClip(nullptr)`.
+- **At the cause and complete:** the placement in `TextFloat::displayMessage` (`TextFloat.cpp:111-123`) is the
+  cause. All 32 callers are covered in the integration section above: 1 window-parent caller (`CommandRun.cpp:96`),
+  which is fixed, and 31 no-parent callers, which are unchanged.
+- **No collateral damage:** the change is GUI placement only. It adds no limit or check, touches no saved data and
+  changes no load path. The widget-parent and no-parent branches are unchanged. GrooveMenuTest and
+  PluginShortcutsTest pass 2/2.
+- **Not ALREADY-FIXED or FALSE-POSITIVE:** the verdict is FIXED.
+- **submit_check `gates` row is FAIL here:** `submit_check.py:117` runs the unmodified `feature_check.py`. That script
+  mkdirs `<worktree>-feature-check` beside the worktree, outside this lane's write-jail (PermissionError, `07-gates.log`).
+  The same gates, with only the log folder moved, give 8/8 PASS, EXIT=0 (`09-gates.log`). A run outside the jail
+  should confirm this.
