@@ -177,3 +177,80 @@ Files committed: `src/gui/widgets/TextFloat.cpp`, `tests/src/gui/GrooveMenuTest.
   dies with `PermissionError` creating `<worktree>-feature-check` beside the worktree, outside this lane's write-jail
   (`LOGS/gates-3-stock-committed.log` STOCK_EXIT=1, no gate ran). The same gates via the logdir-only copy on the
   committed tree: `LOGS/gates-4-committed.log` EXIT=0, `RESULT: PASS`. The loop's own run, which can write there, should match.
+
+## Integration onto 050/m0-train-26 (round 3) - verdict: FIXED, already integrated; no conflict against the pinned target
+
+Round 3 re-queued the same cluster with reason `merge conflict with the newer line in: src/gui/widgets/TextFloat.cpp`.
+I traced that reason to its source before touching anything:
+
+- The pinned target is `050/m0-train-26 @ af010bc3cc`. Its merge base with the accepted tip `f9150e8918` is `af010bc3cc`
+  itself (`git merge-base` EXIT=0), so the target has no change of its own to `TextFloat.cpp` or `GrooveMenuTest.cpp`.
+- `git merge-tree --write-tree --name-only --no-messages af010bc3cc HEAD` (LOGS/mt-1.log) exits 0 and names no conflict
+  file. There is no conflict against the pinned target.
+- The integrated tree is byte-identical to the accepted tip for the product, test and registration files:
+  `git diff --exit-code f9150e8918..HEAD -- src/gui/widgets/TextFloat.cpp tests/src/gui/GrooveMenuTest.cpp
+  tests/upstream-modifications.txt` exits 0. The only difference from the accepted tip is this report.
+- The "newer line" is real, but it is not on the pinned target: `050/m0-train-27` carries a *different* fix for the same
+  bug (gui-1030) - `keepOnScreen(QWidget*, QWidget*)` at `src/gui/widgets/TextFloat.cpp:50`, with `displayMessage` at
+  `:133-144` routing a window parent to the window's lower-left area. Merging the accepted patch into train-27 conflicts
+  there. That is outside this job's pinned target (train-26) and outside the accepted design, which the job says to retain,
+  so no conflict resolution was needed and none was made. `git merge-base --is-ancestor f9150e8918 050/m0-train-27` exits 1
+  (train-27 does not contain the accepted branch).
+
+The accepted design is unchanged: file-local `onScreen()` at `src/gui/widgets/TextFloat.cpp:52-71`, applied once in
+`displayMessage` at `src/gui/widgets/TextFloat.cpp:156`; the caller in the finding is `src/gui/CommandRun.cpp:95`
+(`announce()`), reached from the menu through `CommandRun.cpp:111`.
+
+Failure paths and supported-platform hazards, all together (unchanged from the accepted patch, re-checked on this tree):
+- parent = maximised/screen-filling main window (the finding): clamped onto the anchor's screen - proved RED/GREEN below.
+- parent = small widget (knob-like) with room to its right: the frame fits a screen, so the position is unchanged (no-op).
+- no parent: main-window lower-left position, clamped only if it would leave every screen.
+- multi-monitor: a frame fitting on any virtual sibling is kept, so spill onto a neighbouring monitor stays; gaps in the
+  virtual bounding rectangle are not treated as on-screen (the round-1 QA point).
+- screen smaller than the float: `std::max` keeps a valid `std::clamp` range (the screen's top-left).
+- `anchor->screen()` null (no screen yet): the position is returned unchanged.
+- Platforms: only `QScreen::virtualSiblings()` / `availableGeometry()` / `QWidget::screen()` (Qt >= 5.14, present in the
+  supported Qt 5.15 and Qt6 builds); no platform-specific code. Realtime/undo/commands: GUI thread only, no command or
+  undo change, nothing on the audio thread.
+
+Evidence (LOGS = `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-navigate-next-clip.r3/logs`):
+
+| step | command | EXIT |
+| --- | --- | --- |
+| build | `CCACHE_DISABLE=1 cmake --build build --target zene GrooveMenuTest PluginShortcutsTest -j4 > LOGS/build-1.log 2>&1` | 0 |
+| family tests | `cd build/tests && ctest -R '^(GrooveMenuTest\|PluginShortcutsTest)$' --output-on-failure > LOGS/test-1.log 2>&1` | 0 (2/2 tests passed) |
+| merge-tree vs pinned target | `git merge-tree --write-tree --name-only --no-messages af010bc3cc HEAD > LOGS/mt-1.log 2>&1` | 0 (no conflict file) |
+| product identity | `git diff --exit-code f9150e8918..HEAD -- src/gui/widgets/TextFloat.cpp tests/src/gui/GrooveMenuTest.cpp tests/upstream-modifications.txt` | 0 |
+| 4b save | `git diff af010bc3cc..HEAD -- src/gui/widgets/TextFloat.cpp > LOGS/fix.patch` | 0 |
+| 4b revert | `git apply -R LOGS/fix.patch` | 0 |
+| 4b reverted build | `CCACHE_DISABLE=1 cmake --build build --target zene GrooveMenuTest -j4 > LOGS/build-2-reverted.log 2>&1` | 0 |
+| 4b RED | `cd build/tests && ctest -R '^GrooveMenuTest$' --output-on-failure > LOGS/test-2-red.log 2>&1` | **8** (`FAIL! : GrooveMenuTest::aMessageOverAWindowFillingTheScreenStaysOnScreen() 'fitsOnAScreen' returned FALSE. (message does not fit within any screen's available geometry)`, `tests/src/gui/GrooveMenuTest.cpp:192`; 1 test, 0% passed) |
+| 4b reapply | `git apply LOGS/fix.patch` | 0 |
+| 4b restored build | `CCACHE_DISABLE=1 cmake --build build --target zene GrooveMenuTest PluginShortcutsTest -j4 > LOGS/build-3-restored.log 2>&1` | 0 |
+| 4b GREEN | `cd build/tests && ctest -R '^(GrooveMenuTest\|PluginShortcutsTest)$' --output-on-failure > LOGS/test-3-green.log 2>&1` | **0** (2/2 tests passed) |
+| gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > LOGS/gates-1.log 2>&1` | 0 (`RESULT: PASS`; fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity and file-length all PASS) |
+
+The 4b patch is the product diff from the pinned base `af010bc3cc` (the fix is already committed, so `git diff` against
+`HEAD` is empty; the base-relative diff is the honest reversal). Test changes were left in place for the RED run.
+
+Files committed this round: this report. The integrated patch (`src/gui/widgets/TextFloat.cpp`,
+`tests/src/gui/GrooveMenuTest.cpp`, `tests/upstream-modifications.txt`) is already committed as `180d83e875`.
+
+## Self-check (round 3, integration)
+
+- **Test FAILS with the product change reverted and PASSES with it:** RED `LOGS/test-2-red.log` EXIT=8
+  (`aMessageOverAWindowFillingTheScreenStaysOnScreen` FAIL, `'fitsOnAScreen' returned FALSE`); GREEN `LOGS/test-3-green.log`
+  EXIT=0 (2/2). Family `LOGS/test-1.log` EXIT=0 (2/2).
+- **Deterministic:** no timers, sleeps or event-loop waits. Seam: the test sets the main window's geometry to the offscreen
+  screen's available geometry, calls `TextFloat::displayMessage(..., 0, window)` (timeout 0 = no `QTimer::singleShot`),
+  reads `frameGeometry()` synchronously and deletes the float.
+- **At the cause and complete:** the integrated code is identical to the accepted tip (`git diff --exit-code f9150e8918..HEAD`
+  for the product/test/registration files exits 0). The only `displayMessage` caller in the finding's path is
+  `src/gui/CommandRun.cpp:95`; every `announce()`/`runCommand()` path goes through `TextFloat.cpp:156`. Sibling knob/fader
+  floats (`moveGlobal`) are out of scope as argued in round 1.
+- **No collateral damage:** GUI placement only; no saved data, project format, command, undo or audio-thread change; the
+  clamp is a no-op whenever the float already fits on a screen.
+- **Conflict:** none against the pinned target `050/m0-train-26` (`git merge-tree` EXIT=0, no conflict file). The newer line
+  the driver names is on `050/m0-train-27`, which is not the pinned target and carries a different fix for the same bug.
+- **ALREADY-FIXED / FALSE-POSITIVE:** not claimed; verdict FIXED (RED reproduced on this target).
+- **submit_check.py:** see the run recorded below.
