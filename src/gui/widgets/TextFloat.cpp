@@ -24,12 +24,16 @@
 
 #include "TextFloat.h"
 
+#include <algorithm>
+
 #include <QTimer>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QLabel>
 
+#include <QGuiApplication>
 #include <QRegularExpression>
+#include <QScreen>
 
 #include "AccessibleWidgets.h"
 #include "GuiApplication.h"
@@ -37,6 +41,25 @@
 
 namespace lmms::gui
 {
+
+namespace
+{
+
+//! Keeps a floated message on the screen it opened on: beside a window that fills the screen
+//! there is no room past its edge, and a message placed there is never seen.
+void keepOnScreen(QWidget* message, const QWidget* anchor)
+{
+	const QScreen* screen = QGuiApplication::screenAt(message->pos());
+	if (screen == nullptr) { screen = anchor->screen(); }
+	if (screen == nullptr) { return; }
+	const QRect area = screen->availableGeometry();
+	const QSize size = message->frameGeometry().size();
+	const int x = std::max(area.left(), std::min(message->x(), area.right() + 1 - size.width()));
+	const int y = std::max(area.top(), std::min(message->y(), area.bottom() + 1 - size.height()));
+	message->move(x, y);
+}
+
+} // namespace
 
 
 TextFloat::TextFloat() :
@@ -108,6 +131,7 @@ TextFloat * TextFloat::displayMessage(const QString & title,
 	// Show the widget so that the correct height is calculated in the code that follows
 	tf->show();
 
+	QWidget * anchor = parent;
 	if(parent != nullptr)
 	{
 		tf->moveGlobal(parent, QPoint(parent->width() + 2, 0));
@@ -117,7 +141,9 @@ TextFloat * TextFloat::displayMessage(const QString & title,
 		// If no parent is given move the window to the lower left area of the main window
 		QWidget * mw = getGUI()->mainWindow();
 		tf->moveGlobal(mw, QPoint(32, mw->height() - tf->height() - 8));
+		anchor = mw;
 	}
+	keepOnScreen(tf, anchor);
 
 	// 0.5.0 (theme 17): a status message is spoken too, once, after what the screen reader is saying (the float's
 	// name carries it for a Qt without announcement events, AccessibleWidgets.h).
