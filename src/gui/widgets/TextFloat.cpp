@@ -108,15 +108,16 @@ TextFloat * TextFloat::displayMessage(const QString & title,
 	// Show the widget so that the correct height is calculated in the code that follows
 	tf->show();
 
-	if(parent != nullptr)
+	if (parent != nullptr && !parent->isWindow())
 	{
 		tf->moveGlobal(parent, QPoint(parent->width() + 2, 0));
 	}
 	else
 	{
-		// If no parent is given move the window to the lower left area of the main window
-		QWidget * mw = getGUI()->mainWindow();
-		tf->moveGlobal(mw, QPoint(32, mw->height() - tf->height() - 8));
+		// No parent, or a top-level window (the main window a menu command passes as host): "beside" it would be
+		// past its right edge, off the screen when it fills it. Float in its lower left area instead.
+		QWidget * host = parent != nullptr ? parent : getGUI()->mainWindow();
+		tf->moveGlobal(host, QPoint(32, host->height() - tf->height() - 8));
 	}
 
 	// 0.5.0 (theme 17): a status message is spoken too, once, after what the screen reader is saying (the float's

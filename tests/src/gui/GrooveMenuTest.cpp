@@ -155,6 +155,34 @@ private slots:
 		delete menu;
 	}
 
+	//! A notice floated over a top-level window (the main window a menu command passes as host) must land
+	//! inside that window: beside it (width + 2) it is off the right edge, where nobody sees it.
+	void aNoticeOverTheMainWindowLandsInsideIt()
+	{
+		QWidget* window = getGUI()->mainWindow();
+		const QRect hostRect(window->mapToGlobal(QPoint(0, 0)), window->size());
+		TextFloat* notice = TextFloat::displayMessage(QStringLiteral("Next Clip"),
+			QStringLiteral("no clip is selected"), QPixmap(), 60000, window);
+		const QRect noticeRect(notice->pos(), notice->size());
+		notice->close();
+		QVERIFY2(hostRect.contains(noticeRect),
+			qPrintable(QStringLiteral("notice %1,%2 %3x%4 is outside the window %5,%6 %7x%8")
+				.arg(noticeRect.x()).arg(noticeRect.y()).arg(noticeRect.width()).arg(noticeRect.height())
+				.arg(hostRect.x()).arg(hostRect.y()).arg(hostRect.width()).arg(hostRect.height())));
+	}
+
+	//! A plain child widget keeps the old placement: just right of it, at its top.
+	void aNoticeBesideAWidgetStaysBesideIt()
+	{
+		QWidget child(getGUI()->mainWindow());
+		child.setGeometry(10, 10, 40, 20);
+		TextFloat* notice = TextFloat::displayMessage(QStringLiteral("t"), QStringLiteral("m"), QPixmap(), 60000, &child);
+		const QPoint expected = child.mapToGlobal(QPoint(0, 0)) + QPoint(child.width() + 2, 0);
+		const QPoint got = notice->pos();
+		notice->close();
+		QCOMPARE(got, expected);
+	}
+
 	void aRefusedCommandIsShownToTheUser()
 	{
 		// An empty clip carries no note a groove can be measured from, so groove.extract
