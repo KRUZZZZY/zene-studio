@@ -5771,3 +5771,4 @@ src/gui/widgets/TextFloat.cpp	bugs/qwen-gui-1105 (cluster gui-1105-menu-navigate
 tests/src/gui/GrooveMenuTest.cpp	# Fit Selection refusal notification is positioned off-screen
 tests/CMakeLists.txt	cluster gui-1106-menu-edit-collaborate: the CollabPanelTest registration comment no longer says collab.show_panel requires a display; it now covers Edit > Collaborate... in a headless session
 tests/src/gui/ShellHomesTest.cpp	# Mixer tab click leaves the Note Editor panel open
+tests/src/gui/ShellHomesTest.cpp	# Devices tab click leaves the Note Editor panel open
