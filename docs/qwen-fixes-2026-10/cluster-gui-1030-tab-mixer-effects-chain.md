@@ -79,7 +79,7 @@ Semantic difference from the accepted patch: **none**. The product/test hunks of
 | 4b RED | rebuild `zene MixerZonesTest` (`03-build-4b-red.log`, EXIT=0); `ctest -R '^MixerZonesTest$' --output-on-failure > 04-test-4b-red.log 2>&1` | EXIT=8: `FAIL! theMixerFitsAMainWindowOf1024Pixels() 'window->width() <= 1024' returned FALSE. (the window could not shrink below 2000 px)` |
 | 4b re-apply | `git apply fix.patch` | EXIT=0; `git status --short` empty |
 | 4b GREEN | rebuild (`05-build-4b-green.log`, EXIT=0); `ctest -R '^MixerZonesTest$' --output-on-failure > 06-test-4b-green.log 2>&1` | EXIT=0, 100% passed out of 1 |
-| Gates, original script | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > 07-feature-check.log 2>&1` | EXIT=0, 8/8 PASS (complexity and file-length: "no new item in your files") |
+| Gates, original script | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > 07-feature-check.log 2>&1` | EXIT=0, 8/8 PASS (complexity and file-length: "no new item in your files"). The round-3 write-jail `PermissionError` did not occur this round; the unmodified original script completed. |
 
 Failure paths and supported-platform hazards, unchanged from the accepted patch and re-checked here:
 - **Narrow panel (the finding's 1024x768):** the window shrinks to 1024, the rack's right edge stays inside it, and the mode bar's horizontal scroll maximum is above 0, so every control remains reachable.
