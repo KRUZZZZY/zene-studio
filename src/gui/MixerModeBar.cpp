@@ -32,6 +32,8 @@
 #include <QLabel>
 #include <QMenu>
 #include <QPushButton>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QSignalBlocker>
 #include <QToolButton>
 
@@ -56,6 +58,36 @@ namespace
 {
 
 const QString kViewCommand = QStringLiteral("window.mixer_view");
+
+//! The mode bar's row of controls, scrolling sideways. Its minimum width is nothing, so a narrow mixer panel
+//! never forces the window wider than the screen (the row's controls need ~1.5k pixels); its height is the row's
+//! plus the scroll bar's while the bar is there, so no control is ever cut off at the bottom either.
+class ModeBarScroll final : public QScrollArea
+{
+public:
+	explicit ModeBarScroll(QWidget* parent) : QScrollArea(parent)
+	{
+		setFrameShape(QFrame::NoFrame);
+		setWidgetResizable(true);
+		setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+		setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+		setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+		connect(horizontalScrollBar(), &QScrollBar::rangeChanged, this, [this] { updateGeometry(); });
+	}
+
+	QSize minimumSizeHint() const override { return {0, heightFor(widget() ? widget()->minimumSizeHint().height() : 0)}; }
+	QSize sizeHint() const override
+	{
+		const QSize row = widget() ? widget()->sizeHint() : QSize();
+		return {row.width(), heightFor(row.height())};
+	}
+
+private:
+	int heightFor(int rowHeight) const
+	{
+		return rowHeight + (horizontalScrollBar()->maximum() > 0 ? horizontalScrollBar()->sizeHint().height() : 0);
+	}
+};
 
 //! A checkable entry running @a id with @a args, checked when it is the state in force.
 void commandChoice(QMenu* menu, const QString& label, const QString& id, const QJsonObject& args, bool checked)
@@ -101,7 +133,16 @@ MixerModeBar::MixerModeBar(QWidget* parent) :
 {
 	setObjectName(QStringLiteral("mixerModeBar"));
 	setAccessibleName(tr("Mixer modes"));
-	auto* layout = new QHBoxLayout(this);
+	// The controls live in one row inside a sideways-scrolling area (ModeBarScroll): in a narrow window the
+	// row scrolls, instead of making the whole mixer - and the window - too wide for the screen.
+	auto* outer = new QHBoxLayout(this);
+	outer->setContentsMargins(0, 0, 0, 0);
+	auto* scroll = new ModeBarScroll(this);
+	scroll->setAccessibleName(tr("Mixer mode controls"));  // a focusable surface needs a name (AccessibilityWalkTest)
+	auto* row = new QWidget(scroll);
+	scroll->setWidget(row);
+	outer->addWidget(scroll);
+	auto* layout = new QHBoxLayout(row);
 	layout->setContentsMargins(tokens::space::sm, tokens::space::xs, tokens::space::sm, tokens::space::xs);
 	layout->setSpacing(tokens::space::sm);
 	m_viewButtons = addSegment(layout, tr("View"), "view", mixerviewoptions::viewNames(), {tr("Mix"), tr("Routing")});

@@ -200,7 +200,9 @@ MixerView::MixerView(Mixer* mixer) :
 	channelArea->setWidget(m_channelAreaWidget);
 	channelArea->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 	channelArea->setFrameStyle(QFrame::NoFrame);
-	channelArea->setMinimumWidth(mixerChannelSize.width() * 6);
+	// Two strips, not six: the area scrolls, and a larger minimum made the mixer - and with it the window -
+	// wider than a 1024-pixel screen, which pushed New mixer channel and Return off it.
+	channelArea->setMinimumWidth(mixerChannelSize.width() * 2);
 	channelArea->setWidgetResizable(true);
 
 	int const scrollBarExtent = style()->pixelMetric(QStyle::PM_ScrollBarExtent);
