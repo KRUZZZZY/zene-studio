@@ -85,6 +85,34 @@ file (`QStringLiteral`, `IntModel`, `QJsonObject`, `std::clamp`), adds no Qt-6-o
 std::filesystem, no new file and no registration change; the command schema and description are untouched, so the
 ControlCommandsSnapshot canary does not move. Realtime: no audio-thread code is touched.
 
+### r3 re-verification (LOG FOLDER = /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1106-menu-navigate-zoom-out.r3/logs)
+
+r2 was accepted by QA (`runs/...r2/qa-session-2.log`: verdict ACCEPT, no blocking items, no rework instructions). r3
+re-dispatched the same integration job, so this round re-checks it with no code change. The branch head is still
+`7ea5ec2884` on the pinned target `af010bc3cc`. `git merge-base eac7b710 af010bc3cc` = af010bc3cc. `git diff --stat
+eac7b710 -- src tests` is empty (EXIT=0), so the tree is still byte-identical to the accepted patch. The only file this
+round changes is this report.
+
+| Step | Command | EXIT |
+| --- | --- | --- |
+| GREEN build | `cmake --build build --target zene ArrangerTimelineTest -j4 > LOGS/01-build-green.log` | 0 |
+| GREEN test | `cd build/tests && ctest -R '^ArrangerTimelineTest$' --output-on-failure > LOGS/02-test-green.log` | 0 (1/1) |
+| 4b revert | `git diff af010bc3cc -- src/gui/ControlCommandsArrangerView.cpp > LOGS/fix.patch && git apply -R LOGS/fix.patch` | 0 |
+| 4b RED build | `cmake --build build --target zene ArrangerTimelineTest -j4 > LOGS/03-build-red.log` | 0 |
+| 4b RED test | `ctest -R '^ArrangerTimelineTest$' --output-on-failure > LOGS/04-test-red.log` | **8** (`ArrangerTimelineTest.cpp(504)`: `'!out.ok' returned FALSE. (Zoom Out at the minimum zoom reported success without zooming)`) |
+| 4b reapply | `git apply LOGS/fix.patch` | 0 |
+| 4b GREEN build | `cmake --build build --target zene ArrangerTimelineTest -j4 > LOGS/05-build-green-restored.log` | 0 |
+| 4b GREEN test | `ctest -R '^ArrangerTimelineTest$' --output-on-failure > LOGS/06-test-green-restored.log` | 0 (1/1) |
+| Family build (attempt 1, my error) | `07-build-family.log`: zsh passed the nine test names as one target word ("No rule to make target"), so only `zene` was rebuilt. The ctest run after it (`08-test-family.log`, EXIT=8, 8/9 failed) ran against test binaries that had not been built. This was a harness mistake, not a product result | 2 / 8 |
+| Family build | `cmake --build build -j4 --target zene ArrangerTimelineTest VideoClipsGuiTest LoopDropWarpTest ClipWaveformEditTest BrowserDragUrlTest ArrangerFileDropTest ArrangerTakePunchTest ArrangerOverlaysVideoLaneTest ArrangerKeysNavigatorTest > LOGS/10-build-family.log` | 0 |
+| Family tests | `ctest -R '^(ArrangerTimelineTest\|VideoClipsGuiTest\|LoopDropWarpTest\|ClipWaveformEditTest\|BrowserDragUrlTest\|ArrangerFileDropTest\|ArrangerTakePunchTest\|ArrangerOverlaysVideoLaneTest\|ArrangerKeysNavigatorTest)$' --output-on-failure > LOGS/11-test-family.log` | 0 (9/9) |
+| Gates (as given) | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py . > LOGS/09-gates.log` | 1: `PermissionError` creating `<worktree>-feature-check/fork-sources.log`. That path is outside this lane's write-jail, so no gate ran |
+| Gates (log dir moved) | `python3 -I runs/...r3/fc-script/feature_check_local.py <worktree> > LOGS/13-gates.log` | **0**: 8/8 PASS (fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity "no new item in your files", file-length "no new item in your files") |
+
+The local gate copy differs from the original in exactly two lines (`LOGS/12-fc-copy.diff`). `ROOT` is pinned to the real
+qwen dir, so it uses the same FIX-BASE and baselines. The logs dir is moved into the LOG FOLDER. No gate, limit or
+baseline is changed.
+
 ### r2 evidence (LOG FOLDER = /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1106-menu-navigate-zoom-out.r2/logs)
 
 | Step | Command | EXIT |
@@ -172,6 +200,9 @@ same three files as the accepted patch, byte-identical to it.
   - `arrangement.scroll`, `nudge`, `select_clip`, `next_transient`, `fit_tracks`, `set_tool`, `modes`,
     `modifier_tools`, `navigator`, `ruler_lanes` and `get_state` do not use `requestedZoom`/`stepAtBound` or the zoom
     model's step clamp. They are not affected and were not changed.
+- **r3:** this round makes no code change. The tree is byte-identical to the accepted patch. RED is EXIT=8 at the same
+  assertion and GREEN is EXIT=0 (`r3/logs/04`, `06`). The family is 9/9 (`11`). Gates are 8/8 PASS, EXIT=0 (`13`), using
+  the log-dir-moved copy, because the stock script cannot write its log dir from inside this jail (`09`, EXIT=1).
 - **Gates row in submit_check:** in r2 `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py .` ran directly
   and gave RESULT: PASS, EXIT=0 (`02-gates.log`, 8/8 rows: fork-sources, all-sources-reproduce,
   no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length). In r1 the same
