@@ -61,11 +61,16 @@ train change to reconcile.
 | `src/gui/CommandMetadata.cpp` | `0c84bac04f` | `0c84bac04fe234bfdee8be404ccda04abb6fcda7` |
 | `tests/src/core/ControlRegistryNestingTest.cpp` | `aa166e8567` | `aa166e85677b0e253143aa98e44813e6a194c906` |
 
-`git diff --cached` (the integrated tree) and `git diff af010bc3cc..f8c7c0fc` (the accepted patch) are byte-identical,
-so the integration introduces **no semantic difference** from the accepted patch. The "newer line" the driver flagged in
-`include/UnattendedRun.h`, `src/core/ControlRegistry.cpp` and `src/core/UnattendedRun.cpp` is the accepted patch's own
-context: `git merge-base af010bc3cc f8c7c0fc` is `af010bc3cc` itself, so the branch was cut from the target and there is
-no second line to keep.
+The five product/test files in the integrated tree are byte-identical to the accepted patch:
+`git diff f8c7c0fc..HEAD -- include/UnattendedRun.h src/core/UnattendedRun.cpp src/core/ControlRegistry.cpp
+src/gui/CommandMetadata.cpp tests/src/core/ControlRegistryNestingTest.cpp` is empty, and each blob hash matches
+(`ControlRegistry.cpp` is `01507b165d` on both sides, `UnattendedRun.h` `442f60aac3`, `UnattendedRun.cpp` `854e2e6534`,
+`CommandMetadata.cpp` `0726d58d0b`, `ControlRegistryNestingTest.cpp` `c99ad3f67a`). The report is the accepted
+108-line report plus the round-2 integration sections below (this file is 192 lines), so the integration introduces
+**no semantic difference** in product or test code; the only delta is the documentation of the integration itself.
+The "newer line" the driver flagged in `include/UnattendedRun.h`, `src/core/ControlRegistry.cpp` and
+`src/core/UnattendedRun.cpp` is the accepted patch's own context: `git merge-base af010bc3cc f8c7c0fc` is `af010bc3cc`
+itself, so the branch was cut from the target and there is no second line to keep.
 
 ### Affected failure paths
 
@@ -101,6 +106,31 @@ the environment variable plus the agent flag. It sits in the "recreated registry
 is at the 500-code-line limit; a slot there put it at 534, and the file-length gate failed (log 18).
 
 ## Commands and exit codes
+
+### Round 3 — re-verification (logs in `~/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-manual.r3/logs`)
+
+The round-3 brief lists no new review point beyond the integration job text, so I re-verified the committed
+integration on the same tree (HEAD `102ced752d`, base `af010bc3cc`) and changed no product or test code. The driver's
+three-way merge has no conflict to resolve: `git merge-base af010bc3cc f8c7c0fc` is `af010bc3cc`, the accepted branch's
+parent chain is `af010bc3cc` → `3d9466fbb9` → `f8c7c0fc`, and the five product/test blobs at HEAD equal the accepted
+patch's blobs. The "newer line" in the three files is the patch's own context.
+
+| Step | Command | EXIT |
+| --- | --- | --- |
+| build | `cmake --build build --target zene ControlRegistryNestingTest ControlRegistryTest StartHubTest CommandPaletteTest HelpAccessTest -j4` (build-1.log) | 0 |
+| focused family | `ctest -R '^(ControlRegistryTest\|ControlRegistryNestingTest\|StartHubTest\|CommandPaletteTest\|HelpAccessTest)$' --output-on-failure` (test-1.log): 100% of 5 | 0 |
+| 4b patch | `git diff af010bc3cc HEAD -- include/UnattendedRun.h src/core/UnattendedRun.cpp src/core/ControlRegistry.cpp src/gui/CommandMetadata.cpp > logs/fix.patch && git apply -R logs/fix.patch` | 0 |
+| 4b build reverted | `cmake --build build --target zene ControlRegistryNestingTest -j4` (build-2-reverted.log) | 0 |
+| 4b RED | `ctest -R '^ControlRegistryNestingTest$' --output-on-failure` (test-2-red.log): `FAIL! ... '!headless' returned FALSE`, 17 passed 1 failed | 8 |
+| 4b re-apply | `git apply logs/fix.patch` | 0 |
+| 4b build restored | `cmake --build build --target zene ControlRegistryNestingTest -j4` (build-3-reapplied.log) | 0 |
+| 4b GREEN | `ctest -R '^ControlRegistryNestingTest$' --output-on-failure` (test-3-green.log) | 0 |
+| family re-run | same ctest as test-1 (test-4-family.log): 100% of 5 | 0 |
+| gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (gates-1.log): 8/8 rows PASS, RESULT PASS | 0 |
+| completion | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> gui-1105-menu-help-manual` (submit-1.log): RESULT PASS - submit | 0 |
+
+The focused-family selector is written with `\|` in the table only to keep the Markdown cell intact; the shell form is
+`^(ControlRegistryTest|ControlRegistryNestingTest|StartHubTest|CommandPaletteTest|HelpAccessTest)$`.
 
 ### Round 2 — integration (logs in `~/.local/share/zene-bunny-fix/qwen/runs/gui-1105-menu-help-manual.r2/logs`)
 
@@ -150,6 +180,29 @@ Files committed: `include/UnattendedRun.h`, `src/core/UnattendedRun.cpp`, `src/c
 fork-new and already in `tests/fork-sources.txt`; no new files, so no registration changes.
 
 ## Self-check
+
+### Round 3 (re-verification)
+
+- **Fails reverted / passes with the fix:** 4b above: reverted → `ControlRegistryNestingTest` EXIT 8 (`'!headless'
+  returned FALSE`, test-2-red.log); re-applied → EXIT 0 (test-3-green.log; family test-4-family.log, 5/5).
+- **Deterministic:** no wall-clock, sleeps, threads or races. The seam is the `QT_QPA_PLATFORM` environment variable
+  (saved with `qgetenv`, cleared with `qunsetenv`, restored with `qputenv`) plus `setAgentInstance(true)`, both restored
+  before the assertion (`ControlRegistryNestingTest.cpp:613-618`).
+- **At the cause and complete:** the cause is the predicate the registry's headless flag is built from
+  (`ControlRegistry.cpp:160`). Every consumer of `isHeadless()` is in the table above. The only modal one
+  (`confirmAction`) keeps its agent-instance behaviour through `isAgentInstance()`. `isUnattendedRun()` and its callers
+  are unchanged. The accepted design and the regression test are retained unchanged: the five product/test blobs at
+  HEAD equal the accepted patch's blobs.
+- **No collateral damage:** no project, save or config format is touched, so old projects load as before. No limit or
+  check was added. Displayless runs are still headless. In a visible agent instance, only non-modal surfaces (toasts,
+  popup menu, the workflow report window) now appear, and no modal dialog can open (`confirmAction` guard,
+  `isUnattendedRun()` unchanged).
+- **Semantic difference from the accepted patch:** none in product or test code (blob-identical). The report is the
+  accepted report plus the integration sections.
+- **ControlSocketIntegration (round-2 QA note):** not rerun; it is outside this patch (`plugin.list` catalogue format,
+  no `display` requirement, offscreen registry unchanged). The round-1 wider sweep's failure is environmental (no
+  built-in instrument libraries in this build tree: `find build -name '*.so'` is empty).
+- **submit_check "gates" row:** PASS (gates-1.log, EXIT 0; submit-1.log, EXIT 0).
 
 ### Round 2 (integration)
 
