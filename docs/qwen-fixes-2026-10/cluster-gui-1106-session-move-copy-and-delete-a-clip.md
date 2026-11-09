@@ -129,6 +129,10 @@ directly and passed (10-feature-check.log), so that environment limitation no lo
 - **`submit_check.py` gates row:** in r2 the original `feature_check.py` ran directly (10-feature-check.log, EXIT 0,
   RESULT: PASS). In r3 it could not create its hard-coded log folder outside the jail (07-gates.log, EXIT 1,
   PermissionError before any gate ran). The same gate code, with only its log folder moved, passed
-  (08-gates.log, EXIT 0, 8/8 PASS). No gate, limit or baseline was changed.
+  (08-gates.log, EXIT 0, 8/8 PASS). No gate, limit or baseline was changed. For the same reason,
+  `submit_check.py <worktree> gui-1106-session-move-copy-and-delete-a-clip` inside this jail (09-submit-check.log,
+  EXIT 1) marks only the "gates (feature_check.py)" row FAIL: `submit_check.py:117` runs the shipped script, which
+  hits the same PermissionError. Every other row passes (commits, clean tree, report, test added, test registered).
+  Run outside the jail, where the folder is writable, it should pass. That is unverified from here.
 - **r3 review points:** none. Both r2 QA verdicts were ACCEPT with no blocking items, and the r3 re-run reproduced
   RED (EXIT 8) and GREEN (EXIT 0) on the unchanged integrated commit.
