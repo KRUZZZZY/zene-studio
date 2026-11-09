@@ -167,9 +167,13 @@ public:
 	//! Payload of control.commands_list.
 	QJsonObject describeAll() const;
 
-	//! True when no display is available (offscreen/minimal/vnc platform).
+	//! True when nobody can answer a dialog: an agent instance (--control-socket) or no display.
 	bool isHeadless() const { return m_headless; }
-	void setHeadless(bool headless) { m_headless = headless; }
+	//! True when no display is available (offscreen/minimal/vnc platform): what a "display"
+	//! requirement checks. A visible GUI under --control-socket is headless but has a display.
+	bool isDisplayless() const { return m_displayless; }
+	//! Sets both: a caller that says "headless" means there is no display either.
+	void setHeadless(bool headless) { m_headless = headless; m_displayless = headless; }
 
 	//! True once the GUI is fully constructed and the initial project exists.
 	//! Commands return the typed 'busy' refusal until then, so a client cannot
@@ -378,6 +382,7 @@ private:
 	int m_recordedBytes = 0;
 	int m_evicted = 0;
 	bool m_headless;
+	bool m_displayless;
 };
 
 //! Register every command of the first control-surface slice (SPEC A12/A16).

@@ -73,6 +73,11 @@ void setAgentInstance(bool agent)
 	s_agentInstance = agent;
 }
 
+bool hasNoDisplay()
+{
+	return platformHasNoDisplay();
+}
+
 bool isUnattendedRun()
 {
 	return s_agentInstance || platformHasNoDisplay();

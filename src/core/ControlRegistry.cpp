@@ -151,12 +151,17 @@ ControlRegistry::ControlRegistry(QObject* parent) :
 	QObject(parent),
 	m_commands(),
 	m_transactions(),
-	m_headless(false)
+	m_headless(false),
+	m_displayless(false)
 {
 	// Headless = no display a human could answer a dialog on. One place decides
 	// (UnattendedRun.h), because MainWindow asks the same question before the
 	// registry exists.
 	m_headless = isUnattendedRun();  // one predicate for one concept: agent instance or no display
+	// A "display" requirement asks only whether a screen exists, not whether a human is
+	// watching it: a visible GUI under --control-socket is headless (no dialogs) yet can
+	// open the Help window.
+	m_displayless = hasNoDisplay();
 }
 
 ControlRegistry* ControlRegistry::instance()
@@ -230,7 +235,7 @@ QString ControlRegistry::checkRequires(const ControlCommand& command) const
 		{
 			return QStringLiteral("command '%1' requires a human").arg(command.id);
 		}
-		if (requirement == QLatin1String("display") && m_headless)
+		if (requirement == QLatin1String("display") && m_displayless)
 		{
 			return QStringLiteral("command '%1' requires a display (headless instance)").arg(command.id);
 		}
