@@ -108,14 +108,15 @@ TextFloat * TextFloat::displayMessage(const QString & title,
 	// Show the widget so that the correct height is calculated in the code that follows
 	tf->show();
 
-	if(parent != nullptr)
+	if (parent != nullptr && !parent->isWindow())
 	{
 		tf->moveGlobal(parent, QPoint(parent->width() + 2, 0));
 	}
 	else
 	{
-		// If no parent is given move the window to the lower left area of the main window
-		QWidget * mw = getGUI()->mainWindow();
+		// No parent, or a whole window (CommandRun passes the main window or a dialog, gui-1105): beside a window
+		// is off-screen once it is maximized, so the message goes to the lower left area inside that window.
+		QWidget * mw = parent != nullptr ? parent : getGUI()->mainWindow();
 		tf->moveGlobal(mw, QPoint(32, mw->height() - tf->height() - 8));
 	}
 
