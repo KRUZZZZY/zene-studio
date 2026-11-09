@@ -3324,6 +3324,7 @@ tests/src/gui/Lv2ViewBaseLifetimeTest.cpp
 tests/src/gui/MainWindowGeometryTest.cpp
 tests/src/gui/MainWindowTest.cpp
 tests/src/gui/MasteringReleaseGuiTest.cpp
+tests/src/gui/MenuRefusalNoticeTest.cpp
 tests/src/gui/MenuTestSupport.h
 tests/src/gui/MicrotunerScaleFileTest.cpp
 tests/src/gui/MidiClipLinkedEditTest.cpp
