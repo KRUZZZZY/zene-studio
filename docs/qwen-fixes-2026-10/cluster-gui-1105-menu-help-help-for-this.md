@@ -115,6 +115,8 @@ fixes that patch the same predicate (Integration section above), not a second li
 | family re-run | same ctest as GREEN family (logs/test-4-family.log) | 0: 4/4 passed |
 | gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (logs/gates-2.log, post-report-edit; logs/gates-1.log is the same run before it) | 0: 8/8 rows PASS, RESULT PASS |
 | completion | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> gui-1105-menu-help-help-for-this` (logs/submit-1.log) | 0: RESULT PASS - submit |
+| post-commit gates | same `feature_check.py` run after the report commit (logs/gates-3.log) | 0: 8/8 rows PASS, RESULT PASS |
+| post-commit completion | same `submit_check.py` run after the report commit (logs/submit-2.log) | 0: RESULT PASS - submit |
 
 Files committed: include/ControlRegistry.h, include/UnattendedRun.h, src/core/ControlRegistry.cpp,
 src/core/UnattendedRun.cpp, tests/src/core/ControlRegistryNestingTest.cpp, this report.
