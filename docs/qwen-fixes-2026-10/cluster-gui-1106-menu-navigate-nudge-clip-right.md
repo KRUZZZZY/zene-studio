@@ -160,3 +160,61 @@ Files committed: `src/gui/widgets/TextFloat.cpp`, `tests/src/gui/GrooveMenuTest.
   mkdirs `<worktree>-feature-check` beside the worktree, outside this lane's write-jail (PermissionError, `07-gates.log`).
   The same gates, with only the log folder moved, give 8/8 PASS, EXIT=0 (`09-gates.log`). A run outside the jail
   should confirm this.
+
+## Integration re-verification (round r3, 2026-11-09)
+
+Verdict: FIXED, integration unchanged. Luna's r2 QA was ACCEPT-NOTE with no blocking items
+(`runs/…r2/qa-session.log`). Its one note was the write-jail gate caveat, which this round handles again below. The r3
+job asked for the integration to be re-checked, so this round re-verifies the branch tip `bfb19b717` on
+`050/m0-train-26` @ `af010bc3c`. It changes no product or test code. `git diff --stat af010bc3cc HEAD` shows the same
+four files as r2, and `TextFloat.cpp:111-123` is the accepted hunk.
+
+- Callers on this tree (`rg 'displayMessage\b' src plugins include`) are 30 call sites. Only one passes a parent:
+  `src/gui/CommandRun.cpp:95-96`, which passes `parent`, the main window for menu actions. That is the fixed path. The
+  other 29 pass no parent and keep the `else` branch exactly as before. One example of each kind:
+  `ClipLockFeedback.cpp:157,164,173`, `ClipView.cpp:122`, `LmmsStyle.cpp:229,238`, `FileBrowser.cpp:832`,
+  `MainWindow.cpp:238,1037,2023,2029,2044`, `ArrangerFileDrop.cpp:137`, `ControlCommandsTheme.cpp:302`,
+  `VstEffect.cpp:147`, `Vestige.cpp:356`. This corrects r2's "31 no-parent" to 29. The behaviour is the same either
+  way.
+- Platform, realtime, undo, commands and saved data: no change from r2. The fix uses only `QWidget::isWindow()` and
+  `moveGlobal`. It changes no header, adds no command and touches nothing on the audio thread.
+
+Evidence (logs in `~/.local/share/zene-bunny-fix/qwen/runs/gui-1106-menu-navigate-nudge-clip-right.r3/logs/`, -j4):
+
+| Step | Command | EXIT | Result |
+| --- | --- | --- | --- |
+| Build (ccache) | `cmake --build build --target zene GrooveMenuTest PluginShortcutsTest -j4 > 01-build.log` | 2 | environment: ccache cannot write its temp dir in the jail (`Permission denied`) |
+| Build | `CCACHE_DISABLE=1 cmake --build build --target zene GrooveMenuTest PluginShortcutsTest -j4 > 03-build-noccache.log` | 0 | built |
+| Family GREEN | `ctest -R '^(GrooveMenuTest\|PluginShortcutsTest)$' --output-on-failure > 04-ctest-green.log` (from build/tests) | 0 | 100% tests passed out of 2 |
+| 4b revert | `git diff af010bc3cc HEAD -- src/gui/widgets/TextFloat.cpp > logs/fix.patch && git apply -R logs/fix.patch` | 0 | |
+| 4b build | `CCACHE_DISABLE=1 cmake --build build --target zene GrooveMenuTest -j4 > 05-build-reverted.log` | 0 | |
+| 4b RED | `ctest -R '^GrooveMenuTest$' --output-on-failure > 06-ctest-reverted.log` | 8 | `FAIL! aRefusalFromAMainWindowMenuIsShownInsideTheWindow() 'inside.contains(placed)' (float at 1002,0 142x76 is outside the window 0,0 1000x700)` |
+| 4b reapply | `git apply logs/fix.patch` | 0 | |
+| 4b build | `CCACHE_DISABLE=1 cmake --build build --target zene GrooveMenuTest -j4 > 07-build-restored.log` | 0 | |
+| 4b GREEN | `ctest -R '^GrooveMenuTest$' --output-on-failure > 08-ctest-restored.log` | 0 | 100% tests passed out of 1 |
+| Gates (unmodified) | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > 09-feature-check.log` | 1 | PermissionError writing `<worktree>-feature-check/fork-sources.log` (outside the jail) |
+| Gates (logs redirected) | `python3 logs/fc_wrap.py <worktree> logs/feature-check > 10-feature-check.log` | 0 | 8/8 PASS, RESULT: PASS |
+| Whitespace | `git diff --check af010bc3cc HEAD` | 0 | |
+
+Gate note: `logs/fc_wrap.py` loads the unmodified `feature_check.py` and calls its `main()`. It changes only two
+things: it skips the `mkdir` of the sibling `*-feature-check` folder, and it sends each gate's log file to
+`logs/feature-check/`. Gate commands, baselines and pass rules are untouched. The table header still prints the
+sibling path, but the logs are in `logs/feature-check/`.
+
+## Self-check (round r3)
+
+- **Fails without the fix, passes with it:** re-run in r3. Revert gives EXIT=8 (`06-ctest-reverted.log`); reapply
+  gives EXIT=0 (`08-ctest-restored.log`).
+- **Deterministic:** unchanged from r2. The menu action is triggered synchronously, with a fixed window size and no
+  timers or sleeps.
+- **At the cause and complete:** all 30 callers were enumerated on this tree (above). There is 1 window-parent caller,
+  which is fixed, and 29 no-parent callers, which are unchanged.
+- **No collateral damage:** placement only. GrooveMenuTest and PluginShortcutsTest pass 2/2.
+- **Gates:** 8/8 PASS with only the log location redirected. The unmodified script cannot write its sibling log
+  folder from inside the jail (EXIT=1, PermissionError). Luna's r2 review ran the unmodified script outside the jail
+  and got EXIT 0, 8/8.
+- **No saved data affected:** old projects load exactly as before. No load path or saved data is touched, and no
+  limit or check was added.
+- **Not ALREADY-FIXED or FALSE-POSITIVE:** the verdict is FIXED (RED EXIT=8 above on the reverted tree).
+- **submit_check `gates` row:** FAIL inside the jail for the PermissionError above (`11-submit-check.log`). The same
+  gates with logs redirected give 8/8 PASS.
