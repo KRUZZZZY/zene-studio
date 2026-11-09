@@ -30,6 +30,9 @@
 #include <QLabel>
 
 #include <QRegularExpression>
+#include <QScreen>
+
+#include <algorithm>
 
 #include "AccessibleWidgets.h"
 #include "GuiApplication.h"
@@ -37,6 +40,22 @@
 
 namespace lmms::gui
 {
+
+namespace
+{
+
+//! @a at moved just enough that a float of @a size there stays on @a anchor's screen (its available area).
+QPoint onScreen(QPoint at, const QSize& size, const QWidget* anchor)
+{
+	const QScreen* screen = anchor->screen();
+	if (screen == nullptr) { return at; }
+	const QRect area = screen->availableGeometry();
+	at.setX(std::clamp(at.x(), area.left(), std::max(area.left(), area.right() + 1 - size.width())));
+	at.setY(std::clamp(at.y(), area.top(), std::max(area.top(), area.bottom() + 1 - size.height())));
+	return at;
+}
+
+} // namespace
 
 
 TextFloat::TextFloat() :
@@ -108,16 +127,13 @@ TextFloat * TextFloat::displayMessage(const QString & title,
 	// Show the widget so that the correct height is calculated in the code that follows
 	tf->show();
 
-	if(parent != nullptr)
-	{
-		tf->moveGlobal(parent, QPoint(parent->width() + 2, 0));
-	}
-	else
-	{
-		// If no parent is given move the window to the lower left area of the main window
-		QWidget * mw = getGUI()->mainWindow();
-		tf->moveGlobal(mw, QPoint(32, mw->height() - tf->height() - 8));
-	}
+	// Beside a control (to its right), as before. With no parent - or a WINDOW as the parent (a menu entry's
+	// reply floats over the window its menu belongs to; beside a window is past its right edge, off the screen
+	// when it fills it, cluster gui-1106) - in the lower left area of that window. Never past the screen's edge.
+	const bool beside = parent != nullptr && !parent->isWindow();
+	QWidget* anchor = parent != nullptr ? parent : getGUI()->mainWindow();
+	const QPoint offset = beside ? QPoint(anchor->width() + 2, 0) : QPoint(32, anchor->height() - tf->height() - 8);
+	tf->move(onScreen(anchor->mapToGlobal(QPoint(0, 0)) + offset, tf->size(), anchor));
 
 	// 0.5.0 (theme 17): a status message is spoken too, once, after what the screen reader is saying (the float's
 	// name carries it for a Qt without announcement events, AccessibleWidgets.h).
