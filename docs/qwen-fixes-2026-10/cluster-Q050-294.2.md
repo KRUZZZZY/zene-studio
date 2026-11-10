@@ -42,7 +42,10 @@ Also green in one run (`test-green-2.log`, exit 0): `ControlRegistryTest`, `Reve
   `ReversibilityContractTest` exit 0.
 - **Audio thread:** nothing added on it. All new code is GUI-thread (paint, mouse, spin boxes, registry calls); no engine,
   playback or play-handle code changed. Local TSan does not run on this box; by design the grid reaches the clip only through
-  `note.step_set`, which edits it as `note.edit` does.
+  `note.step_set`, which edits it as `note.edit` does. The check's audio-path hint matches only
+  `tests/src/gui/StepGridPanelTest.cpp`'s `#include "NotePlayHandle.h"` and `NotePlayHandleManager::init()` in `initTestCase`
+  - test setup that creates the play-handle pool a test binary needs (as `NoteEditorTest` / `NoteMelodyTest` do), not product
+  code and not on any audio thread.
 - **Old projects / round-trip:** no format change and nothing saved by the grid (its resolution, scale choice and row filter are
   interface state). The notes it writes use the existing `prob` / `rep` attributes, whose defaults-omitted save and round-trip
   stage 1's `ControlNoteStep check_persistence` proves (green in `test-green-2.log`). I did not render audio; nothing in the
