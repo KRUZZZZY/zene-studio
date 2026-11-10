@@ -539,7 +539,7 @@ plug-in, in a window of its own from Wine for a Windows one. Its parameters are 
 <code>plugin.param_set</code> parameters (by name or index, one undo step each) and automation targets. The effect's Wet/Dry knob
 mixes its output with its input. Zene runs Carla for each VST2 effect on a thread of its own, two audio periods behind the audio
 thread, so neither a slow plug-in nor the Wine bridge can stall playback; the effect reports those two periods as its delay, and the
-chain compensates for it. While a project is exported Zene waits for the plug-in instead, so no audio is dropped from the file. The
+chain compensates for it. While a project is exported Zene waits for each VST2 plug-in between audio periods (at most two seconds each), so no audio is dropped from the file, and playback itself never waits. The
 plug-in's settings, including its chunk, are saved with the project, in presets (<code>plugin.preset_save</code> /
 <code>plugin.preset_load</code>) and with <code>plugin.state_save</code> / <code>plugin.state_load</code>. Without a Carla runtime
 no VST2 effect is listed, and a project that used one keeps it as a placeholder until Carla is installed.</p>

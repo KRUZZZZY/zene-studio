@@ -16,6 +16,19 @@ one cache. Proof: `CarlaVst2EffectHostingTest`, against an in-tree VST2 test eff
 stage-1 VST2 test instrument, with a real Carla runtime built by `tools/build-carla-runtime.sh` (Wine bridge included,
 llvm-mingw 20261020 as the PE toolchain; log `01-carla-runtime.log`, exit 0).
 
+## Review round 1 -> round 2
+
+| Blocking finding | Change | Test | Reverted | Fixed |
+| --- | --- | --- | --- | --- |
+| The effect passed `Song::isExporting()` to `Renderer::process`, whose `take()` then slept waiting for the worker inside `renderNextPeriod`'s `RealtimeScope`. | The render path never waits (the `mayWait` path is gone from `read`/`process`/`take`, for the effect and the stage-1 instrument alike). New `OfflineRenderBarrier` (`include/OfflineRenderBarrier.h`, `src/core/OfflineRenderBarrier.cpp`): every VST2 renderer is a participant, and `ProjectRenderer::run` calls `offlinerender::waitForAll()` before each period, outside the render period, until each worker has the next period's frames (bounded 2 s). While exporting, the effect's Carla rack reports offline, so Carla blocks for its plug-in/bridge on the worker instead of passing a block through. | `CarlaVst2EffectExportTest::anExportWaitsBetweenPeriodsAndKeepsTheEffectsOutput(native, wine-bridged)`: a real `ProjectRenderer` export with the effect stalling 150 ms per process call; the render period clock is sampled while it runs (longest period must be < 75 ms) and the float WAV must hold the processed note with no silent and no unprocessed frame. | Round-1 product hunks restored (`git diff --binary ed2c3b376d HEAD -- include src plugins \| git apply -R`), test kept: **exit 8**, "a render period took 150 ms" in both rows (r2 `56-revert-r2-ctest.log`). Control: new render path without the exporter's `waitForAll()`: **exit 8**, "the exported file lost the effect's output" (0 sounding frames) in both rows (r2 `59`). | **exit 0**, 4/4, longest period 0 ms, 17640-frame processed span, 0 gaps, 0 unprocessed; three runs in a row (r2 `65-final-export-1..3`). |
+
+Round-2 logs are in `~/.local/share/zene-bunny-fix/qwen/runs/Q050-481.2.r2/logs/` (numbered; "r2 NN" below).
+Found while testing round 2: after a long silence a Wine-bridged plug-in applies a parameter change one or two blocks
+late (with or without the stall: `31-iso-0.log`, the first sounding blocks at the old value). The export test plays the
+note once before exporting so that does not mask what it checks; it is listed under limits in the feature record.
+The export case lives in its own test (`CarlaVst2EffectExportTest`), with the helpers both effect tests share in
+`tests/src/gui/CarlaVst2EffectTestSupport.h`, to stay under the file-length and complexity ratchets.
+
 ## Acceptance
 
 Command for rows 1-2 and the bridged half of row 3: `ctest -R '^CarlaVst2EffectHostingTest$' -V` from `build/tests`.
@@ -27,7 +40,17 @@ Final tree: exit 0, 14/14, three runs in a row (`35-final-1`, `35-final-2`, `35-
 | 2. The effect editor, parameter automation, presets, state save/load, and parameter commands work. | `theEffectsOwnEditorOpensThroughCarla` (`plugin.editor_open/close` + a click on the effect dialog's editor button; the plug-in reports its editor open/closed); `automationDrivesAVst2EffectParameter(native, wine-bridged)` (automation drives the plug-in in playback; 0 render-thread signals); `theAudioThreadNeverWaitsForTheEffect(native, wine-bridged)` (fixture stalls 800 ms per process call; worst engine period 0 ms); `presetsSaveAndLoad`; `deviceStateSaveAndLoad` (`plugin.state_save`/`state_load` bring back the value and the chunk-only count); `projectStateRoundTripsThroughCarla` (binary, parameter, chunk-only count and rendered output identical after save/restore); `pluginLoadHostsTheNativeEffectAndItProcesses` (`plugin.param_get/set` by name, rendered ratio, `control.undo` of the value, then of the load) | 0 |
 | 3. Regenerate and verify the live MCP snapshot; test both native and Wine-bridged fixture paths. | `python3 .../snapshot_live.py $PWD` (exit 0, 924 ids / 78 groups, only `plugin.list`'s description changed; `23-snapshot.log`), `python3 tests/doc-figures-gate.py` (exit 0, `24`), `ctest -R '^(ControlCommandsSnapshot\|ReversibilityContractTest\|ControlDevices)$'` (exit 0, 3/3, `25`); bridged: `theWindowsEffectRunsThroughTheWineBridge` and the `(wine-bridged)` rows (PE fixture discovered through Wine, loaded in Carla's Wine bridge, param_set, processing ratio, project round trip); native: every other row | 0 |
 
-Revert proof: product hunks reversed (`git diff --binary af010bc3cc HEAD -- cmake include plugins src | git apply -R`),
+Round 2 final tree: `CarlaVst2EffectHostingTest` exit 0, 14/14 (r2 `66`); `CarlaVst2EffectExportTest` exit 0, 4/4, three
+runs in a row (r2 `65`); `CarlaVst2HostingTest` exit 0, 13/13 (r2 `66`); neighbours exit 0, 14/14 (r2 `67`: the
+catalogue, vendor, reversibility, Carla parameter, missing-devices, native-editor, RtSafetySweep, ControlDevices and
+ControlCommandsSnapshot tests, plus the export tests ClipFadesRenderTest, ExportWavDitherTest, ExportWavWriteErrorTest
+and LoudnessReportTest, since `ProjectRenderer` changed).
+
+Round 2 full revert proof: all product hunks against the base reversed, stale module moved away, rebuilt:
+`CarlaVst2EffectHostingTest` **exit 8** (12/12 hosted cases FAIL) and `CarlaVst2EffectExportTest` **exit 8** (2/2 FAIL)
+(r2 `62`); restored and rebuilt: exit 0 (r2 `65`, `66`).
+
+Round 1 revert proof: product hunks reversed (`git diff --binary af010bc3cc HEAD -- cmake include plugins src | git apply -R`),
 the stale `libcarlavst2effect.so` moved out of `build/plugins`, `zene`/`carlabase`/`carlavst2`/the test rebuilt
 (`17`, `18`, exit 0): **exit 8**, 12/12 hosted cases FAIL (`19-revert-ctest.log`). Restored (`git checkout HEAD --
 cmake include plugins src`) and rebuilt: **exit 0**, 14/14 (`22-restore-ctest.log`).
@@ -84,20 +107,25 @@ was added and the README canary (924 ids / 78 groups) is what `tests/doc-figures
   journalled step: the test sets Left, hears it, `control.undo`, reads and hears the old value. `plugin.load` of an
   effect is an append with an exact inverse: the next `control.undo` removes the effect. `plugin.preset_load` /
   `plugin.state_load` go through the effect's own state (`restoreState`), as for every effect.
-- **Nothing on the audio thread allocates/frees/locks/waits/does I/O/emits?** The audio thread's new functions are
-  `CarlaVst2Effect::processImpl`, `carlavst2::Renderer::process` and `Renderer::take` (and the stage-1
-  `Renderer::read`, now a call to `take`): relaxed/acquire/release atomics, frame copies into and out of
-  preallocated rings (allocated in the constructor), a signed counter only the audio thread touches, and
-  `Song::isExporting()`. No Carla call, no lock, no allocation, no system call, no Qt signal. The one wait is
-  `take`'s bounded wait while a project is exported (no realtime deadline; stage 1's and VeSTige's rule). Carla
-  (including the Wine bridge's wait) runs on the effect's worker thread; parameter models defer render-thread change
-  signals (the test counts 0 render-thread emissions, natively and bridged); the GUI timer emits them and tells Carla's
-  UI. All three functions are declared in `tests/rt-safety-scope.txt`; `RtSafetySweep` PASS (`16`). With the fixture
-  stalling 800 ms per process call, the worst engine period measured 0 ms (native and bridged). TSan: not available
-  here; the reasoning is one producer and one consumer per ring, release on publish and acquire on read, and the
-  worker held between periods (pause handshake) while Carla's plug-in or parameter list changes.
-- **Old projects load and render as before; new data round-trips?** No existing format changed and no existing module's
-  behaviour changed: Carla Rack/Patchbay are untouched; the stage-1 instrument keeps its key attributes, its listing
+- **Nothing on the audio thread allocates/frees/locks/waits/does I/O/emits?** Yes (reworked in round 2). The audio
+  thread's new functions are `CarlaVst2Effect::processImpl`, `carlavst2::Renderer::process`, `Renderer::take` and
+  the stage-1 `Renderer::read` (now a call to `take`): relaxed/acquire/release atomics, frame copies into and out of
+  preallocated rings (allocated in the constructor), and a signed counter only the audio thread touches. No Carla
+  call, no lock, no allocation, no system call, no Qt signal - and no wait, not even while a project is exported
+  (round 1's export wait inside the period is gone; `CarlaVst2EffectExportTest` measures 0 ms periods during an export
+  with an 800/150 ms-stalling plug-in, and 150 ms with round 1's code). The export's wait is in
+  `offlinerender::waitForAll()`, called by `ProjectRenderer::run` between periods (no `RealtimeScope` there); its
+  mutex is never taken by a render period. Carla (including the Wine bridge's wait, and its offline-mode blocking
+  lock) runs on the effect's worker thread; parameter models defer render-thread change signals (0 render-thread
+  emissions, natively and bridged). All four functions are declared in `tests/rt-safety-scope.txt` with updated
+  reasons; `RtSafetySweep` PASS (r2 `67`). TSan: not available here; the reasoning is one producer and one consumer per
+  ring, release on publish and acquire on read, the worker held between periods while Carla's plug-in or parameter list
+  changes, and the barrier reading the rings' counters with acquire loads only.
+- **Old projects load and render as before; new data round-trips?** No existing format changed. `ProjectRenderer` now
+  calls `offlinerender::waitForAll()` between periods, which returns at once with no VST2 device (empty registry); the
+  export tests ClipFadesRenderTest, ExportWavDitherTest, ExportWavWriteErrorTest and LoudnessReportTest pass (r2 `67`).
+  No other existing module's behaviour changed except the stage-1 VST2 instrument, which now also waits between export
+  periods instead of inside one (its `Q050-481.1.md` describes the old in-period wait): Carla Rack/Patchbay are untouched; the stage-1 instrument keeps its key attributes, its listing
   order (instrument `dev-<n>` ids do not move: effects are appended after them) and its renderer mode (the discovery
   move and the shared SubPluginFeatures class are behaviour-preserving - `CarlaVst2HostingTest` 13/13). Neighbours pass:
   `ControlDeviceCatalogueTest`, `ControlHostedDeviceCatalogueTest`, `ControlDeviceVendorTest`,
@@ -115,9 +143,12 @@ was added and the README canary (924 ids / 78 groups) is what `tests/doc-figures
   POSIX-only (Windows points at the build directory, where every case skips for want of a runtime).
 - **Registration?** New files in `tests/fork-sources.txt` (a Q050-481.2 block; the moved discovery's paths updated in
   the stage-1 block); inherited files changed (`cmake/modules/PluginList.cmake`, `plugins/CarlaBase/CMakeLists.txt`,
-  `tests/CMakeLists.txt`, `tests/rt-safety-scope.txt`) in `tests/upstream-modifications.txt` with reasons;
+  `tests/CMakeLists.txt`, `tests/rt-safety-scope.txt`, and in round 2 `src/core/ProjectRenderer.cpp`,
+  `src/core/CMakeLists.txt`) in `tests/upstream-modifications.txt` with reasons; round 2's new files
+  (`include/OfflineRenderBarrier.h`, `src/core/OfflineRenderBarrier.cpp`, `CarlaVst2EffectExportTest.cpp`,
+  `CarlaVst2EffectTestSupport.h`) in `tests/fork-sources.txt`;
   `tests/all-sources.txt` re-derived (`tests/all-sources-reproduce.sh`: REPRODUCES); the test in `tests/CMakeLists.txt`
-  with `add_dependencies` on `carlavst2`, `carlavst2effect`, `tripleoscillator` and both fixtures.
+  with `add_dependencies` on `carlavst2`, `carlavst2effect`, `tripleoscillator` and both fixtures (both effect tests).
 - **Commands snapshot / canary?** Regenerated live with `snapshot_live.py` (`23`), doc-figures PASS (`24`),
   `ControlCommandsSnapshot` PASS (`25`).
 - **Docs?** `data/manual/index.html` (a "VST2 effects through Carla" paragraph; the stage-1 paragraph no longer says
