@@ -43,7 +43,11 @@
  *    so a test can show the host's audio thread does not wait for it.
  */
 
-#ifndef _WIN32
+/* nanosleep is POSIX.1b (199309L). Darwin's default feature level already exposes it, and
+ * defining _POSIX_C_SOURCE there selects the strict POSIX level, which hides the C99 snprintf
+ * declaration (macos-x86_64 run 42805458633: "call to undeclared library function 'snprintf'").
+ */
+#if !defined(_WIN32) && !defined(__APPLE__)
 #define _POSIX_C_SOURCE 199309L  /* nanosleep */
 #endif
 
