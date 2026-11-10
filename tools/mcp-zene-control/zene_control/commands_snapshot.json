@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-11-06T14:56:55Z",
+  "captured_at": "2026-11-10T08:37:08Z",
   "commands": [
     {
       "args_schema": {
@@ -39045,6 +39045,76 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "root": {
+            "maximum": 11,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scale": {
+            "type": "string"
+          },
+          "scale_rows_only": {
+            "type": "boolean"
+          },
+          "step_ticks": {
+            "maximum": 3072,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Open a MIDI clip in the melodic step grid (Edit > Step Grid..., or the note editor's Notes > Tools > Open in Step Grid) and answer what the grid shows. Columns are steps of 'step_ticks' ticks (default 12, a sixteenth), rows are pitches; every lit cell is one ordinary note of the clip, so the piano roll (roll.get_state) and note.step_get_state read the same notes. 'scale' picks the scale the rows are read against: \"\" the project key (scale.set), \"none\" no scale, or a scale.list name on 'root' (0 = C); 'scale_rows_only' hides the out-of-scale rows that hold no note. With no 'clip' it opens the selected MIDI clip, or keeps the grid's own. The grid's clicks and fields each run ONE note.step_set (one undo step); this command only opens the view and edits nothing. The reply: 'clip', 'step_ticks', 'steps', 'rows' (keys, highest first), 'cells' (each note's id, step, key, velocity, chance, ratchet, length, in_scale) and 'selected'.",
+      "group": "window",
+      "id": "window.step_grid",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "cells": {
+            "type": "array"
+          },
+          "clip": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "array"
+          },
+          "scale": {
+            "type": "object"
+          },
+          "scale_choice": {
+            "type": "string"
+          },
+          "scale_rows_only": {
+            "type": "boolean"
+          },
+          "selected": {
+            "type": "string"
+          },
+          "shown": {
+            "type": "boolean"
+          },
+          "step_ticks": {
+            "type": "integer"
+          },
+          "steps": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {},
         "required": [],
         "type": "object"
@@ -39551,23 +39621,23 @@
       }
     }
   ],
-  "count": 924,
+  "count": 925,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-294.2/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-an6tkf3w/zene.sock",
-    "version": "0.4.0-alpha.6311+c4eb4b6"
+    "source_socket": "/tmp/zctl-run-ksr88_7f/zene.sock",
+    "version": "0.4.0-alpha.6312+af010bc"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 78,
-    "id_count": 924,
-    "ids_sha256": "fac3b27d98cbc91933c63f6608d20739a9d2d1000608af46ee5823a0c47077e1"
+    "id_count": 925,
+    "ids_sha256": "f4cd02eddb5770911a86773d5fe0c11e9d4aee2e11eae8f3f01929ad9733a651"
   }
 }

@@ -278,6 +278,7 @@ void registerWindowCommands(ControlRegistry& registry)
 		registry.registerCommand(cmd);
 	}
 	registerNoteEditorWindowCommands(registry);
+	registerStepGridWindowCommand(registry);  // Q050-294.2
 	registerSampleEditorWindowCommands(registry);  // 0.5.0 wave 3 theme 15
 	registerSelectionWindowCommands(registry);
 	registerShortcutCommands(registry);

@@ -888,6 +888,7 @@ include/StemSeparation/StemSeparator.h
 include/StemSeparation/StemTrackBuilder.h
 include/StemSeparation/StemTypes.h
 include/StemSplitController.h
+include/StepGridPanel.h
 include/StepRecorder.h
 include/StepRecorderWidget.h
 include/StringPairDrag.h
@@ -2405,6 +2406,7 @@ src/gui/ControlCommandsShell.cpp
 src/gui/ControlCommandsShortcuts.cpp
 src/gui/ControlCommandsShortcutsRegister.cpp
 src/gui/ControlCommandsShortcutsShared.h
+src/gui/ControlCommandsStepGrid.cpp
 src/gui/ControlCommandsTheme.cpp
 src/gui/ControlCommandsViewMemory.cpp
 src/gui/ControlCommandsWindow.cpp
@@ -2628,6 +2630,8 @@ src/gui/noteeditor/NoteLaneKeys.cpp
 src/gui/noteeditor/NoteLanePaint.cpp
 src/gui/noteeditor/NoteLanes.cpp
 src/gui/noteeditor/NoteProperties.cpp
+src/gui/noteeditor/StepGridCanvas.cpp
+src/gui/noteeditor/StepGridPanel.cpp
 src/gui/shell/BrowserPanel.cpp
 src/gui/shell/ChannelLevelMeter.cpp
 src/gui/shell/CpuDiagnosticsDialog.cpp
@@ -3403,6 +3407,7 @@ tests/src/gui/SlicerTSliceControlsTest.cpp
 tests/src/gui/StartHubTest.cpp
 tests/src/gui/StemSplitBackgroundTest.cpp
 tests/src/gui/StemSplitMenuTest.cpp
+tests/src/gui/StepGridPanelTest.cpp
 tests/src/gui/StepRecorderWidgetTest.cpp
 tests/src/gui/SurroundPannerTest.cpp
 tests/src/gui/TakeLanesPanelTest.cpp
