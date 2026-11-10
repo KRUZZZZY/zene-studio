@@ -1,7 +1,7 @@
 // One events.subscribe on one connection: ordered project changes until it ends.
 
 import { ZeneError } from "./errors.ts";
-import { Listeners, rethrowLater, type Unlisten } from "./listeners.ts";
+import { HeldListeners, Listeners, rethrowLater, type Unlisten } from "./listeners.ts";
 import type { Cursor, EventsOverflowNotice, ProjectChangedEvent, SubscribeResult, UnsubscribeResult } from "./protocol.ts";
 
 /**
@@ -26,6 +26,9 @@ export interface SubscriptionHost {
 	sendUnsubscribe(subscription: string): Promise<UnsubscribeResult>;
 }
 
+/** Changes held for a subscription nobody listens to yet before it ends with reason `overflow`. */
+export const MAX_HELD_EVENTS = 8192;
+
 export interface EventIteratorOptions {
 	/** Events held for a slow `for await` loop before the iterator fails (default 4096). */
 	bufferLimit?: number;
@@ -45,7 +48,7 @@ export class Subscription {
 	private endState: SubscriptionEnd | null = null;
 	private resolveEnded!: (end: SubscriptionEnd) => void;
 	private readonly host: SubscriptionHost;
-	private readonly eventListeners = new Listeners<[ProjectChangedEvent]>(rethrowLater);
+	private readonly eventListeners: HeldListeners<ProjectChangedEvent>;
 	private readonly endListeners = new Listeners<[SubscriptionEnd]>(rethrowLater);
 
 	constructor(host: SubscriptionHost, reply: SubscribeResult) {
@@ -56,12 +59,17 @@ export class Subscription {
 		this.last = reply.seq;
 		this.queueLimit = reply.queue_limit;
 		this.queueByteLimit = reply.queue_byte_limit;
+		this.eventListeners = new HeldListeners<ProjectChangedEvent>(MAX_HELD_EVENTS, () => this.finish({
+			reason: "overflow",
+			lastSeq: this.last,
+			error: new ZeneError("protocol", `${MAX_HELD_EVENTS} changes arrived and no onEvent listener took them`),
+		}));
 		this.ended = new Promise((resolve) => {
 			this.resolveEnded = resolve;
 		});
 	}
 
-	/** The last change delivered to this client. */
+	/** The last change this client received; it reached the listeners, or is held for the first one. */
 	get lastSeq(): number {
 		return this.last;
 	}
@@ -80,16 +88,19 @@ export class Subscription {
 		return this.endState;
 	}
 
-	/** Called for each change, in `seq` order. */
+	/**
+	 * Called for each change, in `seq` order. Changes that arrived before the first listener (with the subscribe
+	 * reply, or while resync() was reading) are held and reach it first, a microtask after it attaches: none is lost.
+	 */
 	onEvent(fn: (event: ProjectChangedEvent) => void): Unlisten {
 		return this.eventListeners.add(fn);
 	}
 
-	/** Called once when the subscription ends (at once if it already has). */
+	/** Called once when the subscription ends; if it already has, after any held change reached onEvent. */
 	onEnd(fn: (end: SubscriptionEnd) => void): Unlisten {
 		if (this.endState !== null) {
 			const end = this.endState;
-			queueMicrotask(() => fn(end));
+			this.eventListeners.afterHeld(() => fn(end));
 			return () => {};
 		}
 		return this.endListeners.add(fn);
@@ -128,7 +139,7 @@ export class Subscription {
 			return;
 		}
 		this.last = event.seq;
-		this.eventListeners.emit(event);
+		this.eventListeners.push(event);
 	}
 
 	/** @internal */
@@ -142,8 +153,8 @@ export class Subscription {
 			return;
 		}
 		this.endState = end;
+		// Event listeners stay: changes held before the end still reach the first one (deliver() takes no more).
 		this.endListeners.emit(end);
-		this.eventListeners.clear();
 		this.endListeners.clear();
 		this.resolveEnded(end);
 	}

@@ -166,6 +166,41 @@ async function checkIteratorAndUnsubscribe(client: ZeneClient, editor: ZeneClien
 	check(failed instanceof ZeneConnectionError, "a call on a closed connection is a typed ZeneConnectionError");
 }
 
+/**
+ * An edit made INSIDE a resync's read, after its subscription started: the instance has written the event to every
+ * subscriber (nothing queued, each at the current seq), and a ping on the reading connection returns after that
+ * line, so the SDK has received the event before the read returns. Deterministic, no timing involved.
+ */
+async function editDuringRead(reader: ZeneClient, editor: ZeneClient, name: string): Promise<void> {
+	await editor.call("track.add", { type: "instrument", name });
+	await waitUntil(async () => {
+		const state = await editor.call("events.get_state");
+		return state.subscriptions.every((row) => row.queued === 0 && row.last_delivered_seq === state.seq);
+	}, "the event written to the reading connection");
+	await reader.call("control.ping");
+}
+
+async function checkResyncKeepsEventsDuringRead(path: string, editor: ZeneClient): Promise<void> {
+	// The earlier connections' subscriptions are gone, so every row below is the reader's.
+	await waitUntil(async () => (await editor.call("events.get_state")).subscriptions.length === 0, "no subscriptions");
+	const reader = await ZeneClient.connect({ path });
+	const result = await reader.resync(async (c) => {
+		await editDuringRead(c, editor, "during resync read");
+		return c.call("project.get_state");
+	});
+	check(result.subscription.lastSeq === result.cursor.seq + 1,
+		"an event that arrived while resync() was reading is counted by the subscription (received, held)");
+	const events = collect(result.subscription);
+	await waitUntil(() => events.length >= 1, "the held event");
+	check(events[0]?.seq === result.cursor.seq + 1 && events[0]?.args?.name === "during resync read",
+		"the change made while resync() read reaches the first onEvent listener, in sequence (not lost)");
+	await editor.call("track.add", { type: "instrument", name: "after resync read" });
+	await waitUntil(() => events.length >= 2, "the next event");
+	check(events[1]?.seq === result.cursor.seq + 2, "later changes follow it with no gap");
+	await reader.close();
+	await waitUntil(async () => (await editor.call("events.get_state")).subscriptions.length === 0, "the reader to go");
+}
+
 interface Observed {
 	syncs: SyncInfo<ProjectState>[];
 	changes: ProjectChangedEvent[];
@@ -266,14 +301,26 @@ async function checkLiveSession(path: string, editor: ZeneClient): Promise<void>
 	const scratch = mkdtempSync(join("/tmp", "zsdk-"));
 	const proxy = await Proxy.listen(join(scratch, "proxy.sock"), path);
 	try {
+		const seqBefore = (await editor.call("events.get_state")).seq;
+		let firstRead = true;
 		const live = await LiveSession.start<ProjectState>({
 			path: proxy.path,
-			read: (client) => client.call("project.get_state"),
+			read: async (client) => {
+				if (firstRead) {
+					firstRead = false;
+					await editDuringRead(client, editor, "during live read");
+				}
+				return client.call("project.get_state");
+			},
 			queueLimit: 4,
 			reconnectDelayMs: 50,
 			maxReconnectDelayMs: 400,
 		});
 		const seen = observe(live);
+		check(live.cursor.seq === seqBefore + 1, "LiveSession's cursor counts the change made during its first read");
+		await waitUntil(() => seen.changes.length >= 1, "the change made during the first read");
+		check(seen.changes[0]?.seq === seqBefore + 1 && seen.changes[0]?.args?.name === "during live read",
+			"the change made while LiveSession read reaches onChange attached after start() (not lost)");
 		check(live.state.tracks?.length === await trackCount(editor), "LiveSession connects and reads the state");
 		const own = await live.client?.call("track.add", { type: "instrument", name: "live one" });
 		await waitUntil(() => seen.changes.some((event) => event.args?.name === "live one"), "the live edit's event");
@@ -303,6 +350,7 @@ async function main(argv: string[]): Promise<number> {
 	const editor = await ZeneClient.connect({ path });
 	const { sub, events } = await checkReadEditEvent(client, editor);
 	await checkIteratorAndUnsubscribe(client, editor, sub, events);
+	await checkResyncKeepsEventsDuringRead(path, editor);
 	await checkLiveSession(path, editor);
 	await client.close();
 	await editor.close();

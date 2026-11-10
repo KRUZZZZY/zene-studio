@@ -127,6 +127,13 @@ await view.client?.call("track.add", { type: "sample" });
 await view.stop();
 ```
 
+No change is lost while you set up. A change that arrives before a subscription's first `onEvent` listener
+attaches is held, and so is one that arrives before a `LiveSession`'s first `onChange` listener. That covers a change
+in the same read as the subscribe reply, and one made while `resync()` or a sync was reading the state. The listener
+gets the held changes first, in order, one microtask after it attaches, and `cursor` counts them. A subscription
+with no listener that holds 8192 changes ends with reason `overflow`, and a `LiveSession` with no `onChange`
+listener stops holding at that point.
+
 Events that arrive after a resync can describe changes that `state` already shows, because the read ran after the
 subscription started. Apply them idempotently, or reread.
 

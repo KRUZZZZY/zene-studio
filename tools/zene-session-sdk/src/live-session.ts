@@ -3,11 +3,14 @@
 
 import { ZeneClient, type ConnectOptions } from "./client.ts";
 import { ZeneError } from "./errors.ts";
-import { Listeners, rethrowLater, type Unlisten } from "./listeners.ts";
+import { HeldListeners, Listeners, rethrowLater, type Unlisten } from "./listeners.ts";
 import type { Cursor, ProjectChangedEvent } from "./protocol.ts";
 import type { Subscription, SubscriptionEnd, SubscriptionEndReason } from "./subscription.ts";
 
 export type SyncReason = "initial" | Exclude<SubscriptionEndReason, "unsubscribed">;
+
+/** Changes held for a LiveSession with no onChange listener; past it they are not kept (nobody listens). */
+export const MAX_HELD_CHANGES = 8192;
 
 export interface SyncInfo<S> {
 	/** What made this sync happen. */
@@ -46,7 +49,8 @@ export class LiveSession<S> {
 	private staleSince: SyncReason | null = null;
 	private wake: (() => void) | null = null;
 	private readonly syncListeners = new Listeners<[SyncInfo<S>]>(rethrowLater);
-	private readonly changeListeners = new Listeners<[ProjectChangedEvent]>(rethrowLater);
+	// Changes that arrive before the caller's first onChange (start() resolves first) are held for it, not lost.
+	private readonly changeListeners = new HeldListeners<ProjectChangedEvent>(MAX_HELD_CHANGES, () => {});
 	private readonly staleListeners = new Listeners<[SubscriptionEnd]>(rethrowLater);
 	private readonly errorListeners = new Listeners<[Error]>(rethrowLater);
 
@@ -67,7 +71,7 @@ export class LiveSession<S> {
 		return this.lastSync().state;
 	}
 
-	/** The last change this view knows about. */
+	/** The last change this view received: delivered to onChange, or held for its first listener. */
 	get cursor(): Cursor {
 		return this.position ?? this.lastSync().cursor;
 	}
@@ -86,6 +90,10 @@ export class LiveSession<S> {
 		return this.syncListeners.add(fn);
 	}
 
+	/**
+	 * Each change, in `seq` order, including those that arrived while a sync was reading the state. Changes that
+	 * arrived before the first listener reach it first, a microtask after it attaches.
+	 */
 	onChange(fn: (event: ProjectChangedEvent) => void): Unlisten {
 		return this.changeListeners.add(fn);
 	}
@@ -136,7 +144,7 @@ export class LiveSession<S> {
 		this.staleSince = null;
 		result.subscription.onEvent((event) => {
 			this.position = { session: event.session, seq: event.seq };
-			this.changeListeners.emit(event);
+			this.changeListeners.push(event);
 		});
 		result.subscription.onEnd((end) => this.onSubscriptionEnd(client, end));
 		const info: SyncInfo<S> = {
