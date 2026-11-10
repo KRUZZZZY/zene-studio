@@ -83,13 +83,14 @@ cmake include plugins src`) and rebuilt: **exit 0**, 14/14 (`22-restore-ctest.lo
 
 ## Self-check
 
-`submit_check.py` (`36-submit-check.log`): every mechanical item PASS except (a) the report, which is this file, and
+`submit_check.py` (round 1 `36-submit-check.log`; round 2 r2 `69-submit-check.log`, same result): every mechanical item PASS except (a) the report, which is this file, and
 (b) `gates (feature_check.py)` FAIL, because `feature_check.py` creates `<worktree>/../zene-feat-q050-481.2-feature-check/`,
 outside this lane's write-jail (`PermissionError`, `26-feature-check.log`). An identical copy whose only changes are
 that log directory (`/tmp/q4812-fc`) and its `ROOT` path (so it still reads `FIX-BASE` and the baselines from
 `~/.local/share/zene-bunny-fix/qwen`) ran every gate: fork-sources, all-sources-reproduce, no-upstream-regression,
 check-namespace, no-tautology, doc-figures PASS; complexity and file-length PASS (no new item in my files) -
-`RESULT: PASS`, exit 0 (`27-feature-check.log`). Two WARNs: "no GUI file changed" - the GUI entry points are the
+`RESULT: PASS`, exit 0 (round 1 `27-feature-check.log`; round 2 r2 `68-feature-check.log`, after the export test
+was split out to keep both files under the file-length and complexity ratchets - r2 `53` had flagged them). `git diff --check af010bc3cc HEAD`: exit 0. Two WARNs: "no GUI file changed" - the GUI entry points are the
 existing Device panel / effect rack / device menu pickers (which list the new entries without a change) and the new
 effect dialog, which lives in the plug-in (`plugins/CarlaVst2Effect/CarlaVst2Effect.cpp`,
 `CarlaVst2EffectControlDialog`); and "canary figures - new command ids: automation.add_point, carlabase_export.h,
