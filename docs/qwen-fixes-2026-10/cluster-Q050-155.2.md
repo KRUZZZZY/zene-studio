@@ -1,5 +1,61 @@
 IMPLEMENTED
 
+# Round 2 - review round 1 (REWORK): a far pin saved while the bus was stereo
+
+**The blocking finding.** A device pin on channel 41 did not survive a project save/open when its mixer bus was stereo
+at save time, and widening the bus again left it missing. The load grew a device's matrix only to the host bus width
+(none for stereo), so the bounds check dropped `c41_N`.
+
+**Fix** (`src/core/AudioPortsModel.cpp`):
+- `saveSettings` writes `track_channels` on `<pins>` when pins go past the stereo pair (the highest pair in use). A
+  pair-only matrix, which covers every older project, writes nothing new.
+- `loadSettings` grows the matrix to the larger of that count and the host's `HostBusScope` width before reading the
+  pins.
+- The count is validated like the port counts: 2 .. 256, otherwise ignored with a warning. A pin name outside the
+  matrix is still dropped, so the BUG-PINBOUNDS contract and the existing `AudioPortsModelTest` slots hold unchanged.
+- I also compacted my own `HostBusScope` definitions in that file to keep it under the 500-code-line gate.
+
+**Regressions** (logs `~/.local/share/zene-bunny-fix/qwen/runs/Q050-155.2.r2/logs/`):
+
+| Check | Test | Exit |
+|---|---|---|
+| discrete-64 pins -> bus set to stereo -> save -> open -> pins read back -> widened to discrete-64 -> 64-channel render with every device on its pair | `WidePinRoutingTest::farPinsSurviveASaveWhileTheBusIsNarrow` | 0 (test-1: 8/8; test-4) |
+| saved count round-trips; `track_channels` 999 / -4 / x / 0 ignored (matrix stays 2, far pin dropped); pair-only matrix writes no count | `AudioPortsModelTest::loadSettingsGrowsToTheSavedTrackChannels` | 0 (test-1: 22/22; test-4) |
+| the reviewer's reproduction | `QT_QPA_PLATFORM=offscreen python3 /tmp/q050-1552-pin-narrow-roundtrip.py ./build/zene` | 0 (reviewer-repro-1: after reopen on stereo and after re-widen, out pins `[(40, 0), (41, 1)]`) |
+
+## Self-check (round 2)
+
+- **New tests fail reverted, pass restored.** `src/core/AudioPortsModel.cpp` set to the round-1 commit (`git show
+  HEAD:...`), rebuilt (build-2-reverted, exit 0): `ctest -R '^(WidePinRoutingTest|AudioPortsModelTest)$'` exit 8. Both
+  new slots fail (`Compared values are not the same`), and every other slot passes (test-2-reverted). Restored the fixed
+  file, rebuilt (build-3-restored, exit 0): the 24-test set exits 0, 24/24 (test-3-restored). That set is the three
+  acceptance tests plus AudioPortsModelTest, AudioPortsTest, WideDiscreteBusTest, SurroundTest, SurroundExportTest,
+  MixingRoutingTest, MixerToolsTest, PinConnectorTest, AudioBusTest, PluginAudioPortsTest, ReversibilityContractTest,
+  DeviceToolsTest, DeviceToolsChainTest, ClipEffectsTest, MixerModesTest, MixerWindowsTest, AudioPluginTest,
+  ProjectStateTest, ControlRoutingCommands, ControlPortsCommands and ControlCommandsSnapshot. After the file-length
+  compaction (build-4, exit 0), the 6 focused tests exit 0 (test-4).
+- **Every criterion proven by a test I ran:** `ControlWidePinRouting` 0, `WidePinRoutingTest` 0 (now 8 slots),
+  `WidePinRoutingGuiTest` 0 (test-3-restored, test-4).
+- **One undo step; reversibility.** No command changed in this round. `ReversibilityContractTest` and
+  `ControlCommandsSnapshot` exit 0 (test-3-restored).
+- **Realtime.** The change is in project save/load on the control thread only: an attribute write and a validated
+  parse before `growTrackChannels`, which takes the routing change guard as before. Nothing on the audio path changed.
+- **Old projects; round-trip.** A matrix with pins only on the pair writes no new attribute (asserted). A project
+  without the attribute loads as before (`loadSettingsIgnoresMalformedAndOutOfRangePins` and the other existing slots
+  pass). The narrowed-bus round trip is now covered, and `ProjectStateTest` exits 0.
+- **Portability.** Plain Qt DOM and `std::max`; the `thread_local` stays in the .cpp (never in an exported class).
+  Only GCC/Qt6 was compiled locally.
+- **Gates.** `feature_check.py` still cannot create its log directory outside my write jail. My copy, with only the
+  log directory pointed at `runs/Q050-155.2.r2/logs/feature-check` and `ROOT` pinned, gives exit 0 with every row
+  PASS (feature-check-3). The first two runs failed for these reasons:
+  - feature-check-1: my copy still wrote to the r1 log folder (permission denied).
+  - feature-check-2: `file-length` flagged `src/core/AudioPortsModel.cpp` at 505 code lines; I compacted my own
+    additions.
+
+  `submit_check.py`'s gates row therefore still reports FAIL in this sandbox, for that reason only.
+
+# Round 1 record
+
 # Q050-155.2 - Carry 64 channels through device pins and mixer routes
 
 Stage 2 of 4 of Q050-155 (L09, P1). Both acceptance criteria are met and proven by tests I ran in this worktree. Full
