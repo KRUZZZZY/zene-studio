@@ -94,7 +94,7 @@ Nothing new runs on the audio thread. TSan does not run here - reasoned.
   QObject::connect functor with context + Qt::QueuedConnection); no `small/near/far/interface/min/max` identifiers, no std::filesystem,
   no POSIX calls. Built here on Qt 6.12/GCC only; Qt 5.15/MSVC/macOS not built - reasoned.
 - **Known limits (documented):** a kept automation link is not re-made if its clip was deleted or moved while the row was
-  neutral; automation of the row's own mute/solo is not carried; a channel the instrument used stays in the mixer while neutral;
+  neutral; a channel the instrument used stays in the mixer while neutral;
   audio input is stage 3.
 - **Completion check:** `submit_check.py` (`submit-1.log`, exit 1): every item PASS except "gates (feature_check.py)", which fails
   only because `feature_check.py` cannot `mkdir` `<worktree>-feature-check` from this sandbox (PermissionError, as in `gates-1.log`).
@@ -103,3 +103,19 @@ Nothing new runs on the audio thread. TSan does not run here - reasoned.
 - **Completion check, round 2:** `r2/logs/submit-1.log` exit 1 - every item PASS except "gates (feature_check.py)", the same
   sandbox-only `mkdir` refusal as round 1; the same gates PASS with the log directory moved into the run folder
   (`r2/logs/gates-2.log`, exit 0).
+
+## Verifier fix - row mute/solo automation
+
+The first review's focused suite passed, but an additional probe found that switching a neutral row to an instrument destroyed
+the row's mute model while its automation clip queued the ID for resolution; `AutomationClip::saveSettings` writes only live
+targets, so that link could be lost on save. `track.set_role` now detaches row mute/solo links separately from kept instrument
+links and reattaches them to the replacement row's same-ID controls. The instrument-role link count and its kept-link data stay
+separate. Regression `HybridTrackInstrumentRoleTest::rowMuteAutomationSurvivesRoleSwitch` verifies the link and points through
+neutral -> instrument -> neutral -> save/load -> instrument.
+
+| Check | Command / evidence | Exit |
+|---|---|---|
+| Build restored fix | `cmake --build build --target zene HybridTrackInstrumentRoleTest HybridTrackRoleGuiTest HybridTrackRoundTripTest HybridTrackGuiTest ReversibilityContractTest ReversibilityUndoTest StableTrackIdsTest TrackFolderTest AutomationLaneChildrenTest AutomationLaneChildGuiTest TrackAddRoutingTest -- -j4` | 0 (`/tmp/q050-2832-review-final-build.log`) |
+| Focused tests + neighbours, including row mute automation | `ctest -R '^(ReversibilityContractTest|ReversibilityUndoTest|AutomationLaneChildrenTest|HybridTrackRoundTripTest|HybridTrackInstrumentRoleTest|StableTrackIdsTest|TrackFolderTest|TrackAddRoutingTest|AutomationLaneChildGuiTest|HybridTrackGuiTest|HybridTrackRoleGuiTest|ControlHybridTrackTranscript|ControlHybridTrackRoleTranscript|ControlCommandsSnapshot)$' --output-on-failure` | 14/14, exit 0 (`/tmp/q050-2832-review-final-ctest.log`) |
+| Negative control for this fix | reverse its product hunks, rebuild `zene HybridTrackInstrumentRoleTest` (exit 0), then `ctest -R '^HybridTrackInstrumentRoleTest$' --output-on-failure` | exit 8; the new row-mute target assertion fails (`/tmp/q050-2832-mute-fix-negative-ctest.log`) |
+| Gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-283.2` | 0; no new complexity or file-length item |

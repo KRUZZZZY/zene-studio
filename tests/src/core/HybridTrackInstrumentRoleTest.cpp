@@ -456,6 +456,51 @@ private slots:
 		QCOMPARE(targetsOf(firstAutomationClip(lane)).size(), 2);
 		QVERIFY(targetsOf(firstAutomationClip(lane)).contains(static_cast<InstrumentTrack*>(trackOf(row))->volumeModel()));
 	}
+
+	//! Row mute automation stays bound to the same row control across both role swaps and a save/load.
+	void rowMuteAutomationSurvivesRoleSwitch()
+	{
+		const QString row = add(QStringLiteral("neutral"), QStringLiteral("Idea"));
+		const QString lane = add(QStringLiteral("automation"), QStringLiteral("Auto"));
+		auto* lanes = dynamic_cast<AutomationTrack*>(trackOf(lane));
+		QVERIFY(lanes != nullptr);
+		auto* clip = dynamic_cast<AutomationClip*>(lanes->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		QVERIFY(clip->addObject(trackOf(row)->getMutedModel()));
+		clip->putValue(TimePos(0), 1.0f, false);
+		const int points = clip->getTimeMap().size();
+		const int depth = undoDepth();
+		QVERIFY(setRole(row, QStringLiteral("instrument"), Synth).ok);
+		QCOMPARE(undoDepth(), depth + 1);
+		auto* instrument = dynamic_cast<InstrumentTrack*>(trackOf(row));
+		QVERIFY(instrument != nullptr);
+		QVERIFY(targetsOf(firstAutomationClip(lane)).contains(instrument->getMutedModel()));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(targetsOf(firstAutomationClip(lane)).contains(trackOf(row)->getMutedModel()));
+		QVERIFY(run(QStringLiteral("control.redo")).ok);
+		instrument = dynamic_cast<InstrumentTrack*>(trackOf(row));
+		QVERIFY(instrument != nullptr);
+		QVERIFY(targetsOf(firstAutomationClip(lane)).contains(instrument->getMutedModel()));
+
+		QVERIFY(setRole(row, QStringLiteral("neutral")).ok);
+		QCOMPARE(stateOf(row).value(QStringLiteral("kept_roles")).toArray().first().toObject()
+			.value(QStringLiteral("automation_links")).toInt(), 0);
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString path = QDir(dir.path()).filePath(QStringLiteral("row-mute.mmp"));
+		QVERIFY(Engine::getSong()->saveProjectFile(path));
+		Engine::getSong()->clearProject();
+		Engine::getSong()->loadProject(path);
+		QVERIFY(dynamic_cast<NeutralTrack*>(trackOf(row)) != nullptr);
+		QVERIFY(targetsOf(firstAutomationClip(lane)).contains(trackOf(row)->getMutedModel()));
+		QCOMPARE(firstAutomationClip(lane)->getTimeMap().size(), points);
+
+		QVERIFY(setRole(row, QStringLiteral("instrument")).ok);
+		instrument = dynamic_cast<InstrumentTrack*>(trackOf(row));
+		QVERIFY(instrument != nullptr);
+		QVERIFY(targetsOf(firstAutomationClip(lane)).contains(instrument->getMutedModel()));
+		QCOMPARE(firstAutomationClip(lane)->getTimeMap().size(), points);
+	}
 };
 
 QTEST_MAIN(HybridTrackInstrumentRoleTest)

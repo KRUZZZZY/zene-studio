@@ -53,8 +53,8 @@ void collectIds(const QDomElement& element, QSet<int>* ids)
 	}
 }
 
-//! The ids the role's own elements carry: every `id` below `<track>`, except the row's mute/solo.
-QSet<int> roleControlIds(const QString& xml)
+//! The ids carried by either the row's mute/solo children or its instrument-role elements.
+QSet<int> trackControlIds(const QString& xml, bool rowControls)
 {
 	QSet<int> ids;
 	QDomDocument document;
@@ -62,7 +62,8 @@ QSet<int> roleControlIds(const QString& xml)
 	const QDomElement track = document.documentElement().firstChildElement(QStringLiteral("track"));
 	for (QDomElement child = track.firstChildElement(); !child.isNull(); child = child.nextSiblingElement())
 	{
-		if (child.tagName() == QLatin1String("muted") || child.tagName() == QLatin1String("solo")) { continue; }
+		const bool isRowControl = child.tagName() == QLatin1String("muted") || child.tagName() == QLatin1String("solo");
+		if (isRowControl != rowControls) { continue; }
 		collectIds(child, &ids);
 	}
 	return ids;
@@ -130,10 +131,10 @@ AutomatableModel* controlOf(int id)
 
 } // namespace
 
-std::vector<KeptAutomationLink> detachInstrumentAutomation(const QString& xml)
+std::vector<KeptAutomationLink> detachTrackAutomation(const QString& xml, bool rowControls)
 {
 	std::vector<KeptAutomationLink> links;
-	const QSet<int> ids = roleControlIds(xml);
+	const QSet<int> ids = trackControlIds(xml, rowControls);
 	if (ids.isEmpty()) { return links; }
 	for (Track* track : automationTracks())
 	{

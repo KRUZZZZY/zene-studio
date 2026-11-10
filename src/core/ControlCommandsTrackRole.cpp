@@ -206,10 +206,12 @@ Track* replaceRow(Track* live, int index, const QString& xml,
 	const std::vector<KeptAutomationLink>& reattach = {}, std::vector<KeptAutomationLink>* detached = nullptr)
 {
 	std::vector<KeptAutomationLink> taken;
+	std::vector<KeptAutomationLink> rowLinks;
 	QString liveXml;
-	if (live->type() == Track::Type::Instrument && captureTrackXml(live, &liveXml, MaxRoleSwitchChars))
+	if (captureTrackXml(live, &liveXml, MaxRoleSwitchChars))
 	{
-		taken = detachInstrumentAutomation(liveXml);
+		rowLinks = detachTrackAutomation(liveXml, true);
+		if (live->type() == Track::Type::Instrument) { taken = detachTrackAutomation(liveXml, false); }
 	}
 	if (detached != nullptr) { *detached = taken; }
 	removeTrack(live);
@@ -218,6 +220,7 @@ Track* replaceRow(Track* live, int index, const QString& xml,
 	{
 		moveTrackToIndex(replacement, index);
 		placeRowView(replacement->id(), index);
+		reattachInstrumentAutomation(rowLinks);
 		if (replacement->type() == Track::Type::Instrument) { reattachInstrumentAutomation(reattach); }
 	}
 	return replacement;

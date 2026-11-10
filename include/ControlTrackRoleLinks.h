@@ -39,16 +39,13 @@ class Track;
 namespace control
 {
 
-/*! Takes every automation link to a control of @a instrument OFF its automation clip, before the
- *  instrument track is destroyed by a role switch, and answers them (Q050-283.2). @a xml is the track's
- *  captured document, taken while the links were still in place: a linked control is "automated", so its
- *  element carries its id, and the ids in the document are exactly the instrument's own linked controls.
- *  Each link is removed with AutomationClip::removeObject and its destroyed() connection is cut, so the
- *  clip neither keeps a dangling target nor queues the id for a later resolve; the clip's points stay.
- *  The row's own mute/solo controls (direct children of `<track>`) are not the role's and are left alone.
- *  Clips are searched in the song, the pattern store and the song-global automation track.
- *  UI/control thread only. */
-LMMS_EXPORT std::vector<KeptAutomationLink> detachInstrumentAutomation(const QString& xml);
+/*! Takes automation links to one side of a role-switched row off their clips before its models are
+ *  destroyed, and answers them (Q050-283.2). @a xml is the captured track document. @a rowControls
+ *  selects the row's mute/solo models; false selects the instrument role's controls. Each link is
+ *  removed with AutomationClip::removeObject and its destroyed() connection is cut, so the clip's
+ *  points stay and it queues no dangling id. Clips are searched in the song, pattern store and
+ *  song-global automation track. UI/control thread only. */
+LMMS_EXPORT std::vector<KeptAutomationLink> detachTrackAutomation(const QString& xml, bool rowControls);
 
 /*! Puts @a links back once the instrument track has been rebuilt from its kept document (whose controls
  *  are given back the ids the links name). A link whose clip or control cannot be found is skipped.
