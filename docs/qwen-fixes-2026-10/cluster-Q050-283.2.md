@@ -100,3 +100,6 @@ Nothing new runs on the audio thread. TSan does not run here - reasoned.
   only because `feature_check.py` cannot `mkdir` `<worktree>-feature-check` from this sandbox (PermissionError, as in `gates-1.log`).
   The same gates, with only the log directory moved inside the run folder, PASS (`gates-2.log`, exit 0). The loop's own run
   outside the sandbox is the authoritative one.
+- **Completion check, round 2:** `r2/logs/submit-1.log` exit 1 - every item PASS except "gates (feature_check.py)", the same
+  sandbox-only `mkdir` refusal as round 1; the same gates PASS with the log directory moved into the run folder
+  (`r2/logs/gates-2.log`, exit 0).
