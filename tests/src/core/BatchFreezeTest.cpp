@@ -45,6 +45,7 @@
 #include <QTemporaryDir>
 #include <QThread>
 
+#include <algorithm>
 #include <cerrno>
 #include <cmath>
 #include <cstring>
@@ -384,6 +385,20 @@ private slots:
 		QCOMPARE(undoDepth(), depth);
 		QVERIFY(run(QStringLiteral("control.redo")).ok);
 		QVERIFY(a->isFrozen() && b->isFrozen() && c->isFrozen());
+
+		// The batch writes the per-track take format freeze.track always wrote: it survives save and open.
+		const QString project = path(QStringLiteral("batch.mmp"));
+		QVERIFY(Engine::getSong()->saveProjectFile(project));
+		Engine::getSong()->loadProject(project);
+		QVERIFY(Engine::getSong()->loadRefusal().isEmpty());
+		int frozenAfterLoad = 0;
+		for (const Track* track : Engine::getSong()->tracks())
+		{
+			const bool batchTrack = track->name() != QLatin1String("Other");
+			QCOMPARE(track->isFrozen(), batchTrack);
+			if (batchTrack) { QVERIFY(track->frozenAudioReady()); ++frozenAfterLoad; }
+		}
+		QCOMPARE(frozenAfterLoad, 3);
 	}
 
 	void cancelAfterOneTrackRenderedRestoresEveryTrack()
