@@ -52,6 +52,7 @@
 #include "ControlStructuralSupport.h"
 #include "ControlTrackCreation.h"
 #include "ControlTrackRole.h"
+#include "ControlTrackRoleLinks.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "GuiApplication.h"
@@ -195,21 +196,36 @@ void placeRowView(int id, int index)
 
 /*! Replaces @a live by the track @a xml describes, at @a index: the product's own removal (view
  *  first), then the project loader's Track::create(element), then the reorder the remove-undo uses.
- *  The document is the row's own, so the new object has the row's id. */
-Track* replaceRow(Track* live, int index, const QString& xml)
+ *  The document is the row's own, so the new object has the row's id.
+ *
+ *  Automation (review r1): an instrument @a live has its automation links taken off their clips first
+ *  (they are answered in @a detached), because destroying its controls would otherwise leave each clip
+ *  with only a queued id that the next save drops. When the new object is an instrument, @a reattach
+ *  (the links its role kept) are put back on it. */
+Track* replaceRow(Track* live, int index, const QString& xml,
+	const std::vector<KeptAutomationLink>& reattach = {}, std::vector<KeptAutomationLink>* detached = nullptr)
 {
+	std::vector<KeptAutomationLink> taken;
+	QString liveXml;
+	if (live->type() == Track::Type::Instrument && captureTrackXml(live, &liveXml, MaxRoleSwitchChars))
+	{
+		taken = detachInstrumentAutomation(liveXml);
+	}
+	if (detached != nullptr) { *detached = taken; }
 	removeTrack(live);
 	Track* replacement = restoreTrackFromXml(xml, Engine::getSong());
 	if (replacement != nullptr)
 	{
 		moveTrackToIndex(replacement, index);
 		placeRowView(replacement->id(), index);
+		if (replacement->type() == Track::Type::Instrument) { reattachInstrumentAutomation(reattach); }
 	}
 	return replacement;
 }
 
-//! The undo/redo half of a role switch: whatever object is the row now becomes the one @a xml holds.
-void replaceRowWithId(int id, int index, const QString& xml)
+//! The undo/redo half of a role switch: whatever object is the row now becomes the one @a xml holds,
+//! with @a links put back when that is the instrument.
+void replaceRowWithId(int id, int index, const QString& xml, const std::vector<KeptAutomationLink>& links)
 {
 	Track* live = trackWithId(id);
 	if (live == nullptr)
@@ -217,7 +233,7 @@ void replaceRowWithId(int id, int index, const QString& xml)
 		recordActionRestoreFailure(QStringLiteral("track.set_role: the row trk-%1 is gone; nothing was replaced").arg(id));
 		return;
 	}
-	if (replaceRow(live, index, xml) == nullptr)
+	if (replaceRow(live, index, xml, links) == nullptr)
 	{
 		recordActionRestoreFailure(QStringLiteral("track.set_role: the row trk-%1 could not be rebuilt").arg(id));
 	}
@@ -237,6 +253,8 @@ struct RoleRequest
 	QString role;
 	QString instrument;
 	QString beforeXml;
+	//! The automation links of the instrument side of the switch (kept, or taken off the clips).
+	std::vector<KeptAutomationLink> links;
 };
 
 ControlResult refuse(ControlErrorKind kind, const QString& message)
@@ -305,15 +323,16 @@ bool checkInstrumentChoice(const RoleRequest& request, ControlResult* error)
 }
 
 //! neutral -> instrument. The row's own name is kept: loading a plug-in names the track after it.
-Track* switchToInstrument(const RoleRequest& request)
+Track* switchToInstrument(RoleRequest& request)
 {
 	auto* neutral = static_cast<NeutralTrack*>(request.track);
 	const QString kept = neutral->keptInstrumentRole();
+	request.links = neutral->keptInstrumentLinks();
 	const QString rowName = neutral->name();
 	const QString target = kept.isEmpty() ? freshInstrumentRow(request.beforeXml)
 		: keptInstrumentRow(request.beforeXml, kept);
 	if (target.isEmpty()) { return nullptr; }
-	Track* replacement = replaceRow(request.track, request.index, target);
+	Track* replacement = replaceRow(request.track, request.index, target, request.links);
 	auto* instrumentTrack = dynamic_cast<InstrumentTrack*>(replacement);
 	if (instrumentTrack != nullptr && kept.isEmpty())
 	{
@@ -324,14 +343,20 @@ Track* switchToInstrument(const RoleRequest& request)
 }
 
 //! instrument -> neutral: the neutral row keeps the whole instrument track it was.
-Track* switchToNeutral(const RoleRequest& request)
+//! Its automation links go with it (taken off their clips before the instrument's controls are destroyed).
+Track* switchToNeutral(RoleRequest& request)
 {
 	const QString target = neutralRow(request.beforeXml);
 	if (target.isEmpty()) { return nullptr; }
-	Track* replacement = replaceRow(request.track, request.index, target);
-	if (auto* neutral = dynamic_cast<NeutralTrack*>(replacement)) { neutral->setKeptInstrumentRole(request.beforeXml); }
+	Track* replacement = replaceRow(request.track, request.index, target, {}, &request.links);
+	if (auto* neutral = dynamic_cast<NeutralTrack*>(replacement))
+	{
+		neutral->setKeptInstrumentRole(request.beforeXml, request.links);
+	}
 	return replacement;
 }
+
+std::vector<KeptAutomationLink> noLinks() { return {}; }
 
 QString mechanismText()
 {
@@ -339,7 +364,8 @@ QString mechanismText()
 		"the switch, and the one recorded step replaces the row by the other document at the same index "
 		"through control::removeTrack and Track::create(element) - the remove-undo path. The row's id, name, "
 		"mute/solo, colour, height and folder are in both documents, and the instrument role (plug-in, "
-		"settings, clips) is the kept role of the neutral document, so neither direction loses it");
+		"settings, clips, and the automation clips' links to its controls) is the kept role of the neutral "
+		"document, so neither direction loses it");
 }
 
 ControlResult setRole(const QJsonObject& args)
@@ -366,8 +392,12 @@ ControlResult setRole(const QJsonObject& args)
 	QString afterXml;
 	const bool captured = captureTrackXml(replacement, &afterXml, MaxRoleSwitchChars);
 	const bool recorded = captured && addStructuralUndoStep(
-		[id, index = request.index, xml = request.beforeXml]() { replaceRowWithId(id, index, xml); },
-		[id, index = request.index, xml = afterXml]() { replaceRowWithId(id, index, xml); },
+		// The links go with whichever document is the instrument: the after-document of a switch to
+		// instrument, the before-document of a switch to neutral (a neutral document carries its own).
+		[id, index = request.index, xml = request.beforeXml, links = toInstrument ? noLinks() : request.links]() {
+			replaceRowWithId(id, index, xml, links); },
+		[id, index = request.index, xml = afterXml, links = toInstrument ? request.links : noLinks()]() {
+			replaceRowWithId(id, index, xml, links); },
 		static_cast<qint64>(request.beforeXml.size() + afterXml.size()) * static_cast<qint64>(sizeof(QChar)));
 
 	QJsonObject result = trackEditState(replacement, request.index);
@@ -397,7 +427,8 @@ void insertTrackRoleFields(QJsonObject* entry, const Track* track)
 	if (!neutral->keptInstrumentRole().isEmpty())
 	{
 		kept.append(QJsonObject{{QStringLiteral("role"), RoleInstrument},
-			{QStringLiteral("instrument"), neutral->keptInstrumentPlugin()}});
+			{QStringLiteral("instrument"), neutral->keptInstrumentPlugin()},
+			{QStringLiteral("automation_links"), static_cast<int>(neutral->keptInstrumentLinks().size())}});
 	}
 	entry->insert(QStringLiteral("kept_roles"), kept);
 }
@@ -413,7 +444,8 @@ void registerTrackRoleCommands(ControlRegistry& registry)
 	cmd.description = QStringLiteral("Give a neutral row an instrument (role 'instrument', naming the "
 		"`instrument` plug-in), or switch an instrument track back to a neutral row (role 'neutral'). The row "
 		"keeps its trk-<n> id, its position, name, mute/solo, colour and folder, and nothing else in the "
-		"project changes. Switching to neutral KEEPS the instrument role - plug-in, settings and clips - with "
+		"project changes. Switching to neutral KEEPS the instrument role - plug-in, settings, clips and the "
+		"automation clips' links to its controls - with "
 		"the row (track.get_state `kept_roles`, saved with the project); switching that row to 'instrument' "
 		"again gives it back (omit `instrument`). One undo step.");
 	cmd.argsSchema = objectSchema({

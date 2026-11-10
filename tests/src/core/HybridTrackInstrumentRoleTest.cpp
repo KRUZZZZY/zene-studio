@@ -40,6 +40,9 @@
 #include <QJsonDocument>
 #include <QTemporaryDir>
 
+#include "AutomatableModel.h"
+#include "AutomationClip.h"
+#include "AutomationTrack.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
@@ -158,6 +161,33 @@ void verifyRoleContent(const QString& id)
 	QCOMPARE(trackOf(id)->numOfClips(), 1);
 	QCOMPARE(noteCount(id), 2);
 	QCOMPARE(static_cast<InstrumentTrack*>(trackOf(id))->volumeModel()->value(), 42.0f);
+}
+
+//! The automation clip at index 0 of the automation track @a id.
+AutomationClip* firstAutomationClip(const QString& id)
+{
+	Track* track = Engine::getSong()->findTrackById(id.mid(4).toInt());
+	return track != nullptr && !track->getClips().empty() ? dynamic_cast<AutomationClip*>(track->getClips().front()) : nullptr;
+}
+
+//! The clip's targets, as raw pointers.
+QList<AutomatableModel*> targetsOf(AutomationClip* clip)
+{
+	QList<AutomatableModel*> targets;
+	for (const auto& target : clip->objectsSnapshot())
+	{
+		if (target) { targets << target.data(); }
+	}
+	return targets;
+}
+
+//! The first control of the row's instrument plug-in itself (not the track's own knobs).
+AutomatableModel* pluginControlOf(const QString& id)
+{
+	auto* track = dynamic_cast<InstrumentTrack*>(trackOf(id));
+	if (track == nullptr || track->instrument() == nullptr) { return nullptr; }
+	const auto controls = track->instrument()->findChildren<AutomatableModel*>();
+	return controls.isEmpty() ? nullptr : controls.first();
 }
 
 } // namespace
@@ -360,6 +390,71 @@ private slots:
 		const int kept = undoDepth();
 		QCOMPARE(setRole(row, QStringLiteral("instrument"), QStringLiteral("kicker")).errorKind, ControlErrorKind::InvalidArgs);
 		QCOMPARE(undoDepth(), kept);
+	}
+
+	/*! Review r1: the automation links to the kept instrument's controls go with the kept role. An
+	 *  automation clip drives the row's volume and one control of its plug-in; the row goes neutral (the
+	 *  controls are destroyed), the project is saved and opened again, and the restored instrument is driven
+	 *  by the same clip again, its points unchanged. The undo of a switch to neutral gives the links back too. */
+	void automationLinksSurviveNeutralSaveLoadAndRestore()
+	{
+		const QString row = add(QStringLiteral("neutral"), QStringLiteral("Idea"));
+		const QString lane = add(QStringLiteral("automation"), QStringLiteral("Auto"));
+		QVERIFY(setRole(row, QStringLiteral("instrument"), Synth).ok);
+		auto* lanes = dynamic_cast<AutomationTrack*>(trackOf(lane));
+		QVERIFY(lanes != nullptr);
+		auto* clip = dynamic_cast<AutomationClip*>(lanes->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		AutomatableModel* plugin = pluginControlOf(row);
+		QVERIFY2(plugin != nullptr, "the instrument has no control of its own to automate");
+		QVERIFY(clip->addObject(static_cast<InstrumentTrack*>(trackOf(row))->volumeModel()));
+		QVERIFY(clip->addObject(plugin));
+		clip->putValue(TimePos(0), 20.0f, false);
+		clip->putValue(TimePos(96), 80.0f, false);
+		const int points = clip->getTimeMap().size();
+		const QString pluginName = plugin->objectName() + plugin->displayName();
+
+		// Undo of a switch to neutral gives the links back.
+		QVERIFY(setRole(row, QStringLiteral("neutral")).ok);
+		QCOMPARE(targetsOf(firstAutomationClip(lane)).size(), 0);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(targetsOf(firstAutomationClip(lane)).size(), 2);
+
+		const ControlResult neutral = setRole(row, QStringLiteral("neutral"));
+		QVERIFY(neutral.ok);
+		QCOMPARE(stateOf(row).value(QStringLiteral("kept_roles")).toArray().first().toObject()
+			.value(QStringLiteral("automation_links")).toInt(), 2);
+		QCOMPARE(firstAutomationClip(lane)->getTimeMap().size(), points);
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString path = QDir(dir.path()).filePath(QStringLiteral("links.mmp"));
+		QVERIFY(Engine::getSong()->saveProjectFile(path));
+		Engine::getSong()->clearProject();
+		Engine::getSong()->loadProject(path);
+		QVERIFY(dynamic_cast<NeutralTrack*>(trackOf(row)) != nullptr);
+
+		QVERIFY(setRole(row, QStringLiteral("instrument")).ok);
+		AutomationClip* restored = firstAutomationClip(lane);
+		QVERIFY(restored != nullptr);
+		const QList<AutomatableModel*> targets = targetsOf(restored);
+		QCOMPARE(targets.size(), 2);
+		QVERIFY2(targets.contains(static_cast<InstrumentTrack*>(trackOf(row))->volumeModel()),
+			"the clip no longer drives the restored row's volume");
+		AutomatableModel* restoredPlugin = pluginControlOf(row);
+		QVERIFY(targets.contains(restoredPlugin));
+		QCOMPARE(restoredPlugin->objectName() + restoredPlugin->displayName(), pluginName);
+		QCOMPARE(restored->getTimeMap().size(), points);
+		QCOMPARE(restored->valueAt(TimePos(96)), 80.0f);
+
+		// Undo of the restore takes the links back into the kept role, redo puts them on the instrument again.
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(targetsOf(firstAutomationClip(lane)).size(), 0);
+		QCOMPARE(stateOf(row).value(QStringLiteral("kept_roles")).toArray().first().toObject()
+			.value(QStringLiteral("automation_links")).toInt(), 2);
+		QVERIFY(run(QStringLiteral("control.redo")).ok);
+		QCOMPARE(targetsOf(firstAutomationClip(lane)).size(), 2);
+		QVERIFY(targetsOf(firstAutomationClip(lane)).contains(static_cast<InstrumentTrack*>(trackOf(row))->volumeModel()));
 	}
 };
 

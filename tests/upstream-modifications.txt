@@ -5749,7 +5749,7 @@ plugins/LadspaBrowser/LadspaDescription.cpp	new-p14-130: rowChanged ignores a ro
 tests/src/core/SessionAudioRecordTest.cpp	# audio-recording arm dereferences a possibly-null audio engine
 include/AudioBufferView.h	new-p10-495: framesView() returns an empty range when empty() is true (null data with any counts, or zero counts) instead of offsetting a null pointer by channels*frames; valid views unchanged; covered by AudioResamplerRatioTest framesViewOfNullDataIsEmpty
 src/gui/tracks/TrackOperationsWidget.cpp	Q050-283.2 (L04, R-workflow-286): the track menu gains ONE addTrackRoleMenu(toMenu, track) call before the Folder submenu - a neutral row's "Assign instrument" and an instrument track's "Make neutral (keep instrument)", both through track.set_role (src/gui/TrackRoleMenu.cpp); held by tests/src/gui/HybridTrackRoleGuiTest.cpp
-src/core/CMakeLists.txt	Q050-283.2: builds core/ControlCommandsTrackRole.cpp (track.set_role).
+src/core/CMakeLists.txt	Q050-283.2: builds core/ControlCommandsTrackRole.cpp (track.set_role) and core/ControlTrackRoleLinks.cpp (the automation links a kept instrument role takes with it).
 src/gui/CMakeLists.txt	Q050-283.2: builds gui/TrackRoleMenu.cpp (the track menu's role items).
 tests/CMakeLists.txt	Q050-283.2: registers HybridTrackInstrumentRoleTest and HybridTrackRoleGuiTest (with the tripleoscillator module they load) and the ControlHybridTrackRoleTranscript socket test.
 data/manual/index.html	Q050-283.2: documents giving a neutral track an instrument, Make neutral (keep instrument), Restore, and track.set_role.

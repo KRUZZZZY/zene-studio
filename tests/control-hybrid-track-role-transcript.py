@@ -11,7 +11,7 @@ prints the raw request/response transcript, in order:
   B. One `control.undo` gives the neutral row back at the same place, one
      `control.redo` the instrument row.
   C. A clip on the instrument row; `track.set_role` role=neutral keeps the row and
-     reports `kept_roles` [{role: instrument, instrument: tripleoscillator}].
+     reports `kept_roles` [{role: instrument, instrument: tripleoscillator, automation_links: 0}].
   D. `project.save`, `project.new`, `project.open`: the neutral row and its kept role
      come back; `track.set_role` role=instrument then gives the instrument and its
      clip back at the same place.
@@ -90,7 +90,7 @@ def claims(test, tmp):
     neutral = test.call("track.set_role", {"track": row, "role": "neutral"})
     test.require(neutral.get("type") == "neutral" and neutral.get("index") == index, "the switch gave %r" % neutral)
     kept = test.call("track.get_state", {"track": row}).get("kept_roles")
-    test.require(kept == [{"role": "instrument", "instrument": "tripleoscillator"}], "kept_roles is %r" % (kept,))
+    test.require(kept == [{"role": "instrument", "instrument": "tripleoscillator", "automation_links": 0}], "kept_roles is %r" % (kept,))
 
     print("\n---- D. save, new project, open; then the instrument back ----")
     before = test.rows()
@@ -100,7 +100,7 @@ def claims(test, tmp):
     test.call("project.open", {"path": path})
     test.require(test.rows() == before, "the arrangement changed over save/open: %r -> %r" % (before, test.rows()))
     kept = test.call("track.get_state", {"track": row}).get("kept_roles")
-    test.require(kept == [{"role": "instrument", "instrument": "tripleoscillator"}], "kept_roles after open is %r" % (kept,))
+    test.require(kept == [{"role": "instrument", "instrument": "tripleoscillator", "automation_links": 0}], "kept_roles after open is %r" % (kept,))
     back = test.call("track.set_role", {"track": row, "role": "instrument"})
     test.require(back.get("track") == row and back.get("index") == index and back.get("clip_count") == 1,
         "the restored row is %r" % back)

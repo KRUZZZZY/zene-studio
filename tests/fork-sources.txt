@@ -3522,6 +3522,8 @@ docs/qwen-fixes-2026-10/cluster-Q050-283.1.md
 include/ControlTrackRole.h
 include/TrackRoleMenu.h
 src/core/ControlCommandsTrackRole.cpp
+include/ControlTrackRoleLinks.h
+src/core/ControlTrackRoleLinks.cpp
 src/gui/TrackRoleMenu.cpp
 tests/src/core/HybridTrackInstrumentRoleTest.cpp
 tests/src/gui/HybridTrackRoleGuiTest.cpp

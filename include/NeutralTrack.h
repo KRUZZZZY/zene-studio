@@ -25,10 +25,25 @@
 #ifndef LMMS_NEUTRAL_TRACK_H
 #define LMMS_NEUTRAL_TRACK_H
 
+#include <vector>
+
 #include "Track.h"
 
 namespace lmms
 {
+
+/*! One automation link of a kept instrument role (Q050-283.2): automation clip -> one control of the
+ *  instrument. The control is destroyed with the instrument track when the row goes neutral, so the link is
+ *  kept HERE, by references that survive a save and a load: the automation clip by its track's stable id,
+ *  its index on that track and its start tick; the control by the id its element carries in the kept
+ *  document (the id it is given back when the role returns). */
+struct KeptAutomationLink
+{
+	int track = -1;     //!< Track::id() of the automation track holding the clip
+	int clip = -1;      //!< the clip's index in that track's clip list
+	int position = 0;   //!< the clip's start tick (checks the index; finds the clip if the index moved)
+	int model = 0;      //!< the control's id as written in the kept document
+};
 
 /*! A NEUTRAL arrangement row (0.5.0 Q050-283, stage 1 of 3; docs/050-features/Q050-283.1.md).
  *
@@ -74,12 +89,16 @@ public:
 	const QString& keptInstrumentRole() const { return m_keptInstrumentRole; }
 	//! The plug-in name of the kept instrument role ("" when there is none).
 	const QString& keptInstrumentPlugin() const { return m_keptInstrumentPlugin; }
-	//! Keeps @a xml (a captured instrument track) as this row's inactive instrument role; "" forgets it.
-	void setKeptInstrumentRole(const QString& xml);
+	//! The automation links of the kept instrument role, given back with it.
+	const std::vector<KeptAutomationLink>& keptInstrumentLinks() const { return m_keptInstrumentLinks; }
+	//! Keeps @a xml (a captured instrument track) and its automation @a links as this row's inactive
+	//! instrument role; "" forgets both. Links are persisted in `<keptlinks kind="instrument">`.
+	void setKeptInstrumentRole(const QString& xml, std::vector<KeptAutomationLink> links = {});
 
 private:
 	QString m_keptInstrumentRole;
 	QString m_keptInstrumentPlugin;
+	std::vector<KeptAutomationLink> m_keptInstrumentLinks;
 };
 
 } // namespace lmms

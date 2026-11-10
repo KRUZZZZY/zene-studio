@@ -350,6 +350,7 @@ include/ControlStemSupport.h
 include/ControlStructuralSupport.h
 include/ControlTrackCreation.h
 include/ControlTrackRole.h
+include/ControlTrackRoleLinks.h
 include/ControlTrackRouting.h
 include/ControlUndoCoalescing.h
 include/ControlVocabulary.h
@@ -1985,6 +1986,7 @@ src/core/ControlStemSupport.cpp
 src/core/ControlStemWav.cpp
 src/core/ControlStructuralSupport.cpp
 src/core/ControlTrackCreation.cpp
+src/core/ControlTrackRoleLinks.cpp
 src/core/ControlTrackRouting.cpp
 src/core/ControlTransactions.cpp
 src/core/ControlUndoCoalescing.cpp

@@ -58,6 +58,9 @@ namespace
 
 //! The element, inside `<neutraltrack>`, that carries one kept role (Q050-283.2).
 const QString KeptRoleElement = QStringLiteral("keptrole");
+//! Its automation links: a sibling element, so the kept role's text stays text only.
+const QString KeptLinksElement = QStringLiteral("keptlinks");
+const QString LinkElement = QStringLiteral("link");
 const QString InstrumentRoleKind = QStringLiteral("instrument");
 
 //! The plug-in a captured instrument track names: `<track><instrumenttrack><instrument name=...>`.
@@ -72,11 +75,58 @@ QString instrumentPluginOf(const QString& xml)
 
 } // namespace
 
-void NeutralTrack::setKeptInstrumentRole(const QString& xml)
+void NeutralTrack::setKeptInstrumentRole(const QString& xml, std::vector<KeptAutomationLink> links)
 {
 	m_keptInstrumentRole = xml;
 	m_keptInstrumentPlugin = instrumentPluginOf(xml);
+	m_keptInstrumentLinks = xml.isEmpty() ? std::vector<KeptAutomationLink>() : std::move(links);
 }
+
+namespace
+{
+
+void saveLinks(QDomDocument& doc, QDomElement& parent, const std::vector<KeptAutomationLink>& links)
+{
+	if (links.empty()) { return; }
+	QDomElement kept = doc.createElement(KeptLinksElement);
+	kept.setAttribute(QStringLiteral("kind"), InstrumentRoleKind);
+	for (const KeptAutomationLink& link : links)
+	{
+		QDomElement each = doc.createElement(LinkElement);
+		each.setAttribute(QStringLiteral("track"), link.track);
+		each.setAttribute(QStringLiteral("clip"), link.clip);
+		each.setAttribute(QStringLiteral("pos"), link.position);
+		each.setAttribute(QStringLiteral("model"), link.model);
+		kept.appendChild(each);
+	}
+	parent.appendChild(kept);
+}
+
+std::vector<KeptAutomationLink> loadLinks(const QDomElement& element)
+{
+	std::vector<KeptAutomationLink> links;
+	for (QDomElement kept = element.firstChildElement(KeptLinksElement); !kept.isNull();
+		kept = kept.nextSiblingElement(KeptLinksElement))
+	{
+		if (kept.attribute(QStringLiteral("kind")) != InstrumentRoleKind) { continue; }
+		for (QDomElement each = kept.firstChildElement(LinkElement); !each.isNull(); each = each.nextSiblingElement(LinkElement))
+		{
+			bool trackOk = false;
+			bool clipOk = false;
+			bool modelOk = false;
+			KeptAutomationLink link;
+			link.track = each.attribute(QStringLiteral("track")).toInt(&trackOk);
+			link.clip = each.attribute(QStringLiteral("clip")).toInt(&clipOk);
+			link.position = each.attribute(QStringLiteral("pos")).toInt();
+			link.model = each.attribute(QStringLiteral("model")).toInt(&modelOk);
+			// A link that names nothing usable is dropped, never guessed.
+			if (trackOk && clipOk && modelOk && link.track >= 0 && link.clip >= 0) { links.push_back(link); }
+		}
+	}
+	return links;
+}
+
+} // namespace
 
 void NeutralTrack::saveTrackSpecificSettings(QDomDocument& doc, QDomElement& parent, bool presetMode)
 {
@@ -87,6 +137,7 @@ void NeutralTrack::saveTrackSpecificSettings(QDomDocument& doc, QDomElement& par
 	kept.setAttribute(QStringLiteral("plugin"), m_keptInstrumentPlugin);
 	kept.appendChild(doc.createTextNode(m_keptInstrumentRole));
 	parent.appendChild(kept);
+	saveLinks(doc, parent, m_keptInstrumentLinks);
 }
 
 void NeutralTrack::loadTrackSpecificSettings(const QDomElement& element)
@@ -98,7 +149,7 @@ void NeutralTrack::loadTrackSpecificSettings(const QDomElement& element)
 	{
 		if (role.attribute(QStringLiteral("kind")) == InstrumentRoleKind) { kept = role.text(); }
 	}
-	setKeptInstrumentRole(kept);
+	setKeptInstrumentRole(kept, loadLinks(element));
 }
 
 } // namespace lmms

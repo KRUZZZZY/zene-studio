@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-11-10T09:29:43Z",
+  "captured_at": "2026-11-10T12:41:43Z",
   "commands": [
     {
       "args_schema": {
@@ -33990,7 +33990,7 @@
         ],
         "type": "object"
       },
-      "description": "Give a neutral row an instrument (role 'instrument', naming the `instrument` plug-in), or switch an instrument track back to a neutral row (role 'neutral'). The row keeps its trk-<n> id, its position, name, mute/solo, colour and folder, and nothing else in the project changes. Switching to neutral KEEPS the instrument role - plug-in, settings and clips - with the row (track.get_state `kept_roles`, saved with the project); switching that row to 'instrument' again gives it back (omit `instrument`). One undo step.",
+      "description": "Give a neutral row an instrument (role 'instrument', naming the `instrument` plug-in), or switch an instrument track back to a neutral row (role 'neutral'). The row keeps its trk-<n> id, its position, name, mute/solo, colour and folder, and nothing else in the project changes. Switching to neutral KEEPS the instrument role - plug-in, settings, clips and the automation clips' links to its controls - with the row (track.get_state `kept_roles`, saved with the project); switching that row to 'instrument' again gives it back (omit `instrument`). One undo step.",
       "group": "track",
       "id": "track.set_role",
       "mutating": true,
@@ -39638,8 +39638,8 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-283.2/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-i0i6nmp_/zene.sock",
-    "version": "0.4.0-alpha.6312+af010bc"
+    "source_socket": "/tmp/zctl-run-khbe3cql/zene.sock",
+    "version": "0.4.0-alpha.6315+6721702"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
