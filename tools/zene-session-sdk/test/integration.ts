@@ -109,7 +109,12 @@ async function checkReadEditEvent(client: ZeneClient, editor: ZeneClient): Promi
 	await editor.call("control.undo");
 	await waitUntil(() => events.length >= 3, "three events");
 	await barrier(client);
+	checkThreeEvents(sub, events);
+	check(await trackCount(client) === before + 1, "rereading shows the edit");
+	return { sub, events };
+}
 
+function checkThreeEvents(sub: Subscription, events: ProjectChangedEvent[]): void {
 	check(events.length === 3, "exactly the three successful changes arrived (no event for the refusal or the read)");
 	const [first, second, third] = events as [ProjectChangedEvent, ProjectChangedEvent, ProjectChangedEvent];
 	check(first.command === "track.add" && first.kind === "edit" && first.source === "command" &&
@@ -119,8 +124,6 @@ async function checkReadEditEvent(client: ZeneClient, editor: ZeneClient): Promi
 	check(events.map((event) => event.seq).join() === [1, 2, 3].map((n) => n + sub.startSeq).join(),
 		"seq rises by one from the subscription's start");
 	check(sub.lastSeq === third.seq && sub.cursor.session === sub.session, "the subscription's cursor follows the events");
-	check(await trackCount(client) === before + 1, "rereading shows the edit");
-	return { sub, events };
 }
 
 async function checkIteratorAndUnsubscribe(client: ZeneClient, editor: ZeneClient, sub: Subscription,

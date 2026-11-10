@@ -107,26 +107,28 @@ export class ZeneClient implements SubscriptionHost {
 
 	/** Opens a connection. Rejects with ZeneConnectionError when nothing listens, ZeneProtocolError on a revision mismatch. */
 	static async connect(options: ConnectOptions = {}): Promise<ZeneClient> {
-		const path = options.path ?? process.env[SOCKET_PATH_ENV];
-		if (path === undefined || path === "") {
-			throw new ZeneConnectionError(`no socket path: pass { path } or set ${SOCKET_PATH_ENV}`);
-		}
+		const path = socketPath(options);
 		const socket = await openSocket(path, options.connectTimeoutMs ?? 10_000);
 		const client = new ZeneClient(path, socket, options.callTimeoutMs ?? 30_000);
 		if (options.checkProtocol ?? true) {
-			try {
-				const version = await client.call("control.version");
-				if (version.proto !== PROTOCOL_VERSION) {
-					throw new ZeneProtocolError(`the instance speaks control protocol ${version.proto}; ` +
-						`this SDK speaks ${PROTOCOL_VERSION}`);
-				}
-				client.serverVersion = version.version;
-			} catch (error) {
-				await client.close();
-				throw error;
-			}
+			await client.checkProtocol();
 		}
 		return client;
+	}
+
+	/** Asks control.version; closes the connection and rejects when the revision differs. */
+	private async checkProtocol(): Promise<void> {
+		try {
+			const version = await this.call("control.version");
+			if (version.proto !== PROTOCOL_VERSION) {
+				throw new ZeneProtocolError(`the instance speaks control protocol ${version.proto}; ` +
+					`this SDK speaks ${PROTOCOL_VERSION}`);
+			}
+			this.serverVersion = version.version;
+		} catch (error) {
+			await this.close();
+			throw error;
+		}
 	}
 
 	/** Zene's version string, when connect() checked the protocol. */
@@ -358,6 +360,14 @@ export class ZeneClient implements SubscriptionHost {
 		this.closeListeners.emit(error);
 		this.closeListeners.clear();
 	}
+}
+
+function socketPath(options: ConnectOptions): string {
+	const path = options.path ?? process.env[SOCKET_PATH_ENV];
+	if (path === undefined || path === "") {
+		throw new ZeneConnectionError(`no socket path: pass { path } or set ${SOCKET_PATH_ENV}`);
+	}
+	return path;
 }
 
 function openSocket(path: string, timeoutMs: number): Promise<Socket> {
