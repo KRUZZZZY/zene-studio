@@ -323,19 +323,27 @@ private slots:
 		MidiPlayback::instance().stopped();
 		song->playSong();
 		qint64 worst = 0;
+		float loudest = 0.f;
+		QElapsedTimer loop;
+		loop.start();
 		for (int period = 0; period < 12; ++period)
 		{
 			QElapsedTimer timer;
 			timer.start();
-			Engine::audioEngine()->renderNextPeriod();
+			const std::span<const SampleFrame> frames = Engine::audioEngine()->renderNextPeriod();
 			worst = std::max(worst, timer.elapsed());
+			for (const SampleFrame& frame : frames) { loudest = std::max(loudest, std::abs(frame.left())); }
 			QTest::qWait(5);
 		}
+		const qint64 looped = loop.elapsed();
 		song->stop();
 		for (int period = 0; period < 8; ++period) { Engine::audioEngine()->renderNextPeriod(); }
 		delete clip;
 		delete track;
-		qInfo("worst render period with the effect stalling %lld ms per process call: %lld ms", StallMs, worst);
+		qInfo("worst render period with the effect stalling %lld ms per process call: %lld ms (loop %lld ms, peak %f)",
+			StallMs, worst, looped, static_cast<double>(loudest));
+		// No assertion on the sound: Carla's rack passes its input through until a plug-in it has just added is
+		// active, so the first periods may carry the (unity) input. The peak is logged for the record.
 		QVERIFY2(worst < StallMs / 2, qPrintable(QStringLiteral("a render period took %1 ms").arg(worst)));
 	}
 
