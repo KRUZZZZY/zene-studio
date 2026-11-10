@@ -1410,6 +1410,9 @@ set(LMMS_TESTS
 	# automation, presets, device and project state and the plug-in's own editor, against the in-tree VST2 test
 	# effect, native and through Carla's Wine bridge (needs a real Carla runtime).
 	src/gui/CarlaVst2EffectHostingTest.cpp
+	# Q050-481.2 review r1: an export through a stalling VST2 effect never waits inside a render period, and keeps
+	# the effect's output (the exporter waits between periods).
+	src/gui/CarlaVst2EffectExportTest.cpp
 	# M0 coverage: the reference project's window and its track / clip / device copies.
 	src/gui/ReferenceProjectPanelTest.cpp
 	# Q050-501: the update check against a loopback feed (only the commands' absence with -DZENE_UPDATE_CHECK=OFF).
@@ -2583,6 +2586,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "CarlaVst2HostingTest"
 		# Q050-481.2: carlavst2effect hosts the VST2 test effect, carlavst2 the instrument that feeds it.
 		OR LMMS_TEST_NAME STREQUAL "CarlaVst2EffectHostingTest"
+		OR LMMS_TEST_NAME STREQUAL "CarlaVst2EffectExportTest"
 		OR LMMS_TEST_NAME STREQUAL "ReferenceProjectPanelTest"
 		# The LV2 state round trip loads the host's real LV2 effects.
 		OR LMMS_TEST_NAME STREQUAL "Lv2StateTest"
@@ -3820,25 +3824,28 @@ if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.22)
 endif()
 # Q050-481.2: the VST2 test effect (native and, where winegcc can build PE, Windows) fed by the native VST2 test
 # instrument, with the same Carla runtime and Wine prefix. Without the runtime every case reports Skipped.
-set_tests_properties(CarlaVst2EffectHostingTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 900)
+# CarlaVst2EffectExportTest (review r1): the same environment, for the export through a stalling VST2 effect.
 add_subdirectory(data/vst2-test-effect)
-target_compile_definitions(CarlaVst2EffectHostingTest PRIVATE
-	CARLA_VST2_NATIVE_FIXTURE_DIR="${LMMS_VST2_TEST_NATIVE_DIR}"
-	CARLA_VST2_WINE_FIXTURE_DIR="${LMMS_VST2_TEST_WINE_DIR}"
-	CARLA_VST2_EFFECT_NATIVE_FIXTURE_DIR="${LMMS_VST2_TEST_EFFECT_NATIVE_DIR}"
-	CARLA_VST2_EFFECT_WINE_FIXTURE_DIR="${LMMS_VST2_TEST_EFFECT_WINE_DIR}"
-	ZENE_TEST_WINEPREFIX="${CMAKE_BINARY_DIR}/carla-runtime/wineprefix"
-	ZENE_CARLA_RUNTIME_DIR="${ZENE_CARLA_RUNTIME_DIR}")
-add_dependencies(CarlaVst2EffectHostingTest vst2-test-instrument vst2-test-effect)
-foreach(module carlavst2 carlavst2effect tripleoscillator vst2-test-effect-wine)
-	if(TARGET ${module})
-		add_dependencies(CarlaVst2EffectHostingTest ${module})
+foreach(test CarlaVst2EffectHostingTest CarlaVst2EffectExportTest)
+	set_tests_properties(${test} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 900)
+	target_compile_definitions(${test} PRIVATE
+		CARLA_VST2_NATIVE_FIXTURE_DIR="${LMMS_VST2_TEST_NATIVE_DIR}"
+		CARLA_VST2_WINE_FIXTURE_DIR="${LMMS_VST2_TEST_WINE_DIR}"
+		CARLA_VST2_EFFECT_NATIVE_FIXTURE_DIR="${LMMS_VST2_TEST_EFFECT_NATIVE_DIR}"
+		CARLA_VST2_EFFECT_WINE_FIXTURE_DIR="${LMMS_VST2_TEST_EFFECT_WINE_DIR}"
+		ZENE_TEST_WINEPREFIX="${CMAKE_BINARY_DIR}/carla-runtime/wineprefix"
+		ZENE_CARLA_RUNTIME_DIR="${ZENE_CARLA_RUNTIME_DIR}")
+	add_dependencies(${test} vst2-test-instrument vst2-test-effect)
+	foreach(module carlavst2 carlavst2effect tripleoscillator vst2-test-effect-wine)
+		if(TARGET ${module})
+			add_dependencies(${test} ${module})
+		endif()
+	endforeach()
+	if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.22)
+		set_tests_properties(${test} PROPERTIES
+			ENVIRONMENT_MODIFICATION "LD_LIBRARY_PATH=path_list_prepend:${ZENE_CARLA_RUNTIME_DIR}")
 	endif()
 endforeach()
-if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.22)
-	set_tests_properties(CarlaVst2EffectHostingTest PROPERTIES
-		ENVIRONMENT_MODIFICATION "LD_LIBRARY_PATH=path_list_prepend:${ZENE_CARLA_RUNTIME_DIR}")
-endif()
 set_tests_properties(UpdateCheckTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 if(ZENE_UPDATE_CHECK_ENABLED)
 	set_tests_properties(UpdateCheckWindowsTest UpdateCheckHiddenTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

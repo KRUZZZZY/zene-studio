@@ -3491,6 +3491,8 @@ plugins/CarlaVst2Effect/logo.png
 tests/data/vst2-test-effect/CMakeLists.txt
 tests/data/vst2-test-effect/vst2-test-effect.c
 tests/src/gui/CarlaVst2EffectHostingTest.cpp
+tests/src/gui/CarlaVst2EffectExportTest.cpp
+tests/src/gui/CarlaVst2EffectTestSupport.h
 include/OfflineRenderBarrier.h
 src/core/OfflineRenderBarrier.cpp
 docs/050-features/Q050-481.2.md

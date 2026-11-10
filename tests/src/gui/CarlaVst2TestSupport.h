@@ -203,7 +203,7 @@ bool carlaWineAvailable(const QString& peFixture)
 }
 
 //! Whether a file can be created where Carla's water library puts the chunk it hands a bridge.
-bool carlaTempDirWritable()
+[[maybe_unused]] bool carlaTempDirWritable()
 {
 	const QString dir = QFileInfo(QStringLiteral("/var/tmp")).isDir() ? QStringLiteral("/var/tmp") : QStringLiteral("/tmp");
 	QFile probe(QDir(dir).filePath(QStringLiteral(".zene-carla-probe-%1").arg(QCoreApplication::applicationPid())));
@@ -272,7 +272,7 @@ struct Rendered
 	float right = 0.f;
 };
 
-Rendered renderNote(InstrumentTrack* track, int timeoutMs)
+[[maybe_unused]] Rendered renderNote(InstrumentTrack* track, int timeoutMs)
 {
 	auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
 	clip->addNote(Note(TimePos(64 * DefaultTicksPerBar), TimePos(0), 60, 100), false);
