@@ -322,7 +322,7 @@ private slots:
 		QVERIFY(QDir().mkpath(barrier));
 		qputenv("ZENE_FAKE_BARRIER_DIR", barrier.toLocal8Bit());
 		// Every child must see the others running before it renders: a serial batch would time out (exit 7).
-		const int together = std::min(3, BatchFreeze::parallelLimit());
+		const int together = std::max(2, std::min(3, BatchFreeze::parallelLimit()));
 		qputenv("ZENE_FAKE_BARRIER_COUNT", QByteArray::number(together));
 		const int tasksBefore = freezeTaskCount();
 		const int depth = undoDepth();
