@@ -5778,3 +5778,10 @@ tests/src/gui/ShellHomesTest.cpp	# Pattern Editor tab click does not switch the 
 tests/src/gui/ShellHomesTest.cpp	# Hide button click leaves the lower panel open
 tests/src/gui/ShellHomesTest.cpp	# Pattern Editor tab click leaves the Note Editor selected
 src/gui/editors/TimeLineWidget.cpp	gui-1106: the punch band row stays reserved across the ruler, but only the interval between the punch bounds is filled, outlined and labelled, and a handle whose bound is in view is kept wholly inside the content area; hit testing and the drag are unchanged. Held by ArrangerTakePunchTest::theArmedPunchRangeIsPaintedOnlyBetweenItsBounds.
+
+# cluster ci-748342d46d7e9dd9: the MinGW64 CI configure failed at generate time - the
+# SfzFilePoolTest block links Threads::Threads and no ancestor scope provides that target on
+# Windows (the root FIND_PACKAGE(Threads) is gated to the pthread platforms, and
+# plugins/SfzPlayer's own call is scoped to its subtree). The block now finds the target in
+# its own scope, and the CMakeThreadsScope configure regression is registered beside it.
+tests/CMakeLists.txt	ci-748342d46d7e9dd9: the SfzFilePoolTest block resolves Threads::Threads in its own directory scope (MinGW64 had no ancestor target, so the generate step failed) and registers tests/cmake-threads-scope.sh as the CMakeThreadsScope configure regression.
