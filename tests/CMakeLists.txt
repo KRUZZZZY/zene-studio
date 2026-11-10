@@ -6232,6 +6232,20 @@ if(PYTHON3_EXECUTABLE)
 	set_tests_properties(MocQt5TrailingReturnCheck PROPERTIES TIMEOUT 300)
 endif()
 
+# Per-method complexity regression (cluster ci-6d61162ce0abfd39, 2026-11-10). Hosted CI failed
+# Gate 4 - the CCN <= 10 ratchet - at a1a98b67b2 with eight regressions, each a function that had
+# grown past the target. The repair is a behaviour-preserving extraction, so the complexity IS the
+# observable change and this check holds it: it measures the eight functions with lizard and fails
+# when one drifts back over CCN 10. It reads sources only, runs its own red/green fixtures first,
+# and skips (77) on a host without lizard, exactly as ControlStemCommands skips without its backend.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME ComplexityGateCheck
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/complexity-gate-check.py
+			${CMAKE_SOURCE_DIR})
+	set_tests_properties(ComplexityGateCheck PROPERTIES TIMEOUT 300 SKIP_RETURN_CODE 77)
+endif()
+
 # The real-time-safety WHOLE-TREE SWEEP (2026-09-16, lane 030/rt-safety, board task #678,
 # feature row 52). AGENTS.md's realtime rule - "no allocation, no locking, no unbounded
 # growth on audio-thread paths" - was held per feature until now: an allocation-counter
