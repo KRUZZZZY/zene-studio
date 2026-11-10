@@ -3238,6 +3238,7 @@ tests/src/core/WarpMarkersTest.cpp
 tests/src/core/WarpQuantizeTest.cpp
 tests/src/core/WaveformDataTest.cpp
 tests/src/core/WideDiscreteBusTest.cpp
+tests/src/core/WidePinRoutingTest.cpp
 tests/src/core/WriteRefusalGateTest.cpp
 tests/src/core/esp32-freertos-host/freertos/FreeRTOS.h
 tests/src/core/esp32-freertos-host/freertos/task.h
@@ -3431,6 +3432,7 @@ tests/src/gui/VisibilitySetMenuTest.cpp
 tests/src/gui/Warp/SampleClipWarpEditTest.cpp
 tests/src/gui/Warp/SampleClipWarpEditTestSupport.h
 tests/src/gui/WcagContrastTest.cpp
+tests/src/gui/WidePinRoutingGuiTest.cpp
 tests/src/gui/WindowSelectStartupTest.cpp
 tests/src/gui/WorkflowFeedbackTest.cpp
 tests/src/gui/WorkspaceAccessTest.cpp

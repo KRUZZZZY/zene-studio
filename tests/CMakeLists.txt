@@ -2009,6 +2009,9 @@ endif()
 # 64 distinct channels across a discrete-64 bus. Registered late, like the tests above, so the mechanical
 # negative control can see its name in `ctest -N`.
 list(APPEND LMMS_TESTS src/core/WideDiscreteBusTest.cpp)
+# Q050-155.2: devices pinned onto the channels of a discrete-64 bus, through the build's amplifier module,
+# and the Pin Connector's Channels menu driving port.set_pins.
+list(APPEND LMMS_TESTS src/core/WidePinRoutingTest.cpp src/gui/WidePinRoutingGuiTest.cpp)
 
 foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# TODO CMake 3.20: Use cmake_path
@@ -2693,7 +2696,10 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "UndoHistoryOptionsTest"
 		# Q050-111: clip effects load the build's amplifier module (the test and its GUI half).
 		OR LMMS_TEST_NAME STREQUAL "ClipEffectsTest"
-		OR LMMS_TEST_NAME STREQUAL "ClipEffectsDialogTest")
+		OR LMMS_TEST_NAME STREQUAL "ClipEffectsDialogTest"
+		# Q050-155.2: amplifiers pinned onto a discrete-64 bus (the render test and its GUI half).
+		OR LMMS_TEST_NAME STREQUAL "WidePinRoutingTest"
+		OR LMMS_TEST_NAME STREQUAL "WidePinRoutingGuiTest")
 		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			LMMS_TEST_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
@@ -2732,6 +2738,10 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	endif()
 	# Q050-066 stage 2: the pad-chain cases put the build's amplifier module on a pad's channel.
 	if(LMMS_TEST_NAME STREQUAL "DrumRackPadsTest" OR LMMS_TEST_NAME STREQUAL "DrumRackPanelTest")
+		add_dependencies(${LMMS_TEST_NAME} amplifier)
+	endif()
+	# Q050-155.2: the wide pin routing tests load the build's amplifier module.
+	if(LMMS_TEST_NAME STREQUAL "WidePinRoutingTest" OR LMMS_TEST_NAME STREQUAL "WidePinRoutingGuiTest")
 		add_dependencies(${LMMS_TEST_NAME} amplifier)
 	endif()
 
@@ -6825,6 +6835,17 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		TIMEOUT 600
 		SKIP_RETURN_CODE 77
 	)
+	# Q050-155.2: 64 channel pins (port.set_pins) and a mixer route on discrete-64 buses, read back over the
+	# socket, each edit one control.undo step. Loads the build's amplifier module.
+	add_test(NAME ControlWidePinRouting
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-wide-pin-routing.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlWidePinRouting PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 600
+		SKIP_RETURN_CODE 77
+	)
 	# plugin.scan_cache_* / plugin.rescan (0.3.0, feature row 46 "Plugin scan
 	# cache and quarantine"): the cache and the quarantine list driven over
 	# --control-socket, with the cache FILE read off disk as well as off the
@@ -7783,7 +7804,7 @@ set_tests_properties(DawProjectInterchangeRoundTripTest DawProjectDeflateImportT
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # 0.5.0 wave 2: AAF import, the video track and hardware I/O build a real Engine and drive the
 # registry (the video window and lane are widgets), so they need a Qt platform plugin.
-set_tests_properties(AafImportTest VideoTrackTest VideoClipsTest LegacyPatternUpgradeTest HardwareIoTest SurroundTest SurroundExportTest WideDiscreteBusTest PROPERTIES
+set_tests_properties(AafImportTest VideoTrackTest VideoClipsTest LegacyPatternUpgradeTest HardwareIoTest SurroundTest SurroundExportTest WideDiscreteBusTest WidePinRoutingTest WidePinRoutingGuiTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # VideoTrackTest's Linux/macOS allocation-failure case interposes FFmpeg entry points from
 # the test executable, so its symbols must be exported - same reason plugin-loading tests carry ENABLE_EXPORTS.
