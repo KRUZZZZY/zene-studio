@@ -8251,6 +8251,31 @@ else()
 	message(STATUS "python3 not found: ControlLivecodeCommands is not registered")
 endif()
 
+# Q050-334.2: the public TypeScript session SDK (tools/zene-session-sdk). ControlSessionSdk runs the SDK's own
+# integration test and its usage example against a real zene (connect, read, edit, event, unsubscribe, recovery after
+# overflow and after a dropped connection); it needs a node that strips types (>= 22.6, else Skipped 77). The
+# typecheck uses the package's pinned compiler from `npm ci` in that directory (or $ZENE_TSC); without one it reports
+# Skipped (77) rather than passing. Registered only where a node exists: a test that cannot run is not one that passed.
+find_program(NODE_EXECUTABLE NAMES node node.exe)
+if(PYTHON3_EXECUTABLE AND NODE_EXECUTABLE)
+	add_test(NAME ZeneSessionSdkTypecheck
+		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/session-sdk-typecheck.py
+			${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/zene-session-sdk)
+	set_tests_properties(ZeneSessionSdkTypecheck PROPERTIES TIMEOUT 300 SKIP_RETURN_CODE 77)
+	if(CONTROL_SUITE_AVAILABLE)
+		add_test(NAME ControlSessionSdk
+			COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/control-session-sdk.py
+				$<TARGET_FILE:zene> ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/zene-session-sdk)
+		set_tests_properties(ControlSessionSdk PROPERTIES
+			ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+			TIMEOUT 400
+			SKIP_RETURN_CODE 77
+		)
+	endif()
+else()
+	message(STATUS "node or python3 not found: ZeneSessionSdkTypecheck and ControlSessionSdk are not registered")
+endif()
+
 # BUG-CTL-2 / BUG-SRV-1 / BUG-SRV-2 (lane bugs/hunt-2026-09-24): the control
 # surface's own input validation and connection bounds, driven over
 # --control-socket against the real binary. Four cases, each the regression test

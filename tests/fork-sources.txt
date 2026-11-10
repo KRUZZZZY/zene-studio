@@ -3519,3 +3519,25 @@ tests/src/gui/HybridTrackGuiTest.cpp
 tests/control-hybrid-track-transcript.py
 docs/qwen-fixes-2026-10/cluster-Q050-283.1.md
 tests/src/gui/LadspaDescriptionTest.cpp
+# Q050-334.2 (2026-11): the public TypeScript session SDK (stage 2 of Q050-334) - the package, its example, its own
+# integration test and proxy, the ctest drivers and the reports (fork-NEW; TypeScript and Python, no C/C++).
+tools/zene-session-sdk/package.json
+tools/zene-session-sdk/package-lock.json
+tools/zene-session-sdk/tsconfig.json
+tools/zene-session-sdk/tsconfig.build.json
+tools/zene-session-sdk/.gitignore
+tools/zene-session-sdk/README.md
+tools/zene-session-sdk/CHANGELOG.md
+tools/zene-session-sdk/src/index.ts
+tools/zene-session-sdk/src/version.ts
+tools/zene-session-sdk/src/protocol.ts
+tools/zene-session-sdk/src/errors.ts
+tools/zene-session-sdk/src/listeners.ts
+tools/zene-session-sdk/src/subscription.ts
+tools/zene-session-sdk/src/client.ts
+tools/zene-session-sdk/src/live-session.ts
+tools/zene-session-sdk/examples/live-view.ts
+tools/zene-session-sdk/test/integration.ts
+tools/zene-session-sdk/test/proxy.ts
+tests/control-session-sdk.py
+tests/session-sdk-typecheck.py
