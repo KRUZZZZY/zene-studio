@@ -398,6 +398,33 @@ private slots:
 		QVERIFY2(wrong.isEmpty(), qPrintable(QStringLiteral("stereo bus: ") + wrong));
 	}
 
+	//! Review round 1: pins past the pair saved while the bus is stereo come back, and work again once the bus is
+	//! discrete-64 again (save on stereo -> open -> widen).
+	void farPinsSurviveASaveWhileTheBusIsNarrow()
+	{
+		Mixer* mixer = Engine::mixer();
+		QCOMPARE(mixer->mixerChannel(1)->m_surround.format(), surround::Format::Stereo);
+		QDomDocument doc;
+		QDomElement element = doc.createElement(QStringLiteral("mixer"));
+		doc.appendChild(element);
+		mixer->saveSettings(doc, element);
+		mixer->clear();
+		mixer->loadSettings(element);
+		QCOMPARE(mixer->mixerChannel(1)->m_surround.format(), surround::Format::Stereo);
+		for (const int k : {1, 20, Pairs - 1})
+		{
+			const QJsonObject state = portState(ch(1), ampAt(k));
+			const QString pair = QStringLiteral("%1:0,%2:1").arg(2 * k).arg(2 * k + 1);
+			QCOMPARE(pinsOf(state, QStringLiteral("in")).join(QLatin1Char(',')), pair);
+			QCOMPARE(pinsOf(state, QStringLiteral("out")).join(QLatin1Char(',')), pair);
+		}
+		QVERIFY(format(1, QStringLiteral("discrete-64")));
+		routeThroughTheBus(*mixer);
+		for (int i = 0; i < 3; ++i) { period(*mixer); }
+		const QString wrong = checkOutputs([](int c) { return volumeOf(c / 2) / 100.f; });
+		QVERIFY2(wrong.isEmpty(), qPrintable(QStringLiteral("widened after a stereo save: ") + wrong));
+	}
+
 private:
 	//! Channel 1 into channel 2 only; channel 2's direct out on outputs 1..N, the master on 127/128.
 	static void routeThroughTheBus(Mixer& mixer)
