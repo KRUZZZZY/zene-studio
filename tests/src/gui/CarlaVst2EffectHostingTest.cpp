@@ -394,19 +394,29 @@ private slots:
 		InstrumentTrack* track = sourceWithEffect(file, ExportStallMs);
 		QVERIFY(track != nullptr);
 		QVERIFY(setEffectParam(track, QStringLiteral("Right"), 0.25).ok);  // processed: R = 0.5 * input, L = input
-		// A few silent periods first, as any session has before an export: a Wine bridge that has never processed
-		// takes a parameter change one block late (measured: the first sounding period at the old value).
-		for (int period = 0; period < 8; ++period)
-		{
-			Engine::audioEngine()->renderNextPeriod();
-			QTest::qWait(static_cast<int>(ExportStallMs) + 20);  // the worker processes it meanwhile
-		}
 		Song* song = Engine::getSong();
 		const int tempo = song->getTempo();
 		song->setTempo(600);  // one bar is 0.4 s: a short file, so the stalled export stays short
 		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
 		clip->addNote(Note(TimePos(DefaultTicksPerBar), TimePos(0), 60, 100), false);
 		song->updateLength();
+		// Played once first, as any session is before an export: a Wine bridge applies a parameter change one or
+		// two blocks late (measured, with or without the stall: the first sounding blocks at the old value), and
+		// that is not what this case is about. Each period is given the time the stalled worker needs.
+		song->setPlayPos(0, Song::PlayMode::Song);
+		MidiPlayback::instance().stopped();
+		song->playSong();
+		for (int period = 0; period < 8; ++period)
+		{
+			Engine::audioEngine()->renderNextPeriod();
+			QTest::qWait(static_cast<int>(ExportStallMs) + 20);
+		}
+		song->stop();
+		for (int period = 0; period < 4; ++period)
+		{
+			Engine::audioEngine()->renderNextPeriod();
+			QTest::qWait(static_cast<int>(ExportStallMs) + 20);
+		}
 		const QString path = QDir(m_files.path()).filePath(QStringLiteral("vst2-effect-export-%1.wav").arg(QTest::currentDataTag()));
 		const OutputSettings settings(44100, 192, OutputSettings::BitDepth::Depth32Bit, OutputSettings::StereoMode::Stereo);
 		qint64 longestPeriodMs = 0;
@@ -448,7 +458,11 @@ private slots:
 			// The source's (0.5, 0.25) through Left 0.5 / Right 0.25: right = left * (0.25 / 0.5) * (0.25 / 0.5).
 			if (std::abs(frame->right() - frame->left() * 0.25f) > 1e-3f)
 			{
-				if (wrongRatio++ == 0) { qInfo("first unprocessed frame at %td of the span", std::distance(first, frame)); }
+				if (wrongRatio++ == 0)
+				{
+					qInfo("first unprocessed frame at %td of the span: (%f, %f)", std::distance(first, frame),
+						static_cast<double>(frame->left()), static_cast<double>(frame->right()));
+				}
 			}
 		}
 		qInfo("export: %d periods seen, longest %lld ms; %zu frames, %td sounding in one span, %d silent inside it, "

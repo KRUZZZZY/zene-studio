@@ -311,7 +311,10 @@ double Rack::hostSampleRate(NativeHostHandle)
 
 bool Rack::hostIsOffline(NativeHostHandle)
 {
-	return false;
+	// While a project is exported Carla may block (on the render WORKER, never the audio thread): it then waits for
+	// a plug-in its idle holds, and for the Wine bridge, rather than pass a block through unprocessed (review r1).
+	const Song* song = Engine::getSong();
+	return song != nullptr && song->isExporting();
 }
 
 const NativeTimeInfo* Rack::hostTimeInfo(NativeHostHandle handle)
