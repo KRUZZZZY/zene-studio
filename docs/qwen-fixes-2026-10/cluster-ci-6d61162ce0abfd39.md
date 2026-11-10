@@ -77,7 +77,7 @@ Notes on completeness (callers / siblings / the wider type):
 
 ## Regression test and RED/GREEN proof
 
-The regression test is ctest **`ComplexityGateCheck`** (`tests/complexity-gate-check.py`, registered in
+The regression test is ctest **`complexity-gate-check`** (`tests/complexity-gate-check.py`, registered in
 `tests/CMakeLists.txt` beside `MocQt5TrailingReturnCheck`). The repair is a behaviour-preserving
 extraction, so the complexity IS the observable change: the check measures the eight functions with
 lizard and fails when one is back over CCN 10. It reads sources only (no build, no clock, no sleeps),
@@ -88,15 +88,15 @@ the whole-tree form of the same assertion.
 | Step | Command | EXIT |
 | --- | --- | --- |
 | Repro at the pinned SHA | `PATH="$TMPDIR/lizard1251/bin:$PATH" bash tests/complexity-gate.sh --check` (`gate-complexity-lizard1251-2.log`) | 1 (8 regressions) |
-| **RED** (product change reverted) | `git apply -R product.patch`, rebuild, then `ctest -R '^ComplexityGateCheck$' --output-on-failure` (`test-complexity-red-24.log`) | **1** (6 src functions back over CCN 10) |
-| **GREEN** (fix restored) | `git apply product.patch`, rebuild, then `ctest -R '^ComplexityGateCheck$' --output-on-failure` (`test-complexity-green-25.log`) | **0** |
+| **RED** (product change reverted) | `git apply -R product.patch` (the six `src/` files), then `ctest -R '^complexity-gate-check$' --output-on-failure` (`test-complexity-red-24.log`) | **1** (6 src functions back over CCN 10) |
+| **GREEN** (fix restored) | `git checkout HEAD -- <the six src files>`, then the same ctest (`test-complexity-green-25.log`) | **0** |
 | GREEN, whole-tree gate, CI lizard 1.25.1 | `PATH="$TMPDIR/lizard1251/bin:$PATH" bash tests/complexity-gate.sh --check` (`gate-green-15.log`) | 0 |
 | GREEN, whole-tree gate, default lizard 1.24.0 | `bash tests/complexity-gate.sh --check` (`gate-complexity-1240-13.log`) | 0 |
 
 The RED step is exactly what the independent proof loop does: it reverts only the product files
-(`src/`, `include/`, `plugins/` - not the test files), rebuilds, and runs the test. The gate itself
-needs no build (it reads sources), so the reverse/restore cycle is the whole proof; the tree was
-rebuilt and the family re-run afterwards (below).
+(`src/`, `include/`, `plugins/` - not the test files), rebuilds, and runs the test. The check itself
+reads sources only, so it needs no rebuild; the tree was rebuilt and the family re-run afterwards
+(below).
 
 ## Commands and exit codes (logs in `~/.local/share/zene-bunny-fix/qwen/runs/ci-6d61162ce0abfd39.r1/logs/`)
 
@@ -104,7 +104,7 @@ rebuilt and the family re-run afterwards (below).
 | --- | --- | --- |
 | Build (core + 10 test targets + zene) | `cmake --build build --target zene ControlSessionRecordLandTest MixerStripTest MixerToolsTest DawProjectInterchangeRoundTripTest DawProjectDeflateImportTest VideoAudioNameTest VideoTrackTest XyPadPairTest StripMeterModeTest ConsoleStripTest -j4` (`build-16.log`) | 0 |
 | Affected family | `cd build/tests && ctest -R '^(ControlSessionRecordLandTest\|MixerStripTest\|MixerToolsTest\|DawProjectInterchangeRoundTripTest\|DawProjectDeflateImportTest\|VideoAudioNameTest\|VideoTrackTest\|XyPadPairTest\|StripMeterModeTest\|ConsoleStripTest\|ControlStemCommands)$' --output-on-failure` (`test-family-17.log`) | 0 (**11/11** passed) |
-| Regression test | `cd build/tests && ctest -R '^ComplexityGateCheck$' --output-on-failure` (`test-complexity-green-25.log`) | 0 (8/8 at or under CCN 10) |
+| Regression test | `cd build/tests && ctest -R '^complexity-gate-check$' --output-on-failure` (`test-complexity-green-25.log`) | 0 (8/8 at or under CCN 10) |
 | WasmSandbox TU (not built here: `WANT_WASM=OFF`, no wasmtime) | `g++ -fsyntax-only -Werror src/wasm/WasmSandbox.cpp` with the pinned wasmtime 48.0.1 headers (`wasmsandbox-syntax-20.log`) | 0 |
 | Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py .` (`feature-check-18.log`) | 0 (**PASS**, table below) |
 | Other static gates | `gates-other-19.log`: Gate 8 fork/tools, Gate 11, Gate 12, Gate 7 tools | 0 / 0 / 0 / 0 / 0 |
@@ -141,9 +141,9 @@ cause. They are recorded here so the next patrol does not re-file them as this c
 ## Self-check
 
 - **The regression test FAILS with your product change reverted and PASSES with it (exit codes).**
-  `ComplexityGateCheck` is the regression test. Reverting only the product files (the independent
+  `complexity-gate-check` is the regression test. Reverting only the product files (the independent
   loop's own `product.patch`: the six `src/` files), rebuilding and running
-  `ctest -R '^ComplexityGateCheck$'` gives **EXIT=1** (`test-complexity-red-24.log`: the six functions
+  `ctest -R '^complexity-gate-check$'` gives **EXIT=1** (`test-complexity-red-24.log`: the six functions
   are back over CCN 10); restoring and re-running gives **EXIT=0** (`test-complexity-green-25.log`).
   The whole-tree gate shows the same: RED `gate-red-14.log` EXIT=1 with the exact 8 CI regressions,
   GREEN `gate-green-15.log` EXIT=0.
