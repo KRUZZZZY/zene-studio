@@ -98,21 +98,33 @@ The RED step is exactly what the independent proof loop does: it reverts only th
 reads sources only, so it needs no rebuild; the tree was rebuilt and the family re-run afterwards
 (below).
 
+The loop's own verdict (`negctl.prove`, base `a1a98b67b2`, no report text - `proof-loop-29.log`, logs in
+`runs/ci-6d61162ce0abfd39.r1/negctl/`):
+
+```
+ok: true
+detail: "XyPadPairTest, complexity-gate-check: they fail without it (rc 8) and pass with it"
+tests: ["XyPadPairTest", "complexity-gate-check"]
+reverted_build_rc: 0, reverted_rc: 8, restored_rc: 0, tree_clean: true
+```
+
 ## Commands and exit codes (logs in `~/.local/share/zene-bunny-fix/qwen/runs/ci-6d61162ce0abfd39.r1/logs/`)
 
 | Step | Command | EXIT |
 | --- | --- | --- |
-| Build (core + 10 test targets + zene) | `cmake --build build --target zene ControlSessionRecordLandTest MixerStripTest MixerToolsTest DawProjectInterchangeRoundTripTest DawProjectDeflateImportTest VideoAudioNameTest VideoTrackTest XyPadPairTest StripMeterModeTest ConsoleStripTest -j4` (`build-16.log`) | 0 |
-| Affected family | `cd build/tests && ctest -R '^(ControlSessionRecordLandTest\|MixerStripTest\|MixerToolsTest\|DawProjectInterchangeRoundTripTest\|DawProjectDeflateImportTest\|VideoAudioNameTest\|VideoTrackTest\|XyPadPairTest\|StripMeterModeTest\|ConsoleStripTest\|ControlStemCommands)$' --output-on-failure` (`test-family-17.log`) | 0 (**11/11** passed) |
-| Regression test | `cd build/tests && ctest -R '^complexity-gate-check$' --output-on-failure` (`test-complexity-green-25.log`) | 0 (8/8 at or under CCN 10) |
+| Build (core + 10 test targets + zene) | `cmake --build build --target zene ControlSessionRecordLandTest MixerStripTest MixerToolsTest DawProjectInterchangeRoundTripTest DawProjectDeflateImportTest VideoAudioNameTest VideoTrackTest XyPadPairTest StripMeterModeTest ConsoleStripTest -j4` (`build-30.log`) | 0 |
+| Affected family + regression test | `cd build/tests && ctest -R '^(ControlSessionRecordLandTest\|MixerStripTest\|MixerToolsTest\|DawProjectInterchangeRoundTripTest\|DawProjectDeflateImportTest\|VideoAudioNameTest\|VideoTrackTest\|XyPadPairTest\|StripMeterModeTest\|ConsoleStripTest\|ControlStemCommands\|complexity-gate-check)$' --output-on-failure` (`test-family-31.log`) | 0 (**12/12** passed) |
+| Regression test alone | `cd build/tests && ctest -R '^complexity-gate-check$' --output-on-failure` (`test-complexity-green-25.log`) | 0 (8/8 at or under CCN 10) |
+| Gate 4, CI lizard 1.25.1 | `PATH="$TMPDIR/lizard1251/bin:$PATH" bash tests/complexity-gate.sh --check` (`gate-final-1251-32.log`) | 0 |
+| Gate 4, default lizard 1.24.0 | `bash tests/complexity-gate.sh --check` (`gate-final-1240-33.log`) | 0 |
 | WasmSandbox TU (not built here: `WANT_WASM=OFF`, no wasmtime) | `g++ -fsyntax-only -Werror src/wasm/WasmSandbox.cpp` with the pinned wasmtime 48.0.1 headers (`wasmsandbox-syntax-20.log`) | 0 |
-| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py .` (`feature-check-18.log`) | 0 (**PASS**, table below) |
+| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py .` (`feature-check-34.log`) | 0 (**PASS**, table below) |
 | Other static gates | `gates-other-19.log`: Gate 8 fork/tools, Gate 11, Gate 12, Gate 7 tools | 0 / 0 / 0 / 0 / 0 |
 
-feature_check table (`feature-check-18.log`):
+feature_check table (`feature-check-34.log`):
 
 ```
-feature-check zene-qwen-ci-6d61162ce0abfd39 (base af010bc3c, 133 changed files)
+feature-check zene-qwen-ci-6d61162ce0abfd39 (base af010bc3c, 135 changed files)
   PASS  fork-sources            exit 0
   PASS  all-sources-reproduce   exit 0
   PASS  no-upstream-regression  exit 0
@@ -138,15 +150,25 @@ cause. They are recorded here so the next patrol does not re-file them as this c
   only fails on items new in the branch's files; after this fix the branch adds none
   (`gate-filelength-9.log`, `feature-check-18.log`).
 
+## Files committed
+
+| Commit | Files |
+| --- | --- |
+| `93aa6fc08f` fix(gate 4) | `src/core/VideoAudioExtract.cpp`, `src/core/ControlCommandsMixerStrip.cpp`, `src/core/ControlCommandsMixerTools.cpp`, `src/core/ControlCommandsSessionRecordLand.cpp`, `src/core/DawProjectReadTracks.cpp`, `src/wasm/WasmSandbox.cpp`, `tests/src/gui/XyPadPairTest.cpp`, `tests/stem_commands_lib.py`, `docs/qwen-fixes-2026-10/cluster-ci-6d61162ce0abfd39.md` |
+| `5834127d21` test(gate 4) | `tests/complexity-gate-check.py` (new), `tests/CMakeLists.txt`, the report |
+| `bf9cec8193` test(gate 4) | `tests/CMakeLists.txt` (registration renamed to `complexity-gate-check`), the report |
+
 ## Self-check
 
 - **The regression test FAILS with your product change reverted and PASSES with it (exit codes).**
   `complexity-gate-check` is the regression test. Reverting only the product files (the independent
-  loop's own `product.patch`: the six `src/` files), rebuilding and running
-  `ctest -R '^complexity-gate-check$'` gives **EXIT=1** (`test-complexity-red-24.log`: the six functions
-  are back over CCN 10); restoring and re-running gives **EXIT=0** (`test-complexity-green-25.log`).
-  The whole-tree gate shows the same: RED `gate-red-14.log` EXIT=1 with the exact 8 CI regressions,
-  GREEN `gate-green-15.log` EXIT=0.
+  loop's own `product.patch`: the six `src/` files) and running `ctest -R '^complexity-gate-check$'`
+  gives **EXIT=1** (`test-complexity-red-24.log`: the six functions are back over CCN 10); restoring and
+  re-running gives **EXIT=0** (`test-complexity-green-25.log`). The loop's own run agrees:
+  `reverted_rc: 8, restored_rc: 0, ok: true` (`proof-loop-29.log`, `negctl/test-reverted.log` shows
+  `complexity-gate-check` Failed, `negctl/test-restored.log` shows both tests Passed). The whole-tree
+  gate shows the same: RED `gate-red-14.log` EXIT=1 with the exact 8 CI regressions, GREEN
+  `gate-green-15.log` EXIT=0.
 - **The test is deterministic: no wall-clock timing, sleeps or races.**
   `tests/complexity-gate-check.py` runs `python3 -m lizard --csv` on eight source files and compares
   the named functions' CCN with the target; it builds nothing, spawns no threads and touches no clock.
@@ -163,8 +185,9 @@ cause. They are recorded here so the next patrol does not re-file them as this c
 - **No collateral damage: old projects and saved data still load as before, and any limit or check you
   added does not hit other callers that legitimately exceed it.**
   No limit, check, command or schema was added; every extraction preserves the original short-circuit
-  order and texts. The affected family (11 tests, including the DawProject import/round-trip and the
-  stem-command end-to-end test that exercises `wav_facts`) passes 11/11. The one file whose length moved,
+  order and texts. The affected family plus the new regression test - 12 tests, including the
+  DawProject import/round-trip and the stem-command end-to-end test that exercises `wav_facts` -
+  passes 12/12 (`test-family-31.log`). The one file whose length moved,
   `tests/src/gui/XyPadPairTest.cpp`, was brought back under the 500-code-line ratchet (498).
 - **If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or the intended contract that
   shows it.** Not applicable - verdict is FIXED.
