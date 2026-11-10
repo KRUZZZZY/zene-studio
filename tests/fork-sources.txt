@@ -3541,3 +3541,5 @@ tools/zene-session-sdk/test/integration.ts
 tools/zene-session-sdk/test/proxy.ts
 tests/control-session-sdk.py
 tests/session-sdk-typecheck.py
+# Q050-334.2: its feature record.
+docs/050-features/Q050-334.2.md
