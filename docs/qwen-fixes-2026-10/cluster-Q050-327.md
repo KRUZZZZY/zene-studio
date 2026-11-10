@@ -16,7 +16,7 @@ All runs `ctest -R '^<name>$' --output-on-failure` from `build/tests`, each repo
 
 | Criterion | Test | Exit with change | Exit with the change reverted / mutated |
 | --- | --- | --- | --- |
-| A multi-track test runs freezes concurrently, reports one task with progress/cancel and creates one undo entry | `BatchFreezeTest` (`rendersConcurrentlyAsOneTaskAndUndoesAsOneStep`: barrier needs >=2 child renders running at once, one task, progress 0..1, undo depth +1, one undo thaws all, save/open round trip; `theTrackMenuOpensTheSelectionAndFreezesTheTickedTracks`: the GUI action + dialog click); `TrackRenderMenuTest`; `ControlFreezeTracksTranscript` (real tripleoscillator renders over the socket: one task in task.list, done, both frozen per track.get_state, depth +1, one undo) | 0 / 0 / 0 (test-17-restored-*, test-15-1..3, test-14-*) | 8 / 8 / 8 reverted (test-16-reverted-*); BatchFreezeTest 8 with `parallelLimit()` forced to 1 (test-10-serial: "the render failed (exit 7)") and 8 with the checkpoint merge removed (test-11-nomerge: undo depth 3) |
+| A multi-track test runs freezes concurrently, reports one task with progress/cancel and creates one undo entry | `BatchFreezeTest` (`rendersConcurrentlyAsOneTaskAndUndoesAsOneStep`: barrier needs >=2 child renders running at once, one task, progress 0..1, undo depth +1, one undo thaws all, save/open round trip; `theTrackMenuOpensTheSelectionAndFreezesTheTickedTracks`: the GUI action + dialog click); `TrackRenderMenuTest`; `ControlFreezeTracksTranscript` (real tripleoscillator renders over the socket: one task in task.list, done, both frozen per track.get_state, depth +1, one undo) | 0 / 0 / 0 (test-17-restored-*, test-15-1..3, test-14-*; BatchFreezeTest again after its last refactor: test-18) | 8 / 8 / 8 reverted (test-16-reverted-*); BatchFreezeTest 8 with `parallelLimit()` forced to 1 (test-10-serial: "the render failed (exit 7)") and 8 with the checkpoint merge removed (test-11-nomerge: undo depth 3) |
 | Cancel and partial failure restore every selected track to its original state | `BatchFreezeTest` (`cancelAfterOneTrackRenderedRestoresEveryTrack` via task.cancel after one render finished; `aFailedRenderAfterAnotherSucceededRestoresEveryTrack`; `aTargetChangedDuringTheRenderAppliesNothing`; `refusesABatchItCannotFreezeWholeAndStartsNothing`) - no track frozen, undo depth unchanged, staged/scratch files gone, a pre-existing output file kept; `ControlFreezeTracksTranscript` (real cancel through task.cancel, refusals) | 0 / 0 | 8 / 8 (test-16-reverted-*) |
 
 Neighbours with the change, exit 0 each (test-12-*): ControlRenderJobTest, RenderTaskLifecycleTest, TaskCenterTest,
@@ -59,7 +59,7 @@ each time.
   therefore shows "gates FAIL" with no FAIL line. I ran a copy whose only change is the log directory
   (`/tmp/q050-327-fc/logs`; same commands, same baseline cache): fork-sources, all-sources-reproduce,
   no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity and file-length all PASS, RESULT PASS
-  (`feature-check-4.log`, exit 0). The loop's own run of the unmodified script at session end should reproduce it.
+  (`feature-check-6.log`, exit 0, on the final tree). The loop's own run of the unmodified script at session end should reproduce it.
 - **Snapshot / canary.** `snapshot_live.py` (EXIT=0): 925 ids / 78 groups, wasm.* out; README canary updated;
   `tests/doc-figures-gate.py` PASS; ControlCommandsSnapshot exit 0.
 - **Not done / limits.** Whole-track batches only; the take decode in `Track::freezeTo` still happens on the UI thread

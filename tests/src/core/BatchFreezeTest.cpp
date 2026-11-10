@@ -239,6 +239,18 @@ const BatchFreezeJob* waitForBatch(int id, int taskId = -1, std::vector<double>*
 	return BatchFreeze::instance().job(id);
 }
 
+//! How many tracks are frozen with their take loaded, or -1 when the track named @a unfrozen is frozen too.
+int frozenWithAudioExcept(const QString& unfrozen)
+{
+	int frozen = 0;
+	for (const Track* track : Engine::getSong()->tracks())
+	{
+		if (track->name() == unfrozen && track->isFrozen()) { return -1; }
+		frozen += track->isFrozen() && track->frozenAudioReady() ? 1 : 0;
+	}
+	return frozen;
+}
+
 int undoDepth() { return Engine::projectJournal()->undoDepth(); }
 
 QStringList partFiles(const QString& dir)
@@ -391,14 +403,7 @@ private slots:
 		QVERIFY(Engine::getSong()->saveProjectFile(project));
 		Engine::getSong()->loadProject(project);
 		QVERIFY(Engine::getSong()->loadRefusal().isEmpty());
-		int frozenAfterLoad = 0;
-		for (const Track* track : Engine::getSong()->tracks())
-		{
-			const bool batchTrack = track->name() != QLatin1String("Other");
-			QCOMPARE(track->isFrozen(), batchTrack);
-			if (batchTrack) { QVERIFY(track->frozenAudioReady()); ++frozenAfterLoad; }
-		}
-		QCOMPARE(frozenAfterLoad, 3);
+		QCOMPARE(frozenWithAudioExcept(QStringLiteral("Other")), 3);
 	}
 
 	void cancelAfterOneTrackRenderedRestoresEveryTrack()
