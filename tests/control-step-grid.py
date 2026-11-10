@@ -94,6 +94,9 @@ def edited_as_asked(cells, ids):
 
 def check_edit_and_undo(session, recorder, clip, opened):
     ids = {c["key"]: c["note"] for c in opened.get("cells") or []}
+    if sorted(ids) != [60, 61, 64, 67]:
+        recorder.check("the grid opened with the four notes to edit", False, "opened=%r" % opened)
+        return
     before = session.result("note.list", {"clip": clip}).get("notes")
     reply = session.result("note.step_set", {"clip": clip, "edits": edit_batch(ids)})
     recorder.check("note.step_set takes the batch", reply.get("edited") == 4, "reply=%r" % reply)
