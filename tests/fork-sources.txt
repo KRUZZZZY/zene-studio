@@ -3525,3 +3525,5 @@ src/core/BatchFreeze.cpp
 src/core/ControlCommandsFreezeBatch.cpp
 tests/src/core/BatchFreezeTest.cpp
 tests/control-freeze-tracks-transcript.py
+docs/050-features/Q050-327.md
+docs/qwen-fixes-2026-10/cluster-Q050-327.md
