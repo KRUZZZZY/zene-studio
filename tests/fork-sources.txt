@@ -3531,3 +3531,6 @@ docs/qwen-fixes-2026-10/cluster-gui-1030-main-pop-out-the-note-editor-panel.md
 # cluster gui-1030-menu-edit-collaborate (2026-11): a refused menu command is said in the status bar (fork-NEW test).
 tests/src/gui/MenuRefusalNoticeTest.cpp
 docs/qwen-fixes-2026-10/cluster-gui-1105-main-delete.md
+# cluster ci-512849fa221097db (2026-11): checks no exported class declares a thread_local data member (MSVC C2492), by scanning include/ and src/ headers (ctest ExportedClassTlsCheck).
+tests/exported-class-tls-check.py
+docs/qwen-fixes-2026-10/cluster-ci-512849fa221097db.md

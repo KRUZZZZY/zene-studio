@@ -6279,6 +6279,18 @@ if(PYTHON3_EXECUTABLE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND NOT MSVC
 	set_tests_properties(FenvShimMsvcInclude PROPERTIES TIMEOUT 60)
 endif()
 
+# A static thread_local data member of a class with a DLL interface is an MSVC
+# error (C2492) and a warning-free build on GCC/Clang, so the hosted msvc-x64
+# job is the only one that sees it. The check reads include/ and src/ headers
+# and fails on any such member; its fixtures prove the scanner can fail.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME ExportedClassTlsCheck
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/exported-class-tls-check.py
+			${CMAKE_SOURCE_DIR})
+	set_tests_properties(ExportedClassTlsCheck PROPERTIES TIMEOUT 60)
+endif()
+
 # Multicore Slice 0+1 (SPEC-MULTICORE-SCHEDULING-DRAFT §6): the published
 # schedule (required/pending/class + ready list) versus the plan-order
 # execution, both walks against the committed reference render, plus the two
