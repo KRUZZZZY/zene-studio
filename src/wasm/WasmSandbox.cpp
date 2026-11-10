@@ -144,6 +144,24 @@ struct WasmSandbox::Impl
 		context = wasmtime_store_context(store);
 	}
 
+	// Drop the previous module and, with it, the instance that came from it.
+	void resetModule()
+	{
+		if (module != nullptr)
+		{
+			wasmtime_module_delete(module);
+			module = nullptr;
+		}
+		hasProcess = false;
+		if (hasInstance)
+		{
+			// Reload: release the previous instance by dropping its store (the
+			// C API has no wasmtime_instance_delete) and instantiate into a
+			// fresh one. All handles into the old store are invalidated here.
+			resetStore();
+		}
+	}
+
 	~Impl()
 	{
 		if (module != nullptr)
@@ -275,6 +293,46 @@ struct WasmSandbox::Impl
 		}
 	}
 
+	//! Read the memory and process exports; false (with @a error) when a module
+	//! exporting process() does not export linear memory.
+	bool readExports(std::string* error)
+	{
+		wasmtime_extern_t memoryExport;
+		const bool hasMemoryExport = exportGet(abi::memoryExport, memoryExport)
+			&& memoryExport.kind == WASMTIME_EXTERN_MEMORY;
+		if (hasMemoryExport) { memory = memoryExport.of.memory; }
+		hasMemory = hasMemoryExport;
+
+		wasmtime_extern_t processExport;
+		if (exportGet(abi::processExport, processExport)
+			&& processExport.kind == WASMTIME_EXTERN_FUNC)
+		{
+			process = processExport.of.func;
+			hasProcess = true;
+		}
+		// Linear memory is part of the DSP ABI: any module exporting process()
+		// must export it. Pure probe modules (G1 hello) need not.
+		if (hasProcess && !hasMemoryExport)
+		{
+			hasProcess = false;
+			*error = "module does not export linear memory '" + std::string(abi::memoryExport) + "'";
+			return false;
+		}
+		return true;
+	}
+
+	//! Clamp the module's declared channel count and latency to the ABI's ranges.
+	void clampTuning()
+	{
+		channels = 1;
+		latency = 0;
+		readGlobalI32(abi::channelsExport, channels);
+		readGlobalI32(abi::latencyExport, latency);
+		if (channels < 1) { channels = 1; }
+		if (channels > static_cast<int>(abi::maxChannels)) { channels = static_cast<int>(abi::maxChannels); }
+		if (latency < 0) { latency = 0; }
+	}
+
 	//! Fuel consumption is enabled in the engine, so the store carries the
 	//! configured budget before any wasm code runs. callWithFuel() primes it per
 	//! call; instantiation runs the module's start function outside that path and
@@ -364,19 +422,7 @@ bool WasmSandbox::loadModuleBytes(const std::uint8_t* bytes, std::size_t size,
 		return false;
 	}
 
-	if (m_impl->module != nullptr)
-	{
-		wasmtime_module_delete(m_impl->module);
-		m_impl->module = nullptr;
-	}
-	m_impl->hasProcess = false;
-	if (m_impl->hasInstance)
-	{
-		// Reload: release the previous instance by dropping its store (the
-		// C API has no wasmtime_instance_delete) and instantiate into a
-		// fresh one. All handles into the old store are invalidated here.
-		m_impl->resetStore();
-	}
+	m_impl->resetModule();
 
 	wasmtime_error_t* err = wasmtime_module_new(m_impl->engine, bytes, size,
 		&m_impl->module);
@@ -408,48 +454,8 @@ bool WasmSandbox::loadModuleBytes(const std::uint8_t* bytes, std::size_t size,
 	}
 	m_impl->hasInstance = true;
 
-	wasmtime_extern_t memoryExport;
-	const bool hasMemory = m_impl->exportGet(abi::memoryExport, memoryExport) &&
-		memoryExport.kind == WASMTIME_EXTERN_MEMORY;
-	if (hasMemory)
-	{
-		m_impl->memory = memoryExport.of.memory;
-	}
-	m_impl->hasMemory = hasMemory;
-
-	wasmtime_extern_t processExport;
-	if (m_impl->exportGet(abi::processExport, processExport) &&
-		processExport.kind == WASMTIME_EXTERN_FUNC)
-	{
-		m_impl->process = processExport.of.func;
-		m_impl->hasProcess = true;
-	}
-	// Linear memory is part of the DSP ABI: any module exporting process()
-	// must export it. Pure probe modules (G1 hello) need not.
-	if (m_impl->hasProcess && !hasMemory)
-	{
-		m_impl->hasProcess = false;
-		error = "module does not export linear memory '" +
-			std::string(abi::memoryExport) + "'";
-		return false;
-	}
-
-	m_impl->channels = 1;
-	m_impl->latency = 0;
-	m_impl->readGlobalI32(abi::channelsExport, m_impl->channels);
-	m_impl->readGlobalI32(abi::latencyExport, m_impl->latency);
-	if (m_impl->channels < 1)
-	{
-		m_impl->channels = 1;
-	}
-	if (m_impl->channels > static_cast<int>(abi::maxChannels))
-	{
-		m_impl->channels = static_cast<int>(abi::maxChannels);
-	}
-	if (m_impl->latency < 0)
-	{
-		m_impl->latency = 0;
-	}
+	if (!m_impl->readExports(&error)) { return false; }
+	m_impl->clampTuning();
 	return true;
 }
 
