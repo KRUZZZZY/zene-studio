@@ -3543,3 +3543,5 @@ tests/control-session-sdk.py
 tests/session-sdk-typecheck.py
 # Q050-334.2: its feature record.
 docs/050-features/Q050-334.2.md
+# Q050-334.2: its report.
+docs/qwen-fixes-2026-10/cluster-Q050-334.2.md
