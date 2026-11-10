@@ -28,6 +28,7 @@
 #include "ControlRegistry.h"
 
 #include "ControlReversibility.h"
+#include "ControlTrackRole.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "SampleTrack.h"
@@ -115,6 +116,7 @@ QJsonObject trackState(Track* track, int index)
 		entry.insert(QStringLiteral("collapsed"), folder->isCollapsed());
 		entry.insert(QStringLiteral("pinned"), folder->isPinned());
 	}
+	control::insertTrackRoleFields(&entry, track);  // Q050-283.2: role, and a neutral row's kept roles
 	return entry;
 }
 
@@ -383,6 +385,8 @@ void registerTransportCommands(ControlRegistry& registry)
 			{QStringLiteral("pinned"), booleanProperty()},
 			{QStringLiteral("soloed"), booleanProperty()},
 			{QStringLiteral("visible"), booleanProperty()},
+			{QStringLiteral("role"), stringProperty()},
+			{QStringLiteral("kept_roles"), arrayProperty()},
 		});
 		cmd.handler = [](const QJsonObject& args) {
 			const QString id = args.value(QStringLiteral("track")).toString();

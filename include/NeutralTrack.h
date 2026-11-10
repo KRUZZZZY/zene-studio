@@ -63,6 +63,23 @@ public:
 
 	void saveTrackSpecificSettings(QDomDocument& doc, QDomElement& parent, bool presetMode) override;
 	void loadTrackSpecificSettings(const QDomElement& element) override;
+
+	/*! The INSTRUMENT ROLE this row keeps while it is neutral (Q050-283.2): the whole captured
+	 *  instrument track (control::captureTrackXml's document - its instrument, settings and clips),
+	 *  or empty when the row has never had one. track.set_role puts it here when the row is switched
+	 *  back to neutral and takes it out again when the row is given its instrument back.
+	 *  Persisted as the TEXT of a `<keptrole kind="instrument">` child of `<neutraltrack>`: text, not
+	 *  elements, so no loader or upgrade that walks a project with elementsByTagName() can mistake the
+	 *  kept track, its instrument or its clips for live ones. */
+	const QString& keptInstrumentRole() const { return m_keptInstrumentRole; }
+	//! The plug-in name of the kept instrument role ("" when there is none).
+	const QString& keptInstrumentPlugin() const { return m_keptInstrumentPlugin; }
+	//! Keeps @a xml (a captured instrument track) as this row's inactive instrument role; "" forgets it.
+	void setKeptInstrumentRole(const QString& xml);
+
+private:
+	QString m_keptInstrumentRole;
+	QString m_keptInstrumentPlugin;
 };
 
 } // namespace lmms

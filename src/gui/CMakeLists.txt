@@ -159,6 +159,7 @@ SET(LMMS_SRCS
 	gui/LivecodePanel.cpp
 	gui/ChordProgressionPanel.cpp
 	gui/TrackFolderMenu.cpp
+	gui/TrackRoleMenu.cpp
 	gui/TrackPinStrip.cpp
 	gui/TrackRenderMenu.cpp
 	gui/AafImportMenu.cpp

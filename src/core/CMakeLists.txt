@@ -547,6 +547,7 @@ set(LMMS_SRCS
 	core/ControlCommandsTrackRouting.cpp
 	core/ControlTrackRouting.cpp
 	core/ControlCommandsTrackFolder.cpp
+	core/ControlCommandsTrackRole.cpp
 	core/ControlCommandsTrackFolderSets.cpp
 	# VCA / mix-and-edit groups (OWNER-31 item 11): the group+entity half, the
 	# mix half (fader/mute/solo/membership) and the phase-locked edit half, each

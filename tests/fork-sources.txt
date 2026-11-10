@@ -3518,4 +3518,12 @@ tests/src/core/HybridTrackRoundTripTest.cpp
 tests/src/gui/HybridTrackGuiTest.cpp
 tests/control-hybrid-track-transcript.py
 docs/qwen-fixes-2026-10/cluster-Q050-283.1.md
+# Q050-283.2 (2026-11, R-workflow-286): a neutral row given an instrument and back (stage 2 of 3) - command, menu, tests and report (fork-NEW).
+include/ControlTrackRole.h
+include/TrackRoleMenu.h
+src/core/ControlCommandsTrackRole.cpp
+src/gui/TrackRoleMenu.cpp
+tests/src/core/HybridTrackInstrumentRoleTest.cpp
+tests/src/gui/HybridTrackRoleGuiTest.cpp
+tests/control-hybrid-track-role-transcript.py
 tests/src/gui/LadspaDescriptionTest.cpp
