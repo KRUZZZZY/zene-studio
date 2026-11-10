@@ -63,3 +63,7 @@ Snapshot regenerated live (`snapshot-1.log`, EXIT=0, 925 ids / 78 groups: +`trac
   no POSIX calls. Built here on Qt 6.12/GCC only; Qt 5.15/MSVC/macOS not built - reasoned.
 - **Known limits (documented):** automation clips aimed at the kept instrument's knobs are not re-linked; a channel the instrument used
   stays in the mixer while neutral; audio input is stage 3.
+- **Completion check:** `submit_check.py` (`submit-1.log`, exit 1): every item PASS except "gates (feature_check.py)", which fails
+  only because `feature_check.py` cannot `mkdir` `<worktree>-feature-check` from this sandbox (PermissionError, as in `gates-1.log`).
+  The same gates, with only the log directory moved inside the run folder, PASS (`gates-2.log`, exit 0). The loop's own run
+  outside the sandbox is the authoritative one.
