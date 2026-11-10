@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-11-06T14:56:55Z",
+  "captured_at": "2026-11-10T02:11:03Z",
   "commands": [
     {
       "args_schema": {
@@ -20326,7 +20326,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Every device this build can load: built-in effect and instrument modules plus the devices of the shipped hosting formats (LADSPA, LV2, VST3 and CLAP), each with a dev-<n> id that is deterministic for the binary. dev-<n> is a catalogue index, not a persisted project id, and 'loadable' says whether plugin.load accepts the entry. Each entry carries 'vendor' - who made it, as its own format reports it (\"Zene Studio\" for a built-in, the LADSPA maker, the LV2 author, the VST3 or CLAP factory's vendor; empty when the format reports none, which the device picker reads as \"Not reported\"). Format order is built-in, then LADSPA, then LV2, then VST3, then CLAP, then AU, so adding a host does not renumber the ids of the formats that were already there. macOS builds also list Audio Units (format 'au', from the system component registry; each entry carries its 'component' type:subtype:manufacturer and the 'scan_cache_path' its quarantine entry uses); other builds have no 'au' format. VST2 instruments (format 'vst2', Q050-481.1) come last: hosted through Carla, found by Carla's own out-of-process discovery under ZENE_VST2_PATH or else VST_PATH, the VST directory setting and ~/.vst; each carries its 'file', VST2 'unique_id', 'binary' (native, win64, win32) and 'bridged' (a Windows binary run through Carla's Wine bridge). None are listed when no Carla runtime is installed.",
+      "description": "Every device this build can load: built-in effect and instrument modules plus the devices of the shipped hosting formats (LADSPA, LV2, VST3 and CLAP), each with a dev-<n> id that is deterministic for the binary. dev-<n> is a catalogue index, not a persisted project id, and 'loadable' says whether plugin.load accepts the entry. Each entry carries 'vendor' - who made it, as its own format reports it (\"Zene Studio\" for a built-in, the LADSPA maker, the LV2 author, the VST3 or CLAP factory's vendor; empty when the format reports none, which the device picker reads as \"Not reported\"). Format order is built-in, then LADSPA, then LV2, then VST3, then CLAP, then AU, so adding a host does not renumber the ids of the formats that were already there. macOS builds also list Audio Units (format 'au', from the system component registry; each entry carries its 'component' type:subtype:manufacturer and the 'scan_cache_path' its quarantine entry uses); other builds have no 'au' format. VST2 instruments, then VST2 effects (format 'vst2', Q050-481.1/.2), come last: hosted through Carla, found by Carla's own out-of-process discovery under ZENE_VST2_PATH or else VST_PATH, the VST directory setting and ~/.vst; each carries its 'file', VST2 'unique_id', 'binary' (native, win64, win32) and 'bridged' (a Windows binary run through Carla's Wine bridge). None are listed when no Carla runtime is installed.",
       "group": "plugin",
       "id": "plugin.list",
       "mutating": false,
@@ -39556,11 +39556,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-481.2/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-an6tkf3w/zene.sock",
-    "version": "0.4.0-alpha.6311+c4eb4b6"
+    "source_socket": "/tmp/zctl-run-3ou9wwrl/zene.sock",
+    "version": "0.4.0-alpha.6314+c8dac3e"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
