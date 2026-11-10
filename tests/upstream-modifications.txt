@@ -5778,3 +5778,4 @@ tests/src/gui/ShellHomesTest.cpp	# Pattern Editor tab click does not switch the 
 tests/src/gui/ShellHomesTest.cpp	# Hide button click leaves the lower panel open
 tests/src/gui/ShellHomesTest.cpp	# Pattern Editor tab click leaves the Note Editor selected
 src/gui/editors/TimeLineWidget.cpp	gui-1106: the punch band row stays reserved across the ruler, but only the interval between the punch bounds is filled, outlined and labelled, and a handle whose bound is in view is kept wholly inside the content area; hit testing and the drag are unchanged. Held by ArrangerTakePunchTest::theArmedPunchRangeIsPaintedOnlyBetweenItsBounds.
+tests/CMakeLists.txt	cluster ci-12f4249981b085d6: registers Vst2FixtureDarwinHeaders (tests/vst2-fixture-darwin-headers-check.py, host GNU/Clang/AppleClang, non-Windows), the regression for the macos-arm64 snprintf visibility failure in the VST2 test fixture; registration only, no existing test changes

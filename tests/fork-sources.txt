@@ -3531,3 +3531,6 @@ docs/qwen-fixes-2026-10/cluster-gui-1030-main-pop-out-the-note-editor-panel.md
 # cluster gui-1030-menu-edit-collaborate (2026-11): a refused menu command is said in the status bar (fork-NEW test).
 tests/src/gui/MenuRefusalNoticeTest.cpp
 docs/qwen-fixes-2026-10/cluster-gui-1105-main-delete.md
+# cluster ci-12f4249981b085d6 (2026-11): the VST2 fixture's Darwin feature-macro regression - compiles the real
+# fixture with the host C compiler against a fake Darwin <stdio.h> (fork-NEW test).
+tests/vst2-fixture-darwin-headers-check.py
