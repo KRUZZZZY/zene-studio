@@ -3526,4 +3526,5 @@ src/gui/TrackRoleMenu.cpp
 tests/src/core/HybridTrackInstrumentRoleTest.cpp
 tests/src/gui/HybridTrackRoleGuiTest.cpp
 tests/control-hybrid-track-role-transcript.py
+docs/qwen-fixes-2026-10/cluster-Q050-283.2.md
 tests/src/gui/LadspaDescriptionTest.cpp
