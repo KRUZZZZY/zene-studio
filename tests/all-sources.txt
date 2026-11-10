@@ -663,6 +663,7 @@ include/NoteProperties.h
 include/NoteRandom.h
 include/NoteTransform.h
 include/NoteTransformActions.h
+include/OfflineRenderBarrier.h
 include/OscBridge.h
 include/OscCommands.h
 include/OscServer.h
@@ -2123,6 +2124,7 @@ src/core/NoteConditions.cpp
 src/core/NotePlayHandle.cpp
 src/core/NoteRandom.cpp
 src/core/NoteTransform.cpp
+src/core/OfflineRenderBarrier.cpp
 src/core/OnnxRuntimeStemSeparator.cpp
 src/core/OscBridge.cpp
 src/core/OscServer.cpp

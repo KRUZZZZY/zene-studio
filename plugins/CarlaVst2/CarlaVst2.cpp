@@ -264,9 +264,9 @@ void CarlaVst2Instrument::loadSettings(const QDomElement& elem)
 
 void CarlaVst2Instrument::playImpl(std::span<SampleFrame> out)
 {
-	// While a project is exported there is no realtime deadline: wait for the worker rather than drop a period.
-	const Song* song = Engine::getSong();
-	m_renderer.read(out, song != nullptr && song->isExporting());
+	// Never waits, not even in an export: the exporter waits for the worker between periods instead
+	// (OfflineRenderBarrier.h, Q050-481.2 review r1).
+	m_renderer.read(out);
 }
 
 void CarlaVst2Instrument::renderPeriod(std::span<SampleFrame> out)

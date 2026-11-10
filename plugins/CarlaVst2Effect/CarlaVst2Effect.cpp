@@ -158,10 +158,9 @@ void CarlaVst2Effect::resumeWorker()
 
 ProcessStatus CarlaVst2Effect::processImpl(InterleavedBufferView<float, 2> inOut)
 {
-	// Audio thread: two rings and a copy, never Carla. While a project is exported there is no realtime
-	// deadline, so the worker is waited for rather than a period dropped.
-	const Song* song = Engine::getSong();
-	m_renderer.process(inOut.asSampleFrames(), song != nullptr && song->isExporting());
+	// Audio thread: two rings and a copy, never Carla, never a wait - not even in an export, where the exporter
+	// waits for the worker between periods instead (OfflineRenderBarrier.h).
+	m_renderer.process(inOut.asSampleFrames());
 	return ProcessStatus::ContinueIfNotQuiet;
 }
 

@@ -52,6 +52,9 @@
 #include "EffectChain.h"
 #include "EffectControlDialog.h"
 #include "EffectControls.h"
+#include "OutputSettings.h"
+#include "ProjectRenderer.h"
+#include "RenderPeriodClock.h"
 
 namespace
 {
@@ -129,6 +132,35 @@ int effectChunkField(Effect* effect, const QString& field) { return chunkField(e
 bool processedAs(const Rendered& sound, float left, float right)
 {
 	return sound.sounded && std::abs(sound.left / sound.right - (SourceLeft * left) / (SourceRight * right)) < 1e-3f;
+}
+
+//! The interleaved float frames of a 32-bit float stereo WAV, or empty.
+std::vector<SampleFrame> readFloatWav(const QString& path)
+{
+	QFile file(path);
+	if (!file.open(QIODevice::ReadOnly)) { return {}; }
+	const QByteArray bytes = file.readAll();
+	int at = 12;  // past "RIFF" <size> "WAVE"
+	while (at + 8 <= bytes.size())
+	{
+		const QByteArray id = bytes.mid(at, 4);
+		quint32 size = 0;
+		std::memcpy(&size, bytes.constData() + at + 4, 4);
+		if (id == "data")
+		{
+			const auto count = std::min<qsizetype>(size, bytes.size() - at - 8) / qsizetype(2 * sizeof(float));
+			std::vector<SampleFrame> frames(static_cast<std::size_t>(count));
+			for (qsizetype f = 0; f < count; ++f)
+			{
+				float pair[2];
+				std::memcpy(pair, bytes.constData() + at + 8 + f * 2 * sizeof(float), sizeof(pair));
+				frames[static_cast<std::size_t>(f)] = SampleFrame(pair[0], pair[1]);
+			}
+			return frames;
+		}
+		at += 8 + static_cast<int>(size) + static_cast<int>(size & 1);
+	}
+	return {};
 }
 
 QString describe(const Rendered& sound)
@@ -345,6 +377,88 @@ private slots:
 		// No assertion on the sound: Carla's rack passes its input through until a plug-in it has just added is
 		// active, so the first periods may carry the (unity) input. The peak is logged for the record.
 		QVERIFY2(worst < StallMs / 2, qPrintable(QStringLiteral("a render period took %1 ms").arg(worst)));
+	}
+
+	void anExportWaitsBetweenPeriodsAndKeepsTheEffectsOutput_data() { automationDrivesAVst2EffectParameter_data(); }
+
+	//! Realtime (review r1): a project export through the real exporter (ProjectRenderer) with the effect stalling
+	//! 150 ms in every process call. The render period never waits for it - no period the exporter renders lasts
+	//! anywhere near the stall (sampled from the render period clock while the export runs) - and the file still
+	//! holds the effect's output without a gap: the exporter waits for the worker BETWEEN periods instead.
+	void anExportWaitsBetweenPeriodsAndKeepsTheEffectsOutput()
+	{
+		QFETCH(QString, file);
+		if (const QString why = missingRuntime(); !why.isEmpty()) { QSKIP(qPrintable(why)); }
+		if (file == EffectWineFile && !wineAvailable()) { QSKIP("no Wine, no Windows PE fixture or no Carla Wine bridge in the runtime"); }
+		constexpr qint64 ExportStallMs = 150;
+		InstrumentTrack* track = sourceWithEffect(file, ExportStallMs);
+		QVERIFY(track != nullptr);
+		QVERIFY(setEffectParam(track, QStringLiteral("Right"), 0.25).ok);  // processed: R = 0.5 * input, L = input
+		// A few silent periods first, as any session has before an export: a Wine bridge that has never processed
+		// takes a parameter change one block late (measured: the first sounding period at the old value).
+		for (int period = 0; period < 8; ++period)
+		{
+			Engine::audioEngine()->renderNextPeriod();
+			QTest::qWait(static_cast<int>(ExportStallMs) + 20);  // the worker processes it meanwhile
+		}
+		Song* song = Engine::getSong();
+		const int tempo = song->getTempo();
+		song->setTempo(600);  // one bar is 0.4 s: a short file, so the stalled export stays short
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		clip->addNote(Note(TimePos(DefaultTicksPerBar), TimePos(0), 60, 100), false);
+		song->updateLength();
+		const QString path = QDir(m_files.path()).filePath(QStringLiteral("vst2-effect-export-%1.wav").arg(QTest::currentDataTag()));
+		const OutputSettings settings(44100, 192, OutputSettings::BitDepth::Depth32Bit, OutputSettings::StereoMode::Stereo);
+		qint64 longestPeriodMs = 0;
+		int periodsSeen = 0;
+		{
+			ProjectRenderer renderer(settings, ProjectRenderer::ExportFileFormat::Wave, path);
+			QVERIFY(renderer.isReady());
+			renderer.startProcessing();
+			bool inPeriod = false;
+			while (!renderer.wait(0))
+			{
+				if (RenderPeriodClock::inPeriod())
+				{
+					const qint64 ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+						std::chrono::steady_clock::now() - RenderPeriodClock::periodStart()).count();
+					longestPeriodMs = std::max(longestPeriodMs, ms);
+					if (!inPeriod) { ++periodsSeen; }
+					inPeriod = true;
+				}
+				else { inPeriod = false; }
+				std::this_thread::sleep_for(std::chrono::microseconds(200));
+			}
+		}
+		song->setTempo(tempo);
+		delete clip;
+		delete track;
+		const std::vector<SampleFrame> frames = readFloatWav(path);
+		QVERIFY2(!frames.empty(), "the export wrote no audio");
+		auto sounding = [](const SampleFrame& frame) { return std::abs(frame.left()) > Tolerance; };
+		const auto first = std::find_if(frames.begin(), frames.end(), sounding);
+		const auto last = std::find_if(frames.rbegin(), frames.rend(), sounding);
+		QVERIFY2(first != frames.end(), "the exported file is silent: the effect's output was lost");
+		const auto span = std::distance(first, last.base());
+		int gaps = 0;
+		int wrongRatio = 0;
+		for (auto frame = first; frame != last.base(); ++frame)
+		{
+			if (!sounding(*frame)) { ++gaps; continue; }
+			// The source's (0.5, 0.25) through Left 0.5 / Right 0.25: right = left * (0.25 / 0.5) * (0.25 / 0.5).
+			if (std::abs(frame->right() - frame->left() * 0.25f) > 1e-3f)
+			{
+				if (wrongRatio++ == 0) { qInfo("first unprocessed frame at %td of the span", std::distance(first, frame)); }
+			}
+		}
+		qInfo("export: %d periods seen, longest %lld ms; %zu frames, %td sounding in one span, %d silent inside it, "
+			"%d not processed", periodsSeen, longestPeriodMs, frames.size(), span, gaps, wrongRatio);
+		QVERIFY2(periodsSeen > 0, "no render period was observed: nothing was measured");
+		QVERIFY2(longestPeriodMs < ExportStallMs / 2, qPrintable(QStringLiteral("a render period took %1 ms").arg(longestPeriodMs)));
+		// The note sounds for one bar (17640 frames at 600 BPM, 44.1 kHz): most of it must be in the file, unbroken.
+		QVERIFY2(span > 17640 / 2, qPrintable(QString::number(span)));
+		QCOMPARE(gaps, 0);
+		QCOMPARE(wrongRatio, 0);
 	}
 
 	//! AC2: the plug-in's own editor, from the agent's plugin.editor_open/close and from the effect dialog's button:

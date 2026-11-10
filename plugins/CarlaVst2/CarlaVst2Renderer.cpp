@@ -71,12 +71,36 @@ void Renderer::start(f_cnt_t aheadFrames)
 	if (m_mode == Mode::Process) { m_written.store(m_ahead.load(), std::memory_order_release); }
 	m_running.store(true);
 	m_thread = std::thread([this] { run(); });
+	offlinerender::add(this);
 }
 
 void Renderer::stop()
 {
+	// Out of the export barrier first (it waits for an exporter waiting on this one right now).
+	offlinerender::remove(this);
 	m_running.store(false);
 	if (m_thread.joinable()) { m_thread.join(); }
+}
+
+bool Renderer::caughtUp() const
+{
+	const std::uint64_t ready = m_written.load(std::memory_order_acquire) - m_read.load(std::memory_order_acquire);
+	if (m_mode == Mode::Process)
+	{
+		// Every input queued so far is processed: the output ring then holds latencyFrames() beyond what the
+		// periods before took, which covers the next one.
+		return m_inTaken.load(std::memory_order_acquire) == m_inWritten.load(std::memory_order_acquire);
+	}
+	return ready >= static_cast<std::uint64_t>(m_ahead.load(std::memory_order_relaxed)) || ready + MaxPeriodFrames > RingFrames;
+}
+
+void Renderer::waitUntilCaughtUp(int limitMs)
+{
+	const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(limitMs);
+	while (m_running.load() && !m_pauseRequested.load() && !caughtUp() && std::chrono::steady_clock::now() < deadline)
+	{
+		std::this_thread::sleep_for(std::chrono::microseconds(100));
+	}
 }
 
 void Renderer::pause()
@@ -146,7 +170,7 @@ void Renderer::run()
 	m_paused.store(true);
 }
 
-void Renderer::process(std::span<SampleFrame> inOut, bool mayWait, int waitLimitMs) noexcept
+void Renderer::process(std::span<SampleFrame> inOut) noexcept
 {
 	const std::uint64_t inWritten = m_inWritten.load(std::memory_order_relaxed);
 	if (inWritten - m_inTaken.load(std::memory_order_acquire) + inOut.size() <= RingFrames)
@@ -171,29 +195,18 @@ void Renderer::process(std::span<SampleFrame> inOut, bool mayWait, int waitLimit
 			m_late -= static_cast<std::int64_t>(drop);
 		}
 	}
-	if (!take(inOut, mayWait, waitLimitMs)) { m_late += static_cast<std::int64_t>(inOut.size()); }
+	if (!take(inOut)) { m_late += static_cast<std::int64_t>(inOut.size()); }
 }
 
-void Renderer::read(std::span<SampleFrame> out, bool mayWait, int waitLimitMs) noexcept
+void Renderer::read(std::span<SampleFrame> out) noexcept
 {
-	take(out, mayWait, waitLimitMs);
+	take(out);
 }
 
-bool Renderer::take(std::span<SampleFrame> out, bool mayWait, int waitLimitMs) noexcept
+bool Renderer::take(std::span<SampleFrame> out) noexcept
 {
 	const std::uint64_t taken = m_read.load(std::memory_order_relaxed);
-	std::uint64_t written = m_written.load(std::memory_order_acquire);
-	if (written - taken < out.size() && mayWait)
-	{
-		// An export only: no realtime deadline, and a dropped period would be silence in the file.
-		const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(waitLimitMs);
-		while (written - taken < out.size() && m_running.load(std::memory_order_relaxed)
-			&& std::chrono::steady_clock::now() < deadline)
-		{
-			std::this_thread::sleep_for(std::chrono::microseconds(100));
-			written = m_written.load(std::memory_order_acquire);
-		}
-	}
+	const std::uint64_t written = m_written.load(std::memory_order_acquire);
 	if (written - taken < out.size())
 	{
 		std::fill(out.begin(), out.end(), SampleFrame{});
