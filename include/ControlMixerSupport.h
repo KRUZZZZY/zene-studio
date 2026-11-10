@@ -68,6 +68,13 @@ LMMS_EXPORT QStringList sidechainTapPointNames();
 //! One regular send/path, as pdc.report reports it.
 LMMS_EXPORT QJsonObject routeJson(MixerRoute& route);
 
+/*! Q050-155.2: what @a route carries past the stereo pair, added to its send entry in mixer.get_state and
+ *  routing.matrix only when a side is not stereo (a stereo route keeps the shape it always had):
+ *  "channels" - how many of the sender's channels reach the receiver - and "channel_routing" - "index" (a
+ *  discrete side: channel i into channel i, the rest dropped), "speakers" (named layouts, folded by the
+ *  downmix matrix) or "pair" (the stereo pair only). */
+LMMS_EXPORT void addRouteChannels(QJsonObject* send, const MixerRoute& route);
+
 //! One sidechain send, as pdc.report reports it.
 LMMS_EXPORT QJsonObject sidechainRouteJson(MixerSidechainRoute& route);
 

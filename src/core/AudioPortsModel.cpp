@@ -209,6 +209,36 @@ void AudioPortsModel::setTrackChannelCount(ch_cnt_t count)
 	emit propertiesChanged();
 }
 
+void AudioPortsModel::growTrackChannels(int count)
+{
+	const int wanted = std::min(count + count % 2, static_cast<int>(MaxTrackChannels));
+	if (wanted <= static_cast<int>(m_totalTrackChannels)) { return; }
+	setTrackChannelCount(static_cast<ch_cnt_t>(wanted));
+}
+
+namespace
+{
+
+thread_local int t_hostBusChannels = 0;
+
+} // namespace
+
+AudioPortsModel::HostBusScope::HostBusScope(int channels) noexcept
+	: m_previous{t_hostBusChannels}
+{
+	t_hostBusChannels = channels;
+}
+
+AudioPortsModel::HostBusScope::~HostBusScope() noexcept
+{
+	t_hostBusChannels = m_previous;
+}
+
+auto AudioPortsModel::HostBusScope::channels() noexcept -> int
+{
+	return t_hostBusChannels;
+}
+
 void AudioPortsModel::setChannelCounts(ch_cnt_t inCount, ch_cnt_t outCount)
 {
 	const auto routingEdit = takeRoutingEditGuard(this);
@@ -295,6 +325,22 @@ void AudioPortsModel::setChannelCountOut(ch_cnt_t outCount)
 	setChannelCounts(in().channelCount(), outCount);
 }
 
+void AudioPortsModel::setPins(const std::vector<PinEdit>& edits)
+{
+	const auto routingEdit = takeRoutingEditGuard(this);
+	bool changed = false;
+	for (const PinEdit& edit : edits)
+	{
+		Matrix& matrix = edit.output ? m_out : m_in;
+		changed = changed || matrix.enabled(edit.trackChannel, edit.processorChannel) != edit.enabled;
+		matrix.setPinBatch(edit.trackChannel, edit.processorChannel, edit.enabled);
+	}
+	m_in.updateAllUsedChannels();
+	m_out.updateAllUsedChannels();
+	updateDirectRouting();
+	if (changed) { emit dataChanged(); }
+}
+
 void AudioPortsModel::saveSettings(QDomDocument& doc, QDomElement& elem)
 {
 	auto pins = doc.createElement(nodeName());
@@ -334,6 +380,9 @@ void AudioPortsModel::loadSettings(const QDomElement& elem)
 	// effect, so a rejected load cannot erase the model's existing connections.
 	if (countsInRange && in().channelCount() == inputs && out().channelCount() == outputs)
 	{
+		// Q050-155.2: a device loading into a discrete-N mixer channel (HostBusScope) addresses N channels, so
+		// its matrix grows to them before the pins are read. Outside a scope nothing grows.
+		growTrackChannels(HostBusScope::channels());
 		m_in.loadSettings(pins.firstChildElement("in_matrix"));
 		m_out.loadSettings(pins.firstChildElement("out_matrix"));
 	}

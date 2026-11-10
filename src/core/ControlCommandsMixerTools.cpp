@@ -364,8 +364,10 @@ ControlResult routingMatrix(const QJsonObject&)
 		QJsonArray sends;
 		for (MixerRoute* route : channel->m_sends)
 		{
-			sends.append(QJsonObject{{QStringLiteral("to"), channelIdOf(route->receiver())}, {QStringLiteral("amount"), static_cast<double>(route->amount()->value())},
-				{QStringLiteral("pre_fader"), route->preFader()}, {QStringLiteral("enabled"), route->enabled()}});
+			QJsonObject send{{QStringLiteral("to"), channelIdOf(route->receiver())}, {QStringLiteral("amount"), static_cast<double>(route->amount()->value())},
+				{QStringLiteral("pre_fader"), route->preFader()}, {QStringLiteral("enabled"), route->enabled()}};
+			addRouteChannels(&send, *route);  // Q050-155.2: only when a side is not stereo
+			sends.append(send);
 		}
 		channels.append(QJsonObject{{QStringLiteral("channel"), channelIdOf(channel)}, {QStringLiteral("name"), i == 0 ? QStringLiteral("Master") : channel->m_name},
 			{QStringLiteral("index"), i}, {QStringLiteral("sends"), sends}});

@@ -183,7 +183,10 @@ public:
 		ProcessStatus status;
 		if constexpr (settings.sampleFrameCompatible())
 		{
-			if (const auto dr = m_ap->directRouting())
+			// Q050-155.2: a direct pair the bus does not have (a narrower bus than the device's
+			// track channels) takes the normal path, which skips the pairs that are not there.
+			const auto dr = m_ap->directRouting();
+			if (dr && *dr < coreInOut.channelPairs())
 			{
 				// The "direct routing" optimization can be applied
 				status = processWithDirectRouting(coreInOut.trackChannelPair(*dr),
@@ -428,8 +431,10 @@ inline void AudioPortsRouter<settings>::send(
 	if (m_ap->in().channelCount() == 0) { return; }
 
 	// Ignore all unused track channels for better performance
-	const auto inSizeConstrained = m_ap->trackChannelsUpperBound() / 2;
-	assert(inSizeConstrained <= in.channelPairs());
+	// Q050-155.2: and never past the bus the router was handed. A device's track channels (a hosted
+	// plug-in has as many as its widest side) can outnumber the bus's pairs - a 64-channel plug-in on a
+	// stereo mixer channel - and a pin on such a channel used to read past the bus's pair pointers.
+	const auto inSizeConstrained = std::min<ch_cnt_t>(m_ap->trackChannelsUpperBound() / 2, in.channelPairs());
 
 	for (ch_cnt_t outChannel = 0; outChannel < out.channels(); ++outChannel)
 	{
@@ -491,8 +496,8 @@ inline void AudioPortsRouter<settings>::receive(
 	if (m_ap->out().channelCount() == 0) { return; }
 
 	// Ignore all unused track channels for better performance
-	const auto inOutSizeConstrained = m_ap->trackChannelsUpperBound() / 2;
-	assert(inOutSizeConstrained <= inOut.channelPairs());
+	// Q050-155.2: never past the bus the router was handed (see send()).
+	const auto inOutSizeConstrained = std::min<ch_cnt_t>(m_ap->trackChannelsUpperBound() / 2, inOut.channelPairs());
 
 	/*
 	 * Routes processor audio to track channel pair and normalizes the result. For track channels
@@ -631,8 +636,10 @@ inline void AudioPortsRouter<settings>::send(
 	assert(m_ap->in().channelCount() == 2); // Interleaved routing only allows exactly 0 or 2 channels
 
 	// Ignore all unused track channels for better performance
-	const auto inSizeConstrained = m_ap->trackChannelsUpperBound() / 2;
-	assert(inSizeConstrained <= in.channelPairs());
+	// Q050-155.2: and never past the bus the router was handed. A device's track channels (a hosted
+	// plug-in has as many as its widest side) can outnumber the bus's pairs - a 64-channel plug-in on a
+	// stereo mixer channel - and a pin on such a channel used to read past the bus's pair pointers.
+	const auto inSizeConstrained = std::min<ch_cnt_t>(m_ap->trackChannelsUpperBound() / 2, in.channelPairs());
 	assert(out.data() != nullptr);
 
 	// Zero the output buffer
@@ -721,8 +728,8 @@ inline void AudioPortsRouter<settings>::receive(
 	assert(m_ap->out().channelCount() == 2); // Interleaved routing only allows exactly 0 or 2 channels
 
 	// Ignore all unused track channels for better performance
-	const auto inOutSizeConstrained = m_ap->trackChannelsUpperBound() / 2;
-	assert(inOutSizeConstrained <= inOut.channelPairs());
+	// Q050-155.2: never past the bus the router was handed (see send()).
+	const auto inOutSizeConstrained = std::min<ch_cnt_t>(m_ap->trackChannelsUpperBound() / 2, inOut.channelPairs());
 	assert(in.data() != nullptr);
 
 	/*

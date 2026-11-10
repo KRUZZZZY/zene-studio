@@ -287,9 +287,10 @@ LMMS_EXPORT void registerRoutingCommands(ControlRegistry& registry);
  * own, so this group is only the topology.
  */
 LMMS_EXPORT void registerBusCommands(ControlRegistry& registry);
-/*! port.get_state / port.set_pin - the audio-ports pin matrix (feature row 29):
+/*! port.get_state / port.set_pin / port.set_pins - the audio-ports pin matrix (feature row 29):
  * the device's AudioPortsModel, its in/out matrices and the pin write the
- * PinConnector view performs (AudioPortsModel::Matrix::setPin).
+ * PinConnector view performs (AudioPortsModel::Matrix::setPin); port.set_pins
+ * (Q050-155.2) is a whole routing as one edit and one undo step.
  */
 LMMS_EXPORT void registerPortCommands(ControlRegistry& registry);
 /*! The five groups above, registered as ONE call from ControlRegistry.cpp's

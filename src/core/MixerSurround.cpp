@@ -466,6 +466,14 @@ void resetMixer()
 	setDownmixOptions(DownmixOptions{});
 }
 
+int savedDiscreteChannels(const QDomElement& channelElement)
+{
+	const QDomElement element = channelElement.firstChildElement(QStringLiteral("surround"));
+	Format format = Format::Stereo;
+	if (element.isNull() || !formatFromName(element.attribute(QStringLiteral("format")), &format)) { return 0; }
+	return isDiscrete(format) ? channelCount(format) : 0;
+}
+
 } // namespace surround
 
 void ChannelSurround::init(f_cnt_t frames)
@@ -473,8 +481,10 @@ void ChannelSurround::init(f_cnt_t frames)
 	// Keep a buffer already grown for a wide discrete layout as wide (only a re-init could find one).
 	const std::size_t planes = std::max<std::size_t>(static_cast<std::size_t>(capacity() - 2),
 		static_cast<std::size_t>(surround::SpeakerSideChannels));
+	const auto pairs = static_cast<std::size_t>(insertPairCapacity() - 1);
 	m_frames = std::max<f_cnt_t>(frames, 1);
 	m_side.assign(planes * m_frames, 0.f);
+	m_pairs.assign(pairs * m_frames, SampleFrame{});
 	m_written = false;
 	setPan(m_pan);
 }
@@ -482,6 +492,11 @@ void ChannelSurround::init(f_cnt_t frames)
 int ChannelSurround::capacity() const
 {
 	return m_frames > 0 ? 2 + static_cast<int>(m_side.size() / m_frames) : 2;
+}
+
+int ChannelSurround::insertPairCapacity() const
+{
+	return m_frames > 0 ? 1 + static_cast<int>(m_pairs.size() / m_frames) : 1;
 }
 
 void ChannelSurround::setFormat(surround::Format format)
@@ -493,6 +508,13 @@ void ChannelSurround::setFormat(surround::Format format)
 	if (needed > capacity() && m_frames > 0)
 	{
 		m_side.resize(static_cast<std::size_t>(needed - 2) * m_frames);
+	}
+	// Q050-155.2: the insert bus of a discrete layout - one interleaved pair per two side channels - is grown
+	// here for the same reason, and never shrinks either.
+	const int pairs = (needed + 1) / 2;
+	if (surround::isDiscrete(format) && pairs > insertPairCapacity() && m_frames > 0)
+	{
+		m_pairs.resize(static_cast<std::size_t>(pairs - 1) * m_frames);
 	}
 	m_format = format;
 	std::fill(m_side.begin(), m_side.end(), 0.f);

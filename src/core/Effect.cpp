@@ -25,6 +25,8 @@
 
 #include "Effect.h"
 
+#include <algorithm>
+
 #include <QDomElement>
 
 #include "AudioBuffer.h"
@@ -321,9 +323,18 @@ bool Effect::processAudioBuffer(AudioBus& inOut)
 			{
 				inOut.silenceChannels(*apm);
 			}
-			else
+			else if (inOut.channelPairs() == 1)
 			{
 				inOut.silenceAllChannels();
+			}
+			else
+			{
+				// Q050-155.2: a device without pins owns the first pair only (it processes nothing else),
+				// so on a wide discrete insert bus only that pair is silenced: the other channels pass it
+				// untouched. A one-pair bus (every other bus) is silenced exactly as before, above.
+				std::fill_n(inOut[0], static_cast<std::size_t>(inOut.frames()) * 2, 0.f);
+				inOut.quietChannels().set(0);
+				inOut.quietChannels().set(1);
 			}
 
 			return false;

@@ -32,6 +32,7 @@
 #include <QStringList>
 
 #include "LmmsTypes.h"
+#include "SampleFrame.h"
 #include "lmms_export.h"
 
 class QDomDocument;
@@ -40,11 +41,11 @@ class QDomElement;
 namespace lmms
 {
 
+class AudioBuffer;
 class HardwareOutputBus;
 class Mixer;
 class MixerChannel;
 class MixerRoute;
-class SampleFrame;
 
 /*! 0.5.0 F7 (MX-060): surround channels, opted into one mixer channel at a time.
  *
@@ -162,6 +163,9 @@ LMMS_EXPORT int channelOf(Format format, Role role);
 LMMS_EXPORT QString formatName(Format format);
 LMMS_EXPORT bool formatFromName(const QString& name, Format* format);
 LMMS_EXPORT QStringList formatNames();
+//! Q050-155.2: the channel count of the discrete layout a saved mixer channel element names, or 0 (none, or not
+//! discrete). Read before the channel's devices load (AudioPortsModel::HostBusScope).
+LMMS_EXPORT int savedDiscreteChannels(const QDomElement& channelElement);
 //! Whether @a format is one of the role-less discrete layouts (Discrete2..Discrete64).
 LMMS_EXPORT bool isDiscrete(Format format);
 //! @a format's discrete channel count (2..64), or -1 when it is not discrete.
@@ -214,6 +218,12 @@ struct LMMS_EXPORT ChannelSurround
 	float* plane(int channel) { return m_side.data() + static_cast<std::size_t>(channel - 2) * m_frames; }
 	const float* plane(int channel) const { return m_side.data() + static_cast<std::size_t>(channel - 2) * m_frames; }
 	f_cnt_t frames() const { return m_frames; }
+	/*! Q050-155.2: the interleaved pairs a discrete layout's insert devices see beyond the channel's own pair:
+	 *  pair @a pair (1 .. insertPairCapacity() - 1) carries channels 2 * pair and 2 * pair + 1, frames() frames.
+	 *  Allocated by setFormat() with the side buffer (control thread, change lock), never on the audio path. */
+	SampleFrame* insertPair(int pair) { return m_pairs.data() + static_cast<std::size_t>(pair - 1) * m_frames; }
+	//! How many pairs the insert bus can hold now, the channel's own pair included (1 .. 32).
+	int insertPairCapacity() const;
 	//! Whether the side buffer holds anything this period (its owner wrote it).
 	bool written() const { return m_written; }
 	void markWritten() { m_written = true; }
@@ -232,6 +242,8 @@ private:
 	surround::PanPosition m_pan;
 	std::array<surround::Gains, surround::FormatCount> m_gains{};
 	std::vector<float> m_side;
+	//! Q050-155.2: insertPair()'s storage; empty until a discrete layout wider than its pair is set.
+	std::vector<SampleFrame> m_pairs;
 	f_cnt_t m_frames = 0;
 	bool m_written = false;
 };
@@ -250,6 +262,16 @@ LMMS_EXPORT void panSend(MixerRoute& route, const SampleFrame* src, f_cnt_t fram
 //! The receiver's worker, after a send's stereo part: a surround sender's side channels into the
 //! receiver - carried or folded (matrix()). Not for feedback sends (their snapshot is stereo).
 LMMS_EXPORT void addSideChannels(MixerRoute& route, f_cnt_t frames);
+/*! Q050-155.2: whether @a channel's insert chain runs on its wide bus this period: a discrete layout wider than
+ *  its pair, a non-empty enabled chain, and an insert bus allocated for @a frames. A named speaker layout's
+ *  side channels still bypass the devices, as before. */
+LMMS_EXPORT bool insertsTakeWideBus(const MixerChannel& channel, f_cnt_t frames);
+/*! The channel's worker, its insert stage (insertsTakeWideBus()): the chain on one bus of every channel - the
+ *  pair, then the side channels as interleaved pairs in index order - so a device's pins reach channel 0 .. 63
+ *  by index. A legacy device (no pins) still processes the pair only; the sides pass it untouched. The side
+ *  buffer is written back afterwards. @a sidechain as EffectChain::processAudioBuffer takes it. Returns
+ *  whether the chain keeps running. */
+LMMS_EXPORT bool processWideInserts(MixerChannel& channel, f_cnt_t frames, const AudioBuffer* sidechain);
 //! The channel's worker, after its pan stage: trim, VCA gain and the pan's balance on the side channels.
 LMMS_EXPORT void processChannel(MixerChannel& channel, f_cnt_t frames);
 //! The render thread, after the master's fader: a surround master's side channels onto the hardware

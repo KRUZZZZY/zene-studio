@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-11-06T14:56:55Z",
+  "captured_at": "2026-11-10T05:55:13Z",
   "commands": [
     {
       "args_schema": {
@@ -22404,7 +22404,7 @@
         ],
         "type": "object"
       },
-      "description": "A device's audio-ports model: the input and output pin matrices, their channel counts and names, and the engine's own used-channel caches. Read-only.",
+      "description": "A device's audio-ports model: the input and output pin matrices, their channel counts and names, the engine's own used-channel caches, and the bus its track channels address (a discrete-N mixer channel: N channels by index; any other host: the stereo pair). Read-only.",
       "group": "port",
       "id": "port.get_state",
       "mutating": false,
@@ -22412,6 +22412,9 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "bus": {
+            "type": "object"
+          },
           "device": {
             "type": "string"
           },
@@ -22501,6 +22504,87 @@
           },
           "track_channel": {
             "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "pins": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "direction": {
+                  "enum": [
+                    "in",
+                    "out"
+                  ],
+                  "type": "string"
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "processor_channel": {
+                  "maximum": 255,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "track_channel": {
+                  "maximum": 255,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "direction",
+                "track_channel",
+                "processor_channel",
+                "enabled"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "device",
+          "pins"
+        ],
+        "type": "object"
+      },
+      "description": "Set many pins of a device's audio-ports matrices as one routing edit (the render sees all of them or none). 'pins' lists {direction, track_channel, processor_channel, enabled}, up to 8192. A device in a discrete-N mixer channel reaches channels 0..N-1 by index (port.get_state's 'bus'). One undo step on the engine's own history (control.undo, Edit > Undo) puts back the values the pins held before; redo applies them again.",
+      "group": "port",
+      "id": "port.set_pins",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bus": {
+            "type": "object"
+          },
+          "device": {
+            "type": "string"
+          },
+          "ports": {
+            "type": "object"
+          },
+          "set": {
+            "type": "integer"
+          },
+          "target": {
+            "type": "string"
           }
         },
         "required": [],
@@ -39551,23 +39635,23 @@
       }
     }
   ],
-  "count": 924,
+  "count": 925,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-155.2/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-an6tkf3w/zene.sock",
-    "version": "0.4.0-alpha.6311+c4eb4b6"
+    "source_socket": "/tmp/zctl-run-fdtwh0zp/zene.sock",
+    "version": "0.4.0-alpha.6312+af010bc"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 78,
-    "id_count": 924,
-    "ids_sha256": "fac3b27d98cbc91933c63f6608d20739a9d2d1000608af46ee5823a0c47077e1"
+    "id_count": 925,
+    "ids_sha256": "11aee921462e78039e549c04e4fffa3afffda80011d223d62d9660179b7d9e2a"
   }
 }

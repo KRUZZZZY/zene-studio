@@ -49,6 +49,9 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <algorithm>
+#include <vector>
+
 #include <QJsonArray>
 #include <QJsonObject>
 
@@ -57,10 +60,16 @@
 #include "ControlRegistry.h"
 
 #include "AudioPortsModel.h"
+#include "ControlMixerSupport.h"
+#include "ControlReversibility.h"
 #include "ControlVocabulary.h"
 #include "Effect.h"
+#include "Engine.h"
 #include "Instrument.h"
 #include "InstrumentTrack.h"
+#include "Mixer.h"
+#include "MixerSurround.h"
+#include "Song.h"
 
 namespace lmms
 {
@@ -170,6 +179,23 @@ QJsonObject portsModelJson(const AudioPortsModel* model)
 	return out;
 }
 
+//! Q050-155.2: the bus the device's track channels address (controlHostBusChannels), as port.get_state reports it.
+QJsonObject hostBusJson(const ControlTarget& target, const AudioPortsModel* model)
+{
+	const int channels = controlHostBusChannels(target.id);
+	const QString format = channels > 2 ? surround::formatName(surround::discreteFormat(channels))
+		: QStringLiteral("stereo");
+	const int reached = std::min(channels, static_cast<int>(model->trackChannelCount()));
+	return QJsonObject{{QStringLiteral("format"), format}, {QStringLiteral("channels"), channels},
+		{QStringLiteral("reached_track_channels"), reached}};
+}
+
+//! The highest track channel a pin may name: the model's own, or its host bus's when that is wider.
+int trackChannelBound(const ControlTarget& target, const AudioPortsModel::Matrix& matrix)
+{
+	return std::max(static_cast<int>(matrix.trackChannelCount()), controlHostBusChannels(target.id));
+}
+
 //! The matrix a direction name selects, or nullptr (typed) when the name is not
 //! one of the two.
 AudioPortsModel::Matrix* matrixForDirection(AudioPortsModel* model, const QString& direction,
@@ -222,6 +248,7 @@ ControlResult handlePortGetState(const QJsonObject& args)
 	result.insert(QStringLiteral("target"), target.id);
 	result.insert(QStringLiteral("device"), deviceId);
 	result.insert(QStringLiteral("ports"), portsModelJson(model));
+	result.insert(QStringLiteral("bus"), hostBusJson(target, model));
 	result.insert(QStringLiteral("note"),
 		QStringLiteral("the pin matrix is the processor's own serialized <pins> element; a pin is "
 			"set with port.set_pin. track_channel indexes the song's track channels, "
@@ -253,11 +280,11 @@ ControlResult handlePortSetPin(const QJsonObject& args)
 	if (matrix == nullptr) { return error; }
 
 	// Validated before the write, so a refusal changes nothing.
-	if (trackChannel < 0 || trackChannel >= static_cast<int>(matrix->trackChannelCount()))
+	if (trackChannel < 0 || trackChannel >= trackChannelBound(target, *matrix))
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("track_channel %1 is out of range: this device routes %2 track channels")
-				.arg(trackChannel).arg(static_cast<int>(matrix->trackChannelCount())));
+				.arg(trackChannel).arg(trackChannelBound(target, *matrix)));
 	}
 	if (processorChannel < 0 || processorChannel >= static_cast<int>(matrix->channelCount()))
 	{
@@ -267,6 +294,7 @@ ControlResult handlePortSetPin(const QJsonObject& args)
 				.arg(static_cast<int>(matrix->channelCount())));
 	}
 
+	fitPinsToHostBus(target.id, model);  // Q050-155.2: a discrete bus's channels, before the pin is read
 	const bool enabled = wanted.toBool();
 	const bool previous = matrix->enabled(static_cast<ch_cnt_t>(trackChannel),
 		static_cast<ch_cnt_t>(processorChannel));
@@ -308,7 +336,107 @@ ControlResult handlePortSetPin(const QJsonObject& args)
 	return ControlResult::success(result);
 }
 
+//! One entry of port.set_pins, validated against the matrix it names; false with *error on the first bad field.
+bool parsePinEdit(const ControlTarget& target, AudioPortsModel* model, const QJsonValue& value,
+	AudioPortsModel::PinEdit* edit, ControlResult* error)
+{
+	const QJsonObject entry = value.toObject();
+	const QString direction = entry.value(QStringLiteral("direction")).toString();
+	AudioPortsModel::Matrix* matrix = matrixForDirection(model, direction, error);
+	if (matrix == nullptr) { return false; }
+	const int trackChannel = entry.value(QStringLiteral("track_channel")).toInt(-1);
+	const int processorChannel = entry.value(QStringLiteral("processor_channel")).toInt(-1);
+	const QJsonValue enabled = entry.value(QStringLiteral("enabled"));
+	const int tracks = trackChannelBound(target, *matrix);
+	if (!enabled.isBool() || trackChannel < 0 || trackChannel >= tracks
+		|| processorChannel < 0 || processorChannel >= static_cast<int>(matrix->channelCount()))
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("each pin needs a boolean 'enabled', a track_channel in 0..%1 and a processor_channel "
+				"in 0..%2 of the %3 matrix").arg(tracks - 1)
+				.arg(static_cast<int>(matrix->channelCount()) - 1).arg(direction));
+		return false;
+	}
+	*edit = {matrix->isOutput(), static_cast<ch_cnt_t>(trackChannel), static_cast<ch_cnt_t>(processorChannel),
+		enabled.toBool()};
+	return true;
+}
+
+/*! The undo and redo of port.set_pins: @a pins on the device @a deviceId of @a targetId, re-resolved each time (a
+ *  journal step outlives the pointer it was recorded with). A pin the matrix no longer has is skipped. */
+void reapplyPins(const QString& targetId, const QString& deviceId, std::vector<AudioPortsModel::PinEdit> pins)
+{
+	ControlTarget target;
+	ControlResult ignored;
+	if (!resolveControlTarget(targetId, &target, &ignored)) { return; }
+	AudioPortsModel* model = writableModel(target, deviceId, QStringLiteral("in"), &ignored);
+	if (model == nullptr) { return; }
+	fitPinsToHostBus(targetId, model);
+	const auto inside = [model](const AudioPortsModel::PinEdit& pin) {
+		const AudioPortsModel::Matrix& matrix = pin.output ? model->out() : model->in();
+		return pin.trackChannel < matrix.trackChannelCount() && pin.processorChannel < matrix.channelCount();
+	};
+	pins.erase(std::remove_if(pins.begin(), pins.end(), [&inside](const auto& pin) { return !inside(pin); }), pins.end());
+	model->setPins(pins);
+}
+
+//! The most pins one port.set_pins call takes: every pin of two 64 x 64 matrices.
+constexpr int MaxPinsPerBatch = 2 * 64 * 64;
+
+ControlResult handlePortSetPins(const QJsonObject& args)
+{
+	ControlResult error;
+	ControlTarget target;
+	if (!resolveControlTarget(args.value(QStringLiteral("target")).toString(), &target, &error)) { return error; }
+	const QString deviceId = args.value(QStringLiteral("device")).toString();
+	AudioPortsModel* model = writableModel(target, deviceId, QStringLiteral("in"), &error);
+	if (model == nullptr) { return error; }
+	const QJsonArray pins = args.value(QStringLiteral("pins")).toArray();
+	if (pins.isEmpty() || pins.size() > MaxPinsPerBatch)
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'pins' needs 1 .. %1 entries").arg(MaxPinsPerBatch));
+	}
+	// Every entry is validated before a single pin moves, so a refusal changes nothing.
+	std::vector<AudioPortsModel::PinEdit> edits(static_cast<std::size_t>(pins.size()));
+	for (int i = 0; i < pins.size(); ++i)
+	{
+		if (!parsePinEdit(target, model, pins.at(i), &edits[static_cast<std::size_t>(i)], &error)) { return error; }
+	}
+	fitPinsToHostBus(target.id, model);  // Q050-155.2: a discrete bus's channels, before any pin is read
+	// The undo step sets the same pins back to the values read here, before any write.
+	std::vector<AudioPortsModel::PinEdit> before = edits;
+	for (AudioPortsModel::PinEdit& edit : before)
+	{
+		edit.enabled = (edit.output ? model->out() : model->in()).enabled(edit.trackChannel, edit.processorChannel);
+	}
+	model->setPins(edits);
+	const QString targetId = target.id;
+	addUndoStep([targetId, deviceId, before]() { reapplyPins(targetId, deviceId, before); },
+		[targetId, deviceId, edits]() { reapplyPins(targetId, deviceId, edits); });
+	Engine::getSong()->setModified();
+
+	QJsonObject result{{QStringLiteral("target"), target.id}, {QStringLiteral("device"), deviceId},
+		{QStringLiteral("set"), pins.size()}, {QStringLiteral("ports"), portsModelJson(model)},
+		{QStringLiteral("bus"), hostBusJson(target, model)}};
+	return ControlResult::success(result);
+}
+
 } // namespace
+
+int controlHostBusChannels(const QString& targetId)
+{
+	ControlResult ignored;
+	if (!targetId.startsWith(QLatin1String("ch-"))) { return 2; }
+	const MixerChannel* channel = resolveMixerChannel(targetId, &ignored);
+	if (channel == nullptr || !surround::isDiscrete(channel->m_surround.format())) { return 2; }
+	return surround::channelCount(channel->m_surround.format());
+}
+
+void fitPinsToHostBus(const QString& targetId, AudioPortsModel* model)
+{
+	if (model != nullptr) { model->growTrackChannels(controlHostBusChannels(targetId)); }
+}
 
 void registerPortCommands(ControlRegistry& registry)
 {
@@ -318,8 +446,9 @@ void registerPortCommands(ControlRegistry& registry)
 		cmd.group = QStringLiteral("port");
 		cmd.verb = QStringLiteral("get_state");
 		cmd.description = QStringLiteral("A device's audio-ports model: the input and output pin "
-			"matrices, their channel counts and names, and the engine's own used-channel caches. "
-			"Read-only.");
+			"matrices, their channel counts and names, the engine's own used-channel caches, and the bus "
+			"its track channels address (a discrete-N mixer channel: N channels by index; any other host: "
+			"the stereo pair). Read-only.");
 		cmd.argsSchema = objectSchema(
 			{{QStringLiteral("target"), stringProperty()},
 				{QStringLiteral("device"), stringProperty()}},
@@ -328,6 +457,7 @@ void registerPortCommands(ControlRegistry& registry)
 			{QStringLiteral("target"), stringProperty()},
 			{QStringLiteral("device"), stringProperty()},
 			{QStringLiteral("ports"), objectProperty()},
+			{QStringLiteral("bus"), objectProperty()},
 			{QStringLiteral("note"), stringProperty()},
 		});
 		cmd.handler = [](const QJsonObject& args) { return handlePortGetState(args); };
@@ -365,6 +495,42 @@ void registerPortCommands(ControlRegistry& registry)
 		});
 		cmd.mutating = true;
 		cmd.handler = [](const QJsonObject& args) { return handlePortSetPin(args); };
+		registry.registerCommand(cmd);
+	}
+
+	{
+		// Q050-155.2: a whole routing - up to every pin of a 64-channel device - as one edit and one undo step.
+		ControlCommand cmd;
+		cmd.id = QStringLiteral("port.set_pins");
+		cmd.group = QStringLiteral("port");
+		cmd.verb = QStringLiteral("set_pins");
+		cmd.description = QStringLiteral("Set many pins of a device's audio-ports matrices as one routing edit "
+			"(the render sees all of them or none). 'pins' lists {direction, track_channel, processor_channel, "
+			"enabled}, up to 8192. A device in a discrete-N mixer channel reaches channels 0..N-1 by index "
+			"(port.get_state's 'bus'). One undo step on the engine's own history (control.undo, Edit > Undo) "
+			"puts back the values the pins held before; redo applies them again.");
+		QJsonObject pinsProperty = arrayProperty();
+		pinsProperty.insert(QStringLiteral("items"), objectSchema(
+			{{QStringLiteral("direction"), enumProperty({QStringLiteral("in"), QStringLiteral("out")})},
+				{QStringLiteral("track_channel"), integerProperty(0, MaxTrackChannels - 1)},
+				{QStringLiteral("processor_channel"), integerProperty(0, 255)},
+				{QStringLiteral("enabled"), booleanProperty()}},
+			{QStringLiteral("direction"), QStringLiteral("track_channel"),
+				QStringLiteral("processor_channel"), QStringLiteral("enabled")}));
+		cmd.argsSchema = objectSchema(
+			{{QStringLiteral("target"), stringProperty()},
+				{QStringLiteral("device"), stringProperty()},
+				{QStringLiteral("pins"), pinsProperty}},
+			{QStringLiteral("target"), QStringLiteral("device"), QStringLiteral("pins")});
+		cmd.resultSchema = objectSchema({
+			{QStringLiteral("target"), stringProperty()},
+			{QStringLiteral("device"), stringProperty()},
+			{QStringLiteral("set"), integerProperty()},
+			{QStringLiteral("ports"), objectProperty()},
+			{QStringLiteral("bus"), objectProperty()},
+		});
+		cmd.mutating = true;
+		cmd.handler = [](const QJsonObject& args) { return handlePortSetPins(args); };
 		registry.registerCommand(cmd);
 	}
 }

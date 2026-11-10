@@ -37,6 +37,7 @@
 namespace lmms
 {
 
+class AudioPortsModel;
 class AutomatableModel;
 class Effect;
 class EffectChain;
@@ -138,6 +139,12 @@ struct ControlTarget
 //! Resolves "trk-<n>", "ch-<n>" or "clip-<n>" (an audio clip's own effects, Q050-111); false and *error set
 //! on failure.
 LMMS_EXPORT bool resolveControlTarget(const QString& id, ControlTarget* target, ControlResult* error);
+
+/*! Q050-155.2: how many channels the bus a device in @a targetId ("ch-<n>", "trk-<n>", ...) addresses through its
+ *  pins: N for a mixer channel set to discrete-N (its devices see every channel by index), 2 for any other host. */
+LMMS_EXPORT int controlHostBusChannels(const QString& targetId);
+//! Q050-155.2: grows @a model's track channels to its host bus (controlHostBusChannels) - never shrinks them.
+LMMS_EXPORT void fitPinsToHostBus(const QString& targetId, AudioPortsModel* model);
 
 //! The effect addressed by \a pluginId ("fx-<n>") inside \a target.
 LMMS_EXPORT Effect* resolveControlEffect(const ControlTarget& target, const QString& pluginId,

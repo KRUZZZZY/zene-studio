@@ -37,6 +37,7 @@
 
 #include "AudioBusHandle.h"
 #include "AudioEngine.h"
+#include "AudioPortsModel.h"
 #include "AudioEngineWorkerThread.h"
 #include "AudioEngineWorkerThread.h"
 #include "AutomatableModel.h"
@@ -783,6 +784,12 @@ void MixerChannel::processInserts(const f_cnt_t fpp)
 		m_stillRunning = m_sidechainReceives.empty()
 			? m_rack.processAudioBuffer( m_bus )
 			: m_rack.processAudioBuffer( m_bus, &m_sidechainBuffer );
+	}
+	else if( surround::insertsTakeWideBus( *this, fpp ) )
+	{
+		// Q050-155.2: a discrete layout's devices see all its channels, by index, through their pins.
+		m_stillRunning = surround::processWideInserts( *this, fpp,
+			m_sidechainReceives.empty() ? nullptr : &m_sidechainBuffer );
 	}
 	else
 	{
@@ -2988,8 +2995,13 @@ void Mixer::loadSettings( const QDomElement & _this )
 			m_mixerChannels[num]->setColor(QColor{mixch.attribute("color")});
 		}
 
-		m_mixerChannels[num]->m_fxChain.restoreState( mixch.firstChildElement(
-			m_mixerChannels[num]->m_fxChain.nodeName() ) );
+		{
+			// Q050-155.2: a discrete-N channel's devices load with N track channels, so their pins past the
+			// stereo pair are read back (the <surround> element itself is applied below, as before).
+			const AudioPortsModel::HostBusScope hostBus( surround::savedDiscreteChannels( mixch ) );
+			m_mixerChannels[num]->m_fxChain.restoreState( mixch.firstChildElement(
+				m_mixerChannels[num]->m_fxChain.nodeName() ) );
+		}
 
 		// #599: the channel's rack, if the project has one. A project with no
 		// <rack> element loads an empty rack, which is off the signal path.
