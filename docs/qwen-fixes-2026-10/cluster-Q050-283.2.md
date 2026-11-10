@@ -38,9 +38,41 @@ no-upstream-regression, check-namespace, no-tautology, doc-figures PASS; complex
 Snapshot regenerated live (`snapshot-1.log`, EXIT=0, 925 ids / 78 groups: +`track.set_role`); README canary updated;
 `doc-figures-gate.py` `docfig-2.log` exit 0 (`docfig-1.log` exit 1 before the canary update).
 
+## Round 2 - review r1 (REWORK: automation links lost through neutral + save/load)
+
+Logs: `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/Q050-283.2.r2/logs`. Commits `4bf3e6fa23` (fix + regression test),
+`ecf6a4a81f` (complexity refactor of `setRole`).
+
+- **Cause (confirmed):** the switch to neutral destroyed the instrument's controls; each automation clip kept only a queued id
+  (`AutomationClip::objectDestroyed`), which `saveSettings` does not write, so after save/load the link was gone.
+- **Fix:** `src/core/ControlTrackRoleLinks.cpp` takes every clip link to the instrument's own controls off its clip before the
+  destruction (`removeObject`, `destroyed()` connection cut; the clip's points stay) and keeps it with the kept role
+  (`NeutralTrack::keptInstrumentLinks`, saved as `<neutraltrack><keptlinks kind="instrument"><link track clip pos model/>`).
+  The restored instrument's controls get their ids back from the kept document and the links are re-made on the same clips -
+  on `track.set_role`, on undo of a switch to neutral, on redo of a restore, and after save/load. `kept_roles` reports
+  `automation_links`.
+- **Regression:** `HybridTrackInstrumentRoleTest::automationLinksSurviveNeutralSaveLoadAndRestore` - clip on the row's volume and
+  a TripleOscillator control; neutral (0 targets, points kept, 2 kept links); undo (2 targets); neutral, save, clear, load,
+  restore: both targets are the restored controls, same point count, same value at tick 96; undo/redo of the restore.
+
+| Check | Command / log | Exit |
+|---|---|---|
+| Build | `cmake --build build --target zene HybridTrackInstrumentRoleTest HybridTrackRoleGuiTest ... -- -j4` (`build-8.log`, `build-9.log`) | 0 |
+| Focused + neighbours (14): HybridTrackInstrumentRoleTest, HybridTrackRoleGuiTest, ControlHybridTrackRoleTranscript, HybridTrackRoundTripTest, HybridTrackGuiTest, ControlHybridTrackTranscript, ReversibilityContractTest, ReversibilityUndoTest, StableTrackIdsTest, TrackFolderTest, AutomationLaneChildrenTest, AutomationLaneChildGuiTest, TrackAddRoutingTest, ControlCommandsSnapshot | `ctest -R "^(...)$"` (`test-5.log`) | 0 (14/14) |
+| Negative control: this round's product hunks reverted (`NeutralTrack.h/.cpp`, `ControlCommandsTrackRole.cpp`, `src/core/CMakeLists.txt` at `672170214c`; `ControlTrackRoleLinks.*` removed), rebuilt (`build-neg-2.log` EXIT=0) | `ctest -R "^HybridTrackInstrumentRoleTest$"` (`test-neg-1.log`): only the new case fails (0 targets, expected 2) | 8 |
+| Restored (`git checkout HEAD -- include src`), rebuilt | `build-7.log`, `build-8.log` | 0 |
+| Gates (feature_check copy, log dir moved into the run folder) | `gates-1.log`: complexity flagged `setRole` CCN 12 -> refactored; `gates-2.log` all 8 PASS | 1, then 0 |
+| Snapshot regenerated live (description of `track.set_role` changed) | `snapshot-1.log` (925 ids / 78 groups); `doc-figures-gate.py` `docfig-1.log` | 0 / 0 |
+
+Realtime: the link removal and re-adding run on the control/GUI thread; `AutomationClip::addObject`/`removeObject` take the
+engine's target-change guard themselves (the render thread is kept out while the target list changes), as every existing caller does.
+Nothing new runs on the audio thread. TSan does not run here - reasoned.
+
 ## Self-check
 
-- **Every criterion proven by a test I ran:** yes - table above, `test-7.log` exit 0 (8/8).
+- **Every criterion proven by a test I ran:** yes - round 1 table (`r1/logs/test-7.log`, 8/8) and round 2 (`r2/logs/test-5.log`,
+  14/14, including the automation-link regression for criterion 2).
+- **Round 2 regression fails without the fix:** `r2/logs/test-neg-1.log` exit 8 (only the new case), restored and passing (`test-5.log` exit 0).
 - **New tests fail with the change reverted, pass restored:** yes - `test-neg-1.log` exit 8 (3/3 failed; `HybridTrackInstrumentRoleTest`
   5 of 6 cases, the sixth is a format guard that passes on the base), restored + `build-10.log` EXIT=0, `test-7.log` exit 0.
 - **GUI and agent through the same command:** the menu items call `ControlRegistry::invoke("track.set_role", ...)`
@@ -61,8 +93,9 @@ Snapshot regenerated live (`snapshot-1.log`, EXIT=0, 925 ids / 78 groups: +`trac
 - **Portability:** only Qt APIs present in 5.15 (QDomDocument/QDomNamedNodeMap, QMetaObject::invokeMethod with a functor - Qt >= 5.10,
   QObject::connect functor with context + Qt::QueuedConnection); no `small/near/far/interface/min/max` identifiers, no std::filesystem,
   no POSIX calls. Built here on Qt 6.12/GCC only; Qt 5.15/MSVC/macOS not built - reasoned.
-- **Known limits (documented):** automation clips aimed at the kept instrument's knobs are not re-linked; a channel the instrument used
-  stays in the mixer while neutral; audio input is stage 3.
+- **Known limits (documented):** a kept automation link is not re-made if its clip was deleted or moved while the row was
+  neutral; automation of the row's own mute/solo is not carried; a channel the instrument used stays in the mixer while neutral;
+  audio input is stage 3.
 - **Completion check:** `submit_check.py` (`submit-1.log`, exit 1): every item PASS except "gates (feature_check.py)", which fails
   only because `feature_check.py` cannot `mkdir` `<worktree>-feature-check` from this sandbox (PermissionError, as in `gates-1.log`).
   The same gates, with only the log directory moved inside the run folder, PASS (`gates-2.log`, exit 0). The loop's own run
