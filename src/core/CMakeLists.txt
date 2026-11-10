@@ -1247,6 +1247,9 @@ set(LMMS_SRCS
 	core/ControlCommandsTrackFlatten.cpp
 	core/RenderQueue.cpp
 	core/RenderQueueBounce.cpp
+	# Q050-327: freeze.tracks - several tracks rendered concurrently, one task, one undo step.
+	core/BatchFreeze.cpp
+	core/ControlCommandsFreezeBatch.cpp
 	core/ControlCommandsSubprojects.cpp
 	core/ControlCommandsAlternatives.cpp
 	core/ControlTrackCreation.cpp

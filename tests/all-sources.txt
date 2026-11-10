@@ -241,6 +241,7 @@ include/AutomationTrackView.h
 include/BandLimitedWave.h
 include/BarModelEditor.h
 include/BasicFilters.h
+include/BatchFreeze.h
 include/BiquadDesign.h
 include/BounceInPlace.h
 include/BrowserCatalog.h
@@ -1570,6 +1571,7 @@ src/core/AutomationNode.cpp
 src/core/AutomationRamp.cpp
 src/core/AutomationSwitches.cpp
 src/core/BandLimitedWave.cpp
+src/core/BatchFreeze.cpp
 src/core/BounceInPlace.cpp
 src/core/BrowserCatalog.cpp
 src/core/BrowserFeatures.cpp
@@ -1686,6 +1688,7 @@ src/core/ControlCommandsExternalDevice.cpp
 src/core/ControlCommandsFeedback.cpp
 src/core/ControlCommandsFolderSpans.cpp
 src/core/ControlCommandsFreeze.cpp
+src/core/ControlCommandsFreezeBatch.cpp
 src/core/ControlCommandsGroove.cpp
 src/core/ControlCommandsGrooveEdit.cpp
 src/core/ControlCommandsGroovePool.cpp
@@ -2795,6 +2798,7 @@ tests/src/core/AutomationThinTest.cpp
 tests/src/core/AutomationWriteToEndTest.cpp
 tests/src/core/BandLimitedWaveTest.cpp
 tests/src/core/BasicFiltersSampleRateTest.cpp
+tests/src/core/BatchFreezeTest.cpp
 tests/src/core/BenchmarkBaseline.h
 tests/src/core/BiquadSectionTest.cpp
 tests/src/core/BounceInPlaceTest.cpp

@@ -29,6 +29,7 @@
 
 #include "lmms_export.h"
 
+class QDialog;
 class QJsonObject;
 class QMenu;
 
@@ -41,9 +42,15 @@ namespace lmms::gui
 {
 
 /*! For an instrument or sample track's operations menu, Freeze track and Bounce in place queue a
- *  cancellable child render shown in the task indicator; Unfreeze applies immediately. Other track
+ *  cancellable child render shown in the task indicator; Unfreeze applies immediately; an unfrozen track
+ *  also gets Freeze several tracks... (openBatchFreezeDialog, freeze.tracks). Other track
  *  types get nothing. */
 LMMS_EXPORT void addTrackRenderActions(QMenu* menu, Track* track);
+
+/*! Q050-327: the dialog behind the track menu's "Freeze several tracks...": every unfrozen instrument or
+ *  sample track as a checkable row (@a preselected ticked), and Freeze - enabled from two ticks on - sends
+ *  freeze.tracks, the command an agent sends. Opened non-modally (QDialog::open) and deleted on close. */
+LMMS_EXPORT QDialog* openBatchFreezeDialog(Track* preselected);
 
 /*! KNOWN-LIMITATIONS "DAWproject import / export has no interface": File menu items Import
  *  DAWproject... and Export DAWproject... (dawproject.import / dawproject.export), each through a
