@@ -65,11 +65,8 @@ def depth(session):
     return session.result("control.undo_depth").get("depth")
 
 
-def run_checks(session, recorder, outdir):
-    a = build_track(session, "Batch A")
-    b = build_track(session, "Batch B")
-    if a is None or b is None:
-        return False
+def check_batch(session, recorder, outdir, a, b):
+    """Steps 1-3: one task, both frozen, one undo step, one undo thaws both."""
     before = depth(session)
     started = session.result("freeze.tracks", {"tracks": [a, b], "out_dir": outdir})
     task_id = started.get("task")
@@ -91,6 +88,9 @@ def run_checks(session, recorder, outdir):
     thawed = [frozen_state(session, t)[0] for t in (a, b)]
     recorder.check("one control.undo thaws both tracks", thawed == [False, False], "frozen=%r" % thawed)
 
+
+def check_cancel(session, recorder, outdir, a, b):
+    """Step 4: task.cancel on a running batch freezes nothing and records nothing."""
     before = depth(session)
     second = session.result("freeze.tracks", {"tracks": [a, b], "out_dir": os.path.join(outdir, "cancelled")})
     cancelled = session.result("task.cancel", {"id": second.get("task")})
@@ -102,6 +102,9 @@ def run_checks(session, recorder, outdir):
     recorder.check("a cancelled batch records no undo step", depth(session) == before,
                    "before=%r after=%r" % (before, depth(session)))
 
+
+def check_refusals(session, recorder, outdir, a, b):
+    """Step 5: one track, and a batch holding a frozen track, are refused whole."""
     refusal = session.typed_error("freeze.tracks", {"tracks": [a]})
     recorder.check("one track is refused (a batch needs two)", refusal.get("kind") == "refused"
                    or "two or more" in str(refusal), "error=%r" % refusal)
@@ -109,6 +112,16 @@ def run_checks(session, recorder, outdir):
     refusal = session.typed_error("freeze.tracks", {"tracks": [a, b]})
     recorder.check("a batch with a frozen track is refused whole", a in str(refusal), "error=%r" % refusal)
     recorder.check("the refused batch left the other track unfrozen", frozen_state(session, b)[0] is False, "")
+
+
+def run_checks(session, recorder, outdir):
+    a = build_track(session, "Batch A")
+    b = build_track(session, "Batch B")
+    if a is None or b is None:
+        return False
+    check_batch(session, recorder, outdir, a, b)
+    check_cancel(session, recorder, outdir, a, b)
+    check_refusals(session, recorder, outdir, a, b)
     return True
 
 

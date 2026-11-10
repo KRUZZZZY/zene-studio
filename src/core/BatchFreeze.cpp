@@ -102,6 +102,63 @@ void rollbackOutputs(BatchFreezeJob& job)
 	for (BatchFreezeTarget& target : job.targets) { BounceInPlace::rollbackPreparedOutput(&target.prepared); }
 }
 
+//! Every staged take moved to its output path (a previous file kept aside); on a failure the installed ones go back.
+bool installOutputs(BatchFreezeJob& job, QString* error)
+{
+	for (BatchFreezeTarget& target : job.targets)
+	{
+		if (!BounceInPlace::installPreparedOutput(&target.prepared, error))
+		{
+			rollbackOutputs(job);
+			return false;
+		}
+	}
+	return true;
+}
+
+//! A Track checkpoint and the take on every target, inside the caller's open journal edit; false at the first refusal.
+bool freezeTargets(const BatchFreezeJob& job, QJsonArray* frozen, QString* error)
+{
+	for (const BatchFreezeTarget& target : job.targets)
+	{
+		Track* track = control::trackWithId(target.trackId);
+		track->addJournalCheckPoint();
+		if (!track->freezeTo(target.rendered.path, 0, target.rendered.range.end, {}, error, false)) { return false; }
+		frozen->append(QJsonObject{{QStringLiteral("track"), control::trackIdOf(track)},
+			{QStringLiteral("audio"), target.rendered.path}, {QStringLiteral("sha256"), target.rendered.sha256},
+			{QStringLiteral("end_ticks"), static_cast<double>(target.rendered.range.end)}});
+	}
+	return true;
+}
+
+//! Opens one journal edit; the serial its merge starts from (0 without a journal).
+quint64 openEdit(ProjectJournal* journal)
+{
+	if (journal == nullptr) { return 0; }
+	const quint64 serial = journal->topStepSerial();
+	journal->beginEdit();
+	return serial;
+}
+
+//! Closes the edit and merges every checkpoint it took into ONE step; whether a step was recorded.
+bool closeEdit(ProjectJournal* journal, quint64 serialBefore)
+{
+	if (journal == nullptr) { return false; }
+	journal->endEdit();
+	journal->mergeCheckpointsSince(serialBefore);
+	return journal->topStepSerial() != serialBefore;
+}
+
+//! The A16 transaction for the completed batch's single journal step.
+void recordEdit(const BatchFreezeJob& job, quint64 step)
+{
+	QJsonArray ids;
+	for (const BatchFreezeTarget& target : job.targets) { ids.append(QStringLiteral("trk-%1").arg(target.trackId)); }
+	ControlRegistry::instance()->recordCompletedEdit(QStringLiteral("freeze.tracks"), job.args,
+		QJsonObject{{QStringLiteral("batch"), job.id}, {QStringLiteral("tracks"), ids}, {QStringLiteral("frozen"), false}},
+		job.report, step);
+}
+
 } // namespace
 
 BatchFreeze& BatchFreeze::instance()
@@ -323,51 +380,22 @@ bool BatchFreeze::applyAll(BatchFreezeJob& job, QString* error)
 	TaskCenter::instance().progress(job.taskToken, 1.0, tr("Applying %n frozen take(s)", nullptr,
 		static_cast<int>(job.targets.size())));
 	*error = staleReason(job);
-	if (!error->isEmpty()) { return false; }
-	for (BatchFreezeTarget& target : job.targets)
-	{
-		if (!BounceInPlace::installPreparedOutput(&target.prepared, error)) { rollbackOutputs(job); return false; }
-	}
+	if (!error->isEmpty() || !installOutputs(job, error)) { return false; }
 	ProjectJournal* journal = Engine::projectJournal();
-	const quint64 serialBefore = journal != nullptr ? journal->topStepSerial() : 0;
-	if (journal != nullptr) { journal->beginEdit(); }
-	bool frozeAll = true;
+	const quint64 serialBefore = openEdit(journal);
 	QJsonArray frozen;
-	for (const BatchFreezeTarget& target : job.targets)
-	{
-		Track* track = control::trackWithId(target.trackId);
-		track->addJournalCheckPoint();
-		if (!track->freezeTo(target.rendered.path, 0, target.rendered.range.end, {}, error, false))
-		{
-			frozeAll = false;
-			break;
-		}
-		frozen.append(QJsonObject{{QStringLiteral("track"), control::trackIdOf(track)},
-			{QStringLiteral("audio"), target.rendered.path}, {QStringLiteral("sha256"), target.rendered.sha256},
-			{QStringLiteral("end_ticks"), static_cast<double>(target.rendered.range.end)}});
-	}
-	if (journal != nullptr)
-	{
-		journal->endEdit();
-		journal->mergeCheckpointsSince(serialBefore);
-	}
+	const bool frozeAll = freezeTargets(job, &frozen, error);
+	const bool recorded = closeEdit(journal, serialBefore);
 	if (!frozeAll)
 	{
 		// The one merged step holds every checkpoint taken so far: undoing it thaws them all.
-		if (journal != nullptr && journal->topStepSerial() != serialBefore && journal->canUndo()) { journal->undo(); }
+		if (recorded && journal->canUndo()) { journal->undo(); }
 		rollbackOutputs(job);
 		return false;
 	}
 	for (BatchFreezeTarget& target : job.targets) { BounceInPlace::commitPreparedOutput(&target.prepared); }
 	job.report = QJsonObject{{QStringLiteral("frozen"), frozen}, {QStringLiteral("undo"), QStringLiteral("control.undo")}};
-	if (journal != nullptr && journal->topStepSerial() != serialBefore)
-	{
-		QJsonArray ids;
-		for (const BatchFreezeTarget& target : job.targets) { ids.append(QStringLiteral("trk-%1").arg(target.trackId)); }
-		ControlRegistry::instance()->recordCompletedEdit(QStringLiteral("freeze.tracks"), job.args,
-			QJsonObject{{QStringLiteral("batch"), job.id}, {QStringLiteral("tracks"), ids}, {QStringLiteral("frozen"), false}},
-			job.report, journal->topStepSerial());
-	}
+	if (recorded) { recordEdit(job, journal->topStepSerial()); }
 	return true;
 }
 

@@ -131,24 +131,33 @@ bool waitAtBarrier()
 	return false;
 }
 
-int fakeRender(int argc, char** argv)
+//! The `-o` path of a render command line.
+QString outputArgument(int argc, char** argv)
 {
-	QString project;
-	QString out;
-	if (argc > 2) { project = QString::fromLocal8Bit(argv[2]); }
 	for (int i = 3; i + 1 < argc; ++i)
 	{
-		if (std::strcmp(argv[i], "-o") == 0) { out = QString::fromLocal8Bit(argv[++i]); }
+		if (std::strcmp(argv[i], "-o") == 0) { return QString::fromLocal8Bit(argv[i + 1]); }
 	}
-	const QStringList names = audibleNames(project);
+	return QString();
+}
+
+bool writePid(const QString& name)
+{
+	const QString pidDir = qEnvironmentVariable("ZENE_FAKE_PID_DIR");
+	if (pidDir.isEmpty()) { return true; }
+	QFile pid(QDir(pidDir).filePath(name));
+	if (!pid.open(QIODevice::WriteOnly)) { return false; }
+	pid.write(QByteArray::number(QCoreApplication::applicationPid()));
+	return true;
+}
+
+int fakeRender(int argc, char** argv)
+{
+	const QStringList names = audibleNames(argc > 2 ? QString::fromLocal8Bit(argv[2]) : QString());
+	const QString out = outputArgument(argc, argv);
 	if (out.isEmpty() || names.size() != 1) { return 4; }
 	const QString name = names.front();
-	if (const QString pidDir = qEnvironmentVariable("ZENE_FAKE_PID_DIR"); !pidDir.isEmpty())
-	{
-		QFile pid(QDir(pidDir).filePath(name));
-		if (!pid.open(QIODevice::WriteOnly)) { return 6; }
-		pid.write(QByteArray::number(QCoreApplication::applicationPid()));
-	}
+	if (!writePid(name)) { return 6; }
 	if (!waitAtBarrier()) { return 7; }
 	if (name == qEnvironmentVariable("ZENE_FAKE_SLOW_TRACK"))
 	{
