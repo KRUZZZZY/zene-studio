@@ -5,7 +5,41 @@ IMPLEMENTED
 Branch `feat/050-Q050-334.2-oc` from `050/m0-train-26` (`af010bc3cc`). The package is in `tools/zene-session-sdk/`
 (`@zene-studio/session-sdk` 0.1.0), and it uses stage 1's event protocol unchanged. This unit changes no C++, adds or
 changes no command, and changes no project format. The feature record is `docs/050-features/Q050-334.2.md`. Logs are
-in `~/.local/share/zene-bunny-fix/qwen/runs/Q050-334.2.r1/logs/`.
+in `~/.local/share/zene-bunny-fix/qwen/runs/Q050-334.2.r1/logs/` (round 1) and `.../Q050-334.2.r2/logs/` (round 2).
+
+## Round 2 (review REWORK): changes during a read were lost
+
+The reviewer showed that a change arriving after a subscription started, but before any listener attached, reached
+nobody, while the subscription's cursor counted it. That window is `resync()`'s read, `LiveSession`'s sync, and the
+read that carries the subscribe reply. So `LiveSession` went on from a later seq without reporting the gap.
+
+**Fix (`1de9c4a0a2`):**
+- A new `HeldListeners` (`src/listeners.ts`) holds pushed changes until the first listener attaches, then delivers
+  them in order, a microtask later, before anything newer.
+- `Subscription.onEvent` uses it, and `onEnd` on an ended subscription fires only after the held changes.
+  `LiveSession.onChange` uses it too, since `start()` resolves before a caller can listen.
+- Both hold at most 8192 changes. Past that, a subscription nobody listens to ends `overflow`.
+
+**Regression (in `ControlSessionSdk`):**
+- `checkResyncKeepsEventsDuringRead`: an edit is made inside `resync()`'s read. The test waits until
+  `events.get_state` shows it written to the reader, then pings on the reading connection, so the SDK has received it
+  before the read returns. The first `onEvent` attached after `resync()` must then get it at `cursor.seq + 1`, and the
+  next change at `+ 2`.
+- The same check runs inside `LiveSession`'s first read: `onChange`, attached after `start()`, must get it, and
+  `cursor` counts it.
+
+**Round 2 evidence (logs in `Q050-334.2.r2/logs/`):**
+
+| Run | Command | Exit |
+|---|---|---|
+| Fixed sources + new checks | `ctest -R "SessionSdk" -V` (`ctest-3-restored.log`): both pass; 49 `PASS:` lines (47 SDK checks + 2 launcher lines) | 0 |
+| Round-1 `src/` + new checks (the fix reverted) | `ctest -R "^ControlSessionSdk$"` (`ctest-2-reverted.log`): "timed out waiting for the held event", which reproduces the review's lost event | 8 |
+| Only `live-session.ts` reverted | `ctest-4-livesession-reverted.log`: "timed out waiting for the change made during the first read" | 8 |
+| Recovery mutation (no `recover()`), still caught | `ctest-5-mutated-recovery.log` | 8 |
+| 5 repeats | `ctest -R "^ControlSessionSdk$" --repeat until-fail:5` (`ctest-6-repeat.log`): 5 of 5 passed | 0 |
+| Gates (copy of `feature_check.py`, log path only) | `feature-check-2.log`: all 8 rows PASS | 0 |
+
+The round-1 tables below still stand. The criterion-2 test now has 47 checks.
 
 ## Acceptance
 
