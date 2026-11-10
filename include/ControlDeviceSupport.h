@@ -98,8 +98,9 @@ LMMS_EXPORT void controlAuDeviceEntries(QList<ControlDeviceEntry>* out);
 
 //! Q050-481.1: appends the VST2 instruments the Carla-backed VST2 host (plugins/CarlaVst2, module
 //! "carlavst2") discovers, through its own SubPluginFeatures::listSubPluginKeys() - Carla's
-//! out-of-process discovery tools, native and through Wine. A no-op when the build has no such host
-//! or no Carla runtime is installed. Called after every other format, so no existing dev-<n> moves.
+//! out-of-process discovery tools, native and through Wine - and then (Q050-481.2) the VST2 effects
+//! of plugins/CarlaVst2Effect ("carlavst2effect"). A no-op when the build has no such host or no
+//! Carla runtime is installed. Called after every other format, so no existing dev-<n> moves.
 LMMS_EXPORT void controlVst2DeviceEntries(QList<ControlDeviceEntry>* out);
 
 //! The build's device catalogue in the stable order the dev-<n> ids use:
@@ -221,9 +222,9 @@ LMMS_EXPORT bool controlClapDeviceModule(const ControlDeviceEntry& entry, QStrin
 LMMS_EXPORT bool controlAuDeviceModule(const ControlDeviceEntry& entry, QString* pluginName,
 	Plugin::Descriptor::SubPluginFeatures::Key* key, bool* useKey, ControlResult* error);
 
-//! Q050-481.1: the same for a VST2 entry: the "carlavst2" module and the (file, name, uniqueid,
-//! binary) key plugins/CarlaVst2 builds and a saved project stores. False and *error set when the
-//! build has no such host, when the entry is not an instrument, or when its binary is gone.
+//! Q050-481.1: the same for a VST2 entry: the "carlavst2" module (an instrument) or, Q050-481.2,
+//! "carlavst2effect" (an effect), and the (file, name, uniqueid, binary) key both build and a saved
+//! project stores. False and *error set when the build has no such host or its binary is gone.
 LMMS_EXPORT bool controlVst2DeviceModule(const ControlDeviceEntry& entry, QString* pluginName,
 	Plugin::Descriptor::SubPluginFeatures::Key* key, bool* useKey, ControlResult* error);
 

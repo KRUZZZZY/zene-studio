@@ -1,6 +1,6 @@
 /*
- * CarlaVst2Renderer.h - runs Carla's processing for a VST2 instrument off the
- *                       audio thread (Q050-481.1).
+ * CarlaVst2Renderer.h - runs Carla's processing for a VST2 instrument or
+ *                       effect off the audio thread (Q050-481.1, .2).
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -55,17 +55,33 @@ namespace lmms::carlavst2
  * While a project is exported there is no realtime deadline, and dropping a
  * period would put silence into the file: read(.., mayWait = true) then waits
  * for the worker (bounded), as the VeSTige host already does while exporting.
+ *
+ * Q050-481.2: an effect has an input. In Mode::Process the audio thread's
+ * process() hands its period to the worker through a second preallocated ring
+ * and takes back the frames processed latencyFrames() earlier (the output ring
+ * starts with that much silence); the worker processes whatever input has
+ * arrived, in place. A period the worker has not finished is silence, and the
+ * frames it delivers late are dropped once they arrive, so the effect's latency
+ * - which the chain compensates - stays what it reported.
  */
 class Renderer
 {
 public:
-	//! Renders exactly @a out.size() frames; runs on the worker thread only.
-	using RenderFn = std::function<void(std::span<SampleFrame> out)>;
+	//! Renders exactly @a frames.size() frames; runs on the worker thread only. In Mode::Process the span holds
+	//! the input when called and must hold the output when it returns.
+	using RenderFn = std::function<void(std::span<SampleFrame> frames)>;
+
+	//! Generate: an instrument, rendered ahead with no input. Process: an effect, fed through process().
+	enum class Mode
+	{
+		Generate,
+		Process
+	};
 
 	static constexpr f_cnt_t MaxPeriodFrames = 4096;   // MAXIMUM_BUFFER_SIZE
 	static constexpr std::size_t RingFrames = 32768;   // a power of two, eight maximum periods
 
-	explicit Renderer(RenderFn render);
+	explicit Renderer(RenderFn render, Mode mode = Mode::Generate);
 	~Renderer();
 
 	Renderer(const Renderer&) = delete;
@@ -80,6 +96,11 @@ public:
 	//! (an export, no realtime deadline) it waits for them, at most @a waitLimitMs.
 	void read(std::span<SampleFrame> out, bool mayWait, int waitLimitMs = 2000) noexcept;
 
+	//! Audio thread, Mode::Process: queues @a inOut for the worker and replaces it with the processed frames of
+	//! latencyFrames() earlier, or silence (counted) if they are not ready. No lock, allocation or system call;
+	//! with @a mayWait (an export) it waits for them, at most @a waitLimitMs.
+	void process(std::span<SampleFrame> inOut, bool mayWait, int waitLimitMs = 2000) noexcept;
+
 	//! Control thread: holds the worker between periods (it finishes the one it is rendering) until resume().
 	void pause();
 	void resume();
@@ -87,6 +108,8 @@ public:
 	f_cnt_t latencyFrames() const { return m_ahead.load(std::memory_order_relaxed); }
 	std::uint64_t underruns() const { return m_underruns.load(std::memory_order_relaxed); }
 	std::uint64_t renderedPeriods() const { return m_rendered.load(std::memory_order_relaxed); }
+	//! Mode::Process: periods of input the audio thread could not queue (the worker was a whole ring behind).
+	std::uint64_t inputOverruns() const { return m_inputOverruns.load(std::memory_order_relaxed); }
 
 	//! The audio engine's period, as the worker renders it (bounded by MaxPeriodFrames).
 	static f_cnt_t periodFrames();
@@ -94,10 +117,21 @@ public:
 private:
 	void run();
 	bool renderOnePeriod();
+	bool processOnePeriod();
+	//! Audio thread: copies @a out.size() published frames out of the ring, waiting only when @a mayWait.
+	bool take(std::span<SampleFrame> out, bool mayWait, int waitLimitMs) noexcept;
 
 	RenderFn m_render;
+	const Mode m_mode;
 	std::vector<SampleFrame> m_ring;
 	std::vector<SampleFrame> m_scratch;
+	//! Mode::Process: the input the audio thread queued (written by it, taken by the worker).
+	std::vector<SampleFrame> m_inRing;
+	std::atomic<std::uint64_t> m_inWritten{0};
+	std::atomic<std::uint64_t> m_inTaken{0};
+	//! Mode::Process, audio thread only: output frames owed by periods that were silence; dropped once they arrive.
+	std::int64_t m_late = 0;
+	std::atomic<std::uint64_t> m_inputOverruns{0};
 	std::atomic<std::uint64_t> m_written{0};  //!< frames the worker has published (worker writes)
 	std::atomic<std::uint64_t> m_read{0};     //!< frames the audio thread has taken (audio thread writes)
 	std::atomic<f_cnt_t> m_ahead{0};

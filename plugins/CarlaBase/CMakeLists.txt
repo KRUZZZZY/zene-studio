@@ -34,7 +34,9 @@ if(LMMS_HAVE_CARLA OR LMMS_HAVE_WEAKCARLA)
         include_directories(SYSTEM ${CARLA_INCLUDE_DIRS})
         LINK_DIRECTORIES(${CARLA_LIBRARY_DIRS})
         LINK_LIBRARIES(${CARLA_LIBRARIES})
-        BUILD_PLUGIN(carlabase Carla.cpp Carla.h
+        # Q050-481.2: VST2 discovery lives here, shared by the carlavst2 (instrument) and carlavst2effect modules,
+        # so both read one per-session cache instead of running Carla's discovery tools twice per binary.
+        BUILD_PLUGIN(carlabase Carla.cpp Carla.h CarlaVst2Discovery.cpp CarlaVst2Discovery.h
             MOCFILES Carla.h
             EMBEDDED_RESOURCES artwork-patchbay.png artwork-rack.png
             EXPORT_BASE_NAME carlabase

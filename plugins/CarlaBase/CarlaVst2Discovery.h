@@ -1,6 +1,7 @@
 /*
  * CarlaVst2Discovery.h - finding VST2 plug-ins for the Carla-backed VST2 host
- *                        (Q050-481.1).
+ *                        (Q050-481.1; in carlabase since Q050-481.2, so the
+ *                        instrument and effect hosts share one cache).
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -29,6 +30,8 @@
 #include <QList>
 #include <QString>
 #include <QStringList>
+
+#include "carlabase_export.h"
 
 namespace lmms::carlavst2
 {
@@ -62,28 +65,28 @@ inline QString uniqueIdAttribute() { return QStringLiteral("uniqueid"); }
 inline QString binaryAttribute() { return QStringLiteral("binary"); }
 inline QString makerAttribute() { return QStringLiteral("maker"); }
 
-QString binaryName(Binary binary);
-Binary binaryFromName(const QString& name);
+CARLABASE_EXPORT QString binaryName(Binary binary);
+CARLABASE_EXPORT Binary binaryFromName(const QString& name);
 
 //! The binary kind of @a path from its own header (ELF / PE machine field), not its extension.
-Binary binaryOf(const QString& path);
+CARLABASE_EXPORT Binary binaryOf(const QString& path);
 
 //! The directories searched for VST2 binaries. ZENE_VST2_PATH (list-separated), when set, is the
 //! whole list - a test or a packaged setup names exactly where to look. Otherwise VST_PATH, the
 //! product's VST directory setting, ~/.vst and the usual system locations.
-QStringList searchDirs();
+CARLABASE_EXPORT QStringList searchDirs();
 
 //! Every VST2 plug-in under searchDirs(), as Carla's own discovery tools report them (run out of
 //! process, so a crashing plug-in cannot take the product down; Windows binaries through Wine).
 //! Results are cached per file and refreshed when the file's size or time changes. Empty when
 //! no Carla runtime (libcarla_native-plugin and its discovery tools) is installed.
-QList<Vst2Record> discoverAll();
+CARLABASE_EXPORT QList<Vst2Record> discoverAll();
 
 //! Parses carla-discovery's stdout ("carla-discovery::<key>::<value>" lines, one block per plug-in).
-QList<Vst2Record> parseDiscoveryOutput(const QString& file, Binary binary, const QString& output);
+CARLABASE_EXPORT QList<Vst2Record> parseDiscoveryOutput(const QString& file, Binary binary, const QString& output);
 
 //! The folder of the Carla runtime in use (where its bridges and discovery tools live), or empty.
-QString runtimeFolder();
+CARLABASE_EXPORT QString runtimeFolder();
 
 } // namespace lmms::carlavst2
 
