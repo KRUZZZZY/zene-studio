@@ -368,6 +368,34 @@ QString mechanismText()
 		"document, so neither direction loses it");
 }
 
+/*! Records the ONE undo step of a switch: the row's documents before and after. The automation links
+ *  go with whichever document is the instrument - the after-document of a switch to instrument, the
+ *  before-document of a switch to neutral (a neutral document carries its own). False when nothing was
+ *  recorded (the journal is off, or the switched row is too large to capture). */
+bool recordSwitch(const RoleRequest& request, int id, bool toInstrument, Track* replacement)
+{
+	QString afterXml;
+	if (!captureTrackXml(replacement, &afterXml, MaxRoleSwitchChars)) { return false; }
+	const std::vector<KeptAutomationLink> undoLinks = toInstrument ? noLinks() : request.links;
+	const std::vector<KeptAutomationLink> redoLinks = toInstrument ? request.links : noLinks();
+	const qint64 bytes = static_cast<qint64>(request.beforeXml.size() + afterXml.size()) * static_cast<qint64>(sizeof(QChar));
+	return addStructuralUndoStep(
+		[id, index = request.index, xml = request.beforeXml, links = undoLinks]() { replaceRowWithId(id, index, xml, links); },
+		[id, index = request.index, xml = afterXml, links = redoLinks]() { replaceRowWithId(id, index, xml, links); },
+		bytes);
+}
+
+QJsonObject switchTransaction(const QJsonObject& before, bool recorded)
+{
+	if (!recorded)
+	{
+		return transactionPayload(before, QStringLiteral("none: no undo step could be recorded"), QJsonObject(), false,
+			QStringLiteral("snapshot only: the journal is off or the switched row is too large to capture"));
+	}
+	return transactionPayload(before, QStringLiteral("replace the row by its captured document from before the switch"),
+		QJsonObject(), true, mechanismText());
+}
+
 ControlResult setRole(const QJsonObject& args)
 {
 	RoleRequest request;
@@ -389,25 +417,11 @@ ControlResult setRole(const QJsonObject& args)
 	{
 		return refuse(ControlErrorKind::Refused, QStringLiteral("the row's document could not be rebuilt"));
 	}
-	QString afterXml;
-	const bool captured = captureTrackXml(replacement, &afterXml, MaxRoleSwitchChars);
-	const bool recorded = captured && addStructuralUndoStep(
-		// The links go with whichever document is the instrument: the after-document of a switch to
-		// instrument, the before-document of a switch to neutral (a neutral document carries its own).
-		[id, index = request.index, xml = request.beforeXml, links = toInstrument ? noLinks() : request.links]() {
-			replaceRowWithId(id, index, xml, links); },
-		[id, index = request.index, xml = afterXml, links = toInstrument ? request.links : noLinks()]() {
-			replaceRowWithId(id, index, xml, links); },
-		static_cast<qint64>(request.beforeXml.size() + afterXml.size()) * static_cast<qint64>(sizeof(QChar)));
-
+	const bool recorded = recordSwitch(request, id, toInstrument, replacement);
 	QJsonObject result = trackEditState(replacement, request.index);
 	result.insert(QStringLiteral("track"), trackIdOf(replacement));
 	insertTrackRoleFields(&result, replacement);
-	result.insert(QStringLiteral("__transaction"), transactionPayload(before,
-		recorded ? QStringLiteral("replace the row by its captured document from before the switch")
-			: QStringLiteral("none: no undo step could be recorded"),
-		QJsonObject(), recorded, recorded ? mechanismText()
-			: QStringLiteral("snapshot only: the journal is off or the switched row is too large to capture")));
+	result.insert(QStringLiteral("__transaction"), switchTransaction(before, recorded));
 	return ControlResult::success(result);
 }
 
