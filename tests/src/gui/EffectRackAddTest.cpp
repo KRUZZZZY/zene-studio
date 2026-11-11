@@ -99,6 +99,38 @@ private slots:
 		if (Engine::getSong() != nullptr) { Engine::destroy(); }
 	}
 
+	//! cluster gui-1105-tab-mixer-add-effect: one mouse click on a mixer channel rack's "Add effect" reaches
+	//! DevicePicker::pick with the effect catalogue and the title "Add effect". The picker is answered through
+	//! its test seam (DevicePicker::setChooser), so no modal dialog, timer or event-loop wait is involved;
+	//! the empty answer is the cancel path, which adds nothing.
+	void addEffectClickReachesThePicker()
+	{
+		MixerChannel* channel = Engine::mixer()->mixerChannel(Engine::mixer()->createChannel());
+		EffectChain* chain = &channel->m_fxChain;
+		EffectRackView rack(chain);
+		rack.show();
+		QPushButton* add = addButton(&rack);
+		QVERIFY(add != nullptr);
+		QVERIFY(add->isEnabled());
+
+		int calls = 0;
+		DevicePicker::Kind kind = DevicePicker::Kind::Instrument;
+		QString title;
+		DevicePicker::setChooser([&](DevicePicker::Kind k, const QString& t) {
+			++calls;
+			kind = k;
+			title = t;
+			return QString();
+		});
+		QTest::mouseClick(add, Qt::LeftButton);
+		DevicePicker::setChooser({});
+
+		QCOMPARE(calls, 1);
+		QVERIFY(kind == DevicePicker::Kind::Effect);
+		QCOMPARE(title, EffectRackView::tr("Add effect"));
+		QCOMPARE(static_cast<int>(chain->effects().size()), 0);
+	}
+
 	void addEffectPicksFromTheDevicePicker()
 	{
 		MixerChannel* channel = Engine::mixer()->mixerChannel(Engine::mixer()->createChannel());
