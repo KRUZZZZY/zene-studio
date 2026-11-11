@@ -3538,3 +3538,6 @@ docs/qwen-fixes-2026-10/cluster-gui-1105-main-delete.md
 # cluster gui-1105-main-loop-points (2026-11): n-state button activation regression test and its report (fork-NEW).
 tests/src/gui/NStateButtonActivationTest.cpp
 docs/qwen-fixes-2026-10/cluster-gui-1105-main-loop-points.md
+# cluster ci-512849fa221097db (2026-11): checks no exported class declares a thread_local data member (MSVC C2492), by scanning include/ and src/ headers (ctest ExportedClassTlsCheck).
+tests/exported-class-tls-check.py
+docs/qwen-fixes-2026-10/cluster-ci-512849fa221097db.md
