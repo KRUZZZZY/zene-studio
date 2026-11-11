@@ -30,9 +30,11 @@
 #include <QtTest>
 
 #include <QAbstractButton>
+#include <QLabel>
 #include <QTemporaryDir>
 
 #include "AutomatableButton.h"
+#include "ControlRegistry.h"
 #include "Engine.h"
 #include "Fader.h"
 #include "GuiApplication.h"
@@ -90,10 +92,12 @@ private slots:
 		QVERIFY(getGUI() != nullptr);
 		getGUI()->mainWindow()->show();
 		getGUI()->mainWindow()->revealPanel(QStringLiteral("mixer"));
+		ControlRegistry::setReady(true);  // the Return button runs bus.create
 	}
 
 	void cleanupTestCase()
 	{
+		ControlRegistry::setReady(false);
 		Engine::destroy();
 	}
 
@@ -266,6 +270,26 @@ private slots:
 		QVERIFY(selectedWhenMacroActionRan);
 		QCOMPARE(mixer->currentMixerChannel(), targetView);
 		QTest::mouseRelease(macro, Qt::LeftButton, Qt::NoModifier, macro->rect().center());
+	}
+
+	// The Return button creates a bus and refreshes the view at once. The strip it adds must already
+	// be labelled Return then: the rebuild of the strips must not skip the type badges, which would
+	// show "Channel N" until the half-second timer's next pass.
+	void aNewReturnStripIsLabelledReturnAtOnce()
+	{
+		MixerView* mixer = getGUI()->mixerView();
+		syncMixer();
+		const int before = static_cast<int>(Engine::mixer()->numChannels());
+		auto* button = mixer->findChild<QAbstractButton*>(QStringLiteral("newReturnBtn"));
+		QVERIFY(button != nullptr);
+
+		QTest::mouseClick(button, Qt::LeftButton);  // no sync of ours after this: only the click's own
+
+		QCOMPARE(static_cast<int>(Engine::mixer()->numChannels()), before + 1);
+		MixerChannelView* strip = mixer->channelView(before);
+		QVERIFY(strip != nullptr);
+		QVERIFY(Engine::mixer()->mixerChannel(before)->isBus());
+		QCOMPARE(strip->typeBadge()->text(), QStringLiteral("Return"));
 	}
 
 private:
