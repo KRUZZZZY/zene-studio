@@ -45,6 +45,13 @@
 
 #ifndef _WIN32
 #define _POSIX_C_SOURCE 199309L  /* nanosleep */
+// _POSIX_C_SOURCE alone hides Darwin's C99 declarations (<stdio.h>'s snprintf:
+// macos-arm64 "call to undeclared library function 'snprintf'", cluster
+// ci-12f4249981b085d6); _DARWIN_C_SOURCE restores the full header. Apple-only,
+// so glibc's feature visibility is untouched.
+#if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
+#define _DARWIN_C_SOURCE
+#endif
 #endif
 
 #include <stdio.h>

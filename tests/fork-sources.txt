@@ -3541,3 +3541,6 @@ docs/qwen-fixes-2026-10/cluster-gui-1105-main-loop-points.md
 # cluster ci-512849fa221097db (2026-11): checks no exported class declares a thread_local data member (MSVC C2492), by scanning include/ and src/ headers (ctest ExportedClassTlsCheck).
 tests/exported-class-tls-check.py
 docs/qwen-fixes-2026-10/cluster-ci-512849fa221097db.md
+# cluster ci-12f4249981b085d6 (2026-11): the VST2 fixture's Darwin feature-macro regression - compiles the real
+# fixture with the host C compiler against a fake Darwin <stdio.h> (fork-NEW test).
+tests/vst2-fixture-darwin-headers-check.py

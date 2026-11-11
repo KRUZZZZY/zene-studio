@@ -6296,6 +6296,20 @@ if(PYTHON3_EXECUTABLE)
 	set_tests_properties(ExportedClassTlsCheck PROPERTIES TIMEOUT 60)
 endif()
 
+# The VST2 test instrument must keep Darwin's C99 <stdio.h> declarations visible
+# (cluster ci-12f4249981b085d6: macos-arm64 saw snprintf undeclared because the
+# fixture's _POSIX_C_SOURCE hid it). The check compiles the real fixture with the
+# host C compiler, plus a fake Darwin <stdio.h> that applies the same rule; it
+# needs a GNU-style driver, not MSVC, and no Windows SDK.
+if(PYTHON3_EXECUTABLE AND NOT WIN32 AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+	add_test(NAME Vst2FixtureDarwinHeaders
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/vst2-fixture-darwin-headers-check.py
+			${CMAKE_C_COMPILER}
+			${CMAKE_CURRENT_SOURCE_DIR}/data/vst2-test-instrument/vst2-test-instrument.c)
+	set_tests_properties(Vst2FixtureDarwinHeaders PROPERTIES TIMEOUT 60)
+endif()
+
 # Multicore Slice 0+1 (SPEC-MULTICORE-SCHEDULING-DRAFT §6): the published
 # schedule (required/pending/class + ready list) versus the plan-order
 # execution, both walks against the committed reference render, plus the two
