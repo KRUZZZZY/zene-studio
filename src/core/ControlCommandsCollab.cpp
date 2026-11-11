@@ -197,7 +197,11 @@ void registerCollabCommands(ControlRegistry& registry)
 	panel.group = QStringLiteral("collab");
 	panel.verb = QStringLiteral("show_panel");
 	panel.description = QStringLiteral("Show the collaboration panel (host, invites, join, who is connected).");
-	panel.requiresDecl = QStringList{QStringLiteral("display")};
+	// No `requires: display` (gui-1106): the panel is non-modal - its only question (Host...) goes through
+	// collabHost, which asks only when personPresent() - so, like window.tempo_map and the other panels, an
+	// agent or offscreen GUI session may show it. The registry's display check refused it there, and Edit >
+	// Collaborate... discards the result, so the menu closed and showed nothing. No main window: the
+	// handler answers `requires` itself (showCollabPanel).
 	panel.argsSchema = objectSchema({});
 	panel.resultSchema = objectProperty();
 	panel.requiresEngine = false;
