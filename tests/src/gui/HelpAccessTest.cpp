@@ -44,6 +44,7 @@
 #include <QScrollBar>
 #include <QTabWidget>
 #include <QTemporaryDir>
+#include <QTabWidget>
 #include <QToolButton>
 #include <QTreeWidget>
 
@@ -551,6 +552,37 @@ private slots:
 		QVERIFY(view.results()->isColumnHidden(5));
 		QVERIFY(view.results()->isColumnHidden(6));
 		QVERIFY(view.results()->isSortingEnabled());
+	}
+
+	//! gui-1106: Help > Manual / Command Reference with other windows (About, Keyboard Shortcuts) already
+	//! open in front of an open Help Center brings the Help Center forward AND activates it - raising
+	//! alone left it behind the active dialogs, so the menu item appeared to do nothing.
+	void helpComesForwardOverOtherOpenWindows()
+	{
+		HelpCenter* centre = HelpCenter::showHelp(QString(), false);
+		QVERIFY(centre != nullptr);
+		QCoreApplication::processEvents();
+		QDialog about;    // stand-ins for the About and Keyboard Shortcuts windows opened after the centre
+		QDialog shortcuts;
+		for (QDialog* other : {&about, &shortcuts})
+		{
+			other->show();
+			other->activateWindow();
+			QCoreApplication::processEvents();
+		}
+		QCOMPARE(QApplication::activeWindow(), &shortcuts);  // the precondition: the centre is behind them
+		for (const bool reference : {false, true})            // Help > Manual, then Help > Command Reference
+		{
+			shortcuts.activateWindow();
+			QCoreApplication::processEvents();
+			QCOMPARE(QApplication::activeWindow(), &shortcuts);
+			QCOMPARE(HelpCenter::showHelp(QString(), reference), centre);
+			QCoreApplication::processEvents();
+			QCOMPARE(QApplication::activeWindow(), centre);
+			QVERIFY(centre->findChild<QTabWidget*>() != nullptr);
+			QCOMPARE(centre->findChild<QTabWidget*>()->currentIndex(), reference ? 1 : 0);
+		}
+		centre->close();
 	}
 
 private:
