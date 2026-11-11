@@ -69,7 +69,7 @@ bool readUint32(const QByteArray& packet, int* offset, std::uint32_t* out)
 bool readUint64(const QByteArray& packet, int* offset, std::uint64_t* out)
 {
 	if (*offset + 8 > packet.size()) { return false; }
-	*out = qFromBigEndian<std::uint64_t>(reinterpret_cast<const uchar*>(packet.constData() + *offset));
+	*out = qFromBigEndian<quint64>(reinterpret_cast<const uchar*>(packet.constData() + *offset));
 	*offset += 8;
 	return true;
 }

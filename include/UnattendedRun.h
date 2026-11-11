@@ -36,6 +36,11 @@ namespace lmms
 LMMS_EXPORT bool isAgentInstance();
 LMMS_EXPORT void setAgentInstance(bool agent);
 
+//! True when Qt runs on a platform with no display (offscreen/minimal/vnc).  Unlike
+//! isUnattendedRun() this is false for a visible GUI started with --control-socket: a
+//! command that "requires a display" (app.help, window.*) can open its window there.
+LMMS_EXPORT bool hasNoDisplay();
+
 //! True when nobody can answer a dialog in this process: it was started with
 //! --control-socket, or Qt runs on a platform with no display
 //! (offscreen/minimal/vnc, i.e. a CI run).  A QMessageBox::exec() /

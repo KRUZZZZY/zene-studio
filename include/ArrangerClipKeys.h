@@ -55,7 +55,10 @@ class Clip;
  *    (track.folder_span_resize);
  *  - Ctrl+Alt+K: split them at the play position (track.folder_span_split);
  *  - Ctrl+Alt+Page Up / Page Down: move them a snap step earlier / later (track.folder_span_move);
- *  - Delete: delete them (track.folder_span_delete); Escape: select nothing. */
+ *  - Delete: delete them (track.folder_span_delete); Escape: select nothing.
+ *
+ *  Cluster gui-1106: Ctrl+C / Ctrl+X copy / cut the selected clips (their context menu's Copy / Cut) and Ctrl+V pastes
+ *  the copied clips at the play position, on the selected clip's track, else on the track they were copied from. */
 namespace lmms::gui
 {
 

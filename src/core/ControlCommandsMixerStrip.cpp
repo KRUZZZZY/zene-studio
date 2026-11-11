@@ -239,6 +239,14 @@ bool finiteStripSettings(const StripSettings& s)
 	return std::isfinite(s.trim) && std::isfinite(s.panLeft) && std::isfinite(s.panRight) && std::isfinite(s.width);
 }
 
+//! The ranges set_strip accepts, finite included: trim -24..24, pan mode balance/dual/width, width 0..2,
+//! pan and pan_right -1..1, meter mode one of the names.
+bool validStripSettings(const StripSettings& s)
+{
+	return finiteStripSettings(s) && std::abs(s.trim) <= 24.f && s.panMode >= 0 && s.width >= 0.f && s.width <= 2.f
+		&& std::abs(s.panLeft) <= 1.f && std::abs(s.panRight) <= 1.f && s.meterMode >= 0;
+}
+
 //! Q050-108: what the strip's own meter modes read - the VU needle (VU against meter.set_reference) and, while the
 //! strip is in 'lufs', its momentary and short-term loudness and true peak; null for no reading.
 void addModeReadings(const MixerChannel* c, QJsonObject* meters)
@@ -282,8 +290,7 @@ ControlResult setStrip(const QJsonObject& args)
 	if (args.size() == 1) { return ControlResult::success(stripJson(channel)); }
 	const StripSettings before = settingsOf(channel);
 	const StripSettings after = merged(before, args);
-	if (!finiteStripSettings(after) || std::abs(after.trim) > 24.f || after.panMode < 0 || after.width < 0.f || after.width > 2.f || std::abs(after.panLeft) > 1.f
-		|| std::abs(after.panRight) > 1.f || after.meterMode < 0)
+	if (!validStripSettings(after))
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'trim_db' is -24..24, 'pan_mode' balance / dual / width, "
 			"'width' 0..2, 'pan' and 'pan_right' -1..1, 'meter_mode' %1").arg(stripmeters::modeNames().join(QStringLiteral(" / "))));
