@@ -3248,6 +3248,7 @@ tests/src/gui/AafImportMenuTest.cpp
 tests/src/gui/AccessibilityHelperTest.cpp
 tests/src/gui/AccessibilityWalkTest.cpp
 tests/src/gui/AgentSurfaceReportTest.cpp
+tests/src/gui/ArrangerClipboardKeysTest.cpp
 tests/src/gui/ArrangerFileDropTest.cpp
 tests/src/gui/ArrangerKeysNavigatorTest.cpp
 tests/src/gui/ArrangerOverlaysVideoLaneTest.cpp
