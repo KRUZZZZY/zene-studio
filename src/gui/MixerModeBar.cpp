@@ -24,12 +24,13 @@
 #include "MixerModeBar.h"
 
 #include <algorithm>
+#include <limits>
 
 #include <QButtonGroup>
 #include <QComboBox>
-#include <QHBoxLayout>
 #include <QJsonArray>
 #include <QLabel>
+#include <QLayout>
 #include <QMenu>
 #include <QPushButton>
 #include <QSignalBlocker>
@@ -93,6 +94,119 @@ QStringList listeningNames(const mixerstripinfo::Context& context)
 	return names;
 }
 
+/*! gui-1030: the bar's controls in rows - as many as fit side by side, the rest wrapped onto the next
+ *  row - so a mixer narrower than one row shows every control instead of clipping the ones past its
+ *  right edge. A spacer takes its row's spare width, as the stretch of the single row did. */
+class WrapLayout : public QLayout
+{
+public:
+	explicit WrapLayout(QWidget* parent) : QLayout(parent) {}
+	~WrapLayout() override { while (QLayoutItem* item = takeAt(0)) { delete item; } }
+	WrapLayout(const WrapLayout&) = delete;
+	WrapLayout& operator=(const WrapLayout&) = delete;
+
+	void addItem(QLayoutItem* item) override { m_items.append(item); }
+	int count() const override { return static_cast<int>(m_items.size()); }
+	QLayoutItem* itemAt(int index) const override { return m_items.value(index); }
+	QLayoutItem* takeAt(int index) override
+	{
+		return index >= 0 && index < m_items.size() ? m_items.takeAt(index) : nullptr;
+	}
+	Qt::Orientations expandingDirections() const override { return {}; }
+	bool hasHeightForWidth() const override { return true; }
+	int heightForWidth(int width) const override { return arrange(QRect(0, 0, width, 0), false); }
+	//! Everything on one row.
+	QSize sizeHint() const override
+	{
+		const Row row = rowAt(0, std::numeric_limits<int>::max());
+		const QMargins m = contentsMargins();
+		return {row.used + m.left() + m.right(), row.height + m.top() + m.bottom()};
+	}
+	//! The widest control alone on a row.
+	QSize minimumSize() const override
+	{
+		int width = 0;
+		for (const QLayoutItem* item : m_items) { width = std::max(width, item->minimumSize().width()); }
+		const QMargins m = contentsMargins();
+		return {width + m.left() + m.right(), sizeHint().height()};
+	}
+	void setGeometry(const QRect& rect) override
+	{
+		QLayout::setGeometry(rect);
+		arrange(rect, true);
+	}
+
+private:
+	struct Row
+	{
+		int end;      //!< one past its last item
+		int used;     //!< the width its controls and the spacing between them take
+		int height;
+		int spacers;
+	};
+
+	//! The row starting at item @a first in @a width: always at least one item.
+	Row rowAt(int first, int width) const
+	{
+		Row row{first, 0, 0, 0};
+		bool any = false;
+		for (; row.end < m_items.size(); ++row.end)
+		{
+			QLayoutItem* item = m_items.at(row.end);
+			if (item->spacerItem() != nullptr) { ++row.spacers; continue; }
+			if (item->isEmpty()) { continue; }  // a hidden control
+			const QSize size = item->sizeHint();
+			const int need = row.used + (any ? spacing() : 0) + size.width();
+			if (any && need > width) { break; }
+			row.used = need;
+			row.height = std::max(row.height, size.height());
+			any = true;
+		}
+		return row;
+	}
+
+	void place(int first, const Row& row, const QRect& area, int y) const
+	{
+		const int spare = row.spacers > 0 ? std::max(0, area.width() - row.used) / row.spacers : 0;
+		int x = area.left();
+		bool any = false;
+		for (int i = first; i < row.end; ++i)
+		{
+			QLayoutItem* item = m_items.at(i);
+			if (item->spacerItem() != nullptr) { x += spare; continue; }
+			if (item->isEmpty()) { continue; }
+			x += any ? spacing() : 0;
+			QSize size = item->sizeHint();
+			size.setWidth(std::min(size.width(), area.width()));
+			item->setGeometry(QRect(QPoint(x, y + (row.height - size.height()) / 2), size));
+			x += size.width();
+			any = true;
+		}
+	}
+
+	//! Lays the rows out in @a rect when @a apply; the height they take either way.
+	int arrange(const QRect& rect, bool apply) const
+	{
+		const QMargins m = contentsMargins();
+		const QRect area = rect.marginsRemoved(m);
+		int y = area.top();
+		for (int first = 0; first < m_items.size();)
+		{
+			const Row row = rowAt(first, area.width());
+			if (row.height > 0)
+			{
+				if (apply) { place(first, row, area, y); }
+				y += row.height + spacing();
+			}
+			first = row.end;
+		}
+		if (y > area.top()) { y -= spacing(); }
+		return y - rect.top() + m.bottom();
+	}
+
+	QList<QLayoutItem*> m_items;
+};
+
 } // namespace
 
 MixerModeBar::MixerModeBar(QWidget* parent) :
@@ -101,7 +215,7 @@ MixerModeBar::MixerModeBar(QWidget* parent) :
 {
 	setObjectName(QStringLiteral("mixerModeBar"));
 	setAccessibleName(tr("Mixer modes"));
-	auto* layout = new QHBoxLayout(this);
+	auto* layout = new WrapLayout(this);
 	layout->setContentsMargins(tokens::space::sm, tokens::space::xs, tokens::space::sm, tokens::space::xs);
 	layout->setSpacing(tokens::space::sm);
 	m_viewButtons = addSegment(layout, tr("View"), "view", mixerviewoptions::viewNames(), {tr("Mix"), tr("Routing")});
@@ -136,7 +250,7 @@ MixerModeBar::MixerModeBar(QWidget* parent) :
 		setOption(QStringLiteral("follow_selection"), on);
 	});
 	layout->addWidget(m_follow);
-	layout->addStretch(1);
+	layout->addItem(new QSpacerItem(0, 0, QSizePolicy::Expanding, QSizePolicy::Minimum));
 	m_faders = addChip(layout, QStringLiteral("mixerModeFaders"), tr("What every fader drives: its channel's volume, or its send to one return"), &MixerModeBar::fillFaders);
 	m_solo = addChip(layout, QStringLiteral("mixerModeSolo"), tr("The solo mode: whether a solo unsolos the others"), &MixerModeBar::fillSolo);
 	m_listen = addChip(layout, QStringLiteral("mixerModeListen"), tr("The listen bus: the channels heard in place of the mix, after or before their faders"), &MixerModeBar::fillListen);
@@ -151,7 +265,7 @@ MixerModeBar::MixerModeBar(QWidget* parent) :
 	refresh(mixerstripinfo::buildContext());
 }
 
-QHash<QString, QPushButton*> MixerModeBar::addSegment(QHBoxLayout* layout, const QString& label, const char* key,
+QHash<QString, QPushButton*> MixerModeBar::addSegment(QLayout* layout, const QString& label, const char* key,
 	const QStringList& values, const QStringList& captions)
 {
 	auto* caption = new QLabel(label + QLatin1Char(':'), this);
@@ -177,7 +291,7 @@ QHash<QString, QPushButton*> MixerModeBar::addSegment(QHBoxLayout* layout, const
 	return buttons;
 }
 
-QToolButton* MixerModeBar::addChip(QHBoxLayout* layout, const QString& objectName, const QString& hint,
+QToolButton* MixerModeBar::addChip(QLayout* layout, const QString& objectName, const QString& hint,
 	void (MixerModeBar::*fill)(QMenu*))
 {
 	auto* chip = new QToolButton(this);
