@@ -152,7 +152,7 @@ private slots:
 	void init()
 	{
 		Engine::getSong()->clearProject();
-		m_client.writable = {QStringLiteral("Synth:out"), QStringLiteral("Other:out")};
+		m_client.writable = QStringList{QStringLiteral("Synth:out"), QStringLiteral("Other:out")};
 	}
 
 	//! Criterion 1: the command configures and reports port, channel, bank and program, and the bank and program
@@ -289,7 +289,7 @@ private slots:
 		QVERIFY(set(track, {{QStringLiteral("port"), QStringLiteral("Synth:out")}, {QStringLiteral("channel"), 6}, {QStringLiteral("program"), 12}}).ok);
 		QVERIFY(preset("save", track, QStringLiteral("Lead")).ok);
 		QVERIFY(set(track, {{QStringLiteral("port"), QStringLiteral("Other:out")}, {QStringLiteral("channel"), 2}, {QStringLiteral("program"), 99}}).ok);
-		m_client.writable = {QStringLiteral("Other:out")};
+		m_client.writable = QStringList{QStringLiteral("Other:out")};
 		const ControlResult recalled = preset("recall", track, QStringLiteral("Lead"));
 		QVERIFY(recalled.ok);
 		QCOMPARE(recalled.result.value(QStringLiteral("port_applied")).toBool(), false);
@@ -298,7 +298,7 @@ private slots:
 		QCOMPARE(state.value(QStringLiteral("port")).toString(), QStringLiteral("Other:out"));  // left where it was
 		QCOMPARE(state.value(QStringLiteral("channel")).toInt(), 6);
 		QCOMPARE(state.value(QStringLiteral("program")).toInt(), 12);
-		m_client.writable = {QStringLiteral("Synth:out"), QStringLiteral("Other:out")};
+		m_client.writable = QStringList{QStringLiteral("Synth:out"), QStringLiteral("Other:out")};
 	}
 
 	//! A preset saved with output off has no port; recalling it must restore output off, not keep a later route.

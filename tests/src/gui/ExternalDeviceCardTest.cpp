@@ -120,7 +120,7 @@ private slots:
 	void init()
 	{
 		Engine::getSong()->clearProject();
-		m_client.writable = {QStringLiteral("Synth:out"), QStringLiteral("Other:out")};
+		m_client.writable = QStringList{QStringLiteral("Synth:out"), QStringLiteral("Other:out")};
 	}
 
 	//! Driving the controls leaves the device the commands leave, and the patch reaches the output.
@@ -229,7 +229,7 @@ private slots:
 
 		// The preset's port can disappear while another output is selected; tell the musician what was not applied.
 		port->setCurrentIndex(port->findData(QStringLiteral("Other:out")));
-		m_client.writable = {QStringLiteral("Other:out")};
+		m_client.writable = QStringList{QStringLiteral("Other:out")};
 		name->setEditText(QStringLiteral("Pad"));
 		recall->click();
 		QVERIFY(card.message().contains(QStringLiteral("Synth:out")));
