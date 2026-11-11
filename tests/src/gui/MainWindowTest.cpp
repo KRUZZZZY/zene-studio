@@ -31,6 +31,7 @@
 #include <QAction>
 #include <QMenu>
 #include <QTabBar>
+#include <QTabBar>
 #include <QWidget>
 
 #include "ConfigManager.h"
@@ -41,6 +42,8 @@
 #include "GuiTestApplication.h"
 #include "MainWindow.h"
 #include "ProjectJournal.h"
+#include "Shell.h"
+#include "ShellRegionTabs.h"
 #include "Shell.h"
 #include "ShellRegionTabs.h"
 
@@ -124,6 +127,24 @@ private slots:
 		// holding nothing, which is what the user would otherwise be left looking at.
 		QTRY_VERIFY(!rack->isVisible());
 		QVERIFY(!frame->isVisible());
+	}
+
+	//! A tab of the bottom region goes through window.toggle on the real shell (ShellRegionTabs::toggle): picking
+	//! the Mixer tab while the Note Editor is open must leave the Mixer open and its tab the selected one.
+	void pickingTheMixerTabOpensTheMixerPanel()
+	{
+		Shell* shell = getGUI()->mainWindow()->shell();
+		shell->setView(ShellView::Arrange);
+		ShellRegionTabs* tabs = shell->regionTabs(ShellRegion::Bottom);
+		QVERIFY(tabs != nullptr);
+		QVERIFY(shell->revealPanel(QStringLiteral("detail")));
+		QCOMPARE(tabs->currentId(), QStringLiteral("detail"));
+		const int index = static_cast<int>(tabs->tabIds().indexOf(QStringLiteral("mixer")));
+		QVERIFY(index >= 0);
+		tabs->bar()->setCurrentIndex(index);  // what a click on the tab does
+		QVERIFY(shell->model().isVisible(QStringLiteral("mixer")));
+		QCOMPARE(shell->model().openIn(ShellRegion::Bottom), QStringLiteral("mixer"));
+		QCOMPARE(tabs->currentId(), QStringLiteral("mixer"));
 	}
 
 	void anUnattendedFirstRunDoesNotRecordTheSetupAsDone()
