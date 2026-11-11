@@ -3553,3 +3553,6 @@ tests/complexity-regression-check.py
 
 # Cumulative Terra integration: shared real-window visibility and hit-testing regression.
 tests/src/gui/MixerModeVisibilityTestSupport.h
+
+# Train 27: verifies seven pending CI deltas are retained by recovery before superseding duplicate replay.
+docs/qwen-fixes-2026-10/sol-train-27-duplicate-ci-repairs.md
