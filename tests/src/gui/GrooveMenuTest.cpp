@@ -600,6 +600,25 @@ private slots:
 		delete tf;
 		delete anchor;
 	}
+
+	void aRefusalOverTheMainWindowLandsInsideIt()
+	{
+		// Navigate > Next Marker with no marker in the project: marker.jump refuses and the menu hands
+		// runCommand the MAIN WINDOW as the host. The notice used to be placed at that window's width + 2
+		// (beside a widget), i.e. past its right edge, so nobody saw it.
+		MainWindow* window = getGUI()->mainWindow();
+		const QJsonObject jump{{QStringLiteral("direction"), QStringLiteral("next")}};
+		const ControlResult result = runCommand(window, CommandCall{QStringLiteral("marker.jump"), jump, {}, QString(), false});
+		QVERIFY2(!result.ok, "marker.jump found a marker in a fresh project");
+		const QList<TextFloat*> floats = window->findChildren<TextFloat*>();
+		QVERIFY2(!floats.isEmpty(), "the refused marker.jump was shown to nobody");
+		const QRect inside(window->mapToGlobal(QPoint(0, 0)), window->size());
+		const TextFloat* shown = floats.last();
+		QVERIFY2(inside.contains(shown->geometry()),
+			qPrintable(QStringLiteral("notice at %1,%2 %3x%4 is outside the main window %5,%6 %7x%8")
+				.arg(shown->x()).arg(shown->y()).arg(shown->width()).arg(shown->height())
+				.arg(inside.x()).arg(inside.y()).arg(inside.width()).arg(inside.height())));
+	}
 };
 
 QTEST_MAIN(GrooveMenuTest)
