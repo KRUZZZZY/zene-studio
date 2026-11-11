@@ -176,6 +176,24 @@ private slots:
 		QVERIFY(!world.shell.findChild<QWidget*>(QStringLiteral("shellBottom"))->isVisible());
 	}
 
+	void aMouseClickOnATabOpensItsPanel()
+	{
+		World world;
+		QVERIFY(QTest::qWaitForWindowExposed(&world.shell));
+		ShellRegionTabs* tabs = world.shell.regionTabs(ShellRegion::Bottom);
+		QVERIFY(tabs->isVisible());
+		QCOMPARE(tabs->currentId(), QStringLiteral("detail"));  // a fresh shell: the Note Editor is open
+		for (const QString& id : {QStringLiteral("mixer"), QStringLiteral("devices"), QStringLiteral("detail")})
+		{
+			const int index = static_cast<int>(tabs->tabIds().indexOf(id));
+			QVERIFY(index >= 0);
+			QTest::mouseClick(tabs->bar(), Qt::LeftButton, Qt::NoModifier, tabs->bar()->tabRect(index).center());
+			QVERIFY2(world.shell.model().isVisible(id), qPrintable(id));
+			QVERIFY2(world.content.value(id)->isVisible(), qPrintable(id));
+			QCOMPARE(tabs->currentId(), id);
+		}
+	}
+
 	void aRegionWithOnePanelShowsNoTabs()
 	{
 		World world;
