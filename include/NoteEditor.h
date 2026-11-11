@@ -229,6 +229,7 @@ private:
 	QPointer<Piano> m_auditionPiano;  //!< the instrument the held audition key sounds on, whatever clip is open now
 	int m_scaleRoot = -1;     //!< the scale context readScale() last read
 	QString m_scaleSeen;
+	bool m_scaleDeferred = false;  //!< readScale() ran before the engine was ready: followScale() asks again
 	bool m_syncing = false;
 	bool m_pendingFit = false;
 	class QTimer* m_playheadTimer = nullptr;
