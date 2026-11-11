@@ -2720,6 +2720,15 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		add_dependencies(${LMMS_TEST_NAME} sfzplayer)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "SfzFilePoolTest")
+		# The block below links Threads::Threads directly, so it must be able to resolve
+		# that target in this directory's scope. The root's FIND_PACKAGE(Threads)
+		# (CMakeLists.txt:768) only runs on the pthread platforms, and plugins/SfzPlayer's
+		# FIND_PACKAGE(Threads REQUIRED) is scoped to its subtree - so on Windows/MinGW no
+		# ancestor scope provides the target and the generate step failed with
+		# "Target SfzFilePoolTest links to: Threads::Threads but the target was not found".
+		if(NOT TARGET Threads::Threads)
+			find_package(Threads REQUIRED)
+		endif()
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE
 			"$<TARGET_PROPERTY:sfzplayer_sfizz,INCLUDE_DIRECTORIES>")
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
@@ -2995,6 +3004,14 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	endif()
 endforeach()
+
+# Cluster ci-748342d46d7e9dd9: the MinGW64 configure failed at generate time because the
+# SfzFilePoolTest block links Threads::Threads and no ancestor scope provides that target
+# on Windows (the root's FIND_PACKAGE(Threads) is gated to the pthread platforms, and
+# plugins/SfzPlayer's own call is scoped to its subtree). The script configures a throwaway
+# fixture that runs the product's own SfzFilePoolTest block against both scope shapes and
+# asserts the Windows-shaped configure succeeds, so the target resolution cannot regress.
+add_test(NAME CMakeThreadsScope COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/cmake-threads-scope.sh)
 
 # BandLimitedWaveTest's two scenarios each run in a fresh process: generateWaves() caches its result in
 # s_wavesGenerated, so the fallback generator and the shipped-file load must not share one cache.

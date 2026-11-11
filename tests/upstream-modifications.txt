@@ -5814,3 +5814,10 @@ include/AudioEngine.h	cluster ci-512849fa221097db (2026-11-10): isChangeInModelH
 src/core/AudioEngine.cpp	cluster ci-512849fa221097db (2026-11-10): the isChangeInModelHeld() nesting depth is a file-local thread_local (internal linkage) and the accessor is defined here, so the exported class carries no thread_local data; request/doneChangeInModel maintain it exactly as before. Held by ExportedClassTlsCheck.
 tests/CMakeLists.txt	cluster ci-512849fa221097db: registers ExportedClassTlsCheck (tests/exported-class-tls-check.py), the MSVC C2492 regression for exported classes with thread_local data members; one add_test and one timeout property, no existing test changes.
 tests/CMakeLists.txt	cluster ci-12f4249981b085d6: registers Vst2FixtureDarwinHeaders (tests/vst2-fixture-darwin-headers-check.py, host GNU/Clang/AppleClang, non-Windows), the regression for the macos-arm64 snprintf visibility failure in the VST2 test fixture; registration only, no existing test changes
+
+# cluster ci-748342d46d7e9dd9: the MinGW64 CI configure failed at generate time - the
+# SfzFilePoolTest block links Threads::Threads and no ancestor scope provides that target on
+# Windows (the root FIND_PACKAGE(Threads) is gated to the pthread platforms, and
+# plugins/SfzPlayer's own call is scoped to its subtree). The block now finds the target in
+# its own scope, and the CMakeThreadsScope configure regression is registered beside it.
+tests/CMakeLists.txt	ci-748342d46d7e9dd9: the SfzFilePoolTest block resolves Threads::Threads in its own directory scope (MinGW64 had no ancestor target, so the generate step failed) and registers tests/cmake-threads-scope.sh as the CMakeThreadsScope configure regression.
