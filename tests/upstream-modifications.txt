@@ -5754,3 +5754,5 @@ src/gui/MainWindow.cpp	gui-1030-session-undo-and-redo: finalize() installs the j
 src/gui/editors/SongEditor.cpp	gui-1030-session-seek-on-the-ruler (2026-10-30, Luna GUI sweep of 050/m0-train-24): BAR_RULER_MIN_HEIGHT and the setMinimumHeight call on the song editor's bar ruler (m_timeLine) before it joins the layout; the layout gave the numbered ruler 0 px, so a click near bar 3 had no hit area to seek on.
 include/NStateButton.h	cluster gui-1030-main-loop-points (2026-11): the multi-state button advances in the nextCheckState() hook instead of mousePressEvent, so the accessible button action and Space (which never press the mouse) change state too. Held by tests/src/gui/NStateButtonActivationTest.cpp.
 tests/src/gui/DevicePanelTest.cpp	gui-1030-session-free-exploration: adds aDeviceWithoutAHostIsNotCalledQuarantined (a refused-no-client TripleOscillator card must not say quarantined) and the DeviceCardState.h include.
+tests/src/gui/HelpAccessTest.cpp	# A refused Help menu command is logged in an unattended session
+include/ControlRegistry.h	# requires: display follows the display, not the agent instance (m_displayAvailable)
