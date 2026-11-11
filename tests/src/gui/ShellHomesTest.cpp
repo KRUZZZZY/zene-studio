@@ -246,6 +246,36 @@ private slots:
 		QVERIFY(world.shell.attachPanel(QStringLiteral("inspector")));
 	}
 
+	//! gui-1106: on a fresh layout the Note Editor is the bottom region's open panel; Hide closes the region with
+	//! no tab chosen first, and the footer switch that reopens it stays.
+	void theHideButtonClosesAFreshNoteEditorRegion()
+	{
+		World world;
+		QVERIFY(QTest::qWaitForWindowExposed(&world.shell));
+		ShellRegionTabs* tabs = world.shell.regionTabs(ShellRegion::Bottom);
+		QCOMPARE(world.shell.model().openIn(ShellRegion::Bottom), QStringLiteral("detail"));
+		QCOMPARE(tabs->currentId(), QStringLiteral("detail"));
+		ShellButton* hide = nullptr;
+		for (ShellButton* button : tabs->findChildren<ShellButton*>())
+		{
+			if (button->accessibleName() == QStringLiteral("Hide the bottom panels")) { hide = button; }
+		}
+		QVERIFY(hide != nullptr);
+		QVERIFY(hide->isVisible());
+		QTest::mouseClick(hide, Qt::LeftButton);
+		QVERIFY(!world.shell.model().isVisible(QStringLiteral("detail")));
+		QVERIFY(world.shell.model().openIn(ShellRegion::Bottom).isEmpty());
+		QVERIFY(!world.shell.findChild<QWidget*>(QStringLiteral("shellBottom"))->isVisible());
+		QAction* footerSwitch = world.shell.panelAction(QStringLiteral("detail"));
+		QVERIFY(footerSwitch != nullptr);
+		QVERIFY(footerSwitch->isEnabled());
+		QVERIFY(!footerSwitch->isChecked());
+		// The footer switch's window.toggle lands in Shell::togglePanel (no MainWindow here to dispatch to).
+		QVERIFY(world.shell.togglePanel(QStringLiteral("detail")));
+		QVERIFY(world.shell.model().isVisible(QStringLiteral("detail")));
+		QVERIFY(footerSwitch->isChecked());
+	}
+
 	void aRegionWithOnePanelShowsNoTabs()
 	{
 		World world;
