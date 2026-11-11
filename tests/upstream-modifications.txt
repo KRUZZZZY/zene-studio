@@ -5775,3 +5775,4 @@ tests/src/gui/ShellHomesTest.cpp	# Mixer tab click leaves the Note Editor panel 
 tests/src/gui/ShellHomesTest.cpp	# Devices tab click leaves the Note Editor panel open
 tests/src/gui/ShellHomesTest.cpp	# Automation tab click leaves the Note Editor panel open
 tests/src/gui/ShellHomesTest.cpp	# Pattern Editor tab click does not switch the lower panel
+tests/src/gui/ShellHomesTest.cpp	# Hide button click leaves the lower panel open
