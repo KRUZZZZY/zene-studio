@@ -97,6 +97,25 @@ private slots:
 		help->close();
 	}
 
+	//! Help > Command Reference with the Help Center already open behind other top-level dialogs (About, Keyboard
+	//! Shortcuts): the second request takes the active window, it does not stay hidden behind them. (A first show
+	//! activates on every platform; the already-visible window is the case show() alone leaves where it was.)
+	void theHelpCenterIsActivatedOverOpenDialogs()
+	{
+		HelpCenter* help = HelpCenter::showHelp(QString(), false);
+		QVERIFY(help->isVisible());
+		QDialog about(getGUI()->mainWindow());
+		QDialog shortcuts(getGUI()->mainWindow());
+		about.show();
+		shortcuts.show();
+		shortcuts.activateWindow();
+		QTRY_COMPARE(QApplication::activeWindow(), &shortcuts);
+		QCOMPARE(HelpCenter::showHelp(QString(), true), help);
+		QVERIFY(help->isVisible());
+		QTRY_COMPARE(QApplication::activeWindow(), static_cast<QWidget*>(help));
+		help->close();
+	}
+
 	//! Theme 21: the tasks are the manual's sections, under the manual's own headings, and the reference is
 	//! grouped and found by them - "mixing" finds the mixer's commands, each by its friendly name.
 	void theReferenceIsGroupedByTheManualsTasks()

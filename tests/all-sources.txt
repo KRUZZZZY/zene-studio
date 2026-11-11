@@ -612,6 +612,7 @@ include/MixerLatencyText.h
 include/MixerListen.h
 include/MixerMaskingReport.h
 include/MixerModeBar.h
+include/MixerModeBarLayout.h
 include/MixerOptions.h
 include/MixerOverlays.h
 include/MixerPostInserts.h
@@ -2471,6 +2472,7 @@ src/gui/MixerChannelView.cpp
 src/gui/MixerHardwareMenu.cpp
 src/gui/MixerMaskingReport.cpp
 src/gui/MixerModeBar.cpp
+src/gui/MixerModeBarLayout.cpp
 src/gui/MixerOverlays.cpp
 src/gui/MixerRoutingMatrix.cpp
 src/gui/MixerSendsBanner.cpp
@@ -2734,6 +2736,7 @@ tests/data/clap-test-plugin/clap-test-gesture.h
 tests/data/clap-test-plugin/clap-test-instrument.c
 tests/data/gigproof/make_gig.cpp
 tests/data/lv2-test-instrument/lv2-test-instrument.c
+tests/data/vst2-test-instrument/chunk-contract-check.c
 tests/data/vst2-test-instrument/vst2-test-instrument.c
 tests/data/vst2-test-instrument/zene_vst2_abi.h
 tests/data/vst3-chunk-probe/vst3-chunk-probe.cpp
@@ -2858,6 +2861,7 @@ tests/src/core/ControlProjectArchiveTest.cpp
 tests/src/core/ControlProjectMediaTest.cpp
 tests/src/core/ControlProjectTemplateTest.cpp
 tests/src/core/ControlRecordingRoutesTest.cpp
+tests/src/core/ControlRegistryDisplayTest.cpp
 tests/src/core/ControlRegistryNestingTest.cpp
 tests/src/core/ControlRegistryTest.cpp
 tests/src/core/ControlRenderJobTest.cpp
@@ -3022,6 +3026,7 @@ tests/src/core/MpeStreamSnapshotTest.cpp
 tests/src/core/MpeSynthExpressionTest.cpp
 tests/src/core/MpscQueueTest.cpp
 tests/src/core/MultiTrackRecorderTest.cpp
+tests/src/core/NamModelEigenWarningProbe.cpp
 tests/src/core/NamModelLoaderTest.cpp
 tests/src/core/NamModelPrewarmTest.cpp
 tests/src/core/NamespaceRegistryTest.cpp
@@ -3245,6 +3250,7 @@ tests/src/gui/AafImportMenuTest.cpp
 tests/src/gui/AccessibilityHelperTest.cpp
 tests/src/gui/AccessibilityWalkTest.cpp
 tests/src/gui/AgentSurfaceReportTest.cpp
+tests/src/gui/ArrangerClipboardKeysTest.cpp
 tests/src/gui/ArrangerFileDropTest.cpp
 tests/src/gui/ArrangerKeysNavigatorTest.cpp
 tests/src/gui/ArrangerOverlaysVideoLaneTest.cpp
@@ -3341,6 +3347,7 @@ tests/src/gui/MixerInsertLatencyTest.cpp
 tests/src/gui/MixerLatencyTextTest.cpp
 tests/src/gui/MixerMaskingReportWindowTest.cpp
 tests/src/gui/MixerMeteringTest.cpp
+tests/src/gui/MixerModeVisibilityTestSupport.h
 tests/src/gui/MixerModesTest.cpp
 tests/src/gui/MixerSelectionIdentityTest.cpp
 tests/src/gui/MixerSendsOnFadersTest.cpp

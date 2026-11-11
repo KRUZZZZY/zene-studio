@@ -30,18 +30,24 @@
  *  application (a Fader cannot be built without it). */
 
 #include <QtTest>
+#include "MixerModeVisibilityTestSupport.h"
 
 #include <QAccessible>
 #include <QApplication>
 #include <QComboBox>
 #include <QEvent>
 #include <QContextMenuEvent>
+#include <QAbstractButton>
 #include <QJsonArray>
 #include <QLabel>
+#include <QLayout>
 #include <QLineEdit>
 #include <QPointer>
 #include <QMenu>
 #include <QPushButton>
+#include <QScopeGuard>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QSet>
 #include <QTimer>
 #include <QToolButton>
@@ -309,6 +315,137 @@ private slots:
 				QCOMPARE(matrix->geometry().right(), modes->rect().right() - modes->layout()->contentsMargins().right());
 			}
 		}
+	}
+
+	//! gui-1030: in a narrow Mixer panel (a shell column held at 300 px) the bar wraps instead of
+	//! clipping or crushing its controls, so Density: Compact and every other mode control stays whole,
+	//! on screen and clickable.
+	void aNarrowPanelKeepsEveryModeControlOnScreen()
+	{
+		const auto restore = qScopeGuard([] {  // the density a click below sets, even if a check fails
+			run(QStringLiteral("window.mixer_view"), {{QStringLiteral("density"), QStringLiteral("expanded")}});
+			syncMixer();
+		});
+		QWidget host;
+		auto* column = new QVBoxLayout(&host);
+		column->setContentsMargins(0, 0, 0, 0);
+		auto* narrow = new MixerModeBar(&host);
+		column->addWidget(narrow);
+		column->addStretch(1);
+		host.setFixedSize(300, 600);  // the panel is this wide whatever the bar asks for
+		host.show();
+		column->activate();
+		QCoreApplication::processEvents();
+		QCOMPARE(host.width(), 300);
+		const auto onScreen = [&](QWidget* control) {
+			const QRect r(control->mapTo(&host, QPoint(0, 0)), control->size());
+			// whole and uncrushed: a squeezed row shrinks a button below its caption, clipping it
+			const QSize whole = control->minimumSizeHint();
+			return host.rect().contains(r) && narrow->geometry().contains(r) && host.childAt(r.center()) == control
+				&& r.width() >= whole.width() && r.height() >= whole.height();
+		};
+		QPushButton* compact = narrow->densityButton(QStringLiteral("compact"));
+		QVERIFY2(onScreen(compact), "Density: Compact is clipped in a 300 px panel");
+		for (QWidget* control : narrow->findChildren<QWidget*>())
+		{
+			const bool interactive = qobject_cast<QAbstractButton*>(control) != nullptr || qobject_cast<QComboBox*>(control) != nullptr;
+			if (!interactive || !control->isVisibleTo(&host)) { continue; }
+			QVERIFY2(onScreen(control), qPrintable(control->objectName()));
+		}
+		QVERIFY(narrow->height() > compact->height() * 2);  // it wrapped onto more rows
+		QTest::mouseClick(compact, Qt::LeftButton);  // and Compact answers a click there
+		QCOMPARE(mixerviewoptions::options().density, QStringLiteral("compact"));
+		// A wide panel keeps one row with Routing Matrix... at its right end, as before.
+		host.setFixedSize(2400, 600);
+		column->activate();
+		QCoreApplication::processEvents();
+		QWidget* matrix = narrow->findChild<QWidget*>(QStringLiteral("mixerModeMatrix"));
+		QVERIFY(matrix != nullptr);
+		QVERIFY(onScreen(compact));
+		QVERIFY(onScreen(matrix));
+		QCOMPARE(narrow->width() - 1 - matrix->geometry().right(), narrow->layout()->contentsMargins().right());
+		QVERIFY(qAbs(matrix->geometry().center().y() - compact->geometry().center().y()) <= 2);
+	}
+
+	//! gui-1030: in a mixer too narrow for one row the bar wraps its controls onto more rows, so none of
+	//! them - Density: Expanded among them - lies past its right edge where it cannot be clicked.
+	void aNarrowModeBarKeepsEveryControlOnScreen()
+	{
+		QWidget host;
+		auto* narrow = new MixerModeBar(&host);
+		const int width = 320;
+		QVERIFY(narrow->sizeHint().width() > width);  // one row would not fit
+		const int height = std::max(narrow->heightForWidth(width), narrow->sizeHint().height());
+		host.resize(width, height);
+		narrow->setGeometry(0, 0, width, height);
+		narrow->layout()->invalidate();  // unshown, a resize alone does not lay it out again
+		narrow->layout()->activate();
+		QPushButton* expanded = narrow->densityButton(QStringLiteral("expanded"));
+		QVERIFY(expanded);
+		QVERIFY2(narrow->rect().contains(expanded->geometry()), "Density: Expanded is past the bar's edge");
+		QVERIFY2(expanded->width() >= expanded->minimumSizeHint().width(), "Density: Expanded is squeezed out of sight");
+		for (QWidget* control : narrow->findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly))
+		{
+			if (control->isHidden() || control->isWindow()) { continue; }
+			QVERIFY2(narrow->rect().contains(control->geometry()), qPrintable(control->objectName() + QStringLiteral(" is clipped")));
+			QVERIFY2(control->width() >= control->minimumSizeHint().width(), qPrintable(control->objectName() + QStringLiteral(" is squeezed")));
+		}
+		// Wide enough, the bar stays the one row it was.
+		const int wide = narrow->sizeHint().width() + 120;
+		narrow->setGeometry(0, 0, wide, narrow->sizeHint().height());
+		narrow->layout()->invalidate();  // unshown, a resize alone does not lay it out again
+		narrow->layout()->activate();
+		QCOMPARE(expanded->geometry().center().y(), narrow->viewButton(QStringLiteral("mix"))->geometry().center().y());
+		QCOMPARE(narrow->zonesButton()->geometry().center().y(), expanded->geometry().center().y());
+		QPushButton* matrix = narrow->findChild<QPushButton*>(QStringLiteral("mixerModeMatrix"));
+		QVERIFY(matrix);
+		QCOMPARE(matrix->geometry().right(), wide - narrow->layout()->contentsMargins().right() - 1);
+	}
+
+	//! gui-1030: in a narrow Mixer panel the bar wraps onto more rows instead of clipping its right-hand
+	//! controls (Pick..., Follow Selection, the mode chips, Routing Matrix...); wide, it stays one row.
+	void theModeBarWrapsInsteadOfClippingInANarrowPanel()
+	{
+		MixerModeBar probe(nullptr);
+		const auto heightAt = [&probe](int width) {
+			return probe.hasHeightForWidth() ? probe.heightForWidth(width) : probe.sizeHint().height();
+		};
+		const auto controlsOutside = [&probe, &heightAt](int width) {
+			// The layout is driven directly: a hidden widget defers its resize (and so its layout) to show.
+			probe.resize(width, heightAt(width));
+			probe.layout()->setGeometry(probe.rect());
+			QStringList outside;
+			const QRect room = probe.rect();
+			for (QWidget* control : probe.findChildren<QWidget*>())
+			{
+				if (qobject_cast<QAbstractButton*>(control) == nullptr && qobject_cast<QComboBox*>(control) == nullptr) { continue; }
+				const QRect at(control->mapTo(&probe, QPoint(0, 0)), control->size());
+				if (!room.contains(at)) { outside << QStringLiteral("%1@%2,%3,%4x%5").arg(control->objectName()).arg(at.x()).arg(at.y()).arg(at.width()).arg(at.height()); }
+			}
+			return outside;
+		};
+		const int wide = 3000;
+		const int narrow = 420;
+		// Without wrapping the row's minimum is the sum of its controls, which a narrower panel can only clip.
+		QVERIFY2(probe.minimumSizeHint().width() <= narrow,
+			qPrintable(QStringLiteral("the bar needs %1px at least").arg(probe.minimumSizeHint().width())));
+		QVERIFY2(controlsOutside(wide).isEmpty(), "the wide bar must fit");
+		QPushButton* matrix = probe.findChild<QPushButton*>(QStringLiteral("mixerModeMatrix"));
+		QVERIFY(matrix != nullptr);
+		const int wideRowY = matrix->mapTo(&probe, QPoint(0, 0)).y();
+		QVERIFY(matrix->geometry().right() > wide / 2);  // the old stretch keeps the trailing controls on the right
+		for (QWidget* control : probe.findChildren<QWidget*>())
+		{
+			if (qobject_cast<QAbstractButton*>(control) == nullptr && qobject_cast<QComboBox*>(control) == nullptr) { continue; }
+			QCOMPARE(control->mapTo(&probe, QPoint(0, 0)).y(), wideRowY);  // wide enough means one row, as before
+		}
+		const int oneRow = heightAt(wide);
+		const QStringList clipped = controlsOutside(narrow);
+		QVERIFY2(clipped.isEmpty(), qPrintable(QStringLiteral("clipped at %1px: %2").arg(narrow).arg(clipped.join(QLatin1Char(',')))));
+		QVERIFY(probe.hasHeightForWidth());
+		QVERIFY2(heightAt(narrow) > oneRow, "a narrow bar must take more rows");
+		QCOMPARE(heightAt(wide), oneRow);
+		QVERIFY(probe.findChild<QPushButton*>(QStringLiteral("mixerModePickSelected")) != nullptr);
 	}
 
 	//! Acceptance 1: the fader and the mute/solo (LED) buttons are Tab stops, answer their keys, and
@@ -850,6 +987,26 @@ private slots:
 			QColorDialog::setStandardColor(i, original[i]);
 		}
 		QCOMPARE(restored, original);
+	}
+
+	//! gui-1106-main-edit: with the Mixer open, the mode bar's full row (1576 px) made the main window's minimum
+	//! width 2000 px, so on a 1600-px screen the window grew past the edge and took the footer's Arrange/Mix/Edit
+	//! switches and the Browser switch with it. Every mode control must remain visible and unobscured
+	//! inside the same window; layout implementation is not the behavioral contract.
+	void anOpenMixerKeepsTheMainWindowOnA1600PixelScreen()
+	{
+		MainWindow* window = getGUI()->mainWindow();
+		window->revealPanel(QStringLiteral("mixer"));
+		QVERIFY(getGUI()->mixerView()->isVisible());
+		QVERIFY2(window->minimumSizeHint().width() <= 1600,
+			qPrintable(QStringLiteral("main window minimum width %1").arg(window->minimumSizeHint().width())));
+		window->resize(1600, 900);
+		QCoreApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
+		QCoreApplication::processEvents();
+		QVERIFY(window->width() <= 1600);
+		const QString problem = lmms::test::mixerModeVisibilityProblem(bar(), window);
+		QVERIFY2(problem.isEmpty(), qPrintable(problem));
+		QVERIFY(bar()->findChild<QPushButton*>(QStringLiteral("mixerModeMatrix")) != nullptr);
 	}
 
 private:
