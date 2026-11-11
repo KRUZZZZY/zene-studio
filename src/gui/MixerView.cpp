@@ -49,7 +49,9 @@
 #include <QLineEdit>
 #include <QPushButton>
 #include <QVBoxLayout>
+#include <QResizeEvent>
 #include <QScrollArea>
+#include <QScrollBar>
 #include <QSplitter>
 #include <QStyle>
 #include <QKeyEvent>
@@ -88,6 +90,47 @@
 namespace lmms::gui
 {
 
+namespace
+{
+
+//! gui-1030: the mode bar's row scrolls sideways in a narrow panel instead of forcing the mixer (and
+//! the window) wider than the screen. It asks for the bar's own width, and for room under the bar
+//! only while the scroll bar is shown.
+class ModeBarStrip : public QScrollArea
+{
+public:
+	ModeBarStrip(QWidget* parent, QWidget* bar) : QScrollArea(parent)
+	{
+		setObjectName(QStringLiteral("mixerModeBarStrip"));
+		setFrameShape(QFrame::NoFrame);
+		setWidgetResizable(true);
+		setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+		setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+		setWidget(bar);
+	}
+	QSize sizeHint() const override { return {widget()->sizeHint().width(), barHeight()}; }
+	QSize minimumSizeHint() const override { return {QScrollArea::minimumSizeHint().width(), barHeight()}; }
+
+protected:
+	void resizeEvent(QResizeEvent* event) override
+	{
+		QScrollArea::resizeEvent(event);
+		const bool scrollsNow = scrolls();
+		if (m_scrolls != scrollsNow) { m_scrolls = scrollsNow; updateGeometry(); }
+	}
+
+private:
+	bool scrolls() const { return width() < widget()->minimumSizeHint().width(); }
+	int barHeight() const
+	{
+		const int bar = widget()->sizeHint().height();
+		return scrolls() ? bar + horizontalScrollBar()->sizeHint().height() : bar;
+	}
+	bool m_scrolls = false;
+};
+
+} // namespace
+
 
 MixerView::MixerView(Mixer* mixer) :
 	QWidget(),
@@ -115,7 +158,7 @@ MixerView::MixerView(Mixer* mixer) :
 	connect(m_modeBar, &MixerModeBar::changed, this, &MixerView::syncWithMixer, Qt::QueuedConnection);
 	// MX-021: with following on, a new arranger selection re-lays the Selected filter's strips.
 	connect(ShellSelection::instance(), &ShellSelection::changed, this, &MixerView::syncWithMixer, Qt::QueuedConnection);
-	outer->addWidget(m_modeBar);
+	outer->addWidget(new ModeBarStrip(this, m_modeBar));
 	m_sendsBanner = new MixerSendsBanner(this);
 	outer->addWidget(m_sendsBanner);
 
@@ -186,21 +229,26 @@ MixerView::MixerView(Mixer* mixer) :
 	class ChannelArea : public QScrollArea
 	{
 		public:
-			ChannelArea(QWidget* parent, MixerView* mv) :
-				QScrollArea(parent), m_mv(mv) { setAccessibleName(MixerView::tr("Mixer channels")); } // R8.5
+			ChannelArea(QWidget* parent, MixerView* mv, int preferredWidth) :
+				QScrollArea(parent), m_mv(mv), m_preferredWidth(preferredWidth) { setAccessibleName(MixerView::tr("Mixer channels")); } // R8.5
 			~ChannelArea() override = default;
 			void keyPressEvent(QKeyEvent* e) override
 			{
 				m_mv->keyPressEvent(e);
 			}
+			//! Six strips is the width it asks for, not a minimum (gui-1030).
+			QSize sizeHint() const override { return QScrollArea::sizeHint().expandedTo({m_preferredWidth, 0}); }
 		private:
 			MixerView* m_mv;
+			int m_preferredWidth;
 	};
-	channelArea = new ChannelArea(this, this);
+	channelArea = new ChannelArea(this, this, mixerChannelSize.width() * 6);
 	channelArea->setWidget(m_channelAreaWidget);
 	channelArea->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 	channelArea->setFrameStyle(QFrame::NoFrame);
-	channelArea->setMinimumWidth(mixerChannelSize.width() * 6);
+	// gui-1030: the strips scroll, so one strip is all a narrow panel must keep; six were reserved before
+	// and pushed the add buttons and the rack beside them off a 1024-pixel screen.
+	channelArea->setMinimumWidth(mixerChannelSize.width());
 	channelArea->setWidgetResizable(true);
 
 	int const scrollBarExtent = style()->pixelMetric(QStyle::PM_ScrollBarExtent);
