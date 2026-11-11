@@ -36,6 +36,7 @@
 #include <QComboBox>
 #include <QEvent>
 #include <QContextMenuEvent>
+#include <QAbstractButton>
 #include <QJsonArray>
 #include <QLabel>
 #include <QLayout>
@@ -396,6 +397,52 @@ private slots:
 		QPushButton* matrix = narrow->findChild<QPushButton*>(QStringLiteral("mixerModeMatrix"));
 		QVERIFY(matrix);
 		QCOMPARE(matrix->geometry().right(), wide - narrow->layout()->contentsMargins().right() - 1);
+	}
+
+	//! gui-1030: in a narrow Mixer panel the bar wraps onto more rows instead of clipping its right-hand
+	//! controls (Pick..., Follow Selection, the mode chips, Routing Matrix...); wide, it stays one row.
+	void theModeBarWrapsInsteadOfClippingInANarrowPanel()
+	{
+		MixerModeBar probe(nullptr);
+		const auto heightAt = [&probe](int width) {
+			return probe.hasHeightForWidth() ? probe.heightForWidth(width) : probe.sizeHint().height();
+		};
+		const auto controlsOutside = [&probe, &heightAt](int width) {
+			// The layout is driven directly: a hidden widget defers its resize (and so its layout) to show.
+			probe.resize(width, heightAt(width));
+			probe.layout()->setGeometry(probe.rect());
+			QStringList outside;
+			const QRect room = probe.rect();
+			for (QWidget* control : probe.findChildren<QWidget*>())
+			{
+				if (qobject_cast<QAbstractButton*>(control) == nullptr && qobject_cast<QComboBox*>(control) == nullptr) { continue; }
+				const QRect at(control->mapTo(&probe, QPoint(0, 0)), control->size());
+				if (!room.contains(at)) { outside << QStringLiteral("%1@%2,%3,%4x%5").arg(control->objectName()).arg(at.x()).arg(at.y()).arg(at.width()).arg(at.height()); }
+			}
+			return outside;
+		};
+		const int wide = 3000;
+		const int narrow = 420;
+		// Without wrapping the row's minimum is the sum of its controls, which a narrower panel can only clip.
+		QVERIFY2(probe.minimumSizeHint().width() <= narrow,
+			qPrintable(QStringLiteral("the bar needs %1px at least").arg(probe.minimumSizeHint().width())));
+		QVERIFY2(controlsOutside(wide).isEmpty(), "the wide bar must fit");
+		QPushButton* matrix = probe.findChild<QPushButton*>(QStringLiteral("mixerModeMatrix"));
+		QVERIFY(matrix != nullptr);
+		const int wideRowY = matrix->mapTo(&probe, QPoint(0, 0)).y();
+		QVERIFY(matrix->geometry().right() > wide / 2);  // the old stretch keeps the trailing controls on the right
+		for (QWidget* control : probe.findChildren<QWidget*>())
+		{
+			if (qobject_cast<QAbstractButton*>(control) == nullptr && qobject_cast<QComboBox*>(control) == nullptr) { continue; }
+			QCOMPARE(control->mapTo(&probe, QPoint(0, 0)).y(), wideRowY);  // wide enough means one row, as before
+		}
+		const int oneRow = heightAt(wide);
+		const QStringList clipped = controlsOutside(narrow);
+		QVERIFY2(clipped.isEmpty(), qPrintable(QStringLiteral("clipped at %1px: %2").arg(narrow).arg(clipped.join(QLatin1Char(',')))));
+		QVERIFY(probe.hasHeightForWidth());
+		QVERIFY2(heightAt(narrow) > oneRow, "a narrow bar must take more rows");
+		QCOMPARE(heightAt(wide), oneRow);
+		QVERIFY(probe.findChild<QPushButton*>(QStringLiteral("mixerModePickSelected")) != nullptr);
 	}
 
 	//! Acceptance 1: the fader and the mute/solo (LED) buttons are Tab stops, answer their keys, and
