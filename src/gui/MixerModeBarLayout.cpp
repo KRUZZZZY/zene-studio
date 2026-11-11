@@ -107,7 +107,9 @@ int MixerModeBarLayout::placeUnit(int unit, int x, int y, int rowHeight) const
 	{
 		if (m_items.at(i)->isEmpty()) { continue; }
 		const QSize size = itemSize(m_items.at(i));
-		m_items.at(i)->setGeometry(QRect(x, y + (rowHeight - size.height()) / 2, size.width(), size.height()));
+		// Give every control the full row height: their top edges stay aligned even
+		// when the platform gives labels and buttons slightly different size hints.
+		m_items.at(i)->setGeometry(QRect(x, y, size.width(), rowHeight));
 		x += size.width() + spacing();
 	}
 	return x;
