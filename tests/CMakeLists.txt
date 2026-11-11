@@ -1344,6 +1344,8 @@ set(LMMS_TESTS
 	src/gui/RealtimeExportMenuTest.cpp
 	# 0.5.0 themes 2/9: ruler lanes, anchored zoom, the drag preview, locked clips.
 	src/gui/ArrangerTimelineTest.cpp
+	# gui-1106-menu-navigate-zoom-in: a step zoom at the end of the zoom range is refused (Navigate > Zoom In says so).
+	src/gui/ArrangerZoomBoundTest.cpp
 	# 0.5.0 L03: the punch ruler band (Q050-147) and the take-lane rows/waveforms (Q050-123).
 	src/gui/ArrangerTakePunchTest.cpp
 	# 0.5.0 L04 (Q050-031): files dragged out of a plug-in editor become clips where they are dropped.
@@ -3767,6 +3769,7 @@ set_tests_properties(LinkedModelGroupViewLifetimeTest PROPERTIES ENVIRONMENT "QT
 set_tests_properties(NoteEditorFlTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MixerSendsOnFadersTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ArrangerTimelineTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(ArrangerZoomBoundTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ArrangerTakePunchTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ArrangerFileDropTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SampleClipWarpEditTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
