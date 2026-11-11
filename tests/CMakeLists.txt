@@ -5868,6 +5868,7 @@ set_tests_properties(NamModelPrewarmTest PROPERTIES
 # build/tests in a build without the plugin module.
 add_executable(NamModelLoaderTest
 	src/core/NamModelLoaderTest.cpp
+	src/core/NamModelEigenWarningProbe.cpp
 	${CMAKE_SOURCE_DIR}/plugins/NeuralAmp/nam/NamModel.cpp
 	${CMAKE_SOURCE_DIR}/plugins/NeuralAmp/nam/NamModelLoader.cpp
 )
@@ -5883,6 +5884,7 @@ if(NOT MSVC)
 	target_link_libraries(NamModelLoaderTest PRIVATE m)
 endif()
 target_compile_features(NamModelLoaderTest PRIVATE cxx_std_20)
+target_compile_options(NamModelLoaderTest PRIVATE ${ZENE_NAM_EIGEN_OPTIONS})
 
 # Native VST3 instrument fixture and its probe.
 #
