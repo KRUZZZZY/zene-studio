@@ -3526,3 +3526,5 @@ docs/qwen-fixes-2026-10/cluster-gui-1030-main-loop-points.md
 tests/src/gui/ShellFloatButtonTest.cpp
 # cluster gui-1030-main-pop-out-the-note-editor-panel (2026-11): report for the five GUI-sweep pop-out reports (fork-NEW).
 docs/qwen-fixes-2026-10/cluster-gui-1030-main-pop-out-the-note-editor-panel.md
+# cluster gui-1030-menu-edit-collaborate (2026-11): a refused menu command is said in the status bar (fork-NEW test).
+tests/src/gui/MenuRefusalNoticeTest.cpp
