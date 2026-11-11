@@ -44,6 +44,7 @@
 #include <QMenuBar>
 #include <QScreen>
 #include <QScreen>
+#include <QScreen>
 #include <QTemporaryDir>
 
 #include "ControlRegistry.h"
@@ -295,6 +296,24 @@ private slots:
 		});
 		delete message;
 		QVERIFY2(fitsOnAScreen, "message does not fit within any screen's available geometry");
+	}
+
+	void aMessageOverAMaximisedWindowStaysOnScreen()
+	{
+		// CommandRun floats a refusal beside its parent window (just past its right edge). A window
+		// that fills the screen has nothing past that edge, so the message was placed off-screen and
+		// the menu closing on a silence was the report (gui-1105: Navigate > Previous Clip).
+		QWidget* window = getGUI()->mainWindow();
+		const QRect screen = window->screen()->availableGeometry();
+		window->setGeometry(screen);
+		TextFloat* message = TextFloat::displayMessage(QStringLiteral("Previous Clip"),
+			QStringLiteral("No clip is selected."), QPixmap(), 0, window);
+		const QRect shown = message->frameGeometry();
+		QVERIFY2(screen.contains(shown),
+			qPrintable(QStringLiteral("message %1,%2 %3x%4 is outside the screen %5,%6 %7x%8")
+				.arg(shown.x()).arg(shown.y()).arg(shown.width()).arg(shown.height())
+				.arg(screen.x()).arg(screen.y()).arg(screen.width()).arg(screen.height())));
+		delete message;
 	}
 };
 
