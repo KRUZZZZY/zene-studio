@@ -24,6 +24,8 @@
 
 #include "TextFloat.h"
 
+#include <algorithm>
+
 #include <QTimer>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
