@@ -157,6 +157,7 @@ ControlRegistry::ControlRegistry(QObject* parent) :
 	// (UnattendedRun.h), because MainWindow asks the same question before the
 	// registry exists.
 	m_headless = isUnattendedRun();  // one predicate for one concept: agent instance or no display
+	m_displayAvailable = hasDisplay();  // `requires: display` is about the display alone, not who drives the instance
 }
 
 ControlRegistry* ControlRegistry::instance()
@@ -230,7 +231,7 @@ QString ControlRegistry::checkRequires(const ControlCommand& command) const
 		{
 			return QStringLiteral("command '%1' requires a human").arg(command.id);
 		}
-		if (requirement == QLatin1String("display") && m_headless)
+		if (requirement == QLatin1String("display") && !m_displayAvailable)
 		{
 			return QStringLiteral("command '%1' requires a display (headless instance)").arg(command.id);
 		}

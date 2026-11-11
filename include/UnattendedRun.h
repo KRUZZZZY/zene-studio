@@ -45,6 +45,12 @@ LMMS_EXPORT void setAgentInstance(bool agent);
 //! usable (task #625, measured on the base commit 6b01b98eb).
 LMMS_EXPORT bool isUnattendedRun();
 
+//! True when Qt runs on a platform a window can be shown on (not offscreen/minimal/vnc), whether or not an
+//! agent drives the instance. A command that declares `requires: display` needs this, not a person: an
+//! agent instance on a real display can open a non-modal window (the Help Center); `human` is what keeps a
+//! modal screen away from an agent.
+LMMS_EXPORT bool hasDisplay();
+
 } // namespace lmms
 
 #endif // LMMS_UNATTENDED_RUN_H
