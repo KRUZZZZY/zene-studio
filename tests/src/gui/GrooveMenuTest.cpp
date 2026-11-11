@@ -36,6 +36,8 @@
 #include <QJsonObject>
 #include <QLabel>
 #include <QMenu>
+#include <QMenuBar>
+#include <QScreen>
 #include <QTemporaryDir>
 
 #include "ControlRegistry.h"
@@ -169,6 +171,37 @@ private slots:
 		QVERIFY2(!shown.isEmpty(), "the refused groove.extract was shown to nobody");
 		QVERIFY2(shown.contains(QStringLiteral("groove")), qPrintable(shown));
 		delete menu;
+	}
+
+	void aMessageOverAMaximizedWindowIsOnScreen()
+	{
+		// gui-1030: Help > Accessibility Check floats its report beside its host - the main
+		// window, whose right edge is the screen's own when it fills the screen. The report
+		// must still land where it can be read, over the window, not past the screen's edge.
+		MainWindow* window = getGUI()->mainWindow();
+		QScreen* screen = window->screen();
+		QVERIFY(screen != nullptr);
+		const QRect area = screen->availableGeometry();
+		window->setGeometry(area);
+		window->show();
+		// The shell adds its menu entries (Help > Accessibility Check among them) once the
+		// window's first queued events run; a test that started the GUI runs them here.
+		QCoreApplication::processEvents();
+		QAction* check = named(window->menuBar()->actions().last()->menu(), QObject::tr("Accessibility Check"));
+		QVERIFY2(check != nullptr, "Help has no Accessibility Check entry");
+		const QList<TextFloat*> before = window->findChildren<TextFloat*>();
+		check->trigger();
+		TextFloat* report = nullptr;
+		for (TextFloat* shown : window->findChildren<TextFloat*>())
+		{
+			if (!before.contains(shown)) { report = shown; }
+		}
+		QVERIFY2(report != nullptr, "Accessibility Check showed no report");
+		QVERIFY(report->isVisible());
+		QVERIFY2(area.contains(report->frameGeometry()), qPrintable(QStringLiteral("report at %1,%2 %3x%4 is not inside "
+			"the screen %5,%6 %7x%8").arg(report->x()).arg(report->y()).arg(report->width()).arg(report->height())
+			.arg(area.x()).arg(area.y()).arg(area.width()).arg(area.height())));
+		report->close();
 	}
 };
 
