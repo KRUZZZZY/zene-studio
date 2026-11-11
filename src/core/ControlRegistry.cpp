@@ -151,7 +151,8 @@ ControlRegistry::ControlRegistry(QObject* parent) :
 	QObject(parent),
 	m_commands(),
 	m_transactions(),
-	m_headless(false)
+	m_headless(false),
+	m_displayless(false)
 {
 	// Headless = no display a human could answer a dialog on. One place decides
 	// (UnattendedRun.h), because MainWindow asks the same question before the
