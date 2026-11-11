@@ -25,6 +25,8 @@
 #include "PatternEditor.h"
 
 #include <QAction>
+#include <QStatusBar>
+#include <new>
 #include <QVBoxLayout>
 
 #include "ClipView.h"
@@ -32,6 +34,7 @@
 #include "ControlTrackCreation.h"
 #include "DataFile.h"
 #include "embed.h"
+#include "GuiApplication.h"
 #include "MainWindow.h"
 #include "PatternStore.h"
 #include "PatternTrack.h"
@@ -107,9 +110,33 @@ void PatternEditor::removeSteps()
 
 
 
+namespace
+{
+
+//! One of the toolbar's "add track" buttons. Track::create gives the model-change lock back and removes a half-made
+//! row when it fails (cluster gui-1105), so a failed allocation reaches here with the project as it was: the button
+//! says so in the status bar instead of letting the exception leave the Qt slot and end the application.
+void addTrackFromButton(Track::Type type, TrackContainer* container)
+{
+	try
+	{
+		(void) Track::create(type, container);
+	}
+	catch (const std::bad_alloc&)
+	{
+		MainWindow* window = getGUI() != nullptr ? getGUI()->mainWindow() : nullptr;
+		if (window != nullptr)
+		{
+			window->statusBar()->showMessage(PatternEditor::tr("Could not add the track: the application is out of memory."), 8000);
+		}
+	}
+}
+
+} // namespace
+
 void PatternEditor::addSampleTrack()
 {
-	(void) Track::create( Track::Type::Sample, model() );
+	addTrackFromButton(Track::Type::Sample, model());
 }
 
 
@@ -117,7 +144,7 @@ void PatternEditor::addSampleTrack()
 
 void PatternEditor::addAutomationTrack()
 {
-	(void) Track::create( Track::Type::Automation, model() );
+	addTrackFromButton(Track::Type::Automation, model());
 }
 
 

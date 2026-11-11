@@ -30,6 +30,8 @@
 
 #include <QtTest>
 
+#include <new>
+
 #include <cmath>
 #include <memory>
 
@@ -45,11 +47,13 @@
 #include "ControlVocabulary.h"
 #include "DataFile.h"
 #include "Engine.h"
+#include "AudioEngine.h"
 #include "GuiApplication.h"
 #include "GuiTestApplication.h"
 #include "InstrumentTrack.h"
 #include "MainWindow.h"
 #include "MidiClip.h"
+#include "AutomationTrack.h"
 #include "PatternEditor.h"
 #include "PatternStore.h"
 #include "ProjectJournal.h"
@@ -69,6 +73,14 @@ namespace
 
 constexpr tick_t Bar = 192;
 constexpr int PixelsPerBar = 40;
+
+int s_createFaultProbeCalls = 0;
+int s_createFaultProbeThrowsOn = 0;
+
+void throwOnSelectedCreateFaultProbe()
+{
+	if (++s_createFaultProbeCalls == s_createFaultProbeThrowsOn) { throw std::bad_alloc(); }
+}
 
 ControlResult run(const QString& id, const QJsonObject& args = {})
 {
@@ -447,6 +459,72 @@ private slots:
 		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), songTracks + 1);
 		QCoreApplication::processEvents();  // the redone track's view is built on the next turn
 		QCOMPARE(store->tracks().back()->numOfClips(), 1);  // one pattern clip, not one from the redo and one from the restore
+	}
+
+	//! cluster gui-1105: the Pattern Editor's "Add automation-track" button on a Song with no pattern track makes the
+	//! row and the Song's first pattern track.
+	void addAutomationTrackInAnEmptyPatternEditorMakesTheRow()
+	{
+		PatternStore* store = Engine::patternStore();
+		QCOMPARE(store->numOfPatterns(), 0);
+		const int storeTracks = static_cast<int>(store->tracks().size());
+		getGUI()->patternEditor()->m_editor->addAutomationTrack();
+		QCOMPARE(static_cast<int>(store->tracks().size()), storeTracks + 1);
+		QVERIFY(dynamic_cast<AutomationTrack*>(store->tracks().back()) != nullptr);
+	}
+
+	//! The sweep's sequence: New pattern, Clone pattern, Add sample-track, then Add automation-track.
+	void addAutomationTrackAfterNewAndClonePatternMakesTheRow()
+	{
+		PatternStore* store = Engine::patternStore();
+		PatternEditor* editor = getGUI()->patternEditor()->m_editor;
+		Track::create(Track::Type::Instrument, store);
+		Track::create(Track::Type::Automation, Engine::getSong());
+		Engine::getSong()->addPatternTrack();
+		QCoreApplication::processEvents();
+		editor->cloneClip();
+		QCoreApplication::processEvents();
+		editor->addSampleTrack();
+		QCoreApplication::processEvents();
+		const int storeTracks = static_cast<int>(store->tracks().size());
+		editor->addAutomationTrack();
+		QCOMPARE(static_cast<int>(store->tracks().size()), storeTracks + 1);
+		QVERIFY(dynamic_cast<AutomationTrack*>(store->tracks().back()) != nullptr);
+		// Every row of the store owns one clip per pattern - the pattern-mode automation read indexes by pattern number.
+		for (Track* track : store->tracks()) { QCOMPARE(track->numOfClips(), store->numOfPatterns()); }
+	}
+
+	//! An allocation fails after container registration in Track's constructor or while its follow-up work runs. The
+	//! button must report both failures, release the model-change lock and leave no half-made row in the project.
+	void aFailedAllocationInAddAutomationTrackIsReportedAndLeavesTheProjectAsItWas()
+	{
+		PatternStore* store = Engine::patternStore();
+		PatternEditor* editor = getGUI()->patternEditor()->m_editor;
+		Track::create(Track::Type::Instrument, store);  // a store with a pattern, so nothing but the new row can change it
+		QCOMPARE(store->numOfPatterns(), 1);
+		const int storeTracks = static_cast<int>(store->tracks().size());
+		const int songTracks = static_cast<int>(Engine::getSong()->tracks().size());
+		QVERIFY(!Engine::audioEngine()->isChangeInModelHeld());
+
+		for (int throwOnProbe : {1, 2})
+		{
+			s_createFaultProbeCalls = 0;
+			s_createFaultProbeThrowsOn = throwOnProbe;
+			Track::setCreateFaultProbeForTest(throwOnSelectedCreateFaultProbe);
+			bool escaped = false;
+			try { editor->addAutomationTrack(); }
+			catch (const std::bad_alloc&) { escaped = true; }
+			Track::setCreateFaultProbeForTest(nullptr);
+
+			QVERIFY2(!escaped, "std::bad_alloc left the Add automation-track slot");
+			QVERIFY2(!Engine::audioEngine()->isChangeInModelHeld(), "the model-change lock was left taken");
+			QCOMPARE(static_cast<int>(store->tracks().size()), storeTracks);
+			QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), songTracks);
+			QVERIFY(getGUI()->mainWindow()->statusBar()->currentMessage().contains(QStringLiteral("out of memory")));
+		}
+
+		editor->addAutomationTrack();  // the button works again afterwards
+		QCOMPARE(static_cast<int>(store->tracks().size()), storeTracks + 1);
 	}
 
 	//! A malformed track-copy payload is refused before the Pattern Editor creates its first pattern track.
