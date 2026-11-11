@@ -38,6 +38,7 @@
 #include <QContextMenuEvent>
 #include <QJsonArray>
 #include <QLabel>
+#include <QLayout>
 #include <QLineEdit>
 #include <QPointer>
 #include <QMenu>
@@ -360,6 +361,41 @@ private slots:
 		QVERIFY(onScreen(matrix));
 		QCOMPARE(narrow->width() - 1 - matrix->geometry().right(), narrow->layout()->contentsMargins().right());
 		QVERIFY(qAbs(matrix->geometry().center().y() - compact->geometry().center().y()) <= 2);
+	}
+
+	//! gui-1030: in a mixer too narrow for one row the bar wraps its controls onto more rows, so none of
+	//! them - Density: Expanded among them - lies past its right edge where it cannot be clicked.
+	void aNarrowModeBarKeepsEveryControlOnScreen()
+	{
+		QWidget host;
+		auto* narrow = new MixerModeBar(&host);
+		const int width = 320;
+		QVERIFY(narrow->sizeHint().width() > width);  // one row would not fit
+		const int height = std::max(narrow->heightForWidth(width), narrow->sizeHint().height());
+		host.resize(width, height);
+		narrow->setGeometry(0, 0, width, height);
+		narrow->layout()->invalidate();  // unshown, a resize alone does not lay it out again
+		narrow->layout()->activate();
+		QPushButton* expanded = narrow->densityButton(QStringLiteral("expanded"));
+		QVERIFY(expanded);
+		QVERIFY2(narrow->rect().contains(expanded->geometry()), "Density: Expanded is past the bar's edge");
+		QVERIFY2(expanded->width() >= expanded->minimumSizeHint().width(), "Density: Expanded is squeezed out of sight");
+		for (QWidget* control : narrow->findChildren<QWidget*>(QString(), Qt::FindDirectChildrenOnly))
+		{
+			if (control->isHidden() || control->isWindow()) { continue; }
+			QVERIFY2(narrow->rect().contains(control->geometry()), qPrintable(control->objectName() + QStringLiteral(" is clipped")));
+			QVERIFY2(control->width() >= control->minimumSizeHint().width(), qPrintable(control->objectName() + QStringLiteral(" is squeezed")));
+		}
+		// Wide enough, the bar stays the one row it was.
+		const int wide = narrow->sizeHint().width() + 120;
+		narrow->setGeometry(0, 0, wide, narrow->sizeHint().height());
+		narrow->layout()->invalidate();  // unshown, a resize alone does not lay it out again
+		narrow->layout()->activate();
+		QCOMPARE(expanded->geometry().center().y(), narrow->viewButton(QStringLiteral("mix"))->geometry().center().y());
+		QCOMPARE(narrow->zonesButton()->geometry().center().y(), expanded->geometry().center().y());
+		QPushButton* matrix = narrow->findChild<QPushButton*>(QStringLiteral("mixerModeMatrix"));
+		QVERIFY(matrix);
+		QCOMPARE(matrix->geometry().right(), wide - narrow->layout()->contentsMargins().right() - 1);
 	}
 
 	//! Acceptance 1: the fader and the mute/solo (LED) buttons are Tab stops, answer their keys, and
