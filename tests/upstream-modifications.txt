@@ -5791,4 +5791,5 @@ include/NStateButton.h	cluster gui-1105-main-loop-points (2026-11): mouseRelease
 tests/src/gui/GrooveMenuTest.cpp	# Nudge refusal notification is positioned off-screen
 src/gui/widgets/TextFloat.cpp	gui-1105 (bugs/qwen-gui-1105-menu-navigate-nudge-clip-right): displayMessage keeps the float inside its anchor's screen; a message beside a maximized window (a menu command's refusal) was placed past the right edge. On-screen placements are unchanged
 src/gui/widgets/TextFloat.cpp	gui-1105 (050/m0-train-25 GUI sweep): displayMessage keeps the float wholly within one virtual sibling screen's availableGeometry; a float that already fits is placed exactly as before. Proved by GrooveMenuTest::aMessageOverAWindowFillingTheScreenStaysOnScreen
+src/gui/widgets/TextFloat.cpp	gui-1105 (2026-11-07): displayMessage given a whole window as parent (CommandRun passes the main window or a dialog) places the message inside its lower left like the no-parent case, not beyond its right edge (off-screen when maximized); a child-widget parent is placed exactly as before
 tests/src/gui/GrooveMenuTest.cpp	# Navigate refusal notification is placed off-screen

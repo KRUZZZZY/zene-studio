@@ -36,6 +36,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QLabel>
+#include <QMenuBar>
 #include <QMenu>
 #include <QMenuBar>
 #include <QScreen>
@@ -314,6 +315,29 @@ private slots:
 				.arg(shown.x()).arg(shown.y()).arg(shown.width()).arg(shown.height())
 				.arg(screen.x()).arg(screen.y()).arg(screen.width()).arg(screen.height())));
 		delete message;
+	}
+	void aRefusalFromTheMainWindowIsShownInsideIt()
+	{
+		// gui-1105: Navigate > Next Marker with no marker refuses through CommandRun, which hands the
+		// main window to TextFloat::displayMessage as the float's parent. Placed just past that window's
+		// right edge, the message lands off-screen once the window is maximized - so it must sit inside.
+		MainWindow* main = getGUI()->mainWindow();
+		main->setGeometry(0, 0, 800, 600);
+		for (TextFloat* message : main->findChildren<TextFloat*>()) { delete message; }
+		QMenu* navigate = installNavigateMenu(main->menuBar());
+		QAction* next = named(navigate, QObject::tr("Next Marker"));
+		QVERIFY(next != nullptr);
+		QVERIFY2(next->isEnabled(), "marker.jump is not registered in this binary");
+		next->trigger();
+		const QList<TextFloat*> shown = main->findChildren<TextFloat*>();
+		QVERIFY2(!shown.isEmpty(), "the refused marker.jump was shown to nobody");
+		const QRect window(main->mapToGlobal(QPoint(0, 0)), main->size());
+		for (TextFloat* message : shown)
+		{
+			QVERIFY2(window.contains(message->geometry()), qPrintable(QStringLiteral("float at %1,%2 %3x%4 is outside "
+				"the main window %5x%6").arg(message->x()).arg(message->y()).arg(message->width())
+				.arg(message->height()).arg(window.width()).arg(window.height())));
+		}
 	}
 };
 
