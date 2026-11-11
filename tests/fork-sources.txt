@@ -3477,6 +3477,8 @@ plugins/CarlaVst2/logo.png
 src/core/ControlDeviceVst2.cpp
 tests/data/vst2-test-instrument/BuildWineFixture.cmake
 tests/data/vst2-test-instrument/CMakeLists.txt
+tests/data/vst2-test-instrument/chunk-contract-check.c
+tests/data/vst2-test-instrument/darwin-feature-level-check.py
 tests/data/vst2-test-instrument/vst2-test-instrument.c
 tests/data/vst2-test-instrument/zene_vst2_abi.h
 tests/src/gui/CarlaVst2HostingTest.cpp

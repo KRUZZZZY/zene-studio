@@ -2736,6 +2736,7 @@ tests/data/clap-test-plugin/clap-test-gesture.h
 tests/data/clap-test-plugin/clap-test-instrument.c
 tests/data/gigproof/make_gig.cpp
 tests/data/lv2-test-instrument/lv2-test-instrument.c
+tests/data/vst2-test-instrument/chunk-contract-check.c
 tests/data/vst2-test-instrument/vst2-test-instrument.c
 tests/data/vst2-test-instrument/zene_vst2_abi.h
 tests/data/vst3-chunk-probe/vst3-chunk-probe.cpp
