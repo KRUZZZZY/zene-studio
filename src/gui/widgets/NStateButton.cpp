@@ -23,6 +23,8 @@
  */
  
 
+#include <QMouseEvent>
+
 #include "NStateButton.h"
 
 
@@ -35,6 +37,9 @@ NStateButton::NStateButton( QWidget * _parent ) :
 	m_generalToolTip( "" ),
 	m_curState( -1 )
 {
+	// An activation without a mouse press (QAbstractButton::click() from an accessibility
+	// press action or automation, a keyboard Space press) only emits clicked(); advance there too.
+	connect(this, &NStateButton::clicked, this, &NStateButton::onClicked);
 }
 
 
@@ -80,14 +85,41 @@ void NStateButton::changeState(int state)
 	}
 }
 
-// QAbstractButton::click() runs this for every activation - the mouse release, the keyboard's Space,
-// the accessible button action - so the state advances however the button is activated, once per click.
-void NStateButton::nextCheckState()
+void NStateButton::advanceState()
 {
 	if (!m_states.empty())
 	{
 		changeState((m_curState + 1) % m_states.size());
 	}
+}
+
+void NStateButton::mousePressEvent(QMouseEvent* me)
+{
+	if (me->button() == Qt::LeftButton && !m_states.empty())
+	{
+		// Preserve the existing mouse behavior: the state changes at press time.
+		advanceState();
+	}
+	ToolButton::mousePressEvent(me);
+}
+
+void NStateButton::mouseReleaseEvent(QMouseEvent* me)
+{
+	// Suppress the clicked() emitted by the base release handler. Keep this scoped to the
+	// handler so a release swallowed while the button is disabled cannot poison a later click.
+	m_suppressReleaseClick = true;
+	ToolButton::mouseReleaseEvent(me); // emits clicked() when released over the button
+	m_suppressReleaseClick = false;
+}
+
+void NStateButton::onClicked()
+{
+	if (m_suppressReleaseClick)
+	{
+		m_suppressReleaseClick = false;
+		return;
+	}
+	advanceState();
 }
 
 } // namespace lmms::gui

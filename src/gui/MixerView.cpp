@@ -52,6 +52,7 @@
 #include <QResizeEvent>
 #include <QScrollArea>
 #include <QScrollBar>
+#include <QResizeEvent>
 #include <QSplitter>
 #include <QStyle>
 #include <QKeyEvent>
@@ -90,48 +91,6 @@
 namespace lmms::gui
 {
 
-namespace
-{
-
-//! gui-1030: the mode bar's row scrolls sideways in a narrow panel instead of forcing the mixer (and
-//! the window) wider than the screen. It asks for the bar's own width, and for room under the bar
-//! only while the scroll bar is shown.
-class ModeBarStrip : public QScrollArea
-{
-public:
-	ModeBarStrip(QWidget* parent, QWidget* bar) : QScrollArea(parent)
-	{
-		setObjectName(QStringLiteral("mixerModeBarStrip"));
-		setFrameShape(QFrame::NoFrame);
-		setWidgetResizable(true);
-		setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-		setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
-		setWidget(bar);
-	}
-	QSize sizeHint() const override { return {widget()->sizeHint().width(), barHeight()}; }
-	QSize minimumSizeHint() const override { return {QScrollArea::minimumSizeHint().width(), barHeight()}; }
-
-protected:
-	void resizeEvent(QResizeEvent* event) override
-	{
-		QScrollArea::resizeEvent(event);
-		const bool scrollsNow = scrolls();
-		if (m_scrolls != scrollsNow) { m_scrolls = scrollsNow; updateGeometry(); }
-	}
-
-private:
-	bool scrolls() const { return width() < widget()->minimumSizeHint().width(); }
-	int barHeight() const
-	{
-		const int bar = widget()->sizeHint().height();
-		return scrolls() ? bar + horizontalScrollBar()->sizeHint().height() : bar;
-	}
-	bool m_scrolls = false;
-};
-
-} // namespace
-
-
 MixerView::MixerView(Mixer* mixer) :
 	QWidget(),
 	ModelView(nullptr, this),
@@ -158,7 +117,8 @@ MixerView::MixerView(Mixer* mixer) :
 	connect(m_modeBar, &MixerModeBar::changed, this, &MixerView::syncWithMixer, Qt::QueuedConnection);
 	// MX-021: with following on, a new arranger selection re-lays the Selected filter's strips.
 	connect(ShellSelection::instance(), &ShellSelection::changed, this, &MixerView::syncWithMixer, Qt::QueuedConnection);
-	outer->addWidget(new ModeBarStrip(this, m_modeBar));
+	// The grouped mode layout supplies heightForWidth, so every control stays visible.
+	outer->addWidget(m_modeBar);
 	m_sendsBanner = new MixerSendsBanner(this);
 	outer->addWidget(m_sendsBanner);
 

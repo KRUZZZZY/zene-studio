@@ -43,8 +43,15 @@
  *    so a test can show the host's audio thread does not wait for it.
  */
 
-#ifndef _WIN32
-#define _POSIX_C_SOURCE 199309L  /* nanosleep */
+/* Keep nanosleep visible on POSIX hosts. Darwin also needs its full feature level
+ * so selecting POSIX.1b does not hide C99 snprintf. These are independent guards:
+ * the Darwin extension must not be nested inside a non-Apple condition.
+ */
+#if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
+#define _POSIX_C_SOURCE 199309L
+#endif
+#if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
+#define _DARWIN_C_SOURCE
 #endif
 
 #include <stdio.h>

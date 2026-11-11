@@ -36,3 +36,25 @@ if(LMMS_VST2_TEST_WINEGCC AND NOT WIN32 AND NOT APPLE)
 		COMMENT "Building the Windows (PE) VST2 test instrument with winegcc"
 		VERBATIM)
 endif()
+
+# ci-d14f7617bae6160d: the hosted macos-x86_64 build failed because the fixture's
+# _POSIX_C_SOURCE 199309L hid Darwin's C99 snprintf declaration. No macOS SDK exists on
+# every builder, so the check compiles the fixture's real feature-test preamble with the
+# C preprocessor and asserts the Darwin feature level (see darwin-feature-level-check.py).
+find_program(ZENE_VST2_PYTHON3 NAMES python3 python3.exe python)
+if(ZENE_VST2_PYTHON3)
+	add_test(NAME Vst2FixtureDarwinFeatureLevel
+		COMMAND ${ZENE_VST2_PYTHON3}
+			${CMAKE_CURRENT_SOURCE_DIR}/darwin-feature-level-check.py
+			${CMAKE_C_COMPILER}
+			"${CMAKE_C_COMPILER_ID}"
+			"${CMAKE_C_COMPILER_FRONTEND_VARIANT}")
+	set_tests_properties(Vst2FixtureDarwinFeatureLevel PROPERTIES TIMEOUT 120)
+endif()
+
+# ci-d14f7617bae6160d: the ZNV2 chunk contract checked directly - the written text, the
+# parse, the 128-byte read guard and the rejection of malformed input. Carla only ever
+# hands a host well-formed chunks, so those branches are unreachable through
+# CarlaVst2HostingTest.
+add_executable(vst2-chunk-contract-check chunk-contract-check.c)
+add_test(NAME Vst2ChunkContractCheck COMMAND vst2-chunk-contract-check)

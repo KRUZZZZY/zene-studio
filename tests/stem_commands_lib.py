@@ -123,6 +123,23 @@ def sha256_of(path):
     return digest.hexdigest()
 
 
+def wav_chunks(handle):
+    """(fmt payload, data chunk size) read off a WAV's chunk stream, either None."""
+    fmt = None
+    data_bytes = None
+    while True:
+        chunk_header = handle.read(8)
+        if len(chunk_header) < 8:
+            break
+        chunk_id, chunk_size = struct.unpack("<4sI", chunk_header)
+        payload = handle.read(chunk_size + (chunk_size & 1))
+        if chunk_id == b"fmt ":
+            fmt = payload
+        elif chunk_id == b"data":
+            data_bytes = chunk_size
+    return fmt, data_bytes
+
+
 def wav_facts(path):
     """(bytes, frames, audio_format, channels, rate, bits) of one WAV, or None."""
     if not os.path.isfile(path):
@@ -131,21 +148,10 @@ def wav_facts(path):
         header = handle.read(12)
         if len(header) != 12 or header[0:4] != b"RIFF" or header[8:12] != b"WAVE":
             return None
-        fmt = None
-        data_bytes = None
-        while True:
-            chunk_header = handle.read(8)
-            if len(chunk_header) < 8:
-                break
-            chunk_id, chunk_size = struct.unpack("<4sI", chunk_header)
-            payload = handle.read(chunk_size + (chunk_size & 1))
-            if chunk_id == b"fmt ":
-                fmt = payload
-            elif chunk_id == b"data":
-                data_bytes = chunk_size
-        if fmt is None or data_bytes is None:
-            return None
-        audio_format, channels, rate, _, _, bits = struct.unpack("<HHIIHH", fmt[:16])
+        fmt, data_bytes = wav_chunks(handle)
+    if fmt is None or data_bytes is None:
+        return None
+    audio_format, channels, rate, _, _, bits = struct.unpack("<HHIIHH", fmt[:16])
     return (os.path.getsize(path), data_bytes // (channels * (bits // 8)) if bits else 0,
             audio_format, channels, rate, bits)
 

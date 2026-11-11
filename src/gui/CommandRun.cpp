@@ -32,6 +32,7 @@
 #include <QJsonArray>
 #include <QMenu>
 #include <QtGlobal>
+#include <QMenuBar>
 
 #include "CommandMetadata.h"
 #include "ControlVocabulary.h"
@@ -104,8 +105,11 @@ void announce(QWidget* parent, const CommandCall& call, const ControlResult& res
 	constexpr int MaxLines = 8;
 	QString text = result.ok ? resultSummary(result.result, MaxLines) : result.errorMessage;
 	if (text.size() > MaxChars) { text = text.left(MaxChars - 1) + QStringLiteral("…"); }
+	// gui-1105: a message floats beside the widget it was asked from - but a menu bar spans its window, so beside it
+	// is past the window's right edge (often off-screen); a main-menu entry's message goes over the main window.
+	QWidget* beside = qobject_cast<QMenuBar*>(parent) != nullptr ? nullptr : parent;
 	TextFloat::displayMessage(call.title.isEmpty() ? commandName(call.id) : call.title, text, QPixmap(),
-		result.ok ? 8000 : 4000, parent);
+		result.ok ? 8000 : 4000, beside);
 }
 
 ControlResult runCommand(QWidget* parent, const CommandCall& call, CommandForm** form)
