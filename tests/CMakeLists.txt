@@ -280,6 +280,8 @@ set(LMMS_TESTS
 	# on Windows before the empty-session refusal.
 	src/core/ControlRenderOutputPathTest.cpp
 	src/core/ControlRegistryTest.cpp
+	# gui-1105: the 'display' requirement follows the platform, not the agent flag.
+	src/core/ControlRegistryDisplayTest.cpp
 	# The rules a caller's sample array has to satisfy before a render or a
 	# process is driven with it (cluster new-p10-76-port): the ONE reader the
 	# wasm.* commands use (include/ControlSampleArray.h), tested in every

@@ -2860,6 +2860,7 @@ tests/src/core/ControlProjectArchiveTest.cpp
 tests/src/core/ControlProjectMediaTest.cpp
 tests/src/core/ControlProjectTemplateTest.cpp
 tests/src/core/ControlRecordingRoutesTest.cpp
+tests/src/core/ControlRegistryDisplayTest.cpp
 tests/src/core/ControlRegistryNestingTest.cpp
 tests/src/core/ControlRegistryTest.cpp
 tests/src/core/ControlRenderJobTest.cpp
