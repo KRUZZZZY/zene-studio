@@ -50,6 +50,7 @@
 #include <QRect>
 #include <QMenuBar>
 #include <QMenuBar>
+#include <QMenuBar>
 #include <QTemporaryDir>
 
 #include "CommandForm.h"
@@ -562,6 +563,42 @@ private slots:
 		QVERIFY2(inside.contains(placed), qPrintable(QStringLiteral("float at %1,%2 %3x%4 is outside the window %5,%6 %7x%8")
 			.arg(placed.x()).arg(placed.y()).arg(placed.width()).arg(placed.height())
 			.arg(inside.x()).arg(inside.y()).arg(inside.width()).arg(inside.height())));
+	}
+
+	void aRefusalFromAMainMenuIsShownInsideTheWindow()
+	{
+		// gui-1106: Main menu > Navigate > Previous Clip with no clip selected refuses. The menu passes
+		// the main window as the float's parent, and a float placed beside a window (at its width + 2)
+		// is outside it, where nobody sees it. A window parent must get its float inside the window.
+		MainWindow* window = getGUI()->mainWindow();
+		window->resize(900, 600);
+		window->show();
+		qDeleteAll(window->findChildren<TextFloat*>());
+		QMenu* navigate = installNavigateMenu(window->menuBar());
+		QAction* previous = named(navigate, QObject::tr("Previous Clip"));
+		QVERIFY(previous != nullptr && previous->isEnabled());
+		previous->trigger();
+		const QList<TextFloat*> floats = window->findChildren<TextFloat*>();
+		QCOMPARE(floats.size(), 1);
+		const QRect inside(window->mapToGlobal(QPoint(0, 0)), window->size());
+		const QRect shown = floats.front()->geometry();
+		QVERIFY2(inside.contains(shown), qPrintable(QStringLiteral("float at %1,%2 %3x%4 is outside the window %5,%6 %7x%8")
+			.arg(shown.x()).arg(shown.y()).arg(shown.width()).arg(shown.height())
+			.arg(inside.x()).arg(inside.y()).arg(inside.width()).arg(inside.height())));
+		qDeleteAll(floats);
+	}
+
+	void aFloatForAWidgetStillOpensBesideIt()
+	{
+		// The sibling path keeps its contract: a widget inside a window gets its float to its right.
+		MainWindow* window = getGUI()->mainWindow();
+		auto* anchor = new QWidget(window);
+		anchor->setGeometry(20, 40, 100, 30);
+		anchor->show();
+		TextFloat* tf = TextFloat::displayMessage(QStringLiteral("Hint"), QStringLiteral("beside"), QPixmap(), 4000, anchor);
+		QCOMPARE(tf->pos(), anchor->mapToGlobal(QPoint(0, 0)) + QPoint(anchor->width() + 2, 0));
+		delete tf;
+		delete anchor;
 	}
 };
 
