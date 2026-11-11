@@ -49,6 +49,7 @@
 #include <QMenuBar>
 #include <QRect>
 #include <QMenuBar>
+#include <QMenuBar>
 #include <QTemporaryDir>
 
 #include "CommandForm.h"
@@ -62,6 +63,7 @@
 #include "MenuBarExtras.h"
 #include "MidiClip.h"
 #include "Note.h"
+#include "ShellSelection.h"
 #include "Song.h"
 #include "TextFloat.h"
 #include "WorkspaceMenus.h"
@@ -506,6 +508,32 @@ private slots:
 		QCOMPARE(message->pos(), anchor->mapToGlobal(QPoint(anchor->width() + 2, 0)));
 		delete message;
 		delete anchor;
+	}
+
+	void aRefusalFromAMainWindowMenuIsShownInsideTheWindow()
+	{
+		// gui-1106: Navigate > Nudge Clip Right with no clip selected refuses, and the menu
+		// (parented to the main window) hands the main window to the floating message. The
+		// float was placed at the window's width + 2, beyond its right edge, where nobody saw it.
+		MainWindow* window = getGUI()->mainWindow();
+		window->resize(1000, 700);
+		ShellSelection::instance()->setClip(nullptr);
+		QMenu* navigate = installNavigateMenu(window->menuBar());
+		const QList<TextFloat*> before = window->findChildren<TextFloat*>();
+		QAction* nudge = named(navigate, QObject::tr("Nudge Clip Right"));
+		QVERIFY2(nudge != nullptr, "Navigate has no Nudge Clip Right");
+		nudge->trigger();
+		TextFloat* shown = nullptr;
+		for (TextFloat* message : window->findChildren<TextFloat*>())
+		{
+			if (!before.contains(message)) { shown = message; }
+		}
+		QVERIFY2(shown != nullptr, "the refused arrangement.nudge was shown to nobody");
+		const QRect inside(window->mapToGlobal(QPoint(0, 0)), window->size());
+		const QRect placed(shown->pos(), shown->size());
+		QVERIFY2(inside.contains(placed), qPrintable(QStringLiteral("float at %1,%2 %3x%4 is outside the window %5,%6 %7x%8")
+			.arg(placed.x()).arg(placed.y()).arg(placed.width()).arg(placed.height())
+			.arg(inside.x()).arg(inside.y()).arg(inside.width()).arg(inside.height())));
 	}
 };
 

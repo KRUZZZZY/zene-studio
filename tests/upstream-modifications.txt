@@ -5799,4 +5799,5 @@ tests/src/gui/GrooveMenuTest.cpp	# Previous Marker notification is positioned of
 src/gui/widgets/TextFloat.cpp	bugs/qwen-gui-1105-menu-window-channel-load: displayMessage with a parent clamps the float inside the parent's top-level window (it was put at the parent's right edge + 2 px, outside the app when the parent is the main window or flush with its edge - Window > Channel Load showed nothing); a position already inside the window is unchanged; covered by GrooveMenuTest aResultFloatedOverTheMainWindowLiesOverIt
 tests/src/gui/GrooveMenuTest.cpp	# Channel Load results are positioned off-screen
 tests/src/gui/GrooveMenuTest.cpp	# Accessibility Check result is positioned beyond the main window
+src/gui/widgets/TextFloat.cpp	bugs/qwen-gui-1106 (2026-11-07): displayMessage given a whole window as parent (a menu or dialog host) places the float at the lower left inside that window instead of at its width + 2, off its right edge; widget parents and the no-parent case are placed exactly as before
 tests/src/gui/GrooveMenuTest.cpp	# Nudge refusal notification appears outside the app window
