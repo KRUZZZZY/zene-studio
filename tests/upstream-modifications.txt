@@ -5797,3 +5797,4 @@ src/gui/widgets/TextFloat.cpp	bugs/qwen-gui-1105-menu-navigate-previous-marker: 
 tests/src/gui/GrooveMenuTest.cpp	# Previous Marker notification is positioned off-screen
 src/gui/widgets/TextFloat.cpp	bugs/qwen-gui-1105-menu-window-channel-load: displayMessage with a parent clamps the float inside the parent's top-level window (it was put at the parent's right edge + 2 px, outside the app when the parent is the main window or flush with its edge - Window > Channel Load showed nothing); a position already inside the window is unchanged; covered by GrooveMenuTest aResultFloatedOverTheMainWindowLiesOverIt
 tests/src/gui/GrooveMenuTest.cpp	# Channel Load results are positioned off-screen
+tests/src/gui/GrooveMenuTest.cpp	# Accessibility Check result is positioned beyond the main window
