@@ -3550,3 +3550,6 @@ tests/vst2-fixture-darwin-headers-check.py
 tests/threads-target-windows-configure.py
 tests/cmake-threads-scope.sh
 tests/complexity-regression-check.py
+
+# Cumulative Terra integration: shared real-window visibility and hit-testing regression.
+tests/src/gui/MixerModeVisibilityTestSupport.h

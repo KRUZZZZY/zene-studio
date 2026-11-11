@@ -40,6 +40,11 @@ void MixerModeBarLayout::addUnit(const QList<QWidget*>& widgets)
 {
 	for (QWidget* widget : widgets)
 	{
+		// Native buttons and combo boxes may use a fixed vertical size policy. Let
+		// them fill their shared row without fixing a pixel height across DPI changes.
+		QSizePolicy policy = widget->sizePolicy();
+		policy.setVerticalPolicy(QSizePolicy::Minimum);
+		widget->setSizePolicy(policy);
 		addChildWidget(widget);
 		m_items.append(new QWidgetItem(widget));
 	}

@@ -129,3 +129,49 @@ The platform check is deterministic in the test because there is no `QGuiApplica
   offscreen. The menu dispatch (`src/gui/HelpCenter.cpp:479` -> `app.help` ->
   `src/gui/ControlCommandsHelp.cpp:84`) was verified in code, and the display/agent distinction is
   covered deterministically by the regression above.
+
+
+## Cumulative Terra integration — 2026-11-11
+
+The owner asked for autonomous resolution of the stalled integrations. This branch
+contains all 104 latest accepted Terra commits and resolves the thirty cumulative
+conflicts as a coherent whole. This is integration of accepted work, not a reset of
+issue identities or implementation budgets. The current focused suite is 29/29 after
+rebuilding the affected targets; mixer container reversal fails all three real-window
+mixer suites. See docs/RECOVERY-2026-11-11.md and the program workspace's
+verification/recovery-20261111 evidence. Full gates, native-platform hosted checks and
+independent acceptance remain outstanding. Original per-finding red/green evidence
+is retained in each accepted branch's report; duplicates already fixed on the
+combined base should be confirmed as such by the independent reviewer.
+
+Integration outcomes (the existing original finding identities):
+gui-1030-session-loop-a-range: FIXED
+gui-1030-tab-mixer-density-compact: FIXED
+gui-1030-tab-mixer-density-expanded: FIXED
+gui-1030-tab-mixer-pick-the-channels-to-show: FIXED
+gui-1030-tab-mixer-return: FIXED
+gui-1030-tab-mixer-effects-chain: FIXED
+gui-1030-tab-mixer-add-effect: FIXED
+gui-1105-main-loop-points: FIXED
+gui-1105-menu-navigate-nudge-clip-left: FIXED
+gui-1105-menu-navigate-nudge-clip-right: FIXED
+gui-1105-menu-navigate-next-clip: FIXED
+gui-1105-menu-navigate-previous-clip: FIXED
+gui-1105-menu-navigate-next-marker: FIXED
+gui-1105-menu-navigate-previous-marker: FIXED
+gui-1105-menu-window-channel-load: FIXED
+gui-1105-menu-help-accessibility-check: FIXED
+gui-1106-menu-navigate-nudge-clip-left: FIXED
+gui-1106-menu-navigate-nudge-clip-right: FIXED
+gui-1106-menu-navigate-next-clip: FIXED
+gui-1106-menu-navigate-previous-clip: FIXED
+gui-1106-menu-navigate-next-marker: FIXED
+gui-1106-menu-navigate-previous-marker: FIXED
+gui-1106-menu-help-command-reference: FIXED
+gui-1106-menu-help-accessibility-check: FIXED
+gui-1105-menu-help-help-for-this: FIXED
+gui-1105-menu-help-manual: FIXED
+gui-1105-menu-help-command-reference: FIXED
+gui-1106-session-move-copy-and-delete-a-clip: FIXED
+gui-1106-main-edit: FIXED
+gui-1106-menu-navigate-zoom-out: FIXED

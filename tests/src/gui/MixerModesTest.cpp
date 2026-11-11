@@ -30,6 +30,7 @@
  *  application (a Fader cannot be built without it). */
 
 #include <QtTest>
+#include "MixerModeVisibilityTestSupport.h"
 
 #include <QAccessible>
 #include <QApplication>
@@ -990,8 +991,8 @@ private slots:
 
 	//! gui-1106-main-edit: with the Mixer open, the mode bar's full row (1576 px) made the main window's minimum
 	//! width 2000 px, so on a 1600-px screen the window grew past the edge and took the footer's Arrange/Mix/Edit
-	//! switches and the Browser switch with it - a click on Edit landed off the screen. The bar scrolls sideways
-	//! instead, keeping every mode control, and the window fits the screen.
+	//! switches and the Browser switch with it. Every mode control must remain visible and unobscured
+	//! inside the same window; layout implementation is not the behavioral contract.
 	void anOpenMixerKeepsTheMainWindowOnA1600PixelScreen()
 	{
 		MainWindow* window = getGUI()->mainWindow();
@@ -999,13 +1000,12 @@ private slots:
 		QVERIFY(getGUI()->mixerView()->isVisible());
 		QVERIFY2(window->minimumSizeHint().width() <= 1600,
 			qPrintable(QStringLiteral("main window minimum width %1").arg(window->minimumSizeHint().width())));
-		auto* scroller = qobject_cast<QScrollArea*>(bar()->parentWidget() != nullptr ? bar()->parentWidget()->parentWidget() : nullptr);
-		QVERIFY(scroller != nullptr);
-		QCOMPARE(scroller->widget(), bar());
-		// Every control is still in the bar, reachable by scrolling: narrow the scroller and the bar keeps its row.
-		scroller->resize(400, scroller->height());
-		QVERIFY(bar()->width() >= bar()->minimumSizeHint().width());
-		QVERIFY(scroller->horizontalScrollBar()->maximum() > 0);
+		window->resize(1600, 900);
+		QCoreApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
+		QCoreApplication::processEvents();
+		QVERIFY(window->width() <= 1600);
+		const QString problem = lmms::test::mixerModeVisibilityProblem(bar(), window);
+		QVERIFY2(problem.isEmpty(), qPrintable(problem));
 		QVERIFY(bar()->findChild<QPushButton*>(QStringLiteral("mixerModeMatrix")) != nullptr);
 	}
 

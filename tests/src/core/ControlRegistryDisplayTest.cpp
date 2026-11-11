@@ -93,6 +93,39 @@ private slots:
 		QCOMPARE(result.errorKind, ControlErrorKind::Requires);
 	}
 
+    //! A visible agent may open nonmodal windows, but nobody is attending to answer a modal dialog.
+    void visibleAgentRunsDisplayCommandsAndRefusesHumanCommands()
+    {
+        qunsetenv("QT_QPA_PLATFORM");
+        setAgentInstance(true);
+        ControlRegistry::destroy();
+        ControlRegistry* registry = ControlRegistry::instance();
+        ControlRegistry::setReady(true);
+        ControlCommand command;
+        command.id = QStringLiteral("test.visible_agent");
+        command.group = QStringLiteral("test");
+        command.verb = QStringLiteral("visible_agent");
+        command.requiresEngine = false;
+        command.requiresDecl = QStringList{QStringLiteral("display")};
+        command.handler = [](const QJsonObject&) { return ControlResult::success(); };
+        registry->registerCommand(command);
+        const bool unattended = registry->isHeadless();
+        const bool display = registry->isDisplayAvailable();
+        const ControlResult window = registry->invoke(command.id);
+        command.id = QStringLiteral("test.needs_human");
+        command.verb = QStringLiteral("needs_human");
+        command.requiresDecl = QStringList{QStringLiteral("human")};
+        registry->registerCommand(command);
+        const ControlResult modal = registry->invoke(command.id);
+        setAgentInstance(false);
+        ControlRegistry::destroy();
+        QVERIFY(unattended);
+        QVERIFY(display);
+        QVERIFY2(window.ok, qPrintable(window.errorMessage));
+        QVERIFY(!modal.ok);
+        QCOMPARE(modal.errorKind, ControlErrorKind::Requires);
+    }
+
 private:
 	QByteArray m_platform;
 };

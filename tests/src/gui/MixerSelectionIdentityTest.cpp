@@ -28,6 +28,7 @@
  *  the way a script or the TrackContainer does, and then let the mixer's own sync pass catch up. */
 
 #include <QtTest>
+#include "MixerModeVisibilityTestSupport.h"
 
 #include <QAbstractButton>
 #include <QLabel>
@@ -326,15 +327,13 @@ private slots:
 			.arg(onWindow.x()).arg(onWindow.y()).arg(onWindow.width()).arg(onWindow.height())
 			.arg(win->width()).arg(win->height())));
 
-		// The mode bar is a scrolling row when it is narrower than its controls: its last control is one
-		// scroll away, not cut off.
+		// Every mode control, including the last one, remains visible and clickable.
 		auto* bar = mixer->findChild<QWidget*>(QStringLiteral("mixerModeBar"));
 		QVERIFY(bar != nullptr);
+		const QString problem = lmms::test::mixerModeVisibilityProblem(bar, win);
+		QVERIFY2(problem.isEmpty(), qPrintable(problem));
 		auto* matrix = bar->findChild<QWidget*>(QStringLiteral("mixerModeMatrix"));
 		QVERIFY(matrix != nullptr);
-		auto* scroll = bar->findChild<QScrollArea*>();
-		QVERIFY(scroll != nullptr);
-		scroll->horizontalScrollBar()->setValue(scroll->horizontalScrollBar()->maximum());
 		const QRect onBar(matrix->mapTo(bar, QPoint(0, 0)), matrix->size());
 		QVERIFY(bar->rect().contains(onBar));
 	}
