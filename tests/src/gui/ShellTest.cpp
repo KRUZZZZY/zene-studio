@@ -138,6 +138,35 @@ private slots:
 		QVERIFY(!world.shell.findChild<QWidget*>(QStringLiteral("shellBottom"))->isVisible());
 	}
 
+	//! gui-1030-menu-view-note-editor: View > Note Editor is a toggle. With another bottom panel open it
+	//! OPENS the Note Editor (the sweep's "before" frame showed the Mixer there, so there was nothing to
+	//! close); with the Note Editor already open it CLOSES it. Only the Edit view's centre cannot hide.
+	void theNoteEditorSwitchOpensWhenAnotherPanelHoldsTheLowerRegionAndClosesWhenItDoesNot()
+	{
+		World world;
+		const QString detail = QStringLiteral("detail");
+		QAction* action = world.shell.panelAction(detail);
+		QVERIFY(action != nullptr);
+		QCOMPARE(world.shell.model().openIn(ShellRegion::Bottom), detail);  // first-run layout
+		world.shell.togglePanel(QStringLiteral("mixer"));                   // the Mixer takes the region
+		QVERIFY(!world.shell.model().isVisible(detail));
+		QVERIFY(!action->isChecked());
+		QVERIFY(world.shell.togglePanel(detail));                           // View > Note Editor: it opens
+		QVERIFY(world.shell.model().isVisible(detail));
+		QVERIFY(action->isChecked());
+		QVERIFY(world.content.value(detail)->isVisible());
+		QVERIFY(!world.content.value(QStringLiteral("mixer"))->isVisible());
+		QVERIFY(!world.shell.togglePanel(detail));                          // a second click: it closes
+		QVERIFY(!world.shell.model().isVisible(detail));
+		QVERIFY(!action->isChecked());
+		QVERIFY(world.shell.model().openIn(ShellRegion::Bottom).isEmpty());
+		QVERIFY(!world.shell.findChild<QWidget*>(QStringLiteral("shellBottom"))->isVisible());
+		// In the Edit view the Note Editor is the centre: that one stays, by design (ShellLayout::close).
+		world.shell.setView(ShellView::Edit);
+		QVERIFY(world.shell.togglePanel(detail));
+		QVERIFY(world.shell.model().isVisible(detail));
+	}
+
 	void aPanelTheViewLacksIsRevealedBySwitchingView()
 	{
 		World world;
