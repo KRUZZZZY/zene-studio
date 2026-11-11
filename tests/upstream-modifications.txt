@@ -5783,3 +5783,4 @@ tests/src/gui/MixerModesTest.cpp	# Compact density choice is clipped in a narrow
 tests/src/gui/MixerModesTest.cpp	# Expanded density choice is clipped in a narrow Mixer panel
 tests/src/gui/MixerModesTest.cpp	# Channel picker is clipped in a narrow Mixer panel
 src/gui/MixerView.cpp	gui-1030-tab-mixer-return (2026-11-06): the channel scroll area keeps a two-strip minimum width instead of six, so the mixer (and the window that follows its minimum) fits a 1024-pixel screen with the Inspector and Browser open and New mixer channel / Return stay on screen; the area scrolls, nothing else changes; covered by MixerSelectionIdentityTest theReturnButtonStaysOnAThousandPixelScreen
+src/gui/MixerView.cpp	gui-1030 (mixer effects chain off-screen on a 1024 px display): the mode bar sits in a horizontal scroll area so its 13 controls no longer set the Mix panel (and main window) minimum width, and the channel area keeps 2 strips in view instead of 6
