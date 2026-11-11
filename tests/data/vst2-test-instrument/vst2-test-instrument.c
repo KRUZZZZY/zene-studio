@@ -43,19 +43,15 @@
  *    so a test can show the host's audio thread does not wait for it.
  */
 
-/* nanosleep is POSIX.1b (199309L). Darwin's default feature level already exposes it, and
- * defining _POSIX_C_SOURCE there selects the strict POSIX level, which hides the C99 snprintf
- * declaration (macos-x86_64 run 42805458633: "call to undeclared library function 'snprintf'").
+/* Keep nanosleep visible on POSIX hosts. Darwin also needs its full feature level
+ * so selecting POSIX.1b does not hide C99 snprintf. These are independent guards:
+ * the Darwin extension must not be nested inside a non-Apple condition.
  */
-#if !defined(_WIN32) && !defined(__APPLE__)
-#define _POSIX_C_SOURCE 199309L  /* nanosleep */
-// _POSIX_C_SOURCE alone hides Darwin's C99 declarations (<stdio.h>'s snprintf:
-// macos-arm64 "call to undeclared library function 'snprintf'", cluster
-// ci-12f4249981b085d6); _DARWIN_C_SOURCE restores the full header. Apple-only,
-// so glibc's feature visibility is untouched.
+#if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
+#define _POSIX_C_SOURCE 199309L
+#endif
 #if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
 #define _DARWIN_C_SOURCE
-#endif
 #endif
 
 #include <stdio.h>
