@@ -540,6 +540,31 @@ private slots:
 		QCOMPARE(model->value(), model->maxValue());
 	}
 
+	//! gui-1106: Navigate > Zoom Out (step -4) at the minimum zoom - the 4 px per bar a fresh project can
+	//! inherit from the saved UI setting - must say it cannot zoom further instead of reporting a success
+	//! that left the view unchanged; likewise Zoom In at the maximum. A step off the bound still zooms.
+	void aZoomStepAtItsBoundIsRefusedNotASilentSuccess()
+	{
+		IntModel* model = m_editor->zoomingModel();
+		model->setValue(model->minValue());
+		const ControlResult out = run(QStringLiteral("arrangement.zoom"), {{QStringLiteral("step"), -4}});
+		QVERIFY2(!out.ok, "Zoom Out at the minimum zoom reported success without zooming");
+		QCOMPARE(out.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(model->value(), model->minValue());
+		const ControlResult in = run(QStringLiteral("arrangement.zoom"), {{QStringLiteral("step"), 4}});
+		QVERIFY2(in.ok, qPrintable(in.errorMessage));
+		QCOMPARE(model->value(), model->minValue() + 4);
+
+		model->setValue(model->maxValue());
+		const ControlResult past = run(QStringLiteral("arrangement.zoom"), {{QStringLiteral("step"), 4}});
+		QVERIFY2(!past.ok, "Zoom In at the maximum zoom reported success without zooming");
+		QCOMPARE(past.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(model->value(), model->maxValue());
+		// An absolute zoom to the extent already shown is not a step and stays a success.
+		QVERIFY(run(QStringLiteral("arrangement.zoom"), {{QStringLiteral("pixels_per_bar"), 40}}).ok);
+		QVERIFY(run(QStringLiteral("arrangement.zoom"), {{QStringLiteral("pixels_per_bar"), 40}}).ok);
+	}
+
 	void aPatternPreviewCombinesOffsetAndNoteBeforeRasterizing()
 	{
 		QVERIFY(run(QStringLiteral("arrangement.zoom"), {{QStringLiteral("pixels_per_bar"), 4},
