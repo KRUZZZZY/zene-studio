@@ -100,7 +100,7 @@ def main():
 		for line in findings:
 			print(f"  {line}")
 		return 1
-	print(f"complexity-gate-check: {len(TARGETS)} functions at or under CCN {CCN_LIMIT}")
+	print(f"complexity-regression-check: {len(TARGETS)} functions at or under CCN {CCN_LIMIT}")
 	return 0
 
 

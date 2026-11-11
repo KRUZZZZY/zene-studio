@@ -6275,11 +6275,11 @@ endif()
 # when one drifts back over CCN 10. It reads sources only, runs its own red/green fixtures first,
 # and skips (77) on a host without lizard, exactly as ControlStemCommands skips without its backend.
 if(PYTHON3_EXECUTABLE)
-	add_test(NAME complexity-gate-check
+	add_test(NAME complexity-regression-check
 		COMMAND ${PYTHON3_EXECUTABLE}
-			${CMAKE_CURRENT_SOURCE_DIR}/complexity-gate-check.py
+			${CMAKE_CURRENT_SOURCE_DIR}/complexity-regression-check.py
 			${CMAKE_SOURCE_DIR})
-	set_tests_properties(complexity-gate-check PROPERTIES TIMEOUT 300 SKIP_RETURN_CODE 77)
+	set_tests_properties(complexity-regression-check PROPERTIES TIMEOUT 300 SKIP_RETURN_CODE 77)
 endif()
 
 # The real-time-safety WHOLE-TREE SWEEP (2026-09-16, lane 030/rt-safety, board task #678,
