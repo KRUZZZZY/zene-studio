@@ -6134,6 +6134,18 @@ endif()
 # framing and the command groups are exercised end to end.
 # ---------------------------------------------------------------------------
 find_program(PYTHON3_EXECUTABLE NAMES python3 python3.exe python)
+# Cluster ci-0ff72c5279856e5d: the windows-arm64 configure regression. That job failed at
+# the generate step because Threads::Threads was not defined above the tests on Windows -
+# the top-level pthread check is gated to the pthread platforms, and FindSDL2.cmake's own
+# Threads lookup is skipped when SDL2 ships a CMake config package. The driver configures a
+# scratch project under that exact condition and asserts the target resolves.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME ThreadsTargetWindowsConfigure
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/threads-target-windows-configure.py
+			${CMAKE_CURRENT_BINARY_DIR}/threads-target-windows)
+	set_tests_properties(ThreadsTargetWindowsConfigure PROPERTIES TIMEOUT 300)
+endif()
 # Keep each NAM WAV output failure independently discoverable and attributable.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE AND TARGET nam_harness)
 	set(NAM_HARNESS_WAV_FAILURE_SCRIPT
