@@ -5795,3 +5795,5 @@ src/gui/widgets/TextFloat.cpp	gui-1105 (2026-11-07): displayMessage given a whol
 tests/src/gui/GrooveMenuTest.cpp	# Navigate refusal notification is placed off-screen
 src/gui/widgets/TextFloat.cpp	bugs/qwen-gui-1105-menu-navigate-previous-marker: displayMessage with a parent that is itself a window (a command run from the main menu) floats the message over the lower left of that window instead of 2 px right of it, outside the app; children (knobs, faders, clips) keep the right-of placement; covered by GrooveMenuTest aMessageOverTheMainWindowIsShownInsideIt
 tests/src/gui/GrooveMenuTest.cpp	# Previous Marker notification is positioned off-screen
+src/gui/widgets/TextFloat.cpp	bugs/qwen-gui-1105-menu-window-channel-load: displayMessage with a parent clamps the float inside the parent's top-level window (it was put at the parent's right edge + 2 px, outside the app when the parent is the main window or flush with its edge - Window > Channel Load showed nothing); a position already inside the window is unchanged; covered by GrooveMenuTest aResultFloatedOverTheMainWindowLiesOverIt
+tests/src/gui/GrooveMenuTest.cpp	# Channel Load results are positioned off-screen
