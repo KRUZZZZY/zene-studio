@@ -31,12 +31,14 @@
 
 #include <QAbstractButton>
 #include <QLabel>
+#include <QPushButton>
 #include <QTemporaryDir>
 #include <QScrollArea>
 #include <QScrollBar>
 
 #include "AutomatableButton.h"
 #include "ControlRegistry.h"
+#include "EffectRackView.h"
 #include "Engine.h"
 #include "Fader.h"
 #include "GuiApplication.h"
@@ -335,6 +337,49 @@ private slots:
 		scroll->horizontalScrollBar()->setValue(scroll->horizontalScrollBar()->maximum());
 		const QRect onBar(matrix->mapTo(bar, QPoint(0, 0)), matrix->size());
 		QVERIFY(bar->rect().contains(onBar));
+	}
+
+	//! gui-1030-tab-mixer-add-effect: on a 1024x768 screen, Mix view with the Inspector and the Browser
+	//! open, the effect rack's Add effect button stays on screen. The window's minimum width follows the
+	//! mixer's: the mode bar's rigid row and the channel area's six-strip minimum made it 2000 px wide,
+	//! and a window wider than the screen leaves the rack - at the right of the body - beyond the edge.
+	void theAddEffectButtonStaysOnAThousandPixelScreen()
+	{
+		MainWindow* win = getGUI()->mainWindow();
+		MixerView* mixer = getGUI()->mixerView();
+		win->shell()->setView(ShellView::Mix);
+		win->revealPanel(QStringLiteral("inspector"));
+		win->revealPanel(QStringLiteral("browser"));
+		win->revealPanel(QStringLiteral("mixer"));
+		QCoreApplication::processEvents();  // let the panel moves settle before the window is sized
+		QCoreApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
+		QVERIFY2(win->minimumSizeHint().width() <= 1024,
+			qPrintable(QStringLiteral("window minimum width %1").arg(win->minimumSizeHint().width())));
+
+		win->resize(1024, 768);
+		QCoreApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
+		QVERIFY(win->width() <= 1024);
+
+		// The selected channel's rack is the page on show; its Add effect sits at the bottom of the rack.
+		QPushButton* addEffect = nullptr;
+		for (QPushButton* button : mixer->zoneWidget(QStringLiteral("rack"))->findChildren<QPushButton*>())
+		{
+			if (button->isVisible() && button->text() == EffectRackView::tr("Add effect")) { addEffect = button; }
+		}
+		QVERIFY2(addEffect != nullptr, "the selected channel's effect rack has no visible Add effect button");
+		const QRect whole(addEffect->mapTo(win, QPoint(0, 0)), addEffect->size());
+		QRect shown = whole;
+		for (QWidget* w = addEffect->parentWidget(); w != nullptr; w = w->parentWidget())
+		{
+			shown &= QRect(w->mapTo(win, QPoint(0, 0)), w->size());
+		}
+		shown &= win->rect();
+		QVERIFY2(shown == whole, qPrintable(QStringLiteral("Add effect: %1x%2 of %3x%4 px on screen")
+			.arg(shown.width()).arg(shown.height()).arg(whole.width()).arg(whole.height())));
+
+		win->shell()->setView(ShellView::Arrange);
+		win->revealPanel(QStringLiteral("mixer"));
+		win->resize(1400, 900);
 	}
 
 private:
