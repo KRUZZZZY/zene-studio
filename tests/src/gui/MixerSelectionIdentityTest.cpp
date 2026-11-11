@@ -32,6 +32,8 @@
 #include <QAbstractButton>
 #include <QLabel>
 #include <QTemporaryDir>
+#include <QScrollArea>
+#include <QScrollBar>
 
 #include "AutomatableButton.h"
 #include "ControlRegistry.h"
@@ -46,6 +48,7 @@
 #include "Mixer.h"
 #include "MixerChannelView.h"
 #include "MixerView.h"
+#include "Shell.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -290,6 +293,48 @@ private slots:
 		QVERIFY(strip != nullptr);
 		QVERIFY(Engine::mixer()->mixerChannel(before)->isBus());
 		QCOMPARE(strip->typeBadge()->text(), QStringLiteral("Return"));
+	}
+
+private slots:
+	// gui-1030-tab-mixer-return: on a 1024x768 screen with the Inspector and the Browser open, the Mix view's
+	// mixer must still fit - the window's minimum width follows the mixer's, so a mixer that wants more than the
+	// centre column leaves its right-hand controls (New mixer channel, Return) beyond the screen.
+	void theReturnButtonStaysOnAThousandPixelScreen()
+	{
+		MainWindow* win = getGUI()->mainWindow();
+		MixerView* mixer = getGUI()->mixerView();
+		win->shell()->setView(ShellView::Mix);
+		win->revealPanel(QStringLiteral("inspector"));
+		win->revealPanel(QStringLiteral("browser"));
+		win->revealPanel(QStringLiteral("mixer"));
+		QCoreApplication::processEvents();  // let the panel moves settle before the window is sized
+		QCoreApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
+		QVERIFY2(win->minimumSizeHint().width() <= 1024,
+			qPrintable(QStringLiteral("window minimum width %1").arg(win->minimumSizeHint().width())));
+
+		win->resize(1024, 768);
+		QCoreApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
+		QVERIFY(win->width() <= 1024);
+
+		auto* newReturn = mixer->findChild<QWidget*>(QStringLiteral("newReturnBtn"));
+		QVERIFY(newReturn != nullptr);
+		QVERIFY(newReturn->isVisible());
+		const QRect onWindow(newReturn->mapTo(win, QPoint(0, 0)), newReturn->size());
+		QVERIFY2(win->rect().contains(onWindow), qPrintable(QStringLiteral("Return at %1,%2 %3x%4 in a window %5x%6")
+			.arg(onWindow.x()).arg(onWindow.y()).arg(onWindow.width()).arg(onWindow.height())
+			.arg(win->width()).arg(win->height())));
+
+		// The mode bar is a scrolling row when it is narrower than its controls: its last control is one
+		// scroll away, not cut off.
+		auto* bar = mixer->findChild<QWidget*>(QStringLiteral("mixerModeBar"));
+		QVERIFY(bar != nullptr);
+		auto* matrix = bar->findChild<QWidget*>(QStringLiteral("mixerModeMatrix"));
+		QVERIFY(matrix != nullptr);
+		auto* scroll = bar->findChild<QScrollArea*>();
+		QVERIFY(scroll != nullptr);
+		scroll->horizontalScrollBar()->setValue(scroll->horizontalScrollBar()->maximum());
+		const QRect onBar(matrix->mapTo(bar, QPoint(0, 0)), matrix->size());
+		QVERIFY(bar->rect().contains(onBar));
 	}
 
 private:
