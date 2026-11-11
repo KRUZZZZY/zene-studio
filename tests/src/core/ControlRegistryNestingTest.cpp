@@ -614,6 +614,24 @@ private slots:
 		setAgentInstance(false); qunsetenv("QT_QPA_PLATFORM"); ControlRegistry::destroy(); ControlRegistry::setReady(true);
 		QVERIFY(unattended); QVERIFY2(result.ok, qPrintable(result.errorMessage));
 	}
+
+	//! cluster gui-1105-menu-help-manual: a recreated registry's "headless" is about
+	//! the display, not about who drives it. A --control-socket instance on a visible
+	//! display has one, so Help > Manual (app.help, requires: display) is not refused.
+	//! This is a QCoreApplication: with no QT_QPA_PLATFORM asked for, only the agent
+	//! flag could make it headless (offscreen staying headless is what every test
+	//! that calls setHeadless(false) "because offscreen is a display" relies on).
+	void agentInstanceOnADisplayIsNotHeadless()
+	{
+		const QByteArray platform = qgetenv("QT_QPA_PLATFORM");
+		qunsetenv("QT_QPA_PLATFORM");
+		setAgentInstance(true);  // what main() does for --control-socket
+		ControlRegistry::destroy();
+		const bool headless = ControlRegistry::instance()->isHeadless();
+		setAgentInstance(false); qputenv("QT_QPA_PLATFORM", platform);
+		ControlRegistry::destroy();
+		QVERIFY2(!headless, "an agent instance on a visible display refuses every 'display' command");
+	}
 };
 
 QTEST_GUILESS_MAIN(ControlRegistryNestingTest)
