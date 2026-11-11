@@ -35,6 +35,7 @@
 
 #include "ConfigManager.h"
 #include "MainWindow.h"
+#include "NoteEditor.h"
 #include "Shell.h"
 #include "ShellChrome.h"
 #include "ShellPanel.h"
@@ -520,6 +521,39 @@ private slots:
 	//! BUGS_FOUND 11.30, carried over from FocusDeskPaneTest when the Focus Desk was retired: a
 	//! restored window is never clamped into an area too small to hold the grab sliver - the
 	//! never-shown workspace is exactly such an area now.
+
+	//! gui-1106-main-mute: a Note Editor tool button in the docked shell, clicked where it is, checks and paints
+	//! as selected (the ShellButton follows its QAction's group, so the painter and the group cannot diverge).
+	void aClickedNoteEditorToolButtonShowsItIsSelected()
+	{
+		World world;
+		auto* editor = new NoteEditor;
+		world.shell.mount(QStringLiteral("detail"), editor);
+		QVERIFY(QTest::qWaitForWindowExposed(&world.shell));
+		ShellButton* mute = nullptr;
+		for (ShellButton* b : editor->findChildren<ShellButton*>())
+		{
+			if (b->toolTip().startsWith(NoteEditor::tr("Mute tool"))) { mute = b; }
+		}
+		QVERIFY(mute != nullptr);
+		QVERIFY(mute->isVisible());
+		QVERIFY(!mute->isChecked());
+		// It lies inside its own panel, nothing of the docked shell covers it.
+		const QRect inShell(mute->mapTo(&world.shell, QPoint()), mute->size());
+		ShellPanel* frame = world.shell.panel(QStringLiteral("detail"));
+		QVERIFY(QRect(frame->mapTo(&world.shell, QPoint()), frame->size()).contains(inShell));
+		QCOMPARE(world.shell.childAt(inShell.center()), static_cast<QWidget*>(mute));
+		const QImage before = mute->grab().toImage();
+		QTest::mouseMove(mute);  // the hover fill is in both images, so only the checked state can differ
+		const QImage hovered = mute->grab().toImage();
+		QTest::mouseClick(mute, Qt::LeftButton);
+		QVERIFY(mute->isChecked());
+		QVERIFY(mute->defaultAction()->isChecked());
+		const QImage after = mute->grab().toImage();
+		QVERIFY(after != before);
+		QVERIFY(after != hovered);
+	}
+
 	void aRestoredWindowIsNotClampedIntoAHiddenWorkspace()
 	{
 		const QRect saved(300, 200, 400, 300);
