@@ -3549,3 +3549,4 @@ docs/qwen-fixes-2026-10/cluster-ci-512849fa221097db.md
 tests/vst2-fixture-darwin-headers-check.py
 tests/threads-target-windows-configure.py
 tests/cmake-threads-scope.sh
+tests/complexity-gate-check.py
