@@ -36,6 +36,7 @@
 #include <QJsonArray>
 #include <QPushButton>
 #include <QSpinBox>
+#include <QToolButton>
 #include <QWheelEvent>
 
 #include "ControlRegistry.h"
@@ -448,6 +449,36 @@ private slots:
 		QCOMPARE(static_cast<int>(m_editor->canvas()->cursor().shape()), static_cast<int>(Qt::ForbiddenCursor));
 		QTest::keyClick(m_editor, Qt::Key_P);
 		QCOMPARE(static_cast<int>(m_editor->canvas()->cursor().shape()), static_cast<int>(Qt::CrossCursor));
+	}
+
+	void clickingAToolButtonSelectsThatTool()
+	{
+		// The toolbar buttons themselves, clicked with the mouse (GUI sweep gui-1105: Mute "left unchanged").
+		const NoteTool order[] = {NoteTool::Mute, NoteTool::Erase, NoteTool::Slice, NoteTool::Select, NoteTool::Audition,
+			NoteTool::Paint, NoteTool::Draw};
+		for (const NoteTool tool : order)
+		{
+			QAction* action = toolAction(tool);
+			QVERIFY(action != nullptr);
+			QToolButton* button = nullptr;
+			for (auto* candidate : m_editor->findChildren<QToolButton*>())
+			{
+				if (candidate->defaultAction() == action) { button = candidate; }
+			}
+			QVERIFY2(button != nullptr, "every tool action has a toolbar button");
+			QVERIFY(button->isVisible() && button->isEnabled());
+			QTest::mouseClick(button, Qt::LeftButton);
+			QCOMPARE(m_editor->state().tool, tool);
+			QVERIFY2(action->isChecked() && button->isChecked(), "the clicked button shows as selected");
+			for (QAction* other : m_editor->findChildren<QAction*>())
+			{
+				if (other != action && other->isCheckable() && other->property("controlCommand").toString()
+						== QStringLiteral("window.note_editor_set") && other->data().isValid())
+				{
+					QVERIFY2(!other->isChecked() || other->data().toInt() != action->data().toInt(), "one tool at a time");
+				}
+			}
+		}
 	}
 
 	void theClipboardKeysCopyPasteDuplicateAndDelete()
