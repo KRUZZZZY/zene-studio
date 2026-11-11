@@ -61,7 +61,7 @@ signals:
 	void changedState(int state);
 
 protected:
-	void mousePressEvent(QMouseEvent* me) override;
+	void nextCheckState() override;
 
 private:
 	QVector<QPair<QPixmap, QString>> m_states;
