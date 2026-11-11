@@ -21,10 +21,13 @@
  * Boston, MA 02110-1301 USA.
  *
  */
-/*! 0.5.0 F6: collab.show_panel declares requires: display, so a headless instance refuses it, typed;
- *  with a display it shows the panel beside the REAL main window (GuiApplication: the panel has no
+/*! 0.5.0 F6: collab.show_panel shows the panel beside the REAL main window (GuiApplication: the panel has no
  *  window to sit beside without it), creating it once and showing the same panel on a second call.
- *  The panel reads the idle session: Host is offered, Stop hosting is not. */
+ *  The panel reads the idle session: Host is offered, Stop hosting is not.
+ *  gui-1106: like every other non-modal panel (window.tempo_map, window.undo_history, ...) it declares no
+ *  `requires: display` - an agent or offscreen GUI session (the registry's headless flag) still has the
+ *  main window, and Edit > Collaborate... discards the command's result, so a refusal there was a menu
+ *  that closed and showed nothing. With no main window the handler itself answers `requires`. */
 
 #include <QtTest>
 
@@ -88,15 +91,15 @@ private slots:
 		ControlRegistry* registry = ControlRegistry::instance();
 		const bool headless = registry->isHeadless();
 
-		registry->setHeadless(true);  // an agent instance: no person to show a panel to
-		const ControlResult refused = registry->invoke(QStringLiteral("collab.show_panel"));
-		registry->setHeadless(false);  // the offscreen platform is a display (requires: display)
+		registry->setHeadless(true);  // an agent / offscreen GUI session: the main window is still there
+		const ControlResult headlessShown = registry->invoke(QStringLiteral("collab.show_panel"));
+		registry->setHeadless(false);
 		const ControlResult shown = registry->invoke(QStringLiteral("collab.show_panel"));
 		const ControlResult again = registry->invoke(QStringLiteral("collab.show_panel"));
 		registry->setHeadless(headless);
 
-		QVERIFY(!refused.ok);
-		QCOMPARE(refused.errorKind, ControlErrorKind::Requires);
+		QVERIFY2(headlessShown.ok, qPrintable(headlessShown.errorMessage));
+		QVERIFY(headlessShown.result.value(QStringLiteral("shown")).toBool());
 		QVERIFY2(shown.ok, qPrintable(shown.errorMessage));
 		QVERIFY(shown.result.value(QStringLiteral("shown")).toBool());
 		QVERIFY2(again.ok, qPrintable(again.errorMessage));
@@ -112,6 +115,39 @@ private slots:
 		QVERIFY(host != nullptr && stop != nullptr);
 		QVERIFY(host->isEnabled());   // idle: hosting is on offer
 		QVERIFY(!stop->isEnabled());  // and there is nothing to stop
+		panel->close();
+	}
+
+	//! gui-1106: Edit > Collaborate... in an agent / offscreen GUI session opens the panel. The menu runs the
+	//! command and discards its result, so a refusal was invisible: the menu closed and nothing appeared.
+	void theEditMenuOpensThePanelInAHeadlessSession()
+	{
+		MainWindow* window = getGUI()->mainWindow();
+		for (CollabPanel* existing : window->findChildren<CollabPanel*>()) { existing->close(); }
+		QAction* collaborate = nullptr;
+		for (QAction* action : window->findChildren<QAction*>())
+		{
+			if (action->property("controlCommand").toString() == QStringLiteral("collab.show_panel")
+				&& action->text() == MainWindow::tr("Collaborate...")) { collaborate = action; }
+		}
+		QVERIFY2(collaborate != nullptr, "Edit > Collaborate... is not in the main window");
+		QVERIFY(collaborate->isEnabled());
+
+		ControlRegistry* registry = ControlRegistry::instance();
+		const bool headless = registry->isHeadless();
+		registry->setHeadless(true);  // what --control-socket or QT_QPA_PLATFORM=offscreen makes it
+		collaborate->trigger();
+		registry->setHeadless(headless);
+
+		const QList<CollabPanel*> panels = window->findChildren<CollabPanel*>();
+		QCOMPARE(panels.size(), 1);
+		CollabPanel* panel = panels.first();
+		QVERIFY2(panel->isVisible(), "the menu closed but no Collaborate window appeared");
+		QCOMPARE(panel->windowTitle(), CollabPanel::tr("Collaborate"));
+		QPushButton* host = buttonOf(panel, QStringLiteral("Host..."));
+		QPushButton* join = buttonOf(panel, QStringLiteral("Join"));
+		QVERIFY(host != nullptr && join != nullptr);
+		QVERIFY(host->isEnabled());  // idle session: host and join controls are offered
 		panel->close();
 	}
 
