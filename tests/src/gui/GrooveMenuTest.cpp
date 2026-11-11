@@ -32,6 +32,7 @@
 
 #include <QtTest>
 
+#include <algorithm>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QLabel>
@@ -41,6 +42,7 @@
 #include <QMenuBar>
 #include <QScreen>
 #include <QMenuBar>
+#include <QScreen>
 #include <QScreen>
 #include <QTemporaryDir>
 
@@ -274,6 +276,25 @@ private slots:
 		QVERIFY2(screen.contains(placed), qPrintable(QStringLiteral("refusal placed at %1,%2 %3x%4, screen %5,%6 %7x%8")
 			.arg(placed.x()).arg(placed.y()).arg(placed.width()).arg(placed.height())
 			.arg(screen.x()).arg(screen.y()).arg(screen.width()).arg(screen.height())));
+	}
+
+	void aMessageOverAWindowFillingTheScreenStaysOnScreen()
+	{
+		// gui-1105: a menu command's refusal floats "just right of" its parent, and the parent is often
+		// the main window; maximised, that is beyond the screen's right edge and nobody sees it.
+		MainWindow* window = getGUI()->mainWindow();
+		const QRect area = window->screen()->availableVirtualGeometry();
+		window->setGeometry(area);
+		window->show();
+		TextFloat* message = TextFloat::displayMessage(QStringLiteral("Next Clip"), QStringLiteral("No clip is selected."),
+			QPixmap(), 0, window);
+		const QRect placed = message->frameGeometry();
+		const auto screens = window->screen()->virtualSiblings();
+		const bool fitsOnAScreen = std::any_of(screens.cbegin(), screens.cend(), [&placed](const QScreen* screen) {
+			return screen->availableGeometry().contains(placed);
+		});
+		delete message;
+		QVERIFY2(fitsOnAScreen, "message does not fit within any screen's available geometry");
 	}
 };
 
