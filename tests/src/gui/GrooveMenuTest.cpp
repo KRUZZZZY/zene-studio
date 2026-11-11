@@ -51,6 +51,8 @@
 #include <QMenuBar>
 #include <QMenuBar>
 #include <QMenuBar>
+#include <QMenuBar>
+#include <QScreen>
 #include <QTemporaryDir>
 
 #include "CommandForm.h"
@@ -645,6 +647,47 @@ private slots:
 		QVERIFY2(inside.contains(shown->geometry().topLeft()),
 			qPrintable(QStringLiteral("refusal at (%1,%2), window spans %3,%4 %5x%6").arg(shown->x()).arg(shown->y())
 				.arg(inside.x()).arg(inside.y()).arg(inside.width()).arg(inside.height())));
+	}
+
+	void aMessageForTheMainWindowIsShownOverIt()
+	{
+		// cluster gui-1106: Help > Accessibility Check floats its report with the main window
+		// (the Help menu's parent) as the anchor. Beside a window is past its right edge - off
+		// the screen when the window fills it - so the report must land over the window instead.
+		MainWindow* window = getGUI()->mainWindow();
+		window->show();
+		QVERIFY(QTest::qWaitForWindowExposed(window));
+		window->setGeometry(window->screen()->availableGeometry());
+		QAction* check = nullptr;
+		for (QAction* top : window->menuBar()->actions())
+		{
+			if (top->menu() != nullptr && check == nullptr) { check = named(top->menu(), QObject::tr("Accessibility Check")); }
+		}
+		QVERIFY2(check != nullptr, "Help > Accessibility Check is not in the menu bar");
+		const QList<TextFloat*> before = window->findChildren<TextFloat*>();
+		check->trigger();
+		TextFloat* report = nullptr;
+		for (TextFloat* message : window->findChildren<TextFloat*>())
+		{
+			if (!before.contains(message)) { report = message; }
+		}
+		QVERIFY2(report != nullptr, "the Accessibility Check report was shown to nobody");
+		const QRect shownAt = report->frameGeometry();
+		const QRect over = window->frameGeometry();
+		QVERIFY2(over.contains(shownAt), qPrintable(QStringLiteral("report at %1,%2 %3x%4 is outside the window %5,%6 %7x%8")
+			.arg(shownAt.x()).arg(shownAt.y()).arg(shownAt.width()).arg(shownAt.height())
+			.arg(over.x()).arg(over.y()).arg(over.width()).arg(over.height())));
+		QVERIFY(window->screen()->availableGeometry().contains(shownAt));
+
+		// A message beside a control (not a window) still goes to the control's right, as before.
+		auto* control = new QWidget(window);
+		control->setGeometry(10, 10, 40, 20);
+		control->show();
+		TextFloat* beside = TextFloat::displayMessage(QStringLiteral("Beside"), QStringLiteral("a control"), QPixmap(), 0, control);
+		QCOMPARE(beside->pos(), control->mapToGlobal(QPoint(0, 0)) + QPoint(control->width() + 2, 0));
+		beside->close();
+		delete beside;
+		delete control;
 	}
 };
 
