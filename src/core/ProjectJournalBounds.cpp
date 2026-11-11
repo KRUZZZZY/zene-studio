@@ -67,6 +67,7 @@ int ProjectJournal::serialisedBytes( const DataFile & data )
 
 bool ProjectJournal::setMaxUndoStates( int states )
 {
+	const StackChangeNotice stackNotice( this );
 	if( states < 1 || states > MaxUndoStateLimit ) { return false; }
 	m_maxUndoStates = states;
 	// Lowering the cap evicts the oldest steps there and then: the caller is
@@ -81,6 +82,7 @@ bool ProjectJournal::setMaxUndoStates( int states )
 
 bool ProjectJournal::setMaxUndoBytes( qint64 bytes )
 {
+	const StackChangeNotice stackNotice( this );
 	if( bytes < 1 || bytes > MaxUndoByteLimit ) { return false; }
 	m_maxUndoBytes = bytes;
 	trimUndoStack();
@@ -145,6 +147,7 @@ bool ProjectJournal::topStepCaptures( jo_id_t id ) const
 
 bool ProjectJournal::coalesceTopStepIntoPrevious()
 {
+	const StackChangeNotice stackNotice( this );
 	if( m_undoCheckPoints.size() < 2 ) { return false; }
 	// WF-033: a step a load put back is never the start of a gesture.
 	if( m_undoCheckPoints.top().loaded || m_undoCheckPoints.at( m_undoCheckPoints.size() - 2 ).loaded ) { return false; }
