@@ -167,9 +167,14 @@ public:
 	//! Payload of control.commands_list.
 	QJsonObject describeAll() const;
 
-	//! True when no display is available (offscreen/minimal/vnc platform).
+	//! True when nobody can answer a dialog: an agent instance, or no display (offscreen/minimal/vnc platform).
 	bool isHeadless() const { return m_headless; }
-	void setHeadless(bool headless) { m_headless = headless; }
+	//! Sets both flags: headless means no display here (a test's way to be on, or off, a display).
+	void setHeadless(bool headless) { m_headless = headless; m_displayAvailable = !headless; }
+	//! True when a window can be shown: what `requires: display` checks. Unlike isHeadless() it stays true in an
+	//! agent instance on a real display, so a non-modal window command (app.help) runs there.
+	bool isDisplayAvailable() const { return m_displayAvailable; }
+	void setDisplayAvailable(bool available) { m_displayAvailable = available; }
 
 	//! True once the GUI is fully constructed and the initial project exists.
 	//! Commands return the typed 'busy' refusal until then, so a client cannot
@@ -378,6 +383,7 @@ private:
 	int m_recordedBytes = 0;
 	int m_evicted = 0;
 	bool m_headless;
+	bool m_displayAvailable = true;
 };
 
 //! Register every command of the first control-surface slice (SPEC A12/A16).
