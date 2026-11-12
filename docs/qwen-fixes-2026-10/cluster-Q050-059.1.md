@@ -108,6 +108,9 @@ session's writable area). Tests run from `build/tests` with `ctest -R '^<name>$'
 | 2 | Instrument state saves and restores safely | `ModularSynthTest::theStateRoundTripsModulesWiringAndParameters` (6-module graph + edited values -> state -> fresh instrument: same wiring, values, sample-identical audio); `::projectSaveAndOpenKeepTheGraph` (`project.save` / clear / `project.open`: same wiring, values, identical audio); `::aDamagedGraphFallsBackToTheStarterGraph` (8 damaged graphs -> starter graph, reason kept, plays); `::aGraphReplacedUnderASoundingNoteKeepsPlaying` | 8 [r2:test-4] | 0 [r2:test-6] |
 | 2 | ... including when new graph state is absent in older projects | `ModularSynthTest::aStateWithoutAGraphLoadsTheStarterGraph` (`<modularsynth/>`); `::projectSaveAndOpenKeepTheGraph` second half (the saved `.mmp` with `<graph>` removed opens with the starter graph, no error, and plays) | 8 [r2:test-4] | 0 [r2:test-6] |
 | GUI | The window edits through `plugin.param_set`, one undo step | `ModularSynthViewTest::theWindowHasAKnobForEveryParameterAndTurningOneIsHeard` (knob per parameter showing its value; wheel on `osc1.coarse` -> `plugin.param_get` reads it -> pitch rises 2^(st/12) -> one `control.undo` reports `plugin.param_set` and restores 0, knob follows; agent write moves the knob; a replaced graph rebuilds the knobs) | 8 [r2:test-5-revert-all-view]; 8 with the direct-binding view [r2:test-2-revert-view] | 0 [r2:test-7-restored-view] |
+| GUI, no agent socket (r3) | A knob turn is `plugin.param_set` (one undo step) when the registry was never made ready | `ModularSynthViewTest::aKnobTurnWithNoAgentSocketIsStillOneUndoablePluginParamSet` | 8, round-2 view [r3:06] | 0 [r3:08, r3:18] |
+| GUI refusal (r3) | A refused `plugin.param_set` changes nothing: no value, no undo step, no transaction | `ModularSynthViewTest::aRefusedKnobTurnChangesNothing` | 8, round-2 view [r3:06] | 0 [r3:08, r3:18] |
+| limits (r3) | 16 modules / 64 wires load; 17 / 65 fall back with a reason | `ModularSynthTest::aGraphAtTheSizeLimitsLoads`, `::aDamagedGraphFallsBackToTheStarterGraph(17 modules / 65 wires)` | pins existing validation (whole-module revert, round 2) | 0 [r3:18] |
 | agent | plugin.list / plugin.load / plugin.param_get / param_set / undo | `ModularSynthTest::theInstrumentIsReachableThroughThePluginCommands` | 8 [r2:test-4] | 0 [r2:test-6] |
 | RT | Render path allocation-free | `ModularSynthTest::theRenderPathAllocatesNothing` (4 notes, whole life, 0 allocations / 0 frees) | 8 [r2:test-4] | 0 [r2:test-6]; sensitivity: an allocation planted in `playNoteImpl` fails it with 164 [test-3-mutation] |
 
@@ -116,6 +119,43 @@ Case counts (round 2, current tests): reverted `ModularSynthTest` 2 passed / 16 
 on the round-1 tests [test-17..20].
 
 ## Self-check
+
+**Round 3** (`r3:` logs in `~/.local/share/zene-bunny-fix/qwen/runs/Q050-059.1.r3/logs/`):
+
+- `submit_check.py ... Q050-059.1` [r3:20]: the first run had 2 FAILs. The first was "commands snapshot regenerated live".
+  I fixed it by running `snapshot_live.py $PWD`, EXIT=0, which reported 871 ids / 76 groups. The diff touches only
+  `captured_at`, lane, socket and version, so no command changed. It is committed as `a619c8e4e`, and
+  `tests/doc-figures-gate.py` gave EXIT=0 [r3:21, r3:22]. The second was `gates (feature_check.py)`. That is the same
+  sandbox `PermissionError` as round 2: the script writes `../zene-feat-q050-059.1-feature-check/`, outside the writable
+  area [r3:11]. I ran a copy that differs only in its log directory (`/tmp/q0591fc`) and its `ROOT` path (the shown
+  `diff`). It gave **all 8 rows PASS, EXIT=0** [r3:19], including file-length after the `ControlRegistry.cpp` trim (it had
+  failed at 509 lines [r3:13]). The WARN "canary figures" lists strings from test code (`control.undo`, `modular.mmp`), not
+  new command ids, so no README figure changed.
+- **Each new test fails with the product change reverted.** I reverted the product hunk the round-3 tests target, the
+  view's dispatch, to the round-2 `invoke`+fallback version, and rebuilt `modularsynth ModularSynthViewTest` (BUILD=0
+  [r3:05]). `ctest -R '^ModularSynthViewTest$' -V` then gave **EXIT=8**: the no-socket case failed (transactions 2, not
+  3) and the refusal case failed (parameter 3, not 0) [r3:06]. With the fix restored and rebuilt (BUILD=0 [r3:07]), the run
+  gave **EXIT=0**, 5/5 and 18/18 [r3:08]. With the final tree: build EXIT=0 [r3:17], and both tests EXIT=0, 22/22 and 5/5
+  [r3:18]. The new limit rows pin the existing graph validation and are not changed behaviour. They fail only with the
+  whole module reverted (round 2).
+- **Acceptance.** Criteria 1 and 2 are covered by `ModularSynthTest`, EXIT=0 with 22/22 [r3:18]; the table above names
+  the cases.
+- **One undo step and reversibility.** No command was added or changed; the live snapshot gives the same 871 ids.
+  `invokeInProcess` runs the registered `plugin.param_set` handler (`true_inverse`) through the same `runHandler`
+  bookkeeping. The no-socket test shows one `control.undo` reporting `plugin.param_set`, and the refusal test shows no
+  undo step. `ControlRegistryTest` (28/28) and `ReversibilityContractTest` (9/9) give EXIT=0 [r3:16].
+- **Audio thread.** Round 3 changed only GUI-thread and control code: `ModularSynthView::dispatch`,
+  `ControlRegistry::invoke`/`invokeInProcess`/`dispatch`, and the file-static `engineAddressable`. The handler still runs
+  through `runOnUiThread`. No render-path code changed, so the round-2 audio analysis below stands.
+- **Old projects.** No loader or render change this round. `invoke` keeps its behaviour for every other caller, and
+  `ControlRegistryTest` still passes, including its busy-before-ready refusal.
+- **Portability.** The new code uses no Qt-6-only API, no `std::filesystem`, no POSIX call and no reserved identifier
+  (`inProcess`, `engineAddressable`). `invokeInProcess` is inline in an `LMMS_EXPORT` class and calls the exported member
+  `dispatch`. I built only Linux/GCC/Qt 6.
+- **Train merge.** It was not performed because the guard refuses `git merge` (round 3, item 1). Only the derived
+  `tests/all-sources.txt` still conflicts.
+
+**Round 2 (kept for the record):**
 
 `submit_check.py` (round 2, after the report commit): every item PASS except `gates (feature_check.py)`, which fails in this
 session only because the script creates its log directory beside the worktree (`PermissionError: ...
