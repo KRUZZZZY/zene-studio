@@ -367,6 +367,22 @@ private slots:
 		QCOMPARE(button->accessibleName(), QStringLiteral("Pop out the Note Editor panel"));
 	}
 
+	//! GUI sweep gui-1106: Automation's pop-out button, clicked once, floats it in "Automation - Zene Studio".
+	void theAutomationPopOutButtonFloatsItAndDocksItBack()
+	{
+		World world;
+		const QString id = QStringLiteral("automation");
+		auto* button = world.shell.panel(id)->findChild<QToolButton*>(QStringLiteral("panelFloat"));
+		QVERIFY(button != nullptr);
+		QCOMPARE(button->accessibleName(), QStringLiteral("Pop out the Automation panel"));
+		button->click();
+		QVERIFY(world.shell.isDetached(id));
+		QVERIFY(world.shell.floatingWindow(id)->isVisible());
+		QCOMPARE(world.shell.floatingWindow(id)->windowTitle(), QStringLiteral("Automation - Zene Studio"));
+		button->click();  // now "Dock"
+		QVERIFY(!world.shell.isDetached(id));
+	}
+
 	void draggingAHeaderOutFloatsThePanelWhereItIsDropped()
 	{
 		World world;
