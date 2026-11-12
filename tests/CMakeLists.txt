@@ -1230,6 +1230,8 @@ set(LMMS_TESTS
 	# and BUGS_FOUND 11.30's clamp guarantee (carried over from the retired Focus Desk tests).
 	src/gui/ShellLayoutTest.cpp
 	src/gui/ShellTest.cpp
+	# GUI sweep 050/m0-train-24 (cluster gui-1030-*): what a click on a panel's Pop out button and the View > Float or Dock Panel action do
+	src/gui/ShellFloatButtonTest.cpp
 	# 0.5.0 wave 3 themes 8/22: region tabs, footer/header overflow, the Tools home, personal vs project layouts
 	src/gui/ShellHomesTest.cpp
 	# The design tokens: every declared text/surface pair AA, the generated stylesheet AA, the
@@ -3678,6 +3680,7 @@ set_tests_properties(ClipLinkTest ClipLinkPersistenceTest LinkedClipEditsTest Li
 # run them in the headless state the product is told about, not what keeps them
 # from aborting.
 set_tests_properties(ShellTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(ShellFloatButtonTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(DesignTokensTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TouchLayoutTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(NoteEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
