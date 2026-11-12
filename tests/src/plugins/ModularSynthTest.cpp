@@ -35,6 +35,30 @@ using namespace lmms;
 using namespace lmms::modular_test;
 
 
+namespace
+{
+
+/*! A graph of @a modules modules - an oscillator, filters, and the output last - with the first @a wires of the forward
+ *  wires (module i into module j's audio input, i < j, in order of i then j); acyclic, so only its size can be wrong.
+ *  The first wires fan the oscillator into every later module, so it reaches the output. */
+QString limitGraph(int modules, int wires)
+{
+	QString xml = QStringLiteral("<module id=\"m0\" type=\"oscillator\"/>");
+	for (int m = 1; m < modules - 1; ++m) { xml += QStringLiteral("<module id=\"m%1\" type=\"filter\"/>").arg(m); }
+	xml += QStringLiteral("<module id=\"m%1\" type=\"output\"/>").arg(modules - 1);
+	int made = 0;
+	for (int from = 0; from < modules && made < wires; ++from)
+	{
+		for (int to = from + 1; to < modules && made < wires; ++to, ++made)
+		{
+			xml += QStringLiteral("<wire from=\"m%1\" to=\"m%2\" port=\"in\"/>").arg(from).arg(to);
+		}
+	}
+	return xml;
+}
+
+} // namespace
+
 class ModularSynthTest : public ModularSynthFixture
 {
 	Q_OBJECT
@@ -179,6 +203,9 @@ private slots:
 			<< QStringLiteral("cannot feed");
 		QTest::newRow("missing module") << oscOut + QStringLiteral("<wire from=\"ghost\" to=\"out\" port=\"in\"/>")
 			<< QStringLiteral("unknown module");
+		// The size limits, one past each (ModularGraph.h: MaxModules 16, MaxWires 64); the limits themselves load below.
+		QTest::newRow("17 modules") << limitGraph(17, 16) << QStringLiteral("17 modules, more than 16");
+		QTest::newRow("65 wires") << limitGraph(16, 65) << QStringLiteral("65 wires, more than 64");
 		QTest::newRow("cycle") << QStringLiteral(
 			"<module id=\"a\" type=\"filter\"/><module id=\"b\" type=\"filter\"/><module id=\"out\" type=\"output\"/>"
 			"<wire from=\"a\" to=\"b\" port=\"in\"/><wire from=\"b\" to=\"a\" port=\"in\"/><wire from=\"b\" to=\"out\" port=\"in\"/>")
@@ -195,6 +222,31 @@ private slots:
 		QCOMPARE(wiring(), StarterWiring);
 		QVERIFY2(loadProblem().contains(reason), qPrintable(loadProblem()));
 		QVERIFY(peakOf(playNote()) > 0.05f);
+	}
+
+	//! The size limits themselves are playable graphs: 16 modules, and 16 modules with 64 wires, load as written (no
+	//! fallback, no problem reported) and play a finite, sounding note.
+	void aGraphAtTheSizeLimitsLoads_data()
+	{
+		QTest::addColumn<int>("modules");
+		QTest::addColumn<int>("wires");
+		QTest::newRow("16 modules") << 16 << 16;
+		QTest::newRow("16 modules, 64 wires") << 16 << 64;
+	}
+
+	void aGraphAtTheSizeLimitsLoads()
+	{
+		QFETCH(int, modules);
+		QFETCH(int, wires);
+		fresh();
+		QDomDocument doc;
+		restore(stateElement(doc, limitGraph(modules, wires)));
+		QVERIFY2(loadProblem().isEmpty(), qPrintable(loadProblem()));
+		QCOMPARE(wiring().count(QLatin1Char('\n')) + 1, wires);
+		QVERIFY(wiring() != StarterWiring);
+		const std::vector<float> note = playNote();
+		QVERIFY(std::all_of(note.begin(), note.end(), [](float v) { return std::isfinite(v); }));
+		QVERIFY(peakOf(note) > 0.f);
 	}
 
 	//! ACCEPTANCE 2, through the files and commands a user and an agent use: project.save writes the graph,
