@@ -225,6 +225,27 @@ private slots:
 		QVERIFY(world.shell.attachPanel(QStringLiteral("inspector")));
 	}
 
+
+	void aMouseClickOnATabOpensItsPanelWithTheInspectorFloating()
+	{
+		// gui-1105: the GUI sweep clicked "Pattern Editor" where the Inspector it had popped out was lying over the
+		// strip. The click itself, delivered to the tab, opens the panel - also with the left region emptied.
+		World world;
+		QVERIFY(QTest::qWaitForWindowExposed(&world.shell));
+		QVERIFY(world.shell.detachPanel(QStringLiteral("inspector")));
+		ShellRegionTabs* tabs = world.shell.regionTabs(ShellRegion::Bottom);
+		QCOMPARE(tabs->currentId(), QStringLiteral("detail"));
+		QTabBar* bar = tabs->bar();
+		const int index = static_cast<int>(tabs->tabIds().indexOf(QStringLiteral("pattern")));
+		QVERIFY(index >= 0);
+		QVERIFY(bar->rect().contains(bar->tabRect(index)));  // the whole tab is on the bar, none scrolled away
+		QTest::mouseClick(bar, Qt::LeftButton, {}, bar->tabRect(index).center());
+		QVERIFY(world.shell.model().isVisible(QStringLiteral("pattern")));
+		QVERIFY(world.content.value(QStringLiteral("pattern"))->isVisible());
+		QCOMPARE(tabs->currentId(), QStringLiteral("pattern"));
+		QVERIFY(world.shell.attachPanel(QStringLiteral("inspector")));
+	}
+
 	void aRegionWithOnePanelShowsNoTabs()
 	{
 		World world;
