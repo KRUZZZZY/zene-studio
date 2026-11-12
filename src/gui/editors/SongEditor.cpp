@@ -84,6 +84,9 @@ namespace
 constexpr int MIN_PIXELS_PER_BAR = 4;
 constexpr int MAX_PIXELS_PER_BAR = 400;
 constexpr int ZOOM_STEPS = 200;
+//! The bar ruler's least height: a bar number, the loop brace and the punch band fit in it. Its layout gives it
+//! no size of its own, so without this it collapses to nothing and there is no ruler to click.
+constexpr int BAR_RULER_MIN_HEIGHT = 24;
 
 constexpr std::array SNAP_SIZES{8.f, 4.f, 2.f, 1.f, 1/2.f, 1/4.f, 1/8.f, 1/16.f};
 constexpr std::array PROPORTIONAL_SNAP_SIZES{64.f, 32.f, 16.f, 8.f, 4.f, 2.f, 1.f, 1/2.f, 1/4.f, 1/8.f, 1/16.f, 1/32.f, 1/64.f};
@@ -161,6 +164,7 @@ SongEditor::SongEditor( Song * song ) :
 	m_mpsStatus = nullptr;
 
 
+	m_timeLine->setMinimumHeight( BAR_RULER_MIN_HEIGHT );
 	static_cast<QVBoxLayout *>( layout() )->insertWidget( 0, m_timeLine );
 
 	m_leftRightScroll = new QScrollBar( Qt::Horizontal, this );

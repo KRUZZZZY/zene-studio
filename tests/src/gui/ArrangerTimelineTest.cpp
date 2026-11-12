@@ -55,6 +55,7 @@
 #include <QScrollBar>
 #include <QTimer>
 #include <QToolBar>
+#include <QVBoxLayout>
 #include <QWheelEvent>
 
 #include "../core/AudioBurstSupport.h"
@@ -408,6 +409,39 @@ private slots:
 		QCOMPARE(run(QStringLiteral("arrangement.ruler_lanes")).result.value(QStringLiteral("tempo")).toBool(), false);
 		QVERIFY(run(QStringLiteral("arrangement.ruler_lanes"), {{QStringLiteral("tempo"), true}}).ok);
 		QCOMPARE(lanes->height(), sections.height() + markers.height() + tempo.height());
+	}
+
+	//! The numbered bar ruler, not the lanes, is what a click seeks on, so it has to be a band of its own with
+	//! a usable height: listed once in the song editor's layout, and clicked near bar 3 it puts the play position
+	//! there, and a drag along it follows the pointer.
+	void theBarRulerHasAUsableHeightAndSeeksWhereItIsDragged()
+	{
+		constexpr int MinBarRulerHeight = 24;  // a bar number, the loop brace and the punch band fit in it
+		TimeLineWidget* ruler = m_editor->timeLine();
+		QVERIFY(ruler->isVisible());
+
+		auto* box = qobject_cast<QVBoxLayout*>(m_editor->layout());
+		QVERIFY(box != nullptr);
+		int entries = 0;
+		for (int i = 0; i < box->count(); ++i) { entries += box->itemAt(i)->widget() == ruler ? 1 : 0; }
+		QCOMPARE(entries, 1);
+
+		QVERIFY2(ruler->height() >= MinBarRulerHeight,
+			qPrintable(QStringLiteral("the bar ruler is %1 px tall, under %2").arg(ruler->height()).arg(MinBarRulerHeight)));
+
+		const int y = ruler->height() / 2;
+		QTest::mouseClick(ruler, Qt::LeftButton, Qt::NoModifier, QPoint(ruler->markerX(TimePos(2 * Bar)), y));
+		QVERIFY2(std::abs(Engine::getSong()->getPlayPos().getTicks() - 2 * Bar) <= Bar / 8,
+			qPrintable(QStringLiteral("a click at bar 3 left the play position at tick %1").arg(Engine::getSong()->getPlayPos().getTicks())));
+
+		QTest::mousePress(ruler, Qt::LeftButton, Qt::NoModifier, QPoint(ruler->markerX(TimePos(2 * Bar)), y));
+		const QPoint dragTo(ruler->markerX(TimePos(4 * Bar)), y);
+		QMouseEvent drag(QEvent::MouseMove, QPointF(dragTo), QPointF(ruler->mapToGlobal(dragTo)), Qt::NoButton,
+			Qt::LeftButton, Qt::NoModifier);
+		QCoreApplication::sendEvent(ruler, &drag);
+		QTest::mouseRelease(ruler, Qt::LeftButton, Qt::NoModifier, dragTo);
+		QVERIFY2(std::abs(Engine::getSong()->getPlayPos().getTicks() - 4 * Bar) <= Bar / 8,
+			qPrintable(QStringLiteral("a drag to bar 5 left the play position at tick %1").arg(Engine::getSong()->getPlayPos().getTicks())));
 	}
 
 	//! 0.5.0 E23: the chord track has a lane under Tempo - it takes room only while the chord track holds a
