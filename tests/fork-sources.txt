@@ -2162,6 +2162,8 @@ include/MidiInputGate.h
 tests/src/core/MidiInputGateTest.cpp
 tests/src/core/MidiAlsaSeqShutdownTest.cpp
 tests/src/core/MidiAlsaRawShutdownTest.cpp
+# Train 27 tools-complexity refactor: cause, unchanged enforcement, negative controls and validation.
+docs/qwen-fixes-2026-10/sol-train-27-tools-complexity.md
 docs/050-features/Q050-488.md
 docs/qwen-fixes-2026-10/cluster-Q050-488.md
 # 0.5.0 Q050-141: a finger's touch event as the mouse gesture the widget already handles.

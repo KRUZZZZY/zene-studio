@@ -8214,6 +8214,16 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	# running instance: it operates on project files directly.  The binary-
 	# dependent classes (BinarySafety, AudibleDiffBinary) skip when build/zene
 	# is absent, exactly as the pre-existing Qt6 test skips without scratch/qtsave2.
+	# Keep the tools ratchet beside the merge-driver behavior suite. This invokes
+	# the unchanged gate in CI check mode; it never rewrites a baseline.
+	add_test(NAME MmpzGitToolsComplexity
+		COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/complexity-gate.sh --scope tools --check)
+	set_tests_properties(MmpzGitToolsComplexity PROPERTIES TIMEOUT 120)
+	add_test(NAME MmpzGitMergeTest
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_SOURCE_DIR}/tools/mmpz-git/tests/test_mmpz_git.py -v
+			Merge MergeDepth MusicalPresentation LargeAssets GitDriverFlow)
+	set_tests_properties(MmpzGitMergeTest PROPERTIES TIMEOUT 180)
 	add_test(NAME MmpzGitDepthTest
 		COMMAND ${PYTHON3_EXECUTABLE}
 			${CMAKE_SOURCE_DIR}/tools/mmpz-git/tests/test_mmpz_git.py -v)

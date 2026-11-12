@@ -152,6 +152,7 @@ tools/mcp-zene-control/zene_control/tools.py
 tools/mmpz-git/demo_check.py
 tools/mmpz-git/demo_edits.py
 tools/mmpz-git/depth-demo.sh
+# ci-6d61162ce0abfd39: split recursive merge phases into bounded-complexity helpers; preserve deep signatures, mutation and conflict-comment ordering.
 tools/mmpz-git/mmpz_git.py
 tools/mmpz-git/render-recipe.sh
 # ARCH-4 S3 (2026-09-22): rev_report.py names which side of a three-way merge

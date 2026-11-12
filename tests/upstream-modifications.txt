@@ -26,6 +26,7 @@
 # (2026-09-09 form of this file: an empty allowlist used only for "compile-only fixes".
 # It never held a line, and Gate 6 was red from the first behavioural change.)
 
+tests/CMakeLists.txt	ci-6d61162ce0abfd39: register MmpzGitToolsComplexity and focused MmpzGitMergeTest beside the unchanged full merge-driver suite; the tools gate runs in check mode without writing a baseline.
 tests/CMakeLists.txt	cluster new-p23-97: register SfzFilePoolTest and link it to the built sfizz library and its header dependencies for direct FilePool regression coverage.
 tests/fork-sources.txt	cluster new-p23-97: register the new direct FilePool regression test in the fork-added source manifest.
 tests/all-sources.txt	cluster new-p23-97: regenerate the entry list from its published recipe after the train snapshot reintroduced the excluded vendored sfizz paths; the new SfzFilePoolTest source is included.
