@@ -3527,3 +3527,4 @@ docs/qwen-fixes-2026-10/cluster-gui-1030-main-loop-points.md
 tests/src/gui/ShellFloatButtonTest.cpp
 # cluster gui-1030-main-pop-out-the-note-editor-panel (2026-11): report for the five GUI-sweep pop-out reports (fork-NEW).
 docs/qwen-fixes-2026-10/cluster-gui-1030-main-pop-out-the-note-editor-panel.md
+docs/qwen-fixes-2026-10/cluster-gui-1105-main-delete.md
