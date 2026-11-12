@@ -960,6 +960,61 @@ private slots:
 		QCOMPARE(m_editor->state().tool, NoteTool::Paint);
 	}
 
+	//! gui-1105-main-paint (Terra sweep m0-train-25): in a fresh project - no clip open - a real left click on the
+	//! toolbar's Paint button selects Paint: the editor's tool, the button's checked state, and no other tool shown
+	//! selected. Driven through the button the user sees, not through setTool.
+	void aClickOnThePaintButtonWithNoClipOpenSelectsPaint()
+	{
+		m_editor->setClip(nullptr);
+		m_editor->setTool(NoteTool::Draw);  // a fresh editor's tool
+		ShellButton* paint = toolButtonIn(m_editor, QStringLiteral("Paint"));
+		QVERIFY2(paint != nullptr, "the toolbar has no Paint button");
+		QVERIFY(paint->isVisible() && paint->isEnabled() && !paint->isChecked());
+		QTest::mouseClick(paint, Qt::LeftButton, Qt::NoModifier, paint->rect().center());
+		QCOMPARE(m_editor->state().tool, NoteTool::Paint);
+		QVERIFY2(paint->isChecked(), "Paint is not shown selected after its click");
+		for (ShellButton* other : m_editor->findChildren<ShellButton*>())
+		{
+			if (other != paint && other->defaultAction() != nullptr
+				&& other->defaultAction()->actionGroup() == paint->defaultAction()->actionGroup())
+			{
+				QVERIFY2(!other->isChecked(), qPrintable(other->defaultAction()->text() + QStringLiteral(" is still selected")));
+			}
+		}
+	}
+
+	//! gui-1105-main-paint: the sweep's layout. It popped the Inspector out (its step 13) before clicking Paint
+	//! (step 23). A popped-out panel opens as a top-level window at least 480 px wide where the panel was, and the
+	//! centre reflows under it, so the Paint button sits beneath that window: the sweep's click at x=180 landed on the
+	//! Inspector (its after-shot shows the pointer on empty Inspector space). Delivered to the button, the click works.
+	void thePoppedOutInspectorCoversThePaintButtonTheSweepClicked()
+	{
+		Shell shell;
+		auto* editor = new NoteEditor;
+		for (const ShellPanelSpec& spec : ShellLayout::panels())
+		{
+			shell.mount(spec.id, spec.id == QLatin1String("detail") ? static_cast<QWidget*>(editor) : new QWidget);
+		}
+		shell.resize(1600, 1000);
+		shell.show();
+		QVERIFY(QTest::qWaitForWindowExposed(&shell));
+		if (!editor->isVisible()) { shell.togglePanel(QStringLiteral("detail")); }
+		QVERIFY2(editor->isVisible(), "the note editor is not on screen in the shell");
+		QVERIFY(shell.detachPanel(QStringLiteral("inspector")));
+		QCoreApplication::processEvents();  // the centre's reflow
+		QWidget* inspector = shell.floatingWindow(QStringLiteral("inspector"));
+		QVERIFY(inspector != nullptr && inspector->isVisible());
+		ShellButton* paint = toolButtonIn(editor, QStringLiteral("Paint"));
+		QVERIFY2(paint != nullptr, "the toolbar has no Paint button");
+		const QPoint at = paint->mapToGlobal(paint->rect().center());
+		QVERIFY2(inspector->frameGeometry().contains(at),
+			qPrintable(QStringLiteral("Paint at %1,%2 is outside the floating Inspector %3,%4 %5x%6").arg(at.x()).arg(at.y())
+				.arg(inspector->x()).arg(inspector->y()).arg(inspector->width()).arg(inspector->height())));
+		QTest::mouseClick(paint, Qt::LeftButton, Qt::NoModifier, paint->rect().center());
+		QCOMPARE(editor->state().tool, NoteTool::Paint);
+		QVERIFY(paint->isChecked());
+	}
+
 private:
 	//! The toolbar's button for the action named @a text, found as a user finds it: by its label.
 	ShellButton* toolButtonNamed(const QString& text) const
@@ -991,6 +1046,16 @@ private:
 				QVERIFY2(!other->isChecked(), qPrintable(other->defaultAction()->text() + QStringLiteral(" is still selected")));
 			}
 		}
+	}
+
+	//! The toolbar button of @a editor whose action is labelled @a text, found as a user finds it.
+	static ShellButton* toolButtonIn(NoteEditor* editor, const QString& text)
+	{
+		for (ShellButton* button : editor->findChildren<ShellButton*>())
+		{
+			if (button->defaultAction() != nullptr && button->defaultAction()->text() == text) { return button; }
+		}
+		return nullptr;
 	}
 
 	QPoint point(int tick, int key) const
