@@ -121,8 +121,9 @@ path. The shimmed run is the one in the "Submit check, unmodified tool" row.
 - **The regression test FAILS with the product change reverted and PASSES with it (exit codes).**
   RED: `git apply -R LOG/fix.patch` EXIT=0, build EXIT=0, `./ArrangerTakePunchTest` **EXIT=4**
   (4 failures, LOG/061). GREEN: `git apply LOG/fix.patch` EXIT=0, build EXIT=0,
-  `./ArrangerTakePunchTest` **EXIT=0** (7 passed, LOG/063). The direct Qt Test binary returns the
-  number of failing functions; under `ctest` the same RED state is exit 8.
+  `./ArrangerTakePunchTest` **EXIT=0** (7 passed, LOG/063). Both runs used the rebuilt Qt Test
+  binary directly (its exit code is the number of failing test functions); the ctest-wrapped GREEN
+  run is LOG/071 and LOG/100.
 - **The test is deterministic: no wall-clock timing, sleeps or races.** Inputs are fixed: fixture
   zoom 40 px/bar and scroll 0, explicit `transport.punch_set` `start`/`end` ticks, a deterministic
   `ruler->resize(markerX(600 bar) - 1, 32)`, and synchronous `QWidget::grab()` images compared at
