@@ -28,6 +28,8 @@
 
 #include <QtTest>
 
+#include <QAction>
+#include <QMenu>
 #include <QWidget>
 
 #include "ConfigManager.h"
@@ -37,6 +39,7 @@
 #include "GuiApplication.h"
 #include "GuiTestApplication.h"
 #include "MainWindow.h"
+#include "ProjectJournal.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -101,7 +104,110 @@ private slots:
 		QCOMPARE(ConfigManager::inst()->value(QStringLiteral("app"), QStringLiteral("configured")).toInt(), 0);
 	}
 
+	void redoShortcutWorksAfterUndoWhileTheEditMenuIsClosed()
+	{
+		// Edit > Redo is refreshed only when the Edit menu opens, and a disabled QAction does not
+		// fire its shortcut. Undoing a step therefore has to refresh Redo, or Ctrl+Shift+Z stays
+		// dead until the menu is opened again.
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		journal->clearJournal();
+		QAction* undoAction = editAction(QStringLiteral("control.undo"));
+		QAction* redoAction = editAction(QStringLiteral("control.redo"));
+		QVERIFY(undoAction != nullptr);
+		QVERIFY(redoAction != nullptr);
+
+		int undone = 0;
+		int redone = 0;
+		journal->addJournalAction([&undone]() { ++undone; }, [&redone]() { ++redone; });
+		openEditMenu(undoAction);
+		QVERIFY(undoAction->isEnabled());
+		QVERIFY(!redoAction->isEnabled());  // nothing to redo yet, so the menu greys it out
+
+		pressShortcut(undoAction);
+		QCOMPARE(undone, 1);
+		QVERIFY(redoAction->isEnabled());
+
+		pressShortcut(redoAction);
+		QCOMPARE(redone, 1);
+	}
+
+	void undoShortcutWorksForAnEditMadeWhileTheEditMenuIsClosed()
+	{
+		// The mirror of the Redo case: the menu was last opened with nothing to undo, so Undo was
+		// greyed out. An edit that arrives afterwards must make Undo available without the menu
+		// being reopened.
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		journal->clearJournal();
+		QAction* undoAction = editAction(QStringLiteral("control.undo"));
+		QVERIFY(undoAction != nullptr);
+
+		openEditMenu(undoAction);
+		QVERIFY(!undoAction->isEnabled());
+
+		int undone = 0;
+		journal->addJournalAction([&undone]() { ++undone; }, []() {});
+		QVERIFY(undoAction->isEnabled());
+
+		pressShortcut(undoAction);
+		QCOMPARE(undone, 1);
+	}
+
+	void aStepUnwoundThroughTheJournalRefreshesRedo()
+	{
+		// control.undo and control.redo unwind the journal directly, not through the menu slots,
+		// so the Edit menu's Redo must follow the stack whichever path moved it.
+		ProjectJournal* journal = Engine::projectJournal();
+		QVERIFY(journal != nullptr);
+		journal->clearJournal();
+		QAction* redoAction = editAction(QStringLiteral("control.redo"));
+		QVERIFY(redoAction != nullptr);
+
+		journal->addJournalAction([]() {}, []() {});
+		journal->undo();
+		QVERIFY(redoAction->isEnabled());
+		journal->redo();
+		QVERIFY(!redoAction->isEnabled());
+	}
+
 private:
+	// The Edit menu's undo/redo actions are found by the registry command they declare.
+	static QAction* editAction(const QString& command)
+	{
+		const auto actions = getGUI()->mainWindow()->findChildren<QAction*>(QString(), Qt::FindChildrenRecursively);
+		for( QAction* action : actions )
+		{
+			if( action->data().toString() == command ) { return action; }
+		}
+		return nullptr;
+	}
+
+	// Presses the first key combination the action is bound to on this platform (Ctrl+Y on the offscreen
+	// theme, Ctrl+Shift+Z where that is the binding), so the test follows the shortcut the user has.
+	static void pressShortcut(QAction* action)
+	{
+		QVERIFY(!action->shortcut().isEmpty());
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+		const QKeyCombination combination = action->shortcut()[0];
+		const Qt::Key key = combination.key();
+		const Qt::KeyboardModifiers modifiers = combination.keyboardModifiers();
+#else
+		const int combined = action->shortcut()[0];
+		const Qt::Key key = static_cast<Qt::Key>(combined & ~Qt::KeyboardModifierMask);
+		const Qt::KeyboardModifiers modifiers = static_cast<Qt::KeyboardModifiers>(combined & Qt::KeyboardModifierMask);
+#endif
+		QTest::keyClick(getGUI()->mainWindow(), key, modifiers);
+	}
+
+	// Opening the Edit menu is what refreshes its Undo/Redo enablement, so open it the same way.
+	static void openEditMenu(QAction* action)
+	{
+		auto* menu = qobject_cast<QMenu*>(action->parent());
+		QVERIFY(menu != nullptr);
+		QMetaObject::invokeMethod(menu, "aboutToShow");
+	}
+
 	QTemporaryDir m_home;
 };
 
