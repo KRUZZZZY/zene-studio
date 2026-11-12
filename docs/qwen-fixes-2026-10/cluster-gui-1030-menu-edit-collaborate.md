@@ -113,9 +113,10 @@ check was modified.
 | **4b GREEN** | `ctest -R MenuRefusalNoticeTest --output-on-failure` (`017-test-green-restored.log`, 1 test) | 0 |
 | family build | `cmake --build build --target OnlineHelpNoticeTest CollabPanelTest HelpAccessTest StartHubTest AgentSurfaceReportTest OscServerMenuTest ShortcutsCommandsTest ArrangerFileDropTest -j4` (`020-build-family.log`) | 0 |
 | family tests | `ctest -R "MenuRefusalNoticeTest\|OnlineHelpNoticeTest\|CollabPanelTest\|HelpAccessTest\|StartHubTest\|AgentSurfaceReportTest\|OscServerMenuTest\|ShortcutsCommandsTest\|ArrangerFileDropTest" --output-on-failure` (`021-test-family.log`) - **9/9 passed** | 0 |
-| final pre-commit build | `cmake --build build --target zene MenuRefusalNoticeTest -j4` (`023-build-final-precommit.log`) | 0 |
-| final focused run | `ctest -R MenuRefusalNoticeTest` (`024-test-final-precommit.log`, 1 test) | 0 |
-| **gates (exact shipped script)** | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (`019-gates-final.log`) | **0, 8/8 PASS** |
+| final pre-commit build | `cmake --build build --target zene MenuRefusalNoticeTest -j4` (`023-build-final-precommit.log`, `025-build-precommit-final.log` after the test-comment edit) | 0 |
+| final focused run | `ctest -R MenuRefusalNoticeTest` (`024-test-final-precommit.log`, `026-test-precommit-final.log`, 1 test each) | 0 |
+| **gates (exact shipped script)** | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (`019-gates-final.log` on the working tree, `027-gates-committed.log` on the committed tree) | **0, 8/8 PASS** (both) |
+| submit check (committed tree) | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> gui-1030-menu-edit-collaborate` (`028-submit-check-committed.log`) | **0, `RESULT: PASS - submit`** |
 
 Gate table (`019-gates-final.log`): fork-sources PASS, all-sources-reproduce PASS, no-upstream-regression PASS,
 check-namespace PASS, no-tautology PASS, doc-figures PASS, complexity "no new item in your files" PASS,
@@ -188,4 +189,6 @@ were re-run through `systemd-run` after the commit.
   adjusted to describe this line; this report is the integration record. The diff against HEAD is therefore the
   test adaptation, the comment and this report - no target file or manifest entry is dropped.
 - **LOG FOLDER:** every numbered log above plus `fix.patch` is in the r4 folder, written through `systemd-run` where
-  the lane jail denied direct writes. No gate limit, baseline or check was modified.
+  the lane jail denied direct writes. No gate limit, baseline or check was modified. The committed tree is
+  `84ed9ff2bc` (parent `b4a19c424b`); gates (`027-gates-committed.log`, EXIT=0, 8/8 PASS) and the submit check
+  (`028-submit-check-committed.log`, EXIT=0, `RESULT: PASS - submit`) were re-run on it after the commit.
