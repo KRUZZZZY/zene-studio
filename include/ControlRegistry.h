@@ -155,7 +155,7 @@ public:
 	 *  engine command needs only the engine to exist. The readiness flag (setReady) belongs to the opt-in
 	 *  agent socket and is never set when the program runs without one, so an edit made in a window must
 	 *  not depend on it. A refusal leaves the project as it was, exactly as it does for invoke(). */
-	ControlResult invokeInProcess(const QString& id, const QJsonObject& args = QJsonObject());
+	ControlResult invokeInProcess(const QString& id, const QJsonObject& args = QJsonObject()) { return dispatch(id, args, true); }
 	//! The class an aggregate record of several mutating children carries: the weakest of their classes
 	//! ("irreversible" < "snapshot" < "true_inverse"), or "" when a child has no row or is not mutating.
 	static QString aggregateClassOf(const QStringList& childClasses);

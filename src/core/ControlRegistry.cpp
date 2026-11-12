@@ -259,27 +259,13 @@ ControlResult ControlRegistry::runOnUiThread(const std::function<ControlResult()
 	return out;
 }
 
-ControlResult ControlRegistry::invoke(const QString& id, const QJsonObject& args)
-{
-	return dispatch(id, args, false);
-}
-
-ControlResult ControlRegistry::invokeInProcess(const QString& id, const QJsonObject& args)
-{
-	return dispatch(id, args, true);
-}
-
-namespace
-{
-
-//! Whether an engine command may run: the agent surface waits for startup to finish (setReady), the
-//! process's own window needs only the engine it edits.
-bool engineAddressable(bool inProcess)
+//! The agent surface waits for startup to finish (setReady); the process's own window needs only the engine it edits.
+static bool engineAddressable(bool inProcess)
 {
 	return inProcess ? Engine::getSong() != nullptr && Engine::mixer() != nullptr : ControlRegistry::isEngineReady();
 }
 
-} // namespace
+ControlResult ControlRegistry::invoke(const QString& id, const QJsonObject& args) { return dispatch(id, args, false); }
 
 ControlResult ControlRegistry::dispatch(const QString& id, const QJsonObject& args, bool inProcess)
 {
