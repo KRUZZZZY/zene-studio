@@ -3014,6 +3014,20 @@ endforeach()
 # asserts the Windows-shaped configure succeeds, so the target resolution cannot regress.
 add_test(NAME CMakeThreadsScope COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/cmake-threads-scope.sh)
 
+# Cluster ci-3eb9bda8aa6785a3: the mingw64 job's "Install dependencies" step fetched the
+# MinGW PPA's signing key from keyserver.ubuntu.com at run time, and the hosted runner
+# cannot reach that keyserver ("gpg: keyserver receive failed: Network is unreachable"),
+# so the following apt-get update died with NO_PUBKEY / "repository ... is not signed"
+# and exit 100. The keyring is now committed and pinned with signed-by=; the script
+# checks the install path, the script text (comments stripped), and that the committed
+# keyring verifies the real Launchpad-signed InRelease committed as a fixture, with the
+# legacy apt-key/keyserver shape, an uncommitted keyring, a legacy-key-only keyring and a
+# tampered fixture as red controls. gpgv is needed; it ships in `gpg`, which both the
+# hosted runner image and this repo's Linux dependency list already install, and the
+# script exits 77 (SKIP_RETURN_CODE) rather than failing where gpgv is absent.
+add_test(NAME MingwPpaKeyGate COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/mingw-ppa-key-check.sh)
+set_tests_properties(MingwPpaKeyGate PROPERTIES SKIP_RETURN_CODE 77)
+
 # BandLimitedWaveTest's two scenarios each run in a fresh process: generateWaves() caches its result in
 # s_wavesGenerated, so the fallback generator and the shipped-file load must not share one cache.
 add_test(NAME BandLimitedWaveFallback COMMAND BandLimitedWaveTest fallbackTablesHoldOnlyInBandHarmonics)
@@ -3059,6 +3073,26 @@ target_link_libraries(RemotePluginShmFifoNoSysIpcProbe PRIVATE ${QT_LIBRARIES})
 target_compile_features(RemotePluginShmFifoNoSysIpcProbe PRIVATE cxx_std_20)
 target_compile_definitions(RemotePluginShmFifoNoSysIpcProbe PRIVATE LMMS_STATIC_DEFINE LMMS_TESTING SYNC_WITH_SHM_FIFO)
 target_sources(RemotePluginShmFifoTest PRIVATE $<TARGET_OBJECTS:RemotePluginShmFifoNoSysIpcProbe>)
+
+# Cluster ci-f0fa6219c5d4b443: Apple clang's Darwin target defines __APPLE__ and
+# __MACH__ but not __unix__, so the no-<sys/ipc.h> probe must not rely on a
+# probe-side __unix__ include to declare getpid()/usleep(). Compile the same probe
+# with that macro state on every host; the header has to carry the POSIX
+# declarations itself for this target to build.
+add_library(RemotePluginShmFifoNoSysIpcAppleMacroProbe OBJECT src/core/RemotePluginShmFifoNoSysIpcProbe.cpp)
+target_include_directories(RemotePluginShmFifoNoSysIpcAppleMacroProbe BEFORE PRIVATE
+	${CMAKE_CURRENT_BINARY_DIR}/RemotePluginShmFifoNoSysIpc)
+target_include_directories(RemotePluginShmFifoNoSysIpcAppleMacroProbe PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>)
+target_link_libraries(RemotePluginShmFifoNoSysIpcAppleMacroProbe PRIVATE ${QT_LIBRARIES})
+target_compile_features(RemotePluginShmFifoNoSysIpcAppleMacroProbe PRIVATE cxx_std_20)
+target_compile_definitions(RemotePluginShmFifoNoSysIpcAppleMacroProbe PRIVATE LMMS_STATIC_DEFINE LMMS_TESTING SYNC_WITH_SHM_FIFO)
+if(MSVC)
+	target_compile_options(RemotePluginShmFifoNoSysIpcAppleMacroProbe PRIVATE /U__unix__)
+else()
+	target_compile_options(RemotePluginShmFifoNoSysIpcAppleMacroProbe PRIVATE -U__unix__)
+endif()
+add_dependencies(RemotePluginShmFifoTest RemotePluginShmFifoNoSysIpcAppleMacroProbe)
 
 # Tell the test whether each target compiles RemotePluginBase.cpp through the
 # static branch of lmms_export.h (cluster ci-v041-5).
@@ -6340,6 +6374,22 @@ if(PYTHON3_EXECUTABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/exported-class-tls-check.py
 			${CMAKE_SOURCE_DIR})
 	set_tests_properties(ExportedClassTlsCheck PROPERTIES TIMEOUT 60)
+endif()
+
+# The `template` keyword before a member-template name that takes no explicit
+# template argument list is ill-formed, and the Clang of the hosted windows-arm64
+# job rejects it (cluster ci-165e1914b308f189: atomic_queue.h's
+# `Base::template do_pop_any(...)` failed FilePool.cpp and Synth.cpp). GCC accepts
+# it, so the check scans every tracked C/C++ source and, on a compiler that
+# enforces the rule, also compiles the real atomic_queue header with both affected
+# queue templates instantiated. Its fixtures prove the scanner can fail.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME ClangTemplateKeywordCheck
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/clang-template-keyword-check.py
+			--root ${CMAKE_SOURCE_DIR}
+			--compiler ${CMAKE_CXX_COMPILER})
+	set_tests_properties(ClangTemplateKeywordCheck PROPERTIES TIMEOUT 120)
 endif()
 
 # The VST2 test instrument must keep Darwin's C99 <stdio.h> declarations visible

@@ -3544,15 +3544,36 @@ docs/qwen-fixes-2026-10/cluster-gui-1105-main-loop-points.md
 # cluster ci-512849fa221097db (2026-11): checks no exported class declares a thread_local data member (MSVC C2492), by scanning include/ and src/ headers (ctest ExportedClassTlsCheck).
 tests/exported-class-tls-check.py
 docs/qwen-fixes-2026-10/cluster-ci-512849fa221097db.md
+# cluster ci-165e1914b308f189 (2026-11): no `template` keyword before a member-template name with no explicit argument list - the hosted windows-arm64 Clang failed the vendored atomic_queue header in FilePool.cpp/Synth.cpp; source scan plus a compile probe of the real header (ctest ClangTemplateKeywordCheck).
+tests/clang-template-keyword-check.py
+docs/qwen-fixes-2026-10/cluster-ci-165e1914b308f189.md
 # cluster ci-12f4249981b085d6 (2026-11): the VST2 fixture's Darwin feature-macro regression - compiles the real
 # fixture with the host C compiler against a fake Darwin <stdio.h> (fork-NEW test).
 tests/vst2-fixture-darwin-headers-check.py
 tests/threads-target-windows-configure.py
 tests/cmake-threads-scope.sh
 tests/complexity-regression-check.py
+# cluster ci-3eb9bda8aa6785a3 (2026-11): the MinGW64 PPA signing key is committed and pinned with signed-by=
+# instead of fetched from a network keyserver at run time; the regression checks the script, verifies the real
+# Launchpad-signed InRelease fixture with gpgv, and carries two keyring fixtures plus its report (fork-NEW).
+tests/mingw-ppa-key-check.sh
+tests/data/mingw-ppa/InRelease
+tests/data/mingw-ppa/legacy-only.gpg
+tests/data/mingw-ppa/README.md
+docs/qwen-fixes-2026-10/cluster-ci-3eb9bda8aa6785a3.md
 
 # Cumulative Terra integration: shared real-window visibility and hit-testing regression.
 tests/src/gui/MixerModeVisibilityTestSupport.h
 
 # Train 27: verifies seven pending CI deltas are retained by recovery before superseding duplicate replay.
 docs/qwen-fixes-2026-10/sol-train-27-duplicate-ci-repairs.md
+
+# macOS arm64/x86_64 build regression: RemotePluginBase.h's shm-FIFO branch must declare getpid()/usleep() itself.
+docs/qwen-fixes-2026-10/cluster-ci-4e020460347493c3.md
+
+# Train 27 repair replay conflict resolution, combined provenance and verification report.
+docs/qwen-fixes-2026-10/sol-train-27-ci-repair-integration.md
+
+# Retain independently reviewed macOS x86_64 and Linux ARM64 CI repair reports in the combined replay.
+docs/qwen-fixes-2026-10/cluster-ci-f0fa6219c5d4b443.md
+docs/qwen-fixes-2026-10/cluster-ci-7d1b70f4f0a0b12b.md
