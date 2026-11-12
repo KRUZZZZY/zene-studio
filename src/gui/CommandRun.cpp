@@ -31,6 +31,7 @@
 #include <QAction>
 #include <QJsonArray>
 #include <QMenu>
+#include <QtGlobal>
 
 #include "CommandMetadata.h"
 #include "ControlVocabulary.h"
@@ -50,6 +51,16 @@ QWidget* hostOf(QWidget* widget)
 {
 	while (qobject_cast<QMenu*>(widget) != nullptr) { widget = widget->parentWidget(); }
 	return widget;
+}
+
+//! An unattended session has nobody to read a floating message, but a refusal (app.help declares
+//! requires: display) must not vanish: log it, as the other menus' refusals are.
+void logHeadlessRefusal(const CommandCall& call, const ControlResult& result)
+{
+	if (!result.ok && ControlRegistry::instance()->isHeadless())
+	{
+		qWarning("%s refused: %s", qPrintable(call.id), qPrintable(result.errorMessage));
+	}
 }
 
 } // namespace
@@ -86,6 +97,7 @@ QJsonObject selectionContext(const QString& id)
 
 void announce(QWidget* parent, const CommandCall& call, const ControlResult& result)
 {
+	logHeadlessRefusal(call, result);
 	// No interface to float a message over (a tool embedding the registry): nothing to show.
 	if (ControlRegistry::instance()->isHeadless() || getGUI() == nullptr || (result.ok && !call.showResult)) { return; }
 	constexpr int MaxChars = 400;
