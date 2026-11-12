@@ -78,4 +78,9 @@ bool isUnattendedRun()
 	return s_agentInstance || platformHasNoDisplay();
 }
 
+bool hasDisplay()
+{
+	return !platformHasNoDisplay();
+}
+
 } // namespace lmms
