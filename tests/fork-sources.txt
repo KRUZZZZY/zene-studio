@@ -3531,3 +3531,7 @@ tests/src/gui/MidiTakeMenuTest.cpp
 tests/control-midi-take-record.py
 docs/050-features/Q050-054.1.md
 docs/qwen-fixes-2026-10/cluster-Q050-054.1.md
+# Q050-054.1 round 4: the track menu's Record submenu (with the MIDI take entries) in its own file - moved
+# unchanged out of ShellCommandMenus.cpp, which sits at the file-length gate's limit.
+include/ShellRecordMenu.h
+src/gui/shell/ShellRecordMenu.cpp

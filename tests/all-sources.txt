@@ -864,6 +864,7 @@ include/ShellLayout.h
 include/ShellMenuParts.h
 include/ShellOverflow.h
 include/ShellPanel.h
+include/ShellRecordMenu.h
 include/ShellRegionTabs.h
 include/ShellSelection.h
 include/ShellTearOff.h
@@ -2658,6 +2659,7 @@ src/gui/shell/ShellMenuEntries.cpp
 src/gui/shell/ShellMenuParts.cpp
 src/gui/shell/ShellOverflow.cpp
 src/gui/shell/ShellPanel.cpp
+src/gui/shell/ShellRecordMenu.cpp
 src/gui/shell/ShellRegionTabs.cpp
 src/gui/shell/ShellSelection.cpp
 src/gui/shell/ShellTearOff.cpp

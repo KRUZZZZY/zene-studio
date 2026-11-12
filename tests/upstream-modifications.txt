@@ -5753,3 +5753,4 @@ src/tracks/InstrumentTrack.cpp	Q050-054.1: processInEvent feeds live note edges 
 src/core/Song.cpp	Q050-054.1: makes the MidiTakeRecorder (a child of the song), publishes the period's play position and loop pass for the MIDI take capture next to the retro-capture tick (one relaxed store), and hands the record point after a count-in to the recorder.
 src/core/CMakeLists.txt	Q050-054.1: builds MidiTakeCapture.cpp, MidiTakeRecorder.cpp and ControlCommandsMidiTakes.cpp.
 tests/CMakeLists.txt	Q050-054.1: registers MidiTakeRecordTest, MidiTakeMenuTest (headless Qt platform) and the ControlMidiTakeRecord transcript (Skipped, never Passed, without a real MIDI source).
+src/gui/CMakeLists.txt	Q050-054.1: builds gui/shell/ShellRecordMenu.cpp (the track menu's Record submenu, moved out of ShellCommandMenus.cpp with its MIDI take entries).

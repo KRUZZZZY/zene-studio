@@ -60,6 +60,7 @@
 #include "TrackFolder.h"
 #include "ShellLayout.h"
 #include "ShellMenuParts.h"
+#include "ShellRecordMenu.h"
 #include "Song.h"
 #include "WorkspaceMenus.h"
 
@@ -130,27 +131,6 @@ void automationClipMenus(QMenu* menu, Clip* clip)
 	add(menu, "Transform...", "automation.transform", self, true, span);
 	add(menu, "Thin Points...", "automation.thin", self, true, {{QStringLiteral("tolerance"), 0.01}});
 	add(menu, "Point Curve...", "automation.set_curve", self, true, {{QStringLiteral("curve"), QStringLiteral("bend")}});
-}
-
-void recordMenu(QMenu* menu, const QJsonObject& self, bool instrument)
-{
-	QMenu* record = menu->addMenu(tr("Record"));
-	add(record, "Arm", "track.set_arm", with(self, "armed", true), false);
-	add(record, "Arm With Input Channel...", "track.set_arm", with(self, "armed", true), true);
-	add(record, "Disarm", "track.set_arm", with(self, "armed", false), false);
-	record->addSeparator();
-	add(record, "Audio Input...", "record.input_set", {}, true);
-	if (instrument)  // Q050-054.1: MIDI takes - armed tracks record what is played while Record runs
-	{
-		record->addSeparator();
-		choices(record, "Record MIDI Takes", "track.set_midi_arm", "armed", self);
-		add(record, "MIDI Take Status", "record.midi_capture_status", {}, false, {}, true);
-		add(record, "Keep the Captured MIDI", "record.midi_capture_commit", {}, false);
-	}
-	QMenu* retro = menu->addMenu(tr("Retrospective Capture"));
-	choices(retro, "Keep Listening", "record.retro_capture_arm", "armed", {});
-	if (instrument) { add(retro, "Last MIDI to a New Clip", "midi.retro_capture_to_clip", self, false, {}, true); }
-	add(retro, "Save Last Audio as a Take...", "record.retro_capture_to_take", {}, true, {}, true);
 }
 
 //! The MIDI clips selected in the arranger, by id.
