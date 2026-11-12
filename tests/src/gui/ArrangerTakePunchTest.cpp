@@ -201,7 +201,10 @@ private slots:
 		QVERIFY2(!band.isEmpty(), "the ruler did not reserve a band for the punch range");
 		QCOMPARE(ruler->punchBeginHandleRect().center().x(), ruler->markerX(TimePos(here)));
 		const QImage painted = ruler->grab().toImage();
-		QVERIFY2(isPunchRed(painted, QPoint(band.right() - 6, band.center().y())), "the painted ruler shows no punch band");
+		// The band is the armed range itself (gui-1030 geometry); "Punch In Here" opens a range from
+		// the play position to the song's end, which at this zoom is narrower than one pixel, so
+		// sample the band's own centre rather than a fixed 6 px inside its right edge.
+		QVERIFY2(isPunchRed(painted, band.center()), "the painted ruler shows no punch band");
 		auto* arm = getGUI()->songEditor()->findChild<QAction*>(QStringLiteral("punchAction"));
 		QVERIFY(arm != nullptr && arm->isChecked());
 	}
@@ -338,6 +341,9 @@ private slots:
 		Timeline& timeline = Engine::getSong()->getTimeline(Song::PlayMode::Song);
 		auto* arm = getGUI()->songEditor()->findChild<QAction*>(QStringLiteral("punchAction"));
 		QVERIFY2(arm != nullptr, "the song editor has no punch arm action");
+		// Neighbouring tests leave their own range armed; start from the fresh-project state the
+		// finding describes. clearPunch() emits punchChanged, so the arm action follows it.
+		timeline.clearPunch();
 		// Keep the loop brace out of the sampled columns, so only the punch band can paint there.
 		timeline.setLoopEnabled(false);
 		timeline.setLoopPoints(TimePos(20 * Bar), TimePos(24 * Bar));
@@ -369,7 +375,24 @@ private slots:
 		// The in handle sits wholly inside the content area, not half under the track headers.
 		QVERIFY(ruler->punchBeginHandleRect().left() >= ruler->markerX(TimePos(0)));
 		QCOMPARE(ruler->punchEndHandleRect().center().x(), ruler->markerX(TimePos(Bar)));
+
+		// A bound outside the content area has no handle: a 5 px handle centred 1-2 px past the
+		// edge would otherwise leave a sliver of itself on the last column, a handle where the
+		// bound is not. A range that starts on screen and ends past a narrowed ruler keeps its
+		// band and its in handle, and must not show the out handle at the edge.
+		const int fullWidth = ruler->width();
+		QVERIFY(run(QStringLiteral("transport.punch_set"), {{QStringLiteral("start"), 3 * Bar},
+			{QStringLiteral("end"), 600 * Bar}, {QStringLiteral("enabled"), true}}).ok);
+		QCoreApplication::processEvents();
+		ruler->resize(ruler->markerX(TimePos(600 * Bar)) - 1, 32);
+		QVERIFY2(!ruler->punchBandRect().isEmpty(), "the visible part of the punch range has no band");
+		QVERIFY2(!ruler->punchBeginHandleRect().isEmpty(),
+			"the in handle of a range that starts inside the ruler is missing");
+		QVERIFY2(ruler->punchEndHandleRect().isEmpty(),
+			"the out handle of a bound past the content edge leaks an edge sliver");
+		ruler->resize(fullWidth, 32);
 		arm->trigger();
+		timeline.clearPunch();
 	}
 
 
