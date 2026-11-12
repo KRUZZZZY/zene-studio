@@ -1761,7 +1761,7 @@ IF(ZENE_HAVE_COLLAB)
 		src/core/PortMappingCodecTest.cpp
 		src/core/PortMappingOrchestratorTest.cpp
 		src/core/UpnpMapperFakeRouterTest.cpp
-		# collab.show_panel (requires: display) over the real main window.
+		# collab.show_panel over the real main window, also from Edit > Collaborate... in a headless session (gui-1106).
 		src/gui/CollabPanelTest.cpp
 		# Q050-205: the opt-in OSC control server over real UDP loopback, and its Customise menu entries.
 		src/core/ControlOscServerTest.cpp
