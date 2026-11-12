@@ -315,6 +315,18 @@ private slots:
 		QVERIFY(world.shell.floatingWindow(QStringLiteral("browser"))->isVisible());
 	}
 
+	//! gui-1106: the header's pop-out click floats the Arranger in a window that opens exactly over its old place.
+	void thePopOutClickFloatsTheArrangerOverItsOwnPlace()
+	{
+		World world;
+		ShellPanel* frame = world.shell.panel(QStringLiteral("arranger"));
+		const QRect was(frame->mapToGlobal(QPoint(0, 0)), Shell::floatSize(frame));
+		frame->findChild<QToolButton*>(QStringLiteral("panelFloat"))->click();
+		QWidget* own = world.shell.floatingWindow(QStringLiteral("arranger"));
+		QVERIFY(own != nullptr && own->isVisible() && frame->window() == own);
+		QCOMPARE(own->geometry(), was);
+	}
+
 	void theCentreSaysWhereItsPanelWentAndTheButtonSaysDock()
 	{
 		World world;
