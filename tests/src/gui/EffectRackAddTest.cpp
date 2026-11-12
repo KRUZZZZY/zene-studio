@@ -45,9 +45,11 @@
 #include "EffectControls.h"
 #include "EffectRackView.h"
 #include "Engine.h"
+#include "GroupBox.h"
 #include "GuiApplication.h"
 #include "GuiTestApplication.h"
 #include "Mixer.h"
+#include "PixmapButton.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -179,6 +181,39 @@ private slots:
 		});
 		QTest::mouseClick(add, Qt::LeftButton);
 		QCOMPARE(static_cast<int>(chain->effects().size()), 1);
+	}
+
+	//! gui-1106: one click on the EFFECTS CHAIN LED toggles the chain and the LED shows it, and so does
+	//! the next click (a fresh chain starts off).
+	void effectsChainLedTogglesOnClick()
+	{
+		MixerChannel* channel = Engine::mixer()->mixerChannel(Engine::mixer()->createChannel());
+		EffectChain* chain = &channel->m_fxChain;
+		EffectRackView rack(chain);
+		rack.resize(EffectRackView::DEFAULT_WIDTH, 250);
+		rack.show();
+		QVERIFY(QTest::qWaitForWindowExposed(&rack));
+		const auto groups = rack.findChildren<GroupBox*>();
+		QCOMPARE(groups.size(), 1);
+		auto* led = groups.front()->findChild<PixmapButton*>();
+		QVERIFY(led != nullptr);
+		QVERIFY(!chain->isEnabled());
+		const QImage off = led->grab().toImage();
+
+		// Clicked through the window, as a user (or the GUI sweep) does, so a sibling stacked over the
+		// LED takes the click if it covers it. The LED's centre is where its accessible rect says it is.
+		const QPoint centre = led->mapTo(&rack, led->rect().center());
+		qInfo() << "LED geometry" << led->geometry() << "title bar" << groups.front()->titleBarHeight();
+		QVERIFY2(rack.childAt(centre) == led, qPrintable(QStringLiteral("the LED's centre is covered by %1")
+			.arg(rack.childAt(centre) ? QString::fromLatin1(rack.childAt(centre)->metaObject()->className())
+				: QStringLiteral("nothing"))));
+		QTest::mouseClick(rack.windowHandle(), Qt::LeftButton, {}, centre);
+		QVERIFY2(chain->isEnabled(), "the click did not enable the chain");
+		QVERIFY2(led->grab().toImage() != off, "the LED looks the same after the click");
+
+		QTest::mouseClick(rack.windowHandle(), Qt::LeftButton, {}, centre);
+		QVERIFY(!chain->isEnabled());
+		QCOMPARE(led->grab().toImage(), off);
 	}
 
 	//! The track resolver (ControlDeviceSupport.cpp:resolveTrackTarget) answers a
