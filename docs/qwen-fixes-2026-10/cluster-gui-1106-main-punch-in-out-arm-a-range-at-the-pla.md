@@ -102,8 +102,8 @@ except the test runs, which were run from `build/tests` as required.
 | Family test | `ctest -R '^(ArrangerTakePunchTest\|VideoClipsGuiTest\|ArrangerOverlaysVideoLaneTest\|NStateButtonActivationTest\|ArrangerTimelineTest)$' --output-on-failure > LOG/071-test-family-final.log` | 0 | 5/5 passed (#480 ArrangerTimelineTest, #482 ArrangerTakePunchTest, #523 ArrangerOverlaysVideoLaneTest, #524 VideoClipsGuiTest, #594 NStateButtonActivationTest) |
 | Gates, as given | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py "$PWD" > LOG/020-feature-check-unmodified.log` | 1 | crashed before any gate: `PermissionError` creating the sibling `<worktree>-feature-check` (this sandbox's write jail) |
 | Gates, same script, log dir redirected | `FEATURE_CHECK_LOGDIR=LOG/feature-check-final python3 LOG/feature_check-shim.py "$PWD" > LOG/070-feature-check-final.log` | **0** | 8/8 PASS: fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity (no new item), file-length (no new item) |
-| Submit check, as given | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py "$PWD" gui-1106-… > LOG/091-submit-check-unmodified-postcommit.log` | 1 | every check PASS except `gates (feature_check.py)`: the subprocess it starts dies on the same `PermissionError` |
-| Submit check, unmodified tool + redirected gate logs | `FEATURE_CHECK_LOGDIR=LOG/feature-check-final python3 LOG/submit_check-shim.py "$PWD" gui-1106-… > LOG/093-submit-check-shim2-postcommit.log` | **0** | `RESULT: PASS - submit` (one WARN: `scope_guard` is not importable in this sandbox) |
+| Submit check, as given | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py "$PWD" gui-1106-… > LOG/095-submit-check-unmodified-final.log` | 1 | every check PASS except `gates (feature_check.py)`: the subprocess it starts dies on the same `PermissionError` |
+| Submit check, unmodified tool + redirected gate logs | `FEATURE_CHECK_LOGDIR=LOG/feature-check-final python3 LOG/submit_check.py "$PWD" gui-1106-… > LOG/097-submit-check-shim-final.log` | **0** | `RESULT: PASS - submit` (one WARN: `scope_guard` is not importable in this sandbox) |
 
 Build flags everywhere: `CCACHE_DISABLE=1 /usr/bin/cmake` (the harness `cmake` shim cannot create
 its build-pool lock in this sandbox; the real binary is used), `-j8`. Every build and test output
@@ -111,9 +111,10 @@ went to a new numbered file under LOG. The shim's complete diff against the harn
 LOG/023-feature-check-shim.diff: `ROOT` pinned to the real qwen directory (so `FIX-BASE` and the
 gate baselines are the harness's own) and the gate-log directory taken from
 `FEATURE_CHECK_LOGDIR` instead of the unwritable sibling. No gate, limit or baseline is changed.
-`LOG/submit_check-shim.py` is the harness's own `submit_check.py` copied verbatim (LOG/024 diff
-is empty) next to that log-redirected `feature_check.py`, so it exercises every check the real
-tool does; run without the redirection, the real tool fails only on the gate-log path.
+`LOG/submit_check.py` is the harness's own `submit_check.py` copied verbatim (LOG/025 diff is
+empty) into the log folder beside that log-redirected `LOG/feature_check.py`, so it exercises every
+check the real tool does; run without the redirection, the real tool fails only on the gate-log
+path. The shimmed run is the one in the "Submit check, unmodified tool" row.
 
 ## Self-check
 
@@ -156,7 +157,7 @@ tool does; run without the redirection, the real tool fails only on the gate-log
   `std::abs` and `QColor`; no Qt-6-only API, no `windows.h` macro names and no `std::filesystem`
   were introduced. No header changed, so no dependent target needed a rebuild beyond `zene` and the
   test binary, both built here.
-- **Submit check.** `LOG/093-submit-check-shim2-postcommit.log` is `RESULT: PASS - submit` with the
+- **Submit check.** `LOG/097-submit-check-shim-final.log` is `RESULT: PASS - submit` with the
   report, clean tree, commits, changed test, registration and gates all PASS; the unmodified tool
-  (LOG/091) fails only the gates step because its gate subprocess cannot create the sibling
+  (LOG/095) fails only the gates step because its gate subprocess cannot create the sibling
   `<worktree>-feature-check` directory in this sandbox.
