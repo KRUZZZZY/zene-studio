@@ -1770,7 +1770,8 @@ IF(ZENE_HAVE_COLLAB)
 		src/core/UpnpMapperFakeRouterTest.cpp
 		# collab.show_panel over the real main window, also from Edit > Collaborate... in a headless session (gui-1106).
 		src/gui/CollabPanelTest.cpp
-		# Edit > Collaborate... refused by the registry (unattended): the reason reaches the status bar.
+		# A refused menu dispatch says why in the status bar. On this line collab.show_panel is a
+		# non-modal panel (gui-1106), so the refusal is held through app.online_help and an unknown id.
 		src/gui/MenuRefusalNoticeTest.cpp
 		# Q050-205: the opt-in OSC control server over real UDP loopback, and its Customise menu entries.
 		src/core/ControlOscServerTest.cpp
