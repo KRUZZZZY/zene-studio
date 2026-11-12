@@ -49,19 +49,19 @@ same one-pixel probe defect was documented by the accepted branch's round-3 repo
 
 ### Merged code (`src/gui/editors/TimeLineWidget.cpp` in this tree)
 
-- `punchBandRect()` (`:323-346`): the interval between the bounds, clipped to the visible ruler;
+- `punchBandRect()` (`:324-347`): the interval between the bounds, clipped to the visible ruler;
   a positive subpixel range intersecting the ruler keeps a one-pixel band; a range wholly beyond
   either edge has no band.
-- `punchIntervalRect()` (`:63-73`): the part of the band between the bounds, with the accepted
+- `punchIntervalRect()` (`:64-74`): the part of the band between the bounds, with the accepted
   one-pixel sliver for a positive subpixel range. With an interval band this is exactly the band;
   it stays correct if a band row is ever passed in.
-- `punchHandleRect()` (`:80-93`): empty for a bound outside `[contentLeft, contentRight]`; a range
+- `punchHandleRect()` (`:81-94`): empty for a bound outside `[contentLeft, contentRight]`; a range
   at least one handle wide clamps the handle inside the content area; a narrower range keeps its
   handle centred on its marker.
-- `punchBeginHandleRect()` (`:350-357`) and `punchEndHandleRect()` (`:359-366`): both pass
+- `punchBeginHandleRect()` (`:351-358`) and `punchEndHandleRect()` (`:360-367`): both pass
   `m_xOffset` … `width()-1`.
-- `paintEvent` (`:260-274`): fills, outlines and labels `punchIntervalRect()` only.
-- `getPunchAction()` (`:410-428`): unchanged from the target — the press only has to be in the
+- `paintEvent` (`:260-275`): fills, outlines and labels `punchIntervalRect()` only.
+- `getPunchAction()` (`:411-429`): unchanged from the target — the press only has to be in the
   band's row, so the handles on the band's edges (and the whole interval) stay draggable.
 - No header change, no serialization, no command or undo change. No audio-thread code.
 
