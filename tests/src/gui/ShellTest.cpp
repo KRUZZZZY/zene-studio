@@ -333,6 +333,27 @@ private slots:
 		QCOMPARE(button->property("controlCommand").toString(), QStringLiteral("window.detach"));
 	}
 
+	//! Cluster gui-1106: the sweep reported that clicking "Pop out the Note Editor panel" left it docked. Its own
+	//! button, clicked, floats it in a window of its own; clicked again ("Dock") it comes back to the bottom region.
+	void theNoteEditorsPopOutButtonFloatsItAndDocksItBack()
+	{
+		World world;
+		const QString id = QStringLiteral("detail");
+		auto* button = world.shell.panel(id)->findChild<QToolButton*>(QStringLiteral("panelFloat"));
+		QVERIFY(button != nullptr);
+		QCOMPARE(button->accessibleName(), QStringLiteral("Pop out the Note Editor panel"));
+		QVERIFY(world.shell.model().isVisible(id));
+		button->click();
+		QVERIFY(world.shell.isDetached(id));
+		QVERIFY(world.shell.floatingWindow(id) != nullptr && world.shell.floatingWindow(id)->isVisible());
+		QCOMPARE(world.shell.panel(id)->window(), world.shell.floatingWindow(id));
+		QCOMPARE(button->property("controlCommand").toString(), QStringLiteral("window.attach"));
+		button->click();
+		QVERIFY(!world.shell.isDetached(id));
+		QCOMPARE(hostOf(world.shell.panel(id)), QStringLiteral("shellBottom"));
+		QCOMPARE(button->accessibleName(), QStringLiteral("Pop out the Note Editor panel"));
+	}
+
 	void draggingAHeaderOutFloatsThePanelWhereItIsDropped()
 	{
 		World world;
