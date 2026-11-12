@@ -62,6 +62,10 @@ struct State
 
 //! The hosting problems oop.get_state reports, by "<target>|<device>": "crashed" or "quarantined". One read for a panel.
 LMMS_EXPORT QHash<QString, QString> hostingProblems();
+//! What one oop.get_state device's `hosting` object says is wrong with its host: "quarantined" (the family's client
+//! died too often this session), "crashed" (a client ran and exited) or empty. A device whose family ships no client
+//! executable in this build (`refused-no-client`) runs in this process by design: that is no problem, so empty.
+LMMS_EXPORT QString hostingProblemOf(const QJsonObject& hosting);
 //! The key hostingProblems() uses for @a plugin (fx-<n> or inst) on @a target.
 LMMS_EXPORT QString hostingKey(const QString& target, const QString& plugin);
 
