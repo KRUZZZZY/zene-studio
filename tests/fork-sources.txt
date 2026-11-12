@@ -2830,6 +2830,7 @@ tests/src/plugins/PatmanLoadTest.cpp
 tests/src/plugins/SidInstrument.cpp
 tests/src/core/SerializingObjectHookTest.cpp
 tests/src/gui/ArrangerTimelineTest.cpp
+tests/src/gui/ArrangerZoomBoundTest.cpp
 tests/src/gui/ArticulationMapEditorTest.cpp
 tests/src/plugins/ExprSynthTest.cpp
 # BUG 16 (new-p10-136): file manager discovery falls back when the MIME query returns nothing.
