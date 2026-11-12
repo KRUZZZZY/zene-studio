@@ -503,7 +503,17 @@ void registerShellCommands(ControlRegistry& registry)
 
 void dispatchShellCommand(const QString& id, const QJsonObject& args)
 {
-	ControlRegistry::instance()->invoke(id, args);
+	const ControlResult result = ControlRegistry::instance()->invoke(id, args);
+	if (result.ok) { return; }
+	// A menu action has no reply channel, so a refused command (Edit > Collaborate... in an
+	// unattended instance: `requires: display`) closed the menu and left nothing - no window and
+	// no reason. The status bar says it where it can be read. Never a modal box: this code also
+	// runs in an unattended instance, where an exec() waits on a click that never comes.
+	gui::MainWindow* window = controlMainWindow();
+	if (window == nullptr) { return; }
+	window->statusBar()->showMessage(
+		QCoreApplication::translate("ControlCommandsShell", "Could not run %1: %2")
+			.arg(id, result.errorMessage), 8000);
 }
 
 bool openOnlineHelp(gui::MainWindow* window)

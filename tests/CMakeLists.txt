@@ -280,6 +280,8 @@ set(LMMS_TESTS
 	# on Windows before the empty-session refusal.
 	src/core/ControlRenderOutputPathTest.cpp
 	src/core/ControlRegistryTest.cpp
+	# gui-1105: the 'display' requirement follows the platform, not the agent flag.
+	src/core/ControlRegistryDisplayTest.cpp
 	# The rules a caller's sample array has to satisfy before a render or a
 	# process is driven with it (cluster new-p10-76-port): the ONE reader the
 	# wasm.* commands use (include/ControlSampleArray.h), tested in every
@@ -1425,6 +1427,8 @@ set(LMMS_TESTS
 	src/gui/ArrangerKeysNavigatorTest.cpp
 	# cluster gui-1105: Navigate > Tool Menu at Pointer leaves the tool menu open.
 	src/gui/ToolMenuAtPointerTest.cpp
+	# Cluster gui-1106: the arranger's clipboard keys (Ctrl+C, Ctrl+X, Ctrl+V).
+	src/gui/ArrangerClipboardKeysTest.cpp
 	# M0 coverage: the audio waveform drawn behind a MIDI clip's notes.
 	src/gui/NoteBackgroundAudioTest.cpp
 	# M0 coverage: the arranger's range / audition / zoom tools and the video lane.
@@ -1591,6 +1595,7 @@ set(LMMS_TESTS
 	src/gui/CPULoadWidgetTest.cpp
 	# cluster gui-1030-main-loop-points: a multi-state button (the timeline's Loop points) advances on click(), Space and the mouse.
 	src/gui/NStateButtonActivationTest.cpp
+	# Cluster gui-1105-main-loop-points: an n-state button (timeline Loop points) advances on click()/accessibility/keyboard activation.
 	# 0.5.0 theme 24: the task indicator and its list
 	src/gui/TaskIndicatorTest.cpp
 	# 0.5.0 Q050-179 (WF-085): the header's Rec left readout shows record.remaining's estimate.
@@ -1765,6 +1770,8 @@ IF(ZENE_HAVE_COLLAB)
 		src/core/UpnpMapperFakeRouterTest.cpp
 		# collab.show_panel over the real main window, also from Edit > Collaborate... in a headless session (gui-1106).
 		src/gui/CollabPanelTest.cpp
+		# Edit > Collaborate... refused by the registry (unattended): the reason reaches the status bar.
+		src/gui/MenuRefusalNoticeTest.cpp
 		# Q050-205: the opt-in OSC control server over real UDP loopback, and its Customise menu entries.
 		src/core/ControlOscServerTest.cpp
 		src/gui/OscServerMenuTest.cpp
@@ -2713,6 +2720,15 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		add_dependencies(${LMMS_TEST_NAME} sfzplayer)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "SfzFilePoolTest")
+		# The block below links Threads::Threads directly, so it must be able to resolve
+		# that target in this directory's scope. The root's FIND_PACKAGE(Threads)
+		# (CMakeLists.txt:768) only runs on the pthread platforms, and plugins/SfzPlayer's
+		# FIND_PACKAGE(Threads REQUIRED) is scoped to its subtree - so on Windows/MinGW no
+		# ancestor scope provides the target and the generate step failed with
+		# "Target SfzFilePoolTest links to: Threads::Threads but the target was not found".
+		if(NOT TARGET Threads::Threads)
+			find_package(Threads REQUIRED)
+		endif()
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE
 			"$<TARGET_PROPERTY:sfzplayer_sfizz,INCLUDE_DIRECTORIES>")
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
@@ -2988,6 +3004,14 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	endif()
 endforeach()
+
+# Cluster ci-748342d46d7e9dd9: the MinGW64 configure failed at generate time because the
+# SfzFilePoolTest block links Threads::Threads and no ancestor scope provides that target
+# on Windows (the root's FIND_PACKAGE(Threads) is gated to the pthread platforms, and
+# plugins/SfzPlayer's own call is scoped to its subtree). The script configures a throwaway
+# fixture that runs the product's own SfzFilePoolTest block against both scope shapes and
+# asserts the Windows-shaped configure succeeds, so the target resolution cannot regress.
+add_test(NAME CMakeThreadsScope COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/cmake-threads-scope.sh)
 
 # BandLimitedWaveTest's two scenarios each run in a fresh process: generateWaves() caches its result in
 # s_wavesGenerated, so the fallback generator and the shipped-file load must not share one cache.
@@ -3737,6 +3761,7 @@ set_tests_properties(WindowSelectStartupTest PROPERTIES ENVIRONMENT "QT_QPA_PLAT
 set_tests_properties(OnlineHelpNoticeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 if(ZENE_HAVE_COLLAB)
 	set_tests_properties(CollabPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	set_tests_properties(MenuRefusalNoticeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	set_tests_properties(ControlOscServerTest OscServerMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
 set_tests_properties(WorkspaceAccessTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -3827,7 +3852,7 @@ if(ZENE_UPDATE_CHECK_ENABLED)
 	set_tests_properties(UpdateCheckWindowsTest UpdateCheckHiddenTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
 set_tests_properties(ReferenceProjectPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-set_tests_properties(TelemetryConsentDialogTest AafImportMenuTest TrackIconsLevelBarTest TrackGripContrastTest ArrangerKeysNavigatorTest ToolMenuAtPointerTest NoteBackgroundAudioTest ArrangerOverlaysVideoLaneTest VideoClipsGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(TelemetryConsentDialogTest AafImportMenuTest TrackIconsLevelBarTest TrackGripContrastTest ArrangerKeysNavigatorTest ToolMenuAtPointerTest ArrangerClipboardKeysTest NoteBackgroundAudioTest ArrangerOverlaysVideoLaneTest VideoClipsGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(NoteTransformActionsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MpeInputActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TempoMapPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -5860,6 +5885,7 @@ set_tests_properties(NamModelPrewarmTest PROPERTIES
 # build/tests in a build without the plugin module.
 add_executable(NamModelLoaderTest
 	src/core/NamModelLoaderTest.cpp
+	src/core/NamModelEigenWarningProbe.cpp
 	${CMAKE_SOURCE_DIR}/plugins/NeuralAmp/nam/NamModel.cpp
 	${CMAKE_SOURCE_DIR}/plugins/NeuralAmp/nam/NamModelLoader.cpp
 )
@@ -5875,6 +5901,7 @@ if(NOT MSVC)
 	target_link_libraries(NamModelLoaderTest PRIVATE m)
 endif()
 target_compile_features(NamModelLoaderTest PRIVATE cxx_std_20)
+target_compile_options(NamModelLoaderTest PRIVATE ${ZENE_NAM_EIGEN_OPTIONS})
 
 # Native VST3 instrument fixture and its probe.
 #
@@ -6124,6 +6151,18 @@ endif()
 # framing and the command groups are exercised end to end.
 # ---------------------------------------------------------------------------
 find_program(PYTHON3_EXECUTABLE NAMES python3 python3.exe python)
+# Cluster ci-0ff72c5279856e5d: the windows-arm64 configure regression. That job failed at
+# the generate step because Threads::Threads was not defined above the tests on Windows -
+# the top-level pthread check is gated to the pthread platforms, and FindSDL2.cmake's own
+# Threads lookup is skipped when SDL2 ships a CMake config package. The driver configures a
+# scratch project under that exact condition and asserts the target resolves.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME ThreadsTargetWindowsConfigure
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/threads-target-windows-configure.py
+			${CMAKE_CURRENT_BINARY_DIR}/threads-target-windows)
+	set_tests_properties(ThreadsTargetWindowsConfigure PROPERTIES TIMEOUT 300)
+endif()
 # Keep each NAM WAV output failure independently discoverable and attributable.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE AND TARGET nam_harness)
 	set(NAM_HARNESS_WAV_FAILURE_SCRIPT
@@ -6229,6 +6268,20 @@ if(PYTHON3_EXECUTABLE)
 	set_tests_properties(MocQt5TrailingReturnCheck PROPERTIES TIMEOUT 300)
 endif()
 
+# Per-method complexity regression (cluster ci-6d61162ce0abfd39, 2026-11-10). Hosted CI failed
+# Gate 4 - the CCN <= 10 ratchet - at a1a98b67b2 with eight regressions, each a function that had
+# grown past the target. The repair is a behaviour-preserving extraction, so the complexity IS the
+# observable change and this check holds it: it measures the eight functions with lizard and fails
+# when one drifts back over CCN 10. It reads sources only, runs its own red/green fixtures first,
+# and skips (77) on a host without lizard, exactly as ControlStemCommands skips without its backend.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME complexity-regression-check
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/complexity-regression-check.py
+			${CMAKE_SOURCE_DIR})
+	set_tests_properties(complexity-regression-check PROPERTIES TIMEOUT 300 SKIP_RETURN_CODE 77)
+endif()
+
 # The real-time-safety WHOLE-TREE SWEEP (2026-09-16, lane 030/rt-safety, board task #678,
 # feature row 52). AGENTS.md's realtime rule - "no allocation, no locking, no unbounded
 # growth on audio-thread paths" - was held per feature until now: an allocation-counter
@@ -6274,6 +6327,32 @@ if(PYTHON3_EXECUTABLE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND NOT MSVC
 			${CMAKE_CXX_COMPILER}
 			${CMAKE_SOURCE_DIR}/include)
 	set_tests_properties(FenvShimMsvcInclude PROPERTIES TIMEOUT 60)
+endif()
+
+# A static thread_local data member of a class with a DLL interface is an MSVC
+# error (C2492) and a warning-free build on GCC/Clang, so the hosted msvc-x64
+# job is the only one that sees it. The check reads include/ and src/ headers
+# and fails on any such member; its fixtures prove the scanner can fail.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME ExportedClassTlsCheck
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/exported-class-tls-check.py
+			${CMAKE_SOURCE_DIR})
+	set_tests_properties(ExportedClassTlsCheck PROPERTIES TIMEOUT 60)
+endif()
+
+# The VST2 test instrument must keep Darwin's C99 <stdio.h> declarations visible
+# (cluster ci-12f4249981b085d6: macos-arm64 saw snprintf undeclared because the
+# fixture's _POSIX_C_SOURCE hid it). The check compiles the real fixture with the
+# host C compiler, plus a fake Darwin <stdio.h> that applies the same rule; it
+# needs a GNU-style driver, not MSVC, and no Windows SDK.
+if(PYTHON3_EXECUTABLE AND NOT WIN32 AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+	add_test(NAME Vst2FixtureDarwinHeaders
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/vst2-fixture-darwin-headers-check.py
+			${CMAKE_C_COMPILER}
+			${CMAKE_CURRENT_SOURCE_DIR}/data/vst2-test-instrument/vst2-test-instrument.c)
+	set_tests_properties(Vst2FixtureDarwinHeaders PROPERTIES TIMEOUT 60)
 endif()
 
 # Multicore Slice 0+1 (SPEC-MULTICORE-SCHEDULING-DRAFT §6): the published

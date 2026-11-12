@@ -48,6 +48,13 @@
 #include <unistd.h>
 #endif
 
+namespace lmms::nam
+{
+// Defined in NamModelEigenWarningProbe.cpp: the build fails when this target loses
+// the vendored-Eigen -Werror suppression that the linux-arm64 CI job needs.
+bool eigenDeprecatedEnumArithmeticProbe() noexcept;
+}
+
 namespace
 {
 
@@ -313,6 +320,12 @@ bool validatesSampleRatesAndFileLimits(const std::filesystem::path& path)
 
 int main()
 {
+	if (!lmms::nam::eigenDeprecatedEnumArithmeticProbe())
+	{
+		std::cerr << "vendored-Eigen enum arithmetic probe failed\n";
+		return 1;
+	}
+
 	const auto directory = std::filesystem::temp_directory_path() /
 		("zene-nam-loader-test-" + std::to_string(testProcessId()));
 	std::filesystem::remove_all(directory);

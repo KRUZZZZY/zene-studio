@@ -35,6 +35,7 @@
 #include "Mixer.h"
 #include "ProjectJournal.h"
 #include "ProvenanceSection.h"
+#include "UnattendedRun.h"
 
 using namespace lmms;
 
@@ -600,6 +601,21 @@ private slots:
 		ControlRegistry::setReady(true);
 		QVERIFY(ControlRegistry::startupComplete());
 	}
+
+	//! gui-1105: a visible GUI under --control-socket is unattended (no dialog may open) yet HAS a display, so a
+	//! command that requires one (app.help, from Help > Help for This) must run there. The guiless test app has no
+	//! platform of its own, so QT_QPA_PLATFORM stands in for the display, as main() sees it.
+	void displayRequirementIgnoresAgentInstance()
+	{
+		qputenv("QT_QPA_PLATFORM", "xcb"); setAgentInstance(true); ControlRegistry::destroy();
+		ControlCommand command = describedCommand(QStringLiteral("test.agent_display"), false, QStringLiteral("none")); command.requiresDecl = QStringList{QStringLiteral("display")};
+		ControlRegistry::instance()->registerCommand(command); ControlRegistry::setReady(true);
+		const bool unattended = ControlRegistry::instance()->isHeadless(); const ControlResult result = ControlRegistry::instance()->invoke(command.id);
+		setAgentInstance(false); qunsetenv("QT_QPA_PLATFORM"); ControlRegistry::destroy(); ControlRegistry::setReady(true);
+		QVERIFY(unattended); QVERIFY2(result.ok, qPrintable(result.errorMessage));
+	}
+
+
 };
 
 QTEST_GUILESS_MAIN(ControlRegistryNestingTest)

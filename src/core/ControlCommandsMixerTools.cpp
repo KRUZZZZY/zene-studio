@@ -227,6 +227,19 @@ bool channelsOf(const QJsonArray& ids, std::vector<MixerChannel*>* out, ControlR
 	return !out->empty();
 }
 
+//! Whether the write would move any channel: a no-op adjust is reported as 0 and records no undo step.
+bool adjustWouldChange(const std::vector<MixerChannel*>& channels, float factor, float panDelta)
+{
+	for (MixerChannel* channel : channels)
+	{
+		const FloatModel& volume = channel->m_volumeModel;
+		const float adjustedVolume = std::clamp(volume.value() * factor, volume.minValue(), volume.maxValue());
+		const float adjustedPan = std::clamp(channel->m_panModel.value() + panDelta, -1.f, 1.f);
+		if (adjustedVolume != volume.value() || adjustedPan != channel->m_panModel.value()) { return true; }
+	}
+	return false;
+}
+
 ControlResult adjust(const QJsonObject& args)
 {
 	std::vector<MixerChannel*> channels;
@@ -241,15 +254,7 @@ ControlResult adjust(const QJsonObject& args)
 	if (db == 0.0 && pan == 0.0) { return ControlResult::success({{QStringLiteral("adjusted"), 0}}); }  // nothing to move (review W3-batchA #11)
 	const float factor = static_cast<float>(std::pow(10.0, db / 20.0));
 	const float panDelta = static_cast<float>(pan);
-	bool changesAnyChannel = false;
-	for (MixerChannel* channel : channels)
-	{
-		const FloatModel& volume = channel->m_volumeModel;
-		const float adjustedVolume = std::clamp(volume.value() * factor, volume.minValue(), volume.maxValue());
-		const float adjustedPan = std::clamp(channel->m_panModel.value() + panDelta, -1.f, 1.f);
-		if (adjustedVolume != volume.value() || adjustedPan != channel->m_panModel.value()) { changesAnyChannel = true; break; }
-	}
-	if (!changesAnyChannel) { return ControlResult::success({{QStringLiteral("adjusted"), 0}}); }
+	if (!adjustWouldChange(channels, factor, panDelta)) { return ControlResult::success({{QStringLiteral("adjusted"), 0}}); }
 	QVector<JournallingObject*> models;
 	for (MixerChannel* channel : channels) { models << &channel->m_volumeModel << &channel->m_panModel; }
 	addUndoStep(models);

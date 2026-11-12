@@ -75,6 +75,7 @@
 #include "ProjectJournal.h"
 #include "ShellSelection.h"
 #include "DesignTokens.h"
+#include "DpiHelper.h"
 #include "Engine.h"
 #include "EditLocks.h"
 #include "GuiApplication.h"
@@ -444,6 +445,18 @@ private slots:
 			qPrintable(QStringLiteral("a drag to bar 5 left the play position at tick %1").arg(Engine::getSong()->getPlayPos().getTicks())));
 	}
 
+	//! The ruler is laid out by the arranger's column and nothing else sizes it: a plain widget has no minimum, so
+	//! the column used to give it no height and its bar numbers and loop brace were not visible or clickable.
+	//! Checked with no test-side resize (the punch-band test below resizes the ruler itself to get a height).
+	void theRulerHasAUsableLayoutHeight()
+	{
+		TimeLineWidget* ruler = m_editor->timeLine();
+		QCoreApplication::processEvents();
+		QVERIFY(ruler->isVisible());
+		QVERIFY2(ruler->height() >= scaledPixels(32),
+			qPrintable(QStringLiteral("the ruler has %1 px of layout height").arg(ruler->height())));
+	}
+
 	//! 0.5.0 E23: the chord track has a lane under Tempo - it takes room only while the chord track holds a
 	//! chord, follows a chord set and an undo without a signal, and a click on a chord seeks there.
 	void theChordTrackIsDrawnInItsLane()
@@ -525,6 +538,31 @@ private slots:
 		QVERIFY2(zoomed.ok, qPrintable(zoomed.errorMessage));
 		QCOMPARE(zoomed.result.value(QStringLiteral("zoom")).toInt(), model->maxValue());
 		QCOMPARE(model->value(), model->maxValue());
+	}
+
+	//! gui-1106: Navigate > Zoom Out (step -4) at the minimum zoom - the 4 px per bar a fresh project can
+	//! inherit from the saved UI setting - must say it cannot zoom further instead of reporting a success
+	//! that left the view unchanged; likewise Zoom In at the maximum. A step off the bound still zooms.
+	void aZoomStepAtItsBoundIsRefusedNotASilentSuccess()
+	{
+		IntModel* model = m_editor->zoomingModel();
+		model->setValue(model->minValue());
+		const ControlResult out = run(QStringLiteral("arrangement.zoom"), {{QStringLiteral("step"), -4}});
+		QVERIFY2(!out.ok, "Zoom Out at the minimum zoom reported success without zooming");
+		QCOMPARE(out.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(model->value(), model->minValue());
+		const ControlResult in = run(QStringLiteral("arrangement.zoom"), {{QStringLiteral("step"), 4}});
+		QVERIFY2(in.ok, qPrintable(in.errorMessage));
+		QCOMPARE(model->value(), model->minValue() + 4);
+
+		model->setValue(model->maxValue());
+		const ControlResult past = run(QStringLiteral("arrangement.zoom"), {{QStringLiteral("step"), 4}});
+		QVERIFY2(!past.ok, "Zoom In at the maximum zoom reported success without zooming");
+		QCOMPARE(past.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(model->value(), model->maxValue());
+		// An absolute zoom to the extent already shown is not a step and stays a success.
+		QVERIFY(run(QStringLiteral("arrangement.zoom"), {{QStringLiteral("pixels_per_bar"), 40}}).ok);
+		QVERIFY(run(QStringLiteral("arrangement.zoom"), {{QStringLiteral("pixels_per_bar"), 40}}).ok);
 	}
 
 	void aPatternPreviewCombinesOffsetAndNoteBeforeRasterizing()

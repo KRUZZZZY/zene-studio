@@ -166,7 +166,8 @@ SongEditor::SongEditor( Song * song ) :
 	m_mpsStatus = nullptr;
 
 
-	m_timeLine->setMinimumHeight( BAR_RULER_MIN_HEIGHT );
+	// Keep the ruler visible and clickable on high-DPI displays.
+	m_timeLine->setMinimumHeight(scaledPixels(32));
 	static_cast<QVBoxLayout *>( layout() )->insertWidget( 0, m_timeLine );
 
 	m_leftRightScroll = new QScrollBar( Qt::Horizontal, this );
