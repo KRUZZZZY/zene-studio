@@ -152,6 +152,26 @@ int requestedZoom(gui::SongEditor* editor, const QJsonObject& args)
 	return static_cast<int>(std::clamp(value, static_cast<long long>(model->minValue()), static_cast<long long>(model->maxValue())));
 }
 
+/*! gui-1106-menu-navigate-zoom-in: a 'step' zoom already at the end it steps toward (Navigate > Zoom In
+ *  at 400 px per bar, a fresh project can inherit it from the saved UI settings) changes nothing; like
+ *  zoom_back with nothing to walk, it is refused with the reason instead of a silent success. Empty when
+ *  the zoom can move (a step clamped onto the bound still moves) or is not a step zoom. */
+QString stepBoundProblem(gui::SongEditor* editor, const QJsonObject& args)
+{
+	if (args.contains(QStringLiteral("pixels_per_bar"))) { return QString(); }
+	const int step = args.value(QStringLiteral("step")).toInt(1);
+	const IntModel* model = editor->zoomingModel();
+	if (step > 0 && model->value() >= model->maxValue())
+	{
+		return QStringLiteral("already at the maximum zoom (%1 px per bar); nothing to zoom in to").arg(editor->pixelsPerBar());
+	}
+	if (step < 0 && model->value() <= model->minValue())
+	{
+		return QStringLiteral("already at the minimum zoom (%1 px per bar); nothing to zoom out to").arg(editor->pixelsPerBar());
+	}
+	return QString();
+}
+
 ControlResult zoom(const QJsonObject& args)
 {
 	gui::SongEditor* editor = arranger();
@@ -180,6 +200,10 @@ ControlResult zoom(const QJsonObject& args)
 	}
 	else
 	{
+		if (const QString bound = stepBoundProblem(editor, args); !bound.isEmpty())
+		{
+			return ControlResult::failure(ControlErrorKind::Refused, bound);
+		}
 		anchor = zoomAnchor(editor, args);
 		gui::arrangerzoom::zoomAround(editor, requestedZoom(editor, args), anchor);
 	}
