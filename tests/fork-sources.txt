@@ -2620,6 +2620,20 @@ tests/src/core/StemExportTestSupport.h
 tests/src/core/StemJobManagerTest.cpp
 tests/src/core/SurroundExportTest.cpp
 tests/src/core/SurroundExportTestSupport.h
+# Q050-059.1 (2026-10-28): the modular instrument (Modular Synth) - its graph, compiled program, instrument, window - and its test (fork-NEW).
+plugins/ModularSynth/ModularGraph.cpp
+plugins/ModularSynth/ModularGraph.h
+plugins/ModularSynth/ModularProgram.cpp
+plugins/ModularSynth/ModularProgram.h
+plugins/ModularSynth/ModularSynth.cpp
+plugins/ModularSynth/ModularSynth.h
+plugins/ModularSynth/ModularSynthView.cpp
+plugins/ModularSynth/ModularSynthView.h
+tests/src/plugins/ModularSynthTest.cpp
+tests/src/plugins/ModularSynthTestSupport.h
+tests/src/gui/ModularSynthViewTest.cpp
+docs/050-features/Q050-059.1.md
+docs/qwen-fixes-2026-10/cluster-Q050-059.1.md
 tests/src/core/StereoDelay.cpp
 tests/src/core/StripMeterModeTest.cpp
 tests/src/core/SurroundTest.cpp
@@ -3203,17 +3217,3 @@ include/PluginInstantiationFailure.h
 src/core/PluginInstantiationFailure.cpp
 tests/src/core/ControlHostedBusLayoutTest.cpp
 docs/qwen-fixes-2026-10/cluster-stress-3.md
-# Q050-059.1 (2026-10-28): the modular instrument (Modular Synth) - its graph, compiled program, instrument, window - and its test (fork-NEW).
-plugins/ModularSynth/ModularGraph.cpp
-plugins/ModularSynth/ModularGraph.h
-plugins/ModularSynth/ModularProgram.cpp
-plugins/ModularSynth/ModularProgram.h
-plugins/ModularSynth/ModularSynth.cpp
-plugins/ModularSynth/ModularSynth.h
-plugins/ModularSynth/ModularSynthView.cpp
-plugins/ModularSynth/ModularSynthView.h
-tests/src/plugins/ModularSynthTest.cpp
-tests/src/plugins/ModularSynthTestSupport.h
-tests/src/gui/ModularSynthViewTest.cpp
-docs/050-features/Q050-059.1.md
-docs/qwen-fixes-2026-10/cluster-Q050-059.1.md
