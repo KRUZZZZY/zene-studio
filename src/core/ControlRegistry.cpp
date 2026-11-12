@@ -261,6 +261,28 @@ ControlResult ControlRegistry::runOnUiThread(const std::function<ControlResult()
 
 ControlResult ControlRegistry::invoke(const QString& id, const QJsonObject& args)
 {
+	return dispatch(id, args, false);
+}
+
+ControlResult ControlRegistry::invokeInProcess(const QString& id, const QJsonObject& args)
+{
+	return dispatch(id, args, true);
+}
+
+namespace
+{
+
+//! Whether an engine command may run: the agent surface waits for startup to finish (setReady), the
+//! process's own window needs only the engine it edits.
+bool engineAddressable(bool inProcess)
+{
+	return inProcess ? Engine::getSong() != nullptr && Engine::mixer() != nullptr : ControlRegistry::isEngineReady();
+}
+
+} // namespace
+
+ControlResult ControlRegistry::dispatch(const QString& id, const QJsonObject& args, bool inProcess)
+{
 	const ControlCommand* cmd = command(id);
 	if (cmd == nullptr)
 	{
@@ -280,7 +302,7 @@ ControlResult ControlRegistry::invoke(const QString& id, const QJsonObject& args
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, invalid);
 	}
 
-	if (cmd->requiresEngine && !isEngineReady())
+	if (cmd->requiresEngine && !engineAddressable(inProcess))
 	{
 		// Carry the reason (task #626): a bare 'busy' left a client with no way
 		// to tell "still starting" from "your audio device failed" - the agent

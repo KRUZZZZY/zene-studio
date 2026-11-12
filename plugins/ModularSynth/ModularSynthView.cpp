@@ -20,6 +20,7 @@
 #include <QScrollArea>
 #include <QVBoxLayout>
 
+#include "CommandForm.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "FontHelper.h"
@@ -147,20 +148,18 @@ void ModularSynthView::dispatch(Binding& binding)
 	const float value = binding.proxy->value();
 	if (value == binding.target->value()) { return; }
 	// The command an agent runs: the same range check, the same journal step, and a knob drag's run of calls on one
-	// parameter coalesces into one undo step (the plugin.param_set row's coalescing key).
+	// parameter coalesces into one undo step (the plugin.param_set row's coalescing key). Run in this process, so it
+	// does not wait on the opt-in agent socket's readiness; a refusal (a collaboration host's, an instrument the
+	// command cannot address) changes nothing, is shown, and the knob goes back to the parameter's value.
 	auto* synth = castModel<ModularSynth>();
-	const ControlResult result = ControlRegistry::instance()->invoke(QStringLiteral("plugin.param_set"),
+	const CommandCall call{QStringLiteral("plugin.param_set"),
 		QJsonObject{{QStringLiteral("target"), control::trackIdOf(synth->instrumentTrack())},
 			{QStringLiteral("plugin"), QStringLiteral("inst")},
 			{QStringLiteral("name"), binding.target->displayName()},
-			{QStringLiteral("value"), static_cast<double>(value)}});
-	if (!result.ok)
-	{
-		// The control surface cannot address this instrument (an instrument layered on another track, or the surface
-		// is not up yet): the knob still works, as a plain journalled edit of the parameter.
-		binding.target->addJournalCheckPoint();
-		binding.target->setValue(value);
-	}
+			{QStringLiteral("value"), static_cast<double>(value)}},
+		{}, QString(), false};
+	const ControlResult result = ControlRegistry::instance()->invokeInProcess(call.id, call.fixed);
+	if (!result.ok) { announce(this, call, result); }
 	follow(binding);
 }
 

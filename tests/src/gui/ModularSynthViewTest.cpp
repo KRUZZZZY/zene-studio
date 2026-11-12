@@ -6,6 +6,10 @@
  * note is heard at the new pitch and one control.undo takes the turn back. A graph replaced by a state restore rebuilds
  * the window onto the new modules' parameters.
  *
+ * The same holds when the program runs without the opt-in agent socket (the registry is never told it is ready): the
+ * knob still edits through plugin.param_set, one undoable step. A plugin.param_set the dispatcher refuses (here a
+ * collaboration host's refusal) changes nothing: no value, no undo step, no transaction, and the knob shows the value.
+ *
  * This file is part of Zene Studio, derived from LMMS - https://lmms.io
  *
  * This program is free software; you can redistribute it and/or
@@ -26,6 +30,7 @@
 #include <memory>
 
 #include "../plugins/ModularSynthTestSupport.h"
+#include "CollabCommandTap.h"
 #include "ControlVocabulary.h"
 #include "InstrumentView.h"
 #include "Knob.h"
@@ -104,7 +109,89 @@ private slots:
 		QVERIFY(view->findChild<QLabel*>(QStringLiteral("modularWiring"))->text().contains(QStringLiteral("o -> out.in")));
 	}
 
+	//! No agent socket: the registry is never told it is ready (src/core/main.cpp sets that only with
+	//! --control-socket). A knob turn is still plugin.param_set - one undo step reporting that command - and the
+	//! undo puts the parameter and the knob back.
+	void aKnobTurnWithNoAgentSocketIsStillOneUndoablePluginParamSet()
+	{
+		fresh();
+		QWidget parent;
+		std::unique_ptr<gui::PluginView> view(m_instrument->createView(&parent));
+		parent.show();
+		QApplication::processEvents();
+		auto* coarse = view->findChild<gui::Knob*>(QStringLiteral("osc1.coarse"));
+		QVERIFY(coarse != nullptr);
+		const int recordedBefore = transactionCount();
+
+		ControlRegistry::setReady(false);
+		QVERIFY(!ControlRegistry::isEngineReady());
+		wheel(coarse, 5);
+		const float turned = model(QStringLiteral("Osc 1 Coarse"))->value<float>();
+		ControlRegistry::setReady(true);
+		QVERIFY2(turned > 0.f, qPrintable(QStringLiteral("the wheel raised the pitch knob (%1)").arg(turned)));
+		QCOMPARE(coarse->model()->value(), turned);
+		QCOMPARE(transactionCount(), recordedBefore + 1);
+
+		const ControlResult undone = run(QStringLiteral("control.undo"));
+		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
+		QCOMPARE(undone.result.value(QStringLiteral("undone_command")).toString(), QStringLiteral("plugin.param_set"));
+		QCOMPARE(model(QStringLiteral("Osc 1 Coarse"))->value<float>(), 0.f);
+		QCOMPARE(coarse->model()->value(), 0.f);
+	}
+
+	//! A refused plugin.param_set (a joined collaboration peer whose host refuses the edit) leaves the parameter as it
+	//! was: no undo step, no transaction, and the knob goes back to the parameter's value.
+	void aRefusedKnobTurnChangesNothing()
+	{
+		fresh();
+		QWidget parent;
+		std::unique_ptr<gui::PluginView> view(m_instrument->createView(&parent));
+		parent.show();
+		QApplication::processEvents();
+		auto* coarse = view->findChild<gui::Knob*>(QStringLiteral("osc1.coarse"));
+		QVERIFY(coarse != nullptr);
+		const int recordedBefore = transactionCount();
+		const int depthBefore = undoDepth();
+		int refused = 0;
+		collab::CommandTap::install(
+			[&refused](const QString& id, bool, const QJsonObject&, ControlResult* result) {
+				if (id != QLatin1String("plugin.param_set")) { return false; }
+				++refused;
+				*result = ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the session host refused the edit"));
+				return true;
+			},
+			nullptr);
+		wheel(coarse, 3);
+		collab::CommandTap::clear();
+		QVERIFY2(refused > 0, "the knob turn went through plugin.param_set");
+		QCOMPARE(model(QStringLiteral("Osc 1 Coarse"))->value<float>(), 0.f);
+		QCOMPARE(coarse->model()->value(), 0.f);
+		QCOMPARE(transactionCount(), recordedBefore);
+		QCOMPARE(undoDepth(), depthBefore);
+	}
+
 private:
+	static void wheel(gui::Knob* knob, int steps)
+	{
+		const QPointF at(knob->width() / 2.0, knob->height() / 2.0);
+		for (int step = 0; step < steps; ++step)
+		{
+			QWheelEvent up(at, knob->mapToGlobal(at.toPoint()), QPoint(), QPoint(0, 120), Qt::NoButton, Qt::NoModifier,
+				Qt::NoScrollPhase, false);
+			QApplication::sendEvent(knob, &up);
+		}
+	}
+
+	static int transactionCount()
+	{
+		return run(QStringLiteral("control.transactions")).result.value(QStringLiteral("count")).toInt(-1);
+	}
+
+	static int undoDepth()
+	{
+		return run(QStringLiteral("control.undo_depth")).result.value(QStringLiteral("depth")).toInt(-1);
+	}
+
 	//! Every parameter has a knob standing for it (by name) that shows its value.
 	void verifyEveryParameterHasAKnob(QWidget* view)
 	{
