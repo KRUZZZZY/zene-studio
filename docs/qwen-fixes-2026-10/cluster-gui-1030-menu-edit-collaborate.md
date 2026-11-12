@@ -189,6 +189,7 @@ were re-run through `systemd-run` after the commit.
   adjusted to describe this line; this report is the integration record. The diff against HEAD is therefore the
   test adaptation, the comment and this report - no target file or manifest entry is dropped.
 - **LOG FOLDER:** every numbered log above plus `fix.patch` is in the r4 folder, written through `systemd-run` where
-  the lane jail denied direct writes. No gate limit, baseline or check was modified. The committed tree is
-  `84ed9ff2bc` (parent `b4a19c424b`); gates (`027-gates-committed.log`, EXIT=0, 8/8 PASS) and the submit check
-  (`028-submit-check-committed.log`, EXIT=0, `RESULT: PASS - submit`) were re-run on it after the commit.
+  the lane jail denied direct writes. No gate limit, baseline or check was modified. The fix commit is `84ed9ff2bc`
+  (parent `b4a19c424b`); gates (`027-gates-committed.log`, EXIT=0, 8/8 PASS) and the submit check
+  (`028-submit-check-committed.log`, EXIT=0, `RESULT: PASS - submit`) were re-run on it after the commit, and the last
+  `*-gates*`/`*-submit-check*` pair in the folder is the same verification on the final report-only commit.
