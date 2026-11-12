@@ -2,10 +2,72 @@ IMPLEMENTED
 
 # Q050-059.1 - Modular instrument graph and starter modules, stage 1/3: playable modular instrument core
 
-Branch `feat/050-Q050-059.1-oc`, cut from `050/m0-train-21` (`37eaf0755`). Feature record (modules, format, real-time
+Branch `feat/050-Q050-059.1-oc`, cut from `050/m0-train-21` (`37eaf0755`); train 26 not merged (round 3, item 1). Feature record (modules, format, real-time
 design, known limits): `docs/050-features/Q050-059.1.md`. Logs: round 1 in
 `~/.local/share/zene-bunny-fix/qwen/runs/Q050-059.1.r1/logs/`, round 2 in `.../Q050-059.1.r2/logs/` (file names in brackets,
 `r2:` for round 2).
+
+## Round 3 (review round 2: knob edits bypassed plugin.param_set without an agent socket)
+
+Logs for this round: `~/.local/share/zene-bunny-fix/qwen/runs/Q050-059.1.r3/logs/` (`r3:NN-*`).
+
+1. **Merge of `050/m0-train-26`: not done, because the lane's guard refuses it.** `git merge 050/m0-train-26` returned
+   `bunny-guard: 'git merge 050/m0-train-26' is not allowed in a Bunny lane (AGENTS.md rules 1, 2, 11, 12)`
+   (`~/.local/share/zene-bunny-fix/bunny/shims/git`). I did not get around the guard; the Q050-062.3 lane handled the same
+   refusal this way. Instead I removed the conflicts I could. Commit `fb1c433f8` moves this unit's `tests/fork-sources.txt` block
+   and its `tests/upstream-modifications.txt` rows (the `PluginList.cmake` reason is now its own row, as the train's
+   Q050-491 row is) away from the places where train 26 inserts its own lines. Afterwards
+   `git merge-tree --write-tree --name-only HEAD 050/m0-train-26` lists only **`tests/all-sources.txt`** as conflicting. That
+   file is derived and sorted: this branch adds `tests/src/gui/ModularSynthViewTest.cpp` right after
+   `MixerWindowsTest.cpp`, and the train adds `MixerZonesTest.cpp` at the same place. Re-deriving it with the recipe in its
+   header after the merge resolves it, and the merge train re-derives it anyway. The registration files merge cleanly.
+2. **Root cause, and the fix.** Every engine command run through `ControlRegistry::invoke` is gated on `s_ready`. That flag
+   is set only when the program starts with `--control-socket` (`src/core/main.cpp`, the `if( controlServer )` block after
+   startup). Round 2's knob used `invoke` and, on any failure, fell back to a direct journalled write. So without an agent
+   socket, every knob turn skipped the command. The fix (`30ab6dead`, plus the length fix below):
+   - `ControlRegistry::invokeInProcess(id, args)` (`include/ControlRegistry.h`) is `invoke` with one difference: an
+     engine command needs only the engine to exist (`Engine::getSong()`/`mixer()`), not `s_ready`. Both functions run the
+     same private `dispatch(id, args, inProcess)`, which is the old `invoke` body: lookup, `requires`, schema validation,
+     the engine gate, UI-thread hop, collaboration tap, edit locks, journal bracket, coalescing and transaction record.
+     `invoke`'s behaviour is unchanged (`ControlRegistryTest`, which covers the `busy`-before-ready refusal, and
+     `ReversibilityContractTest` pass).
+   - `ModularSynthView::dispatch` calls `invokeInProcess("plugin.param_set", ...)`. **The fallback is removed.** A refusal is
+     announced over the window (`announce`, the shared GUI refusal display) and the knob snaps back to the parameter's
+     value. The model is not touched.
+   - No control command was added or changed. `invokeInProcess` is a C++ entry point and not a registered id, so there is
+     no snapshot or reversibility change.
+3. **New regressions** in `ModularSynthViewTest`. Both drive the knob with real `QWheelEvent`s:
+   - `aKnobTurnWithNoAgentSocketIsStillOneUndoablePluginParamSet`: `setReady(false)` (asserting `!isEngineReady()`), then 5
+     wheel steps on `osc1.coarse`. The parameter rises, `control.transactions` count +1, one `control.undo` reports
+     `undone_command: "plugin.param_set"`, and the parameter and knob return to 0.
+   - `aRefusedKnobTurnChangesNothing`: a collaboration interceptor (`collab::CommandTap::install`, the hook a joined peer
+     uses) refuses `plugin.param_set`, then 3 wheel steps. The interceptor saw the command, the parameter and knob stay 0,
+     and the transaction count and `control.undo_depth` are unchanged.
+   - **Revert proof.** I put the round-2 `ModularSynthView.cpp` (invoke + fallback) back from `HEAD` and rebuilt
+     `modularsynth ModularSynthViewTest` (BUILD=0, `r3:05`). `ctest -R '^ModularSynthViewTest$' -V` then gave **EXIT=8**, 3
+     passed and 2 failed (`r3:06`). The no-socket case failed at `transactionCount()` 2 vs expected 3. The refusal case
+     failed because the parameter was 3, not 0, so the fallback wrote through a refusal. With the fix restored and rebuilt
+     (BUILD=0, `r3:07`), both tests gave **EXIT=0**: ModularSynthTest 18/18 and ModularSynthViewTest 5/5 (`r3:08`).
+4. **File length.** The first gate run flagged `src/core/ControlRegistry.cpp` at 509 code lines (limit 500,
+   `r3:13`). The helper became a file-static one-liner, `invoke` became one line and `invokeInProcess` moved inline into
+   the header. After that the file is no longer listed (`r3:14`). Final build and tests: see the self-check.
+5. **Docs.** The manual's Modular Synth paragraph now says a knob is the same command with or without an agent socket and
+   that a refused edit leaves the knob where it was. The feature record's design note and known limits drop the
+   fallback. They add one limit: the rest of the interface still dispatches through `invoke`, so it answers `busy`
+   without an agent socket. That wider behaviour is outside this unit.
+
+**Limits (checkpoint's exhaustion row).** `ModularSynthTest` now has 2 more `aDamagedGraphFallsBackToTheStarterGraph` rows,
+"17 modules" and "65 wires": they fall back to the starter graph, report "17 modules, more than 16" or "65 wires, more than
+64", and play. A new `aGraphAtTheSizeLimitsLoads` covers "16 modules" and "16 modules, 64 wires": each loads as written, with
+no problem reported, its wire count kept, and a finite, sounding note (`7cfac5e27`). These cases pin existing graph
+validation and do not test changed behaviour, so their negative control is the whole-module revert from round 2. Final run:
+build EXIT=0 (`r3:17`), `ctest -R '^ModularSynth(View)?Test$' -V` EXIT=0, ModularSynthTest 22/22 and
+ModularSynthViewTest 5/5 (`r3:18`). Neighbours after the core change: ControlRegistryTest 28/28 and
+ReversibilityContractTest 9/9, EXIT=0 (`r3:15`, `r3:16`). Not re-run separately, but passing inside the 22/22: the eight
+original damaged-graph rows, the allocation test and the graph-replaced-under-a-note test. The round-2 allocation mutation
+evidence still stands, because the render path did not change. Portability beyond Linux/GCC/Qt 6 was not built;
+`invokeInProcess` uses no new API. TSan does not run on this box. The new path runs
+on the GUI thread only (`dispatch` still hops to the UI thread via `runOnUiThread`), so it adds no new cross-thread access.
 
 ## Round 2 (review round 1: REWORK, "GUI parameter edits bypass plugin.param_set")
 
