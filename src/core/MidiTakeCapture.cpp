@@ -99,7 +99,12 @@ bool MidiTakeCapture::push(const MidiTakeEvent& event) noexcept
 		const std::uint64_t sequence = cell.sequence.load(std::memory_order_acquire);
 		const auto diff = static_cast<std::int64_t>(sequence) - static_cast<std::int64_t>(pos);
 		if (diff < 0) { return false; }  // full: the consumer has not freed this cell yet
-		if (diff == 0) { claimed = m_enqueue.compare_exchange_weak(pos, pos + 1, std::memory_order_relaxed); }
+		if (diff == 0)
+		{
+			// The test seam loses this attempt as a rival producer would (pos unchanged, as a spurious CAS failure).
+			const bool contended = m_claimGate != nullptr && !m_claimGate(m_claimGateContext);
+			claimed = !contended && m_enqueue.compare_exchange_weak(pos, pos + 1, std::memory_order_relaxed);
+		}
 		else { pos = m_enqueue.load(std::memory_order_relaxed); }
 	}
 	if (!claimed) { return false; }

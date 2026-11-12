@@ -22,6 +22,7 @@ It reports ctest *Skipped* (exit 77) - never *Passed* - when the host cannot sup
 port), the ControlRetroCapture precedent: a test that cannot make its measurement must not say it did.
 
 Usage: QT_QPA_PLATFORM=offscreen python3 control-midi-take-record.py <zene-binary>
+       python3 control-midi-take-record.py --self-test   (the timing check's own red/green control)
 """
 
 import os
@@ -225,8 +226,42 @@ def check_phrase(rows, problems):
         problems.require(abs(row[1] - expected) <= TOLERANCE, "length %d, played %g" % (row[1], expected))
 
 
-def audio_clip_armed(session, clip):
-    return any(c.get("record") for c in session.ok("arrangement.get_state")["clips"] if c["id"] == clip)
+def phrase_rows():
+    """The phrase exactly as note.list would read it back: (position, length, key, velocity)."""
+    return [[int(n[0] * SONG_TICKS_PER_FILE_TICK), int(n[3] * SONG_TICKS_PER_FILE_TICK),
+             n[1], n[2] * 100 // BASE_VELOCITY] for n in PHRASE]
+
+
+def self_test():
+    """check_phrase's own red/green control, no binary and no MIDI needed: the exact phrase and errors of
+    exactly TOLERANCE (4) ticks are accepted, errors of 5 ticks in a gap or a length are rejected. A
+    widened TOLERANCE (or a weakened comparison) accepts the 5-tick errors and fails this test."""
+    cases = [("the exact phrase", phrase_rows(), True)]
+    for error, accept in ((-5, False), (-4, True), (4, True), (5, False)):
+        rows = phrase_rows()
+        rows[1][0] += error  # moves note 1: the gaps before notes 1 and 2 are off by `error`
+        cases.append(("a %+d-tick gap error" % error, rows, accept))
+    for error, accept in ((-5, False), (-4, True), (4, True), (5, False)):
+        rows = phrase_rows()
+        rows[0][1] += error
+        cases.append(("a %+d-tick length error" % error, rows, accept))
+    failed = []
+    for name, rows, accept in cases:
+        problems = Problems()
+        check_phrase(rows, problems)
+        accepted = not problems
+        print("%-28s %s (contract: %s)" % (name, "accepted" if accepted else "rejected",
+                                           "accept" if accept else "reject"))
+        if accepted != accept:
+            failed.append(name)
+    print("self-test: TOLERANCE=%d, %s" % (TOLERANCE, "FAILED: " + ", ".join(failed) if failed else "ok"))
+    return 1 if failed else 0
+
+
+# The audio take is installed after Stop by a main-thread reaper (SampleRecordHandle's 10 ms timer), not
+# within transport.stop, and no read command reports a sample clip's record flag (arrangement.get_state has
+# none). So the check waits this long - measured under 0.3 s on this box - before asking clip.set_record.
+AUDIO_TAKE_SETTLE_SECONDS = 2.0
 
 
 def check_audio_alongside(context, problems):
@@ -235,9 +270,7 @@ def check_audio_alongside(context, problems):
     audio = [c for c in session.ok("arrangement.get_state")["clips"] if c["id"] == context["audio_clip"]]
     problems.require(len(audio) == 1, "the audio clip recorded alongside is gone: %r" % audio)
     # The armed sample clip recorded the same pass: installing its take disarms it (SampleClip::acceptRecordedTake).
-    deadline = time.time() + 3
-    while audio_clip_armed(session, context["audio_clip"]) and time.time() < deadline:
-        time.sleep(0.1)
+    time.sleep(AUDIO_TAKE_SETTLE_SECONDS)
     disarm = session.ok("clip.set_record", {"clip": context["audio_clip"], "record": False})
     print("  the audio clip after the pass: %r" % disarm)
     problems.require(disarm.get("record_before") is False,
@@ -325,6 +358,8 @@ def step(name, function, context):
 
 
 def main():
+    if sys.argv[1:] == ["--self-test"]:
+        return self_test()
     if len(sys.argv) != 2:
         print(__doc__)
         return 2

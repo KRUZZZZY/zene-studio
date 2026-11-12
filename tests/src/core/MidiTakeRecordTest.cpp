@@ -238,6 +238,55 @@ private slots:
 		}
 	}
 
+	//! The claim-retry bound, forced deterministically through the test seam: a producer that loses
+	//! MaxClaimAttempts - 1 races still queues its event on the last attempt; one that loses
+	//! MaxClaimAttempts races gives up right there - one drop counted, nothing queued, nothing allocated -
+	//! even though the very next attempt would have won. An unbounded retry loop takes that next attempt.
+	void theClaimRetriesAreBounded_data()
+	{
+		QTest::addColumn<int>("losses");
+		QTest::addColumn<bool>("queued");
+		QTest::newRow("boundary: wins the last attempt") << MidiTakeCapture::MaxClaimAttempts - 1 << true;
+		QTest::newRow("exhausted: drops at the bound") << MidiTakeCapture::MaxClaimAttempts << false;
+	}
+
+	void theClaimRetriesAreBounded()
+	{
+		QFETCH(int, losses);
+		QFETCH(bool, queued);
+		struct Rival
+		{
+			int losses = 0;
+			int attempts = 0;
+		} rival;
+		rival.losses = losses;
+		// Loses the first `losses` attempts, then lets every later one through.
+		const MidiTakeCapture::ClaimGate gate = [](void* context) noexcept {
+			auto* r = static_cast<Rival*>(context);
+			return ++r->attempts > r->losses;
+		};
+		MidiTakeCapture capture;
+		capture.arm(true);
+		QVERIFY(capture.startCapture());
+		capture.setClaimGateForTesting(gate, &rival);
+		const MidiEvent on(MidiNoteOn, 0, 60, 100);
+		lmms::test::resetAllocationCount();
+		lmms::test::tlCountAllocations = true;
+		capture.capture(on);
+		lmms::test::tlCountAllocations = false;
+		capture.setClaimGateForTesting(nullptr, nullptr);
+		QCOMPARE(lmms::test::tlAllocationCount, std::uint64_t{0});
+		QCOMPARE(lmms::test::tlFreeCount, std::uint64_t{0});
+		const int expectedAttempts = queued ? losses + 1 : MidiTakeCapture::MaxClaimAttempts;
+		QCOMPARE(rival.attempts, expectedAttempts);
+		QCOMPARE(capture.dropped(), std::uint64_t{queued ? 0u : 1u});
+		std::vector<MidiTakeEvent> drained;
+		QCOMPARE(capture.drain(&drained), std::size_t{queued ? 1u : 0u});
+		// The queue is not wedged by a given-up claim: the next event goes through.
+		capture.capture(on);
+		QCOMPARE(capture.drain(&drained), std::size_t{1});
+	}
+
 	// ------------------------------------------------------------------ a plain pass
 
 	//! Armed, recorded alongside, stopped: one MIDI clip with the notes as they were played.

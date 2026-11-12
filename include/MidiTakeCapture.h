@@ -95,7 +95,7 @@ public:
 
 	//! Main thread (the single consumer): move every queued event to @a out; answers how many.
 	std::size_t drain(std::vector<MidiTakeEvent>* out);
-	//! Events refused because the ring was full, since the track was first armed.
+	//! Events refused because the ring was full or the claim retries ran out, since the track was first armed.
 	std::uint64_t dropped() const noexcept { return m_dropped.load(std::memory_order_relaxed); }
 	std::size_t capacity() const noexcept { return m_cells ? CapacityEvents : 0; }
 
@@ -105,6 +105,17 @@ public:
 	static void publishPosition(tick_t tick, std::uint64_t loopWraps) noexcept;
 	static tick_t publishedTick() noexcept;
 	static std::uint32_t publishedWraps() noexcept;
+
+	//! Test seam (MidiTakeRecordTest): consulted before every claim attempt in capture(); answering false
+	//! makes that attempt lose its race, exactly as if another producer had claimed the slot first. It lets
+	//! a test force the MaxClaimAttempts bound deterministically. Null (the default, and always in the
+	//! product) costs one predictable branch. Set it only while no producer is running.
+	using ClaimGate = bool (*)(void* context) noexcept;
+	void setClaimGateForTesting(ClaimGate gate, void* context) noexcept
+	{
+		m_claimGate = gate;
+		m_claimGateContext = context;
+	}
 
 private:
 	struct Cell
@@ -123,6 +134,8 @@ private:
 	std::atomic<bool> m_armed{false};
 	std::atomic<bool> m_capturing{false};
 	std::atomic<std::uint64_t> m_dropped{0};
+	ClaimGate m_claimGate = nullptr;
+	void* m_claimGateContext = nullptr;
 };
 
 } // namespace lmms

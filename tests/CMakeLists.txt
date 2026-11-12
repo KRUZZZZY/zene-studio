@@ -7006,6 +7006,12 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		TIMEOUT 300
 		SKIP_RETURN_CODE 77
 	)
+	# The transcript's timing check's own red/green control: 5-tick gap and length errors are rejected
+	# under its 4-tick contract (no binary, no MIDI host needed).
+	add_test(NAME ControlMidiTakeRecordSelfTest
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-midi-take-record.py --self-test)
+	set_tests_properties(ControlMidiTakeRecordSelfTest PROPERTIES TIMEOUT 60)
 	add_test(NAME ControlRetroCapture
 		COMMAND ${PYTHON3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/control-retro-capture.py
