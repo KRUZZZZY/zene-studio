@@ -25,6 +25,7 @@
 #include "ShellCommandMenus.h"
 
 #include <algorithm>
+#include <utility>
 
 #include <QJsonArray>
 #include <QMenu>
@@ -302,7 +303,7 @@ void populateTrack(QMenu* menu, Track* track)
 	add(render, "Freeze", "freeze.track", self, false);
 	QMenu* presets = menu->addMenu(tr("Track Preset"));  // L11 (WF-024)
 	add(presets, "Save Preset...", "track.preset_save", self, true);
-	add(presets, "Load Preset...", "track.preset_load", self, true);
+	add(presets, "Load Preset...", "track.preset_load", self, true, {}, true);  // Q050-331: the form shows the bindings it restored
 	LibraryCommandMenus::populateTrack(menu, track);  // L12 (WF-044)
 	if (dynamic_cast<SampleTrack*>(track) != nullptr)
 	{
@@ -397,15 +398,14 @@ void viewOptionsMenu(QMenu* menu)
 {
 	QMenu* view = menu->addMenu(tr("Mixer View"));
 	addMixerWindows(view);  // L08/L09 (MX-131, MX-055)
-	choices(view, "Show Sends", "window.mixer_view", "show_sends", {});
-	choices(view, "Show Pan", "window.mixer_view", "show_pan", {});
-	choices(view, "Show Channel Numbers", "window.mixer_view", "show_number", {});
-	choices(view, "Show Meter Line", "window.mixer_view", "show_meter_info", {});
-	choices(view, "Show Inserts", "window.mixer_view", "show_inserts", {});
-	choices(view, "Show Macro Knobs", "window.mixer_view", "show_macros", {});
+	static const std::pair<const char*, const char*> sections[] = {{"Show Sends", "show_sends"}, {"Show Pan", "show_pan"},
+		{"Show Channel Numbers", "show_number"}, {"Show Meter Line", "show_meter_info"}, {"Show Inserts", "show_inserts"},
+		{"Show Macro Knobs", "show_macros"}};
+	for (const auto& section : sections) { choices(view, section.first, "window.mixer_view", section.second, {}); }
 	choices(view, "Show Console Section", "window.mixer_view", "show_console", {});  // Q050-088
 	choices(view, "Strip Width", "window.mixer_view", "strip_width", {});
 	choices(view, "Show Channels", "window.mixer_view", "filter", {});
+	choices(view, "Follow Arranger Selection", "window.mixer_view", "follow_selection", {});  // MX-021
 	choices(view, "Meter", "window.mixer_view", "meter_mode", {});
 	choices(view, "Meter Scale", "window.mixer_view", "meter_scale", {});
 	choices(view, "Meter Fall-Off", "window.mixer_view", "meter_falloff", {});  // MX-128
@@ -535,6 +535,7 @@ void populateProject(QMenu* menu)
 	list(menu, "Groups...", [] { return CommandLists::vcaGroups(); });
 	list(menu, "Grooves...", [] { return CommandLists::grooves(); });
 	menu->addSeparator();
+	list(menu, "Mastering Release...", [] { return CommandLists::masteringSequence(); });  // Q050-317.1
 	add(menu, "Auto-Master...", "mastering.run", {}, true);
 	add(menu, "Mastering Status", "mastering.get_state", {}, false, {}, true);
 	choices(menu, "Loudness Meter", "meter.arm", "enabled", {});
@@ -558,6 +559,17 @@ void populateCustomise(QMenu* menu)
 	add(surface, "Ports", "surface.mcu_ports", {}, false, {}, true);
 	add(surface, "State", "surface.mcu_state", {}, false, {}, true);
 	add(surface, "Disconnect", "surface.mcu_disconnect", {}, false);
+	// Q050-081: Lua control-surface scripts on MIDI ports (the bindings themselves stay in MIDI Mappings above).
+	QMenu* scripts = menu->addMenu(tr("Controller Scripts"));
+	add(scripts, "Start Script...", "controller.script_start", {}, true, {}, true);
+	add(scripts, "Script State", "controller.script_state", {}, false, {}, true);
+	add(scripts, "Stop Script...", "controller.script_stop", {}, true);
+	// Q050-205: the opt-in OSC server - off until Start runs osc.start; the form shows where it listens.
+	QMenu* osc = menu->addMenu(tr("OSC Control Server"));
+	add(osc, "Start...", "osc.start", {}, true, {{QStringLiteral("address"), QStringLiteral("127.0.0.1")},
+		{QStringLiteral("port"), 9000}, {QStringLiteral("scope"), QStringLiteral("remote")}}, true);
+	add(osc, "State", "osc.get_state", {}, false, {}, true);
+	add(osc, "Stop", "osc.stop", {}, false, {}, true);
 	QMenu* pop = menu->addMenu(tr("Pop Out Panel"));
 	for (const ShellPanelSpec& spec : ShellLayout::panels())
 	{

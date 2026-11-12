@@ -58,6 +58,8 @@ bool moduleOf(const ControlDeviceEntry& device, QString* pluginName, Plugin::Des
 	ControlResult ignored;
 	if (device.format == QLatin1String("vst3")) { return controlVst3DeviceModule(device, pluginName, key, useKey, &ignored); }
 	if (device.format == QLatin1String("clap")) { return controlClapDeviceModule(device, pluginName, key, useKey, &ignored); }
+	if (device.format == QLatin1String("au")) { return controlAuDeviceModule(device, pluginName, key, useKey, &ignored); }
+	if (device.format == QLatin1String("vst2")) { return controlVst2DeviceModule(device, pluginName, key, useKey, &ignored); }
 	return controlDeviceModule(device, pluginName, key, useKey, &ignored);
 }
 
@@ -126,7 +128,12 @@ void setPreferredFormat(const QString& format)
 
 const QStringList& formatNames()
 {
-	static const QStringList names{QString(), QStringLiteral("clap"), QStringLiteral("vst3"), QStringLiteral("lv2"), QStringLiteral("ladspa")};
+	// Q050-491: "au" only where Audio Units are hosted (macOS); a preference no build can honour is not offered.
+	static const QStringList names = [] {
+		QStringList out{QString(), QStringLiteral("clap"), QStringLiteral("vst3"), QStringLiteral("lv2"), QStringLiteral("ladspa")};
+		if (controlAuHostingBuilt()) { out << QStringLiteral("au"); }
+		return out;
+	}();
 	return names;
 }
 

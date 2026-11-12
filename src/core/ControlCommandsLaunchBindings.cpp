@@ -75,6 +75,49 @@ QString unbindableReason(const QString& id)
 	return QString();
 }
 
+/*! Q050-217.2: the names the workflow library in use holds, sorted, for a refusal that says what
+ *  there is. Read through workflow.list - the one reader of the library - so a shared or per-project
+ *  library answers the same way it does to the Workflows menu. */
+QStringList workflowNames()
+{
+	QStringList names;
+	for (const QJsonValue& value : ControlRegistry::instance()->invoke(QStringLiteral("workflow.list")).result
+		.value(QStringLiteral("workflows")).toArray())
+	{
+		names.append(value.toObject().value(QStringLiteral("name")).toString());
+	}
+	names.sort();
+	return names;
+}
+
+/*! Q050-217.2: the workflow a binding names, trimmed, or an empty string when the library in use
+ *  does not hold @a name - with @a error saying so. A workflow target is a saved NAME (not a copy of
+ *  its steps), run through workflow.run when the binding fires; resolving it at BINDING time keeps
+ *  the command's promise honest (a typo is refused where the user can see it), and it is resolved
+ *  again from that same library when it fires, so editing, renaming or switching scope is followed
+ *  rather than frozen. A core-only build registers no workflow.* group: then the check is skipped and
+ *  the binding is stored, exactly as a command id this build lacks would be. */
+QString workflowTarget(const QString& name, ControlResult* error)
+{
+	const QString trimmed = name.trimmed();
+	if (trimmed.isEmpty())
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("a workflow binding needs 'workflow', its name"));
+		return QString();
+	}
+	ControlRegistry* registry = ControlRegistry::instance();
+	if (!registry->hasCommand(QStringLiteral("workflow.list"))) { return trimmed; }
+	const QStringList names = workflowNames();
+	if (!names.contains(trimmed))
+	{
+		*error = ControlResult::failure(ControlErrorKind::NotFound, names.isEmpty()
+			? QStringLiteral("no workflow '%1': the library in use holds none (workflow.save makes one)").arg(trimmed)
+			: QStringLiteral("no workflow '%1' in the library in use (%2)").arg(trimmed, names.join(QStringLiteral(", "))));
+		return QString();
+	}
+	return trimmed;
+}
+
 //! The stored command bindings without the one a trigger names: the same note (on a channel) or the same CC.
 QJsonArray commandBindingsWithout(const QJsonObject& trigger)
 {
@@ -120,17 +163,48 @@ ControlResult storeCommandBindings(const QJsonArray& next)
 	return ControlResult::success({{QStringLiteral("bindings"), next}});
 }
 
-ControlResult bindCommand(const QJsonObject& args)
+/*! The target @a args name, as the ONE key/value a stored binding carries, or false with @a error.
+ *  A binding targets exactly one of `command` (Q050-217.1) and `workflow` (Q050-217.2); when both
+ *  are given the call is ambiguous and refused rather than silently preferring one. */
+bool targetOf(const QJsonObject& args, QJsonObject* out, ControlResult* error)
 {
+	const bool hasCommand = args.contains(QStringLiteral("command"));
+	const bool hasWorkflow = args.contains(QStringLiteral("workflow"));
+	if (hasCommand == hasWorkflow)
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, hasCommand
+			? QStringLiteral("a binding has one target: 'command' or 'workflow', not both")
+			: QStringLiteral("a binding needs a target: 'command' (a command id) or 'workflow' (a saved workflow's name)"));
+		return false;
+	}
+	if (hasWorkflow)
+	{
+		const QString name = workflowTarget(args.value(QStringLiteral("workflow")).toString(), error);
+		if (name.isEmpty()) { return false; }
+		*out = {{QStringLiteral("workflow"), name}};
+		return true;
+	}
 	const QString command = args.value(QStringLiteral("command")).toString();
 	const QString reason = unbindableReason(command);
-	if (!reason.isEmpty()) { return ControlResult::failure(ControlErrorKind::InvalidArgs, reason); }
-	QJsonObject trigger;
+	if (!reason.isEmpty())
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, reason);
+		return false;
+	}
+	*out = {{QStringLiteral("command"), command}};
+	return true;
+}
+
+ControlResult bindCommand(const QJsonObject& args)
+{
+	QJsonObject target;
 	ControlResult error;
+	if (!targetOf(args, &target, &error)) { return error; }
+	QJsonObject trigger;
 	if (!triggerOf(args, &trigger, &error)) { return error; }
 	QJsonObject binding = trigger;
-	binding.insert(QStringLiteral("command"), command);
-	// A NOTE bound to a command takes the same-channel launcher binding over. A binding on any channel
+	for (auto it = target.begin(); it != target.end(); ++it) { binding.insert(it.key(), it.value()); }
+	// A NOTE bound to a target takes the same-channel launcher binding over. A binding on any channel
 	// (-1) replaces every launcher binding for that note; a channel-specific one leaves a wildcard
 	// launcher available on the other channels. A control change never launched anything, so a CC binding
 	// leaves the launcher store alone. Undo puts both stores back: this is ONE edit, so it is one step.
@@ -169,11 +243,44 @@ ControlResult unbindCommand(const QJsonObject& args)
 	return storeCommandBindings(remaining);
 }
 
+/*! Q050-217.2: what @a binding names, as the readback states it - its `target` ("command" or
+ *  "workflow"), the target's name, and whether it still RESOLVES now. A workflow resolves against the
+ *  library in use (a shared or per-project library, by the same reader the Workflows menu uses), so
+ *  the answer follows the scope setting and an edit; a command resolves against the registry. A
+ *  binding that does not resolve is kept, deliberately: the config is the user's, a workflow may come
+ *  back (a removed one restored by undo, a project reopened), and silently deleting their binding
+ *  would be data loss. It is reported as `resolved: false` with the reason instead. */
+QJsonObject describeBinding(const QJsonObject& binding, const QStringList& workflows)
+{
+	const QString key = LaunchBindings::targetKey(binding);
+	const QString target = binding.value(key).toString();
+	QJsonObject out = binding;
+	out.insert(QStringLiteral("target"), key);
+	out.insert(QStringLiteral("name"), target);
+	const bool resolved = key == QLatin1String("workflow") ? workflows.contains(target)
+		: ControlRegistry::instance()->hasCommand(target);
+	out.insert(QStringLiteral("resolved"), resolved);
+	if (!resolved)
+	{
+		out.insert(QStringLiteral("reason"), key == QLatin1String("workflow")
+			? QStringLiteral("the library in use holds no workflow '%1'").arg(target)
+			: QStringLiteral("no command '%1' in this build").arg(target));
+	}
+	return out;
+}
+
 ControlResult listCommandBindings(const QJsonObject&)
 {
 	const LaunchBindings* bindings = LaunchBindings::instance();
+	const QStringList workflows = ControlRegistry::instance()->hasCommand(QStringLiteral("workflow.list"))
+		? workflowNames() : QStringList();
+	QJsonArray described;
+	for (const QJsonValue& value : LaunchBindings::commandBindings()) { described.append(describeBinding(value.toObject(), workflows)); }
 	return ControlResult::success({{QStringLiteral("connected"), bindings != nullptr},
-		{QStringLiteral("bindings"), LaunchBindings::commandBindings()}});
+		{QStringLiteral("bindings"), LaunchBindings::commandBindings()}, {QStringLiteral("targets"), described},
+		{QStringLiteral("workflows"), QJsonArray::fromStringList(workflows)},
+		{QStringLiteral("workflow_scope"), ControlRegistry::instance()->hasCommand(QStringLiteral("workflow.list"))
+			? ControlRegistry::instance()->invoke(QStringLiteral("workflow.list")).result.value(QStringLiteral("scope")) : QJsonValue()}});
 }
 
 //! The action part of a binding from @a args, or false (with @a error) when it is incomplete.
@@ -300,22 +407,27 @@ void registerLaunchBindingCommands(ControlRegistry& registry)
 	add(registry, "bindings", QStringLiteral("The launcher's controller bindings, whether a controller is connected and what the "
 		"next note will be bound to (session.bind_learn)."), objectSchema({}), listBindings, false);
 
-	// Q050-217.1: the same controller, bound to built-in commands that need no arguments.
+	// Q050-217.1 and Q050-217.2: the same controller, bound to a command or a saved workflow.
 	const QJsonObject commandTrigger{{QStringLiteral("trigger"), enumProperty(triggerNames())},
 		{QStringLiteral("key"), integerProperty(0, 127)}, {QStringLiteral("controller"), integerProperty(0, 127)},
-		{QStringLiteral("channel"), integerProperty(-1, 15)}, {QStringLiteral("command"), stringProperty()}};
-	add(registry, "bind_command", QStringLiteral("Bind a MIDI NOTE or CONTROL CHANGE to a built-in command that needs no "
-		"arguments, and run it through the registry once per activation. 'trigger' is note (with 'key' 0..127) or cc (with "
-		"'controller' 0..127); 'channel' is 0..15 or -1 for any; 'command' is a registered command id whose schema requires no "
-		"arguments (the control change's value is NOT passed on as one). A note fires on its press and rearms on its release; a "
-		"control change fires when it leaves zero and rearms at zero, so a sweep is one activation. Replaces a binding on the "
-		"same control, and a note still bound to the launcher is taken away from it by the same edit (one undo step). Kept in the "
-		"config file."), objectSchema(commandTrigger, {QStringLiteral("trigger"), QStringLiteral("command")}), bindCommand, true);
-	add(registry, "unbind_command", QStringLiteral("Remove the command binding on a note ('trigger' note, 'key', 'channel') or a "
-		"control change ('trigger' cc, 'controller', 'channel'). One undo step."),
-		objectSchema(commandTrigger, {QStringLiteral("trigger")}), unbindCommand, true);
-	add(registry, "command_bindings", QStringLiteral("The controller's command bindings (what session.bind_command made), and "
-		"whether a controller is connected."), objectSchema({}), listCommandBindings, false);
+		{QStringLiteral("channel"), integerProperty(-1, 15)}, {QStringLiteral("command"), stringProperty()},
+		{QStringLiteral("workflow"), stringProperty()}};
+	add(registry, "bind_command", QStringLiteral("Bind a MIDI NOTE or CONTROL CHANGE to a target that needs no arguments, and "
+		"run it once per activation: 'command' is a registered command id whose schema requires none, or 'workflow' is the name "
+		"of a workflow saved in the library in use (shared or with the project - workflow.save), run through workflow.run. "
+		"'trigger' is note (with 'key' 0..127) or cc (with 'controller' 0..127); 'channel' is 0..15 or -1 for any. The control "
+		"change's value is NOT passed on as an argument. A note fires on its press and rearms on its release; a control change "
+		"fires when it leaves zero and rearms at zero, so a sweep is one activation. A workflow is resolved from the library in "
+		"use when it fires, so editing it, or keeping workflows with the project, is followed; a name that library no longer "
+		"holds does nothing. Replaces a binding on the same control, and a note still bound to the launcher is taken away from it "
+		"by the same edit (one undo step). Kept in the config file."),
+		objectSchema(commandTrigger, {QStringLiteral("trigger")}), bindCommand, true);
+	add(registry, "unbind_command", QStringLiteral("Remove the binding on a note ('trigger' note, 'key', 'channel') or a "
+		"control change ('trigger' cc, 'controller', 'channel'), whichever target it names - a command or a workflow. One undo "
+		"step."), objectSchema(commandTrigger, {QStringLiteral("trigger")}), unbindCommand, true);
+	add(registry, "command_bindings", QStringLiteral("The controller's bindings to commands and workflows (what "
+		"session.bind_command made), each with its target ('command' or 'workflow'), and whether a controller is connected."),
+		objectSchema({}), listCommandBindings, false);
 }
 
 } // namespace lmms

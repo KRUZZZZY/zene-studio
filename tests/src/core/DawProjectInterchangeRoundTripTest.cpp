@@ -56,6 +56,7 @@
 
 #include <QByteArray>
 #include <QDir>
+#include <QFile>
 #include <QList>
 #include <QPair>
 #include <QJsonArray>
@@ -288,6 +289,32 @@ private slots:
 		QCOMPARE(dawProjectTicksFromBeats(lastTick / perBeat), static_cast<qint64>(lastTick));
 	}
 
+	/*! A read that gives back nothing is refused AS A READ by the strict reader the
+	 *  .mmpz container uses, so a recovery names the file it could not read. The
+	 *  same bytes read without the fault are refused as malformed. The fault is
+	 *  ZENE_TEST_CONTAINER_READ_FAULT. */
+	void aFailedReadOfTheStrictReaderIsNamedAsARead()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString path = dir.filePath(QStringLiteral("read-fault.dawproject"));
+		QFile file(path);
+		QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+		QVERIFY(file.write(QByteArray(64, 'x')) == 64);
+		file.close();
+
+		std::vector<DawProjectEntry> entries;
+		QString error;
+		qputenv("ZENE_TEST_CONTAINER_READ_FAULT", "1");
+		const bool ok = dawProjectZipRead(path, &entries, &error);
+		qunsetenv("ZENE_TEST_CONTAINER_READ_FAULT");
+		QVERIFY(!ok);
+		QVERIFY2(error.contains(QStringLiteral("cannot read")), qPrintable(error));
+
+		QVERIFY(!dawProjectZipRead(path, &entries, &error));
+		QVERIFY2(!error.contains(QStringLiteral("cannot read")), qPrintable(error));
+	}
+
 	void cleanupTestCase()
 	{
 		ControlRegistry::setReady(false);
@@ -470,7 +497,7 @@ private slots:
 		QString error;
 		Song* song = Engine::getSong();
 		QVERIFY2(applyDawProjectModel(song, model, &error), qPrintable(error));
-		QCOMPARE(song->tracks().size(), 1);
+		QCOMPARE(static_cast<int>(song->tracks().size()), 1);
 		auto* sampleTrack = dynamic_cast<SampleTrack*>(song->tracks().front());
 		QVERIFY(sampleTrack != nullptr);
 		QCOMPARE(sampleTrack->panningModel()->value(), 50.f);
@@ -782,6 +809,55 @@ private slots:
 		const ControlResult result = run(QStringLiteral("dawproject.import"),
 			{{QStringLiteral("path"), file}});
 		QVERIFY(!result.ok);
+	}
+
+	//! The tempo arm rounds a point's value and casts it to int. A value that is
+	//! not finite, or that rounds outside the engine's bounds, has no int to
+	//! become (a NaN or out-of-range cast is undefined), so applyDawProjectModel
+	//! refuses it before the cast - naming the value, as the beat refusal names
+	//! its time - and the session's tempo map is left as it was.
+	void tempoPointValuesOutsideTheEngineAreRefusedBeforeTheCast()
+	{
+		Song* song = Engine::getSong();
+		const double refused[] = {
+			std::numeric_limits<double>::quiet_NaN(),
+			std::numeric_limits<double>::infinity(),
+			-std::numeric_limits<double>::infinity(),
+			1e300,
+			-1e300,
+			5000.0,
+			9.4,
+			999.5,
+		};
+		for (const double value : refused)
+		{
+			DawProjectModel model;
+			DawProjectPoint point;
+			point.time = 1.0;
+			point.value = value;
+			model.tempoPoints.append(point);
+
+			QString error;
+			QVERIFY(!applyDawProjectModel(song, model, &error));
+			QVERIFY2(error.contains(QString::number(value, 'g', 17)), qPrintable(error));
+			QCOMPARE(song->tempoMap().map().size(), 0);
+		}
+
+		// The rounding itself is unchanged at both edges of the accepted interval.
+		DawProjectModel accepted;
+		DawProjectPoint minimum;
+		minimum.time = 1.0;
+		minimum.value = 9.5;
+		accepted.tempoPoints.append(minimum);
+		DawProjectPoint maximum;
+		maximum.time = 2.0;
+		maximum.value = 999.4;
+		accepted.tempoPoints.append(maximum);
+		QString error;
+		QVERIFY2(applyDawProjectModel(song, accepted, &error), qPrintable(error));
+		QCOMPARE(song->tempoMap().map().size(), 2);
+		QCOMPARE(song->tempoMap().map()[0].tempo, 10);
+		QCOMPARE(song->tempoMap().map()[1].tempo, 999);
 	}
 
 	//! Claim 5: typed refusals - a missing file, a file that is not a ZIP, a
@@ -1848,8 +1924,8 @@ private slots:
 			"<Structure><Track id=\"t1\" name=\"T\" contentType=\"notes\">"
 			"<Channel id=\"c1\"/></Track></Structure>"
 			"<Arrangement><Lanes><Lanes track=\"t1\"><Clips>"
-			"<Clip time=\"50000000\" duration=\"4\"><Notes>"
-			"<Note time=\"50000000\" duration=\"1\" channel=\"0\" key=\"60\" vel=\"0.8\"/>"
+			"<Clip time=\"50000000\" duration=\"0\"><Notes>"
+			"<Note time=\"50000000\" duration=\"0\" channel=\"0\" key=\"60\" vel=\"0.8\"/>"
 			"</Notes></Clip></Clips></Lanes></Lanes></Arrangement>"
 			"</Project>";
 
@@ -2113,6 +2189,164 @@ void writerRefusesANoteEndpointPastTheTickRange()
 	model.tracks[0].clips[0].notes[0].duration = 1.0 / DawProjectTicksPerQuarterNote;
 	QVERIFY2(!writeDawProject(file, model, &report, &error),
 		"a note endpoint beyond the engine's tick range was written");
+}
+
+//! Cluster new-p14-89: a clip or note whose start plus duration passes tick_t is refused.
+//! An endpoint that fits exactly is kept, and positions outside the domain retain the
+//! reader's existing clamp-and-count behavior.
+void readerRefusesATimelineEndpointPastTheTickRange()
+{
+	// 44739241 beats is exactly 2147483568 ticks, 79 ticks below tick_t's maximum.
+	const auto documentWith = [](const QByteArray& clipAttributes, const QByteArray& clipBody) {
+		return QByteArray("<Project version=\"1.0\"><Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Structure><Track id=\"t1\" name=\"T\" contentType=\"notes\"><Channel id=\"c1\"/>"
+			"</Track></Structure><Arrangement><Lanes><Lanes track=\"t1\"><Clips>"
+			"<Clip ") + clipAttributes + ">" + clipBody + "</Clip>"
+			"</Clips></Lanes></Lanes></Arrangement></Project>";
+	};
+	const QByteArray unitNotes = "<Notes><Note time=\"0\" duration=\"1\" channel=\"0\" key=\"60\" vel=\"0.8\"/></Notes>";
+	const QByteArray notePastMax = "<Notes><Note time=\"44739241\" duration=\"2\" channel=\"0\" key=\"60\" vel=\"0.8\"/></Notes>";
+	const QByteArray noteAtMax = "<Notes><Note time=\"44739241\" duration=\"1.6458333333\" channel=\"0\" key=\"60\" vel=\"0.8\"/></Notes>";
+
+	DawProjectModel rejectedModel;
+	DawProjectReadReport rejectedReport;
+	QString error;
+	QVERIFY(!dawProjectModelFromXml(documentWith("time=\"44739241\" duration=\"2\"", unitNotes),
+		&rejectedModel, &rejectedReport, &error));
+	QVERIFY(error.contains(QStringLiteral("start plus duration")));
+	QVERIFY(!dawProjectModelFromXml(documentWith("time=\"0\" duration=\"4\"", notePastMax),
+		&rejectedModel, &rejectedReport, &error));
+	QVERIFY(error.contains(QStringLiteral("start plus duration")));
+
+	DawProjectModel fitModel;
+	DawProjectReadReport fitReport;
+	QVERIFY2(dawProjectModelFromXml(documentWith("time=\"44739241\" duration=\"1.6458333333\"", unitNotes),
+		&fitModel, &fitReport, &error), qPrintable(error));
+	QCOMPARE(qRound(fitModel.tracks[0].clips[0].duration * DawProjectTicksPerQuarterNote), 79);
+	DawProjectModel noteFitModel;
+	DawProjectReadReport noteFitReport;
+	QVERIFY2(dawProjectModelFromXml(documentWith("time=\"0\" duration=\"4\"", noteAtMax),
+		&noteFitModel, &noteFitReport, &error), qPrintable(error));
+	QCOMPARE(qRound(noteFitModel.tracks[0].clips[0].notes[0].duration * DawProjectTicksPerQuarterNote), 79);
+	QCOMPARE(fitReport.loss.roundedTimes + noteFitReport.loss.roundedTimes, 0);
+
+	// A clip the model does not carry (no <Notes>) is counted as skipped.
+	DawProjectModel uncarriedModel;
+	DawProjectReadReport uncarriedReport;
+	QVERIFY2(dawProjectModelFromXml(documentWith("time=\"0\" duration=\"2\"", ""),
+		&uncarriedModel, &uncarriedReport, &error), qPrintable(error));
+	QCOMPARE(uncarriedModel.tracks[0].clips.size(), 0);
+	QCOMPARE(uncarriedReport.loss.automationClipsSkipped, 1);
+}
+
+//! Cluster new-p14-89, rework: applying an imported boundary clip or note must not overflow tick_t
+//! inside the engine's own sums. Song::lengthChanged runs after every engine length update, so each
+//! clip is checked while the import runs, and a transient overflow is caught even when the final
+//! values look right.
+void appliedBoundaryEndpointsStayInTheTickRange()
+{
+	const qint64 lastTick = std::numeric_limits<tick_t>::max();
+	Song* song = Engine::getSong();
+	QString error;
+	QVERIFY2(applyDawProjectModel(song, previousSessionModel(), &error), qPrintable(error));
+	Track* preservedTrack = song->tracks().front();
+	const auto modelWithClip = [](const DawProjectClip& clip) {
+		DawProjectModel model;
+		DawProjectTrack track;
+		track.typeName = QStringLiteral("instrument");
+		track.contentType = QStringLiteral("notes");
+		track.clips.append(clip);
+		model.tracks.append(track);
+		return model;
+	};
+	DawProjectClip overflowingClip;
+	overflowingClip.time = dawProjectBeatsFromTicks(lastTick - 79);
+	overflowingClip.duration = dawProjectBeatsFromTicks(80);
+	QVERIFY(!applyDawProjectModel(song, modelWithClip(overflowingClip), &error));
+	QVERIFY(error.contains(QStringLiteral("start plus duration")));
+	QVERIFY(song->tracks().size() == 1 && song->tracks().front() == preservedTrack);
+	DawProjectClip overflowingNoteClip;
+	overflowingNoteClip.duration = 4.0;
+	DawProjectNote overflowingNote;
+	overflowingNote.time = dawProjectBeatsFromTicks(lastTick - 79);
+	overflowingNote.duration = dawProjectBeatsFromTicks(80);
+	overflowingNoteClip.notes.append(overflowingNote);
+	QVERIFY(!applyDawProjectModel(song, modelWithClip(overflowingNoteClip), &error));
+	QVERIFY(error.contains(QStringLiteral("start plus duration")));
+	QVERIFY(song->tracks().size() == 1 && song->tracks().front() == preservedTrack);
+	const auto documentWith = [](const QByteArray& clipAttributes, const QByteArray& clipBody) {
+		return QByteArray("<Project version=\"1.0\"><Application name=\"Probe\" version=\"1\"/>"
+			"<Transport><Tempo value=\"120\"/></Transport>"
+			"<Structure><Track id=\"t1\" name=\"T\" contentType=\"notes\"><Channel id=\"c1\"/>"
+			"</Track></Structure><Arrangement><Lanes><Lanes track=\"t1\"><Clips>"
+			"<Clip ") + clipAttributes + ">" + clipBody + "</Clip>"
+			"</Clips></Lanes></Lanes></Arrangement></Project>";
+	};
+	struct Fixture
+	{
+		const char* what;
+		QByteArray xml;
+		qint64 clipStart;
+		qint64 clipLength;
+		qint64 noteStart;
+		qint64 noteLength;
+	};
+	const QByteArray oneBeatNote = "<Notes><Note time=\"0\" duration=\"1\" channel=\"0\" key=\"60\" vel=\"0.8\"/></Notes>";
+	const QList<Fixture> fixtures = {
+		{"a clip starting 79 ticks short of the end",
+			documentWith("time=\"44739241\" duration=\"1.6458333333\"", oneBeatNote), 2147483568, 79, 0, 48},
+		{"a note ending on the last tick",
+			documentWith("time=\"0\" duration=\"44739242.6458333333\"",
+				"<Notes><Note time=\"44739241\" duration=\"1.6458333333\" channel=\"0\" key=\"60\" vel=\"0.8\"/></Notes>"),
+			0, lastTick, 2147483568, 79},
+		{"a clip with no duration, 79 ticks short of the end",
+			documentWith("time=\"44739241\" duration=\"0\"", oneBeatNote), 2147483568, 79, 0, 48},
+	};
+
+	for (const Fixture& fixture : fixtures)
+	{
+		DawProjectModel model;
+		DawProjectReadReport report;
+		QString error;
+		QVERIFY2(dawProjectModelFromXml(fixture.xml, &model, &report, &error), qPrintable(error));
+
+		song->clearProject();
+		int outsideStates = 0;
+		const auto clipsOutsideTickRange = [song, lastTick]() {
+			int outside = 0;
+			for (const Track* track : song->tracks())
+			{
+				for (const Clip* clip : track->getClips())
+				{
+					const qint64 start = clip->startPosition().getTicks();
+					const qint64 length = clip->length().getTicks();
+					if (start < 0 || length < 0 || start + length > lastTick) { ++outside; }
+				}
+			}
+			return outside;
+		};
+		const auto link = QObject::connect(song, &Song::lengthChanged,
+			[&outsideStates, &clipsOutsideTickRange]() { outsideStates += clipsOutsideTickRange(); });
+		const bool applied = applyDawProjectModel(song, model, &error);
+		QObject::disconnect(link);
+		QVERIFY2(applied, qPrintable(error));
+		QVERIFY2(outsideStates == 0, qPrintable(QStringLiteral("%1: %2 engine length states left the tick range")
+			.arg(QString::fromLatin1(fixture.what)).arg(outsideStates)));
+
+		QCOMPARE(static_cast<int>(song->tracks().size()), 1);
+		const auto& clips = song->tracks().front()->getClips();
+		QCOMPARE(clips.size(), 1);
+		const Clip* clip = clips.front();
+		QCOMPARE(static_cast<qint64>(clip->startPosition().getTicks()), fixture.clipStart);
+		QCOMPARE(static_cast<qint64>(clip->length().getTicks()), fixture.clipLength);
+		const auto* midi = dynamic_cast<const MidiClip*>(clip);
+		QVERIFY(midi != nullptr);
+		QCOMPARE(static_cast<int>(midi->notes().size()), 1);
+		const Note* note = midi->notes().front();
+		QCOMPARE(static_cast<qint64>(note->pos().getTicks()), fixture.noteStart);
+		QCOMPARE(static_cast<qint64>(note->length().getTicks()), fixture.noteLength);
+	}
 }
 
 //! Luna cluster 5067: dawProjectXmlFromModel(DawProjectModel{}) SUCCEEDED and

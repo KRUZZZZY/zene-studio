@@ -25,6 +25,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <limits>
 #include <memory>
 #include <thread>
 #include <vector>
@@ -111,6 +112,54 @@ private slots:
 			"OscillatorObject published a user waveform while a render period was in "
 			"flight; playNoteImpl() can read a half-updated buffer/table pair "
 			"(cluster new-p12-275)");
+	}
+
+	// cluster new-p16-156: waveTableBandFromFreq() takes log2 of the frequency and
+	// converts the result to int. For zero, negative, NaN and +inf input that
+	// result is not finite, and the float-to-int conversion is undefined.
+	void waveTableBandIsDefinedForNonFiniteAndNonPositiveFrequencies()
+	{
+		const int topBand = OscillatorConstants::WAVE_TABLES_PER_WAVEFORM_COUNT - 1;
+		const float inf = std::numeric_limits<float>::infinity();
+		const float nan = std::numeric_limits<float>::quiet_NaN();
+
+		// Finite frequencies keep their band (A3 = key 57, A4 = key 69, A5 = key 81).
+		QCOMPARE(Oscillator::waveTableBandFromFreq(220.0f), 57);
+		QCOMPARE(Oscillator::waveTableBandFromFreq(440.0f), 69);
+		QCOMPARE(Oscillator::waveTableBandFromFreq(880.0f), 81);
+		// Finite but outside the table range: clamped to the ends of the range.
+		QCOMPARE(Oscillator::waveTableBandFromFreq(1e-30f), 1);
+		QCOMPARE(Oscillator::waveTableBandFromFreq(1e30f), topBand);
+		// Zero, negative and NaN have no band: the lowest one is used.
+		QCOMPARE(Oscillator::waveTableBandFromFreq(0.0f), 1);
+		QCOMPARE(Oscillator::waveTableBandFromFreq(-440.0f), 1);
+		QCOMPARE(Oscillator::waveTableBandFromFreq(nan), 1);
+		// +inf saturates the same way a huge finite frequency does: the highest band.
+		QCOMPARE(Oscillator::waveTableBandFromFreq(inf), topBand);
+	}
+
+	// cluster new-p16-156: a NaN frequency makes the oscillator phase NaN, and the
+	// sample handed to getWtSampleControl() is then NaN too. Its frame must not be
+	// converted to an integer index as it is.
+	void wavetableFrameIsDefinedForNaNSample()
+	{
+		const float freq = 440.0f;
+		const float detuning = 1.0f;
+		const float phase = 0.0f;
+		const float volume = 1.0f;
+		Oscillator osc(nullptr, nullptr, freq, detuning, phase, volume);
+
+		// A finite sample keeps its frame and the next one (half-way through the table).
+		const f_cnt_t half = static_cast<f_cnt_t>(OscillatorConstants::WAVETABLE_LENGTH / 2);
+		const auto middle = osc.getWtSampleControl(0.5f);
+		QCOMPARE(middle.f1, half);
+		QCOMPARE(middle.f2, half + 1);
+
+		// NaN has no frame: the first one is used.
+		const auto nan = osc.getWtSampleControl(std::numeric_limits<float>::quiet_NaN());
+		QCOMPARE(nan.frame, 0.0f);
+		QCOMPARE(nan.f1, f_cnt_t{0});
+		QCOMPARE(nan.f2, f_cnt_t{1});
 	}
 };
 

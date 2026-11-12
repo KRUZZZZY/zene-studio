@@ -40,6 +40,7 @@
 #include <QTimer>
 #include <QTreeWidget>
 
+#include "ControlTrackRouting.h"
 #include "DesignTokens.h"
 #include "DevicePicker.h"
 #include "EffectPickerOrganiser.h"
@@ -75,7 +76,7 @@ QString formatOf(const Plugin::Descriptor::SubPluginFeatures::Key& key)
 {
 	if (key.desc == nullptr || key.desc->subPluginFeatures == nullptr) { return devicelabels::formatLabel(QStringLiteral("builtin")); }
 	const QString host = QString::fromUtf8(key.desc->name).toLower();
-	for (const QString& format : {QStringLiteral("vst3"), QStringLiteral("clap"), QStringLiteral("lv2"), QStringLiteral("ladspa")})
+	for (const QString& format : {QStringLiteral("vst3"), QStringLiteral("vst2"), QStringLiteral("clap"), QStringLiteral("lv2"), QStringLiteral("ladspa")})
 	{
 		if (host.contains(format)) { return devicelabels::formatLabel(format); }
 	}
@@ -463,6 +464,7 @@ void PluginDescWidget::openInNewInstrumentTrack(QString value)
 {
 	TrackContainer* tc = Engine::getSong();
 	auto it = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, tc));
+	control::assignNewTrackChannel(it);
 	auto ilt = new InstrumentLoaderThread(this, it, value);
 	ilt->start();
 }

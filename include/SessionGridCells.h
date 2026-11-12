@@ -27,6 +27,7 @@
 
 #include <vector>
 
+#include <QJsonObject>
 #include <QString>
 
 #include "lmms_export.h"
@@ -78,6 +79,14 @@ LMMS_EXPORT QString columnTitle(int track);
 //! What launching the cell named @a name will do to its column, for its tooltip: it replaces @a playing (the clip
 //! the column plays now, in another scene) - or empty when the column is idle or already on this cell.
 LMMS_EXPORT QString launchReplaces(const QString& name, const QString& playing);
+
+/*! Q050-493: what an AUDIO cell's playback settings (@a slot, its session.get_state entry) do to it, shown on the
+ *  cell after its name - only the ones off their defaults, short: "-6.0dB +12st +50ct ⟲ W128" (gain, transpose,
+ *  detune, a loop region, warped from 128 BPM). Empty for a MIDI or empty cell, or one at every default. */
+LMMS_EXPORT QString playbackBadge(const QJsonObject& slot);
+//! The same settings in words, for the cell's accessible name and tooltip ("gain -6.0 dB, transposed +12
+//! semitones, ..."); empty when the badge is.
+LMMS_EXPORT QString playbackWords(const QJsonObject& slot);
 
 } // namespace lmms::gui::sessiongrid
 

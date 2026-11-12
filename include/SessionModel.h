@@ -290,6 +290,14 @@ public:
 	}
 };
 
+//! Q050-489: one grid cell as it was, at its coordinates (what a pattern deletion's undo puts back).
+struct SessionCellCopy
+{
+	int track = 0;
+	int scene = 0;
+	ClipSlot slot;
+};
+
 class LMMS_EXPORT SessionModel
 {
 public:
@@ -343,6 +351,21 @@ public:
 	bool hadSessionBlock() const { return m_hadSessionBlock; }
 
 	void clear();
+
+	// ---- pattern references (Q050-489; bodies in SessionTransitions.cpp) ----
+
+	/*! Pattern @a removed was deleted and every pattern numbered after it moved down one (PatternTrack's
+	 *  registry renumbers them). A MIDI cell naming the deleted pattern is emptied - its notes went with the
+	 *  pattern, as the pattern's arrangement clips did - and a cell naming a later pattern follows it down, so
+	 *  every remaining cell still names the pattern it named. Returns the cells changed. */
+	int patternRemoved( int removed );
+	//! Patterns @a first and @a second swapped numbers (a pattern track moved): the cells follow their patterns.
+	int patternsSwapped( int first, int second );
+	//! The MIDI cells that play pattern @a pattern - what patternRemoved() would empty - as copies.
+	std::vector<SessionCellCopy> cellsOfPattern( int pattern ) const;
+	/*! Puts @a cells back where they were, each playing pattern @a pattern (a deleted pattern comes back under a
+	 *  new number). A cell the grid no longer reaches is skipped. Returns the cells put back. */
+	int restoreCells( const std::vector<SessionCellCopy>& cells, int pattern );
 
 	// ---- persistence ---------------------------------------------------
 

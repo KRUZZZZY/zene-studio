@@ -68,7 +68,7 @@ float bestLag(const std::vector<float>& d, int maxLag)
 	for (int tau = 2; tau + 1 < maxLag; ++tau)
 	{
 		if (cmnd[static_cast<std::size_t>(tau)] >= Threshold) { continue; }
-		while (tau + 1 < maxLag && cmnd[static_cast<std::size_t>(tau) + 1] < cmnd[static_cast<std::size_t>(tau)]) { ++tau; }
+		while (tau + 2 < maxLag && cmnd[static_cast<std::size_t>(tau) + 1] < cmnd[static_cast<std::size_t>(tau)]) { ++tau; }
 		const float a = cmnd[static_cast<std::size_t>(tau) - 1];
 		const float b = cmnd[static_cast<std::size_t>(tau)];
 		const float c = cmnd[static_cast<std::size_t>(tau) + 1];
@@ -83,7 +83,8 @@ float bestLag(const std::vector<float>& d, int maxLag)
 float pitchAt(const float* mono, std::size_t count, std::size_t frame, int size, int rate)
 {
 	const int maxLag = size / 2;
-	if (frame + static_cast<std::size_t>(size) > count || maxLag < 4) { return 0.f; }
+	// frame + size is not compared directly: a large frame would wrap that sum past count.
+	if (maxLag < 4 || frame > count || static_cast<std::size_t>(size) > count - frame) { return 0.f; }
 	std::vector<float> d(static_cast<std::size_t>(maxLag), 0.f);
 	for (int tau = 1; tau < maxLag; ++tau)
 	{

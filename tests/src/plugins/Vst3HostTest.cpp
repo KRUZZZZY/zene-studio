@@ -37,10 +37,13 @@
 
 #include "../core/AllocationProbe.h"
 #include "Midi.h"
+#include "PluginWindowSystem.h"
 #include "Vst3ComponentHandler.h"
+#include "Vst3EditorSession.h"
 #include "Vst3Host.h"
 #include "Vst3MidiEvent.h"
 #include "Vst3MidiMapping.h"
+#include "pluginterfaces/gui/iplugview.h"
 #include "pluginterfaces/vst/ivsteditcontroller.h"
 #include "pluginterfaces/vst/ivstmidicontrollers.h"
 #include "public.sdk/source/vst/hosting/parameterchanges.h"
@@ -133,6 +136,53 @@ public:
 	}
 };
 
+//! A stand-in editor view that keeps the frame the host gives it, so a case can question that frame
+//! the way a faulty editor would. The case owns it, not the session: its reference count is fixed.
+class FrameProbeView : public Steinberg::IPlugView
+{
+public:
+	Steinberg::tresult PLUGIN_API queryInterface(const Steinberg::TUID iid, void** obj) override
+	{
+		if (Steinberg::FUnknownPrivate::iidEqual(iid, Steinberg::IPlugView::iid)
+			|| Steinberg::FUnknownPrivate::iidEqual(iid, Steinberg::FUnknown::iid))
+		{
+			*obj = static_cast<Steinberg::IPlugView*>(this);
+			return Steinberg::kResultOk;
+		}
+		*obj = nullptr;
+		return Steinberg::kNoInterface;
+	}
+	Steinberg::uint32 PLUGIN_API addRef() override { return 1; }
+	Steinberg::uint32 PLUGIN_API release() override { return 1; }
+	Steinberg::tresult PLUGIN_API isPlatformTypeSupported(Steinberg::FIDString) override { return Steinberg::kResultTrue; }
+	Steinberg::tresult PLUGIN_API attached(void*, Steinberg::FIDString) override { return Steinberg::kResultOk; }
+	Steinberg::tresult PLUGIN_API removed() override { return Steinberg::kResultOk; }
+	Steinberg::tresult PLUGIN_API onWheel(float) override { return Steinberg::kResultFalse; }
+	Steinberg::tresult PLUGIN_API onKeyDown(Steinberg::char16, Steinberg::int16, Steinberg::int16) override { return Steinberg::kResultFalse; }
+	Steinberg::tresult PLUGIN_API onKeyUp(Steinberg::char16, Steinberg::int16, Steinberg::int16) override { return Steinberg::kResultFalse; }
+	Steinberg::tresult PLUGIN_API getSize(Steinberg::ViewRect*) override { return Steinberg::kResultFalse; }
+	Steinberg::tresult PLUGIN_API onSize(Steinberg::ViewRect*) override { return Steinberg::kResultOk; }
+	Steinberg::tresult PLUGIN_API onFocus(Steinberg::TBool) override { return Steinberg::kResultOk; }
+	Steinberg::tresult PLUGIN_API setFrame(Steinberg::IPlugFrame* frame) override { m_frame = frame; return Steinberg::kResultOk; }
+	Steinberg::tresult PLUGIN_API canResize() override { return Steinberg::kResultFalse; }
+	Steinberg::tresult PLUGIN_API checkSizeConstraint(Steinberg::ViewRect*) override { return Steinberg::kResultFalse; }
+
+	//! The frame the last setFrame() gave this view; the session clears it when the editor closes.
+	Steinberg::IPlugFrame* frame() const { return m_frame; }
+
+private:
+	Steinberg::IPlugFrame* m_frame = nullptr;
+};
+
+//! A controller whose editor is the probe view: the session asks the controller for it.
+class FrameProbeController : public MappingController
+{
+public:
+	Steinberg::IPlugView* PLUGIN_API createView(Steinberg::FIDString) override { return &m_view; }
+
+	FrameProbeView m_view;
+};
+
 //! The queue @a changes holds for parameter @a id, or nullptr.
 auto queueFor(Steinberg::Vst::IParameterChanges& changes, Steinberg::Vst::ParamID id) -> Steinberg::Vst::IParamValueQueue*
 {
@@ -182,11 +232,13 @@ private slots:
 	void testRebuildingControllerMapClearsDeferredPoints();
 	void testPrepareRejectsInvalidRequests();
 	void testComponentHandlerAnswersInterfaceQueries();
+	void testEditorFrameRefusesANullOutPointer();
 	void testNonFiniteParameterValuesAreRefused();
 	void testReprepareGateQuiescesAllActiveAudioCalls();
 	void testDroppedOutputCounterUsesAtomicAccess();
 	void testDroppedMidiCounterUsesAtomicAccess();
 	void testRetriggerGetsANewNoteId();
+	void testEditorRefusalWithoutAnErrorStringDoesNotCrash();
 
 private:
 	void process(HostedPlugin& plugin, const std::vector<std::vector<float>>& inputs,
@@ -565,6 +617,37 @@ void Vst3HostTest::testComponentHandlerAnswersInterfaceQueries()
 	handler->release();
 }
 
+/*! BUG 6 (new-p12-290): a faulty editor that asks the host's frame for an interface through a null
+ *  out-pointer is refused with kInvalidArgument, as the component handler refuses it. The frame's
+ *  queryInterface() stored through the null pointer and crashed the host. The frame is reached the
+ *  way an editor reaches it: the session hands it to the view, and the view keeps it. */
+void Vst3HostTest::testEditorFrameRefusesANullOutPointer()
+{
+	FrameProbeController controller;
+	Vst3EditorSession session(&controller);
+	session.setWindowSystem(PluginWindowSystem::X11);
+	QString error;
+	QVERIFY2(session.open(reinterpret_cast<void*>(1), &error), qPrintable(error));
+	auto* frame = controller.m_view.frame();
+	QVERIFY(frame != nullptr);
+
+	QCOMPARE(frame->queryInterface(Steinberg::IPlugFrame::iid, nullptr), Steinberg::kInvalidArgument);
+	QCOMPARE(frame->queryInterface(Steinberg::FUnknown::iid, nullptr), Steinberg::kInvalidArgument);
+
+	// a valid query still answers with the frame, and the reference it takes is the caller's to release
+	void* queried = nullptr;
+	QCOMPARE(frame->queryInterface(Steinberg::IPlugFrame::iid, &queried), Steinberg::kResultOk);
+	QCOMPARE(queried, static_cast<void*>(frame));
+	frame->release();
+
+	// an interface the frame does not implement still reports kNoInterface and leaves no pointer behind
+	queried = reinterpret_cast<void*>(0x1);
+	QCOMPARE(frame->queryInterface(Steinberg::IPlugView::iid, &queried), Steinberg::kNoInterface);
+	QVERIFY(queried == nullptr);
+
+	session.close();
+}
+
 /*! Luna cluster 3625: a plug-in or a caller that reports a value with no
  *  meaning - NaN, or a double that overflows float - cannot have it stored in
  *  the parameter array the audio thread reads: std::clamp() passes NaN through
@@ -732,6 +815,104 @@ void Vst3HostTest::testRetriggerGetsANewNoteId()
 	QCOMPARE(release.noteOff.noteId, voiceA);
 	QCOMPARE(tail.noteExpressionValue.noteId, voiceA);
 	QCOMPARE(after.noteExpressionValue.noteId, voiceB);
+}
+
+/*! An editor view whose platform support and attach can each be refused, for the editor's refusal paths. */
+class RefusingPlugView : public Steinberg::IPlugView
+{
+public:
+	RefusingPlugView(bool embeds, bool attaches) : m_embeds(embeds), m_attaches(attaches) {}
+
+	Steinberg::tresult PLUGIN_API queryInterface(const Steinberg::TUID, void**) override { return Steinberg::kNoInterface; }
+	Steinberg::uint32 PLUGIN_API addRef() override { return 1; }
+	Steinberg::uint32 PLUGIN_API release() override { return 1; }
+	Steinberg::tresult PLUGIN_API isPlatformTypeSupported(Steinberg::FIDString) override
+	{
+		return m_embeds ? Steinberg::kResultTrue : Steinberg::kResultFalse;
+	}
+	Steinberg::tresult PLUGIN_API attached(void*, Steinberg::FIDString) override
+	{
+		return m_attaches ? Steinberg::kResultOk : Steinberg::kResultFalse;
+	}
+	Steinberg::tresult PLUGIN_API removed() override { return Steinberg::kResultOk; }
+	Steinberg::tresult PLUGIN_API onWheel(float) override { return Steinberg::kResultFalse; }
+	Steinberg::tresult PLUGIN_API onKeyDown(Steinberg::char16, Steinberg::int16, Steinberg::int16) override { return Steinberg::kResultFalse; }
+	Steinberg::tresult PLUGIN_API onKeyUp(Steinberg::char16, Steinberg::int16, Steinberg::int16) override { return Steinberg::kResultFalse; }
+	Steinberg::tresult PLUGIN_API getSize(Steinberg::ViewRect*) override { return Steinberg::kResultFalse; }
+	Steinberg::tresult PLUGIN_API onSize(Steinberg::ViewRect*) override { return Steinberg::kResultOk; }
+	Steinberg::tresult PLUGIN_API onFocus(Steinberg::TBool) override { return Steinberg::kResultOk; }
+	Steinberg::tresult PLUGIN_API setFrame(Steinberg::IPlugFrame*) override { return Steinberg::kResultOk; }
+	Steinberg::tresult PLUGIN_API canResize() override { return Steinberg::kResultFalse; }
+	Steinberg::tresult PLUGIN_API checkSizeConstraint(Steinberg::ViewRect*) override { return Steinberg::kResultOk; }
+
+private:
+	bool m_embeds;
+	bool m_attaches;
+};
+
+//! An edit controller whose editor is the view it was given (nullptr: no editor view at all).
+class ViewingController : public MappingController
+{
+public:
+	explicit ViewingController(Steinberg::IPlugView* view) : m_view(view) {}
+	Steinberg::IPlugView* PLUGIN_API createView(Steinberg::FIDString) override { return m_view; }
+
+private:
+	Steinberg::IPlugView* m_view;
+};
+
+/*! The editor's refusals name their reason through an optional error string, and the string may be null:
+ *  every failure path (no edit controller, no window to embed in, no editor view, a view that cannot embed,
+ *  an attach that is refused) must refuse cleanly without writing through a null pointer, and a caller that
+ *  asks for the reason gets it. The failure paths wrote through the pointer unconditionally, so a null error
+ *  crashed the host. */
+void Vst3HostTest::testEditorRefusalWithoutAnErrorStringDoesNotCrash()
+{
+	void* const standInWindow = reinterpret_cast<void*>(std::uintptr_t{0x2a});
+
+	HostedPlugin unloaded;
+	QVERIFY(!unloaded.openEditor(standInWindow, nullptr));
+	QVERIFY(!unloaded.editorOpen());
+	QString error;
+	QVERIFY(!unloaded.openEditor(standInWindow, &error));
+	QVERIFY(!unloaded.editorOpen());
+	QCOMPARE(error, QStringLiteral("the plug-in has no edit controller"));
+
+	// Each refusal, first with no error string (must not crash), then with one (must name the reason).
+	const auto refuse = [&](Vst3EditorSession& session, const char* reason)
+	{
+		QVERIFY(!session.open(standInWindow, nullptr));
+		QVERIFY(!session.isOpen());
+		QString named;
+		QVERIFY(!session.open(standInWindow, &named));
+		QVERIFY(!session.isOpen());
+		QVERIFY2(named.contains(QLatin1String(reason)), qPrintable(named));
+	};
+
+	Vst3EditorSession noController(nullptr);
+	noController.setWindowSystem(PluginWindowSystem::X11);
+	refuse(noController, "no edit controller");
+
+	MappingController noView;
+	Vst3EditorSession noWindow(&noView);
+	noWindow.setWindowSystem(PluginWindowSystem::None);
+	refuse(noWindow, "no native window a plug-in editor can embed in");
+
+	Vst3EditorSession createViewEmpty(&noView);
+	createViewEmpty.setWindowSystem(PluginWindowSystem::X11);
+	refuse(createViewEmpty, "offers no editor view");
+
+	RefusingPlugView cannotEmbed(false, true);
+	ViewingController embedsNot(&cannotEmbed);
+	Vst3EditorSession embedRefused(&embedsNot);
+	embedRefused.setWindowSystem(PluginWindowSystem::X11);
+	refuse(embedRefused, "cannot embed on");
+
+	RefusingPlugView attachRefused(true, false);
+	ViewingController attachRefusedController(&attachRefused);
+	Vst3EditorSession attachFails(&attachRefusedController);
+	attachFails.setWindowSystem(PluginWindowSystem::X11);
+	refuse(attachFails, "refused to attach");
 }
 
 } // namespace lmms::vst3

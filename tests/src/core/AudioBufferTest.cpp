@@ -245,6 +245,17 @@ private slots:
 		QCOMPARE(ab.hasInterleavedBuffer(), false);
 	}
 
+	//! Verifies zero-frame constructor with default channels adds a stereo group whose channels are empty
+	void Constructor_ZeroFramesDefaultChannels()
+	{
+		auto ab = AudioBuffer{0};
+		QCOMPARE(ab.groupCount(), 1);
+		QCOMPARE(ab.group(0).channels(), 2);
+		QCOMPARE(ab.totalChannels(), 2);
+		QCOMPARE(ab.frames(), 0);
+		QCOMPARE(ab.hasAnySignal(), false);
+	}
+
 	//! Verifies allocation-size reporting rejects dimensions that overflow size_t
 	void AllocationSize_ThrowsOnOverflow()
 	{
@@ -1042,6 +1053,29 @@ private slots:
 
 		// Check if the 5th channel (an unused channel) is non-silent
 		QCOMPARE(ab.hasSignal(0b10000), false);
+	}
+
+	//! Verifies that `MixHelpers::isSilent` classifies real frames by level
+	void IsSilent_NormalFramesAreClassifiedByLevel()
+	{
+		auto frames = std::array<lmms::SampleFrame, 2>{};
+		QVERIFY(lmms::MixHelpers::isSilent(frames.data(), 2));
+
+		frames[1].right() = 0.5f;
+		QVERIFY(!lmms::MixHelpers::isSilent(frames.data(), 2));
+	}
+
+	//! Verifies that an empty or negative frame range is silent.
+	//! A zero-frame buffer may have a null data pointer; the null case passes on common toolchains either way.
+	//! The negative case is the one the unguarded code gets wrong: `frames * 2` wraps to a huge unsigned span
+	//! that starts on the loud sample, so the result is false.
+	void IsSilent_ZeroOrNegativeFramesAreSilent()
+	{
+		QVERIFY(lmms::MixHelpers::isSilent(nullptr, 0));
+
+		const auto loud = std::array<lmms::SampleFrame, 1>{lmms::SampleFrame{0.5f, 0.5f}};
+		QVERIFY(lmms::MixHelpers::isSilent(loud.data(), 0));
+		QVERIFY(lmms::MixHelpers::isSilent(loud.data(), -1));
 	}
 
 	//! Verifies that the `sanitize` method only silences channels containing Inf or NaN

@@ -23,6 +23,7 @@
  */
 
 #include "Mixer.h"
+#include "RealtimeExport.h"
 #include "RecorderTaps.h"
 
 #include <algorithm>
@@ -772,6 +773,83 @@ void MixerChannel::writeSidechainTaps(const SidechainTapPoint point,
 
 
 
+void MixerChannel::processInserts(const f_cnt_t fpp)
+{
+	// #599: a channel with a rack (two or more chains) renders this period
+	// through the rack's RoutingGraph; with no rack configured the
+	// channel's own chain is the whole signal path, exactly as before.
+	if( m_rack.canProcessThroughRack( m_bus ) )
+	{
+		m_stillRunning = m_sidechainReceives.empty()
+			? m_rack.processAudioBuffer( m_bus )
+			: m_rack.processAudioBuffer( m_bus, &m_sidechainBuffer );
+	}
+	else
+	{
+		m_stillRunning = m_sidechainReceives.empty()
+			? m_fxChain.processAudioBuffer(m_bus)
+			: m_fxChain.processAudioBuffer(m_bus, &m_sidechainBuffer);
+	}
+
+	// 0.5.0 F1 (MX-061): the hardware insert, after the devices and before the fader (a no-op while off).
+	hardwareio::processInsert( *this, fpp );
+
+	// VCA / mix group (#622). The group gain is applied here, as one extra
+	// factor on the post-FX buffer, and nowhere else: m_buffer is what the
+	// fader snapshot, the peak meter, the post-/pre-fader sidechain taps
+	// and every receiving channel all read, so a single multiply scales the
+	// whole of the member's output while the member's own volume model is
+	// never written. That is what makes "move the VCA back" restore the
+	// members bit-exactly.
+	//
+	// The guard is not only an optimisation: with gain == 1.0f (no group, or
+	// a group at unity) a channel takes the pre-#622 arithmetic path
+	// unchanged, so an ungrouped project renders byte-identically.
+	const float vcaGain = m_vcaGain.load(std::memory_order_relaxed);
+	if (vcaGain != 1.0f)
+	{
+		for (f_cnt_t f = 0; f < fpp; ++f)
+		{
+			m_buffer[f][0] *= vcaGain;
+			m_buffer[f][1] *= vcaGain;
+		}
+		// Deliberately no quiet-flag update: the bus flags are an
+		// optimisation the DSP trusts, and claiming silence we do not have
+		// loses audio, while claiming audio we do not have only wastes
+		// work. A silent group is silent either way.
+	}
+
+	// Channel pan (m_panModel, a balance law). Applied HERE for the reason the
+	// VCA gain is: m_buffer is what the fader snapshot, the meter, the taps
+	// and every receiver read, so one multiply pans the channel's whole
+	// output, and pre-fader sends carry it too (pan is part of the channel's
+	// insert stage, not of the fader). Centred and unautomated - every
+	// channel in every project written before this - skips the stage, so the
+	// arithmetic is the pre-pan arithmetic, bit for bit. No allocation, no
+	// lock: the model's value and its sample-exact buffer are the same reads
+	// the volume fader makes on this thread.
+	// 0.5.0 L08: polarity and mono, then the pan in its mode (balance falls through to the stage below).
+	mixerstrip::applyOutput( *this, fpp );
+	const bool panned = mixerstrip::applyPanMode( *this, fpp );
+	const ValueBuffer* panBuf = m_panModel.valueBuffer();
+	const float pan = m_panModel.value();
+	if (!panned && (panBuf != nullptr || pan != 0.0f))
+	{
+		for (f_cnt_t f = 0; f < fpp; ++f)
+		{
+			const float p = panBuf != nullptr ? panBuf->values()[f] : pan;
+			m_buffer[f][0] *= std::min(1.0f, 1.0f - p);
+			m_buffer[f][1] *= std::min(1.0f, 1.0f + p);
+		}
+	}
+
+	// 0.5.0 F7 (MX-060): the side channels' trim, VCA gain and balance (a no-op for stereo).
+	surround::processChannel( *this, fpp );
+}
+
+
+
+
 void MixerChannel::doProcessing()
 {
 	const f_cnt_t fpp = Engine::audioEngine()->framesPerPeriod();
@@ -888,8 +966,12 @@ void MixerChannel::doProcessing()
 			}
 		}
 
+		// Q050-124: a frozen bus plays its take in place of the inputs summed above and of every stage up to its
+		// fader (the take carries them); the fader, the sends, the taps and the meters below run on the take.
+		const bool frozen = busfreeze::substitute( *this, fpp );
+
 		// 0.5.0 L08: the strip's trim, before the inserts (MixerStrip.cpp).
-		mixerstrip::applyInput( *this, fpp );
+		if( ! frozen ) { mixerstrip::applyInput( *this, fpp ); }
 
 		// Phase D: pre-FX sidechain tap, taken from the raw channel buffer
 		// before the FX chain runs (spec 4.3).
@@ -904,76 +986,8 @@ void MixerChannel::doProcessing()
 		// this block (two clock reads and one relaxed store; DspLoadProbe.h).
 		const DspLoadProbe dspLoad( m_dspLoad, fpp, Engine::audioEngine()->baseSampleRate() );
 
-		// #599: a channel with a rack (two or more chains) renders this period
-		// through the rack's RoutingGraph; with no rack configured the
-		// channel's own chain is the whole signal path, exactly as before.
-		if( m_rack.canProcessThroughRack( m_bus ) )
-		{
-			m_stillRunning = m_sidechainReceives.empty()
-				? m_rack.processAudioBuffer( m_bus )
-				: m_rack.processAudioBuffer( m_bus, &m_sidechainBuffer );
-		}
-		else
-		{
-			m_stillRunning = m_sidechainReceives.empty()
-				? m_fxChain.processAudioBuffer(m_bus)
-				: m_fxChain.processAudioBuffer(m_bus, &m_sidechainBuffer);
-		}
-
-		// 0.5.0 F1 (MX-061): the hardware insert, after the devices and before the fader (a no-op while off).
-		hardwareio::processInsert( *this, fpp );
-
-		// VCA / mix group (#622). The group gain is applied here, as one extra
-		// factor on the post-FX buffer, and nowhere else: m_buffer is what the
-		// fader snapshot, the peak meter, the post-/pre-fader sidechain taps
-		// and every receiving channel all read, so a single multiply scales the
-		// whole of the member's output while the member's own volume model is
-		// never written. That is what makes "move the VCA back" restore the
-		// members bit-exactly.
-		//
-		// The guard is not only an optimisation: with gain == 1.0f (no group, or
-		// a group at unity) a channel takes the pre-#622 arithmetic path
-		// unchanged, so an ungrouped project renders byte-identically.
-		const float vcaGain = m_vcaGain.load(std::memory_order_relaxed);
-		if (vcaGain != 1.0f)
-		{
-			for (f_cnt_t f = 0; f < fpp; ++f)
-			{
-				m_buffer[f][0] *= vcaGain;
-				m_buffer[f][1] *= vcaGain;
-			}
-			// Deliberately no quiet-flag update: the bus flags are an
-			// optimisation the DSP trusts, and claiming silence we do not have
-			// loses audio, while claiming audio we do not have only wastes
-			// work. A silent group is silent either way.
-		}
-
-		// Channel pan (m_panModel, a balance law). Applied HERE for the reason the
-		// VCA gain is: m_buffer is what the fader snapshot, the meter, the taps
-		// and every receiver read, so one multiply pans the channel's whole
-		// output, and pre-fader sends carry it too (pan is part of the channel's
-		// insert stage, not of the fader). Centred and unautomated - every
-		// channel in every project written before this - skips the stage, so the
-		// arithmetic is the pre-pan arithmetic, bit for bit. No allocation, no
-		// lock: the model's value and its sample-exact buffer are the same reads
-		// the volume fader makes on this thread.
-		// 0.5.0 L08: polarity and mono, then the pan in its mode (balance falls through to the stage below).
-		mixerstrip::applyOutput( *this, fpp );
-		const bool panned = mixerstrip::applyPanMode( *this, fpp );
-		const ValueBuffer* panBuf = m_panModel.valueBuffer();
-		const float pan = m_panModel.value();
-		if (!panned && (panBuf != nullptr || pan != 0.0f))
-		{
-			for (f_cnt_t f = 0; f < fpp; ++f)
-			{
-				const float p = panBuf != nullptr ? panBuf->values()[f] : pan;
-				m_buffer[f][0] *= std::min(1.0f, 1.0f - p);
-				m_buffer[f][1] *= std::min(1.0f, 1.0f + p);
-			}
-		}
-
-		// 0.5.0 F7 (MX-060): the side channels' trim, VCA gain and balance (a no-op for stereo).
-		surround::processChannel( *this, fpp );
+		if( ! frozen ) { processInserts( fpp ); }
+		busfreeze::capture( *this, fpp );  // a render child capturing this bus only (Q050-124)
 
 		// D1: the volume multiply happens after the send loop, producing the
 		// post-fader snapshot used by post-fader sidechain taps.
@@ -2386,7 +2400,8 @@ void Mixer::updateLatencyCompensation()
 		for (const AudioBusHandle* handle : Engine::audioEngine()->audioBusHandles())
 		{
 			const mix_ch_t channel = handle->nextMixerChannel();
-			if (channel < count && !m_mixerChannels[channel]->isBus())
+			// Q050-174: a handle monitored unaligned applies no delay, so it cannot be clamped.
+			if (channel < count && !m_mixerChannels[channel]->isBus() && !handle->monitorUnaligned())
 			{
 				clamped = clamped
 					|| (m_latencyInputScratch[channel]
@@ -2533,9 +2548,12 @@ void Mixer::masterMix( SampleFrame* _buf )
 		const float v = postinserts::faderValue( *m_mixerChannels[0], nullptr );
 		MixHelpers::addMultiplied( _buf, m_mixerChannels[0]->m_buffer, v, fpp );
 	}
+	// Q050-124: a bus-freeze render child writes the captured bus instead of the master (a no-op everywhere else).
+	busfreeze::replaceOutput( _buf, fpp );
 	// 0.5.0 F7 (MX-060): a surround master's other speakers - onto the outputs, or folded into the mix.
 	surround::masterOutput( *this, _buf, fpp );
 	recordertaps::master( _buf, fpp );  // 0.5.0 WF-072: a record route resampling the master
+	realtimeexport::master( _buf, fpp );  // Q050-089.2: render.realtime keeps the master (one load while idle)
 	// 0.5.0 F1 (MX-040, MX-036, MX-061): direct outs, cue mixes and insert sends onto the hardware outputs.
 	hardwareio::mixOutputs( *this, _buf, fpp );
 	// 0.5.0 L09 (MX-037): a channel listened to (AFL / PFL) replaces the mix on the output - unless the
@@ -2594,6 +2612,7 @@ void Mixer::clearChannel(mix_ch_t index)
 	ch->m_postInserts.clear();  // 0.5.0 MX-082
 	ch->m_hardwareIo.clear();  // 0.5.0 F1
 	ch->m_surround.reset();  // 0.5.0 F7
+	if( ch->m_freeze.isFrozen() ) { busfreeze::clear( *ch ); }  // Q050-124
 	ch->m_volumeModel.setValue( 1.0f );
 	ch->m_panModel.setValue( 0.0f );
 	ch->m_muteModel.setValue( false );
@@ -2678,6 +2697,7 @@ void Mixer::saveSettings( QDomDocument & _doc, QDomElement & _this )
 		ch->m_muteModel.saveSettings( _doc, mixch, "muted" );
 		ch->m_soloModel.saveSettings( _doc, mixch, "soloed" );
 		mixerstrip::save( *ch, mixch );  // 0.5.0 L08: only what differs from the defaults
+		busfreeze::save( *ch, mixch );  // Q050-124: only while the bus is frozen
 		mixch.setAttribute("num", static_cast<qulonglong>(i));
 		// SPEC-stable-ids.md 3.1/3.2, slice 2: the channel's stable id as an
 		// ATTRIBUTE on the channel's own element, BESIDE `num` - which keeps
@@ -2977,6 +2997,7 @@ void Mixer::loadSettings( const QDomElement & _this )
 		m_mixerChannels[num]->m_postInserts.load( mixch );  // 0.5.0 MX-082: absent empties it
 		m_mixerChannels[num]->m_hardwareIo.load( mixch, Engine::audioEngine()->framesPerPeriod() );  // 0.5.0 F1
 		m_mixerChannels[num]->m_surround.load( mixch );  // 0.5.0 F7: absent is stereo, panner off
+		busfreeze::load( *m_mixerChannels[num], mixch );  // Q050-124: absent is unfrozen
 
 		// mixer sends
 		QDomNodeList chData = mixch.childNodes();

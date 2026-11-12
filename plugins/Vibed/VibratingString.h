@@ -48,6 +48,10 @@ public:
 	VibratingString(VibratingString&&) noexcept = delete;
 	VibratingString& operator=(VibratingString&&) noexcept = default;
 
+	//! String steps taken per output sample. Test seam: the regression reads it
+	//! directly, because nextSample() with an empty buffer is undefined.
+	int oversampleCount() const { return m_oversample; }
+
 	sample_t nextSample()
 	{
 		for (int i = 0; i < m_oversample; ++i)

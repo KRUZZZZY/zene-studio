@@ -555,8 +555,10 @@ bool LuaBoolModel::value() const
 {
 	if (!m_model) { return false; }
 	ScriptEngine::instance()->flushCommandsForRead();
-	// BoolModel::value() hides the base template, so call the typed overload.
-	return m_model->value();
+	// The flush can apply a project replacement that deletes the model, so the
+	// QPointer is checked again here. BoolModel::value() hides the base template,
+	// so call the typed overload.
+	return m_model ? m_model->value() : false;
 }
 
 void LuaBoolModel::setValue(bool value)
@@ -591,7 +593,8 @@ QString LuaInstrumentTrack::name() const
 	if (!m_track) { return QString(); }
 	// Reads see prior writes from the same script (the apply side drains).
 	ScriptEngine::instance()->flushCommandsForRead();
-	return m_track->name();
+	// The flush can apply a project replacement that deletes the track.
+	return m_track ? m_track->name() : QString();
 }
 
 void LuaInstrumentTrack::setName(const QString& name)
@@ -614,7 +617,8 @@ int LuaInstrumentTrack::volume() const
 {
 	if (!m_track) { return 0; }
 	ScriptEngine::instance()->flushCommandsForRead();
-	return m_track->getVolume();
+	// Checked again: the flush can apply a project replacement that deletes the track.
+	return m_track ? m_track->getVolume() : 0;
 }
 
 void LuaInstrumentTrack::setVolume(int volume)
@@ -631,7 +635,8 @@ int LuaInstrumentTrack::panning() const
 {
 	if (!m_track) { return 0; }
 	ScriptEngine::instance()->flushCommandsForRead();
-	return static_cast<int>(m_track->panningModel()->value());
+	// Checked again: the flush can apply a project replacement that deletes the track.
+	return m_track ? static_cast<int>(m_track->panningModel()->value()) : 0;
 }
 
 void LuaInstrumentTrack::setPanning(int panning)
@@ -694,7 +699,8 @@ QString LuaTrack::name() const
 	if (!m_track) { return QString(); }
 	// Reads see prior writes from the same script (the apply side drains).
 	ScriptEngine::instance()->flushCommandsForRead();
-	return m_track->name();
+	// The flush can apply a project replacement that deletes the track.
+	return m_track ? m_track->name() : QString();
 }
 
 void LuaTrack::setName(const QString& name)
@@ -712,7 +718,7 @@ QString LuaTrack::type() const
 		QStringLiteral("instrument"), QStringLiteral("pattern"),
 		QStringLiteral("sample"), QStringLiteral("event"), QStringLiteral("video"),
 		QStringLiteral("automation"), QStringLiteral("hidden_automation"),
-		QStringLiteral("folder"),
+		QStringLiteral("folder"), QStringLiteral("neutral"),
 	};
 	const int index = static_cast<int>(m_track->type());
 	if (index >= 0 && index < static_cast<int>(Track::Type::Count)) { return names[index]; }
@@ -770,7 +776,8 @@ QString LuaPatternClip::name() const
 	if (!m_clip) { return QString(); }
 	// Reads see prior writes from the same script (the apply side drains).
 	ScriptEngine::instance()->flushCommandsForRead();
-	return m_clip->name();
+	// The flush can apply a project replacement that deletes the clip.
+	return m_clip ? m_clip->name() : QString();
 }
 
 void LuaPatternClip::setName(const QString& name)
@@ -802,7 +809,8 @@ int LuaPatternClip::noteCount() const
 {
 	if (!m_clip) { return 0; }
 	ScriptEngine::instance()->flushCommandsForRead();
-	return static_cast<int>(m_clip->notes().size());
+	// Checked again: the flush can apply a project replacement that deletes the clip.
+	return m_clip ? static_cast<int>(m_clip->notes().size()) : 0;
 }
 
 LuaNote& LuaPatternClip::note(int index) const

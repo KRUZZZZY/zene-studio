@@ -43,6 +43,7 @@
 #include <cassert>
 
 #include "AudioEngine.h"
+#include "ControlTrackRouting.h"
 #include "BrowserTagMenu.h"
 #include "ConfigManager.h"
 #include "DataFile.h"
@@ -725,6 +726,7 @@ void FileBrowserTreeWidget::openInSlicerT(FileItem* item, bool songEditor)
 
 	track->loadInstrument("slicert");
 	track->instrument()->loadFile(item->fullName());
+	control::assignNewTrackChannel(track);
 }
 
 QList<QAction*> FileBrowserTreeWidget::getContextActions(FileItem* file, bool songEditor)
@@ -1042,6 +1044,7 @@ void FileBrowserTreeWidget::openInNewInstrumentTrack(TrackContainer* tc, FileIte
 	if(item->isTrack())
 	{
 		auto it = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, tc));
+		control::assignNewTrackChannel(it);
 		handleFile(item, it);
 	}
 }
@@ -1067,6 +1070,7 @@ bool FileBrowserTreeWidget::openInNewSampleTrack(FileItem* item)
 
 	// Create a new sample track for this sample
 	auto sampleTrack = static_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+	control::assignNewTrackChannel(sampleTrack);
 
 	// Add the sample clip to the track
 	Engine::audioEngine()->requestChangeInModel();

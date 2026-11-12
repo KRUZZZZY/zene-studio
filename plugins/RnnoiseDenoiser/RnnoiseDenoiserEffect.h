@@ -31,6 +31,10 @@
 // Forward declaration of RNNoise's opaque state type (global C typedef)
 struct DenoiseState;
 
+#ifdef LMMS_TESTING
+class RnnoiseDenoiserEffectTest;
+#endif
+
 namespace lmms
 {
 
@@ -76,6 +80,10 @@ private:
 
 	friend class RnnoiseDenoiserControls;
 	friend class gui::RnnoiseDenoiserControlDialog;
+#ifdef LMMS_TESTING
+	// The missing-state regression discards the RNNoise state to reach the path where rnnoise_create() failed.
+	friend class ::RnnoiseDenoiserEffectTest;
+#endif
 };
 
 } // namespace lmms

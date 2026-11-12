@@ -47,6 +47,7 @@
 #include "InputLevelMeter.h"
 #include "MainWindow.h"
 #include "Mixer.h"
+#include "MixerMaskingReport.h"
 #include "MixerRoutingMatrix.h"
 
 namespace lmms::gui
@@ -278,6 +279,9 @@ void addMixerWindows(QMenu* menu)
 	QAction* eq = menu->addAction(QObject::tr("Compare Channel EQ..."));
 	eq->setProperty("controlCommand", QStringLiteral("mixer.eq_compare"));
 	QObject::connect(eq, &QAction::triggered, menu, [] { showOne<EqCompare>(&s_eq); });
+	QAction* masking = menu->addAction(QObject::tr("Masking Report..."));  // Q050-231.1: which channels clash where
+	masking->setProperty("controlCommand", QStringLiteral("mixer.masking_report"));
+	QObject::connect(masking, &QAction::triggered, menu, [] { showMaskingReport(); });
 }
 
 } // namespace lmms::gui

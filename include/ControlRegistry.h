@@ -155,6 +155,10 @@ public:
 	static QString aggregateClassOf(const QStringList& childClasses);
 
 	//! Queue \p fn onto the UI thread and wait for its result.
+	//! How many handlers are running right now (0 with no registry): tells an edit a command makes from one the
+	//! interface makes directly (Q050-334.1).
+	static int runningHandlers() { return s_instance != nullptr ? s_instance->m_depth : 0; }
+
 	static ControlResult runOnUiThread(const std::function<ControlResult()>& fn);
 
 	//! Empty string when \p args satisfies \p schema, else a human-readable reason.
@@ -462,11 +466,14 @@ LMMS_EXPORT void registerPluginEditorCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerClipTrimCommands(ControlRegistry& registry);
 //! note.probability_set - the MIDI-depth probability verb (docs/MIDI-DEPTH.md).
 LMMS_EXPORT void registerNoteProbabilityCommands(ControlRegistry& registry);
+//! note.step_get_state / note.step_set - the melodic step grid view of a MIDI clip (Q050-294.1).
+LMMS_EXPORT void registerNoteStepCommands(ControlRegistry& registry);
 //! note.edit - several notes' position/key/length/velocity/pan/probability as one edit and
 //! one undo step (the 0.5.0 note editor's gestures; docs/NOTE-EDITOR.md).
 LMMS_EXPORT void registerNoteEditCommands(ControlRegistry& registry);
 //! track.set_mixer_channel - which mixer channel a track plays into (0.5.0 L01).
 LMMS_EXPORT void registerTrackChannelCommands(ControlRegistry& registry);
+LMMS_EXPORT void registerTrackRoutingCommands(ControlRegistry& registry);
 //! project.collect_media - a project's media copied beside it, references made relative (L01 E28).
 LMMS_EXPORT void registerCollectMediaCommand(ControlRegistry& registry);
 //! bounce.land - a track rendered onto a new audio track, the source muted (L01).

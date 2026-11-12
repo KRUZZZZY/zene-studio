@@ -31,8 +31,10 @@
 #include <QJsonObject>
 #include <QPainter>
 
+#include "BrowserPeakCache.h"
 #include "ControlRegistry.h"
 #include "DesignTokens.h"
+#include "PeakJobs.h"
 
 namespace lmms::gui
 {
@@ -43,6 +45,13 @@ namespace
 //! How many buckets one preview asks for: enough for a wide panel, a fraction of the cache's base.
 constexpr int PreviewBuckets = 512;
 constexpr int PreviewHeight = 56;
+//! At or below this a file is read where it was selected: milliseconds, like the read of a small sample always was.
+constexpr qint64 SynchronousReadBytes = 1024 * 1024;
+
+QString taskName(int id)
+{
+	return QStringLiteral("peak-%1").arg(id);
+}
 
 } // namespace
 
@@ -54,6 +63,17 @@ WaveformPreview::WaveformPreview(QWidget* parent) :
 	setMinimumHeight(PreviewHeight);
 	setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
 	hide();
+	connect(&PeakJobs::instance(), &PeakJobs::ready, this, [this](int id) {
+		if (m_pendingTask != taskName(id)) { return; }
+		m_pendingTask.clear();
+		m_message.clear();
+		readPeaks();
+	});
+	connect(&PeakJobs::instance(), &PeakJobs::ended, this, [this](int id, const QString&, const QString& error, bool cancelled) {
+		if (m_pendingTask != taskName(id)) { return; }
+		m_pendingTask.clear();
+		showMessage(cancelled ? tr("Waveform analysis cancelled") : error);
+	});
 }
 
 QSize WaveformPreview::sizeHint() const
@@ -63,6 +83,7 @@ QSize WaveformPreview::sizeHint() const
 
 bool WaveformPreview::setPath(const QString& path)
 {
+	cancelPending();
 	m_path = path;
 	m_peaks.clear();
 	m_message.clear();
@@ -70,13 +91,28 @@ bool WaveformPreview::setPath(const QString& path)
 	setAccessibleDescription(QString());  // never the previous sample's name and length (review r4 L20 #5)
 	setVisible(!path.isEmpty());
 	if (path.isEmpty()) { return false; }
+	// A short operation does not report (TaskCenter.h): a click through small samples must not fill the Tasks list.
+	const QFileInfo file(path);
+	if (BrowserPeakCache::instance().isCurrent(path) || (file.isFile() && file.size() <= SynchronousReadBytes)) { return readPeaks(); }
+	const ControlResult started = ControlRegistry::instance()->invoke(QStringLiteral("browser.peaks_start"), {{QStringLiteral("path"), path}});
+	if (!started.ok)
+	{
+		showMessage(started.errorMessage);
+		return false;
+	}
+	if (started.result.value(QStringLiteral("cached")).toBool()) { return readPeaks(); }
+	m_pendingTask = started.result.value(QStringLiteral("task")).toString();
+	showMessage(tr("Analysing waveform..."));
+	return false;
+}
+
+bool WaveformPreview::readPeaks()
+{
 	const ControlResult read = ControlRegistry::instance()->invoke(QStringLiteral("browser.peaks"),
-		{{QStringLiteral("path"), path}, {QStringLiteral("buckets"), PreviewBuckets}});
+		{{QStringLiteral("path"), m_path}, {QStringLiteral("buckets"), PreviewBuckets}});
 	if (!read.ok)
 	{
-		m_message = read.errorMessage;
-		setAccessibleDescription(m_message);
-		update();
+		showMessage(read.errorMessage);
 		return false;
 	}
 	for (const QJsonValue& value : read.result.value(QStringLiteral("peaks")).toArray())
@@ -86,9 +122,24 @@ bool WaveformPreview::setPath(const QString& path)
 			static_cast<float>(peak.value(QStringLiteral("max")).toDouble())});
 	}
 	m_seconds = read.result.value(QStringLiteral("duration_seconds")).toDouble();
-	setAccessibleDescription(tr("%1, %2 seconds").arg(QFileInfo(path).fileName()).arg(m_seconds, 0, 'f', 2));
+	setAccessibleDescription(tr("%1, %2 seconds").arg(QFileInfo(m_path).fileName()).arg(m_seconds, 0, 'f', 2));
 	update();
 	return !m_peaks.isEmpty();
+}
+
+void WaveformPreview::showMessage(const QString& message)
+{
+	m_message = message;
+	setAccessibleDescription(m_message);
+	update();
+}
+
+void WaveformPreview::cancelPending()
+{
+	if (m_pendingTask.isEmpty()) { return; }
+	const QString task = m_pendingTask;
+	m_pendingTask.clear();  // first: a cancel of a queued job reports back inside the call below
+	ControlRegistry::instance()->invoke(QStringLiteral("app.task_cancel"), {{QStringLiteral("id"), task}});
 }
 
 void WaveformPreview::paintEvent(QPaintEvent*)

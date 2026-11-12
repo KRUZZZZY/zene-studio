@@ -82,8 +82,15 @@ private slots:
 		Engine::destroy();
 	}
 
+	//! The arranger's modes go back after every case, a failing one included.
+	void cleanup()
+	{
+		arrangement::setModes(m_modes);
+	}
+
 	void init()
 	{
+		m_modes = arrangement::modes();
 		Engine::getSong()->clearProject();
 		m_track = Track::create(Track::Type::Instrument, Engine::getSong());
 		Clip* clip = m_track->createClip(TimePos(0));
@@ -110,6 +117,24 @@ private slots:
 		QCOMPARE(spans(m_track), (QList<QPair<int, int>>{{0, Bar}, {Bar, 2 * Bar}}));
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(spans(m_track), (QList<QPair<int, int>>{{0, 3 * Bar}}));
+	}
+
+	//! Review: a range whose track is removed covers no track any more (its stored id matches none).
+	//! With ripple 'all' its delete used to shift every other track left although it cut nothing.
+	void rippleAllOverANoTrackRangeShiftsNothing()
+	{
+		Track* other = Track::create(Track::Type::Instrument, Engine::getSong());
+		Clip* clip = other->createClip(TimePos(3 * Bar));
+		clip->changeLength(TimePos(Bar));
+		clip->setAutoResize(false);
+		arrangement::Modes ripple = arrangement::modes();
+		ripple.ripple = arrangement::Ripple::All;
+		arrangement::setModes(ripple);
+		QVERIFY(run(QStringLiteral("track.remove"), {{QStringLiteral("track"), control::trackIdOf(m_track)}}).ok);
+		const ControlResult deleted = run(QStringLiteral("range.delete"));
+		QVERIFY2(deleted.ok, qPrintable(deleted.errorMessage));
+		QCOMPARE(deleted.result.value(QStringLiteral("removed")).toInt(), 0);
+		QCOMPARE(spans(other), (QList<QPair<int, int>>{{3 * Bar, 4 * Bar}}));
 	}
 
 	void cropAndInsertTime()
@@ -174,6 +199,27 @@ private slots:
 		QVERIFY(run(QStringLiteral("range.clear")).ok);
 		QCOMPARE(run(QStringLiteral("range.delete")).errorKind, ControlErrorKind::Refused);
 		QCOMPARE(run(QStringLiteral("range.copy")).errorKind, ControlErrorKind::Refused);
+	}
+
+	//! range.set orders its ends and an empty range is no range, so insert_time's default length (the
+	//! range's length) is never negative: an inverted range.set is read as the ordered one, and an empty one is refused.
+	void insertTimeDefaultLengthIsNeverNegative()
+	{
+		QVERIFY(run(QStringLiteral("range.set"), {{QStringLiteral("start"), 2 * Bar}, {QStringLiteral("end"), Bar},
+			{QStringLiteral("tracks"), QJsonArray{control::trackIdOf(m_track)}}}).ok);
+		QCOMPARE(run(QStringLiteral("range.get")).result.value(QStringLiteral("start")).toInt(), Bar);
+		QCOMPARE(run(QStringLiteral("range.get")).result.value(QStringLiteral("end")).toInt(), 2 * Bar);
+		const ControlResult inserted = run(QStringLiteral("range.insert_time"));
+		QVERIFY2(inserted.ok, qPrintable(inserted.errorMessage));
+		QCOMPARE(inserted.result.value(QStringLiteral("length")).toInt(), Bar);
+		QCOMPARE(spans(m_track), (QList<QPair<int, int>>{{0, Bar}, {2 * Bar, 4 * Bar}}));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(spans(m_track), (QList<QPair<int, int>>{{0, 3 * Bar}}));
+
+		QVERIFY(run(QStringLiteral("range.set"), {{QStringLiteral("start"), Bar}, {QStringLiteral("end"), Bar},
+			{QStringLiteral("tracks"), QJsonArray{control::trackIdOf(m_track)}}}).ok);
+		QCOMPARE(run(QStringLiteral("range.insert_time")).errorKind, ControlErrorKind::Refused);
+		QCOMPARE(spans(m_track), (QList<QPair<int, int>>{{0, 3 * Bar}}));
 	}
 
 	//! ED-030: repeat puts copies back to back; one undo removes them all.
@@ -265,6 +311,7 @@ private slots:
 
 private:
 	Track* m_track = nullptr;
+	arrangement::Modes m_modes;
 };
 
 QTEST_MAIN(RangeEditsTest)

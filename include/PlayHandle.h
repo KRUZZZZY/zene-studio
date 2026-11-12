@@ -46,6 +46,7 @@ namespace lmms
 class Track;
 class AudioBusHandle;
 class SampleFrame;
+class SynthesisLoad;
 
 class LMMS_EXPORT PlayHandle : public ThreadableJob
 {
@@ -132,6 +133,10 @@ public:
 
 
 	virtual bool isFromTrack( const Track * _track ) const = 0;
+
+	//! Q050-074.1: the instrument track's synthesis meter this handle's rendering counts toward, or
+	//! nullptr for a handle that synthesises for no instrument track (samples, previews, monitors).
+	virtual SynthesisLoad* synthesisLoad() noexcept { return nullptr; }
 
 	bool usesBuffer() const
 	{

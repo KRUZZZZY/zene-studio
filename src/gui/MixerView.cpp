@@ -50,6 +50,7 @@
 #include <QPushButton>
 #include <QVBoxLayout>
 #include <QScrollArea>
+#include <QSplitter>
 #include <QStyle>
 #include <QKeyEvent>
 #include <QStackedLayout>
@@ -72,11 +73,13 @@
 #include "MixerStripInfo.h"
 #include "MixerStripTags.h"
 #include "MixerViewOptions.h"
+#include "MixerZones.h"
 #include "Mixer.h"
 #include "MixerChannelView.h"
 #include "PatternStore.h"
 #include "SampleTrack.h"
 #include "SendButtonIndicator.h"
+#include "ShellSelection.h"
 #include "Song.h"
 #include "SubWindow.h"
 #include "TrackContainer.h" // For TrackContainer::TrackList typedef
@@ -110,14 +113,40 @@ MixerView::MixerView(Mixer* mixer) :
 	outer->setSpacing(0);
 	m_modeBar = new MixerModeBar(this);
 	connect(m_modeBar, &MixerModeBar::changed, this, &MixerView::syncWithMixer, Qt::QueuedConnection);
+	// MX-021: with following on, a new arranger selection re-lays the Selected filter's strips.
+	connect(ShellSelection::instance(), &ShellSelection::changed, this, &MixerView::syncWithMixer, Qt::QueuedConnection);
 	outer->addWidget(m_modeBar);
 	m_sendsBanner = new MixerSendsBanner(this);
 	outer->addWidget(m_sendsBanner);
-	auto ml = new QHBoxLayout;
-	outer->addLayout(ml, 1);
 
-	// Set margins
+	// Q050-227.1: the body is one horizontal splitter of dockable regions, so every boundary is a
+	// separator the user can drag. The channels' own dock keeps the scrolling area and the add
+	// buttons together, which is why a separator never falls between them.
+	m_zoneSplitter = new QSplitter(Qt::Horizontal, this);
+	m_zoneSplitter->setObjectName(QStringLiteral("mixerZones"));
+	m_zoneSplitter->setChildrenCollapsible(false);
+	m_zoneSplitter->setHandleWidth(3);
+	outer->addWidget(m_zoneSplitter, 1);
+	m_zoneParking = new QWidget(this);
+	m_zoneParking->setObjectName(QStringLiteral("mixerZoneParking"));
+	m_zoneParking->hide();
+	m_middleHost = new QWidget(this);
+	m_middleHost->setObjectName(QStringLiteral("mixerChannelsDock"));
+	auto ml = new QHBoxLayout(m_middleHost);
 	ml->setContentsMargins(0, 4, 0, 0);
+	ml->setSpacing(0);
+
+	// A docked region's host gives it the top margin the body always had, whatever side it is on.
+	const auto dockHost = [this](const QString& id, QWidget* content) {
+		auto* host = new QWidget(this);
+		host->setObjectName(QStringLiteral("mixerZone_") + id);
+		auto* box = new QVBoxLayout(host);
+		box->setContentsMargins(0, 4, 0, 0);
+		box->setSpacing(0);
+		box->addWidget(content);
+		m_zoneHosts.insert(id, host);
+		return host;
+	};
 
 	// Channel area
 	m_channelAreaWidget = new QWidget;
@@ -141,8 +170,6 @@ MixerView::MixerView(Mixer* mixer) :
 	m_mixerChannelViews[0] = masterView;
 
 	m_racksLayout->addWidget(m_mixerChannelViews[0]->m_effectRackView);
-
-	ml->addWidget(masterView, 0);
 
 	auto mixerChannelSize = masterView->sizeHint();
 
@@ -179,8 +206,6 @@ MixerView::MixerView(Mixer* mixer) :
 	int const scrollBarExtent = style()->pixelMetric(QStyle::PM_ScrollBarExtent);
 	channelArea->setMinimumHeight(mixerChannelSize.height() + scrollBarExtent);
 
-	ml->addWidget(channelArea, 1);
-
 	// M3.7: the VCA groups' strips (hidden while the mix has none).
 	m_vcaArea = new QWidget(this);
 	m_vcaArea->setObjectName(QStringLiteral("vcaArea"));
@@ -188,7 +213,6 @@ MixerView::MixerView(Mixer* mixer) :
 	m_vcaLayout = new QHBoxLayout(m_vcaArea);
 	m_vcaLayout->setContentsMargins(0, 0, 0, 0);
 	m_vcaLayout->setSpacing(0);
-	ml->addWidget(m_vcaArea, 0);
 
 	// show the add new mixer channel button
 	auto newChannelBtn = new QPushButton(embed::getIconPixmap("new_channel"), QString(), this);
@@ -218,11 +242,36 @@ MixerView::MixerView(Mixer* mixer) :
 		if (created.ok) { setCurrentMixerChannel(created.result.value(QStringLiteral("index")).toInt()); }
 	});
 	addLayout->addWidget(newReturnBtn, 0);
-	ml->addWidget(addColumn, 0);
 
+	// Q050-227.1: the four regions, each in its own dock host. The channels' dock keeps the scroll
+	// area and the add buttons; a separator therefore never falls inside it. Docking, the order and
+	// the widths all come from the one layout state, so a restore and a menu choice end in the same
+	// relayoutZones() call.
+	m_zoneHosts.insert(QStringLiteral("master"), dockHost(QStringLiteral("master"), masterView));
+	m_zoneHosts.insert(QStringLiteral("channels"), m_middleHost);
+	ml->addWidget(channelArea, 1);
+	ml->addWidget(addColumn, 0);
+	m_zoneHosts.insert(QStringLiteral("vca"), dockHost(QStringLiteral("vca"), m_vcaArea));
 
 	// add the stacked layout for the effect racks of mixer channels
-	ml->addWidget(m_racksWidget);
+	m_zoneHosts.insert(QStringLiteral("rack"), dockHost(QStringLiteral("rack"), m_racksWidget));
+
+	for (QWidget* host : m_zoneHosts) { host->setParent(m_zoneParking); }
+	m_zoneSplitter->addWidget(m_middleHost);
+	relayoutZones();
+	connect(mixerzones::MixerZoneState::instance(), &mixerzones::MixerZoneState::changed,
+		this, &MixerView::relayoutZones);
+	// A drag writes its widths back THROUGH THE REGISTERED COMMAND - the same window.mixer_zones an agent
+	// calls - with 'live': true so the command records them without re-laying the splitter under the
+	// mouse. The state then lives with the layout and is saved with the project. A relayout's own
+	// setSizes() is not a gesture and is skipped.
+	connect(m_zoneSplitter, &QSplitter::splitterMoved, this, [this] {
+		if (m_applyingZones) { return; }
+		// A refused report (typed, never silent) leaves the state as it was; the next sync pass refreshes the
+		// mode bar's Zones chip from whatever the state holds.
+		runCommand(this, CommandCall{QStringLiteral("window.mixer_zones"),
+			{{QStringLiteral("live"), true}, {QStringLiteral("sizes"), zoneSizesJson()}}, {}, QString(), false});
+	});
 
 	setCurrentMixerChannel(m_mixerChannelViews[0]);
 
@@ -263,6 +312,96 @@ MixerView::MixerView(Mixer* mixer) :
 
 	// we want to receive dataChanged-signals in order to update
 	setModel(mixer);
+}
+
+
+QWidget* MixerView::zoneWidget(const QString& regionId) const
+{
+	return m_zoneHosts.value(regionId);
+}
+
+
+void MixerView::relayoutZones()
+{
+	if (m_zoneSplitter == nullptr) { return; }
+	const mixerzones::Layout& layout = mixerzones::MixerZoneState::instance()->layout();
+	m_applyingZones = true;
+
+	// The docked order: side regions in canonical order on the left, the channels in the middle, the
+	// rest on the right. A region hidden on purpose keeps its host in the splitter (so its stored
+	// width is preserved), and the splitter collapses it; a hidden VCA area or an empty rack is such
+	// a region.
+	const auto sideHosts = [this, &layout](const QString& dock) {
+		QList<QWidget*> out;
+		for (const QString& id : mixerzones::sideRegionIds())
+		{
+			if (layout.docks.value(id) != dock) { continue; }
+			if (QWidget* host = m_zoneHosts.value(id)) { out.append(host); }
+		}
+		return out;
+	};
+	QList<QWidget*> hosts;
+	hosts += sideHosts(QStringLiteral("left"));
+	hosts += m_middleHost;
+	hosts += sideHosts(QStringLiteral("right"));
+
+	// Park every host first, then add them in the wanted order: QSplitter::addWidget() on a widget
+	// that is already a child leaves it where it was, which would keep a re-docked region on the old
+	// side of the channels.
+	for (QWidget* host : hosts)
+	{
+		if (host != nullptr) { host->setParent(m_zoneParking); }
+	}
+	for (QWidget* host : hosts)
+	{
+		if (host != nullptr) { m_zoneSplitter->addWidget(host); }
+	}
+
+	// The widths, side regions only: the channels take what is left. A region whose stored width is
+	// missing gets its default, so a layout written by an older build still lays out usable.
+	QList<int> widths;
+	for (int i = 0; i < m_zoneSplitter->count(); ++i)
+	{
+		QWidget* host = m_zoneSplitter->widget(i);
+		if (host == m_middleHost) { widths << 0; continue; }  // 0 = let the stretch factor decide
+		int width = 0;
+		for (auto it = m_zoneHosts.cbegin(); it != m_zoneHosts.cend(); ++it)
+		{
+			if (it.value() == host) { width = layout.sizes.value(it.key(), mixerzones::defaultSize(it.key())); }
+		}
+		widths << std::max(mixerzones::MinZoneSize, width);
+	}
+	// The channels' own stretch keeps them the largest part of the body; the explicit widths of the
+	// side regions are what a separator drag changes.
+	if (m_zoneSplitter->count() > 0) { m_zoneSplitter->setStretchFactor(m_zoneSplitter->indexOf(m_middleHost), 1); }
+	m_zoneSplitter->setSizes(widths);
+
+	// A host follows its content: with no VCA group the region is collapsed, not left as an empty band.
+	if (QWidget* vca = m_zoneHosts.value(QStringLiteral("vca"))) { vca->setVisible(!getMixer()->vcaGroups().empty()); }
+	m_applyingZones = false;
+}
+
+
+QJsonObject MixerView::zoneSizesJson() const
+{
+	QJsonObject sizes;
+	if (m_zoneSplitter == nullptr) { return sizes; }
+	const QList<int> current = m_zoneSplitter->sizes();
+	for (int i = 0; i < m_zoneSplitter->count() && i < current.size(); ++i)
+	{
+		QWidget* host = m_zoneSplitter->widget(i);
+		if (host == m_middleHost || !host->isVisible()) { continue; }  // a collapsed region keeps its width
+		for (auto it = m_zoneHosts.cbegin(); it != m_zoneHosts.cend(); ++it)
+		{
+			// Clamped to what the command accepts, so a splitter that a style shrank below the minimum
+			// still reports a usable width rather than a refused one.
+			if (it.value() == host)
+			{
+				sizes.insert(it.key(), qBound(mixerzones::MinZoneSize, current.at(i), mixerzones::MaxZoneSize));
+			}
+		}
+	}
+	return sizes;
 }
 
 
@@ -435,6 +574,9 @@ void MixerView::refreshVcaStrips()
 		m_vcaLayout->addWidget(new VcaStripView(group, m_vcaArea));
 	}
 	m_vcaArea->setVisible(!getMixer()->vcaGroups().empty());
+	// Q050-227.1: the VCA region is a dock like any other; with no group it has nothing to show and
+	// its host collapses, and it comes back at its stored width when a group is made.
+	relayoutZones();
 }
 
 

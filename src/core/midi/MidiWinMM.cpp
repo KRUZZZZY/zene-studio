@@ -178,7 +178,9 @@ void WINAPI CALLBACK MidiWinMM::inputCallback( HMIDIIN hm, UINT msg, DWORD_PTR i
 {
 	if( msg == MIM_DATA )
 	{
-		( (MidiWinMM *) inst )->handleInputEvent( hm, param1 );
+		auto client = (MidiWinMM *) inst;
+		const MidiInputGate::Scope dispatch( client->m_inputGate );
+		if( dispatch ) { client->handleInputEvent( hm, param1 ); }
 	}
 }
 

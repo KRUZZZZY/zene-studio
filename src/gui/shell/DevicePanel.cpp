@@ -449,6 +449,17 @@ void DevicePanel::rebuild()
 	for (QWidget* widget : leftOver) { retire(widget); }
 }
 
+bool DevicePanel::openGenericEditor(const QString& target, const QString& plugin)
+{
+	rebuild();
+	for (int i = 0; i < m_cards->count(); ++i)
+	{
+		auto* card = qobject_cast<DeviceCard*>(m_cards->itemAt(i)->widget());
+		if (card != nullptr && card->spec().target == target && card->spec().plugin == plugin) { return card->openGenericEditor(); }
+	}
+	return false;
+}
+
 QString DevicePanel::signature() const
 {
 	// What the panel draws, cheaply: the selection, the channel's devices and the modulators. A

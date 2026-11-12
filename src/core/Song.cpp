@@ -792,7 +792,10 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 		if (relTime >= 0 && relTime < p->length())
 		{
 			const AutomatableModel* recordedModel = p->firstObject();
-			bool writes = p->isRecording();
+			// A clip with no live target has nothing to record from: firstObject() hands back a
+			// fallback model for it, which must not be written (new-p9-439). hasLiveTarget() is a
+			// lock-free read of the flag the clip publishes on every change to its targets.
+			bool writes = p->isRecording() && p->hasLiveTarget();
 			if( !writes && recordedModel
 				&& recordedModel->automationMode() != AutomatableModel::AutomationMode::Read )
 			{
@@ -1352,7 +1355,7 @@ void Song::startExport()
 }
 
 
-auto Song::prepareConverterModeForInstruments(AudioResampler::Mode mode) noexcept -> bool
+bool Song::prepareConverterModeForInstruments(AudioResampler::Mode mode) noexcept
 {
 	for (Track* const track : tracks())
 	{
@@ -1586,7 +1589,7 @@ void Song::buildAutomationRamps( const TrackList & trackList, const TimePos & bl
 	const double framesPerTick = Engine::framesPerTick();
 	// The song-wide read switch (ED-200) gates the ramp exactly as it gates the per-tick apply in
 	// processAutomations(): with reads off, every control keeps its manual value, so nothing is published.
-	if( frames == 0 || framesPerTick <= 0.0 || !AutomationSwitches::instance().reads() )
+	if( frames == 0 || !std::isfinite( framesPerTick ) || framesPerTick <= 0.0 || !AutomationSwitches::instance().reads() )
 	{
 		return;
 	}
@@ -1740,6 +1743,10 @@ void Song::clearProject()
 		getGUI()->mixerView()->clear();
 	}
 	QCoreApplication::sendPostedEvents();
+	// Q050-489: the grid goes BEFORE the tracks. A deleted pattern track renumbers the patterns and the session
+	// cells follow it (PatternTrack.cpp); the cells of a project being closed must not be rewritten one track at a
+	// time on the way out.
+	m_sessionModel.clear();
 	Engine::patternStore()->clearAllTracks();
 	clearAllTracks();
 
@@ -1781,7 +1788,6 @@ void Song::clearProject()
 
 	removeAllControllers();
 
-	m_sessionModel.clear();
 	ProjectSection::clearAll();
 	m_sessionScheduler.reset();
 
@@ -1905,6 +1911,7 @@ void Song::createNewProject()
 
 	setModified(false);
 	m_loadOnLaunch = false;
+	ProjectJournal::notifyChange( ProjectJournal::Change::ProjectReplaced );
 }
 
 
@@ -2290,6 +2297,7 @@ void Song::loadProject( const QString & fileName, const QStringList & skipSectio
 	if( !m_restoringSnapshot ) { ConfigManager::inst()->addRecentlyOpenedProject( fileName ); }
 
 	Engine::projectJournal()->setJournalling( true );
+	ProjectJournal::notifyChange( ProjectJournal::Change::ProjectReplaced );
 
 	emit projectLoaded();
 

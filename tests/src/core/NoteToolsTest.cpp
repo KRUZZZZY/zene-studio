@@ -231,6 +231,16 @@ private slots:
 		QVERIFY(run(QStringLiteral("chord.clear")).ok);
 	}
 
+	//! scale.detect weights each note by key % 12: a note's key is clamped on every path in (constructor, setKey,
+	//! Note::loadSettings), so a -1 never reaches the weights. Pinned here, in the scale.detect family.
+	void aNegativeNoteKeyIsClampedAndDetectsInRange()
+	{
+		MidiClip* clip = clipWith({{-1, 0}, {60, 24}});
+		QCOMPARE(keysOf(clip), (QList<int>{0, 60}));
+		const ControlResult key = run(QStringLiteral("scale.detect"), self(clip));
+		QVERIFY2(key.ok, qPrintable(key.errorMessage));
+	}
+
 	void followingChordsRefusesAnEmptySelection()
 	{
 		MidiClip* clip = clipWith({{61, 0}});

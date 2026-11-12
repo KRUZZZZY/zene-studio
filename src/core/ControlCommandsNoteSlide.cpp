@@ -60,6 +60,7 @@
 #include "ControlReversibility.h"
 #include "MidiClip.h"
 #include "Note.h"
+#include "NoteConditions.h"
 
 namespace lmms
 {
@@ -251,6 +252,8 @@ void registerNoteSlideCommands(ControlRegistry& registry)
 			{QStringLiteral("velocity"), numberProperty()},
 			{QStringLiteral("midi_velocity"), integerProperty(0, 127)},
 			{QStringLiteral("pan"), numberProperty()},
+			{QStringLiteral("recur_length"), integerProperty(0, NoteConditions::MaxRecurLength)},
+			{QStringLiteral("recur_mask"), integerProperty(0, 65535)},
 		});
 		cmd.mutating = true;
 		cmd.handler = [](const QJsonObject& args) { return slideSet(args); };

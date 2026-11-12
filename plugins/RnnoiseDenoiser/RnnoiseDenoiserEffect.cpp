@@ -92,8 +92,9 @@ RnnoiseDenoiserEffect::~RnnoiseDenoiserEffect()
 
 int RnnoiseDenoiserEffect::latencyFrames() const
 {
+	// processImpl() passes audio through undelayed when there is no state or the engine is not at 48 kHz.
 	const auto* engine = Engine::audioEngine();
-	return engine != nullptr && engine->baseSampleRate() == RNNOISE_SAMPLE_RATE
+	return m_rnnoiseState != nullptr && engine != nullptr && engine->baseSampleRate() == RNNOISE_SAMPLE_RATE
 		? RNNOISE_FRAME_SIZE - 1
 		: 0;
 }

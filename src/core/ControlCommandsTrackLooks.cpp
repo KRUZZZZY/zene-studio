@@ -29,13 +29,17 @@
  *  - track.set_icon (WF-120): the icon its header shows (TrackLooks.h);
  *  - mixer.cpu_load (WF-104): every mixer channel's share of the period, and each device's, measured on the
  *    audio thread with relaxed atomics (DspLoadProbe.h). An instrument's own synthesis runs before the mixer and is
- *    not in a channel's figure. Each edit is one undo step whose closures name the track by id. */
+ *    not in a channel's figure: Q050-074.1 reports it per instrument track (SynthesisLoad, RenderDiagnostics.h),
+ *    beside the engine's late periods at their song positions (LatePeriodLog); Q050-074.2 adds the audio device's
+ *    negotiated timing and its own xruns (AudioDeviceDiagnostics.h). Each edit is one undo step whose
+ *    closures name the track by id. */
 
 #include <optional>
 
 #include <QColor>
 #include <QJsonArray>
 
+#include "AudioDeviceDiagnostics.h"
 #include "AudioEngine.h"
 #include "ControlCommandDef.h"
 #include "ControlEdit.h"
@@ -47,6 +51,8 @@
 #include "Engine.h"
 #include "InstrumentTrack.h"
 #include "Mixer.h"
+#include "MusicalTime.h"
+#include "PatternStore.h"
 #include "Song.h"
 #include "Track.h"
 #include "TrackLooks.h"
@@ -88,6 +94,12 @@ MixerChannel* channelOf(Track* track)
 	return index >= 0 && index < Engine::mixer()->numChannels() ? Engine::mixer()->mixerChannel(index) : nullptr;
 }
 
+//! Q050-074.1: @a track's smoothed share of the engine's synthesis stage, in percent of the period.
+double synthesisPercent(const InstrumentTrack* track)
+{
+	return static_cast<double>(track->synthesisLoad().percent(Engine::audioEngine()->renderedPeriods()));
+}
+
 QJsonObject overviewEntry(Track* track, int index)
 {
 	QJsonObject entry = trackEditState(track, index);
@@ -99,6 +111,8 @@ QJsonObject overviewEntry(Track* track, int index)
 	entry.insert(QStringLiteral("channel"), channelIdOf(channel));
 	entry.insert(QStringLiteral("devices"), channel != nullptr ? static_cast<int>(channel->m_fxChain.effects().size()) : 0);
 	entry.insert(QStringLiteral("cpu_percent"), channel != nullptr ? static_cast<double>(channel->dspLoad()) : 0.0);
+	// Q050-074.1: the instrument's own synthesis, apart from the channel's figure; only a track that synthesises has it.
+	if (instrument != nullptr) { entry.insert(QStringLiteral("synthesis_cpu_percent"), synthesisPercent(instrument)); }
 	return entry;
 }
 
@@ -182,6 +196,44 @@ QJsonArray deviceLoads(const MixerChannel* channel)
 	return out;
 }
 
+//! Q050-074.1: every instrument track's synthesis share - the arrangement's, then the pattern editor's.
+QJsonArray synthesisLoads(double* total)
+{
+	QJsonArray out;
+	for (const TrackContainer* container : {static_cast<const TrackContainer*>(Engine::getSong()),
+		static_cast<const TrackContainer*>(Engine::patternStore())})
+	{
+		if (container == nullptr) { continue; }
+		for (const Track* track : container->tracks())
+		{
+			const auto* instrument = dynamic_cast<const InstrumentTrack*>(track);
+			if (instrument == nullptr) { continue; }
+			const double percent = synthesisPercent(instrument);
+			*total += percent;
+			out.append(QJsonObject{{QStringLiteral("track"), trackIdOf(track)}, {QStringLiteral("name"), track->name()},
+				{QStringLiteral("instrument"), instrument->instrumentName()}, {QStringLiteral("synthesis_percent"), percent}});
+		}
+	}
+	return out;
+}
+
+//! Q050-074.1: the engine's late periods - the running count and the newest marks, oldest first.
+QJsonObject latePeriods()
+{
+	const LatePeriodLog& log = Engine::audioEngine()->latePeriods();
+	QJsonArray marks;
+	for (const LatePeriodLog::Mark& mark : log.recent())
+	{
+		marks.append(QJsonObject{{QStringLiteral("serial"), static_cast<double>(mark.serial)},
+			{QStringLiteral("tick"), mark.tick}, {QStringLiteral("position"), musicaltime::barBeatText(mark.tick)},
+			{QStringLiteral("playing"), mark.playing}, {QStringLiteral("took_us"), static_cast<double>(mark.tookMicros)},
+			{QStringLiteral("period_us"), static_cast<double>(mark.periodMicros)},
+			{QStringLiteral("percent"), mark.periodMicros > 0 ? 100.0 * mark.tookMicros / mark.periodMicros : 0.0}});
+	}
+	return QJsonObject{{QStringLiteral("count"), static_cast<double>(log.count())},
+		{QStringLiteral("held"), static_cast<int>(LatePeriodLog::Capacity)}, {QStringLiteral("marks"), marks}};
+}
+
 ControlResult cpuLoad(const QJsonObject&)
 {
 	QJsonArray channels;
@@ -194,8 +246,12 @@ ControlResult cpuLoad(const QJsonObject&)
 		channels.append(QJsonObject{{QStringLiteral("channel"), channelIdOf(channel)}, {QStringLiteral("name"), channel->m_name},
 			{QStringLiteral("cpu_percent"), percent}, {QStringLiteral("devices"), deviceLoads(channel)}});
 	}
+	double synthesisTotal = 0.0;
+	const QJsonArray tracks = synthesisLoads(&synthesisTotal);
 	return ControlResult::success({{QStringLiteral("channels"), channels}, {QStringLiteral("total_percent"), total},
-		{QStringLiteral("engine_percent"), static_cast<double>(Engine::audioEngine()->cpuLoad())}});
+		{QStringLiteral("engine_percent"), static_cast<double>(Engine::audioEngine()->cpuLoad())},
+		{QStringLiteral("tracks"), tracks}, {QStringLiteral("synthesis_total_percent"), synthesisTotal},
+		{QStringLiteral("late_periods"), latePeriods()}, {QStringLiteral("audio_device"), audioDeviceReport(Engine::audioEngine())}});
 }
 
 void add(ControlRegistry& registry, const char* id, const QString& description, const QJsonObject& args, bool mutating,
@@ -211,7 +267,8 @@ void registerTrackLookCommands(ControlRegistry& registry)
 	TrackLooks::instance();  // registers the section before any project loads
 	add(registry, "track.overview", QStringLiteral("Every track in one list, for the track manager: id, index, name, type, "
 		"colour, icon, muted, soloed, visible, folder, clip count, instrument, its mixer channel, that channel's device count and "
-		"its processing load (cpu_percent, mixer.cpu_load's figure)."), objectSchema({}), false, overview);
+		"its processing load (cpu_percent, mixer.cpu_load's figure), and for an instrument track its own synthesis load "
+		"(synthesis_cpu_percent, apart from the channel's)."), objectSchema({}), false, overview);
 	add(registry, "track.set_color", QStringLiteral("Give a track the colour 'color' (#rrggbb), or none with 'color' empty - "
 		"its header and clips take it. Saved with the project; one undo step."),
 		objectSchema({{QStringLiteral("track"), stringProperty()}, {QStringLiteral("color"), stringProperty()}},
@@ -228,7 +285,15 @@ void registerTrackLookCommands(ControlRegistry& registry)
 	add(registry, "mixer.cpu_load", QStringLiteral("How much of each audio period every mixer channel's devices and strip take, "
 		"in percent of the period (smoothed over the last few dozen periods), each of its devices' own share ('devices': "
 		"device id, name, cpu_percent), their sum, and the engine's whole load. An instrument's own synthesis runs before "
-		"the mixer and is in engine_percent, not in its channel's figure. Read-only."),
+		"the mixer and is not in its channel's figure: 'tracks' gives each instrument track's own synthesis share (track id, "
+		"name, instrument, synthesis_percent; CPU time, so several cores can pass 100) and synthesis_total_percent their sum. "
+		"'late_periods' counts the render periods that took longer than they last - the engine's deadline misses, not the "
+		"audio device's xruns - and lists the newest (serial, tick, position, playing, took_us, period_us, percent). "
+		"'audio_device' gives the backend, the engine's own rate and period ('engine') and what the device negotiated: "
+		"sample_rate (output), input_sample_rate (the input's own - a separate ALSA capture device can differ), "
+		"period_frames, buffer_frames, input_latency and output_latency (frames, ms at the input's / output's rate, and the "
+		"basis they are measured from) and xruns, the device's own underruns / xrun notifications; each is {available, value, unit} and a "
+		"value the backend does not report (or no audio device) is available:false, never 0. Read-only."),
 		objectSchema({}), false, cpuLoad);
 }
 

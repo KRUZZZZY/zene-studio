@@ -25,9 +25,13 @@
 #ifndef LMMS_AUDIO_DEVICE_H
 #define LMMS_AUDIO_DEVICE_H
 
+#include <atomic>
+#include <cstdint>
+#include <optional>
 #include <vector>
 
 #include <QMutex>
+#include <QString>
 #include <samplerate.h>
 
 #include "LmmsTypes.h"
@@ -95,6 +99,30 @@ public:
 	 *  engine period per render. */
 	virtual f_cnt_t captureBlockFrames() const;
 
+	/*! Q050-074.2: what the backend negotiated with its device, for the CPU diagnostics
+	 *  (mixer.cpu_load's audio_device). An empty optional is a value this backend does not
+	 *  report - never shown as a zero. Read off the audio thread. */
+	struct DeviceTiming
+	{
+		QString backend;                          //!< the backend's name; empty: the engine's device name
+		std::optional<sample_rate_t> sampleRate;  //!< the rate the device runs at (its output)
+		//! The rate the INPUT runs at - a separate capture device can negotiate its own (ALSA); input
+		//! latency is converted to time at this rate. Empty: no input open, or not reported.
+		std::optional<sample_rate_t> inputSampleRate;
+		std::optional<f_cnt_t> periodFrames;      //!< frames per device period (one callback / write)
+		std::optional<f_cnt_t> bufferFrames;      //!< frames the device queues in all
+		std::optional<f_cnt_t> inputLatencyFrames;
+		QString inputLatencyBasis;                //!< what the input figure is measured from
+		std::optional<f_cnt_t> outputLatencyFrames;
+		QString outputLatencyBasis;
+		bool countsXruns = false;                 //!< backendXruns() is this backend's count
+	};
+	//! Nothing by default: a backend reports what its device negotiated by overriding this.
+	virtual DeviceTiming deviceTiming() const { return {}; }
+	//! Q050-074.2: the device's own xruns (playback underruns / JACK xrun notifications) since it
+	//! opened - not the engine's late periods. Meaningful only when deviceTiming().countsXruns.
+	std::uint64_t backendXruns() const noexcept { return m_backendXruns.load(std::memory_order_relaxed); }
+
 	void startProcessing();
 
 	void stopProcessing();
@@ -120,6 +148,9 @@ protected:
 
 	static void stopProcessingThread( QThread * thread );
 
+	//! Q050-074.2: counts one backend xrun. Any thread, the audio thread included: one relaxed add.
+	void countBackendXrun() noexcept { m_backendXruns.fetch_add(1, std::memory_order_relaxed); }
+
 	/*! R2.3: sizes the stereo scratch bus for pushes of up to @a maxFrames and selects the
 	 *  captured pair (@a left, @a right) that bus carries. Off the audio thread - at open, or
 	 *  in a backend's buffer-size callback - because publishCaptured() must not allocate.
@@ -136,12 +167,42 @@ protected:
 	 *  the prepared bus is carried in bus-sized pieces. */
 	void publishCaptured( const float* interleaved, int channels, f_cnt_t frames ) noexcept;
 
+	/*! A backend callback that can run after stopProcessingImpl() has returned holds one of these
+	 *  for its whole body (render and capture). JACK's process callback is one: it runs for as long
+	 *  as its client stays active, whether or not the device runs. stopProcessing() waits until no
+	 *  such scope is open, so once it returns no render and no capture publish from a callback is
+	 *  still running - the precondition of resetInputStream() (cluster new-p14-402). */
+	class CallbackScope
+	{
+	public:
+		explicit CallbackScope(AudioDevice& device) noexcept : m_device(device)
+		{
+			m_device.m_openCallbacks.fetch_add(1, std::memory_order_seq_cst);
+			// Ordered before the isRunning() reads in the body: see waitForOpenCallbacks().
+			std::atomic_thread_fence(std::memory_order_seq_cst);
+		}
+		~CallbackScope() { m_device.m_openCallbacks.fetch_sub(1, std::memory_order_seq_cst); }
+
+		CallbackScope(const CallbackScope&) = delete;
+		CallbackScope& operator=(const CallbackScope&) = delete;
+
+	private:
+		AudioDevice& m_device;
+	};
+
+	/*! Called on every iteration while stopProcessing() waits for an open CallbackScope. Empty,
+	 *  except in tests, which use it to see the wait begin without a clock. */
+	virtual void onStopWait() {}
+
 protected:
 	bool m_supportsCapture;
 
 private:
 	virtual void startProcessingImpl() = 0;
 	virtual void stopProcessingImpl() = 0;
+
+	//! Waits until every CallbackScope that began before m_running was cleared has ended.
+	void waitForOpenCallbacks();
 
 	sample_rate_t m_sampleRate;
 	ch_cnt_t m_channels;
@@ -150,6 +211,9 @@ private:
 	int m_captureRight = 1;
 	AudioEngine* m_audioEngine = nullptr;
 	std::atomic_flag m_running = ATOMIC_FLAG_INIT;
+	//! Open CallbackScopes. Dekker pair with m_running: see waitForOpenCallbacks().
+	std::atomic<int> m_openCallbacks{0};
+	std::atomic<std::uint64_t> m_backendXruns{0};
 };
 
 } // namespace lmms

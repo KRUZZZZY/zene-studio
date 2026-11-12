@@ -59,6 +59,7 @@
 #include "PatternTrack.h"
 #include "Song.h"
 #include "TimePos.h"
+#include "../../../plugins/MidiExport/MidiFile.hpp"
 
 using namespace lmms;
 
@@ -366,6 +367,36 @@ private slots:
 		QCOMPARE(file.tracks[1].events.back().type, 0x2F);
 	}
 
+	//! The MTrk length field is 32 bits. A track body that the field cannot record is refused
+	//! before any byte of its chunk is written, so no header ever records a wrapped length.
+	//! The limit is a parameter so the boundary can be reached without a 4 GiB track.
+	void aTrackBodyBeyondTheChunkLengthIsRefused()
+	{
+		QCOMPARE(MidiFile::SmfMaxChunkBody, uint64_t(0xFFFFFFFFu));
+
+		MidiFile::MIDITrack track;
+		track.addNoteTicks(60, 100, 0, 480);
+		std::vector<uint8_t> full;
+		QVERIFY(track.writeToBuffer(full));
+		QVERIFY(full.size() > 8);
+		const uint64_t body = full.size() - 8;
+		// the chunk header records the real body length
+		QCOMPARE(uint32_t(full[4]) << 24 | uint32_t(full[5]) << 16 | uint32_t(full[6]) << 8 | uint32_t(full[7]),
+			uint32_t(body));
+
+		// one byte under the limit: refused, and the output is left exactly as it was
+		std::vector<uint8_t> out{0xAA};
+		QVERIFY(!track.writeToBuffer(out, body - 1));
+		QCOMPARE(out.size(), std::size_t(1));
+		QCOMPARE(out[0], uint8_t(0xAA));
+
+		// exactly at the limit: written whole, identical to the unlimited write
+		out.clear();
+		QVERIFY(track.writeToBuffer(out, body));
+		QCOMPARE(out.size(), full.size());
+		QVERIFY(out == full);
+	}
+
 	//! A file already present at the path the exporter is asked to write must not
 	//! be truncated: creation is exclusive, so a collision is a failed export.
 	void collidingPathIsNotClobberedByExport()
@@ -561,6 +592,26 @@ private slots:
 		int ons = 0;
 		for (const SmfEvent& e : file.tracks[1].events) { if ((e.status & 0xF0) == 0x90) { ++ons; } }
 		QCOMPARE(ons, 1); // one note at tick 0 in a one-bar pattern
+	}
+
+	//! A zero tempo is not a tempo: the encoder divides 60000000 by it, and the quotient (+inf)
+	//! has no uint32_t value. Neither entry point may record one, so the track encodes only the
+	//! valid change: 120 bpm = 500000 us per quarter at tick 480 (delta 0x83 0x60).
+	void aZeroTempoIsNotEncoded()
+	{
+		MidiFile::MIDITrack track;
+		track.addTempo(0, 0);
+		MidiFile::Event sibling;
+		sibling.type = MidiFile::Event::TEMPO;
+		sibling.tempo = 0;
+		sibling.time = 0;
+		track.addEvent(sibling);
+		track.addTempo(120, 480);
+
+		std::vector<uint8_t> bytes;
+		track.writeEventsToBuffer(bytes);
+		const std::vector<uint8_t> expected{0x83, 0x60, 0xFF, 0x51, 0x03, 0x07, 0xA1, 0x20};
+		QVERIFY2(bytes == expected, "a zero tempo was encoded beside the valid change");
 	}
 
 private:

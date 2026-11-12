@@ -19,10 +19,15 @@ a user does. This driver starts the REAL `zene` binary headless and proves:
      window.note_editor_set reply; note.add_many adds a batch as one undo step and note.list answers every note;
      note.scale, note.ratchet and note.transform_where change exactly the notes they name;
      groove.quantize takes 'swing'; key_names.* name a track's keys (one undo restores);
+     (Q050-242) a note's recurrence length and pass mask are written by note.edit, read back from
+     roll.get_state, and ONE control.undo restores the pair;
      window.note_editor_set drives the paint tool, the drum view, the colour mode and
      keep-in-scale; a Lua script adds notes through zene.command; clip.controllers_set / get
      write and read a clip's CC lane (one undo step) and the editor shows it as its controller lane;
-     track.input_transform_set / get change what a track does to live MIDI (one undo step).
+     track.input_transform_set / get change what a track does to live MIDI (one undo step);
+  8. (Q050-291.1) clip.controllers_to_automation / _from_automation convert a CC lane to a device parameter's automation
+     and back (read through automation.get_state / clip.controllers_get; one undo each; an unnamed parameter or a
+     pitch-bend lane is refused and changes nothing).
 
 Usage:  QT_QPA_PLATFORM=offscreen python3 tests/control-note-editor.py <zene> [<screenshot dir>]
 Exit 0 only when every check held.
@@ -170,6 +175,33 @@ def check_batch(session, recorder, clip, notes):
     recorder.check("ONE control.undo restores the whole batch", restored, "undone=%r" % undone)
 
 
+def check_recurrence(session, recorder, clip, notes):
+    """Q050-242: the recurrence pair - length 2, mask 1 (the first of every two passes) - as an agent
+    writes it, reads it back from roll.get_state, and gets both original values back from one undo."""
+    target = notes[3]
+    before = roll_notes(session, clip).get(target) or {}
+    recorder.check("a note starts neutral: length 0 plays every pass",
+                   before.get("recur_length") == 0 and before.get("recur_mask") == 0, "note=%r" % before)
+    # A mask without a length is refused (it would mean nothing); the batch changes nothing.
+    error = session.typed_error("note.edit", {"clip": clip, "edits": [{"note": target, "recur_mask": 1}]})
+    recorder.check("a pass mask without a recurrence length is refused, typed",
+                   error.get("kind") == "invalid_args", "error=%r" % error)
+    applied = session.result("note.edit", {"clip": clip, "edits": [
+        {"note": target, "recur_length": 2, "recur_mask": 1}]})
+    after = roll_notes(session, clip).get(target) or {}
+    recorder.check("note.edit writes the recurrence pair and roll.get_state reads it back",
+                   applied.get("edited") == 1 and after.get("recur_length") == 2 and after.get("recur_mask") == 1,
+                   "reply=%r note=%r" % (applied, after))
+    # A length above the model's 16 is refused, not clamped (SPEC A11).
+    error = session.typed_error("note.edit", {"clip": clip, "edits": [{"note": target, "recur_length": 17}]})
+    recorder.check("a recurrence length above 16 is refused, typed", error.get("kind") == "invalid_args",
+                   "error=%r" % error)
+    session.result("control.undo")
+    restored = roll_notes(session, clip).get(target) or {}
+    recorder.check("ONE control.undo restores both original recurrence values",
+                   restored.get("recur_length") == 0 and restored.get("recur_mask") == 0, "note=%r" % restored)
+
+
 def check_atomic(session, recorder, clip, notes):
     before = roll_notes(session, clip)
     error = session.typed_error("note.edit", {"clip": clip, "edits": [{"note": notes[0], "key": 70},
@@ -304,6 +336,84 @@ def check_controller_lanes(session, recorder):
     session.call("window.note_editor_set", {"controller_lane": ""})
 
 
+def plugin_env(binary):
+    plugin_dir = os.path.join(os.path.dirname(os.path.abspath(binary)), "plugins")
+    return {"LMMS_PLUGIN_DIR": plugin_dir} if os.path.isdir(plugin_dir) else None
+
+
+def automated_points(session, track, parameter):
+    parameters = session.result("automation.get_state", {"track": track})["tracks"][0].get("parameters") or []
+    entry = [p for p in parameters if p.get("id") == parameter][0]
+    return [(p["ticks"], p["value"]) for p in (entry.get("automation") or {}).get("points") or []], entry
+
+
+def conversion_setup(session, recorder):
+    """A track with a real instrument, a clip with a CC lane, and a wide-range parameter to convert onto."""
+    devices = session.result("plugin.list", {"kind": "instrument", "loadable_only": True}).get("devices") or []
+    device = next((d.get("id") for d in devices if d.get("name") == "tripleoscillator"), None)
+    recorder.check("a real instrument is available for the conversion", device is not None, "devices=%r" % devices[:3])
+    if device is None:
+        return None
+    track, clip = new_clip(session, "Convert")
+    session.result("plugin.load", {"target": track, "device": device})
+    parameters = session.result("automation.get_state", {"track": track})["tracks"][0].get("parameters") or []
+    wide = [p for p in parameters if p["max"] - p["min"] >= 100][0]
+    ramp = [{"tick": 0, "value": 0}, {"tick": 96, "value": 127}]
+    session.result("clip.controllers_set", {"clip": clip, "lane": "cc:1", "points": ramp})
+    return {"track": track, "clip": clip, "parameter": wide["id"], "low": wide["min"], "high": wide["max"], "ramp": ramp}
+
+
+def conversion_lanes(session, clip):
+    return {l["lane"]: l["points"] for l in session.result("clip.controllers_get", {"clip": clip}).get("lanes")}
+
+
+def check_conversion_refusals(session, recorder, c):
+    ambiguous = session.call("clip.controllers_to_automation", {"clip": c["clip"], "lane": "cc:1"})
+    recorder.check("an unnamed parameter on a many-parameter track is refused, typed",
+                   (ambiguous.get("error") or {}).get("kind") == "invalid_args", "reply=%r" % ambiguous)
+    bend = session.call("clip.controllers_to_automation", {"clip": c["clip"], "lane": "pitchbend", "parameter": c["parameter"]})
+    recorder.check("a pitch-bend lane is refused, typed", (bend.get("error") or {}).get("kind") == "refused", "reply=%r" % bend)
+    points, _ = automated_points(session, c["track"], c["parameter"])
+    recorder.check("the refusals changed nothing", points == [], "points=%r" % points)
+
+
+def check_conversion_to_automation(session, recorder, c):
+    args = {"clip": c["clip"], "lane": "cc:1", "parameter": c["parameter"]}
+    done = session.result("clip.controllers_to_automation", args)
+    points, entry = automated_points(session, c["track"], c["parameter"])
+    span = c["high"] - c["low"]
+    recorder.check("to_automation writes the parameter's automation, read back through automation.get_state",
+                   done.get("converted") == 2 and [t for t, _ in points] == [0, 96] and entry.get("automated") is True
+                   and abs(points[0][1] - c["low"]) < 1e-3 * span and abs(points[1][1] - c["high"]) < 1e-3 * span,
+                   "points=%r low=%r high=%r" % (points, c["low"], c["high"]))
+    recorder.check("the CC lane is kept (a copy)", conversion_lanes(session, c["clip"]) == {"cc:1": c["ramp"]},
+                   "lanes=%r" % conversion_lanes(session, c["clip"]))
+    session.result("control.undo")
+    points, entry = automated_points(session, c["track"], c["parameter"])
+    recorder.check("one undo takes the automation back", points == [] and not entry.get("automated"), "points=%r" % points)
+    session.result("clip.controllers_to_automation", args)
+
+
+def check_conversion_from_automation(session, recorder, c):
+    session.result("clip.controllers_set", {"clip": c["clip"], "lane": "cc:2", "points": [{"tick": 0, "value": 5}]})
+    back = session.result("clip.controllers_from_automation", {"clip": c["clip"], "lane": "cc:2"})
+    lanes = conversion_lanes(session, c["clip"])
+    recorder.check("from_automation takes the one automated parameter and fills the lane (read through clip.controllers_get)",
+                   back.get("parameter") == c["parameter"] and lanes.get("cc:2") == c["ramp"], "lanes=%r reply=%r" % (lanes, back))
+    session.result("control.undo")
+    lanes = conversion_lanes(session, c["clip"])
+    recorder.check("one undo restores the lane that was there", lanes.get("cc:2") == [{"tick": 0, "value": 5}], "lanes=%r" % lanes)
+
+
+def check_controller_conversion(session, recorder):
+    context = conversion_setup(session, recorder)
+    if context is None:
+        return
+    check_conversion_refusals(session, recorder, context)
+    check_conversion_to_automation(session, recorder, context)
+    check_conversion_from_automation(session, recorder, context)
+
+
 def check_input_transform(session, recorder):
     track, _ = new_clip(session, "Live")
     session.result("track.input_transform_set", {"track": track, "transpose": 12, "velocity_scale": 80})
@@ -321,7 +431,7 @@ def main(argv):
         return 2
     recorder = Recorder()
     transcript = H.Transcript()
-    with H.start_instance(argv[1], workingdir=None) as instance:
+    with H.start_instance(argv[1], workingdir=None, extra_env=plugin_env(argv[1])) as instance:
         H.wait_for_socket(instance)
         client = H.connect(instance)
         H.wait_ready(instance, client, transcript)
@@ -333,12 +443,14 @@ def main(argv):
         check_view(session, recorder)
         check_clip_fit(session, recorder)
         check_batch(session, recorder, clip, notes)
+        check_recurrence(session, recorder, clip, notes)
         check_atomic(session, recorder, clip, notes)
         check_lanes(session, recorder, clip, notes)
         check_screenshot(session, recorder, outdir, clip)
         check_note_shapes(session, recorder)
         check_drum_view(session, recorder)
         check_controller_lanes(session, recorder)
+        check_controller_conversion(session, recorder)
         check_input_transform(session, recorder)
     report_results(recorder)
     if recorder.problems:

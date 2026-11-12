@@ -236,7 +236,8 @@ int AudioAlsa::handleError( int _err )
 {
 	if( _err == -EPIPE )
 	{
-		// under-run
+		// under-run: the device ran dry - counted for the diagnostics (Q050-074.2), one relaxed add
+		countBackendXrun();
 		_err = snd_pcm_prepare( m_handle );
 		if( _err < 0 )
 			printf( "Can't recover from underrun, prepare "
@@ -430,6 +431,7 @@ bool AudioAlsa::openCapture()
 	if( grantedChannels == 0 ) { grantedChannels = 1; }
 
 	m_captureChannels = static_cast<int>( grantedChannels );
+	m_captureGrantedRate = grantedRate;
 
 	// Everything the capture thread touches is allocated HERE, once, off that
 	// thread: the loop below must not allocate (the realtime rule).
@@ -518,6 +520,7 @@ void AudioAlsa::closeCapture()
 		m_captureHwParams = nullptr;
 	}
 	m_captureChannels = 0;
+	m_captureGrantedRate = 0;
 
 	// The capture thread is gone by now, so the failures it parked are
 	// reported from here - the thread that closes the capture, which is not
@@ -747,8 +750,40 @@ int AudioAlsa::setHWParams( const ch_cnt_t _channels, snd_pcm_access_t _access )
 							snd_strerror( err ) );
 		return ( err );
 	}
+	// Q050-074.2: what the device granted, for the diagnostics.
+	dir = 0;
+	if (snd_pcm_hw_params_get_rate(m_hwParams, &m_grantedRate, &dir) < 0) { m_grantedRate = 0; }
 
 	return ( 0 );	// all ok
+}
+
+
+
+
+AudioDevice::DeviceTiming AudioAlsa::deviceTiming() const
+{
+	DeviceTiming timing;
+	timing.backend = name();
+	if (m_grantedRate > 0) { timing.sampleRate = static_cast<sample_rate_t>(m_grantedRate); }
+	if (m_periodSize > 0) { timing.periodFrames = static_cast<f_cnt_t>(m_periodSize); }
+	if (m_bufferSize > 0)
+	{
+		timing.bufferFrames = static_cast<f_cnt_t>(m_bufferSize);
+		timing.outputLatencyFrames = static_cast<f_cnt_t>(m_bufferSize);
+		timing.outputLatencyBasis = QStringLiteral("playback_buffer");
+	}
+	// The capture PCM's own rate: a separately selected capture interface negotiates its own.
+	if (m_captureOpen.load(std::memory_order_acquire) && m_captureGrantedRate > 0)
+	{
+		timing.inputSampleRate = static_cast<sample_rate_t>(m_captureGrantedRate);
+	}
+	if (timing.inputSampleRate.has_value() && m_capturePeriodSize > 0)
+	{
+		timing.inputLatencyFrames = static_cast<f_cnt_t>(m_capturePeriodSize);
+		timing.inputLatencyBasis = QStringLiteral("capture_period");
+	}
+	timing.countsXruns = true;
+	return timing;
 }
 
 

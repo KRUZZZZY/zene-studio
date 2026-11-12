@@ -23,6 +23,7 @@
  */
 
 #include "AutomatableModel.h"
+#include "ConnectionRestoreScope.h"
 
 #include <bit>
 #include <chrono>
@@ -59,6 +60,8 @@ thread_local unsigned s_deferredRegistrations = 0;
 //! The ramp-read probe (see the header). Test builds only, and a plain pointer
 //! test - it allocates nothing, locks nothing and is never set in the product.
 void (*s_valueBufferRampReadProbeForTest)(AutomatableModel*) = nullptr;
+//! The cache-hit probe (Q050-161, see the header): same rules as the ramp probe.
+void (*s_valueBufferCacheHitProbeForTest)(AutomatableModel*) = nullptr;
 #endif
 
 AudioEngine::RequestChangesGuard modelChangeGuard(const AutomatableModel* model)
@@ -359,6 +362,7 @@ void AutomatableModel::loadSettings( const QDomElement& element, const QString& 
 
 	QDomNode connectionNode = element.namedItem( "connection" );
 	// reads controller connection
+	bool connectionLoaded = false;
 	if( connectionNode.isElement() )
 	{
 		QDomNode thisConnection = connectionNode.toElement().namedItem( name );
@@ -378,7 +382,14 @@ void AutomatableModel::loadSettings( const QDomElement& element, const QString& 
 			setControllerConnection(new ControllerConnection(nullptr));
 			m_controllerConnection->loadSettings( thisConnection.toElement() );
 			//m_controllerConnection->setTargetName( displayName() );
+			connectionLoaded = true;
 		}
+	}
+	// Q050-331: a journal restore puts the model back exactly as saved, so a connection the saved element does
+	// not carry (one added after the checkpoint) goes. An ordinary load only adds (ConnectionRestoreScope.h).
+	if( !connectionLoaded && m_controllerConnection != nullptr && ConnectionRestoreScope::active() )
+	{
+		setControllerConnection( nullptr );
 	}
 
 	// models can be stored as elements (port00) or attributes (port10):
@@ -451,6 +462,28 @@ void AutomatableModel::loadSettings( const QDomElement& element, const QString& 
 
 
 
+
+namespace
+{
+//! ConnectionRestoreScope's state (Q050-331): one flag per thread, so no lock and no interference between threads.
+thread_local bool t_connectionRestore = false;
+} // namespace
+
+ConnectionRestoreScope::ConnectionRestoreScope() :
+	m_previous(t_connectionRestore)
+{
+	t_connectionRestore = true;
+}
+
+ConnectionRestoreScope::~ConnectionRestoreScope()
+{
+	t_connectionRestore = m_previous;
+}
+
+bool ConnectionRestoreScope::active()
+{
+	return t_connectionRestore;
+}
 
 std::atomic<jo_id_t> AutomatableModel::s_lastTouched{0};
 
@@ -751,6 +784,11 @@ void AutomatableModel::setValueBufferRampReadProbeForTest(void (*probe)(Automata
 {
 	s_valueBufferRampReadProbeForTest = probe;
 }
+
+void AutomatableModel::setValueBufferCacheHitProbeForTest(void (*probe)(AutomatableModel*))
+{
+	s_valueBufferCacheHitProbeForTest = probe;
+}
 #endif
 
 
@@ -775,6 +813,14 @@ ValueBuffer * AutomatableModel::valueBuffer()
 			engine->recordUnpreparedAutomatableBufferRequest();
 			return nullptr;
 		}
+		// Q050-161: a hit on the period's prepared buffer is a plain read of
+		// render-owned state - no mutex, no change guard, no wait. Control
+		// writes are serialised against the render period by the engine's
+		// change lock (taken by the writer, never here), and the next period's
+		// serial prepass recomputes from what they published.
+#ifdef LMMS_TESTING
+		if (s_valueBufferCacheHitProbeForTest != nullptr) { s_valueBufferCacheHitProbeForTest(this); }
+#endif
 		return cachedValueBuffer();
 	}
 

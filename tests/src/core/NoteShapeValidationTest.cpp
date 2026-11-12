@@ -201,6 +201,37 @@ private slots:
 		QCOMPARE(noteIds(), survivors);
 	}
 
+	//! Luna finding new-p10-52 (BUG 17): readBound read an explicit JSON null like an omitted bound, so
+	//! {key_min: null} left the key range open and, with no other bound, matched every note - 'action:
+	//! remove' then removed them all. A null is a value the caller got wrong; an open side is what an
+	//! omitted property means. The scale channel had the same null-as-absent read.
+	void anExplicitNullFilterValueIsRefusedNotReadAsOpen()
+	{
+		freshClip();
+		const QStringList before = noteIds();
+		const QJsonValue null(QJsonValue::Null);
+
+		// (a) a null bound on its own is refused - it used to match all three notes and remove them.
+		QCOMPARE(transform({{QStringLiteral("key_min"), null}}, "remove"), ControlErrorKind::InvalidArgs);
+		QCOMPARE(noteIds(), before);
+		// (b) beside a real bound it is refused too, not taken for an open side of the range.
+		QCOMPARE(transform({{QStringLiteral("key_max"), 61}, {QStringLiteral("velocity_min"), null}}, "remove"),
+			ControlErrorKind::InvalidArgs);
+		QCOMPARE(noteIds(), before);
+		// (c) a null scale is not "no scale filter": it used to widen the filter to every note.
+		QCOMPARE(transform({{QStringLiteral("scale"), null}}, "remove"), ControlErrorKind::InvalidArgs);
+		QCOMPARE(noteIds(), before);
+		// (d) select_where reads the same filter, so it refuses the null too and leaves the selection alone.
+		const ControlResult selected = run(QStringLiteral("note.select_where"), {{QStringLiteral("clip"), clip()},
+			{QStringLiteral("filter"), QJsonObject{{QStringLiteral("key_min"), null}}}});
+		QVERIFY(!selected.ok);
+		QCOMPARE(selected.errorKind, ControlErrorKind::InvalidArgs);
+		// (e) an OMITTED bound is still open: key_max 61 with no key_min matches the two low notes,
+		//     so only the note above survives.
+		QCOMPARE(transform({{QStringLiteral("key_max"), 61}}, "remove"), ControlErrorKind::None);
+		QCOMPARE(noteIds(), QStringList{before.at(2)});
+	}
+
 	//! Luna cluster new-p8-37: an unknown filter key such as key_mni was ignored, leaving an empty
 	//! filter that matched every note and let action: remove erase the clip.
 	void anUnknownFilterKeyIsRefusedWithoutRemovingNotes()
@@ -210,6 +241,50 @@ private slots:
 
 		QCOMPARE(transform({{QStringLiteral("key_mni"), 60}}, "remove"), ControlErrorKind::InvalidArgs);
 		QCOMPARE(noteIds(), before);
+	}
+
+	//! Luna cluster new-p15-15: a range whose minimum is above its maximum matches no note, and
+	//! 'invert' then made the filter match EVERY note, so action: remove erased the clip. Such a
+	//! range is refused, by transform_where and select_where alike, and nothing is changed.
+	void anEmptyFilterRangeIsRefusedEvenWhenInverted()
+	{
+		freshClip();
+		const QStringList before = noteIds();
+
+		// (a) the finding's filter: key 80..40, inverted, removing - refused, no note removed.
+		QCOMPARE(transform({{QStringLiteral("key_min"), 80}, {QStringLiteral("key_max"), 40},
+			{QStringLiteral("invert"), true}}, "remove"), ControlErrorKind::InvalidArgs);
+		QCOMPARE(noteIds(), before);
+		// A reversed pair must be checked before readBound clamps both values to INT_MAX.
+		QCOMPARE(transform({{QStringLiteral("key_min"), 2147483648.0}, {QStringLiteral("key_max"), 2147483647.0},
+			{QStringLiteral("invert"), true}}, "remove"), ControlErrorKind::InvalidArgs);
+		QCOMPARE(noteIds(), before);
+		// (b) the same contradiction in each other range.
+		QCOMPARE(transform({{QStringLiteral("velocity_min"), 150}, {QStringLiteral("velocity_max"), 50},
+			{QStringLiteral("invert"), true}}, "remove"), ControlErrorKind::InvalidArgs);
+		QCOMPARE(transform({{QStringLiteral("position_min"), 100}, {QStringLiteral("position_max"), 10},
+			{QStringLiteral("invert"), true}}, "remove"), ControlErrorKind::InvalidArgs);
+		QCOMPARE(transform({{QStringLiteral("length_min"), 50}, {QStringLiteral("length_max"), 5},
+			{QStringLiteral("invert"), true}}, "remove"), ControlErrorKind::InvalidArgs);
+		// (c) an open side sits at the range's open bound, so a lone bound beyond it is empty too.
+		QCOMPARE(transform({{QStringLiteral("key_min"), 200}, {QStringLiteral("invert"), true}}, "remove"),
+			ControlErrorKind::InvalidArgs);
+		QCOMPARE(transform({{QStringLiteral("key_max"), -5}, {QStringLiteral("invert"), true}}, "remove"),
+			ControlErrorKind::InvalidArgs);
+		QCOMPARE(noteIds(), before);
+		// select_where reads the same filter, so it refuses the same contradiction.
+		const ControlResult selected = run(QStringLiteral("note.select_where"), {{QStringLiteral("clip"), clip()},
+			{QStringLiteral("filter"), QJsonObject{{QStringLiteral("key_min"), 80}, {QStringLiteral("key_max"), 40},
+				{QStringLiteral("invert"), true}}}});
+		QVERIFY(!selected.ok);
+		QCOMPARE(selected.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY(std::none_of(m_clip->notes().cbegin(), m_clip->notes().cend(), [](const Note* note) { return note->selected(); }));
+
+		// (d) an equal bound is one value, not an empty range: key 61..61, inverted and removing,
+		//     takes the two notes that are NOT at 61 and leaves the one that is.
+		QCOMPARE(transform({{QStringLiteral("key_min"), 61}, {QStringLiteral("key_max"), 61},
+			{QStringLiteral("invert"), true}}, "remove"), ControlErrorKind::None);
+		QCOMPARE(noteIds(), QStringList{before.at(1)});
 	}
 
 	//! Luna cluster 2877: 'amount' carried no bound, so a value outside int was narrowed to 0

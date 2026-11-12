@@ -54,15 +54,18 @@ QString asText(const QDomElement& element)
 	return out;
 }
 
-//! Every row of a v1 section into @a out; false at the first child that is not a well-formed row.
+//! Every row of a v1 section into @a out; false at the first child that is not a well-formed row, or that is content no row
+//! carries (text, CDATA, a processing instruction), so the section is kept as it came. Comments and whitespace-only text
+//! are layout and are skipped.
 bool readRows(const QDomElement& section, std::vector<SubScene>* out)
 {
 	for (QDomNode node = section.firstChild(); !node.isNull(); node = node.nextSibling())
 	{
-		if (!node.isElement()) { continue; }  // text and comments carry nothing
+		if (node.isComment()) { continue; }  // comments carry nothing
+		if (node.isText() && node.toText().data().trimmed().isEmpty()) { continue; }  // indentation carries nothing
 		SubScene row;
 		const bool fits = static_cast<int>(out->size()) < SubScene::MaxCount;
-		if (!fits || node.nodeName() != RowName || !row.restoreState(node.toElement())) { return false; }
+		if (!node.isElement() || !fits || node.nodeName() != RowName || !row.restoreState(node.toElement())) { return false; }
 		out->push_back(std::move(row));
 	}
 	return true;

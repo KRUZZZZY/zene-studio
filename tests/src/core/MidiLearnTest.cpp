@@ -147,6 +147,34 @@ private slots:
 		QVERIFY(target.controllerConnection() == nullptr);
 	}
 
+	//! Cluster new-p14-73: setting a connection to the MIDI controller it already
+	//! owns is a no-op. The owned controller used to be disposed of before the
+	//! new value was assigned, so the connection kept driving a freed controller.
+	//! Driven through the learn binding and the connection's own setController().
+	void settingAnOwnedControllerToItselfKeepsIt()
+	{
+		FloatModel target(0.5f, 0.0f, 1.0f, 0.01f);
+		MidiLearn::instance()->setFocusTarget(&target);
+		MidiLearn::instance()->setEnabled(true);
+		QVERIFY(MidiLearn::instance()->handleMidiEvent(makeCc(2, 74, 127)));
+		ControllerConnection* const connection = target.controllerConnection();
+		QVERIFY(connection != nullptr);
+		MidiController* const owned = boundMidiController(&target);
+		QVERIFY(owned != nullptr);
+		QPointer<MidiController> watched(owned);
+
+		connection->setController(connection->getController());
+
+		// The owned controller must still be alive, still be the one the
+		// connection drives, and still reach the model.
+		QVERIFY2(!watched.isNull(), "the owned controller was disposed of by setting it to itself");
+		QCOMPARE(connection->getController(), static_cast<Controller*>(owned));
+		QCOMPARE(boundMidiController(&target), owned);
+		QSignalSpy spy(&target, SIGNAL(dataChanged()));
+		owned->midiPort().processInEvent(makeCc(2, 74, 100), TimePos());
+		QCOMPARE(spy.count(), 1);
+	}
+
 	// A frame count that no tick count can hold is no position either: the
 	// conversion to a tick_t would be undefined behaviour as well.
 	void UnrepresentableFrameCountReturnsNoPosition()

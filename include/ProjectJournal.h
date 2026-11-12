@@ -85,6 +85,20 @@ class ProjectJournal
 public:
 	static const int MAX_UNDO_STATES;
 
+	/*! What a change listener hears (Q050-334.1): a step was pushed, undone or redone, or the project was replaced.
+	 *  A listener is told after the fact and must only record or post. A process-wide hook, so it needs no journal
+	 *  to exist yet; the cost with none installed is one test of an empty function. */
+	enum class Change
+	{
+		Step,
+		Undo,
+		Redo,
+		ProjectReplaced,
+	};
+	using ChangeListener = std::function<void( Change )>;
+	static void setChangeListener( ChangeListener listener );
+	static void notifyChange( Change change );
+
 	//! The hard ceiling a client may raise the count cap to. A "bound" that can
 	//! be set to a billion is not a bound; measured against the byte budget,
 	//! 10000 steps of full-Song XML is already far past what an undo stack may
@@ -243,6 +257,9 @@ public:
 	 */
 	bool coalesceTopStepIntoPrevious();
 
+	//! Whether the newest step holds a capture of the object @a id: a change just made to it has its step on top.
+	bool topStepCaptures( jo_id_t id ) const;
+
 	/*! The serial of the newest step, 0 when the stack is empty. A transaction
 	 *  record holds it so control.undo can tell "this step is still on the
 	 *  stack" from "a bound evicted it". */
@@ -250,6 +267,9 @@ public:
 	/*! The serial of the OLDEST retained step; the next serial to be issued when
 	 *  the stack is empty, so `record.step < oldestStepSerial()` means evicted. */
 	quint64 oldestStepSerial() const;
+	/*! The newest serial a bound evicted, 0 when none (Q050-214). A step older than the stack's oldest may
+	 *  also just have been undone - by Ctrl+Z, say - and only this one tells the two apart. */
+	quint64 newestEvictedSerial() const { return m_newestEvictedSerial; }
 	/*! The serial of the step DIRECTLY BELOW the newest one, 0 when there is
 	 *  none. The coalescing rule uses it to recognise "the step below the one
 	 *  this call just pushed is the run I am still in" without holding an index:
@@ -502,6 +522,7 @@ private:
 	//! Steps a bound has evicted, and steps coalescing has merged away.
 	int m_evicted = 0;
 	int m_coalesced = 0;
+	quint64 m_newestEvictedSerial = 0;
 	//! The last serial handed to a step; 0 means "no step has been pushed yet".
 	quint64 m_stepSerial = 0;
 	//! Set by declineRedo() during a redo, read and cleared by redo() and takeRedoDecline().
@@ -527,6 +548,7 @@ public:
 		qint64 retainedBytes = 0;
 		int evicted = 0;
 		int coalesced = 0;
+		quint64 newestEvictedSerial = 0;
 	};
 	DetachedHistory detachHistory();
 	void reattachHistory( DetachedHistory && history );

@@ -36,6 +36,9 @@
 // The warp vocabulary and WarpMarkers, the base clip's warp state's value type
 // (SPEC-ARCH-4 census row 5: warp is native to the base clip).
 #include "WarpMarkers.h"
+// Q050-162: the repeat interval of the Repeat / Gate modes rides the warp state.
+#include "TransientRepeat.h"
+#include "WarpPublication.h"
 
 // GLOBAL scope, never inside namespace lmms: a `class QDomDocument;` declared
 // after `namespace lmms {` declares the DIFFERENT type lmms::QDomDocument, and
@@ -280,8 +283,11 @@ protected:
 	//! The warp map (#597): markers pinning source frames to clip-relative
 	//! ticks. Empty for every project written before #597, and an empty map is
 	//! what makes the mapping the linear one (design §2.4). A fixed-capacity
-	//! value type, so reading it on the audio thread allocates nothing.
+	//! value type. The control thread's copy, read and written only there and
+	//! written ONLY through publishWarp(); a render pass reads m_warpLive instead.
 	WarpMarkers m_warp;
+	//! The map as the render thread sees it: immutable generations (WarpPublication.h).
+	WarpPublication m_warpLive;
 	//! Follow the project tempo (default), or lead it with `m_sourceTempo`.
 	WarpTempoMode m_tempoMode = WarpTempoMode::FollowProject;
 	//! The clip's declared source tempo in BPM; only read in `SourceTempo`.
@@ -294,9 +300,18 @@ protected:
 	 *  Band-backed mode is only stored AFTER prepareWarpStretchMode() built
 	 *  its voices, so a reader that sees the mode finds the pool. */
 	std::atomic<WarpStretchMode> m_stretchMode{WarpStretchMode::Resample};
+	/*! Q050-162: the Repeat / Gate interval (a tempo division or free ms),
+	 *  packed into one word (TransientRepeatRate::pack) so the control thread
+	 *  publishes it in one store and a play handle reads it in one load. Only
+	 *  rendered in those two modes; the default (synced 1/16) writes nothing. */
+	std::atomic<std::int32_t> m_transientRate{TransientRepeatRate{}.pack()};
 	//! Control thread, before a mode is published: lets a subclass build what the
 	//! mode needs (SampleClip: the Rubber Band voices). Never called on the audio thread.
 	virtual void prepareWarpStretchMode(WarpStretchMode mode) { Q_UNUSED(mode); }
+
+	/*! Q050-063: the one write of m_warp, for an already validated map: it also publishes the map as a new
+	 *  generation for the render thread. Never waits for the audio thread, and the audio thread never waits for it. */
+	void publishWarp(const WarpMarkers& map);
 
 	//! Writes the `<warp>` child (mode/tempo/stretch/marker — the vocabulary
 	//! ports unchanged) ONLY when the clip is not at every default: additive,
@@ -309,6 +324,25 @@ protected:
 	void loadWarp(const QDomElement& element);
 
 public:
+	//! Q050-063: the generation a render pass takes, once per clip (audio-thread safe).
+	WarpSnapshot snapshotWarp() const noexcept { return WarpSnapshot(m_warpLive); }
+
+	/*! Q050-063: while this lives, this thread's reads of @a clip's map (passWarp() and all the mapping built on it)
+	 *  answer from @a snapshot, so everything one pass derives comes from one generation. Audio-thread safe. */
+	class LMMS_EXPORT WarpPassScope
+	{
+	public:
+		WarpPassScope(const Clip& clip, const WarpSnapshot& snapshot) noexcept;
+		~WarpPassScope();
+		WarpPassScope(const WarpPassScope&) = delete;
+		WarpPassScope& operator=(const WarpPassScope&) = delete;
+	private:
+		const Clip* m_previousClip;
+		const WarpMarkers* m_previousMap;
+	};
+
+	//! The map this thread may read: the pass's generation inside a WarpPassScope, else the control thread's copy.
+	const WarpMarkers& passWarp() const noexcept;
 
 	// Will copy the state of a clip to another clip
 	static void copyStateTo( Clip *src, Clip *dst );

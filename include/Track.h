@@ -46,6 +46,7 @@ namespace lmms
 {
 
 class TimePos;
+class MixerChannel;
 class TrackContainer;
 class TrackFolder;
 class Clip;
@@ -108,6 +109,11 @@ public:
 		 *  element, resolved after the load walk (Song::resolveTrackFolders).
 		 */
 		Folder,
+		/*! A NEUTRAL ROW (0.5.0 Q050-283.1): an arrangement row that is not yet an audio or
+		 *  an instrument track. It goes after Folder and still before Count for the same reason
+		 *  Folder does: every earlier value keeps its persisted integer, and only Count moves.
+		 *  An older build reading type=8 drops the row like it would an unknown type. */
+		Neutral,
 		Count
 	} ;
 
@@ -265,6 +271,10 @@ public:
 	 *  file cannot be opened - in which case nothing is changed. */
 	bool freezeTo(const QString& path, tick_t startTicks, tick_t endTicks,
 			const std::vector<FrozenTake::MutedClip>& mutedClips, QString* error, bool region = false);
+	/*! A region take covers [startTicks, endTicks) and must end past its start: an inverted or empty window
+	 *  has no end boundary, so the source would stay silent from its start onward. freezeTo() refuses one,
+	 *  and so does the project load; the freeze verbs check it before they cut any clip. */
+	static bool isValidRegionWindow(tick_t startTicks, tick_t endTicks) noexcept { return endTicks > startTicks; }
 	//! Test seam called after any load work and immediately before the frozen-take render lock.
 #ifdef LMMS_TESTING
 	static void setFrozenTakeLockProbeForTest(void (*probe)());
@@ -479,6 +489,20 @@ public:
 public slots:
 	virtual void setName(const QString& newName);
 
+	/*! Q050-212: the stable id (MixerChannel::id) of the mixer channel that was made for this track, or -1. While the
+	 *  track plays into that channel the two share a name; a track routed elsewhere keeps the id but renames nothing,
+	 *  so taking its reroute back restores the link and the shared name (reconcileLinkedChannelName()). Saved as `mixlink` on the track's element, never in a preset or a
+	 *  copy of the track: a duplicate does not own the channel. */
+	int linkedChannelId() const { return m_linkedChannelId; }
+	void setLinkedChannelId(int id) { m_linkedChannelId = id; }
+	//! The channel the link names, while this track plays into it; nullptr otherwise.
+	MixerChannel* linkedChannel();
+	/*! Called when this track's route changes, by whichever control changed it. A track routed back to its linked
+	 *  channel gives the channel its name, which may have changed while it was routed away. That is part of the routing
+	 *  edit: its one undo puts the channel's old name back. Nothing during a load, an undo or a redo, which restore the
+	 *  names they recorded, nor off the track's own thread. */
+	void reconcileLinkedChannelName();
+
 	void setMutedBeforeSolo(const bool muted)
 	{
 		m_mutedBeforeSolo = muted;
@@ -606,6 +630,9 @@ private:
 	//! automation lanes; false unless the file says otherwise (reset on absence
 	//! in loadTrack, the same rule m_visible follows).
 	bool m_automationLanesCollapsed{false};
+	//! Q050-212: the stable id of the mixer channel made for this track, or -1 (see linkedChannelId()).
+	int m_linkedChannelId{-1};
+	void syncLinkedChannelName();
 
 	friend class gui::TrackView;
 	friend class TrackFolder;

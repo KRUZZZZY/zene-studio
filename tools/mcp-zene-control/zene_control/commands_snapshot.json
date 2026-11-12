@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-10-27T19:33:19Z",
+  "captured_at": "2026-11-12T18:56:42Z",
   "commands": [
     {
       "args_schema": {
@@ -127,7 +127,7 @@
         ],
         "type": "object"
       },
-      "description": "Cancel background task 'id' (as app.tasks lists it): a render-queue job, the library scan or a stem separation job.",
+      "description": "Cancel background task 'id' (as app.tasks lists it): a render-queue job, the library scan, a stem separation job, a plug-in scan or a browser peak read.",
       "group": "app",
       "id": "app.task_cancel",
       "mutating": false,
@@ -147,7 +147,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Every background task in one list - render-queue jobs, the library scan, stem separation jobs and auto-mastering - each with an id, kind, state, label and progress (0..1 where it is known); 'active_only' keeps the queued and running ones.",
+      "description": "Every background task in one list - render-queue jobs, the library scan, stem separation jobs, plug-in scans, browser peak reads and auto-mastering - each with an id, kind, state, label and progress (0..1 where it is known); 'active_only' keeps the queued and running ones.",
       "group": "app",
       "id": "app.tasks",
       "mutating": false,
@@ -203,6 +203,61 @@
         "required": [],
         "type": "object"
       },
+      "description": "Whether Zene may check for a newer release: 'enabled', 'answered' (the question was answered; unanswered is off), 'prereleases'; the 'feed', the 'user_agent' a request sends (all it sends about the program), 'last_check', 'in_progress' and 'result' of the last check this session ('state' none|newer|up_to_date|failed, 'version', 'title', 'notes', 'url' of the download page, 'reason'). Nothing is sent.",
+      "group": "app",
+      "id": "app.update_check_get",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Start a check of the feed in the background and return at once; app.update_check_get's 'result' has the answer. Refused while update checks are off: no request is ever made then. One GET naming the version and platform in its User-Agent; nothing is downloaded or installed.",
+      "group": "app",
+      "id": "app.update_check_run",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "prereleases": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Allow or forbid update checks ('enabled') and whether pre-releases count ('prereleases'; the other stays as it was). Saved in the user's configuration, as Settings does; one undo step. This only changes the preference: app.update_check_run or the daily check makes the request.",
+      "group": "app",
+      "id": "app.update_check_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
       "description": "The product name, the version string, the control protocol version and the build options the binary was compiled with.",
       "group": "app",
       "id": "app.version",
@@ -235,7 +290,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "The release notes the program ships for this version ('notes': version, title, items), every version's ('all'), and whether they have been shown here ('seen'; window.whats_new shows them, and the interface does so once per version at start). Nothing is fetched: there is no update check.",
+      "description": "The release notes the program ships for this version ('notes': version, title, items), every version's ('all'), and whether they have been shown here ('seen'; window.whats_new shows them, and the interface does so once per version at start). Nothing is fetched; 'update_check' says whether the separate check for newer releases is on (app.update_check_get).",
       "group": "app",
       "id": "app.whats_new",
       "mutating": false,
@@ -2208,6 +2263,9 @@
           "category": {
             "type": "string"
           },
+          "key": {
+            "type": "string"
+          },
           "kind": {
             "type": "string"
           },
@@ -2220,6 +2278,12 @@
           "tags": {
             "type": "array"
           },
+          "tempo_max": {
+            "type": "number"
+          },
+          "tempo_min": {
+            "type": "number"
+          },
           "text": {
             "type": "string"
           }
@@ -2229,7 +2293,7 @@
         ],
         "type": "object"
       },
-      "description": "Save a search as a smart collection: 'name' and browser.query's 'text' (a substring or an expression - OR, -word, \"phrase\", name: path: tag: kind: ext:), 'tags', 'kind', 'root' and 'category'. A collection of the same name is replaced. Kept beside the browser tags in the config directory, not the project; one undo step.",
+      "description": "Save a search as a smart collection: 'name' and browser.query's 'text' (a substring or an expression - OR, -word, \"phrase\", name: path: tag: kind: ext:), 'tags', 'kind', 'root', 'category', 'tempo_min', 'tempo_max' and 'key' (the measured tempo range and pitch class, as browser.query takes them, so a tempo/key-filtered search runs again later). A collection of the same name is replaced. Kept beside the browser tags in the config directory, not the project; one undo step.",
       "group": "browser",
       "id": "browser.collection_save",
       "mutating": true,
@@ -2299,6 +2363,9 @@
           "category": {
             "type": "string"
           },
+          "key": {
+            "type": "string"
+          },
           "kind": {
             "type": "string"
           },
@@ -2315,6 +2382,12 @@
           "tags": {
             "type": "array"
           },
+          "tempo_max": {
+            "type": "number"
+          },
+          "tempo_min": {
+            "type": "number"
+          },
           "text": {
             "type": "string"
           }
@@ -2322,7 +2395,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "browser.query over the library index - the whole library, without walking it: 'text' (a substring or an expression - OR, -word, \"phrase\", name: path: tag: kind: ext:), 'tags' (all of them), 'kind', 'category' (the files carrying that one category; empty matches every category), 'limit' and 'offset'. As fresh as the last browser.reindex; the tags and the category are as fresh as the store now.",
+      "description": "browser.query over the library index - the whole library, without walking it: 'text' (a substring or an expression - OR, -word, \"phrase\", name: path: tag: kind: ext:), 'tags' (all of them), 'kind', 'category' (the files carrying that one category; empty matches every category), 'tempo_min' and 'tempo_max' (the measured tempo's range in BPM; 0 = open), 'key' (the measured pitch class - C, C#, Db ... B, 0..11, or 'any'), 'limit' and 'offset'. A file whose tempo or key is unknown matches neither facet, exactly as it does in browser.query: both filter with the same measurement, so both answer the same files. As fresh as the last browser.reindex; the tags and the category are as fresh as the store now.",
       "group": "browser",
       "id": "browser.index_query",
       "mutating": false,
@@ -2394,7 +2467,7 @@
         ],
         "type": "object"
       },
-      "description": "The waveform peaks of an audio file: 'buckets' min/max pairs over the interleaved samples, the frames each bucket covers, the file's rate, channels and length, and whether the answer came out of the cache ('cached') or off the disk. The cache is bounded (capacity entries, base_buckets per file) and its hit and miss counts are reported. Read-only: it writes no project state and nothing at all on disk.",
+      "description": "The waveform peaks of an audio file: 'buckets' min/max pairs over the interleaved samples, the frames each bucket covers, the file's rate, channels and length, and whether the answer came out of the cache ('cached') or off the disk. The cache is bounded (capacity entries, base_buckets per file) and its hit and miss counts are reported. An uncached file is read before this answers, holding the interface for a long one: browser.peaks_start reads it in the background. Read-only: it writes no project state and nothing at all on disk.",
       "group": "browser",
       "id": "browser.peaks",
       "mutating": false,
@@ -2436,6 +2509,44 @@
           "sample_rate": {
             "maximum": 4294967,
             "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Read an audio file's waveform peaks on a background worker, so the window keeps working during a long file. Returns at once with 'task', the id app.tasks lists it under (kind browser_peak, with progress) and app.task_cancel stops it by; a cancelled job leaves the cache as it was. When the task is done, browser.peaks answers from the cache ('cached' true). Read-only: it writes no project state and nothing at all on disk.",
+      "group": "browser",
+      "id": "browser.peaks_start",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "cached": {
+            "type": "boolean"
+          },
+          "path": {
+            "type": "string"
+          },
+          "task": {
+            "type": "string"
+          },
+          "task_id": {
             "type": "integer"
           }
         },
@@ -2522,6 +2633,9 @@
           "category": {
             "type": "string"
           },
+          "key": {
+            "type": "string"
+          },
           "kind": {
             "type": "string"
           },
@@ -2550,6 +2664,12 @@
             },
             "type": "array"
           },
+          "tempo_max": {
+            "type": "number"
+          },
+          "tempo_min": {
+            "type": "number"
+          },
           "text": {
             "type": "string"
           }
@@ -2557,7 +2677,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Find files in the browser by name, by tag, or - with 'probe' - by what the audio file itself says it is (sample rate, channels, length, and the embedded title/artist/album/comment/genre tags). Every 'tags' entry must be present (AND). 'category' narrows to the files carrying that one category (browser.category.set assigns it; empty matches every category). Sorted by path, so paging with offset is stable. The walk is bounded by scan_limit entries and the probe by probe_limit files, and a result that hit either bound says truncated: true. 'text' is one substring, or an expression: words ANDed, OR (or |) between groups, -word to exclude, \"a phrase\", and the fields name: path: tag: kind: ext: (e.g. kind:audio tag:drums -loop OR \"bass drum\"). Read-only.",
+      "description": "Find files in the browser by name, by tag, or - with 'probe' - by what the audio file itself says it is (sample rate, channels, length, and the embedded title/artist/album/comment/genre tags). Every 'tags' entry must be present (AND). 'category' narrows to the files carrying that one category (browser.category.set assigns it; empty matches every category). 'tempo_min' and 'tempo_max' narrow to the audio files whose MEASURED tempo is in that range (BPM, 0 = open) and 'key' to the measured pitch class (C, C#, Db ... B, 0..11, or 'any') - the same measurement browser.index_query filters on, so both answer the same files; a file whose tempo or key is unknown matches neither. Sorted by path, so paging with offset is stable. The walk is bounded by scan_limit entries and the probe by probe_limit files, and a result that hit either bound says truncated: true. 'text' is one substring, or an expression: words ANDed, OR (or |) between groups, -word to exclude, \"a phrase\", and the fields name: path: tag: kind: ext: (e.g. kind:audio tag:drums -loop OR \"bass drum\"). Read-only.",
       "group": "browser",
       "id": "browser.query",
       "mutating": false,
@@ -2571,6 +2691,14 @@
               "properties": {
                 "category": {
                   "type": "string"
+                },
+                "key": {
+                  "type": "string"
+                },
+                "key_pitch_class": {
+                  "maximum": 11,
+                  "minimum": -1,
+                  "type": "integer"
                 },
                 "kind": {
                   "type": "string"
@@ -2627,6 +2755,12 @@
                 },
                 "tags": {
                   "type": "array"
+                },
+                "tempo_bpm": {
+                  "type": "number"
+                },
+                "tempo_known": {
+                  "type": "boolean"
                 }
               },
               "required": [],
@@ -2794,16 +2928,24 @@
           "overwrite": {
             "type": "boolean"
           },
+          "scene": {
+            "maximum": 511,
+            "minimum": 0,
+            "type": "integer"
+          },
           "tags": {
             "type": "array"
+          },
+          "track": {
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
           }
         },
-        "required": [
-          "clip"
-        ],
+        "required": [],
         "type": "object"
       },
-      "description": "Save a 'clip' into the library: a sample clip as the audio it plays (a WAV), a MIDI clip as a MIDI file at the song's tempo. Written to 'dir' (absolute; <user samples>/Clips, which the Samples browser lists, when left out) as 'name' (the clip's name when left out), refused when the file exists unless 'overwrite'; 'tags' are added to it. The library is outside the project: one undo step deletes the file again.",
+      "description": "Save a clip into the library, addressed either by 'clip' (an arrangement clip) or by the pair 'track' + 'scene' (a populated launcher audio cell), exactly one of the two. A sample clip is written as the audio it plays; a MIDI clip as a MIDI file at the song's tempo; an audio cell as the audio its source file holds, at the source's own rate (the cell's gain, transpose, loop and warp are playback settings and are not baked into the entry; the decoded audio is bounded, and a source past the bound is refused before it is decoded). A MIDI cell holds a PatternStore pattern and is refused for now. Written to 'dir' (absolute; <user samples>/Clips, which the Samples browser lists, when left out) as 'name' (the clip's or the cell's own name when left out), refused when the file exists unless 'overwrite'; 'tags' are added to it. The library is outside the project: one undo step deletes the file again.",
       "group": "browser",
       "id": "browser.save_clip",
       "mutating": true,
@@ -3157,7 +3299,7 @@
         ],
         "type": "object"
       },
-      "description": "Apply a stored chain preset to a target: the target's chain becomes the preset's devices, IN THE PRESET'S ORDER, each one restored from its own state document, so the parameters are the values the chain was captured with. The target's existing devices are removed (the plugin.unload lifetime). A preset naming a device this build cannot load is refused and the target's chain is left untouched. Reversible: one control.undo puts the previous chain back, devices and settings. 'chain' (default 0) applies it to parallel chain n of a channel's rack instead.",
+      "description": "Apply a stored chain preset to a target: the target's chain becomes the preset's devices, IN THE PRESET'S ORDER, each one restored from its own state document, so the parameters are the values the chain was captured with. The target's existing devices are removed (the plugin.unload lifetime). A preset naming a device this build cannot load is refused and the target's chain is left untouched. Reversible: one control.undo puts the previous chain back, devices and settings. 'chain' (default 0) applies it to parallel chain n of a channel's rack instead. The devices' MIDI controller bindings come back on the new devices' own parameters; 'bindings' lists the restored ones and the skipped ones (a parameter the device no longer has), with a one-line 'summary'.",
       "group": "chain",
       "id": "chain.apply",
       "mutating": true,
@@ -3165,6 +3307,9 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "bindings": {
+            "type": "object"
+          },
           "device_count": {
             "type": "integer"
           },
@@ -3518,7 +3663,7 @@
         ],
         "type": "object"
       },
-      "description": "Capture a target's effect chain as a named preset: every device in the chain's own order, each with the state document plugin.state_save writes for it (enabled, wet, autoquit and every parameter). Writes ONE file in the store (chainpresets/<name>.zcp), outside the project, so the preset can be applied to a track in another project, and so project.save/project.open cannot lose it. An existing preset of that name is refused unless \"overwrite\":true. 'target' is a trk-<n> or ch-<n> id; 'chain' (default 0) captures parallel chain n of a channel's rack instead. Reversible through a recorded action checkpoint that puts the file - or the revision it replaced - back.",
+      "description": "Capture a target's effect chain as a named preset: every device in the chain's own order, each with the state document plugin.state_save writes for it (enabled, wet, autoquit and every parameter, with its MIDI controller binding, listed in a per-device binding manifest chain.apply reports against). Writes ONE file in the store (chainpresets/<name>.zcp), outside the project, so the preset can be applied to a track in another project, and so project.save/project.open cannot lose it. An existing preset of that name is refused unless \"overwrite\":true. 'target' is a trk-<n> or ch-<n> id; 'chain' (default 0) captures parallel chain n of a channel's rack instead. Reversible through a recorded action checkpoint that puts the file - or the revision it replaced - back.",
       "group": "chain",
       "id": "chain.save",
       "mutating": true,
@@ -4663,6 +4808,35 @@
         "properties": {
           "clip": {
             "type": "string"
+          },
+          "lane": {
+            "type": "string"
+          },
+          "parameter": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip",
+          "lane"
+        ],
+        "type": "object"
+      },
+      "description": "Copy the automation of one of a MIDI clip's track's device parameters into a CC lane of that clip, replacing the lane: the nodes that fall inside the clip become points (rounded to the nearest CC step), and where the clip cuts through the curve its value at the cut is added. The lane is linear between points whatever the clip's progression ('source_progression' reports it). Returns the lane's points. 'clip' is a MIDI clip, 'lane' its cc:<0..127> lane (pitch bend, aftertouch and program lanes are refused), 'parameter' an id automation.get_state lists for the clip's OWNING track ('<plugin>/<index>'); left out it must name exactly one candidate, otherwise the call is refused and lists them. A switch or a list of choices is refused (the CC range maps linearly onto min..max). Refused calls change nothing. One undo step. Ticks keep their song time: lane tick t is song tick clip start + start offset + t.",
+      "group": "clip",
+      "id": "clip.controllers_from_automation",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
           }
         },
         "required": [
@@ -4703,6 +4877,35 @@
       "description": "Replace one controller lane of a MIDI clip: 'lane' is cc:<0..127>, pitchbend (0..16383, 8192 centre), aftertouch or program (a program change, held from each point to the next); 'points' [{tick (clip time), value}] - linear between points, held before the first and after the last; no points removes the lane. Played to the instrument (and the track's MIDI out) as the clip plays. One undo step (MidiClip checkpoint).",
       "group": "clip",
       "id": "clip.controllers_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "lane": {
+            "type": "string"
+          },
+          "parameter": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip",
+          "lane"
+        ],
+        "type": "object"
+      },
+      "description": "Copy a MIDI clip's CC lane to the automation of one of its track's device parameters: CC 0..127 spans the parameter's range, the target clip's nodes between the first and last converted tick are replaced and the clip is made linear (refused when that would change other nodes of a non-linear clip). Creates the parameter's automation track if it has none. Returns the automation as automation.get_state shows it. 'clip' is a MIDI clip, 'lane' its cc:<0..127> lane (pitch bend, aftertouch and program lanes are refused), 'parameter' an id automation.get_state lists for the clip's OWNING track ('<plugin>/<index>'); left out it must name exactly one candidate, otherwise the call is refused and lists them. A switch or a list of choices is refused (the CC range maps linearly onto min..max). Refused calls change nothing. One undo step. Ticks keep their song time: lane tick t is song tick clip start + start offset + t.",
+      "group": "clip",
+      "id": "clip.controllers_to_automation",
       "mutating": true,
       "requires": [],
       "result_schema": {
@@ -5069,6 +5272,14 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "loop_mode": {
+            "enum": [
+              "follow_project",
+              "keep_unstretched",
+              "preference"
+            ],
+            "type": "string"
+          },
           "path": {
             "type": "string"
           },
@@ -5086,7 +5297,7 @@
         ],
         "type": "object"
       },
-      "description": "Make a clip of a file: a Standard MIDI File becomes one MIDI clip holding all its notes (on an instrument track), an audio file one sample clip (on a sample track), at 'position' ticks. With 'track' the clip goes on that track, which must be of the kind the file needs; without it a NEW track of that kind, named after the file, is created. This is what dropping a file on the arranger runs - from a plug-in editor, the desktop or the browser. Everything that can fail is checked before anything changes: a missing, empty, malformed or unsupported file, a clip that would end past the song, a track of the wrong kind or a locked one is refused and the project is left exactly as it was. Audio read from the temporary folder (a plug-in's drag file, deleted right after) is embedded in the clip; other audio is referenced by path. One undo step removes the clip (and a track it created).",
+      "description": "Make a clip of a file: a Standard MIDI File becomes one MIDI clip holding all its notes (on an instrument track), an audio file one sample clip (on a sample track), at 'position' ticks. With 'track' the clip goes on that track, which must be of the kind the file needs; without it a NEW track of that kind, named after the file, is created. This is what dropping a file on the arranger runs - from a plug-in editor, the desktop or the browser. Everything that can fail is checked before anything changes: a missing, empty, malformed or unsupported file, a clip that would end past the song, a track of the wrong kind or a locked one is refused and the project is left exactly as it was. Audio read from the temporary folder (a plug-in's drag file, deleted right after) is embedded in the clip; other audio is referenced by path. One undo step removes the clip (and a track it created). An audio file is also analysed for its tempo and key (the detect.analyze detector) and takes a loop mode: 'loop_mode' follow_project makes the clip lead at its detected tempo (rounded to a whole BPM) so its beats land on the project grid, pitch kept, and transposes its tonic to the project key's tonic; keep_unstretched leaves its own rate and pitch; preference (the default) takes the remembered choice, config key import/loopwarp. The project's tempo and key are never changed; what could not be applied is listed in loop.notes. clip.source_get_state reads the clip's detected and applied values back.",
       "group": "clip",
       "id": "clip.import_file",
       "mutating": true,
@@ -5111,6 +5322,9 @@
             "maximum": 1919808,
             "minimum": 0,
             "type": "integer"
+          },
+          "loop": {
+            "type": "object"
           },
           "note_count": {
             "type": "integer"
@@ -6210,6 +6424,71 @@
             "maximum": 1919808,
             "minimum": 0,
             "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "Read a sample clip's loop source: whether clip.import_file analysed its file, the detected source tempo (BPM) and key (tonic pitch class and scale), the loop mode the import took (follow_project or keep_unstretched), whether the tempo and the key were followed and the semitones applied - and what the clip plays now: its warp tempo mode (source = leads at warp_source_tempo, follow = its own rate), stretch mode, transpose and length in ticks. Writes nothing.",
+      "group": "clip",
+      "id": "clip.source_get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "analysed": {
+            "type": "boolean"
+          },
+          "clip": {
+            "type": "string"
+          },
+          "key_followed": {
+            "type": "boolean"
+          },
+          "length": {
+            "type": "integer"
+          },
+          "loop_mode": {
+            "type": "string"
+          },
+          "source_key": {
+            "type": "object"
+          },
+          "source_tempo": {
+            "type": "object"
+          },
+          "stretch": {
+            "type": "string"
+          },
+          "tempo_followed": {
+            "type": "boolean"
+          },
+          "tempo_mode": {
+            "type": "string"
+          },
+          "transpose": {
+            "type": "integer"
+          },
+          "transpose_applied": {
+            "type": "integer"
+          },
+          "warp_source_tempo": {
+            "type": "number"
           }
         },
         "required": [],
@@ -7932,7 +8211,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Undo the last agent command: the engine's own ProjectJournal step it recorded (the same stack the GUI's Ctrl+Z unwinds), or the recorded inverse command when the change is file-level. If the last recorded command has no inverse, this FAILS with the typed 'irreversible' error and names the documented fallback instead of undoing an older command. One call unwinds ONE undo STEP, and one step is one command EXCEPT under the coalescing rule (docs/UNDO-BOUNDS.md): a run of the same command on the same target inside the window - reads in between do not break it - is one step, so the reply's 'undone_commands' is 1 normally and more for a merged span. Set the window to 0 (control.set_undo_coalescing) for strict one-command-per-call granularity. If the journal's top step has no matching transaction record, the reply identifies it as 'unrecorded edit' and includes its step_serial; transaction history is left intact.",
+      "description": "Undo the last agent command: the engine's own ProjectJournal step it recorded (the same stack the GUI's Ctrl+Z unwinds), or the recorded inverse command when the change is file-level. If the last recorded command has no inverse, this FAILS with the typed 'irreversible' error and names the documented fallback instead of undoing an older command. One call unwinds ONE undo STEP, and one step is one command EXCEPT under the coalescing rule (docs/UNDO-BOUNDS.md): a run of the same command on the same target inside the window - reads in between do not break it - is one step, so the reply's 'undone_commands' is 1 normally and more for a merged span. Set the window to 0 (control.set_undo_coalescing) for strict one-command-per-call granularity. If the journal's top step has no matching transaction record - an editor edit, or a plug-in editor gesture, made after the record's own step was undone - the reply identifies it as 'unrecorded edit' and includes its step_serial; transaction history is left intact.",
       "group": "control",
       "id": "control.undo",
       "mutating": false,
@@ -8174,6 +8453,80 @@
       "group": "controller",
       "id": "controller.map",
       "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "input": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "output": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Start a Lua control-surface script ('path', an absolute .lua file) under 'name', bound to the MIDI client's 'input' and 'output' ports (midi.device_list / surface.mcu_ports names). Each event from the input calls the script's on_midi(event) - event.type (note_on, note_off, cc, pitch_bend, ...), channel 1..16, key/velocity or controller/value - and the script runs registered commands with zene.command(id, args) and sends feedback to the output with surface.send_cc(channel, cc, value) and surface.send_note(channel, key, velocity). Sandboxed (no files, no OS), 1,000,000 Lua instructions per call, 8 MiB of Lua memory; 8 errors in a row stop it, and a lost input or output port is reported and re-bound when it returns. Replaces a running script of that name. Device state: not recorded, not saved.",
+      "group": "controller",
+      "id": "controller.script_start",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "The running control-surface scripts (or the one 'name'): their ports, whether they are faulted or have lost a bound MIDI port, how many events they received, ran and dropped, the commands and feedback they sent, their errors and recent log lines.",
+      "group": "controller",
+      "id": "controller.script_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "description": "Stop the control-surface script 'name' and release its MIDI ports.",
+      "group": "controller",
+      "id": "controller.script_stop",
+      "mutating": false,
       "requires": [],
       "result_schema": {
         "type": "object"
@@ -9180,6 +9533,154 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track"
+        ],
+        "type": "object"
+      },
+      "description": "Read an instrument track's External MIDI device: whether its output is on, the MIDI output 'port' it sends to (and 'available_ports', the ones it could), the 'channel' (0 keeps each note's own, 1..16), the bank select 'bank_msb' / 'bank_lsb' (CC 0 / CC 32; -1 sends none) and the 'program' (1..128, as the PROG box counts; sent as 0..127), and the saved device 'presets'. Read-only.",
+      "group": "device",
+      "id": "device.external_get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "name"
+        ],
+        "type": "object"
+      },
+      "description": "Recall the device preset 'name': its port (when the port is present now - 'port_applied' and 'missing_port' say otherwise), channel, bank and program, and send the patch to the output ('patch_sent'), also when the settings were already those. One control.undo puts the previous settings back.",
+      "group": "device",
+      "id": "device.external_preset_recall",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "name"
+        ],
+        "type": "object"
+      },
+      "description": "Delete the device preset 'name'. Reversible through the ProjectJournal (Track checkpoint).",
+      "group": "device",
+      "id": "device.external_preset_remove",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "name"
+        ],
+        "type": "object"
+      },
+      "description": "Save the device's current port, channel, bank and program as the preset 'name' (1..64 characters; a saved name is replaced). A device keeps up to 64, saved with the project. Reversible through the ProjectJournal (Track checkpoint).",
+      "group": "device",
+      "id": "device.external_preset_save",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bank_lsb": {
+            "maximum": 127,
+            "minimum": -1,
+            "type": "integer"
+          },
+          "bank_msb": {
+            "maximum": 127,
+            "minimum": -1,
+            "type": "integer"
+          },
+          "channel": {
+            "maximum": 16,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "port": {
+            "type": "string"
+          },
+          "program": {
+            "maximum": 128,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track"
+        ],
+        "type": "object"
+      },
+      "description": "Configure an instrument track's External MIDI device. 'port' (midi.device_list's writable ports) is the ONE output the device sends to - any other it was sending to is left - and turns the output on; 'enabled' false stops it; 'channel' is 0..16 (0 keeps each note's own); 'bank_msb' / 'bank_lsb' (-1: none) and 'program' (1..128) are the patch the gear is told to select: when any of them changes the output gets bank select CC 0 / CC 32, then the program change, once ('patch_sent' says it reached an enabled output). Changing only the port or channel sends no patch. Name at least one setting. One control.undo puts every setting back (Track checkpoint) and tells the gear the patch that returns.",
+      "group": "device",
+      "id": "device.external_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {},
         "required": [],
         "type": "object"
@@ -9309,7 +9810,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Every device chain with its fx-<n> instances, each one's parameter values and, on an instrument track, its 'inst' entry with the instrument's parameters. With 'target' it reads exactly that target, an empty chain included; without it, every track and mixer channel that carries at least one device.",
+      "description": "Every device chain with its fx-<n> instances, each one's parameter values and, on an instrument track, its 'inst' entry with the instrument's parameters. With 'target' it reads exactly that target, an empty chain included; without it, every track and mixer channel that carries at least one device. A clip-<n> target reads an audio clip's own effects (Q050-111).",
       "group": "dsp",
       "id": "dsp.get_state",
       "mutating": false,
@@ -9325,6 +9826,124 @@
           },
           "device_count": {
             "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {},
+      "description": "The event stream as this instance sees it: 'session', the current 'seq', every live subscription with its queue depth against its bound, how many overflows and subscriber disconnects have happened, and the limits. Reads only.",
+      "group": "events",
+      "id": "events.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "default_queue_limit": {
+            "type": "integer"
+          },
+          "disconnects": {
+            "type": "integer"
+          },
+          "max_queue_limit": {
+            "type": "integer"
+          },
+          "overflows": {
+            "type": "integer"
+          },
+          "queue_byte_limit": {
+            "type": "integer"
+          },
+          "seq": {
+            "type": "integer"
+          },
+          "session": {
+            "type": "string"
+          },
+          "subscriptions": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "queue_limit": {
+            "maximum": 4096,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Subscribe THIS connection to the instance's ordered project-change events. After the reply, every project change from any client, a script or the interface arrives on this connection as an unsolicited line {\"event\":\"project_changed\",\"subscription\",\"session\",\"seq\",\"source\":\"command\"|\"journal\",\"kind\":\"edit\"|\"undo\"|\"redo\"|\"project_replaced\",\"command\",\"args\"} with no 'id', seq strictly increasing. 'seq' in this reply is the current position: compare it with the last seq you saw (and 'session' with the last session) to learn whether you missed anything while away; events are not replayed, so after any gap reread the project, after subscribing so no change falls between. Delivery is bounded by 'queue_limit' events (default 256, at most 4096) and 1 MiB per subscriber: a client that falls behind gets what was queued, then one {\"event\":\"events_overflow\",...} line naming first_missed_seq, and the subscription ends - subscribe again, then reread the project. A connection holds one subscription; a second is refused 'busy'. A subscribed idle connection is not retired by the idle timeout. Runtime state only: never saved in a project. Over the MCP bridge the lines are skipped, because a bridge call has no way to receive them.",
+      "group": "events",
+      "id": "events.subscribe",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "queue_byte_limit": {
+            "type": "integer"
+          },
+          "queue_limit": {
+            "type": "integer"
+          },
+          "seq": {
+            "type": "integer"
+          },
+          "session": {
+            "type": "string"
+          },
+          "subscription": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "subscription": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "subscription"
+        ],
+        "type": "object"
+      },
+      "description": "End this connection's subscription: no event follows this reply. 'last_delivered_seq' is the last event sent before it; 'discarded' counts queued events dropped unsent. Typed not_found for a subscription this connection does not hold.",
+      "group": "events",
+      "id": "events.unsubscribe",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "discarded": {
+            "type": "integer"
+          },
+          "last_delivered_seq": {
+            "type": "integer"
+          },
+          "subscription": {
+            "type": "string"
+          },
+          "unsubscribed": {
+            "type": "boolean"
           }
         },
         "required": [],
@@ -9900,6 +10519,77 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "out": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel"
+        ],
+        "type": "object"
+      },
+      "description": "Freeze a mixer bus (channel, ch-<n>, must be a bus): its output - every input routed to it, through its trim, devices, VCA and pan, i.e. the signal just before its fader - is rendered to a 32-bit float WAV ('out', or a new file beside the project) and, while the transport plays, the bus plays that take in place of its live inputs and devices. Its fader, its sends to other buses and the master, its taps and its meters keep working on the take. Refused for a channel that is not a bus, a frozen bus, a bus nothing is routed to and a project whose tempo map is on. Saved with the project; one control.undo unfreezes. Blocking: the render runs in a child process against a copy of the session.",
+      "group": "freeze",
+      "id": "freeze.bus",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "audio": {
+            "type": "string"
+          },
+          "audio_missing": {
+            "type": "boolean"
+          },
+          "audio_ready": {
+            "type": "boolean"
+          },
+          "bytes": {
+            "type": "integer"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "end_ticks": {
+            "type": "integer"
+          },
+          "frames": {
+            "type": "integer"
+          },
+          "frozen": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "recovery": {
+            "type": "string"
+          },
+          "sample_rate": {
+            "type": "integer"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "start_ticks": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "end": {
             "type": "integer"
           },
@@ -10108,6 +10798,74 @@
           },
           "track": {
             "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channel": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "channel"
+        ],
+        "type": "object"
+      },
+      "description": "Drop a frozen bus's take: the bus plays its live inputs through its own devices again. Its routing, devices and fader were never changed by the freeze. The take's file stays on disk (not a delete), and one control.undo puts the same take back.",
+      "group": "freeze",
+      "id": "freeze.unfreeze_bus",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "audio": {
+            "type": "string"
+          },
+          "audio_missing": {
+            "type": "boolean"
+          },
+          "audio_ready": {
+            "type": "boolean"
+          },
+          "bytes": {
+            "type": "integer"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "end_ticks": {
+            "type": "integer"
+          },
+          "frames": {
+            "type": "integer"
+          },
+          "frozen": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "recovery": {
+            "type": "string"
+          },
+          "sample_rate": {
+            "type": "integer"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "start_ticks": {
+            "type": "integer"
           }
         },
         "required": [],
@@ -12492,6 +13250,164 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The mastering release sequence: the songs in release order, each with its stable id (song-<n>), its audio 'source', its 'title', the 'processing' it is mastered with (a name from mastering.list_candidates, or \"none\"), its fade-in and fade-out in milliseconds, and the 'gap_ms' of silence that follows it. 'gap_applies' is false for the last song, whose gap is the silence after the release and is not inserted between two songs. Also names every 'processing' value a song may take, and the document type. Read-only.",
+      "group": "mastering",
+      "id": "mastering.sequence_list",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "fade_in_ms": {
+            "maximum": 600000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "fade_out_ms": {
+            "maximum": 600000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "gap_ms": {
+            "maximum": 600000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "processing": {
+            "type": "string"
+          },
+          "song": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "type": "object"
+      },
+      "description": "Add an audio file to the end of the mastering release as 'source', with an optional 'title', 'processing' (a candidate name or \"none\"; default \"none\"), 'fade_in_ms', 'fade_out_ms' and 'gap_ms'. The file must exist and be one this build decodes; the path is stored absolute. One undo step.",
+      "group": "mastering",
+      "id": "mastering.song_add",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "song": {
+            "type": "string"
+          },
+          "to": {
+            "maximum": 511,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "song",
+          "to"
+        ],
+        "type": "object"
+      },
+      "description": "Move song 'song' to release position 'to' (0-based); every other song keeps its order around it. One undo step.",
+      "group": "mastering",
+      "id": "mastering.song_move",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "song": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "song"
+        ],
+        "type": "object"
+      },
+      "description": "Remove song 'song' from the release sequence. The audio file is not touched. One undo step.",
+      "group": "mastering",
+      "id": "mastering.song_remove",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "fade_in_ms": {
+            "maximum": 600000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "fade_out_ms": {
+            "maximum": 600000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "gap_ms": {
+            "maximum": 600000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "processing": {
+            "type": "string"
+          },
+          "song": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "song"
+        ],
+        "type": "object"
+      },
+      "description": "Change the fields of song 'song' (only the fields given change): 'source', 'title', 'processing', 'fade_in_ms', 'fade_out_ms', 'gap_ms'. The song's id and its place in the release are kept. One undo step.",
+      "group": "mastering",
+      "id": "mastering.song_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {
           "enabled": {
             "type": "boolean"
@@ -13427,7 +14343,63 @@
               "discrete-5",
               "discrete-6",
               "discrete-7",
-              "discrete-8"
+              "discrete-8",
+              "discrete-9",
+              "discrete-10",
+              "discrete-11",
+              "discrete-12",
+              "discrete-13",
+              "discrete-14",
+              "discrete-15",
+              "discrete-16",
+              "discrete-17",
+              "discrete-18",
+              "discrete-19",
+              "discrete-20",
+              "discrete-21",
+              "discrete-22",
+              "discrete-23",
+              "discrete-24",
+              "discrete-25",
+              "discrete-26",
+              "discrete-27",
+              "discrete-28",
+              "discrete-29",
+              "discrete-30",
+              "discrete-31",
+              "discrete-32",
+              "discrete-33",
+              "discrete-34",
+              "discrete-35",
+              "discrete-36",
+              "discrete-37",
+              "discrete-38",
+              "discrete-39",
+              "discrete-40",
+              "discrete-41",
+              "discrete-42",
+              "discrete-43",
+              "discrete-44",
+              "discrete-45",
+              "discrete-46",
+              "discrete-47",
+              "discrete-48",
+              "discrete-49",
+              "discrete-50",
+              "discrete-51",
+              "discrete-52",
+              "discrete-53",
+              "discrete-54",
+              "discrete-55",
+              "discrete-56",
+              "discrete-57",
+              "discrete-58",
+              "discrete-59",
+              "discrete-60",
+              "discrete-61",
+              "discrete-62",
+              "discrete-63",
+              "discrete-64"
             ],
             "type": "string"
           }
@@ -13438,7 +14410,7 @@
         ],
         "type": "object"
       },
-      "description": "Set a channel's speaker format: 'stereo' (the default), 'lcr', 'quad', '5.1', '7.1' (WAVE channel order: L R C LFE Ls Rs; 7.1 L R C LFE Lrs Rrs Ls Rs), 'mono' (one M role), or a role-less discrete layout 'discrete-2' .. 'discrete-8'. A surround channel keeps its speakers beyond L/R next to its stereo signal: its devices process L/R only, the other speakers pass with its trim, VCA gain, pan (a balance on each left/right pair), fader and mute. Into a stereo channel - the master, usually - a named layout is downmixed (mixer.downmix_options), while a discrete channel i goes to output i with no speaker folding or reordering. Its hardware output names its first output and it takes as many as it has channels, or the stereo downmix where the device lacks them. mixer.get_state names the format, its channel count and the channel roles (empty speakers, indices 1..N, for discrete). Saved with the project - the count is part of the format name; one undo step.",
+      "description": "Set a channel's speaker format: 'stereo' (the default), 'lcr', 'quad', '5.1', '7.1' (WAVE channel order: L R C LFE Ls Rs; 7.1 L R C LFE Lrs Rrs Ls Rs), 'mono' (one M role), or a role-less discrete layout 'discrete-2' .. 'discrete-64'. A surround channel keeps its speakers beyond L/R next to its stereo signal: its devices process L/R only, the other speakers pass with its trim, VCA gain, pan (a balance on each left/right pair), fader and mute. Into a stereo channel - the master, usually - a named layout is downmixed (mixer.downmix_options), while a discrete channel i goes to channel or output i with no speaker folding or reordering (a receiver with fewer channels drops the rest). Its hardware output names its first output and it takes as many as it has channels, or the stereo downmix where the device lacks them. mixer.get_state names the format, its channel count and the channel roles (empty speakers, indices 1..N, for discrete). Saved with the project - the count is part of the format name; one undo step.",
       "group": "mixer",
       "id": "mixer.channel_format",
       "mutating": true,
@@ -13559,7 +14531,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "How much of each audio period every mixer channel's devices and strip take, in percent of the period (smoothed over the last few dozen periods), each of its devices' own share ('devices': device id, name, cpu_percent), their sum, and the engine's whole load. An instrument's own synthesis runs before the mixer and is in engine_percent, not in its channel's figure. Read-only.",
+      "description": "How much of each audio period every mixer channel's devices and strip take, in percent of the period (smoothed over the last few dozen periods), each of its devices' own share ('devices': device id, name, cpu_percent), their sum, and the engine's whole load. An instrument's own synthesis runs before the mixer and is not in its channel's figure: 'tracks' gives each instrument track's own synthesis share (track id, name, instrument, synthesis_percent; CPU time, so several cores can pass 100) and synthesis_total_percent their sum. 'late_periods' counts the render periods that took longer than they last - the engine's deadline misses, not the audio device's xruns - and lists the newest (serial, tick, position, playing, took_us, period_us, percent). 'audio_device' gives the backend, the engine's own rate and period ('engine') and what the device negotiated: sample_rate (output), input_sample_rate (the input's own - a separate ALSA capture device can differ), period_frames, buffer_frames, input_latency and output_latency (frames, ms at the input's / output's rate, and the basis they are measured from) and xruns, the device's own underruns / xrun notifications; each is {available, value, unit} and a value the backend does not report (or no audio device) is available:false, never 0. Read-only.",
       "group": "mixer",
       "id": "mixer.cpu_load",
       "mutating": false,
@@ -13973,6 +14945,34 @@
       "description": "The listen bus: 'mode' afl (after the fader, the default) or pfl (before it); 'clear' takes every channel off. Answers the mode and the channels listening.",
       "group": "mixer",
       "id": "mixer.listen_mode",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "channels": {
+            "type": "array"
+          },
+          "priorities": {
+            "type": "object"
+          },
+          "threshold_db": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "channels"
+        ],
+        "type": "object"
+      },
+      "description": "Which frequency ranges the selected mixer 'channels' (2..16) fight over, from their audio: each channel's long-term spectrum (the unmuted audio clips on the tracks playing into it, through its strip EQ; instrument tracks are listed as unanalysed) in 24 log bands from 40 Hz to 16 kHz. A band counts for a channel within 'threshold_db' (3..40, 12) of its loudest band and above -70 dB. Each run of bands two channels share is a clash: the pair 'a'/'b', the range, and a proposed cut ('cut_db', -1..-6) on 'target' - the lower of the 'priorities' (channel id to front, middle or back; middle unless set), at equal priority the quieter channel there - with the mixer.channel_eq arguments that would make it ('strip_eq'). The same audio, EQ and priorities give the same report. Read only: it changes no EQ and records no undo step.",
+      "group": "mixer",
+      "id": "mixer.masking_report",
       "mutating": false,
       "requires": [],
       "result_schema": {
@@ -15116,6 +16116,70 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "modulator": {
+            "type": "string"
+          },
+          "per_sample": {
+            "type": "boolean"
+          },
+          "target": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "modulator",
+          "target",
+          "per_sample"
+        ],
+        "type": "object"
+      },
+      "description": "Switch one bound route's per-sample evaluation. True evaluates it INSIDE each block (a ramp read per sample, so a fast LFO does not zipper); false moves it once per block. The route's depth and base are kept; modulator.get_state reports the value as the target's 'per_sample'. Reversible through the ProjectJournal.",
+      "group": "modulator",
+      "id": "modulator.per_sample_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "driving": {
+            "type": "integer"
+          },
+          "engine_active": {
+            "type": "boolean"
+          },
+          "max_modulators": {
+            "type": "integer"
+          },
+          "max_targets_per_modulator": {
+            "type": "integer"
+          },
+          "modulator": {
+            "type": "string"
+          },
+          "modulator_count": {
+            "type": "integer"
+          },
+          "modulators": {
+            "type": "array"
+          },
+          "removed": {
+            "type": "object"
+          },
+          "target_count": {
+            "type": "integer"
+          },
+          "target_index": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "active": {
             "type": "boolean"
           },
@@ -15924,6 +16988,16 @@
             "minimum": 0,
             "type": "integer"
           },
+          "recur_length": {
+            "maximum": 16,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "recur_mask": {
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
           "slide": {
             "type": "boolean"
           },
@@ -16576,6 +17650,97 @@
           "clip": {
             "type": "string"
           },
+          "contour": {
+            "enum": [
+              "walk",
+              "rise",
+              "fall",
+              "arch",
+              "valley"
+            ],
+            "type": "string"
+          },
+          "count": {
+            "maximum": 256,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "high": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "length": {
+            "maximum": 3072,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "low": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scope": {
+            "enum": [
+              "clip",
+              "selection"
+            ],
+            "type": "string"
+          },
+          "seed": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "spread": {
+            "maximum": 12,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "start": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "step": {
+            "maximum": 3072,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "target": {
+            "enum": [
+              "new",
+              "existing"
+            ],
+            "type": "string"
+          },
+          "velocity": {
+            "maximum": 200,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "Generate a melodic line in the active scale (scale.set; custom scales too): every key is one of the scale's keys in 'low'..'high' (48..72 when left out). 'contour' walk (a random walk, steps of 1..'spread' degrees), rise, fall, arch or valley (the shape, moved up to 'spread' degrees either way; 2 when left out, 0 = the bare shape). 'target' new writes 'count' notes (16) 'step' ticks (24) apart from 'start', 'length' ticks long, at 'velocity'; existing re-pitches the notes in 'scope' and keeps their rhythm. The same 'seed' (the project's seed when left out) and the same clip give the same notes. Refused when no scale is set. One undo step.",
+      "group": "note",
+      "id": "note.generate_melody",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
           "scope": {
             "enum": [
               "clip",
@@ -16923,6 +18088,16 @@
           },
           "probability": {
             "type": "number"
+          },
+          "recur_length": {
+            "maximum": 16,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "recur_mask": {
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
           },
           "slide": {
             "type": "boolean"
@@ -17285,6 +18460,16 @@
           "position": {
             "type": "number"
           },
+          "recur_length": {
+            "maximum": 16,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "recur_mask": {
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
           "slide": {
             "type": "boolean"
           },
@@ -17616,6 +18801,16 @@
             "minimum": 0,
             "type": "integer"
           },
+          "recur_length": {
+            "maximum": 16,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "recur_mask": {
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
           "slide": {
             "type": "boolean"
           },
@@ -17646,6 +18841,138 @@
       "mutating": true,
       "requires": [],
       "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "root": {
+            "description": "key index 0..11, or a name (\"C\", \"C#\", \"Db\")"
+          },
+          "scale": {
+            "type": "string"
+          },
+          "step_ticks": {
+            "maximum": 3072,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "Read a MIDI clip as a melodic step grid: 'step_ticks' (default 12, a sixteenth) ticks a column, every note with its step, offset inside the step, key, velocity (0..200), chance (0..1, 1 always), ratchet (attacks, 1 one), length and - when a scale is set (scale.set) or 'root' / 'scale' are named - whether it is in the scale and its scale degree; and the occupied columns with the ids and pitches stacked in each. The notes are the clip's ordinary notes (note.list, roll.get_state): nothing is stored apart from them. Not mutating.",
+      "group": "note",
+      "id": "note.step_get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "clip_length": {
+            "type": "integer"
+          },
+          "columns": {
+            "type": "array"
+          },
+          "count": {
+            "type": "integer"
+          },
+          "notes": {
+            "type": "array"
+          },
+          "scale": {
+            "type": "object"
+          },
+          "step_ticks": {
+            "maximum": 3072,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "steps": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "edits": {
+            "type": "array"
+          },
+          "root": {
+            "description": "key index 0..11, or a name (\"C\", \"C#\", \"Db\")"
+          },
+          "scale": {
+            "type": "string"
+          },
+          "scale_mode": {
+            "enum": [
+              "snap",
+              "strict",
+              "off"
+            ],
+            "type": "string"
+          },
+          "step_ticks": {
+            "maximum": 3072,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip",
+          "edits"
+        ],
+        "type": "object"
+      },
+      "description": "Edit a MIDI clip's melodic steps as ONE edit and ONE undo step. 'edits' is a list of {note | step + key, velocity?, chance?, ratchet?, length?, key?, remove?}: a cell is a step (column, counted from 0 in 'step_ticks' ticks, default 12) and a key; an entry on an empty cell adds a note there (length one step, velocity 100, chance 1, ratchet 1 unless given), an entry on a note or occupied cell changes the fields named and keeps the rest, 'remove' takes it out. velocity 0..200, chance 0..1 (1 always, 0 never), ratchet 1..16 (attacks evenly spaced across the note; 1 is one). With a scale set (or 'root' / 'scale' named) a pitch the call writes - a new cell, or 'key' on a note - follows 'scale_mode': snap (default; nearest in-scale key, a tie down), strict (refused when out of scale) or off; a note left on its key keeps it, so out-of-scale notes stay editable. The whole batch is validated first: one bad entry refuses it and changes nothing. A batch that changes nothing records no undo step. Reversible through the ProjectJournal (one MidiClip checkpoint); control.undo restores the exact prior note list.",
+      "group": "note",
+      "id": "note.step_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "added": {
+            "type": "integer"
+          },
+          "clip": {
+            "type": "string"
+          },
+          "edited": {
+            "type": "integer"
+          },
+          "notes": {
+            "type": "array"
+          },
+          "removed": {
+            "type": "integer"
+          },
+          "step_ticks": {
+            "maximum": 3072,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [],
         "type": "object"
       }
     },
@@ -17994,6 +19321,16 @@
           "position": {
             "type": "number"
           },
+          "recur_length": {
+            "maximum": 16,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "recur_mask": {
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
           "slide": {
             "type": "boolean"
           },
@@ -18268,6 +19605,70 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The OSC control server: running or not, its address, port and scope, and how many requests it received, ran and refused.",
+      "group": "osc",
+      "id": "osc.get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "port": {
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scope": {
+            "enum": [
+              "remote",
+              "full"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Start the OSC control server (off until this runs): listen for UDP on 'address' (an IP literal, default 127.0.0.1 - this machine only) and 'port' (default 9000; 0 = any free port). A message to /zene/<command-id> runs that registered command - its arguments one JSON-object string or string-key/value pairs - and the sender gets /zene/reply (id, result JSON) or /zene/error (id, kind, message). 'scope' remote (default) allows transport, markers, mixer faders and state reads; full allows every command except scripts, sessions and quitting, on a loopback address only. Replaces a running server. Device state: not recorded.",
+      "group": "osc",
+      "id": "osc.start",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Stop the OSC control server and close its port.",
+      "group": "osc",
+      "id": "osc.stop",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {
           "target": {
             "type": "string"
@@ -18404,7 +19805,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Plugin delay compensation as the mixer publishes it: the total latency to the master output, every channel's alignment point and the latency its own chain adds, the compensation applied at every send, and whether sidechain routing exists. Read-only.",
+      "description": "Plugin delay compensation as the mixer publishes it: the total latency to the master output, every channel's alignment point and the latency its own chain adds, its hardware insert's effective latency (hardware_insert_latency_frames: the typed override, else the measured ping; 0 while the insert is off or an export bypasses it) and where that figure comes from (hardware_insert_latency_source: off, bypassed, override, measured or unmeasured), the compensation applied at every send, and whether sidechain routing exists. Read-only.",
       "group": "pdc",
       "id": "pdc.report",
       "mutating": false,
@@ -18741,7 +20142,7 @@
         ],
         "type": "object"
       },
-      "description": "Open a device's OWN editor - the plug-in's interface, not the host's generic knob view (which stays) - in a window of its own. 'target' is the track or channel (trk-<n>/ch-<n>) and 'plugin' the device on it (fx-<n>, or 'inst' for a track's instrument), as plugin.param_set names them. VST3 plug-ins with an editor view and CLAP plug-ins whose gui embeds in X11 open; a plug-in with no editor, or one that can only float, refuses with the reason. An editor already open is brought forward. Needs a display; interface state, not project state: nothing is saved or journalled.",
+      "description": "Open a device's OWN editor - the plug-in's interface, not the host's generic knob view (which stays) - in a window of its own. 'target' is the track or channel (trk-<n>/ch-<n>) and 'plugin' the device on it (fx-<n>, or 'inst' for a track's instrument), as plugin.param_set names them. VST3 and CLAP plug-ins whose editor embeds in this platform's window (X11, a Windows HWND, a macOS NSView) open; a plug-in with no editor, one that cannot embed on this platform (the refusal names the platform and the window API), or one that can only float, refuses with the reason. On Linux editors embed only in X11 windows: on a Wayland desktop Zene runs through XWayland, and natively on Wayland (QT_QPA_PLATFORM=wayland, no XWayland) every editor refuses ('requires') with the reason. An editor already open is brought forward. Needs a display; interface state, not project state: nothing is saved or journalled.",
       "group": "plugin",
       "id": "plugin.editor_open",
       "mutating": false,
@@ -18904,7 +20305,8 @@
               "ladspa",
               "lv2",
               "vst3",
-              "clap"
+              "clap",
+              "vst2"
             ],
             "type": "string"
           },
@@ -18924,7 +20326,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Every device this build can load: built-in effect and instrument modules plus the devices of the shipped hosting formats (LADSPA, LV2, VST3 and CLAP), each with a dev-<n> id that is deterministic for the binary. dev-<n> is a catalogue index, not a persisted project id, and 'loadable' says whether plugin.load accepts the entry. Each entry carries 'vendor' - who made it, as its own format reports it (\"Zene Studio\" for a built-in, the LADSPA maker, the LV2 author, the VST3 or CLAP factory's vendor; empty when the format reports none, which the device picker reads as \"Not reported\"). Format order is built-in, then LADSPA, then LV2, then VST3, then CLAP, so adding a host does not renumber the ids of the formats that were already there.",
+      "description": "Every device this build can load: built-in effect and instrument modules plus the devices of the shipped hosting formats (LADSPA, LV2, VST3 and CLAP), each with a dev-<n> id that is deterministic for the binary. dev-<n> is a catalogue index, not a persisted project id, and 'loadable' says whether plugin.load accepts the entry. Each entry carries 'vendor' - who made it, as its own format reports it (\"Zene Studio\" for a built-in, the LADSPA maker, the LV2 author, the VST3 or CLAP factory's vendor; empty when the format reports none, which the device picker reads as \"Not reported\"). Format order is built-in, then LADSPA, then LV2, then VST3, then CLAP, then AU, so adding a host does not renumber the ids of the formats that were already there. macOS builds also list Audio Units (format 'au', from the system component registry; each entry carries its 'component' type:subtype:manufacturer and the 'scan_cache_path' its quarantine entry uses); other builds have no 'au' format. VST2 instruments (format 'vst2', Q050-481.1) come last: hosted through Carla, found by Carla's own out-of-process discovery under ZENE_VST2_PATH or else VST_PATH, the VST directory setting and ~/.vst; each carries its 'file', VST2 'unique_id', 'binary' (native, win64, win32) and 'bridged' (a Windows binary run through Carla's Wine bridge). None are listed when no Carla runtime is installed.",
       "group": "plugin",
       "id": "plugin.list",
       "mutating": false,
@@ -18982,7 +20384,7 @@
         ],
         "type": "object"
       },
-      "description": "Load a device by its dev-<n> id: an effect onto a track's device chain or a mixer channel's insert chain, an instrument onto an instrument track. Returns the new instance id (fx-<n>, or inst for an instrument). Headless-safe: it declares no 'requires' at all, because no editor is created here - neither a built-in plugin view nor an LV2 UI. An LV2 device whose bundle ships a GUI loads and is fully parametrisable through plugin.param_get / plugin.param_set on a display-less instance. Optional for an effect: `chain` (default 0) puts it on parallel chain n of a mixer channel's rack (rack.add_chain), and `position` (0 = first) inserts it at that slot instead of appending; the reply's `index` is the slot it landed in.",
+      "description": "Load a device by its dev-<n> id: an effect onto a track's device chain or a mixer channel's insert chain, an instrument onto an instrument track. Returns the new instance id (fx-<n>, or inst for an instrument). Headless-safe: it declares no 'requires' at all, because no editor is created here - neither a built-in plugin view nor an LV2 UI. An LV2 device whose bundle ships a GUI loads and is fully parametrisable through plugin.param_get / plugin.param_set on a display-less instance. Optional for an effect: `chain` (default 0) puts it on parallel chain n of a mixer channel's rack (rack.add_chain), and `position` (0 = first) inserts it at that slot instead of appending; the reply's `index` is the slot it landed in. Q050-111: a `target` of clip-<n> (an audio clip) puts the effect on that clip's OWN chain - realtime, processing that clip alone before the track sums its clips; plugin.unload / plugin.bypass / plugin.move / plugin.param_set take the same clip-<n> target, and dsp.get_state reads it.",
       "group": "plugin",
       "id": "plugin.load",
       "mutating": true,
@@ -19571,7 +20973,7 @@
         ],
         "type": "object"
       },
-      "description": "Read one device parameter by 'name' or by 'index'. 'plugin' is an fx-<n> instance id or 'inst' for the target track's instrument. The range reported is the engine's own model range.",
+      "description": "Read one device parameter by 'name' or by 'index'. 'plugin' is an fx-<n> instance id or 'inst' for the target track's instrument. The range reported is the engine's own model range. A parameter the plug-in owns (a meter or output, declared read-only by the plug-in) carries read_only:true; plugin.param_set refuses it.",
       "group": "plugin",
       "id": "plugin.param_get",
       "mutating": false,
@@ -19596,6 +20998,9 @@
               },
               "name": {
                 "type": "string"
+              },
+              "read_only": {
+                "type": "boolean"
               },
               "step": {
                 "type": "number"
@@ -19709,7 +21114,7 @@
         ],
         "type": "object"
       },
-      "description": "Set one device parameter by 'name' or by 'index' with the engine's own range enforcement: a value outside the model's min..max is refused with invalid_args rather than silently clamped. Reversible through the ProjectJournal.",
+      "description": "Set one device parameter by 'name' or by 'index' with the engine's own range enforcement: a value outside the model's min..max is refused with invalid_args rather than silently clamped, and a parameter the plug-in declares read-only is refused. Reversible through the ProjectJournal.",
       "group": "plugin",
       "id": "plugin.param_set",
       "mutating": true,
@@ -19734,6 +21139,9 @@
               },
               "name": {
                 "type": "string"
+              },
+              "read_only": {
+                "type": "boolean"
               },
               "step": {
                 "type": "number"
@@ -20543,7 +21951,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Start a background plug-in rescan: the same scan plugin.rescan runs, one file per event-loop turn, so the window stays usable - plugin.list keeps serving the previous catalogue until the run commits. Follow it with plugin.scan_status, stop it with plugin.scan_cancel; the task list (task.list) shows it with its progress and Cancel. 'pace_ms' (0..1000, default 0) is the delay between two files, so a progress display or a test can watch the run. Not reversible: a finished run re-measures the files and refreshes the cache, like plugin.rescan.",
+      "description": "Start a background plug-in rescan: the same scan plugin.rescan runs, its libraries loaded on a worker thread and one file per event-loop turn, so the window stays usable - plugin.list keeps serving the previous catalogue until the run commits. Follow it with plugin.scan_status, stop it with plugin.scan_cancel; the task list (task.list) shows it with its progress and Cancel. 'pace_ms' (0..1000, default 0) is the delay between two files, so a progress display or a test can watch the run. Not reversible: a finished run re-measures the files and refreshes the cache, like plugin.rescan.",
       "group": "plugin",
       "id": "plugin.scan_start",
       "mutating": true,
@@ -20559,6 +21967,9 @@
           },
           "pace_ms": {
             "type": "integer"
+          },
+          "task": {
+            "type": "string"
           },
           "task_id": {
             "type": "integer"
@@ -20621,6 +22032,209 @@
           },
           "total_files": {
             "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "device": {
+            "enum": [
+              "main",
+              "effect"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Open the editor of the selected track's device: its instrument, or on a track with none (and a selected mixer channel) its first effect; 'device': effect asks for the first effect. A plug-in's own window when it can open one (plugin.editor_open), else the host's view - 'surface' says which: native or generic. Refused, typed, with nothing selected or no such device on the selection; it never goes to another track. Needs a display. Interface state: nothing is saved or journalled.",
+      "group": "plugin",
+      "id": "plugin.selected_editor_open",
+      "mutating": false,
+      "requires": [
+        "display"
+      ],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "open": {
+            "type": "boolean"
+          },
+          "plugin": {
+            "type": "string"
+          },
+          "surface": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "device": {
+            "format": "device",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device"
+        ],
+        "type": "object"
+      },
+      "description": "Load a device onto what is selected: plugin.load with the selected track or mixer channel as its 'target', so the reply, the refusals (an instrument onto a target with no instrument, a track with no chain) and the undo are plugin.load's - an effect is one undo step, replacing an instrument reports reversible:false. 'device' is a dev-<n> or the stable key a binding stores. Needs an interface: the selection is one.",
+      "group": "plugin",
+      "id": "plugin.selected_load",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "chain": {
+            "type": "integer"
+          },
+          "device": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "index": {
+            "type": "number"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "plugin": {
+            "type": "string"
+          },
+          "previous_plugin": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "slice": {
+            "type": "integer"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "type": "object"
+      },
+      "description": "Read the per-slice controls of the SlicerT on instrument track 'target': for one 'slice' (numbered from 0; slice i plays on MIDI key base_key + 1 + i) or, with 'slice' left out, every slice. Each slice reports its key, its start and end as a fraction of the sample, and its gain (dB), pan (-1..1), filter (-1 low-pass .. +1 high-pass, 0 off) and random (0..1) - the neutral values are 0. 'controls' lists each control's range. Read-only.",
+      "group": "plugin",
+      "id": "plugin.slice_get",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "base_key": {
+            "type": "integer"
+          },
+          "controls": {
+            "type": "array"
+          },
+          "device_plugin": {
+            "type": "string"
+          },
+          "slice_count": {
+            "type": "integer"
+          },
+          "slices": {
+            "type": "array"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "filter": {
+            "type": "number"
+          },
+          "gain": {
+            "type": "number"
+          },
+          "pan": {
+            "type": "number"
+          },
+          "random": {
+            "type": "number"
+          },
+          "slice": {
+            "type": "integer"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "slice"
+        ],
+        "type": "object"
+      },
+      "description": "Set any of 'gain' (dB, -48..12), 'pan' (-1..1, a balance), 'filter' (-1 low-pass .. +1 high-pass, 0 off) and 'random' (0..1: each trigger varies gain by up to 6 dB and pan by up to 0.5 times this) on one slice of the SlicerT on instrument track 'target'. 'slice' counts from 0; slice i plays on MIDI key base_key + 1 + i (plugin.slice_get). Values outside a range are refused with invalid_args and nothing is written. Saved with the project. One undo step per call.",
+      "group": "plugin",
+      "id": "plugin.slice_set",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "current": {
+            "type": "object"
+          },
+          "device_plugin": {
+            "type": "string"
+          },
+          "previous": {
+            "type": "object"
+          },
+          "slice": {
+            "type": "integer"
+          },
+          "target": {
+            "type": "string"
           }
         },
         "required": [],
@@ -20742,7 +22356,7 @@
         ],
         "type": "object"
       },
-      "description": "Remove a device instance (fx-<n>) from a track's chain or a mixer channel. When its state fits the capture cap and the undo stack is addressable, one control.undo re-instantiates the same plugin at the same index with its settings restored. If state exceeds the cap, 'state_xml' is empty and 'state_truncated' is true; its settings cannot be manually restored from that snapshot. When state fits the cap but no inverse is recorded, the transaction's 'before' snapshot contains usable XML for a manual rebuild.",
+      "description": "Remove a device instance (fx-<n>) from a track's chain, a mixer channel or an audio clip's own chain (clip-<n>). When its state fits the capture cap and the undo stack is addressable, one control.undo re-instantiates the same plugin at the same index with its settings restored. If state exceeds the cap, 'state_xml' is empty and 'state_truncated' is true; its settings cannot be manually restored from that snapshot. When state fits the cap but no inverse is recorded, the transaction's 'before' snapshot contains usable XML for a manual rebuild.",
       "group": "plugin",
       "id": "plugin.unload",
       "mutating": true,
@@ -25375,6 +26989,9 @@
           },
           "state": {
             "type": "string"
+          },
+          "task": {
+            "type": "string"
           }
         },
         "required": [],
@@ -25462,6 +27079,33 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "out": {
+            "type": "string"
+          },
+          "tail_ms": {
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "out"
+        ],
+        "type": "object"
+      },
+      "description": "Render the project IN REAL TIME through the running audio device, so every hardware insert that is on is heard: its send goes out to the outboard gear and its return is recorded into the mix (an offline render - render.render - bypasses them and renders the dry signal). The song plays from its start to its end plus 'tail_ms' (default 500, at most 10000), with the loop and the metronome off for the pass, and the master mix is written to 'out' (absolute, .wav) at the device's sample rate and the export bit depth in force; the head that delay compensation adds is dropped, so frame k of the file is song frame k, as offline. The reply has the path, frames, seconds, sha256, the compensation dropped and each insert played (channel, send, return, latency). Refused, with nothing rendered and no offline fallback, when no insert is on or the device cannot carry an insert's send or return or delivers no input. The surface does not answer until the pass ends (at most 600 s of song). Changes nothing in the project.",
+      "group": "render",
+      "id": "render.realtime",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "channels": {
             "enum": [
               "stereo",
@@ -25497,7 +27141,7 @@
         ],
         "type": "object"
       },
-      "description": "Render the current session to a file and return its hash (headless). Whole project by default; pass start_ticks and end_ticks TOGETHER to render only that span of the song (a selection), in which case the span is rendered exactly - no tail bar and no loop repetition - and the reply reports the range and the frame count. The render is started with the export settings in force: the preset applied through export.preset_apply (sample rate, bit depth, stereo mode), or the render path's own defaults when none is applied. `channels`: 'stereo' (the default; a surround master is folded with the ITU-R BS.775 downmix) or 'surround' - one WAV channel per speaker of the surround master (6 for 5.1, 8 for 7.1, WAVE_FORMAT_EXTENSIBLE with its channel mask), refused on a stereo master, for a format other than wav, and with the loudness report on; the reply's `channels` and `channel_layout` say what the file holds. Runs in a CHILD process, so the declared bound applies: this surface does not answer - not even control.ping - until it finishes (docs/KNOWN-LIMITATIONS.md).",
+      "description": "Render the current session to a file and return its hash (headless). Whole project by default; pass start_ticks and end_ticks TOGETHER to render only that span of the song (a selection), in which case the span is rendered exactly - no tail bar and no loop repetition - and the reply reports the range and the frame count. The render is started with the export settings in force: the preset applied through export.preset_apply (sample rate, bit depth, stereo mode), or the render path's own defaults when none is applied. `channels`: 'stereo' (the default; a surround master is folded with the ITU-R BS.775 downmix) or 'surround' - one WAV channel per speaker of the surround master (6 for 5.1, 8 for 7.1, WAVE_FORMAT_EXTENSIBLE with its channel mask), refused on a stereo master, for a format other than wav, and with the loudness report on; the reply's `channels` and `channel_layout` say what the file holds. The render is OFFLINE (no audio device), so hardware inserts are bypassed and the dry signal is rendered: the reply's `hardware_inserts` says so (hardware 'unavailable', `bypassed`, the inserts that are on); render.realtime plays the song through them. Runs in a CHILD process, so the declared bound applies: this surface does not answer - not even control.ping - until it finishes (docs/KNOWN-LIMITATIONS.md).",
       "group": "render",
       "id": "render.render",
       "mutating": false,
@@ -25525,6 +27169,9 @@
           },
           "frames": {
             "type": "integer"
+          },
+          "hardware_inserts": {
+            "type": "object"
           },
           "path": {
             "type": "string"
@@ -25574,7 +27221,7 @@
         ],
         "type": "object"
       },
-      "description": "Export the song's named sections (section.add/set/list) as separate files: one file per section, named after the section, each rendered to exactly the section's own start..end ticks (no tail bar). The file name is the section's name with the characters a filesystem refuses (/ \\ : * ? \" < > |) removed and leading dots dropped; trailing dots and spaces become one '_', and a Windows-reserved base name (CON, PRN, AUX, NUL, COM1-9, LPT1-9, even with an extension) gets '_' appended to the base (CON -> CON_), the same on every platform. Names that are equal after Unicode canonical decomposition and case folding (Intro/intro) would be one file on Windows and macOS, so the later section gets '-2', then '-3' (intro-2.wav), skipping any name already taken; a name empty once cleaned is its id (sec-<n>). 'out' is an absolute directory the files are written into; 'sections' picks specific sec-<n> ids (default: every section, in time order); 'format' is one of the build's renderable formats (default wav). Each file is rendered through render.render, so the export settings in force - the preset applied through export.preset_apply - set its rate and bit depth; the reply names them and one entry per written file. NOTE the declared bound: each render runs in a child process and this surface does not answer until it finishes (docs/KNOWN-LIMITATIONS.md).",
+      "description": "Export the song's named sections (section.add/set/list) as separate files: one file per section, named after the section, each rendered to exactly the section's own start..end ticks (no tail bar). The file name is the section's name with the characters a filesystem refuses (/ \\ : * ? \" < > |) removed and leading dots dropped; trailing dots and spaces become one '_', and a Windows-reserved base name (CON, PRN, AUX, NUL, COM1-9, LPT1-9, even with an extension) gets '_' appended to the base (CON -> CON_), the same on every platform. Names that are equal after Unicode canonical decomposition and case folding (Intro/intro) would be one file on Windows and macOS, so the later section gets '-2', then '-3' (intro-2.wav), skipping any name already taken; a name empty once cleaned is its id (sec-<n>). Before any render starts, every generated path is checked: a file, a directory or a symbolic link already there (even a dangling one) refuses the whole call with a typed refusal that names it, so no existing file is replaced and no part of the batch is written. 'out' is an absolute directory the files are written into; 'sections' picks specific sec-<n> ids (default: every section, in time order); 'format' is one of the build's renderable formats (default wav). Each file is rendered through render.render, so the export settings in force - the preset applied through export.preset_apply - set its rate and bit depth; the reply names them and one entry per written file. NOTE the declared bound: each render runs in a child process and this surface does not answer until it finishes (docs/KNOWN-LIMITATIONS.md).",
       "group": "render",
       "id": "render.sections",
       "mutating": false,
@@ -27287,6 +28934,41 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "mode": {
+            "enum": [
+              "gap",
+              "ripple"
+            ],
+            "type": "string"
+          },
+          "section": {
+            "type": "string"
+          },
+          "start": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "section",
+          "start"
+        ],
+        "type": "object"
+      },
+      "description": "Move section 'section' to a new 'start' tick with the material inside it, on every track: clips crossing its edges are cut there, the section keeps its length and name. 'mode' gap leaves everything else where it is (a gap at the source; what lies at the destination stays and may overlap); ripple reorders the song - what the section passes moves the other way by its length, closing the gap, and other sections wholly inside that stretch go with it. Without 'mode', arrangement.modes' ripple decides. Markers, tempo and loop bounds stay. Refused while a clip it would touch is locked. One undo step.",
+      "group": "section",
+      "id": "section.move",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "section": {
             "type": "string"
           }
@@ -27690,15 +29372,17 @@
               "cc"
             ],
             "type": "string"
+          },
+          "workflow": {
+            "type": "string"
           }
         },
         "required": [
-          "trigger",
-          "command"
+          "trigger"
         ],
         "type": "object"
       },
-      "description": "Bind a MIDI NOTE or CONTROL CHANGE to a built-in command that needs no arguments, and run it through the registry once per activation. 'trigger' is note (with 'key' 0..127) or cc (with 'controller' 0..127); 'channel' is 0..15 or -1 for any; 'command' is a registered command id whose schema requires no arguments (the control change's value is NOT passed on as one). A note fires on its press and rearms on its release; a control change fires when it leaves zero and rearms at zero, so a sweep is one activation. Replaces a binding on the same control, and a note still bound to the launcher is taken away from it by the same edit (one undo step). Kept in the config file.",
+      "description": "Bind a MIDI NOTE or CONTROL CHANGE to a target that needs no arguments, and run it once per activation: 'command' is a registered command id whose schema requires none, or 'workflow' is the name of a workflow saved in the library in use (shared or with the project - workflow.save), run through workflow.run. 'trigger' is note (with 'key' 0..127) or cc (with 'controller' 0..127); 'channel' is 0..15 or -1 for any. The control change's value is NOT passed on as an argument. A note fires on its press and rearms on its release; a control change fires when it leaves zero and rearms at zero, so a sweep is one activation. A workflow is resolved from the library in use when it fires, so editing it, or keeping workflows with the project, is followed; a name that library no longer holds does nothing. Replaces a binding on the same control, and a note still bound to the launcher is taken away from it by the same edit (one undo step). Kept in the config file.",
       "group": "session",
       "id": "session.bind_command",
       "mutating": true,
@@ -27850,7 +29534,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Empty the whole Session View: no grid, no slot, no scene override, default quantisation. A project that never used the session then re-saves byte-identically (the <session> block is dropped). Reversible through the ProjectJournal.",
+      "description": "Empty the whole Session View: no grid, no slot, no scene override, default quantisation; every playing cell stops. A project that never used the session then re-saves byte-identically (the <session> block is dropped). Reversible through the ProjectJournal.",
       "group": "session",
       "id": "session.clear",
       "mutating": true,
@@ -27887,7 +29571,7 @@
         ],
         "type": "object"
       },
-      "description": "Empty one grid cell, whatever it held. Reversible through the ProjectJournal (action checkpoint on the <session> block).",
+      "description": "Empty one grid cell, whatever it held; if it is playing or queued it stops, as session.stop_slot stops it. Undo puts the clip back without launching it. Reversible through the ProjectJournal (action checkpoint on the <session> block).",
       "group": "session",
       "id": "session.clear_slot",
       "mutating": true,
@@ -27910,7 +29594,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "The controller's command bindings (what session.bind_command made), and whether a controller is connected.",
+      "description": "The controller's bindings to commands and workflows (what session.bind_command made), each with its target ('command' or 'workflow'), and whether a controller is connected.",
       "group": "session",
       "id": "session.command_bindings",
       "mutating": false,
@@ -28380,6 +30064,9 @@
           "cancel": {
             "type": "boolean"
           },
+          "clock_sync": {
+            "type": "boolean"
+          },
           "quantisation": {
             "enum": [
               "global",
@@ -28400,6 +30087,11 @@
             "minimum": 0,
             "type": "integer"
           },
+          "steps": {
+            "maximum": 1024,
+            "minimum": 1,
+            "type": "integer"
+          },
           "track": {
             "maximum": 255,
             "minimum": 0,
@@ -28412,7 +30104,7 @@
         ],
         "type": "object"
       },
-      "description": "Record audio into an empty launcher cell ('track', 'scene') of an audio (sample) track's column: the cell is armed and launched, so the take starts on the launch quantisation's grid line ('quantisation', else the cell's own, else the session's). It takes the engine's stereo input, shifted by the recording round trip, until the cell stops - session.stop_slot's quantised stop, another cell on the column, session.stop_all - or for 'bars' bars. session.record_slot_status follows it; session.record_slot_land makes it the cell's clip. 'cancel': true drops the take in hand (whichever cell it is for) and stops its cell. Not a project edit: no transaction is recorded.",
+      "description": "Record audio into an empty launcher cell ('track', 'scene') of an audio (sample) track's column: the cell is armed and launched, so the take starts on the launch quantisation's grid line ('quantisation', else the cell's own, else the session's). It takes the engine's stereo input, shifted by the recording round trip, until the cell stops - session.stop_slot's quantised stop, another cell on the column, session.stop_all - or for 'bars' bars or 'steps' steps (sixteenth notes; give one of the two). 'clock_sync': true makes the MIDI clock master (set up with clock.master_set) send START when the take starts and STOP at its end - with exactly the span's clock pulses between - so an external synth plays exactly the take's length; refused while the master is off. session.record_slot_status follows it; session.record_slot_land makes it the cell's clip. 'cancel': true drops the take in hand (whichever cell it is for) and stops its cell. Not a project edit: no transaction is recorded.",
       "group": "session",
       "id": "session.record_slot",
       "mutating": false,
@@ -28451,7 +30143,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Read the launcher cell's audio recording back: 'state' (idle, armed - waiting for its launch, recording, finishing - stopped and running on to its length, done - ready for session.record_slot_land), the cell, the grid line it started on, the frames taken and the length it will have, the frames a starved writer dropped, the sample rate and the round trip it was shifted by. Read-only.",
+      "description": "Read the launcher cell's audio recording back: 'state' (idle, armed - waiting for its launch, recording, finishing - stopped and running on to its length, done - ready for session.record_slot_land), the cell, the grid line it started on, the frames taken and the length it will have, the frames a starved writer dropped, the sample rate and the round trip it was shifted by, whether the take drives the MIDI clock ('clock_sync') and what 'clock' sent for it (the START and STOP ticks and the pulses between; 'refused' counts spans refused before START because earlier clock output had not yet left - such a take records unclocked). Read-only.",
       "group": "session",
       "id": "session.record_slot_status",
       "mutating": false,
@@ -28604,7 +30296,7 @@
         ],
         "type": "object"
       },
-      "description": "Resize the Session View grid (column = a song track, row = a scene). Existing cells keep their content and position; new cells are empty. Reversible through the ProjectJournal (action checkpoint on the <session> block).",
+      "description": "Resize the Session View grid (column = a song track, row = a scene). Existing cells keep their content and position; new cells are empty; a playing cell the grid no longer holds stops. Reversible through the ProjectJournal (action checkpoint on the <session> block).",
       "group": "session",
       "id": "session.set_grid",
       "mutating": true,
@@ -28852,7 +30544,7 @@
         ],
         "type": "object"
       },
-      "description": "Define one grid cell: a MIDI clip ('type':'midi' + 'pattern'), an audio clip ('type':'audio' + 'source'), or empty ('type':'empty'); plus its launch mode, launch quantisation and playback settings, and `follow_actions`, the cell's persisted Follow Action chain ([] clears it; session.follow_set arms it). Only the fields supplied are written. Reversible through the ProjectJournal (action checkpoint on the <session> block).",
+      "description": "Define one grid cell: a MIDI clip ('type':'midi' + 'pattern'), an audio clip ('type':'audio' + 'source'), or empty ('type':'empty'); plus its launch mode, launch quantisation and playback settings, and `follow_actions`, the cell's persisted Follow Action chain ([] clears it; session.follow_set arms it). Only the fields supplied are written; a playing cell sounds its new content at once, and one emptied stops. Reversible through the ProjectJournal (action checkpoint on the <session> block).",
       "group": "session",
       "id": "session.set_slot",
       "mutating": true,
@@ -29162,6 +30854,9 @@
               "cc"
             ],
             "type": "string"
+          },
+          "workflow": {
+            "type": "string"
           }
         },
         "required": [
@@ -29169,7 +30864,7 @@
         ],
         "type": "object"
       },
-      "description": "Remove the command binding on a note ('trigger' note, 'key', 'channel') or a control change ('trigger' cc, 'controller', 'channel'). One undo step.",
+      "description": "Remove the binding on a note ('trigger' note, 'key', 'channel') or a control change ('trigger' cc, 'controller', 'channel'), whichever target it names - a command or a workflow. One undo step.",
       "group": "session",
       "id": "session.unbind_command",
       "mutating": true,
@@ -29397,6 +31092,72 @@
             "type": "string"
           },
           "value": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "device": {
+            "format": "device",
+            "type": "string"
+          },
+          "force": {
+            "type": "boolean"
+          },
+          "keys": {
+            "format": "keys",
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "arranger",
+              "note_editor",
+              "automation_editor",
+              "perform"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "scope",
+          "device",
+          "keys"
+        ],
+        "type": "object"
+      },
+      "description": "Give a chosen loadable plug-in ('device', dev-<n>) a key in one panel scope: pressing it there runs plugin.selected_load on it. The binding appears in shortcuts.list as '<Panel> \u25b8 Load Plug-in \u25b8 <stable key>', and behaves as any panel binding: shortcuts.set changes it (empty keys remove it), a same-scope clash is refused unless 'force', export and import carry it, one undo step. A rescan does not break it.",
+      "group": "shortcuts",
+      "id": "shortcuts.bind_plugin",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "cleared": {
+            "type": "array"
+          },
+          "device": {
+            "type": "string"
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "keys": {
+            "type": "string"
+          },
+          "previous": {
+            "type": "string"
+          },
+          "scope": {
             "type": "string"
           }
         },
@@ -29850,6 +31611,9 @@
               "failed"
             ],
             "type": "string"
+          },
+          "task": {
+            "type": "string"
           }
         },
         "required": [],
@@ -29944,7 +31708,7 @@
         ],
         "type": "object"
       },
-      "description": "Queue one offline 4-stem separation of an absolute audio FILE (drums, bass, other, vocals) and return its job id immediately - the engine runs on its own worker thread, so the control surface keeps answering while the job runs. The source must be stereo; a rate other than the model's own 44100 Hz is resampled to it first (offline, the engine's best sinc converter), so the stems come back at 44100 Hz. Refused, typed, when the file is missing or undecodable, or when the engine cannot run at all (no python onnxruntime, or the model absent and not fetchable). An absent model that IS fetchable (see `stem.get_state` `fetch_on_first_use`) does not refuse: the job fetches the pinned 166 MB file on its own worker first (`fetching_model`, `download_progress`), then separates. `quality` picks how much consecutive model segments overlap: `fast` 25% (about 2/3 of the inference passes), `standard` 50% (the default, and the only behaviour before the setting existed) or `high` 75% (about twice the passes, each frame averaged over more predictions); the job reports the effective `quality`, `overlap` and `hop_frames`, and `inference_quality` (the setting its worker handed the backend; empty until inference starts). NOT realtime, by nature: HTDemucs needs a 7.8 s lookahead. Follow with `stem.job_status`, then `stem.job_result`.",
+      "description": "Queue one offline 4-stem separation of an absolute audio FILE (drums, bass, other, vocals) and return its job id immediately - the engine runs on its own worker thread, which also decodes and resamples the source, so the control surface keeps answering while the job runs; app.tasks lists it as 'task' and app.task_cancel stops it. `frames` is the length its header promises at the model's rate (0 for a source with no such header, a .ds or .ogg, until the worker decoded it). The source must be stereo; a rate other than the model's own 44100 Hz is resampled to it first (offline, the engine's best sinc converter), so the stems come back at 44100 Hz. Refused, typed, when the file is missing or undecodable, or when the engine cannot run at all (no python onnxruntime, or the model absent and not fetchable). An absent model that IS fetchable (see `stem.get_state` `fetch_on_first_use`) does not refuse: the job fetches the pinned 166 MB file on its own worker first (`fetching_model`, `download_progress`), then separates. `quality` picks how much consecutive model segments overlap: `fast` 25% (about 2/3 of the inference passes), `standard` 50% (the default, and the only behaviour before the setting existed) or `high` 75% (about twice the passes, each frame averaged over more predictions); the job reports the effective `quality`, `overlap` and `hop_frames`, and `inference_quality` (the setting its worker handed the backend; empty until inference starts). NOT realtime, by nature: HTDemucs needs a 7.8 s lookahead. Follow with `stem.job_status`, then `stem.job_result`.",
       "group": "stem",
       "id": "stem.job_start",
       "mutating": false,
@@ -30009,6 +31773,9 @@
               "cancelled",
               "failed"
             ],
+            "type": "string"
+          },
+          "task": {
             "type": "string"
           }
         },
@@ -30659,7 +32426,13 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "instrument": {
+            "type": "string"
+          },
           "name": {
+            "type": "string"
+          },
+          "output": {
             "type": "string"
           },
           "type": {
@@ -30668,7 +32441,8 @@
               "pattern",
               "sample",
               "automation",
-              "folder"
+              "folder",
+              "neutral"
             ],
             "type": "string"
           }
@@ -30676,7 +32450,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Append a track of the given type (default instrument) and return its stable trk-<n> id. Undo removes the track; redo recreates it with a fresh stable trk-<n> id.",
+      "description": "Append a track of the given type (default instrument; 'neutral' is a row that holds no clips and is given an audio input or an instrument later) and return its stable trk-<n> id. An instrument or sample track can name its destination: `output` is a ch-<n> id (mixer.get_state lists them; a parallel bus takes no track input and is refused). Without `output`, the preference app/autotrackchannel (settings.set, \"1\" on) gives the track its own mixer channel, named after it and kept in step when either is renamed; off, the track plays into the master as before. `instrument` loads that plug-in. Undo removes the track and any channel made for it; redo recreates both, the track with a fresh stable trk-<n> id.",
       "group": "track",
       "id": "track.add",
       "mutating": true,
@@ -30684,6 +32458,15 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "channel": {
+            "type": "string"
+          },
+          "channel_linked": {
+            "type": "boolean"
+          },
+          "channel_name": {
+            "type": "string"
+          },
           "child_count": {
             "type": "number"
           },
@@ -30730,6 +32513,62 @@
           },
           "visible": {
             "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bus_name": {
+            "type": "string"
+          },
+          "count": {
+            "maximum": 64,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "instrument": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "type": {
+            "enum": [
+              "instrument",
+              "sample"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "count"
+        ],
+        "type": "object"
+      },
+      "description": "Add `count` (1..64) instrument or sample tracks (`type`, default instrument) all playing into one new mixer channel, the bus they share: a regular channel, since a parallel bus (bus.create) takes no track input. `bus_name` names it (default Bus <n>). `name` names the tracks, numbered when there are several. `instrument` loads that plug-in on each. One undo step removes the tracks and the channel; redo makes them again, the channel under the same ch-<n> and the tracks with fresh trk-<n> ids.",
+      "group": "track",
+      "id": "track.add_to_new_bus",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bus_name": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "track_count": {
+            "type": "integer"
+          },
+          "tracks": {
+            "type": "array"
           }
         },
         "required": [],
@@ -30806,6 +32645,95 @@
       "description": "Build a drum rack: 'pads' [{sample (a file), key (0..127; 36 upward when left out), name}] - each pad a sampler track playing its sample at its key, inside one folder named 'name', and each playing into a mixer channel of its own (the pad's chain, for its inserts) that sends to one bus channel, the rack's output. Answers the folder, the pad tracks, the bus and the channels. One undo step.",
       "group": "track",
       "id": "track.drum_rack",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track"
+        ],
+        "type": "object"
+      },
+      "description": "Read a drum rack back: 'track' is its folder. Answers the folder, its name, the bus its pads send to and 'pads', each {track, name, sample (absolute path; empty when embedded), key (the trigger key: the note that plays the sample at its own pitch), channel (the pad's own chain), sends_to, playback {amp, start, end, loop_start, loop, reversed, stutter, interpolation, attack (ms), release (ms), voice_limit}, chain (the effects on the pad's channel, in order: [{id (fx-<n>), plugin, display_name, enabled}] - plugin.load / plugin.unload / plugin.bypass with 'target' = the pad's channel edit it), chain_shared (true when anything else plays through that channel - the master, another track, a send into it - so an effect there would not be the pad's alone)} - what the project saves. Writes nothing.",
+      "group": "track",
+      "id": "track.drum_rack_get_state",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sample": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "sample"
+        ],
+        "type": "object"
+      },
+      "description": "Add a sample pad to a drum rack: 'track' is the rack's folder, 'sample' a file, 'name' (the file's name when left out), 'key' (0..127; the next after 36 when left out). The pad is a sampler track in the folder with a channel of its own sending to the rack's bus. Answers the pad's state as track.drum_rack_get_state reads it. One undo step.",
+      "group": "track",
+      "id": "track.drum_rack_pad_add",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "key": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "sample": {
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track"
+        ],
+        "type": "object"
+      },
+      "description": "Edit a drum-rack pad: 'track' is the pad, and any of 'name', 'key' (the trigger key, 0..127) and 'sample' (a file). Answers the pad's state as track.drum_rack_get_state reads it. One undo step.",
+      "group": "track",
+      "id": "track.drum_rack_pad_set",
       "mutating": true,
       "requires": [],
       "result_schema": {
@@ -30992,6 +32920,180 @@
           }
         },
         "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clips": {
+            "type": "array"
+          },
+          "spans": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Delete every clip of summary clips. Later clips stay where they are. Aimed at 'spans' ([{folder, start, end}], as track.folder_spans lists them) or, without it, the selected summary clips, and at 'clips' (ordinary clip ids) edited with them; a clip reached twice changes once. One undo step.",
+      "group": "track",
+      "id": "track.folder_span_delete",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clips": {
+            "type": "array"
+          },
+          "delta": {
+            "maximum": 1919808,
+            "minimum": -1919808,
+            "type": "integer"
+          },
+          "spans": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "delta"
+        ],
+        "type": "object"
+      },
+      "description": "Move every clip of summary clips by 'delta' ticks, together; what they land on stays. Aimed at 'spans' ([{folder, start, end}], as track.folder_spans lists them) or, without it, the selected summary clips, and at 'clips' (ordinary clip ids) edited with them; a clip reached twice changes once. One undo step.",
+      "group": "track",
+      "id": "track.folder_span_move",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clips": {
+            "type": "array"
+          },
+          "delta": {
+            "maximum": 1919808,
+            "minimum": -1919808,
+            "type": "integer"
+          },
+          "edge": {
+            "enum": [
+              "start",
+              "end"
+            ],
+            "type": "string"
+          },
+          "spans": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "edge",
+          "delta"
+        ],
+        "type": "object"
+      },
+      "description": "Move the 'start' or 'end' 'edge' of summary clips by 'delta' ticks, over their child clips: lengthening takes the clips at that edge out to it, shortening cuts the clips crossing the new edge and removes those wholly past it. An edge cannot pass the neighbouring summary clip; an ordinary clip's own edge moves by the same delta. Aimed at 'spans' ([{folder, start, end}], as track.folder_spans lists them) or, without it, the selected summary clips, and at 'clips' (ordinary clip ids) edited with them; a clip reached twice changes once. One undo step.",
+      "group": "track",
+      "id": "track.folder_span_resize",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "add": {
+            "type": "boolean"
+          },
+          "at": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "folder": {
+            "type": "string"
+          },
+          "selected": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Select the summary clip of 'folder' holding tick 'at', replacing the selection or with 'add' adding to it; 'selected' false takes it out again; no 'folder' clears the selection. Interface state, not saved.",
+      "group": "track",
+      "id": "track.folder_span_select",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "at": {
+            "maximum": 1919808,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "clips": {
+            "type": "array"
+          },
+          "spans": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "at"
+        ],
+        "type": "object"
+      },
+      "description": "Cut every child clip of summary clips that crosses tick 'at' there, nested tracks too. Touching clips still draw as one summary clip. Aimed at 'spans' ([{folder, start, end}], as track.folder_spans lists them) or, without it, the selected summary clips, and at 'clips' (ordinary clip ids) edited with them; a clip reached twice changes once. One undo step.",
+      "group": "track",
+      "id": "track.folder_span_split",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "folder": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "folder"
+        ],
+        "type": "object"
+      },
+      "description": "Folder track 'folder''s summary clips - the stretches its row draws, derived from its children's clips: start, end, how many clips, on which tracks, whether selected - and every selected summary clip.",
+      "group": "track",
+      "id": "track.folder_spans",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
         "type": "object"
       }
     },
@@ -31295,7 +33397,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Every track in one list, for the track manager: id, index, name, type, colour, icon, muted, soloed, visible, folder, clip count, instrument, its mixer channel, that channel's device count and its processing load (cpu_percent, mixer.cpu_load's figure).",
+      "description": "Every track in one list, for the track manager: id, index, name, type, colour, icon, muted, soloed, visible, folder, clip count, instrument, its mixer channel, that channel's device count and its processing load (cpu_percent, mixer.cpu_load's figure), and for an instrument track its own synthesis load (synthesis_cpu_percent, apart from the channel's).",
       "group": "track",
       "id": "track.overview",
       "mutating": false,
@@ -31321,7 +33423,7 @@
         ],
         "type": "object"
       },
-      "description": "Put a track preset ('path') on a track of the same kind: its device, effects and settings; the track keeps its name. One undo step.",
+      "description": "Put a track preset ('path') on a track of the same kind: its device, effects and settings; the track keeps its name. One undo step. The preset's MIDI controller bindings come back on the loaded devices' own parameters; 'bindings' lists the restored ones and the skipped ones (a parameter the device no longer has), and 'bindings_summary' says it in one line.",
       "group": "track",
       "id": "track.preset_load",
       "mutating": true,
@@ -31347,7 +33449,7 @@
         ],
         "type": "object"
       },
-      "description": "Save a track as a preset ('path', an absolute file - .xpf by custom): its device, effects and settings, without its mute and solo. Writes the file only.",
+      "description": "Save a track as a preset ('path', an absolute file - .xpf by custom): its device, effects and settings - with their MIDI controller bindings - without its mute and solo. Writes the file only; 'bindings' is how many controller bindings it holds.",
       "group": "track",
       "id": "track.preset_save",
       "mutating": false,
@@ -32569,7 +34671,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Low-latency monitoring: with 'enabled', the devices whose latency is over 'max_ms' (0..100, 3 by default) stop processing on the chains of record-armed tracks, the channels they play into and the master ('scope' armed) - or on every chain ('scope' all) - so what you play is heard without their delay; off puts them back. Each call re-evaluates (arm a track, call again). Answers the devices it took out. Session state: nothing is saved or journalled.",
+      "description": "Low-latency monitoring: with 'enabled', the devices whose latency is over 'max_ms' (0..100, 3 by default) stop processing on the chains of record-armed tracks, the channels they play into and the master ('scope' armed) - or on every chain ('scope' all) - so what you play is heard without their delay; off puts them back. A latent instrument on those tracks (over 'max_ms') keeps playing but is monitored without the alignment delay PDC adds to line it up with later paths ('instruments': track, channel, path, latency, the frames skipped); every other path stays aligned. Each call re-evaluates (arm a track, call again). Answers the devices it took out. Session state: nothing is saved or journalled.",
       "group": "transport",
       "id": "transport.low_latency",
       "mutating": false,
@@ -34668,9 +36770,58 @@
         ],
         "type": "object"
       },
-      "description": "Attach the video file 'path' to the project (one video per project: an attached one is replaced), its first frame shown at song tick 'offset' (0 when left out). FFmpeg reads its frame rate, length, size and whether it has sound. The video window and the arranger's video lane follow it. Saved with the project (the path absolute); one undo step.",
+      "description": "Attach the video file 'path' to the project, replacing the whole video track with this one clip (the legacy one-video behaviour; use video.clip_add to add another clip), its first frame shown at song tick 'offset' (0 when left out). FFmpeg reads its frame rate, length, size and whether it has sound. The video window and the arranger's video lane follow it. Saved with the project (the path absolute); one undo step.",
       "group": "video",
       "id": "video.attach",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "offset": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "description": "Add a video clip to the project's one video track: file 'path', its first frame at song tick 'offset' (0 when left out). Every clip keeps its own stable 'id', so two files can be placed at different song ticks and addressed independently. The reply returns the new clip and the whole track state. One undo step.",
+      "group": "video",
+      "id": "video.clip_add",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "Remove the clip 'clip' from the project's video track (the file is left alone). One undo step.",
+      "group": "video",
+      "id": "video.clip_remove",
       "mutating": true,
       "requires": [],
       "result_schema": {
@@ -34684,7 +36835,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Take the video off the project (the file is left alone). One undo step.",
+      "description": "Take every video clip off the project (the files are left alone). One undo step.",
       "group": "video",
       "id": "video.detach",
       "mutating": true,
@@ -34700,6 +36851,9 @@
           "background": {
             "type": "boolean"
           },
+          "clip": {
+            "type": "string"
+          },
           "out": {
             "type": "string"
           }
@@ -34707,7 +36861,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Decode the video's sound to a 32-bit float stereo WAV - 'out', or '<video>-audio.wav' next to the project (next to the video while the project is unsaved), numbered when taken - and put it on a new audio track at the video's offset. Runs to the end before it answers - or, with 'background' true, decodes on a worker listed in the task area (task.list: its progress, and task.cancel stops it) and answers at once with the 'task' id; the track then lands when the decode completes. One undo step removes the track; the WAV stays on disk.",
+      "description": "Decode the sound of clip 'clip' (the first clip when left out) to a 32-bit float stereo WAV - 'out', or '<video>-audio.wav' next to the project (next to the video while the project is unsaved), numbered when taken - and put it on a new audio track at that clip's offset. Runs to the end before it answers - or, with 'background' true, decodes on a worker listed in the task area (task.list: its progress, and task.cancel stops it) and answers at once with the 'task' id; the track then lands when the decode completes. One undo step removes the track; the WAV stays on disk.",
       "group": "video",
       "id": "video.extract_audio",
       "mutating": true,
@@ -34723,7 +36877,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "The project's video: whether one is attached, its 'path' (and whether the file still 'exists'), the song tick it starts at ('offset', also in seconds) and ends at ('end'), its 'fps', 'duration' (seconds), 'width', 'height' and 'has_audio'.",
+      "description": "The project's video track: whether any clip is attached, 'clip_count', and 'clips' - each clip's stable 'id', 'path' (and whether the file still 'exists'), the song tick it starts at ('offset', also in seconds) and ends at ('end'), its 'fps', 'duration' (seconds), 'width', 'height' and 'has_audio'. The first clip's fields are also mirrored at the top level for the legacy single-video shape.",
       "group": "video",
       "id": "video.get_state",
       "mutating": false,
@@ -34736,6 +36890,52 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "fps": {
+            "type": "number"
+          },
+          "from": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "height": {
+            "type": "integer"
+          },
+          "out": {
+            "type": "string"
+          },
+          "to": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "width": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "out"
+        ],
+        "type": "object"
+      },
+      "description": "Render the project's video track over the song range 'from'..'to' (ticks, 'to' excluded) as PNG images 'frame-<n>.png' in the folder 'out': one image per 1/'fps' second of song time (25 when left out), so the sampled ticks follow the tempo map. Each image is the frame of the clip active at that tick, at that clip's own time from its offset, letterboxed into 'width' x 'height' (320 x 180); before, after and between clips it is black - never another clip's frame. The reply lists every frame: 'tick', song 'seconds', 'clip' id (empty outside every clip), 'clip_seconds', whether it 'decoded', and its 'file'. At most 10000 frames. Writes files only; the project is not changed.",
+      "group": "video",
+      "id": "video.render_frames",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
           "offset": {
             "maximum": 2147483647,
             "minimum": 0,
@@ -34747,7 +36947,7 @@
         ],
         "type": "object"
       },
-      "description": "Move the video to start at song tick 'offset'. Saved with the project; one undo step.",
+      "description": "Move the clip 'clip' (the first clip when left out) to start at song tick 'offset'. Saved with the project; one undo step.",
       "group": "video",
       "id": "video.set_offset",
       "mutating": true,
@@ -34878,6 +37078,9 @@
           "renders_linearly": {
             "type": "boolean"
           },
+          "repeat_rate": {
+            "type": "object"
+          },
           "source_tempo": {
             "type": "number"
           },
@@ -34892,6 +37095,11 @@
           },
           "track": {
             "type": "string"
+          },
+          "transient_count": {
+            "maximum": 256,
+            "minimum": 0,
+            "type": "integer"
           },
           "warped": {
             "type": "boolean"
@@ -34941,6 +37149,9 @@
           "renders_linearly": {
             "type": "boolean"
           },
+          "repeat_rate": {
+            "type": "object"
+          },
           "source_tempo": {
             "type": "number"
           },
@@ -34955,6 +37166,11 @@
           },
           "track": {
             "type": "string"
+          },
+          "transient_count": {
+            "maximum": 256,
+            "minimum": 0,
+            "type": "integer"
           },
           "warped": {
             "type": "boolean"
@@ -35019,6 +37235,9 @@
           "renders_linearly": {
             "type": "boolean"
           },
+          "repeat_rate": {
+            "type": "object"
+          },
           "source_tempo": {
             "type": "number"
           },
@@ -35033,6 +37252,11 @@
           },
           "track": {
             "type": "string"
+          },
+          "transient_count": {
+            "maximum": 256,
+            "minimum": 0,
+            "type": "integer"
           },
           "warped": {
             "type": "boolean"
@@ -35121,6 +37345,9 @@
           "renders_linearly": {
             "type": "boolean"
           },
+          "repeat_rate": {
+            "type": "object"
+          },
           "source_tempo": {
             "type": "number"
           },
@@ -35135,6 +37362,11 @@
           },
           "track": {
             "type": "string"
+          },
+          "transient_count": {
+            "maximum": 256,
+            "minimum": 0,
+            "type": "integer"
           },
           "warped": {
             "type": "boolean"
@@ -35203,6 +37435,9 @@
           "renders_linearly": {
             "type": "boolean"
           },
+          "repeat_rate": {
+            "type": "object"
+          },
           "source_tempo": {
             "type": "number"
           },
@@ -35217,6 +37452,11 @@
           },
           "track": {
             "type": "string"
+          },
+          "transient_count": {
+            "maximum": 256,
+            "minimum": 0,
+            "type": "integer"
           },
           "warped": {
             "type": "boolean"
@@ -35241,10 +37481,26 @@
               "texture",
               "complex",
               "preserve_pitch",
+              "repeat",
+              "gate",
               "resample",
               "rubberband"
             ],
             "type": "string"
+          },
+          "rate_division": {
+            "enum": [
+              "1/1",
+              "1/2",
+              "1/4",
+              "1/8",
+              "1/16",
+              "1/32"
+            ],
+            "type": "string"
+          },
+          "rate_ms": {
+            "type": "number"
           }
         },
         "required": [
@@ -35253,7 +37509,7 @@
         ],
         "type": "object"
       },
-      "description": "Choose how a warped sample clip renders its rate change: 're_pitch' (the default, and what the engine has always done - the rate goes to the resampler and the pitch moves with it, so a 2x warp is an octave up; the old name 'resample' is accepted), 'preserve_pitch' (the same rate is rendered by the WSOLA stretcher, AudioStretcher, at its default parameters: the clip lasts as long as the mapping says and keeps its own pitch), 'tones' (the same WSOLA stretch with its alignment reach doubled to \u00b1256 frames, for monophonic and tonal material), 'texture' (the same stretch with half the grain, for polyphonic and ambient material), or one of the two Rubber Band-backed modes (Q050-036): 'beats' (R3 restricted to its single short window - the crispest timing at some spectral cost) and 'complex' (R3's full multi-resolution settings, the quality the old name 'rubberband' - also accepted - has always rendered). A build without librubberband refuses those two, and a file that asks for one still loads and renders through WSOLA for the pass in which both of the clip's voices are busy. Refused for a clip that renders linearly - with no marker and no source tempo there is no rate change to render. Reversible through the ProjectJournal (Clip checkpoint).",
+      "description": "Choose how a warped sample clip renders its rate change: 're_pitch' (the default, and what the engine has always done - the rate goes to the resampler and the pitch moves with it, so a 2x warp is an octave up; the old name 'resample' is accepted), 'preserve_pitch' (the same rate is rendered by the WSOLA stretcher, AudioStretcher, at its default parameters: the clip lasts as long as the mapping says and keeps its own pitch), 'tones' (the same WSOLA stretch with its alignment reach doubled to \u00b1256 frames, for monophonic and tonal material), 'texture' (the same stretch with half the grain, for polyphonic and ambient material), or one of the two Rubber Band-backed modes (Q050-036): 'beats' (R3 restricted to its single short window - the crispest timing at some spectral cost) and 'complex' (R3's full multi-resolution settings, the quality the old name 'rubberband' - also accepted - has always rendered), or one of the two transient modes (Q050-162): 'repeat' (each transient segment plays at its own pitch and speed from its transient and restarts at every repeat interval until the next transient's slot) and 'gate' (each segment plays once and is cut at the first interval) - both fill the warped span exactly. The interval is 'rate_division' (1/1 .. 1/32 of a whole note, following the project tempo; 1/16 by default) or 'rate_ms' (a free interval, 5 to 2000 ms, that does not follow it); it is kept across mode switches and may be changed with the mode or on its own. A build without librubberband refuses 'beats' and 'complex', and a file that asks for one still loads and renders through WSOLA for the pass in which both of the clip's voices are busy. Refused for a clip that renders linearly - with no marker and no source tempo there is no rate change to render. Reversible through the ProjectJournal (Clip checkpoint).",
       "group": "warp",
       "id": "warp.stretch",
       "mutating": true,
@@ -35283,8 +37539,14 @@
           "previous_mode": {
             "type": "string"
           },
+          "previous_repeat_rate": {
+            "type": "string"
+          },
           "renders_linearly": {
             "type": "boolean"
+          },
+          "repeat_rate": {
+            "type": "object"
           },
           "source_tempo": {
             "type": "number"
@@ -35300,6 +37562,11 @@
           },
           "track": {
             "type": "string"
+          },
+          "transient_count": {
+            "maximum": 256,
+            "minimum": 0,
+            "type": "integer"
           },
           "warped": {
             "type": "boolean"
@@ -36009,6 +38276,9 @@
             ],
             "type": "string"
           },
+          "follow_selection": {
+            "type": "boolean"
+          },
           "meter_falloff": {
             "enum": [
               "fast",
@@ -36089,7 +38359,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "The mixer view's modes, set and answered: 'sends_on_faders' (a ch-<n> return, or empty for the channel faders) makes every channel's fader drive its send to that return - a banner across the mixer names it, every fader is labelled with what it drives, and a channel with no send there keeps a dimmed, still 'No send' fader in place; the answer adds 'sends_on_faders_name' (the return's name) and 'faders' (per channel, what its fader drives: volume, send or no_send - the return's own fader and the master's stay volume); 'folded' answers the channel strips a collapsed folder hides (track.folder_set_collapsed folds). MX-005: 'selected_channels' (ch-<n> ids, never the master) are the channels the 'selected' filter shows - interface state, never saved, forgotten when the mixer is cleared for another project; a Ctrl+click on a strip adds or removes its channel, and the mode bar's 'Pick...' chooses them; the answer lists them in mixer order. The view options, kept in the config file (ui/mixerview): 'show_sends', 'show_pan', 'show_number', 'show_meter_info', 'show_inserts', 'show_macros' (a strip's sections - the meter line is the gain reduction and the clip light, the inserts are listed by name, the macros are the rack's first four as knobs), 'show_console' (Q050-088: the Console section - knobs and switches for the channel's trim, polarity, EQ and its Console's drive and glue compressor, each running mixer.console_strip; off by default, hidden in the routing view and the compact density), 'strip_width' (narrow / normal / wide), 'filter' (all / instruments / audio / returns / used - the channels a track plays into or a send reaches -, selected), 'meter_mode' (peak - after the fader -, rms, pre_fader) and 'meter_scale' (db42 - the default range -, db60, db24, linear); MX-128, the meters' ballistics: 'meter_falloff' (fast - the default, about 116 dB/s -, medium - about 26 dB/s -, slow - about 12 dB/s, a peak programme meter's fall) and 'peak_hold' (how long the peak line holds: off, 1.5s - the default -, 3s, 6s). Theme 16: 'view' (mix - levels, pan and processing, the default -, routing - each strip lists where its signal comes from and goes by name, the sends row always shown, inserts and macros left to the mix view) and 'density' (expanded - the default, every section the options show -, compact - no inserts, no macros, in the mix view no sends row, routing on one line); a mode bar across the mixer shows and sets both, the filter and the modes. The answer adds 'strips': per channel its 'type' (master, return, group, track, channel), 'format' (stereo, LCR, Quad, 5.1, 7.1), 'inputs' and 'outputs' (by name; each output with amount, pre_fader, enabled), 'hardware' (its hardware output's label, empty for none) and 'states' (afl, pfl, solo_safe, surround_pan, cue, hardware_insert). Interface state: nothing is journalled.",
+      "description": "The mixer view's modes, set and answered: 'sends_on_faders' (a ch-<n> return, or empty for the channel faders) makes every channel's fader drive its send to that return - a banner across the mixer names it, every fader is labelled with what it drives, and a channel with no send there keeps a dimmed, still 'No send' fader in place; the answer adds 'sends_on_faders_name' (the return's name) and 'faders' (per channel, what its fader drives: volume, send or no_send - the return's own fader and the master's stay volume); 'folded' answers the channel strips a collapsed folder hides (track.folder_set_collapsed folds). MX-005: 'selected_channels' (ch-<n> ids, never the master) are the channels the 'selected' filter shows - interface state, never saved, forgotten when the mixer is cleared for another project; a Ctrl+click on a strip adds or removes its channel, and the mode bar's 'Pick...' chooses them; the answer lists them in mixer order. MX-021: 'follow_selection' makes the 'selected' filter show the focused arranger track's (or clip owner's) mixer channel instead, keeping the manual set for when it is turned off; it is saved in the config file (ui/followchannel, off when absent), and the answer adds it with 'visible_channels' (the channels the filter shows now, master included). The view options, kept in the config file (ui/mixerview): 'show_sends', 'show_pan', 'show_number', 'show_meter_info', 'show_inserts', 'show_macros' (a strip's sections - the meter line is the gain reduction and the clip light, the inserts are listed by name, the macros are the rack's first four as knobs), 'show_console' (Q050-088: the Console section - knobs and switches for the channel's trim, polarity, EQ and its Console's drive and glue compressor, each running mixer.console_strip; off by default, hidden in the routing view and the compact density), 'strip_width' (narrow / normal / wide), 'filter' (all / instruments / audio / returns / used - the channels a track plays into or a send reaches -, selected), 'meter_mode' (peak - after the fader -, rms, pre_fader) and 'meter_scale' (db42 - the default range -, db60, db24, linear); MX-128, the meters' ballistics: 'meter_falloff' (fast - the default, about 116 dB/s -, medium - about 26 dB/s -, slow - about 12 dB/s, a peak programme meter's fall) and 'peak_hold' (how long the peak line holds: off, 1.5s - the default -, 3s, 6s). Theme 16: 'view' (mix - levels, pan and processing, the default -, routing - each strip lists where its signal comes from and goes by name, the sends row always shown, inserts and macros left to the mix view) and 'density' (expanded - the default, every section the options show -, compact - no inserts, no macros, in the mix view no sends row, routing on one line); a mode bar across the mixer shows and sets both, the filter and the modes. The answer adds 'strips': per channel its 'type' (master, return, group, track, channel), 'format' (stereo, LCR, Quad, 5.1, 7.1), 'inputs' and 'outputs' (by name; each output with amount, pre_fader, enabled), 'hardware' (its hardware output's label, empty for none) and 'states' (afl, pfl, solo_safe, surround_pan, cue, hardware_insert). Interface state: nothing is journalled.",
       "group": "window",
       "id": "window.mixer_view",
       "mutating": false,
@@ -36120,6 +38390,9 @@
           },
           "folded": {
             "type": "array"
+          },
+          "follow_selection": {
+            "type": "boolean"
           },
           "meter_falloff": {
             "enum": [
@@ -36202,6 +38475,54 @@
               "routing"
             ],
             "type": "string"
+          },
+          "visible_channels": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "dock": {
+            "type": "string"
+          },
+          "live": {
+            "type": "boolean"
+          },
+          "reset": {
+            "type": "boolean"
+          },
+          "sizes": {
+            "type": "object"
+          },
+          "zones": {
+            "type": "object"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Q050-227.1: where the mixer's regions are docked and how wide their separators leave them, set and answered. The regions are 'master' (the master strip), 'channels' (the scrolling channel area), 'vca' (the VCA strips) and 'rack' (the effect rack). 'channels' is always 'middle'; 'master', 'vca' and 'rack' dock 'left' or 'right' of it. 'dock' takes one side region, either alone (put it on the other side) or as '<region>=<left|right>', and 'zones' takes the whole arrangement as an object ({region: dock}). 'sizes' sets a region's width in pixels (24..4000); dragging a separator in the interface sends the same 'sizes' back through this very command, with 'live': true, so the interface's own resize and an agent's are one path ('live' takes only 'sizes' and never re-lays the splitter, which is what makes it safe mid-gesture). 'reset' puts the default arrangement back: master left, channels middle, VCA and rack right. The answer is what the mixer shows now: 'zones' and 'sizes' (the portable arrangement), and 'mixer_zones', the one object window.layout_project_save keeps inside the project's window layout, so saving that layout and reopening the project brings the arrangement and the widths back. Projects and layouts saved before this feature carry no 'mixer_zones' and open with the default arrangement. Interface state, kept with the layout: this command writes no project data of its own and records no undo step (the layout save is the step).",
+      "group": "window",
+      "id": "window.mixer_zones",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "mixer_zones": {
+            "type": "object"
+          },
+          "sizes": {
+            "type": "object"
+          },
+          "zones": {
+            "type": "object"
           }
         },
         "required": [],
@@ -37021,6 +39342,38 @@
         "required": [],
         "type": "object"
       },
+      "description": "Help > Check for Updates: check the feed now and show the answer in a notice that blocks nothing (a newer release with its notes and a button to its download page, up to date, or why it could not tell). While update checks are off it asks first and makes no request unless the answer is yes.",
+      "group": "window",
+      "id": "window.update_check",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Open the download page of the newer release the last check found, in the system's browser ('opened', 'url'). Nothing is downloaded or installed by the program.",
+      "group": "window",
+      "id": "window.update_download_page",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
       "description": "Show this version's release notes (app.whats_new) and remember they were shown, so the start does not show them again until the next version.",
       "group": "window",
       "id": "window.whats_new",
@@ -37316,7 +39669,7 @@
       }
     }
   ],
-  "count": 871,
+  "count": 927,
   "instance": {
     "binary": null,
     "binary_bytes": null,
@@ -37324,15 +39677,15 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-054.1/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-hv552av4/zene.sock",
-    "version": "0.4.0-alpha.5216+5c1c671"
+    "source_socket": "/tmp/zctl-run-_ve5yutq/zene.sock",
+    "version": "0.4.0-alpha.5220+fd9dd43"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
-    "group_count": 76,
-    "id_count": 871,
-    "ids_sha256": "2fb1b210b3e3ee6dcea9e53ec9f31abace77d08ed4972ca83e00c99363a43781"
+    "group_count": 78,
+    "id_count": 927,
+    "ids_sha256": "087bdd6ca869c238d09090ba7e4e22295b7824785ec202593d013f2a3c2e768d"
   }
 }

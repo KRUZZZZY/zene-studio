@@ -30,6 +30,7 @@
 #include <functional>
 #include <memory>
 #include <cstddef>
+#include <optional>
 #include <thread>
 #include <vector>
 
@@ -37,11 +38,13 @@
 #include <QString>
 
 #include "PluginHostChunking.h"
+#include "PluginParamGesture.h"
 #include "Vst3BusMap.h"
 #include "Vst3MidiQueue.h"
 #include "Vst3ParamDescriptor.h"
 
 namespace Steinberg::Vst { class IEditController; }
+namespace lmms { enum class PluginWindowSystem; }  // PluginWindowSystem.h
 
 namespace lmms::vst3
 {
@@ -208,6 +211,8 @@ public:
 	void setParamNormalized(std::uint32_t id, float normalized);
 	//! Lock free, any thread
 	auto paramNormalized(std::uint32_t id) const -> float;
+	//! Lock free, GUI thread only: the editor's gesture reports since the last call, and the value (Q050-214)
+	void readParamEdits(std::uint32_t id, PluginParamGesture::Edits* edits);
 	//! -1 if the plug-in has no such parameter
 	auto paramIndex(std::uint32_t id) const -> int;
 	//! GUI thread: also informs the edit controller (GUI-side value mirror)
@@ -285,14 +290,20 @@ public:
 	//! Test-only: sample offset of that chunk's event @a index, or -1 when there is none. A VST3
 	//! event offset is always in [0, chunk length).
 	auto lastChunkEventOffset(int index) const -> int;
+	//! Test-only: how many parameters the LAST process() call sent the plug-in a change for.
+	auto lastParameterChangeCount() const -> int;
 #endif
 
 	//! GUI thread: plug-in rendered string for a normalized value
 	auto paramDisplayValue(std::uint32_t id, float normalized) const -> QString;
 
 	// ---- R4.2: the plug-in's own editor (Vst3EditorSession.h) --------------------------
-	//! Main thread: attach the plug-in's editor to @a parentWindow (an X11 window id).
+	//! Main thread: attach the plug-in's editor to @a parentWindow - the platform's native window
+	//! (Q050-490: an X11 window id, an HWND or an NSView*, whatever QWidget::winId() gives there).
 	auto openEditor(void* parentWindow, QString* error) -> bool;
+	//! Q050-490: the window system the next openEditor() embeds in, instead of the running one, so a
+	//! test proves the Windows and macOS selection on any machine. Nothing in the product calls it.
+	void setEditorWindowSystem(PluginWindowSystem system);
 	void closeEditor();
 	auto editorOpen() const -> bool;
 	auto resizeEditor(int width, int height) -> bool;
@@ -314,6 +325,7 @@ private:
 	//! reset explicitly in the destructor before the controller is released.
 	std::unique_ptr<Vst3EditorSession> m_editor;
 	double m_editorScale = 1.0;
+	std::optional<PluginWindowSystem> m_editorWindowSystem;
 };
 
 } // namespace lmms::vst3

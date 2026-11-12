@@ -58,6 +58,11 @@ The checks, in order:
                                     configuration - while the record itself says
                                     the tempo a follower wrote is not part of it.
 
+13. `session.record_slot`          Q050-277: an exact-length external-synth capture
+                                    (`steps`, `clock_sync`) on the live engine - refused
+                                    while the master is off, then START, exactly the
+                                    span's pulses and STOP at the chosen boundaries;
+
 Started through the shared harness (tests/control_socket_harness.py), so this
 file adds no second launch path. Usage: QT_QPA_PLATFORM=offscreen python3 control-clock-commands.py <zene>
 Exit code 0 only when every assertion held.
@@ -66,6 +71,7 @@ Exit code 0 only when every assertion held.
 import sys
 import time
 
+import control_clock_capture_checks as CAPTURE
 import control_socket_harness as H
 
 REQUEST_IDS = iter(range(1, 1000))
@@ -552,6 +558,7 @@ def run_checks(session, instance, recorder):
     # Both inverses, in the order that makes each of them the top of the stack.
     check_undo_reverses_the_master(session, recorder)
     check_undo_restores_the_slave_configuration(session, recorder)
+    CAPTURE.check_clock_synced_capture(session, recorder)
 
 
 def main(argv):

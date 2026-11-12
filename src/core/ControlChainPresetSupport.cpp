@@ -250,6 +250,8 @@ QByteArray controlChainPresetDocument(const QString& name,
 		QDomDocument stateDoc;
 		if (!stateDoc.setContent(device.state)) { continue; }
 		holder.appendChild(doc.importNode(stateDoc.documentElement(), true));
+		// Q050-331: the binding manifest follows the state (the reader takes the FIRST child as the state).
+		presetbindings::write(doc, holder, device.bindings);
 		root.appendChild(holder);
 	}
 
@@ -312,6 +314,7 @@ bool controlReadChainPreset(const QString& path, ControlChainPreset* out, Contro
 		ControlChainPresetDevice device;
 		device.state = stateDoc.toString().toUtf8();
 		if (!controlChainPresetIdentity(&device, error)) { return false; }
+		device.bindings = presetbindings::read(holder);
 		preset.devices.append(device);
 	}
 
@@ -396,6 +399,29 @@ bool controlRestoreChainXml(EffectChain* chain, const QString& xml)
 	chain->restoreState(root);
 	return true;
 }
+
+namespace
+{
+
+/*! Q050-331: each device's saved bindings reconciled with the device now in @a chain at that index - the
+ *  instance just created, never another parameter of the same name elsewhere. */
+QJsonObject chainBindingsReport(EffectChain* chain, const ControlChainPreset& preset)
+{
+	QJsonArray restored;
+	QJsonArray skipped;
+	int saved = 0;
+	const std::vector<Effect*>& effects = chain->effects();
+	for (int i = 0; i < preset.devices.size() && i < static_cast<int>(effects.size()); ++i)
+	{
+		const QList<presetbindings::Binding>& bindings = preset.devices.at(i).bindings;
+		saved += static_cast<int>(bindings.size());
+		Effect* effect = effects.at(static_cast<std::size_t>(i));
+		presetbindings::reconcile(bindings, presetbindings::collect(effect), control::effectIdOf(effect), &restored, &skipped);
+	}
+	return presetbindings::report(saved, restored, skipped);
+}
+
+} // namespace
 
 ControlResult controlApplyChainPreset(EffectChain* chain, const ControlChainPreset& preset)
 {
@@ -483,6 +509,7 @@ ControlResult controlApplyChainPreset(EffectChain* chain, const ControlChainPres
 	QJsonObject result;
 	result.insert(QStringLiteral("devices"), devices);
 	result.insert(QStringLiteral("device_count"), devices.size());
+	result.insert(QStringLiteral("bindings"), chainBindingsReport(chain, preset));
 	return ControlResult::success(result);
 }
 

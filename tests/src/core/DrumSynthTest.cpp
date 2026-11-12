@@ -437,6 +437,89 @@ Envelope=0,00000001 100,0
 		QVERIFY2(render(nonfinitePath) == expected, "a non-finite envelope level must be stored as zero");
 	}
 
+	void emptyEnvelopeFieldIsZeroNotAStaleToken_data()
+	{
+		QTest::addColumn<QString>("malformed");
+		QTest::addColumn<QString>("literal");
+		// The empty level after "10," must not reuse the "10" read just before it.
+		QTest::newRow("empty-level") << QStringLiteral("0,100 10, 20,100")
+			<< QStringLiteral("0,100 10,0 20,100");
+		// The empty time before ",100" must not reuse the "50" level read just before it.
+		QTest::newRow("empty-time") << QStringLiteral("0,100 10,50 ,100 30,0")
+			<< QStringLiteral("0,100 10,50 0,100 30,0");
+	}
+
+	void emptyEnvelopeFieldIsZeroNotAStaleToken()
+	{
+		QFETCH(QString, malformed);
+		QFETCH(QString, literal);
+		QTemporaryDir directory;
+		QVERIFY(directory.isValid());
+		const QString malformedPath = directory.filePath(QStringLiteral("empty-field-envelope.ds"));
+		const QString literalPath = directory.filePath(QStringLiteral("literal-zero-envelope.ds"));
+		QVERIFY(writeToneFixture(malformedPath, malformed));
+		QVERIFY(writeToneFixture(literalPath, literal));
+
+		const auto expected = render(literalPath);
+		QVERIFY(!expected.empty());
+		QVERIFY2(render(malformedPath) == expected,
+			"an empty envelope field must be stored as zero, not as the token before it");
+	}
+
+	void emptyEnvelopeFieldIgnoresAnEarlierParse()
+	{
+		// The envelope parse state is thread local and outlives one file. The earlier file leaves a level
+		// of 50 in the slot that the empty level field of the next file reaches, so the empty field must
+		// overwrite it with zero rather than keep it.
+		QTemporaryDir directory;
+		QVERIFY(directory.isValid());
+		const QString earlierPath = directory.filePath(QStringLiteral("earlier-envelope.ds"));
+		const QString emptyPath = directory.filePath(QStringLiteral("empty-level-envelope.ds"));
+		const QString literalPath = directory.filePath(QStringLiteral("literal-zero-envelope.ds"));
+		QVERIFY(writeToneFixture(earlierPath, QStringLiteral("0,100 10,50 20,100")));
+		QVERIFY(writeToneFixture(emptyPath, QStringLiteral("0,100 10, 20,100")));
+		QVERIFY(writeToneFixture(literalPath, QStringLiteral("0,100 10,0 20,100")));
+
+		QVERIFY(!render(earlierPath).empty());
+		const auto expected = render(literalPath);
+		QVERIFY(!expected.empty());
+		QVERIFY2(render(emptyPath) == expected,
+			"an empty envelope level must be stored as zero, not kept from an earlier parse");
+	}
+
+	void noiseBandStepCountStaysDefinedForOutOfRangeQuotients()
+	{
+		// The step quotient is converted to an int only when it is finite and in range; NaN and
+		// out-of-range values take the defined results below instead of an undefined conversion.
+		constexpr long maxStep = std::numeric_limits<int>::max();
+		QCOMPARE(DrumSynth::noiseBandStepCount(41.7), 42L);
+		QCOMPARE(DrumSynth::noiseBandStepCount(-3.0), 1L);
+		QCOMPARE(DrumSynth::noiseBandStepCount(std::numeric_limits<double>::quiet_NaN()), 1L);
+		QCOMPARE(DrumSynth::noiseBandStepCount(std::numeric_limits<double>::infinity()), maxStep);
+		QCOMPARE(DrumSynth::noiseBandStepCount(1e300), maxStep);
+	}
+
+	void negativeNoiseBandFrequencyRendersLikeTheBandOff()
+	{
+		// A disabled noise band with a negative frequency still derives its step; the render must match a file without the band.
+		QTemporaryDir directory;
+		QVERIFY(directory.isValid());
+		const QByteArray tone = "[General]\nVersion=DrumSynth v2.0\n[Tone]\nOn=1\nLevel=100\n"
+								"Envelope=0,100 2400,100 4800,0\nF1=440\nF2=220\n";
+		const auto writeBytes = [](const QString& path, const QByteArray& contents) {
+			QFile file(path);
+			return file.open(QIODevice::WriteOnly) && file.write(contents) == contents.size();
+		};
+		const QString plainPath = directory.filePath(QStringLiteral("plain-tone.ds"));
+		const QString bandPath = directory.filePath(QStringLiteral("negative-band-off.ds"));
+		QVERIFY(writeBytes(plainPath, tone));
+		QVERIFY(writeBytes(bandPath, tone + "[NoiseBand]\nOn=0\nF=-100\nEnvelope=0,100 4800,0\n"));
+
+		const auto expected = render(plainPath);
+		QVERIFY(std::any_of(expected.begin(), expected.end(), [](int16_t sample) { return sample != 0; }));
+		QVERIFY2(render(bandPath) == expected, "a disabled band with a negative frequency must not change the render");
+	}
+
 	void refusesAnEnvelopeWhoseRoundedLengthOverflows()
 	{
 		QTemporaryDir tempDir;
@@ -465,6 +548,48 @@ Envelope=0,00000001 100,0
 		QVERIFY2(!allocationFailed, "An overflowing duration must be rejected before allocation");
 		QCOMPARE(frames, 0);
 		QVERIFY(samples == nullptr);
+	}
+
+	/*! An envelope past the renderer's own longest hold must be refused before
+	 *  any buffer is sized from it. At the largest stretch (Stretch=1000, the
+	 *  10x clamp) a 500000 sample envelope asks for about 5M frames; the
+	 *  unbounded renderer allocated and rendered all of them. */
+	void refusesAnEnvelopeLongerThanTheRendererHold()
+	{
+		QTemporaryDir tempDir;
+		QVERIFY(tempDir.isValid());
+		QFile file(tempDir.filePath("long-hold.ds"));
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		const QByteArray content = "[General]\nVersion=DrumSynth v2.0\nStretch=1000\n\n"
+			"[Tone]\nOn=1\nEnvelope=0,100 500000,0\n";
+		QCOMPARE(file.write(content), static_cast<qint64>(content.size()));
+		file.close();
+
+		int16_t* samples = nullptr;
+		DrumSynth synth;
+		const int frames = synth.GetDSFileSamples(file.fileName(), samples, 1, 44100);
+		const auto owned = std::unique_ptr<int16_t[]>{samples};
+
+		QCOMPARE(frames, 0);
+		QVERIFY(samples == nullptr);
+	}
+
+	/*! The longest envelope the shipped library uses (data/samples/drumsynth/misc/verylong.ds,
+	 *  438020 samples) is under the renderer's hold, so it must still render at the
+	 *  largest stretch. */
+	void rendersTheLongestShippedEnvelopeAtMaximumStretch()
+	{
+		QTemporaryDir tempDir;
+		QVERIFY(tempDir.isValid());
+		QFile file(tempDir.filePath("shipped-hold.ds"));
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		const QByteArray content = "[General]\nVersion=DrumSynth v2.0\nStretch=1000\n\n"
+			"[Tone]\nOn=1\nEnvelope=0,100 438020,0\n";
+		QCOMPARE(file.write(content), static_cast<qint64>(content.size()));
+		file.close();
+
+		const auto samples = render(file.fileName());
+		QVERIFY2(!samples.empty(), "an envelope under the renderer's hold must still render");
 	}
 
 	void mapsAFractionalStepAboveMaxToTheSafeMaximumLength()
@@ -497,6 +622,39 @@ Envelope=0,00000001 100,0
 		const int length = synth.LongestEnv();
 		const int expectedLength = baseLength + (blockLength * maxSteps);
 		QCOMPARE(length, expectedLength);
+	}
+
+	/*! A setting value longer than its destination buffer is cut to that buffer,
+	 *  and a missing setting is read as nothing, not as whatever the buffer held.
+	 *
+	 *  The Version value is copied into a 32 byte buffer. Padding after the
+	 *  version name must leave the version and the rendered samples unchanged,
+	 *  and a file without a Version key must not render. */
+	void boundedProfileValuesKeepTheirSettings()
+	{
+		QTemporaryDir directory;
+		QVERIFY(directory.isValid());
+
+		const QByteArray base = drumSynthFixture(100, false, false);
+		QByteArray padded = base;
+		padded.replace("Version=DrumSynth v2.0", QByteArray("Version=DrumSynth v2.0") + QByteArray(64, 'x'));
+		QByteArray missing = base;
+		missing.replace("Version=DrumSynth v2.0\n", "");
+		QVERIFY(padded != base);
+		QVERIFY(missing != base);
+
+		const QString basePath = directory.filePath(QStringLiteral("base-version.ds"));
+		const QString paddedPath = directory.filePath(QStringLiteral("padded-version.ds"));
+		const QString missingPath = directory.filePath(QStringLiteral("missing-version.ds"));
+		QVERIFY(writeDrumSynthFixture(basePath, base));
+		QVERIFY(writeDrumSynthFixture(paddedPath, padded));
+		QVERIFY(writeDrumSynthFixture(missingPath, missing));
+
+		const auto expected = render(basePath);
+		QVERIFY(!expected.empty());
+		QVERIFY2(render(paddedPath) == expected,
+			"a Version value longer than its buffer must be cut to the buffer and still be read");
+		QVERIFY2(render(missingPath).empty(), "a file without a Version key must not render");
 	}
 
 	/*! An over-long line must not stop the profile parser.

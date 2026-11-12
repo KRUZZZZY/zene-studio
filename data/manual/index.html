@@ -35,6 +35,15 @@ keep working until you bind a scoped action over them. A clash is two actions of
 list marks it, Set Keys refuses it until you turn on <i>Force</i>, which moves the key there and unbinds the other
 action of that context only - a binding in another context is never touched. The choices are saved with your
 configuration, so they are there at the next start.</p>
+<p class="tip"><b>Plug-ins from the keyboard.</b> Every context's list has <i>Open Selected Track's Editor</i> (the
+track's instrument, or on a track with no instrument its first effect) and <i>Open Selected Track's First Effect</i>:
+give either a key and it opens that device of the track selected when you press it - the plug-in's own window when it
+has one, otherwise Zene's view of it. To load a plug-in from a key, press <i>Bind a Plug-in...</i> in Keyboard Shortcuts,
+choose the context, the plug-in and the key. Pressing it loads that plug-in onto the selected track or mixer channel, as
+adding it by hand does: an effect goes at the end of the chain and Undo removes it; an instrument replaces the track's
+instrument, which cannot be undone. A target that cannot take it (an instrument on a sample track, anything on an automation track, or
+nothing selected) loads nothing and a message says why. The same actions are in Project tools &gt; Selected Track, and
+the binding's row takes Set Keys and Unbind like any other, where Unbind removes it from the list.</p>
 <nav><a href="#quickstart">Quick start</a> <a href="#window">The window</a> <a href="#arrange">Arranging</a> <a href="#notes">Notes</a> <a href="#mix">Mixing</a>
 <a href="#devices">Devices</a> <a href="#record">Recording</a> <a href="#launch">Launcher</a> <a href="#workflows">Patterns and cells</a>
 <a href="#projects">Projects</a> <a href="#agents">Scripts and agents</a> <a href="#customise">Customising</a> <a href="#access">Access</a></nav>
@@ -45,7 +54,7 @@ area reference below, and points at the command an agent sends for the same job.
 
 <h3 id="task-first-beat">Make a first beat</h3>
 <ol>
-<li>Open the Browser and drag an instrument onto the arrangement, or choose Track &gt; Add Instrument Track (<code>track.add</code>).</li>
+<li>Open the Browser and drag an instrument onto the arrangement, or use the <b>Add track to</b> button on the Song Editor's track toolbar (<code>track.add</code>).</li>
 <li>Double-click the track at bar 1 to make a MIDI clip, then double-click the clip to open the note editor (<code>note.add</code>).</li>
 <li>Draw a kick and a snare with the pencil; Space plays and stops.</li>
 <li>Take the tour: Help &gt; Tours &gt; Your first beat (<code>app.tour</code>, tour <code>first-beat</code>).</li>
@@ -97,7 +106,23 @@ area reference below, and points at the command an agent sends for the same job.
 <ul>
 <li><b>Header</b> - transport (play, stop, record), tempo, time signature, position, the master level, the transpose,
 the CPU load and the loudness readout. Right-click
-it to choose which buttons it shows. Pressing Play hands the period's work to the worker threads and wakes any that
+it to choose which buttons it shows. Right-click the <b>CPU</b> readout and choose <b>CPU diagnostics...</b> to see
+what the load is made of: every instrument track's own <i>synthesis</i> share of the audio period - the instrument
+alone, apart from its mixer channel and effects (several cores working at once can take it past 100%) - and the
+<i>late periods</i>, the renders that took longer than the period lasts, each at the bar.beat it started at, newest
+first. A late period is the engine missing its deadline, not the audio device reporting an xrun. The window refreshes
+twice a second and shows exactly what agents read from <code>mixer.cpu_load</code> (its <code>tracks</code> and
+<code>late_periods</code>); <code>track.overview</code> gives each instrument track's <code>synthesis_cpu_percent</code>
+beside its channel's <code>cpu_percent</code>. Below them, <b>Audio device</b> shows whether the device's timing
+plays a part: the backend, the engine's own sample rate and period, and what the device negotiated - its output sample rate, the
+input's own sample rate (a separately chosen ALSA capture interface can run at a different rate; input latency is
+timed at it), period and buffer in frames, its input and output latency (frames, milliseconds and what the figure is read from:
+JACK's port latency ranges, or ALSA's playback buffer and, while capture is open, one capture period) - and the
+device's own <i>xruns</i> (JACK's xrun notifications, ALSA's playback underruns), counted apart from the engine's
+late periods. A reading the backend does not report says <b>unavailable</b>, never 0: JACK does not say how many
+periods it queues, and with no audio device (the Dummy) every device reading is unavailable while the CPU and
+late-period readings carry on. Agents read the same state as <code>mixer.cpu_load</code>'s <code>audio_device</code>,
+each reading <code>{available, value, unit}</code>. The readings are live only: nothing is saved with the project. Pressing Play hands the period's work to the worker threads and wakes any that
 are asleep; that wake is a single atomic word, so it never waits for a lock or allocates, on macOS as on every other
 platform. On the Apple build the supported floor is <b>macOS 10.13</b> (High Sierra); a build for a newer macOS runs
 the same wake.</li>
@@ -108,6 +133,12 @@ every word must match (<code>kick 808</code> finds items with both), <code>kick 
 <i>Where to look</i> and <i>Category</i> narrow by what the files are, where they sit and how you classified them - pick a
 category a file carries, or <i>Any category</i> to see everything again - and <i>Whole library</i> searches the built index
 instead of walking the folders. Right-click a result and use the <i>Category</i> submenu to give a file its one category.
+A <i>Tempo</i> row under them narrows the audio files to a BPM range (leave a side at <i>Any</i> for an open end) and a
+<i>Key</i> picker narrows to one key; both read the tempo and key the library index measured when it scanned the files
+(<i>Rescan Library</i> measures new ones), and a file whose tempo or key is not known is never listed by an active filter -
+unknown is not a value. The filters combine (tempo and key and category and tags) and work in <i>Whole library</i> mode too,
+answering the same files; the agent commands <code>browser.query</code> and <code>browser.index_query</code> take the same
+<code>tempo_min</code>, <code>tempo_max</code> and <code>key</code> arguments, and a saved collection keeps them.
 The
 <i>Search file metadata</i> checkbox also matches what the audio files themselves say rather than just
 their names - the embedded title, artist, album, comment and genre tags, and the sample rate, channel
@@ -134,9 +165,25 @@ grid) load it as they always did.</li>
 
 <h2 id="arrange">Arranging</h2>
 <p>Drag clips to move them; drag their edges to trim. Choose a range with the Range tool (Navigate &gt; Arranger Tool &gt; Range: drag over the tracks; the Smart tool does the
-same from a clip's upper half), then split, delete, crop, fade or bounce it from Navigate &gt; Range. A clip dragged onto another trims it (Navigate &gt; Overlap chooses trim, crossfade or free), and before you let go the arranger shows what will be cut and what the clip snaps to. A locked clip can be selected but not moved, trimmed or deleted - a padlock marks it. Sections, markers and tempo have lanes of their own under the bar ruler (right-click them to show or hide one); a pinch or Ctrl+wheel zooms around the pointer, the zoom keys around the selection or the play position. Ctrl+wheel zooms smoothly - a touchpad as finely as you turn it. Where labels would overlap they are shortened or left out; hover to read them. Double-click a section or a marker in its lane to zoom to it. <b>Navigate</b> holds the zoom, the zoom history, markers, ripple and overlap modes; <b>Alt+arrows</b> nudge and select clips. Navigate &gt; Zoom Back steps to an earlier zoom extent and Navigate &gt; Zoom Forward steps back over extents Zoom Back passed, like the browser's back and forward, so several prior zooms can be walked through; a new zoom cuts the forward walk off. Navigate &gt; Zoom Toggle swaps the current zoom with the extent just left, so pressing it twice returns to where you were; unlike Zoom Back and Zoom Forward it does not walk the history. The same three actions are the agent commands arrangement.zoom_back, arrangement.zoom_forward and arrangement.zoom_toggle. Navigate &gt; Range also holds <b>Render Selection...</b>, which renders the selected range to a file at its exact start and end, and <b>Export Sections...</b>, which writes one file per named section, each bounded to its own ticks. A file is named after its section with characters a filesystem refuses (/ \ : * ? &quot; &lt; &gt; |) removed and leading dots dropped; trailing dots and spaces become one _, and a Windows-reserved name (CON, PRN, AUX, NUL, COM1-9, LPT1-9, even with an extension) gets a _ added (CON.wav becomes CON_.wav), so the same project writes the same file names on every system. Two sections whose names match when capitals and accents-versus-composed letters are ignored (Intro and intro) would be one file on Windows and macOS, so the later one gets -2 (intro-2.wav), the next -3, and a section really named intro-2 is moved on to intro-2-2. The Project &gt; Export... dialog carries a <b>Render preset</b> picker: choose a saved preset, or Save Preset... to store the settings shown; the chosen preset sets the render's file format, sample rate, bit depth, channels and stereo mode, and a stem export (Export Tracks...) follows it too.
+same from a clip's upper half), then split, delete, crop, fade or bounce it from Navigate &gt; Range. A clip dragged onto another trims it (Navigate &gt; Overlap chooses trim, crossfade or free), and before you let go the arranger shows what will be cut and what the clip snaps to. A locked clip can be selected but not moved, trimmed or deleted - a padlock marks it. Sections, markers and tempo have lanes of their own under the bar ruler (right-click them to show or hide one); a pinch or Ctrl+wheel zooms around the pointer, the zoom keys around the selection or the play position. Ctrl+wheel zooms smoothly - a touchpad as finely as you turn it. Where labels would overlap they are shortened or left out; hover to read them. Double-click a section or a marker in its lane to zoom to it. Drag a section's block (the hand cursor) to move the section and its material on every track, with clips crossing its edges cut there: on Gap the rest stays where it is, leaving a gap at the source; on Ripple what the section passes moves the other way by its length, so the song is reordered with no gap. Right-click the lanes to choose (it is the Ripple mode of Navigate), hold Shift while dropping for the other one, or Alt for no snap. One undo puts everything back. <b>Navigate</b> holds the zoom, the zoom history, markers, ripple and overlap modes; <b>Alt+arrows</b> nudge and select clips. Navigate &gt; Zoom Back steps to an earlier zoom extent and Navigate &gt; Zoom Forward steps back over extents Zoom Back passed, like the browser's back and forward, so several prior zooms can be walked through; a new zoom cuts the forward walk off. Navigate &gt; Zoom Toggle swaps the current zoom with the extent just left, so pressing it twice returns to where you were; unlike Zoom Back and Zoom Forward it does not walk the history. The same three actions are the agent commands arrangement.zoom_back, arrangement.zoom_forward and arrangement.zoom_toggle. Navigate &gt; Range also holds <b>Render Selection...</b>, which renders the selected range to a file at its exact start and end, and <b>Export Sections...</b>, which writes one file per named section, each bounded to its own ticks. A file is named after its section with characters a filesystem refuses (/ \ : * ? &quot; &lt; &gt; |) removed and leading dots dropped; trailing dots and spaces become one _, and a Windows-reserved name (CON, PRN, AUX, NUL, COM1-9, LPT1-9, even with an extension) gets a _ added (CON.wav becomes CON_.wav), so the same project writes the same file names on every system. Two sections whose names match when capitals and accents-versus-composed letters are ignored (Intro and intro) would be one file on Windows and macOS, so the later one gets -2 (intro-2.wav), the next -3, and a section really named intro-2 is moved on to intro-2-2. The Project &gt; Export... dialog carries a <b>Render preset</b> picker: choose a saved preset, or Save Preset... to store the settings shown; the chosen preset sets the render's file format, sample rate, bit depth, channels and stereo mode, and a stem export (Export Tracks...) follows it too.
 Drop a MIDI file or an audio file on the arranger - from a plug-in editor's window, the desktop or a file manager - to make a clip of it: on a track's lane, on a clip or on a track's name (the clip starts where you let go, on the grid), or on the empty space below the tracks, which adds a new track for it. A MIDI file becomes one MIDI clip on an instrument track (all its channels and tracks together; its tempo is not used); an audio file becomes a sample clip on a sample track. One drop is one undo step. A file that cannot be used - missing, empty, damaged, not MIDI or audio this build reads, a MIDI file that would run past the end of the song, or the wrong kind for the track - is refused with a message in the status bar and nothing in the project changes. Only the first file of several dropped together is used. Audio that a plug-in leaves in the system's temporary folder is copied into the clip, so it survives the plug-in deleting it; other audio stays a link to its file. The same action is the agent command clip.import_file.
+<p id="loop-warp">A dropped audio file - from the desktop, a plug-in editor or the browser onto a sample track - is analysed for its tempo and key, and the status bar says what was found (for example "Detected 100.3 BPM, A Major"). With <b>Edit &gt; Auto-Warp Dropped Loops</b> checked the new clip <b>follows the project</b>: it is played at the project tempo from its detected tempo (rounded to a whole BPM, the pitch kept), so a four-bar loop fills four bars at any project tempo, and when the project has a key (a sample clip's Warp menu, Detect and Apply to Project..., sets one) the clip is transposed the nearest way so its tonic is the project's - an A loop in a C project goes up 3 semitones. Unchecked, the clip <b>keeps its own speed and pitch</b>, as before; the detected values are still kept with it. Hold <b>Alt</b> while dropping to take the other choice for that one drop; the setting stays as it is. The project's own tempo and key never change, the match is made once when the clip is created (changing the project key later does not retune it), and what could not be applied - no tempo or key found, a project without a key, a build without Rubber Band for the transpose - is said in the message instead of guessed. One undo removes the clip and its new track. Agents do the same with clip.import_file and its loop_mode (follow_project, keep_unstretched or preference), set the remembered choice with settings.set on import/loopwarp, and read a clip's detected and applied values with clip.source_get_state.</p>
 Sample clips show fade handles near their top corners and, with Navigate &gt; Show Transients, their transients. A sample clip's own gain is the square handle on its left edge: drag it up or down and the clip's level follows the pointer while you drag, the drawn waveform growing or shrinking with it; let go and the new level is one undo step (the agent command clip.set_gain). The dashed line across the clip is that gain. Click the drawn level line - the dashed gain line, or the envelope once it has points - to add a gain-envelope point there and drag it: the point moves in time and in level, and points can be dragged past each other, with the waveform between them following the curve as the audio does (clip.gain_envelope_set). A plain press within reach of an existing point takes and moves it. No modifier is needed for any of this, so Alt and Ctrl keep their arranger meanings on a clip (unsnapped move or resize, and copy on macOS). The Gain and fades submenu also lists Invert polarity, which renders the clip with its sign flipped and mirrors its drawn waveform, while the source sample keeps every sample it had (clip.set_polarity); all of these are in the Gain and fades submenu besides the drags.
+A sample clip can carry realtime effects of its own: right-click it and choose <b>Clip effects...</b>. The window lists
+the clip's effects in the order they process, each with On or Bypassed and its parameter values. <b>Add effect...</b> picks
+a device from the same catalogue the track's chain uses, <b>Move up</b> and <b>Move down</b> reorder, <b>Bypass</b> (or
+<b>Turn on</b>) switches the selected effect without removing it, <b>Remove</b> takes it off, and double-clicking a parameter
+sets a new value. Each change is one undo step. The effects process this clip only, live and without changing its audio:
+another clip on the same track, even where the two overlap, is not affected, and the track's own effects still run on the
+sum afterwards. A clip with effects shows <b>FX</b> in its bottom-right corner (with the count when it has more than one),
+and the menu item says how many it has. The effects, their settings, their order and their bypass state are saved with the
+project, and copies, splits and duplicates of the clip carry their own copy. Agents use the plugin commands with the clip
+as the target (<code>plugin.load</code>, <code>plugin.move</code>, <code>plugin.bypass</code>, <code>plugin.param_set</code>,
+<code>plugin.unload</code> with <code>target</code> <code>clip-&lt;n&gt;</code>) and read the chain with
+<code>dsp.get_state</code>. Limits: MIDI and pattern clips have no clip effects; an effect's tail stops when the clip's
+playback ends; a clip effect's latency is not compensated; a <b>Process</b> edit changes the clip's source audio and
+leaves its clip effects in place, running on the result; and <b>Consolidate</b> renders the clips' source audio without
+their clip effects, so the consolidated clip has none (one undo brings the original clips and their effects back).
 A sample track's <b>More</b> menu (on its header, or the Inspector's) has <b>Insert Test Signal...</b>: it opens the
 sample.generate command's form with that track set and a tone at position 0 and length 192 ticks filled in, and Run makes a
 new sample clip from it - one undo step removes the clip and its audio. Change the position, length, kind (tone, white
@@ -147,22 +194,45 @@ Project &gt; Sections names the song's parts (verse, chorus) as bands over the r
 finds a clip by name; Next and Previous Transient move the play position through the audio's hits. A clip's Sample Editor... (its menu) raises or lowers by 3 dB, silences, deletes, reverses, fades or crops a selection
 of its audio; Split to stems (a sample clip's menu) separates its audio into stems on tracks of their own. A split runs at one of three qualities - fast, standard or high - which set how much the model's
 overlapping passes over the audio overlap (25 %, 50 % or 75 %): high takes about twice as long as standard and fast about two
-thirds of it. The menu splits at standard, the quality every split used before the setting existed; an agent picks one with the
-<code>quality</code> argument of <code>stem.job_start</code>, and <code>stem.job_status</code> shows the quality a job runs at. A sample clip's
+thirds of it. Measured on the real model over four 30-second excerpts of test songs with known stems, high separated 0.05 dB
+better than standard on average (signal-to-distortion ratio) and fast 0.11 dB worse. These are small differences, and high was not better on
+every song, so standard is a sound default; choose fast for quick drafts and high when the extra time does not matter. Split to stems is a submenu: pick Fast, Standard or High quality and the split starts at it (the one you used last is
+ticked; standard until you choose another). The progress window and the message at the end name the quality the job actually ran at,
+and the original clip stays on its track, unchanged, next to the new stem tracks. The menu goes through the same command an agent uses:
+the <code>quality</code> argument of <code>stem.job_start</code>, and <code>stem.job_status</code> shows the quality a job runs at. A sample clip's
 Process menu also converts its whole source to mono with (L + R) / 2 on both sides (one undo step), or writes its left and
 right channels as two mono WAV files at the source rate and length (Split Stereo to Two Mono Files..., which leaves the clip
 unchanged). A sample clip's menu
 removes its silent stretches, crops its sample to what it plays, makes it unique, converts its melody to MIDI notes or
-splits it at the play position. A crossfade's two sides can have their own lengths and shapes. Moving a folder
+splits it at the play position. A crossfade's two sides can have their own lengths and shapes. A folder's row draws its children's clips as summary clips. Click one to select it, Shift+click for several; clips Ctrl+clicked in the arranger are edited with them, a clip reached twice changing once. Drag a summary clip's edge to resize it: outwards, the clips at that edge follow; inwards, the clips crossing the new edge are cut and those past it removed. Its menu splits it at the pointer, across the child tracks and sub-folders. Each edit is one undo step. With summary clips selected, Ctrl+Alt+Left/Right resizes their end (hold Shift to resize their start), Ctrl+Alt+K splits at the play position, Ctrl+Alt+Page Up/Down moves them, Delete removes them and Escape deselects them; Ctrl+Alt+G selects the summary clip at the play position (Shift adds). Moving a folder
 track moves every clip inside it. A clip's Snap Point (its menu) is the place inside it that lands on the grid
 when you drag it - a downbeat after a pickup. Navigate &gt; Show Navigator puts the whole song in a strip under the arranger:
 click or drag in it to scroll, turn the wheel to zoom; it names the sections and shows the markers, the loop and the play position, and Alt-click or a double-click on one zooms the arranger to it. Navigate &gt; Second Tool on a Modifier Key gives Alt, Ctrl or Shift a
 tool of its own while held. A focused track header's Menu or Shift+F10 opens its actions menu; the time ruler's opens the loop menu at the play position. Track &gt; Versions keeps several versions of a track's clips and switches between them. An audio
 clip's Speed menu ramps its speed (the pitch going with it) or adds a tape start or a tape stop.</p>
+<p>A sample clip draws each of its warp markers as an amber line through the waveform, with a grip at the top. Turn on the clip menu's Warp markers &gt; Edit warp markers, then double-click the waveform to pin the audio under the pointer where it is (nothing changes in the sound yet), drag a marker to move that moment of the audio earlier or later, or double-click a marker to remove it. While you drag, the waveform is redrawn stretched between the markers, and nothing is written until you let go; the release is one undoable edit. A marker never crosses its neighbours. Warp markers &gt; Snap to grid, Snap to transients or No snap chooses what the marker lands on (hold Alt to drag without snapping). The same edits are the warp.add, warp.move and warp.remove commands, and warp.list reads the same markers back; a reversed clip shows its markers but not the stretched waveform.</p>
 <p>Splits and trims can land on an exact sample, and with Navigate &gt; Snap Cuts to Zero Crossings on, the knife and an edge drag move to the
 nearest zero crossing so the cut does not click. A track's menu adds a spacer below it (Add Spacer Below): an empty band
 that separates groups of tracks and moves with the track.</p>
+<p>Long jobs run in the background so the window stays usable: plug-in scans, renders in the render queue, stem splits
+(the source is decoded and resampled in the background too, and a recorded or pasted clip is prepared there first) and the waveform of a long sample selected in the browser. Each
+appears in the Tasks list in the status bar with its progress and Cancel; selecting another sample stops the waveform
+read in progress, and a cancelled job leaves the project and your files as they were. Agents follow the same jobs with
+<code>app.tasks</code> and stop them with <code>app.task_cancel</code>; <code>browser.peaks_start</code> starts a waveform read.</p>
 <p>Sample Editor (a clip's menu, Sample Editor...): drag across the waveform to select a range, or drag the [ and ] handles at its edges. Start, End and Length show the range in the unit Units picks - time from the source's start, bars and beats at the song's tempo from the clip's start, or samples - and can be typed into (Enter applies; a suffix such as s, smp or bars overrides the unit) or stepped with Up and Down. End is the first frame after the range. Ctrl+wheel zooms the waveform around the pointer, the wheel scrolls it, and Zoom In, Zoom Out, Zoom to Selection and Show All do the same from the keyboard. Each range operation edits only the range the fields show, as one undo step; the line under the buttons says what was done, or why it was refused. The range buttons are <b>-3 dB</b>, <b>+3 dB</b>, <b>Silence</b>, <b>Delete</b>, <b>Reverse</b>, <b>Fade In</b>, <b>Fade Out</b> and <b>Crop</b>: Silence keeps the range's length, Delete closes the gap so what followed the range moves earlier, and Crop keeps only the range. Range gain applies no limiter and the two fades are linear; there is no noise reduction among these range tools. To Mono and Split Stereo... act on the whole source instead: the first bakes the documented (L + R) / 2 downmix, the second asks for two destinations and writes the left and right channels as mono WAV files. The Process menu's Normalize..., Amplify..., Reverse and Fade are separate whole-source bakes, and Crop the Sample discards the audio outside the clip's play window.</p>
+<p>A warped sample clip's menu has a Warp mode submenu that picks how the clip fills its warped length. Besides Beats, Tones,
+Texture, Re-Pitch, Complex and the WSOLA stretch it offers two transient modes: <b>Repeat transients</b> plays each piece of
+the clip from one transient to the next at its own speed and pitch, and starts it again from its transient at every repeat
+interval until the next transient's turn comes; <b>Gate transients</b> plays each piece once and cuts it off at the first
+interval. Either way the clip lasts exactly its warped length; at the end of the clip the last interval is simply cut short.
+Warp mode &gt; Repeat rate sets the interval: <b>Synced</b> 1/4, 1/8, 1/16 (the default) or 1/32 of a whole note follows the song's
+tempo, so 1/8 is 250 ms at 120 BPM and 500 ms at 60 BPM; <b>Free</b> 50, 100, 250 or 500 ms stays the same at any tempo. The
+rate is kept when you change modes, it is saved with the project, and each change is one undo step. The clip's transients are
+found when you choose one of the two modes (the same detector the transient tools use). Agents use the same command,
+<code>warp.stretch</code> with <code>mode</code> <code>repeat</code> or <code>gate</code> and <code>rate_division</code> (<code>1/1</code> to
+<code>1/32</code>) or <code>rate_ms</code> (5 to 2000); <code>warp.list</code> reports <code>repeat_rate</code> (including the interval in
+milliseconds at the current tempo) and <code>transient_count</code>. A clip with no warp markers and no source tempo has nothing
+to fill, so the two modes are refused for it, as the other pitch-keeping modes are.</p>
 <p>Edit &gt; Tempo Map... lists the song's tempo and metre changes: add, remove and ramp them, or import and export them as a
 Standard MIDI File.</p>
 <p>Edit &gt; Progression... lists the named progressions and spells each one out in the selected scale and key; Write puts the
@@ -182,19 +252,56 @@ lanes as well; showing it brings them back. Select a lane's clip by clicking it 
 its points. Deleting the owner deletes its lanes in the same undo step, and undo brings the owner and its lanes back together. The fold is saved
 with the track; a project saved before lanes could be folded opens with every lane shown. <code>automation.get_state</code> reports each lane's
 owner (<code>follows</code>) and each track's lane count and folded state, the same state the arranger draws.</p>
+<p>Automation clips that carry a curve (Linear or CubicHermite) render at sample precision by default, so the
+curve reaches the mixer, effect chains and instrument tracks at every frame inside an audio block. Discrete
+clips keep their per-tick step, and a CubicHermite curve is approximated as one straight segment per tick.
+Each audio block's ramp holds 32 knots; a block that needs more has the surplus knots refused and counted
+(<code>automation.ramp_get</code> reports <code>refused_knots</code>), and a clip in a pattern is refused by
+<code>automation.ramp_set</code> because a pattern has no single block timeline. A project file's
+<code>sample_accurate</code> attribute or <code>automation.ramp_set</code> is the only way to set it; there is
+no interface toggle.</p>
+
+<p id="neutral-track"><b>Neutral tracks.</b> Click <b>Add neutral track</b> in the Song Editor's track actions to add a row before you decide what it will
+be. A neutral track has a name, a position in the arrangement, mute, solo, a colour and a place in a folder like any other row, and it keeps its stable
+<code>trk-&lt;n&gt;</code> id for as long as it exists - moving it changes its position, not its id. It plays nothing and holds no clips yet: this version
+adds the row and saves it, and giving it an audio input or an instrument comes in later versions. One click is one undo step (undo removes the row,
+redo brings it back), and the row is saved with the project and drawn again, in the same place, when you open it. Clone Track makes another neutral
+row. Agents make the same row with <code>track.add</code> and <code>type</code> <code>neutral</code>, move it with <code>track.move</code>, and read it
+back with <code>track.list</code> or <code>track.get_state</code> (<code>type</code> is <code>neutral</code>); <code>clip.add</code> on it is refused.
+A Zene Studio build older than this one does not know the row: it opens the project without it.</p>
 
 <h2 id="notes">Editing notes</h2>
-<p>Double-click a MIDI clip to open it in the note editor. Opening a clip fits its length to the view and its used pitches with a little room; a very wide range stays centred at the smallest readable row, and an empty clip opens around C5. With Draw, a translucent note previews the click under the pointer, and dragging up or down while drawing moves the preview, the audition and the note to that pitch. The note area's cursor names the next action (draw, erase, slice or play), and choosing a tool from the toolbar or its letter shows it at once. The tools follow FL Studio's piano roll: P draw, B paint, D delete, T mute, C slice, E select, Y play, Z zooms to the selection (1-7 also pick them). With any tool the right button deletes every note it crosses (one undo step); a double-click on a note opens its properties; Ctrl selects (Ctrl+Shift adds), Shift and Ctrl lock pitch and timing while dragging, Alt bypasses the grid and Alt+wheel changes velocity; a new note takes the last note's length; Ctrl+C, X, V and B copy, cut, paste and duplicate; the lanes
+<p>Double-click a MIDI clip to open it in the note editor. Opening a clip fits its length to the view and its used pitches with a little room; a very wide range stays centred at the smallest readable row, and an empty clip opens around C5. With Draw, a translucent note previews the click under the pointer, and dragging up or down while drawing moves the preview, the audition and the note to that pitch. The note area's cursor names the next action (draw, erase, slice or play), and choosing a tool from the toolbar or its letter shows it at once. The tools follow FL Studio's piano roll: P draw, B paint, D delete, T mute, C slice, E select, Y play, Z zooms to the selection (1-7 also pick them). With any tool the right button deletes every note it crosses (one undo step); a double-click on a note opens its properties, including <b>Recurrence (passes)</b> - the length of the note's pass pattern and a tick box for each pass it plays on, so length 2 with pass 1 ticked plays the first of every two passes of the loop (0 passes means every pass, and no pass ticked means none; a pass is a loop wrap, not a seek or a MIDI clip's own repeat); Ctrl selects (Ctrl+Shift adds), Shift and Ctrl lock pitch and timing while dragging, Alt bypasses the grid and Alt+wheel changes velocity; a new note takes the last note's length; Ctrl+C, X, V and B copy, cut, paste and duplicate; the lanes
 below edit velocity, pan, chance, timbre, pressure, micro-pitch, release velocity, velocity spread and repeats, and the
 clip's controller curves. The Notes menu quantises, transposes,
 scales, strums and transforms; Pitch Curve draws a bend on each note. Notes &gt; Tools inverts, arpeggiates, flams,
 repeats, moves notes a degree up or down in the key, makes them follow the chord track, writes a Euclidean rhythm, moves
 notes to another track, splits a drum loop into a track per key and detects the key. Group keeps notes together when you
-select them; Lyrics lays syllables on the notes ("Hal-le-lu-jah"). Play On chooses the passes of the loop a note plays on;
+select them; Lyrics lays syllables on the notes ("Hal-le-lu-jah"). Play On chooses the passes of the loop a note plays on (the same <code>recur_length</code>/<code>recur_mask</code> pair the properties box edits, read back by <code>roll.get_state</code>);
 the Repeats lane plays a note several times inside its length; the Velocity Spread lane varies its velocity each time.
 Articulation picks one of the track's articulations (Track &gt; Articulations... sets the keyswitch, program or controller
 each one sends). New Note Length fixes the length a click draws; Audio Behind the Notes shows an audio clip's waveform
 under them. The controller lane can also hold program changes.</p>
+<p>A MIDI clip also reads as a melodic step grid, for agents and scripts: <code>note.step_get_state</code> lists every
+note by its step (a column of <code>step_ticks</code> ticks, a sixteenth by default), key, velocity, chance and ratchet, says
+which notes are in the set scale and their degree, and lists each column's stacked pitches. <code>note.step_set</code> edits
+those cells as one undo step: name a note or a step and key, and give velocity, chance (0 never to 1 always), ratchet (1 to
+16 evenly spaced attacks inside the note), length or <code>remove</code>. With a scale set, a new or changed pitch is snapped to
+the nearest in-scale key (<code>scale_mode</code> snap; strict refuses, off leaves it), and a note that is already out of the
+scale stays editable. The cells are ordinary notes of the clip, so the piano roll shows the same notes, an old project opens
+with chance 1 and ratchet 1, and one Undo restores the notes as they were.</p>
+<p><b>CC lanes and device automation.</b> A clip's CC lane and one device parameter of the clip's own track can be turned into each other by an agent (the note editor's menu entry follows in the next release): <code>clip.controllers_to_automation</code> copies a <code>cc:&lt;n&gt;</code> lane onto the parameter's automation - CC 0 to 127 spans the parameter's minimum to maximum - and <code>clip.controllers_from_automation</code> copies the parameter's automation that lies inside the clip back into the lane, rounding to the nearest CC step and adding the curve's value where the clip cuts it. Points keep their place on the song's timeline, including the clip's start offset and an automation clip that starts later. The source stays; the target's points between the first and last converted tick are replaced, and the automation clip is made linear (a CC lane is linear between points). <code>parameter</code> may be left out only when it names one candidate; otherwise the call is refused and lists them. Pitch bend, aftertouch and program lanes, switches and lists of choices, trim clips, a point that would fall before its automation clip and a non-linear clip with other points outside the span are refused, and a refusal changes nothing. One undo takes a conversion back.</p>
+<p><b>MPE pressure and timbre on the built-in synths.</b> A note's pressure and timbre (CC74) values - from the Pressure and Timbre lanes, from an MPE controller with Edit &gt; MPE Input on, or from <code>note.expression_set</code> - now change the sound of the built-in instruments (Triple Oscillator, Monstro, Organic, Kicker, the AudioFileProcessor sampler and every other instrument that plays each note itself; LB302, OpulenZ, the SF2/GIG/SFZ players and ZynAddSubFX play one stream for all notes and are not affected). Pressure makes that note louder (up to twice its level at full pressure); timbre makes it brighter (up to +12 dB above about 1 kHz at full CC74). Both are neutral at 0, so a note with no expression, or with both at 0, sounds exactly as before, and older projects play unchanged. Live changes move only the note on that MPE channel and glide over one audio block, so they do not click. Hosted plug-ins and MIDI outputs still receive the values as MIDI and choose their own mapping.</p>
+<p>Notes &gt; Tools &gt; Generate a Melody... writes a melodic line in the scale chosen in the note editor's scale menu
+(a scale of your own from Define a Scale... too): every note it writes is a key of that root and scale between the Low
+and High keys (48 to 72 when left blank). Contour picks the shape - walk (a random walk, each step one or more scale
+degrees up or down), rise, fall, arch or valley - and Spread how far, in scale degrees, the line may stray from that
+shape (0 gives the bare shape). Target new writes Count notes Step ticks apart from Start; existing gives the notes
+already in the clip (or the selection, with Scope) new pitches and keeps their rhythm, so a rhythm from Generate a
+Rhythm... can be given a line. The same Seed on the same clip always writes the same notes; another seed writes another
+line; a blank seed uses the project's seed. With no scale chosen the form says so and writes nothing. The notes are
+ordinary notes to edit, and one undo takes the whole line back. An agent runs the same command,
+<code>note.generate_melody</code>.</p>
 <p>Each lane under the notes names what it shows and its scale - for example Velocity, 0 % to 200 %, with the values at its top, middle and bottom on the right. Point at a stem and the lane reads out that note's value and the value at the pointer; while nothing is pointed at, the header shows the selected notes' values. Controller lanes keep MIDI's 0 to 127 (pitch bend: -8192 to +8191 around its centre) and read out the curve's value at the pointer's position. Selected notes have square heads; a note whose key is folded away has a hollow one. A muted note has a dashed outline, a note that may not play a dotted one and its chance in its label, and a very short note can be clicked a little beside it.</p>
 <p>Project &gt; Global Swing delays every off-beat 16th (or 8th) of the song; Chase Notes sounds a note playback starts,
 loops or jumps into the middle of, or one already under the playhead when its track or clip is unmuted; MIDI Playback Offset starts every note a little later, to line up a slow instrument.</p>
@@ -210,10 +317,13 @@ lock; a clip's menu has Move With Edit Group.... Solo can be exclusive or
 additive (Mixer View &gt; Solo Mode). A return's Mixer View menu has Show Sends to Here on Faders: every channel's fader then sets its send to that return
 (Channel Faders goes back). A strip can swap its left and right sides; a send can be switched off and on
 again and keeps its level; Create a Return makes a bus fed by the channel; Adjust Channels Together moves several faders
-by the same amount. Project &gt; Pan Law chooses how much a centred signal is cut (none, 3, 4.5 or 6 dB), Control Room &gt;
+by the same amount. With Show set to Selected, Follow Selection makes the mixer show the focused arranger track's
+channel (or the channel of the track a focused clip is on) and the master; the channels you picked for Selected are kept
+while it follows and come back when you turn it off. The setting is remembered between sessions, while projects are
+unchanged. Project &gt; Pan Law chooses how much a centred signal is cut (none, 3, 4.5 or 6 dB), Control Room &gt;
 Mono Check folds what you hear to mono, Order the Mixer by Tracks lines the channels up with the tracks, and Find a Channel searches the
 names. Each send in the Inspector has a meter beside it, and instrument and sample track headers show their level. Mixer View &gt;
-Compare Channel EQ draws two channels' EQ over each other. The Control Room (Project menu) switches between three sets of
+Compare Channel EQ draws two channels' EQ over each other. Mixer View &gt; Masking Report finds where channels fight over the same frequencies: tick two or more channels, give each a priority (Front, Middle or Back), and press Report. Each clash names the two channels, the frequency range they share and a proposed cut (1 to 6 dB) on the lower-priority channel; at equal priority the channel that is quieter in that range gets the cut. The report reads the audio clips on the tracks playing into each channel, through that channel's own EQ (instrument tracks are not analysed yet), and gives the same answer for the same audio and priorities. Reporting changes nothing: apply a cut yourself with the channel's EQ (Show Console Section) and undo it as usual. Agents use <code>mixer.masking_report</code>. The Control Room (Project menu) switches between three sets of
 speakers, each with its own trim, and dims, mutes or checks the mix in mono - on what you hear only, never on an export. A
 channel's "Play Previews Here" sends the browser's previews to it instead of the master. With the keyboard, Tab and Shift+Tab move through a strip's controls and wrap inside it, while Ctrl+Tab and Ctrl+Shift+Tab move to the same control on the next or previous channel and stop at the first and last channel; arrows, Page Up/Down, Home and End adjust a focused fader or knob, and Space toggles Mute or Solo. Every control is announced with its channel's name.</p>
 <p>Mixer View &gt; Show Console Section adds a Console section to every strip (it is off by default, and kept between
@@ -233,21 +343,62 @@ interface and, under them, one for each record-armed track's chosen input - whet
 channel later - or, with a negative number, earlier - by a number of samples, shown in the menu entry; the automatic
 delay compensation keeps everything else lined up. It is saved with the project and one undo puts it back (an
 instrument track's note delay, which starts notes later, is a separate setting).</p>
+<p>Freeze a bus to save the work of playing everything that feeds it: right-click the bus strip and choose Freeze bus.
+Its output - every track and channel routed to it, through the bus's own trim, devices, VCA and pan - is rendered once to a
+32-bit WAV beside the project (in its <code>-bounces</code> folder), and from then on, while the song plays, the bus plays
+that recording in place of its inputs. Everything after it still works live: its fader, its sends to other buses and to
+the master, its taps and its meters. Choose Unfreeze bus to hear the live inputs again; nothing about the tracks or the
+routing was changed, and the recording stays on disk. Both are one undo step, and a frozen bus stays frozen when the
+project is saved and opened again. If the recording has gone missing the bus stays frozen but plays its live inputs, so
+nothing goes silent; unfreeze it, or put the file back. Freezing needs something routed to the bus and the project's one
+tempo (turn the tempo map off first). The recording follows the song: while it is stopped, or past the recording's end,
+the bus is live. Agents use <code>freeze.bus</code> and <code>freeze.unfreeze_bus</code> with the bus's channel id, and
+<code>bus.list</code> shows <code>frozen</code>, <code>frozen_audio</code> and <code>frozen_audio_ready</code>.</p>
 <p>A channel's Hardware I/O menu sends it to your interface's outputs as well as the mix, builds up to four cue
 (headphone) mixes with their own sends, and adds a hardware insert: send to an output, return from an input, with the
-round trip measured by a ping and compensated. Interface Channels names your interface's inputs and outputs and pairs them;
+round trip measured by a ping and compensated. Hover the channel's strip to see the insert's latency in frames and
+milliseconds - the measured round trip, or the figure you typed in place of it ("typed"); "not measured" means the insert
+is on but adds nothing yet, so ping it or type a figure. An agent reads the same number in <code>pdc.report</code>
+(<code>hardware_insert_latency_frames</code>, with <code>hardware_insert_latency_source</code>). An ordinary export
+runs no audio device, so it bypasses hardware inserts and writes the dry signal; an agent's <code>render.render</code> reply
+says so in <code>hardware_inserts</code> (hardware unavailable, the inserts it bypassed). To print the outboard gear,
+choose Hardware I/O &gt; Render Through Hardware (Real Time)... and give a <code>.wav</code> path: the song plays once
+through your interface from its start to its end plus a short tail (loop and metronome off for the pass), and the master
+mix, with every insert's return, is written at the interface's sample rate and the export bit depth. The delay
+compensation head is trimmed, so the file lines up with an offline export. The form shows the file, its length and the
+inserts it played; if an insert's send or return is beyond what the interface opened, or the interface has no inputs, it
+refuses and writes nothing - it never falls back to a dry render. Agents run the same <code>render.realtime</code>
+command. Interface Channels names your interface's inputs and outputs and pairs them;
 the names are kept per device, not per project. Its Surround &gt; Format menu sets a channel to LCR, quad, 5.1, 7.1,
-Mono, or a Discrete layout of 2 to 8 channels: the Surround Panner places a channel's sends into a speaker layout on a 2-D
+Mono, or a Discrete layout of 2 to 64 channels (Discrete 2 to 8 are on the Format menu itself; 9 to 64 are grouped in
+its Discrete 9-16, 17-32, 33-48 and 49-64 submenus): the Surround Panner places a channel's sends into a speaker layout on a 2-D
 room with an LFE send and spread, and a stereo master or a stereo export gets the standard downmix. Mono has one M channel.
 A Discrete layout has no speaker positions at all: channel 1 goes to the first output, channel 2 to the next, and so on, with
-no speaker folding or reordering, and its channels are numbered rather than named. Extra channels need a backend with more
+no speaker folding or reordering, and its channels are numbered rather than named. A Discrete channel sending into
+another Discrete channel carries channel i to channel i at the send's level; a receiver with fewer channels drops the
+ones it lacks, and a stereo receiver takes the first pair only. For now the extra channels come from another surround or
+Discrete channel's send (a 7.1 bus fed by the Surround Panner, say); a track or a device still feeds a channel its first
+pair only. Extra channels need a backend with more
 than two outputs (JACK or ALSA). With a surround master, the WAV export's Channels row can write it as it is - Surround: one
 channel per speaker (6 for 5.1, 8 for 7.1) in the standard WAV order with its speaker mask; Stereo, the default, folds it
 with the downmix.</p>
 
 <p>The mode bar across the top of the mixer shows and sets how it is laid out and what mode it is in. View: Mix shows levels, pan and processing; Routing shows, on every strip, where its signal comes from and where it goes, by channel name, with each send's amount and the hardware output. Density: Compact keeps only the essentials (no inserts or macro knobs, routing on one line); Expanded shows every section turned on in Mixer View. Strips never shrink below their width; use Show to filter channels, or scroll. The mode buttons name what the faders drive, the solo mode (exclusive or additive), who is listening (AFL or PFL) and where the master plays and in what speaker format; click one to change it. Every strip has a badge saying what it is (Master, Return, Group, Track, Channel or VCA, plus its surround format) and a line for the modes it is in (AFL/PFL, Solo safe, Surround pan, Cue, HW insert). Routing Matrix... opens every channel against every channel; filter the senders by name, and double-click or press Enter on a cell to make or change that send.</p>
 
+<p>The mixer's body is four regions: the master strip, the channels, the VCA strips and the effect rack. Dock one of them on either side of the channels from the mode bar's Zones button - its menu names each region and the side it is on - and drag the separator between two regions to resize them. The arrangement and the widths are interface state: they are kept with the window layout (Window &gt; Layouts, below), so File &gt; Save writes them with the project and reopening the project brings them back, while a project or a layout saved before this feature opens with the arrangement the mixer always had: master left, channels in the middle, VCA strips and rack right. <code>window.mixer_zones</code> reads and sets the same arrangement for an agent or a script: <code>dock</code> ("rack=right", or just "rack" for the other side), <code>sizes</code> in pixels, and <code>reset</code> for the default. Dragging a separator runs that same command with the widths you left (<code>live</code>), so the interface and a script never take two different roads to the layout.</p>
+
 <h2 id="devices">Devices</h2>
+<p>The instrument window's <b>keyboard</b> is a touch performance surface: on a touch screen, two or
+more fingers play two or more notes at once, each finger its own note, and a finger's note lasts until that finger
+lifts - lifting, sliding off or cancelling one finger never releases another's. A white key is loudest at its bottom
+edge and a black key at its top, as with the mouse; sliding a held finger to the next key moves only that finger's note.
+Two fingers on the same key sound one note, held until the last of them lifts. Sliding one held finger off the key
+bed - down past the last key, up into the octave strip or out of the keyboard - silences only that finger's note; the
+others keep sounding, and sliding the same finger back onto the keys sounds its note again. The mouse and the computer
+keyboard play the keyboard exactly as before, and the touch notes go into the same MIDI input, so record arming,
+monitoring, the track's input transform and MIDI recording all see them. A widget that loses the keyboard focus drops
+every touch note (nothing is left hanging), and the keyboard accepts touch events only for the surface itself, so Qt's
+fallback that turns an unhandled touch into a mouse click is never a second note for the same finger.</p>
 <p>Add a device from the browser or the rack's menu; right-click a device to insert another before or after it, copy it
 or its whole chain to other channels, or compare two settings (A/B). Racks hold parallel chains, macros (each mapping
 with its own range and curve) and key or velocity zones; <i>Wrap into Rack</i> moves a chain into a rack chain. Plug-in
@@ -255,10 +406,19 @@ windows have a header with presets, and an effect's also has bypass and A/B. Fav
 picker or the plug-in manager (Project &gt; Plug-in Manager); Preferred Plug-in Format lists a plug-in installed in
 several formats once. <i>Project tools &gt; Plug-in Modules...</i> lists every file the scan found with its path, its
 per-file status and the error it failed with, and quarantines or releases one from its row (Edit &gt; Plugin Quarantine
-adds and releases entries too). A device card's dot lights while the device processes audio. The rack menu bypasses every device,
+adds and releases entries too). Its Rescan and Edit &gt; Plugin Quarantine &gt; Rescan Plugins (agent: <code>plugin.scan_start</code>)
+scan in the background: the window stays usable, the Tasks list in the status bar shows the progress and Cancel, and a cancelled scan
+keeps the plug-ins you had. Scans are safe with plug-ins loaded: devices already in the project keep working and save as
+before, and the new scan applies to devices you add or reload afterwards. A device card's dot lights while the device processes audio. The rack menu bypasses every device,
 switches them all back on, removes the bypassed ones and opens an XY pad that plays two macros at once. Modulators can
 be random, smooth random, a step sequence or a retriggered envelope as well as an LFO; a modulator can run a formula of
-its own (sin(2*pi*t), tri(t) * rand(x)...) and restart on every note a track plays.</p>
+its own (sin(2*pi*t), tri(t) * rand(x)...) and restart on every note a track plays. In Edit &gt; Modulators, each
+parameter a modulator drives has a Per sample switch (agent: <code>modulator.per_sample_set</code>): on, the parameter
+moves smoothly inside each audio block, so a fast LFO does not zipper; off, it moves once per block. It is saved with
+the project, and Undo restores it.</p>
+<p>You can keep playing ZynAddSubFX while it loads a preset. Notes wait in a queue of 256 events and play as soon as the load
+finishes; the instrument is silent during the load. If more arrive than the queue holds, the extra events are dropped and
+the instrument ends the notes it is holding, so none stays stuck: play the key again to continue.</p>
 <p>A rack can split its input between its parallel chains (Rack &gt; Split the Input): by frequency band, mid and side,
 or left and right - the chains add back to the whole. A device's menu finds, renames and randomises its parameters
 (a renamed parameter keeps its own name for macros and modulators), blends its A and B settings, folds its card to
@@ -300,6 +460,74 @@ reordering and removing devices work as usual. Wiring you author is not saved wi
 LV2 plug-ins that were tried, each by its package, version and file hash, with whether it loaded, whether its own editor opened and whether its saved state
 came back, and every failure. A plug-in that is not on that page is untested - that Zene lists it as loadable only means the host accepted it.</p>
 
+<p>A VST3 or CLAP plug-in's own editor (Show plugin editor, or Open Editor in a device card's Actions menu; the agent command
+<code>plugin.editor_open</code>) opens in a window of its own on Linux, Windows and macOS: Zene puts the editor inside the system's own kind of
+window (an X11 window on Linux, a Windows window, a macOS view). A plug-in whose editor cannot go inside that kind of window does not
+open; the line under the button says why, naming the system and the plug-in's window type - for example <em>cannot embed on Windows (VST3
+platform type HWND)</em> - and no empty window is left behind. On a Wayland desktop see below. The device's Editor zoom (<code>plugin.options editor_scale</code>) is passed to
+the plug-in on Linux and Windows; on macOS the system scales the editor for the screen itself, so a VST3 editor is only given the larger
+size and a CLAP editor keeps its own size. Windows and macOS editors have so far been proved with Zene's test plug-ins only; the
+compatibility page says which real plug-ins have been opened where.</p>
+
+<p><b>Undoing what you did in a plug-in's editor.</b> Drag one knob in a VST3 or CLAP editor and let go, and that whole drag is one undo step:
+one Edit &gt; Undo puts the value back where it was before the drag, and one Edit &gt; Redo puts its final value back, however long the drag
+took. It shares the project's history with everything else, so an agent's <code>control.undo</code> takes back a drag and Edit &gt; Undo takes back
+an agent's <code>plugin.param_set</code>. This covers parameter changes the plug-in reports with a start and an end. A change the plug-in reports
+with neither - a preset loaded in its own browser, say - is a step per change that Zene sees, and a change it does not report as a parameter is not
+in the history at all. Two drags finished within a tenth of a second are still two steps. Dragging two controls at once is one step per control.</p>
+
+<p><b>Plug-in windows on a Wayland desktop (KDE, GNOME).</b> On Linux a VST3 or CLAP plug-in's own editor can only be placed inside an X11
+window. So on a Wayland desktop Zene Studio runs through XWayland, the X11 layer KDE and GNOME provide, and editors open
+there as they do on an X11 desktop. Zene chooses this when it starts and prints one line about it in the terminal. To
+choose yourself, set <code>QT_QPA_PLATFORM</code> before starting: <code>QT_QPA_PLATFORM=wayland zene</code> runs
+natively on Wayland, and <code>QT_QPA_PLATFORM=xcb</code> forces X11. Zene never overrides a value you set. When an
+editor cannot open - Zene runs natively on Wayland because you asked for it, the desktop has no XWayland (enable or
+install it, then restart), or the plug-in has no X11 editor - Open Editor, the Show plugin editor button and the agent
+command <code>plugin.editor_open</code> say why, and no empty window appears. The device's knobs and the generic editor
+work either way.</p>
+
+<p id="preset-bindings"><b>Presets keep their controller bindings.</b> A track preset (track menu &gt; Track Preset &gt;
+Save Preset... / Load Preset..., <code>track.preset_save</code> / <code>track.preset_load</code>) and an effect chain preset
+(track menu &gt; Effect chain presets, <code>chain.save</code> / <code>chain.apply</code>) carry the MIDI controller bindings of
+their devices' parameters - channel, CC, soft takeover and feedback - and a load puts each one back on the same
+parameter of the device it just loaded, never on another parameter of the same name elsewhere. Load Preset's form and
+the chain menu then say what happened: "2 of 2 controller bindings restored: ..." - or which ones were skipped because
+the loaded device no longer has that parameter (by name, channel and CC); a skipped binding makes no mapping at all.
+Agents read the same as <code>bindings</code> (restored, skipped, a one-line summary) in the load's reply. One undo takes
+the load back, bindings included. Presets saved before this release load as before.</p>
+
+<p>On macOS, Zene also hosts <strong>Audio Units</strong> (AUv2 effects and instruments). They come from the system's own list of
+installed Audio Units - there is no folder to set - and appear in the device picker and the instrument browser with the format
+<em>Audio Unit</em> (<code>plugin.list</code> format <code>au</code>, each entry naming its component, for example
+<code>aufx:bpas:appl</code> for Apple's AUBandpass). An Audio Unit effect goes on a track's or a mixer channel's chain like any other
+device, with bypass, wet/dry and its latency compensated; an Audio Unit instrument plays the track's notes and live MIDI. Every parameter
+is a knob in the device's window, a <code>plugin.param_get</code> / <code>plugin.param_set</code> parameter and an automation target.
+The unit's own settings are saved with the project and with <code>plugin.state_save</code>, and come back with
+<code>plugin.state_load</code> or when the project is opened. Show plugin editor opens the unit's own Cocoa editor, or Apple's generic
+editor for a unit that has none. Each Audio Unit is listed under Project tools &gt; Plug-in Modules by its own path, such as
+<code>/AudioUnits/aufx/dist/appl</code>, and quarantining that path hides that one unit; a unit that cannot be created is refused with
+the reason the system gave (for example <em>AudioUnitInitialize failed (status -10875, kAudioUnitErr_FailedInitialization)</em>).
+Windows and Linux builds have no Audio Unit format. Audio Unit v3 extensions are not hosted.</p>
+
+<p><strong>VST2 instruments through Carla.</strong> When a <a href="https://kx.studio/Applications:Carla">Carla</a> runtime is
+installed, Zene hosts VST2 instruments through it: native Linux plug-ins (<code>.so</code>) in Carla itself, and 64-bit Windows plug-ins
+(<code>.dll</code>) through Carla's Wine bridge (32-bit ones too where Carla's 32-bit bridge is installed). Zene looks for them in the folders named by
+<code>VST_PATH</code>, the VST folder in Settings, <code>~/.vst</code>, <code>~/.lxvst</code>, <code>/usr/lib/vst</code>,
+<code>/usr/local/lib/vst</code> and <code>/usr/lib/lxvst</code>; setting <code>ZENE_VST2_PATH</code> replaces that whole list. Each
+binary is opened only by Carla's own discovery tool, in a separate process, so a plug-in that crashes while it is being listed
+cannot take Zene down. The instruments appear in the device picker and the instrument browser with the format <em>VST2</em>
+(<code>plugin.list</code> format <code>vst2</code>; each entry carries its <code>file</code>, VST2 <code>unique_id</code>,
+<code>binary</code> - <code>native</code>, <code>win64</code> or <code>win32</code> - and <code>bridged</code>), and load with
+Replace Instrument... in the device card's Actions menu or <code>plugin.load</code>. Each one is a Carla Rack holding that plug-in: its
+parameters are knobs in the Params window, <code>plugin.param_get</code> / <code>plugin.param_set</code> parameters and automation
+targets; Show plugin editor (or <code>plugin.editor_open</code>) opens the plug-in's own editor - inside a Zene window for a native
+plug-in, in a window of its own from Wine for a Windows one. Zene runs Carla for each VST2 instrument on a thread of its own, two audio periods ahead, so neither a
+slow plug-in nor the Wine bridge can stall playback; the track compensates for those two periods. The plug-in's settings, including its private state (its chunk), are
+saved with the project, in presets (<code>plugin.preset_save</code> / <code>plugin.preset_load</code>) and with
+<code>plugin.state_save</code>, and come back when they are loaded. Without a Carla runtime no VST2 instrument is listed, and a
+project that used one keeps it as a placeholder until Carla is installed. VST2 effects through Carla, and opening projects saved with
+the older VeSTige and VST effect hosts as Carla devices, come in later releases; until then those older hosts are unchanged.</p>
+
 <p>Each device card has an Actions button (⋯), and the same menu opens on a right-click: Bypass, Open Editor, Presets, A/B, Replace With…, Move Left, Move Right and Remove, then Insert, Copy, Parameters and Hosting. Under the card's header a line says the device's state in words: Bypassed, which A/B setting you hear, the delay it adds, whether its plug-in host crashed or was quarantined, and the preset it last loaded or saved. When the chain changes, the cards that did not change stay where they are. Add device, Insert and Replace open the device picker. With a mixer channel selected, Add device fills the channel's selected parallel chain (Rack &gt; Route to); an empty parallel chain has its own Add device... button under its heading. Start typing to filter it by name, vendor, format or type. The arrow keys move through the list, Enter adds the highlighted device and Escape cancels. Each row shows the device's type, format, vendor and state; favourites come first.</p>
 <p>The Inspector keeps its place as you move through a project: a section that still shows the same track, clip or channel is left as it is, and a changed section keeps your keyboard focus and scroll position. When the selected notes differ, a field says 'Multiple values', and a key, velocity or length you type there is given to every selected note; a typed start moves the first note there and keeps the spacing. Volumes read in dB, velocities and pan in %, and times in the time format. Rename a track or a mixer channel by typing in its name field.</p>
 
@@ -326,7 +554,18 @@ cannot be measured, "0m" when the budget is spent); scripts and agents ask the s
 recording route can take the master or a channel
 instead of the input (record.route_source), before or after the channel's devices or fader - if you also monitor what
 you record, lower the level first: a signal recorded from what it feeds can howl. Track &gt; MIDI Out sends an
-instrument track's notes to a hardware synth; record its audio back on an audio track that monitors the input.
+instrument track's notes to a hardware synth (on ALSA each note leaves at its own frame inside the audio period, so a
+fast 1/32-note line keeps its spacing - measured within 1 ms); record its audio back on an audio track that monitors the input.
+Track &gt; MIDI Out &gt; External Device... opens the track's External MIDI device card: the output port, the channel
+(-- keeps each note's own), the bank select (MSB and LSB, Off sends none) and the program the gear is told to select, and
+the device's presets. A change to the bank or program sends bank select (CC 0 and CC 32) and then the program change to the
+chosen port once, so the synth does not step through the patches in between; changing only the port or the channel sends no
+patch. Name a preset and Save keeps the port, channel, bank and program in the track (and so in the project); Recall applies
+them and sends the patch even when the settings were already those, and says so if the preset's port is not connected now
+(the rest is still applied); Delete removes it. A device keeps up to 64 presets. One undo puts the whole device back and
+tells the gear the patch that returns. Agents use device.external_get_state, device.external_set,
+device.external_preset_save, device.external_preset_recall and device.external_preset_remove for the same things. This
+stage covers the MIDI half: the audio return, monitoring and latency offset are separate.
 <b>MIDI takes.</b> An instrument track records the MIDI played into it - from a controller, the
 on-screen keyboard or any input routed to the track - while Record runs, alongside the audio tracks that record: arm it
 from its Record menu (Record MIDI Takes &gt; On; scripts and agents: track.set_midi_arm) - the record button in its header
@@ -343,6 +582,26 @@ instrument's window captures a bounded take (click again to stop, or let it reac
 so the waveform and, for SlicerT, the slices are ready to play. The take is a WAV in Recordings; one undo
 puts the sampler's previous sample back. Agents use record.sampler_capture, record.sampler_capture_stop,
 record.sampler_capture_status and record.sampler_capture_land for the same take.</p>
+<p>SlicerT's window has a per-slice bar between the waveform and the sample name. Slice picks one playable slice
+(slice 0 plays on the key above the base note; the base note still plays the whole sample) and the waveform shades it.
+Gain (-48 to +12 dB), Pan (-1 left to +1 right; a balance, so 0 leaves the stereo sample alone), Filter (below 0 a low-pass
+that closes to 100 Hz at -1, above 0 a high-pass that opens to 8 kHz at +1, 0 off) and Random (0 to 1) then belong to that
+slice only: a note on its key plays it that way, and the other slices are untouched. Random makes every trigger of the
+slice differ a little - gain by up to 6 dB and pan by up to 0.5, times the amount - and 0 means none. Type a value and press
+Enter, or use the arrows; each edit is one undo step. Deleting a slice point keeps the earlier slice's values for the merged
+slice, and double-clicking to add a point gives both halves the slice's values; Reset slices and detecting slices again start every
+slice neutral. The values are saved with the project (a project without them opens neutral). Agents use plugin.slice_get
+(one slice or all of them: key, start, end and the four values) and plugin.slice_set (any of gain, pan, filter, random on one
+slice; a value outside its range is refused and nothing is written) - the panel calls these same commands.</p>
+<p>Project &gt; Low-Latency Monitoring helps you play in through a latent device. On, it stops each device whose latency is
+over 3 ms on the chains a record-armed track plays through (its own, the channels it plays into and the master), and a
+record-armed instrument track whose instrument reports more than 3 ms of latency keeps playing but is no longer held back
+to line up with a later path: delay compensation normally delays it until the slowest other track catches up, and now you
+hear it after its own latency only. Every other track stays lined up exactly as before, an unarmed latent instrument is
+left alone, and Off puts the normal alignment back. Arm another track and choose On again to take it in. The mode belongs
+to the session: it is not saved with the project and makes no undo step. Scripts and agents use transport.low_latency,
+whose answer lists the devices it stopped and each instrument path it took (track, mixer channel, latency, and the
+alignment frames skipped); max_ms sets the threshold and scope all applies it to every track.</p>
 <p>An instrument track's Instrument Setup menu - on its header menu, the Inspector's More menu and its instrument's device
 card - holds what a multi-output, multitimbral or layered instrument needs. Output Buses lists a plug-in's extra outputs:
 route one to a mixer channel, or make a channel for each. MIDI Parts sends the notes in a key and velocity range on a MIDI
@@ -350,6 +609,24 @@ channel of their own, so one track plays several parts of a multitimbral plug-in
 Layers &gt; Layer Rack stacks more instruments on the track, each with Mute, Solo, a Level and its own window, and Layer Zones
 picks which layers a note plays on. Per-Voice Modulation makes a modulator run once per note of the track and binds it to a
 parameter of the instrument; Modulation Assignments changes a depth or removes a binding.</p>
+<p><b>Drum rack pads.</b> A drum rack is a folder track of sample pads: each pad is a sampler track playing one sample,
+with a mixer channel of its own (the pad's chain, for its effects) that sends to the rack's bus channel. On a folder's
+track menu, Folder &gt; Drum Rack Pads... opens the rack's pads: a row per pad with its name, its trigger key (the note that
+plays the sample at its own pitch) and its sample. Type a new name or key and press Return to change it, Sample... plays
+another file, and Add Pad... asks for a sample file and adds a pad for it on the next key after the rack's pads. Each change
+is one step of Edit &gt; Undo. A pad is stored as the ordinary tracks and channels it is made of, so a rack saved by an
+earlier version opens and plays the same and shows its pads here. Agents use <code>track.drum_rack</code> (build a rack),
+<code>track.drum_rack_pad_add</code>, <code>track.drum_rack_pad_set</code> and <code>track.drum_rack_get_state</code>,
+which reads back what the project saves.</p>
+<p><b>A pad's own effects.</b> Each row of the pad panel also shows the pad's chain - the effects on its own mixer channel,
+in the order they play - and an Effects button. Its menu adds a built-in effect (Add Effect), switches one off or back on
+(Bypass / Switch On) and removes one (Remove). An effect put on one pad plays on that pad only: the other pads have channels
+of their own. When a pad plays through a channel that is not its own - the master, a channel another track also plays
+into, or one another channel sends into - the panel says so and Add Effect is greyed out, since an effect there would
+change more than that pad. Each change is one step of Edit &gt; Undo, and the chain is saved with the project as any
+channel's effects are. Agents read the chain in <code>track.drum_rack_get_state</code> (each pad's <code>chain</code> and
+<code>chain_shared</code>) and edit it with <code>plugin.load</code>, <code>plugin.bypass</code> and
+<code>plugin.unload</code> on the pad's <code>channel</code> - the commands the menu runs.</p>
 
 <h2 id="launch">The launcher</h2>
 <p>Show the launcher from the footer's Clip Launcher button, View &gt; Clip Launcher or Alt+L. Each cell plays a pattern or an audio file; drop a sample on a cell to fill it. Each column is headed by its track's name. A cell's play mark shows its state - ▷ stopped, ▷… queued, ▶ playing - and a scene's mark shows its row's, so you can see what will launch. Dragging a sample over a filled cell shows "Replace" before you let go; after the drop, Undo Replace (or Edit &gt; Undo) puts the old clip back.
@@ -358,11 +635,48 @@ row. Launcher &gt; Launch Scene 1-8 can be given keys (Project tools &gt; Custom
 of a MIDI controller to cells and scenes, and binds a note or a control change to a built-in command that needs no
 arguments (Bind a Command to a Note or Control Change..., Unbind a Command... and Command Bindings list them): a
 note runs its command on the press and is ready again when you let go, and a control change runs it once as the
-knob leaves zero and is ready again at zero, so a sweep is one action rather than 127. Launcher &gt; Record What I Played Into a Cell puts what you just played (with Keep Listening on) into a
+knob leaves zero and is ready again at zero, so a sweep is one action rather than 127. Launcher &gt; Controller &gt;
+Bind a Workflow lists every workflow in the library in use; pick one and Bind a Note... or Bind a Control Change...
+to play that workflow from the controller, with the same press/release and sweep rules, so a saved run of commands
+- shared, or kept with the project - is one pad or one knob away. The workflow is looked up when the control is
+moved, so editing it, or switching between the shared and per-project libraries (Workflows &gt; Keep Workflows),
+is followed; if that library no longer has a workflow of that name the binding simply does nothing until it comes
+back, and Workflow and Command Bindings says so. Launcher &gt; Record What I Played Into a Cell puts what you just played (with Keep Listening on) into a
 cell as a new pattern. A Gate cell plays while you hold it. Right-click a cell for its Follow Action Chain (the
 action after it, its chance and timing) and Jump To (move a playing cell inside its clip); right-click a scene to play
 scenes in order or launch a folder's cells together; the grid's menu captures the playing cells as a new scene and keeps
 a setlist of songs to step through. A marker can run a command when playback crosses it (marker.set 'action'). Launches and stops are announced once they actually play or stop, not when queued, and one scene launch is one scene announcement rather than one per cell; view.announcements gates these routine messages.</p>
+<p><b>Editing a cell while it plays.</b> The launcher always plays what the grid holds. Give a playing cell another
+pattern or audio file (Edit Cell..., Set Pattern, Audio File... or a drop) and it sounds the new one at once, without a
+relaunch. Clear Cell on a playing or queued cell stops it the way the column's stop button does, and its track's
+arrangement plays again; shrinking the grid (Grid Size...) stops the cells it removes; clearing the whole launcher stops
+everything. Edit &gt; Undo and Redo of any of these follow the same rule: they put the cell back as it was written, but an
+undo never launches a cell - press it again to hear it. Deleting a pattern track empties (and stops) the cells that
+played that pattern, and every other cell keeps the pattern it had even though the pattern numbers move; moving a
+pattern track up or down does not change what any cell plays. A saved project keeps the cells, never what was playing:
+it opens with nothing launched (session.set_slot, session.clear_slot, session.set_grid, session.clear).</p>
+<p><b>An audio cell's gain, pitch, loop and warp.</b> Right-click an audio cell and open Playback and Warp. Gain, Pitch,
+Loop and Warp... shows every playback setting of the cell at its current value: gain (dB), transpose (semitones),
+detune (cents), the loop region (loop start and loop length, in ticks; a length of 0 loops to the end of the file),
+warp and the clip's own tempo (warp BPM), and RAM mode. Change any of them and press Run. Warp to Song Tempo On/Off
+switches the tempo warp alone: a warped cell plays at the song's tempo, keeping its pitch, as if it was recorded at
+its warp BPM. Transpose and detune change the pitch the way a sampler does, so the clip also gets shorter or longer.
+<p><b>Saving an audio cell to the library.</b> Right-click a cell that holds audio and choose Save to Library... The
+cell's name is filled in; change it if you like, add tags, and press Run. The audio the cell plays is written to your
+samples library under Clips, which the browser's Samples list shows, and the project is not changed. The library entry
+is the audio itself, at the file's own rate and length: the cell's gain, transpose, detune, loop and warp are playback
+settings of that cell and are not baked into it, so putting the entry in another cell plays the same audio and its own
+playback settings apply there. After you save and reopen the project the entry is still in the browser; drag it onto
+another cell, or give a cell the Audio File..., to use it again. An entry that already exists is refused rather than
+replaced unless you ask to overwrite it, and saving is one Edit &gt; Undo step: undo removes the new file again (or puts
+back the file an overwrite replaced). A very long file is refused with a message saying how much audio it holds instead
+of being loaded whole; a MIDI cell is not saved this way (its notes are stage 2). An agent does the same with
+browser.save_clip and the cell's track and scene, and finds the entry with browser.query.</p>
+Reset Gain, Pitch, Loop and Warp puts them all back to their defaults. Each change is one Edit &gt; Undo step and is
+saved with the project. A cell with settings away from their defaults shows them after its name, for example
+"-6.0dB +12st +50ct ⟲ W128" (gain, transpose, detune, a loop region, warped from 128 BPM), and a screen reader hears
+them in words. RAM mode is kept with the cell but does not change playback yet. An agent sets the same fields with
+session.set_slot (gain_db, transpose, detune, loop_start, loop_length, warp, warp_bpm, ram).</p>
 <p>For a show, View &gt; Perform Mode (or Launcher &gt; Perform Mode) opens a window made to be read from a distance: the
 setlist's song and the next one, Play and Stop, the bar and beat, the tempo with - and + (each an undoable change), the scene
 playing and the scene that plays next, one big button per scene, what each track is playing, and a large Stop All. Its keys:
@@ -393,6 +707,20 @@ step. Send MIDI Clock... beside it opens the master's form. An agent sets the sa
 socket or MCP and reads them back with clock.get_state, so the menu, the forms and a script all drive one
 implementation. The clock's own limits are in Known Limitations: a client with one unnamed input can only
 follow any input, and an incoming start, stop or song position is counted but does not move the transport.</p>
+<p><b>Capturing an external synth for an exact length.</b> Set Edit &gt; MIDI Clock &gt; Send Clock to the synth's port
+(Send MIDI Clock... names it), connect the synth's audio output to an input, then right-click an empty cell of a sample
+track in the Clip Launcher and choose <b>Record Bars with MIDI Clock Start/Stop...</b> or <b>Record Steps with MIDI Clock
+Start/Stop...</b> (a step is a sixteenth note, the grid MIDI Clock counts in). The form asks for the number of bars or steps -
+one of the two - and Run arms the cell. On the cell's launch line the clock sends START; when the chosen length is up it
+sends STOP, with exactly that span's clock pulses between, and the take is that many bars or steps of audio, landed in the
+cell when it finishes (the same landing as Record Audio for Bars...). While the capture runs the clock follows the
+capture, not the song's transport; with Send Clock off the entry is refused and tells you to turn it on. Saving the
+project keeps the cell pointing at the take's WAV file, which keeps its length. An agent does the same with
+session.record_slot (<code>bars</code> or <code>steps</code>, and <code>clock_sync: true</code>), reads
+session.record_slot_status (<code>clock</code> shows the START and STOP ticks and the pulses sent) and lands with
+session.record_slot_land. If the clock's previous messages have not all left yet when the take starts (a stalled MIDI
+output), the take records without the clock rather than start the synth with no guaranteed STOP;
+<code>clock.refused</code> in the status counts that.</p>
 
 <h2 id="workflows">Patterns, clips and cells</h2>
 <p>Zene has three ways to place music, and they store different things. A <b>pattern</b> is a reusable grid of
@@ -417,6 +745,24 @@ the hardware output. An agent reads the same assignment with <code>track.overvie
 <code>channel</code> is a <code>ch-&lt;n&gt;</code> id, and the matching entry in <code>mixer.get_state</code>
 has that <code>id</code> and its <code>name</code>. <code>track.set_mixer_channel</code> changes the assignment,
 exactly as the Inspector's menu does, as one undo step.</p>
+<p><b>Choosing where a new track plays.</b> The <b>Add track to</b> button on the Song Editor's track toolbar lists
+<b>Instrument track to</b> and <b>Sample track to</b>, each with the mixer's regular channels, and adds the track playing into the one
+you pick. <b>Add tracks to new bus...</b> asks for a number, a track type and a name, then makes that many tracks and one new channel
+they all play into. One undo removes everything the action made. Here a bus is a regular mixer channel: a parallel bus
+(Mixer View's return bus, <code>bus.create</code>) takes no direct track input, so it is not offered, and <code>track.add</code>
+refuses it rather than leave the track silent. An agent uses <code>track.add</code> with <code>output</code> (a <code>ch-&lt;n&gt;</code> id)
+and, optionally, <code>instrument</code>, and <code>track.add_to_new_bus</code> with <code>count</code>, <code>type</code>,
+<code>bus_name</code> and <code>name</code>.</p>
+<p><b>A mixer channel for every new track.</b> Settings &gt; General has <b>Give each new instrument or sample track its own named
+mixer channel</b> (off by default; an agent sets <code>app/autotrackchannel</code> to <code>1</code> with <code>settings.set</code>). While it
+is on, a new instrument or sample track with no destination chosen gets a channel named after it: from the toolbar, from
+the Browser (a double-click or a drop on the arrangement), from <code>browser.load</code> and from <code>clip.import_file</code>. Renaming the track
+renames the channel and renaming the channel renames the track, also after you reopen the project. A track routed elsewhere
+stops renaming that channel; routing it back gives the channel the track's current name, and one undo of that routing puts both back. Turning the setting off affects only tracks added later; opening a
+project never assigns anything. Removing a track leaves its channel in place. Tracks made from other material
+(bounce, freeze, stems, slices, recording) and tracks in the Pattern Editor keep their existing routing. With the
+setting off, nothing changes: a new track plays into the master. A track opened from the Browser has no undo step, with or
+without its channel.</p>
 <p>A PatternTrack placeholder never appears as a channel owner: <code>track.overview</code> and
 <code>track.set_mixer_channel</code> address the song's own instrument and sample tracks. The PatternStore's
 instrument tracks make the pattern's sound, each with its own mixer channel set in the Pattern Editor, and a MIDI
@@ -426,16 +772,50 @@ For the rest of the model, <code>arrangement.get_state</code> lists the song tra
 the cells and their launch settings, and <code>session.set_slot</code> fills one.</p>
 
 <h2 id="projects">Projects</h2>
-<p>Projects keep their history: Project &gt; Revisions restores or compares an earlier state. Collect Media copies every
-file a project uses beside it; Project &gt; Hand Off writes a folder someone else can open with a list of the devices
-to install first. Import Tracks copies tracks from another project; Save as Template keeps a project to start from.</p>
+<p><b>Revisions.</b> <b>Project tools &gt; Revisions...</b> lists the revisions still available for the open
+project, newest first, with each row's id, source, UTC time and size. The list gathers the existing sources:
+the <b>rotation</b> (<code>&lt;file&gt;.rev0</code> to <code>.rev2</code>, the
+three saves the keep-3 policy holds before overwriting the project, 8 MiB each), the <b>backup</b>
+(<code>&lt;file&gt;.bak</code>, left by a save from the interface), the <b>autosave</b>
+(<code>recover.mmp</code>, timed by its <code>.info</code> sidecar's <code>savedUTC</code> value, and
+<code>recover.mmp.bak</code> when present, timed by its file timestamp) and, where the project lives in a git
+repository, <b>git</b> - the newest ten
+commits that touched it; git is optional and bounded, skipped when you turn <i>include_git</i> off or no
+git is installed, and the list says which. <b>Compare With Now</b> compares the selected revision with the
+file on disk and reports each document's element counts and the tags that differ - a structural summary,
+not a musical diff. <b>Restore</b> asks first, replaces the file on disk and keeps the file it replaced in
+the rotation so the restore can be undone; it does not reload the session already open, which keeps the
+state it had until you reopen the project. Numbered saves (<b>File &gt; Save as New Version</b>) and named
+<b>Alternatives</b> are separate: they change which file the session works on, and they are not sources in
+this list. An agent gets the same ids from <code>revisions.list</code> and runs the same
+<code>revisions.compare</code> or <code>revisions.restore</code>; a restore changes the file on disk, so
+the agent reopens the project with <code>project.open</code> to work with the restored bytes.</p>
+<p>Collect Media copies every file a project uses beside it; Project &gt; Hand Off writes a folder someone
+else can open with a list of the devices to install first. Import Tracks copies tracks from another project;
+Save as Template keeps a project to start from.</p>
 <p>Project &gt; New Document starts a production, mastering or live project from its own template (your own
-<i>type</i>.mpt in the templates folder wins); the window title names a mastering or live document. Project &gt; Other Projects
+<i>type</i>.mpt in the templates folder wins); the window title names a mastering or live document. A mastering document
+also has a <b>release sequence</b>: Project Tools &gt; Mastering Release... lists the songs of the release in order, each
+an audio file with its own processing - one of the engine's mastering candidates, or <i>none</i> to play the file as it
+is - a fade-in, a fade-out, and the silence that follows it before the next song. Add a song with its audio file, edit one
+in place, move it to the top or bottom (or to any position), and remove one; the last song's gap is the silence after the
+release and is not inserted between two songs. The list is saved with the project and is the same state an agent reads and
+edits through <code>mastering.sequence_list</code> and <code>mastering.song_add</code>, <code>song_set</code>,
+<code>song_move</code> and <code>song_remove</code>, and every edit is one undo step (Ctrl+Z). Project &gt; Other Projects
 opens another project as a read-only reference beside this one and copies its tracks, clips or devices across, and switches to
 a recent project - keeping the one you left open as the reference if you like. Project &gt; Import AAF... brings in an AAF
 from another editor: its audio tracks, clips, fades, clip gain and markers (embedded audio is extracted beside the project;
 OMF is not read). View &gt; Video Window shows a project's video in time with the transport, with a strip of its frames over
-the arranger; the video's sound can be extracted to an audio track. Edit &gt; Collaborate... lets someone on your network (or
+the arranger. A project's video track holds several clips, each a file placed at its own song position: View &gt; Add
+Video Clip... adds one at the play position, double-click empty space in the arranger's video lane (or right-click it,
+Add Video Clip Here...) to add one there, drag a clip to move where it starts, and right-click a clip to move its start
+to the play position or remove it. A click on a clip moves the play position there. The video window always shows the
+clip at the play position and shows no picture before, after or between clips. Right-click the lane and choose Render
+Video Frames of Loop Range... to write the picture at each moment of the loop range as PNG images (25 per second of
+song time). Each clip keeps its own id: <i>video.clip_add</i> returns the new id, <i>video.set_offset</i> and
+<i>video.clip_remove</i> accept one clip id, <i>video.get_state</i> lists every clip, and <i>video.render_frames</i>
+renders the whole track; every edit is one undo step, and a project
+saved with one video before opens as one clip. A clip's sound can be extracted to an audio track. Edit &gt; Collaborate... lets someone on your network (or
 across the internet, where your router allows it) join the project: you share an invite code, every edit is sent to the
 others, and a remote invite gives a phone or another machine the transport and faders only. Nothing listens until you host,
 and you are asked first.</p>
@@ -455,6 +835,59 @@ the waveform the device now holds.</p>
 by you alone); anything connected to it can do whatever the menus can - save, render, delete - so connect only programs
 you trust. A controller can drive the remote-control pages (eight knobs following the selected device), a Mackie
 Control surface, or any parameter through MIDI learn. window.note_editor_set opens a clip in the note editor and sets its tool and view; window.get_state's note_editor reports the active tool and the same zoom, row height and visible top and bottom key.</p>
+<p><b>Closing a MIDI device.</b> When you quit (File &gt; Quit, or <code>control.quit</code>), an ALSA Raw-MIDI
+device (the MIDI interface chosen in Settings) that is waiting for input closes at once: its reader is woken
+and stopped before the device is released, instead of being waited on for a second and then killed. On ALSA Raw-MIDI, ALSA Sequencer, JACK, WinMM and CoreMIDI, incoming MIDI stops before the
+project's tracks are closed; with the ALSA sequencer the last note-offs your tracks send still go out. If at start-up a raw device opens but cannot
+be watched for input, it is closed straight away and treated like a device that failed to open, so Zene falls back to
+the next interface it would try, or to no MIDI.</p>
+
+<p id="project-events"><b>Following project changes from another program.</b> A program connected to the control
+socket can keep its own view of the open project current without polling. <code>events.subscribe</code> makes that
+connection receive one line for each change to the project, whoever made it: another program, a script, or you in the
+interface, including undo, redo and opening or starting a project. Each line says what changed (the command and its
+arguments when a command made it) and carries a number, <code>seq</code>, that rises by one with every change;
+<code>events.unsubscribe</code> stops the lines. Zene never waits for a slow program and never stores more than a limited
+number of lines for it (256 by default, at most 4096 and 1 MiB): a program that falls behind gets the lines already held,
+then one <code>events_overflow</code> line saying which changes it did not receive, and its subscription ends. After
+that, or after losing the connection, it should subscribe again and then read the project again
+(<code>project.get_state</code> and the other read commands); missed changes are never sent later. The <code>seq</code> a new subscription reports
+tells it whether it missed anything while away. Subscribing changes nothing in the project, is not an undo step and is
+not saved. An interface edit is reported when it leaves an undo step; the few interface settings that leave none (such
+as a window's position) are not project changes and make no line. The commands are for programs on the socket: over the
+MCP bridge the lines are skipped, because a tool call cannot receive them.</p>
+
+<p id="controller-scripts"><b>Controller scripts (Customise &gt; Controller Scripts).</b> A control-surface script is a
+Lua file that stays loaded and answers a MIDI controller: Start Script... (<code>controller.script_start</code>) takes a
+name, the file, and the MIDI input and output to bind; every event from the input calls the script's
+<code>on_midi(event)</code> (<code>event.type</code> - note_on, note_off, cc, pitch_bend ... - <code>channel</code> 1-16, then
+<code>key</code>/<code>velocity</code> or <code>controller</code>/<code>value</code>). The script runs any registered command with
+<code>zene.command(id, args)</code> - the same commands, refusals and undo as the menus - and lights LEDs or moves motor
+faders on the output with <code>surface.send_cc(channel, cc, value)</code> and <code>surface.send_note(channel, key,
+velocity)</code>. <code>data/scripts/controller-surface.lua</code> is an example: CC 7 drives the master fader and is echoed
+back; notes 94 and 93 play and stop. Scripts run on the interface thread, never the audio thread, sandboxed (no files,
+no system calls), with 1,000,000 Lua instructions per call and 8 MiB of memory; an error is logged in Script State
+(<code>controller.script_state</code>), and eight in a row stop the script until you start it again. If the input
+disappears (a cable pulled) Script State says so, and the binding is made again when it returns. Scripts are not saved
+with the project. The bindings themselves - which knob drives which parameter - are edited in Customise &gt; MIDI
+Mappings..., saved with the project.</p>
+
+<p id="osc"><b>OSC control (Customise &gt; OSC Control Server).</b> An opt-in OSC 1.0 server over UDP; nothing listens
+until you start it, and it is not saved with the project or remembered after a restart. <i>Start...</i> asks for the
+address (127.0.0.1 by default: this machine only), the port (9000 by default; 0 picks any free port) and the scope, and
+runs <code>osc.start</code>; <i>State</i> (<code>osc.get_state</code>) shows where it listens and how many requests it
+received, ran and refused; <i>Stop</i> (<code>osc.stop</code>) closes the port. The address map: a message to
+<code>/zene/&lt;command-id&gt;</code> runs that registered command - for example <code>/zene/transport.play</code>,
+<code>/zene/transport.get_state</code> or <code>/zene/mixer.set_volume</code>. Its arguments are either none, one string
+holding the command's JSON arguments, or key/value pairs (a string key, then its value), e.g.
+<code>"channel" "ch-1" "volume" 0.5</code>. The sender gets <code>/zene/reply</code> with the command id and the result
+as JSON (a fader write answers with its channel and the applied volume; a state read answers with the state), or
+<code>/zene/error</code> with the id, the error kind (malformed, unsupported, not_found, refused, invalid_args, too_large
+...) and a message of at most 512 characters. Requests over 8 KiB, bundles and blobs are refused; a malformed packet
+never stops the server. The <i>remote</i> scope (the default) allows transport, markers, mixer faders and state reads;
+<i>full</i> allows every command except scripts and controller scripts, sessions, crash and telemetry uploads, the OSC
+server itself and quitting, names no file, and binds only a loopback address. An OSC edit is the same command as the menu's, with the
+same single undo step.</p>
 
 <p><b>Live code (Edit &gt; Live Code).</b> The panel edits a Lua script and schedules it on the
 transport: <i>Every bar</i>, <i>Every beat</i> or <i>Transport play/stop</i>, under an id of your choosing (an id that
@@ -475,7 +908,7 @@ only - they are not saved in the project and do not come back after a restart - 
 
 <h2 id="customise">Customising and the Window menu</h2>
 <p>Project tools &gt; Customise &gt; Theme chooses (from the next start) the palette (dark, high contrast or light), the workspace (standard or touch), the interface zoom and accessible mode, and edits the theme's colours one by one - export a theme to share it, import one,
-or reset to the palette's own. Window &gt; Layouts (also Customise &gt; Window Layouts) saves the panels' arrangement under a name and brings it back; it says what a layout keeps (the view, the open, pinned and floating panels and their sizes - not the zoom, the scroll or the selection). Save never overwrites a name in use; Replace asks first. A project can remember a layout of its own, put back when it opens; your own layout comes back when you open a project without one, or start a new one; the Workflows menu (and Customise &gt; Workflows...) records a run of commands and plays it again, shared by every project or kept with each (Keep Workflows). Drag a panel's header out of the window to float it - on another monitor if you like - and drag it back onto its place, or press Dock, to return it (Ctrl+Shift+F floats or docks the focused panel). Customise &gt; Settings finds any setting by a word, backs all of them up to a file and
+or reset to the palette's own. A track's movement handle (the dots at the left of its row, which you drag to reorder the track) is drawn in the theme's text colour at full strength, so the high-contrast palette strengthens it and a colour you give that role reaches it on the next start; measured against the row it sits on, the handle keeps at least 3:1 contrast in the dark and high-contrast palettes (WCAG 1.4.11's minimum for a control), and it grows slightly while you hold it. Window &gt; Layouts (also Customise &gt; Window Layouts) saves the panels' arrangement under a name and brings it back; it says what a layout keeps (the view, the open, pinned and floating panels and their sizes - not the zoom, the scroll or the selection). Save never overwrites a name in use; Replace asks first. A project can remember a layout of its own, put back when it opens; your own layout comes back when you open a project without one, or start a new one; the Workflows menu (and Customise &gt; Workflows...) records a run of commands and plays it again, shared by every project or kept with each (Keep Workflows). Drag a panel's header out of the window to float it - on another monitor if you like - and drag it back onto its place, or press Dock, to return it (Ctrl+Shift+F floats or docks the focused panel). Customise &gt; Settings finds any setting by a word, backs all of them up to a file and
 restores them, and keeps named settings presets (folder paths never travel in a preset or a backup). While a workflow is being recorded the header says so - "Recording workflow ..." with the steps so far - and its Stop button stops and saves it. A workflow that stops at a step that fails says which step and why, which steps applied (they stay applied; undo each with Edit &gt; Undo) and which did not run, in a report that stays open: Retry Step runs that step again, Skip Step and Continue runs the rest without it (both are in the Workflows menu too).</p>
 <p>The Window menu holds the track manager (every track in one list: mute, solo, hide, rename, colour, icon, move,
 remove, and how much processing its mixer channel takes), a large clock, a tuner (it listens to the input, or to the
@@ -500,9 +933,10 @@ keyboard reaches every menu and most lists, and F6 moves between the panels.</p>
 <p>Help &gt; Ask answers a question from this manual and the command reference, offline: nothing is sent anywhere.
 Help &gt; What's New shows the release notes, once per version at start; Help &gt; Tours walks through the window part
 by part.</p>
+<p id="updates"><b>Checking for updates.</b> The first time you start Zene it asks once whether it may check for a newer version; until you say yes it never does (closing the question counts as no). Change your mind any time under Settings &gt; General &gt; Updates, where you can also include pre-releases. When checks are on, Zene asks once a day, in the background, and Help &gt; Check for Updates asks now (while checks are off it puts the question first and sends nothing unless you say yes). A newer version appears in a notice that blocks nothing, with its version, its release notes and a button to its download page; an automatic check announces each version once. Being offline, or a slow or broken answer, costs at most one quiet line in the log and interrupts nothing. <b>What is sent:</b> one GET request to the release feed (by default <code>https://api.github.com/repos/KRUZZZZY/zene-studio/releases?per_page=10</code>) with a User-Agent such as <code>ZeneStudio/0.5.0 (linux; x86_64)</code> - the version and the platform - and no account, project, file, setting or machine identifier. The feed's server sees your IP address, as with any web request. <b>Installation stays manual:</b> nothing is downloaded or installed by Zene; you download and install the new version yourself. Copies updated by something else (a Flatpak, a Snap, or a distribution's package built with <code>-DZENE_UPDATE_CHECK=OFF</code>) have no such check, and none of this appears in them. An agent reads and changes the choice with <code>app.update_check_get</code> and <code>app.update_check_set</code>, and starts a check with <code>app.update_check_run</code>.</p>
 <p>F1 (Help &gt; Help for This) shows what the focused control is, the command it runs and its shortcut, above the manual opened at its section - no hovering needed. The manual has a find field (Enter: next match, Shift+Enter: previous); the Command Reference groups every command under these sections, names it as the menus do and finds it by a task (&quot;mixing&quot;), a shortcut or a word of its description. Help &gt; Keyboard Shortcuts lists every shortcut by task; Enter runs the highlighted one, and Presets... applies the recommended accessibility map or a migration map for Ableton Live, FL Studio or Logic Pro after saving the current map as a timestamped backup. Lists - revisions, missing files, plug-ins in the project and the rest - have a find field, sort by a column title (numbers by value; a third click restores the list's own order), run their main action on Enter or a double-click and offer every action on the row from the Menu key, Shift+F10 or a right-click; each action's outcome stays in the Results log under the list.</p>
 <p>Press Shift+F1 on any knob, fader, number or menu to learn its drag, wheel, keys and right-click options. Theme, zoom, palette, workspace and accessible-mode changes apply at the next start, and each change says so; a colour that makes text or a control fall below WCAG AA contrast is refused unless you allow low contrast.</p>
-<p><b>Editing without a mouse.</b> Every editing canvas has keys and an editable list. Note editor: Alt+Left/Right previous/next note (Shift adds), Alt+Up/Down the chord's note above/below, Home/End first/last; Ctrl+Left/Right shorten/lengthen, Ctrl+Up/Down velocity (Ctrl+Shift finely); Insert adds a note after the cursor; Enter opens its properties. Expression lane: Left/Right note to note, Up/Down value (Page Up/Down by 10); with several notes selected, one key changes every selected note - including the timbre, pressure and micro-pitch lanes - as one undo step. Controller lane: Left/Right a grid step, Ctrl+Left/Right point to point, Up/Down value at the cursor, Insert adds a point, Delete removes it. XY pad: arrows 1 % (Shift 10 %). Sample Editor: Tab to the waveform, Left/Right move the cursor, Shift+Left/Right extend the selection, Home/End go to the ends, Ctrl+Plus/Minus zoom, Ctrl+0 shows all and Ctrl+A selects all; Tab to an operation and press Space. Comp lanes: Up/Down lane, Left/Right beat (Ctrl bar), Shift marks a range, Enter comps it, C cycles the take. Arranger: Shift+Alt+Up/Down clip on the track above/below, Ctrl+Alt+Left/Right resize. <b>Ctrl+Shift+L on any of these opens its list</b>: a table you can read cell by cell and edit by typing (positions as 5.2.1, pitches as C5); Insert, Delete, + and - work there, and every edit is one undo step.</p>
+<p><b>Editing without a mouse.</b> Every editing canvas has keys and an editable list. Note editor: Alt+Left/Right previous/next note (Shift adds), Alt+Up/Down the chord's note above/below, Home/End first/last; Ctrl+Left/Right shorten/lengthen, Ctrl+Up/Down velocity (Ctrl+Shift finely); Insert adds a note after the cursor; Enter opens its properties. Expression lane: Left/Right note to note, Up/Down value (Page Up/Down by 10); with several notes selected, one key changes every selected note - including the timbre, pressure and micro-pitch lanes - as one undo step. Controller lane: Left/Right a grid step, Ctrl+Left/Right point to point, Up/Down value at the cursor, Insert adds a point, Delete removes it. XY pad: arrows 1 % (Shift 10 %). Sample Editor: Tab to the waveform, Left/Right move the cursor, Shift+Left/Right extend the selection, Home/End go to the ends, Ctrl+Plus/Minus zoom, Ctrl+0 shows all and Ctrl+A selects all; Tab to an operation and press Space. Comp lanes: Up/Down lane, Left/Right beat (Ctrl bar), Shift marks a range, Enter comps it, C cycles the take. Arranger: Shift+Alt+Up/Down clip on the track above/below, Ctrl+Alt+Left/Right resize; Ctrl+Alt+G selects the folder summary clip holding the selected clip (Shift adds), and with one selected Ctrl+Alt+Left/Right moves its end edge (Shift its start edge), Ctrl+Alt+K splits at the play position, Ctrl+Alt+Page Up/Down moves it, Delete deletes it, Escape deselects. <b>Ctrl+Shift+L on any of these opens its list</b>: a table you can read cell by cell and edit by typing (positions as 5.2.1, pitches as C5); Insert, Delete, + and - work there, and every edit is one undo step.</p>
 <p><b>Announcements.</b> Zene tells your screen reader about errors, refused edits, recording starting and stopping, saving or opening a project, and completed launcher cell and scene changes; the announcements level (view.announcements) sets this to all, errors only, or off. Meter movement is not narrated continuously: <b>Speak Meter</b> (Ctrl+Shift+M, or a strip's menu) reports the focused strip's peak and the master's short-term loudness on request, and <b>Peak Watch</b> speaks once when the input or master crosses a threshold you set, then stays quiet until it falls below again. Accessibility Check can run its checks separately: names, roles, values, keyboard reach and duplicate names.</p>
 <p><b>Screen-reader setup.</b> Zene supports the platform bridge used by NVDA on Windows, VoiceOver on macOS and Orca on Linux. Turn on accessible mode under Help &gt; Appearance, then use Tab and the arrow keys for controls and F6 / Shift+F6 to move between panels. The manual and Help &gt; Accessibility Check read the same names, roles and values the bridge exposes. The <a href="https://github.com/KRUZZZZY/zene-studio/blob/main/docs/ACCESSIBILITY-TEST-MATRIX.md">tested workflow matrix</a> records each platform's actual screen-reader runs and explicitly marks the ones not yet tested.</p>
 <p><b>Reporting an accessibility blocker.</b> If a workflow is blocked or unclear with a screen reader, magnifier or other assistive technology, use the <a href="https://github.com/KRUZZZZY/zene-studio/issues/new?template=accessibility-report.yml">accessibility blocker form</a>. It asks for the affected workflow, the assistive technology and version, and the steps to reproduce. You do not need to give a diagnosis or any personal medical information. Agents can open this topic with app.help topic "access".</p>

@@ -296,8 +296,15 @@ ControlResult handleProcess(const QJsonObject& args)
 
 	const std::uint32_t frames = args.contains(QStringLiteral("frames"))
 		? static_cast<std::uint32_t>(args.value(QStringLiteral("frames")).toInt()) : 48u;
-	const float sampleRate = args.contains(QStringLiteral("sample_rate"))
-		? static_cast<float>(args.value(QStringLiteral("sample_rate")).toDouble()) : 48000.0f;
+	// The same rule as wasm.render_offline: a rate that is not a finite, positive
+	// float is refused before the module is called with it.
+	float sampleRate = 48000.0f;
+	const ControlResult rate = readSampleRateArgument(args, 48000.0f, &sampleRate);
+	if (!rate.ok)
+	{
+		return ControlResult::failure(rate.errorKind,
+			wasmNotFound(QStringLiteral("wasm.process"), rate.errorMessage));
+	}
 	const bool callerInput = args.contains(QStringLiteral("input"));
 	std::vector<float> input = rampInput(frames);
 	// The caller's samples are read through the ONE reader both sample-taking

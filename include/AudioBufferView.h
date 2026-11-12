@@ -405,7 +405,8 @@ public:
 	//! @returns a const view over the frames. Iterates in chunks containing `channels()` elements.
 	constexpr auto framesView() const noexcept -> std::ranges::subrange<ConstFrameIter, const T*>
 	{
-		const T* end = this->m_data + Base::channels() * this->m_frames;
+		// An empty view ends where it begins: never offset a null m_data
+		const T* end = this->empty() ? this->m_data : this->m_data + Base::channels() * this->m_frames;
 		if constexpr (channelCount == DynamicChannelCount)
 		{
 			return std::ranges::subrange{ConstFrameIter{this->m_data, Base::channels()}, end};
@@ -419,7 +420,8 @@ public:
 	//! @returns a view over the frames. Iterates in chunks containing `channels()` elements.
 	constexpr auto framesView() noexcept -> std::ranges::subrange<FrameIter, T*>
 	{
-		T* end = this->m_data + Base::channels() * this->m_frames;
+		// An empty view ends where it begins: never offset a null m_data
+		T* end = this->empty() ? this->m_data : this->m_data + Base::channels() * this->m_frames;
 		if constexpr (channelCount == DynamicChannelCount)
 		{
 			return std::ranges::subrange{FrameIter{this->m_data, Base::channels()}, end};

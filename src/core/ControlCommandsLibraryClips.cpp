@@ -26,7 +26,20 @@
  *  plays (its window, warps, gain and fades - ClipConsolidate's render, a 32-bit float WAV); a MIDI clip
  *  as a Standard MIDI File (type 0, 48 ticks per quarter - the song's own grid - at the song's tempo).
  *  The default folder is <user samples>/Clips, which the browser's Samples source lists; the library
- *  is outside the project, so one undo step deletes the file again (and takes off the tags it added). */
+ *  is outside the project, so one undo step deletes the file again (and takes off the tags it added).
+ *
+ *  Q050-273.1: the same command also saves a POPULATED AUDIO LAUNCHER CELL, addressed by 'track' +
+ *  'scene' instead of 'clip'. A cell is not an arrangement Clip - it holds a source PATH - so its
+ *  file is written as the library's 32-bit float WAV at the source's own rate, with the source's own
+ *  frames: the entry is the MEDIA. The cell's gain, transpose, detune, loop region and warp are
+ *  playback settings of the cell, not bytes in the file, so they are deliberately not baked in;
+ *  inserting the entry into another cell plays the same frames. The decoded-size bound and the atomic
+ *  write live in LibraryCellAudio.cpp, so a compressed file that would decode past the bound is
+ *  refused before it is decoded and every failure leaves the destination as it was. Everything else -
+ *  the folder, 'name', 'tags', the overwrite refusal and the one undo step - is the clip path's, so
+ *  the two routes cannot drift apart. A MIDI cell holds PatternStore notes and is stage 2 of
+ *  Q050-273; it is refused by name rather than saved as a bare pattern id, which would be no reusable
+ *  entry at all. */
 
 #include <algorithm>
 #include <limits>
@@ -47,10 +60,13 @@
 #include "ControlReversibility.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
+#include "LibraryCellAudio.h"
 #include "Midi.h"
 #include "MidiClip.h"
 #include "Note.h"
+#include "PathUtil.h"
 #include "SampleClip.h"
+#include "SessionModel.h"
 #include "Song.h"
 
 namespace lmms
@@ -198,12 +214,12 @@ bool existsWithoutOverwrite(const QFileInfo& target, const QJsonObject& args)
 	return target.exists() && !args.value(QStringLiteral("overwrite")).toBool(false);
 }
 
-//! The file @a args asks for: its folder ('dir' or <user samples>/Clips), name and the clip's extension.
-bool targetPath(const QJsonObject& args, const ClipRef& ref, QString* path, ControlResult* error)
+//! The file @a args asks for: its folder ('dir' or <user samples>/Clips), name and the subject's extension.
+bool targetPath(const QJsonObject& args, bool audio, const QString& defaultName, QString* path, ControlResult* error)
 {
 	const QString dir = args.value(QStringLiteral("dir")).toString(ConfigManager::inst()->userSamplesDir() + QStringLiteral("Clips"));
-	QString name = args.value(QStringLiteral("name")).toString(ref.clip->name()).trimmed();
-	if (name.isEmpty()) { name = clipIdOf(ref.clip); }
+	QString name = args.value(QStringLiteral("name")).toString(defaultName).trimmed();
+	if (name.isEmpty()) { name = QStringLiteral("library-entry"); }
 	if (!QFileInfo(dir).isAbsolute() || name.contains(QLatin1Char('/')) || name.contains(QLatin1Char('\\')) || name.startsWith(QLatin1Char('.')))
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'dir' must be absolute and 'name' a plain file name"));
@@ -214,7 +230,6 @@ bool targetPath(const QJsonObject& args, const ClipRef& ref, QString* path, Cont
 		*error = ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("cannot create %1").arg(dir));
 		return false;
 	}
-	const bool audio = dynamic_cast<SampleClip*>(ref.clip) != nullptr;
 	*path = QDir(dir).filePath(name + (audio ? QStringLiteral(".wav") : QStringLiteral(".mid")));
 	const QFileInfo target(*path);
 	if (target.isSymLink())
@@ -297,9 +312,149 @@ void restoreOrRemove(const PreviousFile& previous, const QString& path)
 	if (file.open(QIODevice::WriteOnly) && file.write(previous.bytes) == previous.bytes.size()) { file.commit(); }
 }
 
-//! Writes @a clip to @a path, and first reads what it replaces into @a previous. Refused before any write when that file
-//! exists but cannot be read: an undo could not put back what the overwrite destroyed.
-bool writeKeepingPrevious(Clip* clip, const QString& path, PreviousFile* previous, QString* why)
+/*! What one call saves: an arrangement Clip ('clip'), or the audio a populated LAUNCHER CELL
+ *  plays ('track' + 'scene'). The two are different objects - a cell stores a source path - so
+ *  the subject keeps the shape each write needs, and the undo/redo closures capture those. */
+struct SaveSubject
+{
+	Clip* clip = nullptr;    //!< the arrangement clip, when the call named one
+	int clipId = -1;         //!< its persistent id, captured for redo (a deleted Clip is never dereferenced)
+	QString source;          //!< the cell's audio file, absolute; empty for a clip
+	QString defaultName;     //!< the entry's name when 'name' is left out
+	bool audio = false;      //!< the entry is a .wav (audio) or a .mid (MIDI)
+	bool cell = false;       //!< the subject is a launcher cell, not a Clip
+};
+
+//! Whether @a target and @a source are the same file (a cell saved onto its own audio): a write there
+//! would read one file and rename another over it, and on Windows could not even open the temporary.
+bool sameFile(const QString& target, const QString& source)
+{
+	const QFileInfo a(target);
+	const QFileInfo b(source);
+	if (a.exists() && b.exists())
+	{
+		const QString canonicalA = a.canonicalFilePath();
+		const QString canonicalB = b.canonicalFilePath();
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
+		return canonicalA.compare(canonicalB, Qt::CaseInsensitive) == 0 && !canonicalA.isEmpty();
+#else
+		return canonicalA == canonicalB && !canonicalA.isEmpty();
+#endif
+	}
+#if defined(Q_OS_WIN) || defined(Q_OS_MACOS)
+	return QDir::cleanPath(a.absoluteFilePath()).compare(QDir::cleanPath(b.absoluteFilePath()), Qt::CaseInsensitive) == 0;
+#else
+	return QDir::cleanPath(a.absoluteFilePath()) == QDir::cleanPath(b.absoluteFilePath());
+#endif
+}
+
+//! Whether @a slot at (track, scene) is one this stage can save; false with the typed refusal in @a error.
+bool cellSavable(const ClipSlot& slot, int track, int scene, ControlResult* error)
+{
+	if (slot.isEmpty())
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("the cell at track %1, scene %2 is empty: there is nothing to save").arg(track).arg(scene));
+		return false;
+	}
+	if (slot.type() == ClipSlot::Type::Midi)
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("the cell at track %1, scene %2 holds a MIDI pattern; saving a pattern's notes to the "
+				"library is stage 2 of this work, so only an audio cell can be saved yet").arg(track).arg(scene));
+		return false;
+	}
+	return true;
+}
+
+//! The entry's name: the cell's own, else the source file's, else the coordinates.
+QString cellEntryName(const ClipSlot& slot, const QString& source, int track, int scene)
+{
+	QString name = slot.name().trimmed();
+	if (name.isEmpty()) { name = QFileInfo(source).completeBaseName(); }
+	return name.isEmpty() ? QStringLiteral("track-%1-scene-%2").arg(track).arg(scene) : name;
+}
+
+//! A populated AUDIO launcher cell, addressed by 'track' + 'scene', as a save subject.
+bool resolveCellSubject(const QJsonObject& args, SaveSubject* subject, ControlResult* error)
+{
+	if (!args.contains(QStringLiteral("track")) || !args.contains(QStringLiteral("scene")))
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("a launcher cell is addressed by BOTH 'track' and 'scene'"));
+		return false;
+	}
+	Song* song = Engine::getSong();
+	if (song == nullptr)
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("this instance has no song: no project is loaded, so there is no cell to save"));
+		return false;
+	}
+	const SessionModel& model = song->sessionModel();
+	const int track = args.value(QStringLiteral("track")).toInt();
+	const int scene = args.value(QStringLiteral("scene")).toInt();
+	if (track < 0 || track >= model.trackCount() || scene < 0 || scene >= model.sceneCount())
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("slot (track %1, scene %2) is outside the grid (%3 tracks x %4 scenes); "
+				"session.set_grid resizes it").arg(track).arg(scene).arg(model.trackCount()).arg(model.sceneCount()));
+		return false;
+	}
+	const ClipSlot& slot = model.slot(track, scene);
+	if (!cellSavable(slot, track, scene, error)) { return false; }
+	const QString source = PathUtil::toAbsolute(slot.audioSource());
+	if (!QFileInfo(source).isFile())
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("the cell's audio file '%1' is not there, so there is nothing to save").arg(slot.audioSource()));
+		return false;
+	}
+	subject->cell = true;
+	subject->source = source;
+	subject->audio = true;
+	subject->defaultName = cellEntryName(slot, source, track, scene);
+	return true;
+}
+
+//! Exactly one address: 'clip' for an arrangement clip, or 'track' + 'scene' for a launcher cell.
+bool resolveSaveSubject(const QJsonObject& args, SaveSubject* subject, ControlResult* error)
+{
+	const bool hasClip = args.contains(QStringLiteral("clip"));
+	const bool hasCell = args.contains(QStringLiteral("track")) || args.contains(QStringLiteral("scene"));
+	if (hasClip == hasCell)
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("exactly one of 'clip' (an arrangement clip) or the pair 'track' + 'scene' "
+				"(a launcher cell) is required - neither alone, and never both"));
+		return false;
+	}
+	if (!hasClip) { return resolveCellSubject(args, subject, error); }
+	ClipRef ref;
+	if (!resolveClip(args.value(QStringLiteral("clip")).toString(), &ref, error)) { return false; }
+	if (!canSaveClip(ref.clip))
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("only sample and MIDI clips can be saved to the library"));
+		return false;
+	}
+	subject->clip = ref.clip;
+	subject->clipId = ref.clip->id();
+	subject->audio = dynamic_cast<SampleClip*>(ref.clip) != nullptr;
+	subject->defaultName = ref.clip->name().trimmed().isEmpty() ? control::clipIdOf(ref.clip) : ref.clip->name();
+	return true;
+}
+
+//! Writes the subject to @a path; for a cell, bounded by decoded frames (LibraryCellAudio).
+bool writeSubject(const SaveSubject& subject, const QString& path, QString* why)
+{
+	if (!subject.cell) { return writeClip(subject.clip, path, why); }
+	const libraryaudio::CellAudio::Result saved = libraryaudio::CellAudio::save(subject.source, path);
+	*why = saved.error;
+	return saved.ok;
+}
+
+//! Writes @a subject to @a path, first reading what it replaces into @a previous: undo puts that back.
+bool writeSubjectKeepingPrevious(const SaveSubject& subject, const QString& path, PreviousFile* previous, QString* why)
 {
 	*previous = readBackIfAny(path);
 	if (!previous->readable)
@@ -307,7 +462,22 @@ bool writeKeepingPrevious(Clip* clip, const QString& path, PreviousFile* previou
 		*why = QStringLiteral("'%1' exists but cannot be read, so it would not be replaced; nothing was saved").arg(path);
 		return false;
 	}
-	return writeClip(clip, path, why);
+	return writeSubject(subject, path, why);
+}
+
+//! The redo of a save: the clip or the cell's source written to @a path again.
+void redoSubject(const SaveSubject& subject, const QString& path)
+{
+	QString unused;
+	if (!subject.cell)
+	{
+		ClipRef again;
+		ControlResult ignored;
+		if (!resolveClip(control::clipId(subject.clipId), &again, &ignored)) { return; }
+		writeClip(again.clip, path, &unused);
+		return;
+	}
+	libraryaudio::CellAudio::save(subject.source, path);
 }
 
 ControlResult saveClip(const QJsonObject& args)
@@ -317,29 +487,31 @@ ControlResult saveClip(const QJsonObject& args)
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'tags' must contain only strings"));
 	}
-	ClipRef ref;
+	SaveSubject subject;
 	ControlResult error;
-	if (!resolveClip(args.value(QStringLiteral("clip")).toString(), &ref, &error)) { return error; }
-	if (!canSaveClip(ref.clip))
-	{
-		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("only sample and MIDI clips can be saved to the library"));
-	}
+	if (!resolveSaveSubject(args, &subject, &error)) { return error; }
 	QString path;
-	if (!targetPath(args, ref, &path, &error)) { return error; }
+	if (!targetPath(args, subject.audio, subject.defaultName, &path, &error)) { return error; }
+	if (subject.cell && sameFile(path, subject.source))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("the cell's audio is already '%1': saving it there would replace the file it is reading; "
+				"choose another 'name' or 'dir'").arg(path));
+	}
 	// What the write is about to replace, read before it: undo puts that file back.
 	PreviousFile previous;
 	QString why;
-	if (!writeKeepingPrevious(ref.clip, path, &previous, &why)) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the clip was not saved: %1").arg(why)); }
+	if (!writeSubjectKeepingPrevious(subject, path, &previous, &why))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("the %1 was not saved: %2").arg(subject.cell ? QStringLiteral("cell") : QStringLiteral("clip"), why));
+	}
 	const QStringList addedTags = addTags(path, tags);
-	const int id = ref.clip->id();
 	addUndoStep([path, addedTags, previous]() {
 		for (const QString& tag : addedTags) { BrowserTagStore::instance().remove(browserCanonicalKey(path), tag); }
 		restoreOrRemove(previous, path);
-	}, [id, path, addedTags]() {
-		ClipRef again;
-		ControlResult ignored;
-		QString unused;
-		if (!resolveClip(clipId(id), &again, &ignored) || !writeClip(again.clip, path, &unused)) { return; }
+	}, [subject, path, addedTags]() {
+		redoSubject(subject, path);
 		for (const QString& tag : addedTags) { BrowserTagStore::instance().add(browserCanonicalKey(path), tag); }
 	});
 	return ControlResult::success({{QStringLiteral("path"), path}, {QStringLiteral("kind"), browserKindName(browserKindForPath(path))},
@@ -354,13 +526,18 @@ void registerLibraryClipCommands(ControlRegistry& registry)
 	cmd.id = QStringLiteral("browser.save_clip");
 	cmd.group = QStringLiteral("browser");
 	cmd.verb = QStringLiteral("save_clip");
-	cmd.description = QStringLiteral("Save a 'clip' into the library: a sample clip as the audio it plays (a WAV), a MIDI clip as a "
-		"MIDI file at the song's tempo. Written to 'dir' (absolute; <user samples>/Clips, which the Samples browser lists, when "
-		"left out) as 'name' (the clip's name when left out), refused when the file exists unless 'overwrite'; 'tags' are "
-		"added to it. The library is outside the project: one undo step deletes the file again.");
-	cmd.argsSchema = objectSchema({{QStringLiteral("clip"), stringProperty()}, {QStringLiteral("name"), stringProperty()},
-		{QStringLiteral("dir"), stringProperty()}, {QStringLiteral("tags"), arrayProperty()}, {QStringLiteral("overwrite"), booleanProperty()}},
-		{QStringLiteral("clip")});
+	cmd.description = QStringLiteral("Save a clip into the library, addressed either by 'clip' (an arrangement clip) or by the "
+		"pair 'track' + 'scene' (a populated launcher audio cell), exactly one of the two. A sample clip is written as the audio "
+		"it plays; a MIDI clip as a MIDI file at the song's tempo; an audio cell as the audio its source file holds, at the "
+		"source's own rate (the cell's gain, transpose, loop and warp are playback settings and are not baked into the entry; "
+		"the decoded audio is bounded, and a source past the bound is refused before it is decoded). A MIDI cell holds a "
+		"PatternStore pattern and is refused for now. Written to 'dir' (absolute; <user samples>/Clips, which the Samples "
+		"browser lists, when left out) as 'name' (the clip's or the cell's own name when left out), refused when the file "
+		"exists unless 'overwrite'; 'tags' are added to it. The library is outside the project: one undo step deletes the "
+		"file again.");
+	cmd.argsSchema = objectSchema({{QStringLiteral("clip"), stringProperty()}, {QStringLiteral("track"), integerProperty(0, 255)},
+		{QStringLiteral("scene"), integerProperty(0, 511)}, {QStringLiteral("name"), stringProperty()},
+		{QStringLiteral("dir"), stringProperty()}, {QStringLiteral("tags"), arrayProperty()}, {QStringLiteral("overwrite"), booleanProperty()}});
 	cmd.resultSchema = objectProperty();
 	cmd.mutating = true;
 	cmd.handler = saveClip;

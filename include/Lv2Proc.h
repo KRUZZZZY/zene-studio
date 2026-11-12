@@ -119,8 +119,9 @@ public:
 	//! beyond its control ports, such as the file it loaded; empty when the plug-in has no state
 	//! interface (engine audit E13). Main thread.
 	QString saveState() const;
-	//! Restore a document saveState() wrote; false when it cannot be parsed. Main thread; the
-	//! audio thread is held off for the restore.
+	//! Restore a document saveState() wrote. False when it cannot be parsed, or when the plug-in's own
+	//! LV2_State_Interface::restore() returns a status other than LV2_STATE_SUCCESS (the plug-in refused it).
+	//! Main thread; the audio thread is held off for the restore.
 	bool restoreState(const QString& document);
 
 	//! The latency the plug-in reports on its latency output port, in frames; 0 when it has

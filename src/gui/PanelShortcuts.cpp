@@ -38,6 +38,9 @@
 #include <QPointer>
 #include <QWidget>
 
+#include <optional>
+
+#include "CommandForm.h"
 #include "ControlRegistry.h"
 #include "PerformView.h"
 #include "ShellPanel.h"
@@ -55,11 +58,39 @@ const QString PanelsKey = QStringLiteral("panels");
 const QStringList kScopes{QStringLiteral("arranger"), QStringLiteral("note_editor"),
 	QStringLiteral("automation_editor"), QStringLiteral("perform")};
 
-//! Every bindable panel action. None has a key of its own: a panel's existing keys keep working
-//! until the user binds a scoped action, so a user who never opens the shortcuts page is unaffected.
+//! Q050-055.2: what a selected-track editor key runs, in every scope: the track's main device, and its first effect
+//! (an instrument track's main device is its instrument, so the effect needs a key of its own).
+void appendEditorActions(QList<Action>* table, const QString& scope, const QString& title)
+{
+	const QString command = QStringLiteral("plugin.selected_editor_open");
+	table->append(Action{scope, QStringLiteral("%1 ▸ Open Selected Track's Editor").arg(title),
+		QStringLiteral("Open Selected Track's Editor"), command, {}});
+	table->append(Action{scope, QStringLiteral("%1 ▸ Open Selected Track's First Effect").arg(title),
+		QStringLiteral("Open Selected Track's First Effect"), command, {{QStringLiteral("device"), QStringLiteral("effect")}}});
+}
+
+//! The table's fixed part. Separate so actionTable() can append the per-scope editor actions once.
+QList<Action> fixedActions();
+
+//! Every bindable panel action.
 const QList<Action>& actionTable()
 {
-	static const QList<Action> table{
+	static const QList<Action> table = [] {
+		QList<Action> out = fixedActions();
+		appendEditorActions(&out, QStringLiteral("arranger"), QStringLiteral("Arranger"));
+		appendEditorActions(&out, QStringLiteral("note_editor"), QStringLiteral("Note Editor"));
+		appendEditorActions(&out, QStringLiteral("automation_editor"), QStringLiteral("Automation Editor"));
+		appendEditorActions(&out, QStringLiteral("perform"), QStringLiteral("Perform"));
+		return out;
+	}();
+	return table;
+}
+
+//! The actions every scope declares itself. None has a key of its own: a panel's existing keys keep working
+//! until the user binds a scoped action, so a user who never opens the shortcuts page is unaffected.
+QList<Action> fixedActions()
+{
+	return {
 		// The arranger's view commands (arrangement.zoom / fit_tracks / set_tool): the View menu and
 		// the app's keyboard zoom dispatch these already, so a bound key and the menu are one call.
 		{QStringLiteral("arranger"), QStringLiteral("Arranger ▸ Zoom In"), QStringLiteral("Zoom In"),
@@ -117,7 +148,19 @@ const QList<Action>& actionTable()
 		{QStringLiteral("perform"), QStringLiteral("Perform ▸ Launch Scene 2"), QStringLiteral("Launch Scene 2"),
 			QStringLiteral("session.launch_scene"), {{QStringLiteral("scene"), 1}}},
 	};
-	return table;
+}
+
+//! What comes before the device key in a bound plug-in's id in @a scope.
+QString pluginActionPrefix(const QString& scope)
+{
+	return QStringLiteral("%1 ▸ Load Plug-in ▸ ").arg(scopeTitle(scope));
+}
+
+//! The bound plug-in action @a id of @a scope stands for: loads its device onto the selection.
+Action pluginActionOf(const QString& scope, const QString& id)
+{
+	const QString key = id.mid(pluginActionPrefix(scope).size());
+	return Action{scope, id, key, QStringLiteral("plugin.selected_load"), {{QStringLiteral("device"), key}}};
 }
 
 //! @a event as portable key text; empty for a bare modifier or a key Qt cannot name portably.
@@ -148,19 +191,27 @@ QString keyText(const QKeyEvent* event)
 	return sequence.toString(QKeySequence::PortableText);
 }
 
-//! The action of @a scope bound to @a keys, or nullptr.
-const Action* actionOnKey(const QString& scope, const QString& keys)
+//! The action of @a scope bound to @a keys, if any: one of the table's, or a plug-in the user bound.
+std::optional<Action> actionOnKey(const QString& scope, const QString& keys)
 {
-	if (keys.isEmpty()) { return nullptr; }
+	if (keys.isEmpty()) { return std::nullopt; }
 	const QJsonObject chosen = overrides();
 	for (const Action& entry : actionTable())
 	{
 		if (entry.scope != scope) { continue; }
 		const QJsonValue chosenKeys = stored(chosen, entry.scope, entry.id);
 		// Only a string is an override (cluster 5373: a hand-edited config must not unbind by type).
-		if (chosenKeys.isString() && ShortcutMap::portable(chosenKeys.toString()) == keys) { return &entry; }
+		if (chosenKeys.isString() && ShortcutMap::portable(chosenKeys.toString()) == keys) { return entry; }
 	}
-	return nullptr;
+	const QJsonObject within = chosen.value(scope).toObject();
+	for (auto it = within.begin(); it != within.end(); ++it)
+	{
+		if (isPluginAction(scope, it.key()) && it.value().isString() && ShortcutMap::portable(it.value().toString()) == keys)
+		{
+			return pluginActionOf(scope, it.key());
+		}
+	}
+	return std::nullopt;
 }
 
 //! The panel whose contents hold the keyboard: an editor mounted in a shell panel, or Perform's
@@ -233,7 +284,7 @@ protected:
 		const QString scope = scopeOf(focus);
 		if (scope.isEmpty()) { return false; }
 		const QString keys = keyText(static_cast<QKeyEvent*>(event));
-		if (keys.isEmpty() || actionOnKey(scope, keys) == nullptr) { return false; }
+		if (keys.isEmpty() || !actionOnKey(scope, keys).has_value()) { return false; }
 		if (type == QEvent::ShortcutOverride) { handle(scope, static_cast<QKeyEvent*>(event)); }
 		event->accept();
 		return true;
@@ -275,6 +326,27 @@ const Action* actionById(const QString& id)
 		if (entry.id == id) { return &entry; }
 	}
 	return nullptr;
+}
+
+QString pluginActionId(const QString& scope, const QString& deviceKey)
+{
+	return pluginActionPrefix(scope) + deviceKey;
+}
+
+bool isPluginAction(const QString& scope, const QString& id)
+{
+	const QString prefix = pluginActionPrefix(scope);
+	return knownScope(scope) && id.startsWith(prefix) && id.size() > prefix.size();
+}
+
+ShortcutMap::Binding pluginBinding(const QString& scope, const QString& id)
+{
+	const Action entry = pluginActionOf(scope, id);
+	ShortcutMap::Binding binding;
+	binding.id = entry.id;
+	binding.scope = entry.scope;
+	binding.command = entry.command;
+	return binding;
 }
 
 const Action* action(const QString& scope, const QString& id)
@@ -320,6 +392,18 @@ QList<ShortcutMap::Binding> bindings()
 		binding.keys = binding.overridden ? ShortcutMap::portable(chosenKeys.toString()) : QString();
 		out.append(binding);
 	}
+	for (const QString& scope : kScopes)
+	{
+		const QJsonObject within = chosen.value(scope).toObject();
+		for (auto it = within.begin(); it != within.end(); ++it)
+		{
+			if (!isPluginAction(scope, it.key()) || !it.value().isString()) { continue; }
+			ShortcutMap::Binding binding = pluginBinding(scope, it.key());
+			binding.overridden = true;
+			binding.keys = ShortcutMap::portable(it.value().toString());
+			out.append(binding);
+		}
+	}
 	return out;
 }
 
@@ -330,7 +414,7 @@ QString portableKey(const QKeyEvent* event)
 
 bool claims(const QString& scope, const QKeyEvent* event)
 {
-	return actionOnKey(scope, keyText(event)) != nullptr;
+	return actionOnKey(scope, keyText(event)).has_value();
 }
 
 bool textEntryHasFocus()
@@ -345,9 +429,11 @@ QString focusedScope()
 
 bool handle(const QString& scope, QKeyEvent* event)
 {
-	const Action* chosen = actionOnKey(scope, keyText(event));
-	if (chosen == nullptr) { return false; }
-	ControlRegistry::instance()->invoke(chosen->command, chosen->args);
+	const std::optional<Action> chosen = actionOnKey(scope, keyText(event));
+	if (!chosen.has_value()) { return false; }
+	const ControlResult result = ControlRegistry::instance()->invoke(chosen->command, chosen->args);
+	// A key has no form to show a refusal in: "could not load" and its reason float over the panel.
+	if (!result.ok) { announce(QApplication::focusWidget(), CommandCall{chosen->command, chosen->args, {}, chosen->label, false}, result); }
 	return true;
 }
 

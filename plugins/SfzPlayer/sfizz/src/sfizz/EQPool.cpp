@@ -18,6 +18,7 @@ void sfz::EQHolder::reset()
 {
     eq->clear();
     prepared = false;
+    description = nullptr;
 }
 
 void sfz::EQHolder::setup(const Region& region, unsigned eqId, float velocity)

@@ -57,6 +57,12 @@ set(LMMS_TESTS
 	# Short ALSA writes must advance through every remaining frame in a period.
 	src/core/AudioAlsaWriteTest.cpp
 	src/core/AudioBufferTest.cpp
+	# Q050-491: the format-neutral half of Audio Unit hosting (component keys, the scan cache and its
+	# quarantine, status names) - every build; the macOS-only half is AuHostingTest.
+	src/core/AuComponentTest.cpp
+	# Q050-491 review round 1: an AU parameter's automation reaches the unit in the same render block with no
+	# dataChanged() on the render thread (the hosts' parameter models, compiled in with a stand-in unit).
+	src/plugins/AuParameterHandoffTest.cpp
 	src/core/AudioOssWriteTest.cpp
 	src/core/AudioBusHandleTest.cpp
 	src/core/AudioBusTest.cpp
@@ -73,13 +79,20 @@ set(LMMS_TESTS
 	# the streaming/I8/parameter contract the render path depends on.
 	src/core/AudioStretcherTest.cpp
 	src/core/AudioResamplerRatioTest.cpp
+	src/core/AudioResamplerPoolMemoryTest.cpp
 	# cluster new-p10-520: zero sample rate must not poison BasicFilters'
 	# m_sampleRatio (constructor) or survive setSampleRate.
 	src/core/BasicFiltersSampleRateTest.cpp
 	src/core/AutomatableModelTest.cpp
+	# cluster new-p15-99: a LinkedModelGroup erases only the entry that registers
+	# the model it is asked about (destroy callback and removeControl).
+	src/core/LinkedModelGroupsTest.cpp
 	# cluster new-p12-279: EffectControls::m_viewVisible must be atomic because
 	# processImpl() reads it on the audio thread while the GUI writes it.
 	src/core/EffectControlsVisibilityTest.cpp
+	# cluster new-p10-284: a ParameterControls key names one parameter in the save file, so a
+	# duplicate key is refused at registration and never overwrites another model's saved value.
+	src/core/ParameterControlsTest.cpp
 	src/core/AutomationModesTest.cpp
 	# Q050-037: the pre-first-point contract of an automation clip - times
 	# before the first node read the authored parameter's initial value (or an
@@ -102,6 +115,11 @@ set(LMMS_TESTS
 	# scan and depth bounds, the probe budget), split out of BrowserCatalogTest to
 	# keep both files under the file-length ratchet. Headless, like its sibling.
 	src/core/BrowserCatalogQueryTest.cpp
+	# 0.5.0 L11 (Q050-316.1): the tempo and key facets - the measured-only rule,
+	# the shared predicate both searches call, the walk and the index answering
+	# the same files, the wire form, an old index store, typed refusals and a
+	# collection that keeps the facets. Headless: writes its own index store.
+	src/core/BrowserTempoKeyTest.cpp
 	src/core/BrowserCatalogTest.cpp
 	# The trim half of a bounce (the render half is a child process, so it is not
 	# reachable from a test): a range copied to another file, and the refusal
@@ -119,6 +137,8 @@ set(LMMS_TESTS
 	src/core/ControlBounceRenderTest.cpp
 	# Cluster 917: cancellable bounce jobs apply edits on the main thread after stale-target checks.
 	src/core/ControlRenderJobTest.cpp
+	# Q050-010: a render followed and cancelled through app.tasks, under the id its start reply named.
+	src/core/RenderTaskLifecycleTest.cpp
 	# Cluster new-p16-186: a render queued onto its own source project is refused, and the project kept.
 	src/core/RenderSourceGuardTest.cpp
 	src/core/ControlSessionRecordLandTest.cpp
@@ -129,6 +149,9 @@ set(LMMS_TESTS
 	src/core/ScriptDawEffectsTest.cpp
 	src/core/ClipEditsTest.cpp
 	src/core/ClipFadesRenderTest.cpp
+	# Q050-111: an audio clip's own realtime effects - only that clip's audio changes (a render with an
+	# overlapping sibling), save/reopen, the plugin.* commands on a clip-<n> target, no allocation per period.
+	src/core/ClipEffectsTest.cpp
 	# Q050-125: a clip's polarity - its rendered sign, the source left alone, and the gain curve the
 	# waveform is drawn with is the multiplier the render got.
 	src/core/ClipPolarityTest.cpp
@@ -160,6 +183,8 @@ set(LMMS_TESTS
 	# Engine and no socket, so it runs wherever a binary runs.
 	src/core/WriteRefusalGateTest.cpp
 	src/core/ClipWarpPersistenceTest.cpp
+	# Q050-063: warp markers authored over the waveform - double-click adds, drag moves with snap and a live preview.
+	src/gui/Warp/SampleClipWarpEditTest.cpp
 	src/core/ConfigMigrationTest.cpp
 	src/core/ControlAutomationScriptTest.cpp
 	# The automation MODES' own proof (feature-list rows 10 and 63, board task
@@ -182,6 +207,12 @@ set(LMMS_TESTS
 	# The socket proof of the same claim is the registered ctest
 	# ControlChainPresets (tests/control-chain-presets.py).
 	src/core/ControlChainPresetTest.cpp
+	# Q050-081: Lua control-surface scripts on a bound MIDI port.
+	src/core/ControllerScriptTest.cpp
+	# Q050-331: controller bindings saved with track and chain presets, on real devices.
+	src/core/PresetBindingsTest.cpp
+	# Q050-214: the queue that carries a plug-in's gesture marks from its thread to the GUI poll.
+	src/core/PluginParamGestureTest.cpp
 	# Out-of-process plugin hosting BEYOND ZynAddSubFx (feature row 80 of
 	# docs/FEATURE-LIST-0.3.0.md, board card #670): the family table
 	# (include/OutOfProcessHosting.h), the client-process record it keys the
@@ -216,6 +247,9 @@ set(LMMS_TESTS
 	# file-length ratchet, so it is its own binary now - same registry read,
 	# same picker comparison, same built-in amplifier naming Zene Studio.
 	src/core/ControlDeviceVendorTest.cpp
+	# Cluster stress-3: plug-ins whose bus layout is not one stereo in + one stereo out (an odd channel
+	# count: mono x4 mixers, a mono side-chain) are hosted; one with no audio port is refused with why.
+	src/core/ControlHostedBusLayoutTest.cpp
 	src/core/ControlEditCommandsTest.cpp
 	# The control selection store keeps the SELECTED NOTES' ids, so a removal
 	# cannot shift the selection onto another note (cluster new-p12-53-port).
@@ -254,6 +288,7 @@ set(LMMS_TESTS
 	src/core/ControlSampleArrayTest.cpp
 	# The undo-record bookkeeping for nested and wrapped commands (one record per journal step).
 	src/core/ControlRegistryNestingTest.cpp
+	src/core/ControlEventHubTest.cpp
 	# Replies held to their declared resultSchema (ZENE_CONTROL_CHECK_RESULTS), and
 	# every command's id is its group.verb.
 	src/core/ControlResultSchemaTest.cpp
@@ -304,6 +339,10 @@ set(LMMS_TESTS
 	# it pushed no undo step. Needs a real Engine: the checkpoints are the
 	# Track/Clip journal steps ProjectJournal owns.
 	src/core/ControlSampleOperatorTest.cpp
+	# The sample bakers' NaN and non-finite guards (new-p22-66): NaN gain_db and
+	# target_db, a subnormal peak whose scale overflows float, and an infinite
+	# source sample - each refused before any checkpoint, with no undo step.
+	src/core/ControlSampleBakeGuardTest.cpp
 	# 0.5.0 L05 (Q050-106): the stereo pair - sample.split_stereo's two mono files read
 	# back against the source, and sample.edit_range op 'mono' with the documented
 	# (L + R) / 2 mean, mono/stereo agent read-back and one-step undo through a project
@@ -311,6 +350,8 @@ set(LMMS_TESTS
 	src/core/ControlSampleStereoTest.cpp
 	# 0.5.0 L04 (Q050-031): clip.import_file - a MIDI or audio file becomes a clip, a bad one changes nothing - and the SMF note reader.
 	src/core/ClipImportFileTest.cpp
+	# 0.5.0 L05 (Q050-093): an imported loop's tempo and key detected; it follows the project or keeps its own rate.
+	src/core/LoopImportWarpTest.cpp
 	# The 0.3.0 note/scale/device wave (board task #648; feature-list rows 11, 66 and
 	# 81): the fifteen ids, their contract rows and the REAL inverses - the seed pair
 	# (persisted + undone), the repeatability pair of the seeded roll (same seed ->
@@ -363,6 +404,7 @@ set(LMMS_TESTS
 	src/core/SafeStartLoadPathTest.cpp
 	src/core/DataFileFormatTest.cpp
 	src/core/DataFileSaveIntegrityTest.cpp
+	src/core/DataFileContainerRecoveryTest.cpp
 	# ARCH-4 S2a: the document index (SPEC-ARCH-4 1.4) and the ONE condition
 	# under which a project may carry one - the S1 preserved set being non-empty
 	# (risk 2, "a release invariant"). The index's own slots are DOM-level; the
@@ -493,6 +535,9 @@ set(LMMS_TESTS
 	# into a running instance from outside; the socket half of the proof is the
 	# ControlClockCommands ctest below, which drives the real binary.
 	src/core/MidiClockTest.cpp
+	# Q050-277 (review round 2): the capture span's output contract - its sender never feeds the audio thread's
+	# single-producer MIDI path, and a span is admitted only when its START and STOP both fit the capture ring.
+	src/core/MidiClockCaptureOutputTest.cpp
 	# Q050-026: WHICH clock the follower listens to. The source `clock.slave_set`
 	# stores used to be reported and never read, and every client delivered clock
 	# bytes with no sender, so any connected device could drive the tempo. Two
@@ -502,13 +547,18 @@ set(LMMS_TESTS
 	# unnamed raw-client stream is still followed while no source is chosen, and a
 	# name the follower cannot hold is refused invalid_args.
 	src/core/MidiClockSourceTest.cpp
+	src/core/MidiInputGateTest.cpp
 	src/core/MidiLearnThreadTest.cpp
 	src/core/MidiSurfaceInputTest.cpp
 	src/core/MidiRetroCaptureTest.cpp
 	src/core/MidiOutQueueTest.cpp
+	# Q050-246: repeated 1/32-note output timing through an ALSA sequencer loopback (skips without ALSA).
+	src/core/MidiOutTimingTest.cpp
 	src/core/FrozenTakeHandoffTest.cpp
 	src/core/FrozenTakeRoundTwoTest.cpp
 	src/core/FreezeRegionRepairTest.cpp
+	# Q050-124: a frozen mixer bus - capture, substitution, commands, undo, save/load, failures, allocation probe.
+	src/core/MixerBusFreezeTest.cpp
 	src/core/AudioBusPlayHandleQueueTest.cpp
 	src/core/AutomationRenderAllocationTest.cpp
 	src/core/SlicerTPlayheadTest.cpp
@@ -550,6 +600,8 @@ set(LMMS_TESTS
 	# the route every measured ratio is exactly 1.0 and the test fails;
 	# docs/MPE.md §4 and docs/KNOWN-LIMITATIONS.md carry the claim it backs.
 	src/core/MpePlaybackTest.cpp
+	# Q050-311: MPE pressure (intensity) and CC74 (brightness) heard on a built-in synth (TripleOscillator).
+	src/core/MpeSynthExpressionTest.cpp
 	# The #602 modulation layer: the ENGINE half (the LFO arithmetic, the target
 	# resolver, the per-block relative write and the persistence round trip) and
 	# the SURFACE half (the ten modulator.*/note.expression.* commands, their
@@ -596,6 +648,10 @@ set(LMMS_TESTS
 	src/core/PluginLogoResourceTest.cpp
 	src/core/PluginAudioPortsTest.cpp
 	src/core/PluginScanCacheTest.cpp
+	# Q050-010: the background rescan's library loads run off the interface thread, through app.tasks.
+	src/core/PluginScanWorkerTest.cpp
+	# Q050-010: browser.peaks_start's job through app.tasks: ids, cancels at every stage, failure, responsiveness.
+	src/core/PeakJobsTest.cpp
 	# 0.5.0 Q050-018: a project with unavailable instruments/effects keeps their XML and reports placeholders
 	src/core/MissingDevicesPreserveTest.cpp
 	# Q050-018 review round 2: every mixer chain, save/reopen and the real GUI project-loaded notice.
@@ -632,6 +688,8 @@ set(LMMS_TESTS
 	src/core/InstrumentLayerZonePublishTest.cpp
 	# MX-157 (BUGS 11.34): a hosted instrument's latency reaches PDC, measured on rendered audio
 	src/core/InstrumentLatencyPdcTest.cpp
+	# Q050-174 (MX-159): low-latency monitoring takes an armed latent instrument off its alignment, on rendered audio
+	src/core/InstrumentLowLatencyMonitorTest.cpp
 	src/core/RecordClipTest.cpp
 	src/core/InputChannelRingTest.cpp
 	src/core/RecordRingBufferTest.cpp
@@ -641,6 +699,12 @@ set(LMMS_TESTS
 	# The VST remote client's per-period MIDI helpers (plugins/VstBase/VstMidiEventBatch.h): an
 	# allocation-free sort and a bounded queue. The client itself is an out-of-process executable.
 	src/core/VstMidiEventBatchTest.cpp
+	# The channel counts the VST remote client converts from the plugin's signed numInputs/numOutputs
+	# (plugins/VstBase/VstChannelCount.h): an out-of-range count is refused, never wrapped into range.
+	src/core/VstChannelCountTest.cpp
+	# The VST host's PE machine-type probe (plugins/VstBase/PeMachineType.h) reads only bytes inside the file:
+	# a truncated or malformed binary is rejected, never read past the mapping.
+	src/core/VstPeMachineTypeTest.cpp
 	# The bounded lock-free MIDI hand-off the instrument hosts use to get events off their audio paths
 	# (include/MidiHandoffQueue.h): FIFO, drop-and-count when full, no allocation, no lost accepted event.
 	src/core/MidiHandoffQueueTest.cpp
@@ -676,6 +740,15 @@ set(LMMS_TESTS
 	# glob characters. Split out of RevisionTimelineTest to keep that file under
 	# the file-length ratchet.
 	src/core/ProjectRevisionRestoreStagingTest.cpp
+	# The keep-3 restore into a project file that does not exist (cluster new-p15-24): the
+	# recorded undo removes the file the restore created instead of restoring revision 0,
+	# and the advertised inverse is control.undo. Driven through the registry with a real Engine.
+	src/core/ProjectRestoreMissingTargetTest.cpp
+	# The undo of a revisions.restore that CREATED the project file (cluster
+	# new-p15-27, BUG 9): undo removes the file only while it still holds the bytes
+	# the restore wrote, and leaves a newer file at the path in place. Its own file
+	# so RevisionTimelineTest does not grow past the file-length ratchet.
+	src/core/RevisionRestoreCreatedFileUndoTest.cpp
 	# ARCH-4 S1b: the elements a loader did not claim, kept verbatim so that
 	# opening and re-saving cannot destroy them (SPEC-ARCH-4 1.6.1). The
 	# mechanism's own slots are unit-level; the owed proof is the integration
@@ -693,6 +766,9 @@ set(LMMS_TESTS
 	src/core/UnclaimedTrackTypeTest.cpp
 	# The bounded, coalescing undo (task #623): the declared depth caps, the
 	# drag rule, the byte budget and the refusal of an evicted step.
+	# A JournallingObject restored with a file id while no project journal exists
+	# (before Engine::init): the restore must not dereference the null journal.
+	src/core/JournallingObjectRestoreTest.cpp
 	src/core/UndoBoundsTest.cpp
 	# WF-033: the undo history saved with the project - a real save -> open -> undo
 	# round trip through the control surface, checking every undo against the
@@ -757,6 +833,8 @@ set(LMMS_TESTS
 	src/core/MixerListenTest.cpp
 	# 0.5.0 F1: hardware outputs, cue mixes, hardware inserts
 	src/core/HardwareIoTest.cpp
+	# 0.5.0 F1: the hardware bus reads only the frames of its period
+	src/core/HardwareOutputBusTest.cpp
 	# 0.5.0 theme 24: the task area's reporting API and task.* commands
 	src/core/TaskCenterTest.cpp
 	# Destroying a pool drains tasks already queued behind a running task.
@@ -774,6 +852,8 @@ set(LMMS_TESTS
 	# The organiser, plug-in folder and preferred-format halves of DeviceCopyTest, split out to keep
 	# both files under the file-length ratchet.
 	src/core/DeviceOrganiserTest.cpp
+	# Q050-066 stage 1: a drum rack's sample pads created, edited, undone and read back through a save.
+	src/core/DrumRackPadsTest.cpp
 	# 0.5.0 L10 (rework cluster 5639): plugin.ab store undo and redo after the device was recreated.
 	src/core/DeviceAbUndoTest.cpp
 	# 0.5.0 L03 / L02: count-in, pre-roll, the record mode, cycling takes, the launcher's bindings.
@@ -781,8 +861,14 @@ set(LMMS_TESTS
 	# Q050-217.1: a MIDI note or control-change bound to an argument-free built-in command - one
 	# dispatch per activation through the registry, read back, replaced, and undone as one step.
 	src/core/MidiCommandBindingsTest.cpp
+	# Q050-217.2: the same bindings targeting a SAVED WORKFLOW - a note and a CC each run it once
+	# through workflow.run, read back, surviving a config reload and resolving the library in use.
+	src/core/MidiWorkflowBindingsTest.cpp
 	# 0.5.0 L11 / L12: search expressions, collections, track presets, importing tracks, the hand-off folder.
 	src/core/LibraryProjectsTest.cpp
+	# cluster new-p17-271: a collection store write the kernel cuts short is refused, and the store keeps what it had.
+	# The short write is provoked by capping RLIMIT_FSIZE, so it is deterministic: no disk, no timing, no race.
+	src/core/BrowserCollectionStoreWriteTest.cpp
 	# Focused regressions for track preset command replies.
 	src/core/TrackPresetCommandsTest.cpp
 	# R2.4: the punch region's frame-accurate audio gate (include/PunchWindow.h).
@@ -856,6 +942,8 @@ set(LMMS_TESTS
 	src/core/ClipGainEnvelopeTest.cpp
 	# 0.5.0 L07 ED-130: a MIDI clip's controller lanes as the file carries them.
 	src/core/MidiClipControllersLoadTest.cpp
+	# Q050-291.1: a CC lane converted to a device parameter's automation and back.
+	src/core/ControllerConversionTest.cpp
 	# 0.5.0 L04 ED-038: a clip's non-destructive transpose - command, file, played pitch.
 	src/core/ClipTransposeTest.cpp
 	# 0.5.0 L04 ED-020/043/044: ripple, overlap and edge snapping.
@@ -864,6 +952,8 @@ set(LMMS_TESTS
 	src/core/AutomationLanesTest.cpp
 	# 0.5.0 L06 (Q050-022): automation lanes as track children - ownership, folding, delete-with-owner.
 	src/core/AutomationLaneChildrenTest.cpp
+	# 0.5.0 L04 (Q050-283.1): the neutral track - track.add, move, undo, save/load, clone, no clips.
+	src/core/HybridTrackRoundTripTest.cpp
 	# ED-201: automation.write_to_end holds a value from a tick to the song's end.
 	src/core/AutomationWriteToEndTest.cpp
 	# ED-187: thinning keeps custom-segment endpoints and preserves the evaluated curve.
@@ -897,8 +987,17 @@ set(LMMS_TESTS
 	src/core/UnmuteChaseTest.cpp
 	# 0.5.0 L07 (Q050-015): what each articulation sends before its note, and the map's edits moving the notes with them.
 	src/core/ArticulationPlaybackTest.cpp
+	# Q050-074.1: each instrument track's synthesis load by track id, and a late period at its song position.
+	src/core/TrackSynthesisLoadTest.cpp
+	# Q050-074.2: mixer.cpu_load's audio_device - unavailable without a device, the ALSA null PCM's granted
+	# timing and underruns, a private jackd's rate/period/latency and xruns apart from late periods.
+	src/core/AudioDeviceDiagnosticsTest.cpp
 	# 0.5.0 L08 (W3): pan law, swap, sends switched off, returns, find, gang, order, group colours.
 	src/core/MixerToolsTest.cpp
+	# 0.5.0 L09 (Q050-252.1): the External MIDI device - port, channel, bank, program and presets; what reaches the output; save/open; undo.
+	src/core/ExternalMidiDeviceTest.cpp
+	# 0.5.0 L08 (Q050-231.1): mixer.masking_report - deterministic clashes and cut proposals over fixed tones, read only.
+	src/core/MixerMaskingReportTest.cpp
 	# cluster new-p14-29 (BUG 14): order_by_tracks refuses an index that names no channel, observed before the read.
 	src/core/MixerOrderByTracksTest.cpp
 	# 0.5.0 L02 (W3): capture a scene, playlists, setlists, marker actions, release and jump.
@@ -913,6 +1012,8 @@ set(LMMS_TESTS
 	src/core/PluginHostMetadataTest.cpp
 	# The record tool commands on an instance with NO audio engine: typed refusals, no null deref.
 	src/core/RecordToolsNoEngineTest.cpp
+	# Cluster stress-1 (2026-10-27): a default SampleBuffer and the metronome samples with no engine and no data dir.
+	src/core/SampleBufferNoEngineTest.cpp
 	# 0.5.0 L04 (W3): the clip list, sections, remove silence, tab to transient, note rotation.
 	src/core/ArrangeToolsTest.cpp
 	# 0.5.0 L05/L06 (W3): crop, unique copies, fade curves, asymmetric crossfades, automation switches, trim, moving a point.
@@ -938,12 +1039,19 @@ set(LMMS_TESTS
 	src/plugins/SfzEffectBusViewTest.cpp
 	# 0.5.0 W3 L13 / L14: the light palette, theme editing, density and the other interface commands.
 	src/gui/SamplerTakeGuiTest.cpp
+	# Q050-263: per-slice SlicerT controls: the view's panel, plugin.slice_get / plugin.slice_set, a rendered slice sequence.
+	src/gui/SlicerTSliceControlsTest.cpp
 	src/gui/WorkspaceAccessTest.cpp
 	# Qt reads the startup scale before QApplication; the selected config must win over its fallback file.
 	src/core/AppearanceStartupTest.cpp
+	# Q050-502: the Qt platform a Wayland desktop runs on (XWayland unless the user chose), and the editor refusal it leaves.
+	src/core/PluginWindowPlatformTest.cpp
 	src/core/CustomAccessTest.cpp
 	# 0.5.0 L12 (W3): mixer snapshots, project settings and metadata, the document type, edit locks.
 	src/core/ProjectStateTest.cpp
+	# 0.5.0 L12 (Q050-317.1): a mastering document's release sequence - songs, order, processing,
+	# gaps and fades through mastering.song_*, and the save/reopen round trip.
+	src/core/MasteringSequenceTest.cpp
 	# 0.5.0 L11 (W3): a clip into the library, the index and similar sounds, thumbnails, the matched preview, history.
 	src/core/LibraryBrowserTest.cpp
 	# 0.5.0 Q050-048: browser feature analysis decodes only its window (WAV/FLAC/OGG), duration from the header.
@@ -1058,6 +1166,10 @@ set(LMMS_TESTS
 	src/core/AafImportTest.cpp
 	# 0.5.0 F5 (ED-054): the video track; the FFmpeg cases skip without the library
 	src/core/VideoTrackTest.cpp
+	# 0.5.0 L04 (Q050-180.1, Q050-139 folded in): several positioned video clips on the one video track - ids,
+	# offsets and metadata across save/reopen, legacy one-<video> load, one undo step per edit, the window's frame
+	# during playback with no stale frame, and video.render_frames over a range spanning both clips.
+	src/core/VideoClipsTest.cpp
 	# cluster new-p8-242-port: the FFmpeg stream's refused seek (the video track's decoder behind it)
 	src/core/VideoFfmpegTest.cpp
 	# 0.5.0 L12 (Q050-042): old-version patterns keep their note and pattern lengths after upgrade and save/reopen.
@@ -1131,6 +1243,9 @@ set(LMMS_TESTS
 	# command and one undo step - and note.edit's whole-batch validation.
 	src/gui/NoteGridTest.cpp
 	src/gui/NoteEditorTest.cpp
+	# 0.5.0 Q050-221.1: note.generate_melody - seeded, in the active (or a custom) scale, one undo step, and
+	# Notes > Tools > Generate a Melody... running the same command through its form.
+	src/gui/NoteMelodyTest.cpp
 	# 0.5.0 wave 3 theme 10/17: canvases by keyboard; the editable item list, the staged audit, announcements
 	src/gui/CanvasKeyboardTest.cpp
 	src/gui/ItemListPanelTest.cpp
@@ -1148,6 +1263,8 @@ set(LMMS_TESTS
 	src/gui/CrossfadeEditorTest.cpp
 	# LADSPA Ports renders sample-rate-dependent ranges and their displayed defaults.
 	src/gui/LadspaPortDialogTest.cpp
+	# LADSPA browser: the plug-in list's selection, including the cleared row (-1) and rows outside the key list.
+	src/gui/LadspaDescriptionTest.cpp
 	# 0.5.0 theme 1: the note editor follows FL Studio's piano roll.
 	src/gui/NoteEditorFlTest.cpp
 	# 0.5.0 lane 3: the shell selection, the Inspector and the Device panel's cards and
@@ -1163,6 +1280,14 @@ set(LMMS_TESTS
 	src/gui/Lv2ViewBaseLifetimeTest.cpp
 	# 0.5.0 L11 / L12 (W3): the project menu's new entries, a track's lock, the gallery, the browser's remembered sources.
 	src/gui/LibraryMenusTest.cpp
+	# 0.5.0 L11 (Q050-316.1): the Search view's tempo range and key facets, driven as a
+	# musician drives them - they narrow the walking and the whole-library lists to the
+	# same files, and an unknown tempo never matches an active range. Its own executable
+	# because LibraryMenusTest is at the file-length ratchet.
+	src/gui/BrowserTempoKeyGuiTest.cpp
+	# 0.5.0 L12 (Q050-317.1): Project Tools > Mastering Release... - the release page is the
+	# registered mastering.sequence_list, and its edits and an agent's are the same commands.
+	src/gui/MasteringReleaseGuiTest.cpp
 	# Q050-121: Project Media's usage/state columns, the Unused view, and the injected
 	# confirmation proving Cancel keeps and Confirm removes only the selected unused file.
 	src/gui/BrowserProjectMediaTest.cpp
@@ -1207,14 +1332,22 @@ set(LMMS_TESTS
 	src/gui/MixerMeteringTest.cpp
 	# MixerStripFeaturesTest: the strip's Console section, its meter mode, the delay entries and the input meters (Q050-088/108/339/340).
 	src/gui/MixerStripFeaturesTest.cpp
+	# Q050-227.1: the mixer's dockable regions and separator drags, and the layout a project saves of them.
+	src/gui/MixerZonesTest.cpp
 	# The selected mixer channel follows its identity through a removal, a removal of itself, and a reorder.
 	src/gui/MixerSelectionIdentityTest.cpp
+	# Q050-089.1: a hardware insert's effective latency (measured, then typed) in pdc.report and the strip tooltip.
+	src/gui/MixerInsertLatencyTest.cpp
+	# Q050-089.2: the Hardware I/O menu renders the project through the insert in real time (render.realtime).
+	src/gui/RealtimeExportMenuTest.cpp
 	# 0.5.0 themes 2/9: ruler lanes, anchored zoom, the drag preview, locked clips.
 	src/gui/ArrangerTimelineTest.cpp
 	# 0.5.0 L03: the punch ruler band (Q050-147) and the take-lane rows/waveforms (Q050-123).
 	src/gui/ArrangerTakePunchTest.cpp
 	# 0.5.0 L04 (Q050-031): files dragged out of a plug-in editor become clips where they are dropped.
 	src/gui/ArrangerFileDropTest.cpp
+	# 0.5.0 L05 (Q050-093): a dropped loop follows the project tempo and key, or keeps its own (Edit menu, Alt).
+	src/gui/LoopDropWarpTest.cpp
 	# 4218c1e30 rework: the arranger's trim of a linked MIDI clip keeps the notes of the clip and its peers.
 	src/gui/MidiClipLinkedEditTest.cpp
 	# new-p14-176: the beat step menu names and edits the step under the cursor on a clip with millions of steps.
@@ -1223,10 +1356,17 @@ set(LMMS_TESTS
 	src/gui/XyPadPairTest.cpp
 	# M3: folders from the interface - make one, move a track in, collapse, pin, take it out.
 	src/gui/TrackFolderMenuTest.cpp
+	# Q050-212: a new track's destination and its own named mixer channel, from the commands and the interface.
+	src/gui/TrackAddRoutingTest.cpp
+	src/gui/TrackRouteDropTest.cpp
+	# Q050-066 stage 1: the folder's Drum Rack Pads... panel adds and edits pads through track.drum_rack_*.
+	src/gui/DrumRackPanelTest.cpp
 	# 0.5.0 ED-035: a folder's row draws its children's clips as summary clips, each moved, copied or deleted as one.
 	src/gui/FolderSummaryLaneTest.cpp
 	# 0.5.0 L06 (Q050-022): a lane is drawn as a collapsible child under its owner in the arranger.
 	src/gui/AutomationLaneChildGuiTest.cpp
+	# 0.5.0 L04 (Q050-283.1): the Song Editor's Add neutral track button makes a drawn neutral row.
+	src/gui/HybridTrackGuiTest.cpp
 	# 0.5.0 theme 22: the main window opens where, and as large as, it was left (ui/main.geometry).
 	src/gui/MainWindowGeometryTest.cpp
 	# BUG new-p11-96: clicking the envelope graph turns a negative amount off.
@@ -1241,10 +1381,16 @@ set(LMMS_TESTS
 	src/gui/FollowActionEditorTest.cpp
 	# M0 coverage: the Gate, Modulation and Receiver effects' control dialogs, built over the real modules.
 	src/gui/PluginControlDialogsTest.cpp
+	# Q050-214: a hosted VST3 or CLAP editor gesture is one history step, through Edit > Undo and control.undo alike.
+	src/gui/PluginGestureUndoTest.cpp
 	# Q050-486: the Wave Shaper editor's Graph shows a loaded curve, keeps it on a damaged one, and saves a drawn edit.
 	src/gui/GraphWaveformEditorGuiTest.cpp
 	# M0 coverage: the mixer's windows (routing matrix, large meters, EQ compare), hardware / surround menus, the surround panner.
 	src/gui/MixerWindowsTest.cpp
+	# Q050-124: the bus strip's Freeze bus / Unfreeze bus entry, driven through the strip's own context menu.
+	src/gui/MixerBusFreezeMenuTest.cpp
+	# Q050-231.1: Mixer View > Masking Report... - tick, prioritise, Report; the clash and its cut, nothing written.
+	src/gui/MixerMaskingReportWindowTest.cpp
 	# Regressions for stale panner fields, route refresh, and ignored non-left clicks.
 	src/gui/SurroundPannerTest.cpp
 	# M0 coverage: a device's menu (insert, replace, copy, A/B, parameters), the channel picker and the picker organiser.
@@ -1252,18 +1398,34 @@ set(LMMS_TESTS
 	src/gui/EffectPickerOrganiserTest.cpp
 	# M0 coverage: the plug-in editor window, its host header and the Show plugin editor button.
 	src/gui/PluginNativeEditorTest.cpp
+	# Q050-491: Audio Unit hosting through the product - every build checks the format is offered only where it is
+	# hosted and that a component that cannot instantiate is refused, typed; the macos jobs run the rest against
+	# Apple's built-in AUBandpass, AUDistortion and DLSMusicDevice.
+	src/gui/AuHostingTest.cpp
+	# Q050-481.1: VST2 instruments through Carla - plugin.list/plugin.load, the device card's Replace
+	# Instrument, parameters, automation, presets, the plug-in's own editor and project state, against
+	# the in-tree VST2 fixture, native and through Carla's Wine bridge (needs a real Carla runtime).
+	src/gui/CarlaVst2HostingTest.cpp
 	# M0 coverage: the reference project's window and its track / clip / device copies.
 	src/gui/ReferenceProjectPanelTest.cpp
+	# Q050-501: the update check against a loopback feed (only the commands' absence with -DZENE_UPDATE_CHECK=OFF).
+	src/core/UpdateCheckTest.cpp
 	# M0 coverage: the telemetry consent window, File > Import AAF..., track header icons and the level meter.
 	src/gui/TelemetryConsentDialogTest.cpp
 	src/gui/AafImportMenuTest.cpp
 	src/gui/TrackIconsLevelBarTest.cpp
+	# Q050-442: the track movement handle is drawn from the palette, meets 3:1 in the standard and
+	# high-contrast palettes, and a changed foreground role reaches it on the next start.
+	src/gui/TrackGripContrastTest.cpp
 	# M0 coverage: the arranger's clip keys and the navigator strip.
 	src/gui/ArrangerKeysNavigatorTest.cpp
 	# M0 coverage: the audio waveform drawn behind a MIDI clip's notes.
 	src/gui/NoteBackgroundAudioTest.cpp
 	# M0 coverage: the arranger's range / audition / zoom tools and the video lane.
 	src/gui/ArrangerOverlaysVideoLaneTest.cpp
+	# 0.5.0 L04 (Q050-180.1): the video lane draws each clip over its own span; a click seeks and the video window
+	# follows; double-click / context menu / View menu add, a drag moves, the context menu renders the loop range.
+	src/gui/VideoClipsGuiTest.cpp
 	# The transport's Sync toggle (link.set_enabled) and its session read-out.
 	src/gui/SessionSyncActionTest.cpp
 	# The piano roll's Randomize / Humanize / Scale velocities items (note.randomize, note.velocity_scale).
@@ -1276,6 +1438,8 @@ set(LMMS_TESTS
 	src/gui/LivecodePanelTest.cpp
 	# Track > Articulations: the editor leaves the map track.articulations_set leaves; one undo step per edit.
 	src/gui/ArticulationMapEditorTest.cpp
+	# Track > MIDI Out > External Device...: the card's controls run device.external_*; one undo step per edit.
+	src/gui/ExternalDeviceCardTest.cpp
 	# The file browser's Tags menu (browser.tag.add / browser.tag.remove), over a throwaway store.
 	src/gui/BrowserTagMenuTest.cpp
 	# 0.5.0 L11 (Q050-133): a browser file drag carries a text/uri-list URL beside its StringPair payload.
@@ -1305,6 +1469,8 @@ set(LMMS_TESTS
 	# A mixer strip's tooltip names its delay compensation.
 	# A sample clip's Gain and fades (clip.set_gain / clip.set_fade), with one control.undo.
 	src/gui/ClipEditsMenuTest.cpp
+	# Q050-111: the audio clip's Clip effects... window - add, move, bypass, a parameter and remove, CLICKED.
+	src/gui/ClipEffectsDialogTest.cpp
 	# Q050-125: the clip-gain handle, envelope points and the polarity item are DRAGGED/TRIGGERED on the
 	# real clip view, and the drawn waveform follows the gain curve.
 	src/gui/ClipWaveformEditTest.cpp
@@ -1312,6 +1478,10 @@ set(LMMS_TESTS
 	src/gui/SampleClipWarpModeMenuTest.cpp
 	# A track menu's Effect chain presets (chain.save / apply / remove / list) against a real effect.
 	src/gui/ChainPresetMenuTest.cpp
+	# Q050-081: the MIDI mapping editor (list, edit, persist) and the Controller Scripts menu.
+	src/gui/ControllerMappingEditorTest.cpp
+	# Q050-331: the preset menus show the controller bindings a load restored.
+	src/gui/PresetBindingsGuiTest.cpp
 	# A mixer channel's Rack menu (rack.* chains, routing and macros).
 	src/gui/RackMenuTest.cpp
 	# The pin matrix's hover cursor, and what a drag over it does.
@@ -1344,7 +1514,9 @@ set(LMMS_TESTS
 	# 0.5.0 L12 (Q050-009): the export dialog's render-preset picker - save from the dialog, reopen,
 	# select, and render at the preset's own rate and depth.
 	src/gui/ExportProjectDialogPresetTest.cpp
-	# Edit > Plugin Quarantine (plugin.scan_cache_* / plugin.rescan), over a throwaway scan-cache file.
+	# Q050-010: the waveform view and Rescan Plugins as tasks the Tasks list shows and stops.
+	src/gui/BackgroundTasksGuiTest.cpp
+	# Edit > Plugin Quarantine (plugin.scan_cache_* / plugin.scan_start), over a throwaway scan-cache file.
 	src/gui/PluginQuarantineMenuTest.cpp
 	# Help > Crash Reports (crash.enable / disable / list / acknowledge / discard), over throwaway directories.
 	src/gui/CrashReportMenuTest.cpp
@@ -1360,11 +1532,22 @@ set(LMMS_TESTS
 	# M3.7: the mixer's VCA strip and the channel's VCA menu; Q050-171: the Groups list spec and the
 	# Clip menu's Move With Edit Group entry.
 	src/gui/VcaStripViewTest.cpp
+	# Q050-438: the documented Revisions list, driven through Project tools > Revisions... and held
+	# against revisions.list's live sources, columns and row actions.
+	src/gui/RevisionsDocsTest.cpp
 	# R5.3: the clip-launch grid - launch, stop and scene-launch from the grid produce the
 	# socket-visible state; every cell focusable and announced; the arrow keys.
 	src/gui/SessionGridViewTest.cpp
 	# 0.5.0 L02 (WF-055): an empty cell records audio from its menu, says so, and the grid lands its own take.
 	src/gui/SessionGridRecordTest.cpp
+	# Q050-273.1: a populated audio launcher cell's Save to Library... (browser.save_clip) writes its audio
+	# into the shared library in one undo step; after a save and reopen the entry is browsable and a drop of
+	# it on another cell plays the same frames. The failure matrix (missing/empty/damaged/over-decoded source,
+	# duplicate, allocation and write failures) and the realtime render check are in the same file.
+	src/gui/SessionLibrarySaveTest.cpp
+	# Q050-493: an audio cell's Playback and Warp menu - every set_slot playback field from the GUI, one undo step,
+	# saved and reloaded, shown on the cell, rendered as the Q050-013 engine tests expect.
+	src/gui/SessionCellPlaybackMenuTest.cpp
 	# The clip launcher's Follow Actions / arrangement-record row.
 	src/gui/SessionTransportBarTest.cpp
 	# 0.5.0 L02 (WF-071): perform mode, the launcher's live show window, over the real application.
@@ -1372,6 +1555,9 @@ set(LMMS_TESTS
 	# Q050-217.1: the Launcher > Controller entries that bind a MIDI control to a built-in command,
 	# driven over the real application (the menu action, the command's own form, Edit > Undo).
 	src/gui/MidiCommandBindingsGuiTest.cpp
+	# Q050-217.2: Launcher > Controller > Bind a Workflow - one entry per saved workflow, its form,
+	# and a live note/CC each running the selected workflow over the real application.
+	src/gui/MidiWorkflowBindingsGuiTest.cpp
 	# 0.5.0 L02 (WF-064): sub-scenes from the grid - select cells, make one, launch it - over the real application.
 	src/gui/SessionSubSceneGridTest.cpp
 	# 0.5.0 L14 (Q050-235): the touch workspace read once at start, and its launcher cells, scene and stop
@@ -1390,6 +1576,7 @@ set(LMMS_TESTS
 	# in the arranger, the note editor, the automation editor and Perform, only the focused panel's
 	# action firing; and a same-context clash resolved in the shortcuts page, surviving a restart.
 	src/gui/PanelShortcutsTest.cpp
+	src/gui/PluginShortcutsTest.cpp
 	# 0.5.0 wave 3 theme 19: the workflow recording indicator and the run report
 	src/gui/WorkflowFeedbackTest.cpp
 	# Clusters new-p23-4/new-p22-32/new-p23-5: workflow command names, saved step validation and recording filters.
@@ -1400,6 +1587,8 @@ set(LMMS_TESTS
 	src/gui/TaskIndicatorTest.cpp
 	# 0.5.0 Q050-179 (WF-085): the header's Rec left readout shows record.remaining's estimate.
 	src/gui/RecordRemainingTest.cpp
+	# Q050-074.1: the CPU readout's right-click opens CPU diagnostics, showing mixer.cpu_load's synthesis loads and late periods.
+	src/gui/CpuDiagnosticsDialogTest.cpp
 	# Q050-094: the Record Mode menu and the Rec mode readout offer overdub, replace and keep history through transport.record_options.
 	src/gui/RecordModeMenuTest.cpp
 	# Version number insertion with a dotted parent path.
@@ -1410,6 +1599,8 @@ set(LMMS_TESTS
 	src/gui/HelpAccessTest.cpp
 	# Luna 4016: control.surface_report keeps the whole menu path of a nested action.
 	src/gui/AgentSurfaceReportTest.cpp
+	# window.select delivered during GuiApplication's startup is refused with Requires, not read from an unassigned window.
+	src/gui/WindowSelectStartupTest.cpp
 	# Help > Online Help over the real main window: the desktop taking the URL is said in
 	# the status bar, and taking it is not.
 	src/gui/OnlineHelpNoticeTest.cpp
@@ -1419,6 +1610,10 @@ set(LMMS_TESTS
 	src/gui/PianoRollRecordTest.cpp
 	# The piano view's focus handler must tolerate its model not being assigned yet.
 	src/gui/PianoViewFocusTest.cpp
+	# Q050-321.1 stage 1: the instrument window's keyboard as a multi-touch surface - concurrent
+	# contacts sound distinct notes and releasing or cancelling one leaves the others held, while
+	# the mouse and computer-keyboard paths still work.
+	src/gui/TouchInstrumentSurfaceTest.cpp
 	# BUG new-p10-399: painting the step recorder with a zero tick length completes.
 	src/gui/StepRecorderWidgetTest.cpp
 	src/gui/MidiLearnGuiTest.cpp
@@ -1445,6 +1640,11 @@ set(LMMS_TESTS
 	# Complex) - selection through the command, one render per mode, and a
 	# project-file round trip with different modes on separate clips.
 	src/tracks/SampleClipWarpModesTest.cpp
+	# Q050-162: the transient Repeat / Gate warp modes - free and tempo-synced
+	# rates rendered on a transient fixture, warp.stretch, undo and save/load.
+	src/tracks/SampleClipTransientRepeatTest.cpp
+	# Q050-162 review r1: the reader-safe transient table, amplification, reverse, mid-clip passes.
+	src/tracks/SampleClipTransientRepeatSafetyTest.cpp
 	src/tracks/SampleClipWarpTest.cpp
 	src/tracks/SampleClipWindowTest.cpp
 	# Soundpipe lifecycle methods must report SP_OK on successful setup and teardown.
@@ -1489,10 +1689,18 @@ list(APPEND LMMS_TESTS src/core/SampleDecoderLimitTest.cpp)
 IF(LMMS_HAVE_STEM_SPLIT)
 	LIST(APPEND LMMS_TESTS
 		src/core/StemJobManagerTest.cpp
+		# Q050-010: a stem job's mix is decoded and resampled on the worker, not before submit.
+		src/core/StemJobLoaderTest.cpp
 		src/core/StemModelStoreTest.cpp
 		# Q050-062.1: the quality table and the hop formula every backend shares.
 		src/core/StemQualityTest.cpp
 		src/core/StemSplitPipelineTest.cpp
+		# Q050-062.2: the sample clip's Split to stems submenu picks the job's quality.
+		src/gui/StemSplitMenuTest.cpp
+		# Q050-010: a .ds source and a long in-memory clip reach their job without holding the interface.
+		src/gui/StemSplitBackgroundTest.cpp
+		# new-p21-107: the stem WAV writer's header arithmetic and its refusals (ControlStemWav.cpp).
+		src/core/ControlStemWavTest.cpp
 	)
 	IF(LMMS_HAVE_ONNXRUNTIME)
 		LIST(APPEND LMMS_TESTS src/core/OnnxRuntimeStemSeparatorTest.cpp)
@@ -1505,6 +1713,8 @@ LIST(APPEND LMMS_TESTS src/core/LinkPhaseLockTest.cpp)
 # Q050-024 (docs/LINK-AUDIO.md): the PCM stream between instances - codec, ring, loopback exchange,
 # the audio thread's allocation count, a 3 s two-thread stress, the registered commands. Loopback only.
 LIST(APPEND LMMS_TESTS src/core/LinkAudioStreamTest.cpp)
+# Q050-024 (src/core/LinkAudioCodec.cpp): the datagram codec on its own - pure functions, no socket or engine.
+LIST(APPEND LMMS_TESTS src/core/LinkAudioCodecTest.cpp)
 
 # JACK port state must be replaced when a dead client is reopened.
 IF(LMMS_HAVE_JACK)
@@ -1516,10 +1726,24 @@ ENDIF()
 IF(LMMS_HAVE_ABLETON_LINK)
 	LIST(APPEND LMMS_TESTS
 		src/core/AbletonLinkSessionTest.cpp
+		# The vendored asio allocators refuse a count whose byte size wraps (new-p15-163).
+		src/core/AbletonLinkAllocatorTest.cpp
 		# Zene's engine in a real Link session against a peer built from Link's own
 		# API (that test constructs ableton::Link itself, hence the link below).
 		src/core/AbletonLinkInteropTest.cpp
+		# Link's ESP32 service runner against a FreeRTOS stand-in (host-only, see
+		# esp32-freertos-host/): a failed task creation must be reported.
+		src/core/AbletonLinkEsp32RunnerTest.cpp
+		# The vendored asio's work_dispatcher, moved through its TS-executor
+		# specialisation (the header is asio's, so the test needs ableton_link's
+		# include directories and ASIO_STANDALONE definitions).
+		src/core/AbletonLinkWorkDispatcherTest.cpp
 	)
+ENDIF()
+
+# Q050-501: Help > Check for Updates, the question and the notice over the real main window.
+IF(ZENE_UPDATE_CHECK_ENABLED)
+	LIST(APPEND LMMS_TESTS src/gui/UpdateCheckWindowsTest.cpp src/gui/UpdateCheckHiddenTest.cpp)
 ENDIF()
 
 # Peer-to-peer collaboration (0.5.0 F6): the invite, the TLS-PSK transport and the port-mapping
@@ -1533,6 +1757,9 @@ IF(ZENE_HAVE_COLLAB)
 		src/core/UpnpMapperFakeRouterTest.cpp
 		# collab.show_panel (requires: display) over the real main window.
 		src/gui/CollabPanelTest.cpp
+		# Q050-205: the opt-in OSC control server over real UDP loopback, and its Customise menu entries.
+		src/core/ControlOscServerTest.cpp
+		src/gui/OscServerMenuTest.cpp
 	)
 ENDIF()
 
@@ -1580,6 +1807,9 @@ ENDIF()
 		src/core/SessionAudioRecordTest.cpp
 		# ...and a launched audio cell sounding its clip through its sample track (the landed take included).
 		src/core/SessionAudioCellPlaybackTest.cpp
+		# Q050-489: the launcher, the arrangement and the grid in step through edits, undo, redo, pattern renumbering,
+		# save and load - heard through the export path, so it needs tripleoscillator (below).
+		src/core/SessionTransitionsTest.cpp
 	# What a <session> command ACCEPTS: a wrong-typed Follow Action field is
 	# refused rather than converted, a non-array `actions` does not fall back to
 	# the stored chain, a cell address needs both coordinates - and the session
@@ -1604,6 +1834,10 @@ if(LMMS_HAVE_ALSA)
 	# cluster 4584: the ALSA capture thread must not log a failed recovery -
 	# the failure is parked and reported by the thread that closes the capture.
 	list(APPEND LMMS_TESTS src/core/AudioAlsaCaptureErrorTest.cpp)
+	# Q050-488: the ALSA raw-MIDI worker is woken and joined on close, never terminated.
+	list(APPEND LMMS_TESTS src/core/MidiAlsaRawShutdownTest.cpp)
+	# Q050-488: the sequencer worker is joined before the project's ports are destroyed.
+	list(APPEND LMMS_TESTS src/core/MidiAlsaSeqShutdownTest.cpp)
 endif()
 
 # The OSS MIDI output guard needs the optional backend and its API.
@@ -1622,6 +1856,10 @@ endif()
 # a ctest of its own: the negative control that reverts the product change
 # and re-runs the branch's tests finds it by name and rebuilds its binary.
 LIST(APPEND LMMS_TESTS src/core/ControlCrashAcknowledgeTest.cpp)
+
+# Cluster new-p12-328: the stored band-limited tables hold only harmonics whose period is at least
+# two samples. The fallback generator and the shipped wavetable files are both checked.
+LIST(APPEND LMMS_TESTS src/core/BandLimitedWaveTest.cpp)
 
 # Cluster new-p15-95: the LADSPA global stereo link over a plugin whose control total
 # is 65536. The LADSPA plug-in's own sources are compiled into the test (the
@@ -1700,6 +1938,14 @@ set(ZENE_NAM_EIGEN_OPTIONS "$<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang,AppleClang>:-W
 # control (qwen/negctl.py) cannot read its name out of ctest -N (see the note under the last append).
 list(APPEND LMMS_TESTS src/core/SmfNoteReadTest.cpp)
 
+# cluster new-p9-503: the string model's oversampling count (VibratingString) is never zero.
+# The test compiles the Vibed plug-in's string sources, the same shape as the Vibed tests below.
+list(APPEND LMMS_TESTS src/plugins/VibratingStringTest.cpp)
+
+# cluster new-p15-238: a Vibed note must render when the output device runs below the
+# engine's base rate (VibratingString divided by zero there). The plug-in's sources are
+# compiled into the test below, the same shape as VibedWaveformHandoffTest.
+list(APPEND LMMS_TESTS src/plugins/VibedSubBaseRateTest.cpp)
 # cluster new-p12-278: the Vibed waveform handoff proof - a note's render must
 # depend on the waveform the GUI thread handed off, never on the wave graph model
 # being edited underneath the audio thread. It is registered LAST on purpose: the
@@ -1744,12 +1990,25 @@ if(TARGET sfzplayer_sfizz)
 	list(APPEND LMMS_TESTS src/plugins/SfzSimdHelperAlignmentTest.cpp)
 	# Cluster new-p23-90: EQHolder outputs when the buffer pool is exhausted.
 	list(APPEND LMMS_TESTS src/plugins/SfzEQPoolExhaustionTest.cpp)
+	# Cluster new-p21-169: a zero-duration sustained FlexEG stage holds its target level.
+	list(APPEND LMMS_TESTS src/plugins/SfzFlexEnvelopeZeroStageTest.cpp)
 endif()
 
 # Qwen cluster new-p21-158: a reset filter holder must bypass until its next setup.
 if(TARGET sfzplayer_sfizz)
 	list(APPEND LMMS_TESTS src/plugins/FilterPoolTest.cpp)
 endif()
+
+# cluster new-p21-156: FilterHolder and EQHolder must pass through before setup() and after reset(),
+# not read an indeterminate description pointer. Links the built sfizz library for the holders.
+if(TARGET sfzplayer_sfizz)
+	list(APPEND LMMS_TESTS src/plugins/SfzFilterEqDescriptionTest.cpp)
+endif()
+
+# Q050-155.1: discrete mixer buses through 64 channels - the readback, the save and load, and a render of
+# 64 distinct channels across a discrete-64 bus. Registered late, like the tests above, so the mechanical
+# negative control can see its name in `ctest -N`.
+list(APPEND LMMS_TESTS src/core/WideDiscreteBusTest.cpp)
 
 # Q050-054.1: MIDI takes recorded on armed instrument tracks by transport.record - the capture queue,
 # plain and loop passes, undo/redo, the active-take model and save/load (core); the Record menu entry
@@ -1789,6 +2048,16 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			target_link_libraries(${LMMS_TEST_NAME} PRIVATE m)
 		endif()
 	endif()
+	# Q050-317.1: the release-sequence tests open a real mastering document through
+	# project.new_document, so the build's own template devices must exist (the same reason
+	# ArrangingCatchUpTest's plugin directory is set below).
+	if(LMMS_TEST_NAME STREQUAL "MasteringSequenceTest" OR LMMS_TEST_NAME STREQUAL "MasteringReleaseGuiTest")
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			LMMS_TEST_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
+		if(TARGET eq)
+			add_dependencies(${LMMS_TEST_NAME} eq lomm compressor analyzer)
+		endif()
+	endif()
 	if(LMMS_TEST_NAME STREQUAL "MasteringTest")
 		# The --report regression drives the real CLI, so it runs the application
 		# binary of THIS build: its path is compiled in (the build tree's layout
@@ -1817,6 +2086,29 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	if(LMMS_TEST_NAME STREQUAL "ReverbSCCreateTest")
 		target_sources(${LMMS_TEST_NAME} PRIVATE src/plugins/ReverbSCCreateTestAllocator.c)
 	endif()
+	# cluster new-p9-503: VibratingStringTest compiles the string model's own sources.
+	if(LMMS_TEST_NAME STREQUAL "VibratingStringTest")
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/Vibed/VibratingString.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Vibed/VibratingString.h)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/Vibed)
+	endif()
+	# cluster new-p15-238: VibedSubBaseRateTest compiles the Vibed plug-in's own sources
+	# into the test, so the note path under test is the shipping one.
+	if(LMMS_TEST_NAME STREQUAL "VibedSubBaseRateTest")
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/Vibed/Vibed.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Vibed/Vibed.h
+			${CMAKE_SOURCE_DIR}/plugins/Vibed/NineButtonSelector.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Vibed/NineButtonSelector.h
+			${CMAKE_SOURCE_DIR}/plugins/Vibed/VibratingString.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Vibed/VibratingString.h)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/Vibed ${CMAKE_BINARY_DIR}/plugins/Vibed)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			PLUGIN_NAME=vibedstrings vibedstrings_EXPORTS)
+	endif()
 	# cluster new-p12-278: VibedWaveformHandoffTest compiles the plug-in's own
 	# sources into the test (the SlicerT plug-in tests' shape), so the audio path it
 	# drives is the shipping one and the wave graph models are reachable.
@@ -1832,6 +2124,19 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			${CMAKE_SOURCE_DIR}/plugins/Vibed ${CMAKE_BINARY_DIR}/plugins/Vibed)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			PLUGIN_NAME=vibedstrings vibedstrings_EXPORTS)
+	endif()
+	# Q050-311: MpeSynthExpressionTest compiles TripleOscillator's own sources into the test (the
+	# Vibed tests' shape) and installs that instance on its track, so the native-synth render, the live
+	# MPE path and the project round trip run on every platform - a Windows test host cannot load a
+	# plug-in module, and the module route would have to skip there.
+	if(LMMS_TEST_NAME STREQUAL "MpeSynthExpressionTest")
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/TripleOscillator/TripleOscillator.cpp
+			${CMAKE_SOURCE_DIR}/plugins/TripleOscillator/TripleOscillator.h)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/TripleOscillator ${CMAKE_BINARY_DIR}/plugins/TripleOscillator)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			PLUGIN_NAME=tripleoscillator tripleoscillator_EXPORTS)
 	endif()
 	# cluster new-p14-358 / 5451: VestigeMidiHandoffTest compiles the VeSTige plug-in's
 	# own sources into the test (the SlicerT and Vibed tests' shape), so the "Turn off all
@@ -1866,7 +2171,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "HistoricalBufferResizeTest"
 		OR LMMS_TEST_NAME STREQUAL "HistoricalBufferEmptyTest"
-		OR LMMS_TEST_NAME STREQUAL "SfzEQPoolExhaustionTest")
+		OR LMMS_TEST_NAME STREQUAL "SfzEQPoolExhaustionTest"
+		OR LMMS_TEST_NAME STREQUAL "SfzFlexEnvelopeZeroStageTest")
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE
 			${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/src/sfizz
 			${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/src
@@ -1892,6 +2198,17 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			"LADSPA_PORT_DIALOG_FIXTURE_DIR=\"$<TARGET_FILE_DIR:SampleRateDependentLadspa>\""
 			"LADSPA_PORT_DIALOG_FIXTURE_FILE=\"$<TARGET_FILE_NAME:SampleRateDependentLadspa>\"")
+		add_dependencies(${LMMS_TEST_NAME} SampleRateDependentLadspa)
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "LadspaDescriptionTest")
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/LadspaBrowser/LadspaDescription.cpp
+			${CMAKE_SOURCE_DIR}/plugins/LadspaBrowser/LadspaDescription.h)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/LadspaBrowser)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			"LADSPA_DESCRIPTION_FIXTURE_DIR=\"$<TARGET_FILE_DIR:SampleRateDependentLadspa>\""
+			"LADSPA_DESCRIPTION_FIXTURE_FILE=\"$<TARGET_FILE_NAME:SampleRateDependentLadspa>\"")
 		add_dependencies(${LMMS_TEST_NAME} SampleRateDependentLadspa)
 	endif()
 	# cluster new-p15-95: LadspaGlobalLinkTest compiles the LADSPA plug-in's control
@@ -1936,6 +2253,10 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES TIMEOUT 10)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "LadspaPortDialogTest")
+		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES
+			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "LadspaDescriptionTest")
 		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES
 			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	endif()
@@ -2009,6 +2330,14 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		target_link_libraries(${LMMS_TEST_NAME} PRIVATE hiir)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "SfzSimdHelperAlignmentTest")
+		target_link_libraries(${LMMS_TEST_NAME} PRIVATE sfzplayer_sfizz)
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "SfzFilterEqDescriptionTest")
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/src/sfizz
+			${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/src
+			${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/external/abseil-cpp
+			${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/external/simde)
 		target_link_libraries(${LMMS_TEST_NAME} PRIVATE sfzplayer_sfizz)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "VstEffectControlsTest")
@@ -2100,7 +2429,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	endif()
 	target_compile_definitions(${LMMS_TEST_NAME} PRIVATE LMMS_TESTING)
-	if(LMMS_TEST_NAME STREQUAL "ControlRenderOutputPathTest" OR LMMS_TEST_NAME STREQUAL "LinkAudioStreamTest")
+	if(LMMS_TEST_NAME STREQUAL "ControlRenderOutputPathTest" OR LMMS_TEST_NAME STREQUAL "LinkAudioStreamTest"
+		OR LMMS_TEST_NAME STREQUAL "ControlOscServerTest" OR LMMS_TEST_NAME STREQUAL "ControllerScriptTest")
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE ZENE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "AutomationModesTest")
@@ -2146,6 +2476,12 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	if(LMMS_TEST_NAME STREQUAL "NamespaceRegistryTest")
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			ZENE_ARCH4_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "AuParameterHandoffTest")
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/AuEffect/AuParameter.cpp
+			${CMAKE_SOURCE_DIR}/plugins/AuEffect/AuParameter.h)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/plugins/AuEffect)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "SlicerTWaveformTest")
 		target_sources(${LMMS_TEST_NAME} PRIVATE
@@ -2205,6 +2541,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# instrument parameter through plugin.param_set, and without the modules the
 	# song's track holds a parameterless DummyInstrument.
 	if(LMMS_TEST_NAME STREQUAL "ScriptEngineTest" OR LMMS_TEST_NAME STREQUAL "PluginScanCacheTest"
+		OR LMMS_TEST_NAME STREQUAL "PluginScanWorkerTest"
 		OR LMMS_TEST_NAME STREQUAL "ControlDeviceCatalogueTest"
 		OR LMMS_TEST_NAME STREQUAL "ReceiverEffectTest"
 		OR LMMS_TEST_NAME STREQUAL "ScriptMemoryBudgetTest"
@@ -2217,9 +2554,14 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "AutomationModeMenuTest"
 		# The automation editor's keys move a point of one real instrument's parameter.
 		OR LMMS_TEST_NAME STREQUAL "AutomationEditorEditingTest"
+		OR LMMS_TEST_NAME STREQUAL "TrackAddRoutingTest"
+		OR LMMS_TEST_NAME STREQUAL "TrackRouteDropTest"
 		OR LMMS_TEST_NAME STREQUAL "ControlChainPresetTest"
 		# The track menu's chain presets save and apply a chain holding one real effect.
 		OR LMMS_TEST_NAME STREQUAL "ChainPresetMenuTest"
+		# Q050-331: preset bindings ride a real instrument's and a real effect's parameters.
+		OR LMMS_TEST_NAME STREQUAL "PresetBindingsTest"
+		OR LMMS_TEST_NAME STREQUAL "PresetBindingsGuiTest"
 		# The modulators panel binds a parameter of one real effect.
 		OR LMMS_TEST_NAME STREQUAL "ModulatorPanelTest"
 		# The Device panel draws one real effect's card and the modulator driving it.
@@ -2236,11 +2578,18 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "EffectDeviceMenuTest"
 		OR LMMS_TEST_NAME STREQUAL "EffectPickerOrganiserTest"
 		OR LMMS_TEST_NAME STREQUAL "PluginNativeEditorTest"
+		OR LMMS_TEST_NAME STREQUAL "PluginGestureUndoTest"
+		# Q050-491: plugin.list and plugin.load reach the build's aueffect / auinstrument modules (macOS).
+		OR LMMS_TEST_NAME STREQUAL "AuHostingTest"
+		# Q050-481.1: the carlavst2 module hosts the VST2 fixture; the device card's swap starts from tripleoscillator.
+		OR LMMS_TEST_NAME STREQUAL "CarlaVst2HostingTest"
 		OR LMMS_TEST_NAME STREQUAL "ReferenceProjectPanelTest"
 		# The LV2 state round trip loads the host's real LV2 effects.
 		OR LMMS_TEST_NAME STREQUAL "Lv2StateTest"
 		# The rack menu binds a macro to a parameter of one real effect.
 		OR LMMS_TEST_NAME STREQUAL "RackMenuTest"
+		# Q050-055.2: the keys load a real effect and a real instrument.
+		OR LMMS_TEST_NAME STREQUAL "PluginShortcutsTest"
 		# The effect Hosting submenu reads a real effect's oop.get_state entry.
 		OR LMMS_TEST_NAME STREQUAL "EffectHostingMenuTest"
 		# Board card #712: SessionTuningTest's proof slot needs tracks with a
@@ -2253,6 +2602,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		# needs a real instrument in the pattern store - the same requirement, for
 		# the same reason, as SessionTuningTest above.
 		OR LMMS_TEST_NAME STREQUAL "SessionPlaybackRenderTest"
+		# Q050-074.1: three real tripleoscillator tracks render the synthesis loads it measures.
+		OR LMMS_TEST_NAME STREQUAL "TrackSynthesisLoadTest"
+		OR LMMS_TEST_NAME STREQUAL "SessionTransitionsTest"
 		# The hosting test loads the build's own plugin modules to get devices with
 		# real plugin keys (and, where they exist, the ZynAddSubFx module and its
 		# client - see the OUTOFPROC_ZYN_* definitions below).
@@ -2265,6 +2617,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		# 0.5.0 L10: copying and comparing devices loads the build's effect modules.
 		OR LMMS_TEST_NAME STREQUAL "DeviceCopyTest"
 		OR LMMS_TEST_NAME STREQUAL "DeviceOrganiserTest"
+		# Q050-066: the pad tests and the pad panel play through the build's audiofileprocessor module.
+		OR LMMS_TEST_NAME STREQUAL "DrumRackPadsTest"
+		OR LMMS_TEST_NAME STREQUAL "DrumRackPanelTest"
 		OR LMMS_TEST_NAME STREQUAL "DeviceAbUndoTest"
 		# Luna 5332: the script's removeEffect undo test loads the build's BassBooster module.
 		OR LMMS_TEST_NAME STREQUAL "ScriptDawBindingTest"
@@ -2292,6 +2647,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		# Q050-156: the sampler-take tests load the real AudioFileProcessor and SlicerT modules.
 		OR LMMS_TEST_NAME STREQUAL "SamplerTakeTest"
 		OR LMMS_TEST_NAME STREQUAL "SamplerTakeGuiTest"
+		# Q050-263: the per-slice test loads the real SlicerT module.
+		OR LMMS_TEST_NAME STREQUAL "SlicerTSliceControlsTest"
 		# Cluster new-p12-315: the playhead regression loads the audiofileprocessor module to render a note.
 		OR LMMS_TEST_NAME STREQUAL "AudioFileProcessorPlayheadTest"
 		OR LMMS_TEST_NAME STREQUAL "SamplerEnvelopeTest"
@@ -2310,6 +2667,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "NoteEditingCommandsTest"
 		OR LMMS_TEST_NAME STREQUAL "NoteEditRangeTest"
 		OR LMMS_TEST_NAME STREQUAL "AutomationLanesTest"
+		OR LMMS_TEST_NAME STREQUAL "ControllerConversionTest"
 		OR LMMS_TEST_NAME STREQUAL "AutomationWriteToEndTest"
 		# 0.5.0 L06 (Q050-022): the lane-child tests load a real instrument's parameter.
 		OR LMMS_TEST_NAME STREQUAL "AutomationLaneChildrenTest"
@@ -2322,6 +2680,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "InstrumentLayerZonePublishTest"
 		# MX-157: the hosted instrument modules (clapinstrument, vst3instrument) carry the fixtures.
 		OR LMMS_TEST_NAME STREQUAL "InstrumentLatencyPdcTest"
+		OR LMMS_TEST_NAME STREQUAL "InstrumentLowLatencyMonitorTest"
 		OR LMMS_TEST_NAME STREQUAL "InstrumentSetupUiTest"
 		OR LMMS_TEST_NAME STREQUAL "ArrangingCatchUpTest"
 		OR LMMS_TEST_NAME STREQUAL "ArrangingSpacerReferenceTest"
@@ -2333,9 +2692,14 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		# the binary discovers the build tree's modules like its catalogue
 		# sibling does (the built-in amplifier is the case that names Zene Studio).
 		OR LMMS_TEST_NAME STREQUAL "ControlDeviceVendorTest"
+		# Cluster stress-3: plugin.load of the CLAP/VST3 fixtures through the real host modules.
+		OR LMMS_TEST_NAME STREQUAL "ControlHostedBusLayoutTest"
 		# WF-033: the options half of the undo-history proof needs the same real
 		# instrument (its baseline loads one) as the format half.
-		OR LMMS_TEST_NAME STREQUAL "UndoHistoryOptionsTest")
+		OR LMMS_TEST_NAME STREQUAL "UndoHistoryOptionsTest"
+		# Q050-111: clip effects load the build's amplifier module (the test and its GUI half).
+		OR LMMS_TEST_NAME STREQUAL "ClipEffectsTest"
+		OR LMMS_TEST_NAME STREQUAL "ClipEffectsDialogTest")
 		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			LMMS_TEST_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
@@ -2368,8 +2732,13 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			$<TARGET_PROPERTY:sfzplayer_sfizz,INCLUDE_DIRECTORIES>)
 	endif()
 
-	if(LMMS_TEST_NAME STREQUAL "SamplerEnvelopeTest" OR LMMS_TEST_NAME STREQUAL "SamplerVoiceReuseTest")
+	if(LMMS_TEST_NAME STREQUAL "SamplerEnvelopeTest" OR LMMS_TEST_NAME STREQUAL "SamplerVoiceReuseTest"
+		OR LMMS_TEST_NAME STREQUAL "DrumRackPadsTest" OR LMMS_TEST_NAME STREQUAL "DrumRackPanelTest")
 		add_dependencies(${LMMS_TEST_NAME} audiofileprocessor)
+	endif()
+	# Q050-066 stage 2: the pad-chain cases put the build's amplifier module on a pad's channel.
+	if(LMMS_TEST_NAME STREQUAL "DrumRackPadsTest" OR LMMS_TEST_NAME STREQUAL "DrumRackPanelTest")
+		add_dependencies(${LMMS_TEST_NAME} amplifier)
 	endif()
 
 	# Q050-071: the probe loads third-party plug-ins through the build's hosting modules, so they have to be built first.
@@ -2393,15 +2762,33 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	if(LMMS_TEST_NAME STREQUAL "SamplerTakeGuiTest")
 		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	endif()
+	# Q050-263: the per-slice controls test drives the SlicerT view and renders through the SlicerT module.
+	if(LMMS_TEST_NAME STREQUAL "SlicerTSliceControlsTest")
+		add_dependencies(${LMMS_TEST_NAME} slicert)
+		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	endif()
 
 	# cluster new-p23-37: the replacement regression loads a real amplifier device.
 	if(LMMS_TEST_NAME STREQUAL "DeviceToolsChainTest")
 		add_dependencies(${LMMS_TEST_NAME} amplifier)
 	endif()
 
+	# Q050-212: track.add's `instrument` loads a real plug-in.
+	if(LMMS_TEST_NAME STREQUAL "TrackAddRoutingTest")
+		add_dependencies(${LMMS_TEST_NAME} tripleoscillator)
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "TrackRouteDropTest")
+		add_dependencies(${LMMS_TEST_NAME} tripleoscillator audiofileprocessor slicert)
+	endif()
+
 	# Q050-040: the unmute-chase tests play a real instrument (tripleoscillator) on their tracks,
 	# so a targeted build has to bring that module up first.
 	if(LMMS_TEST_NAME STREQUAL "UnmuteChaseTest")
+		add_dependencies(${LMMS_TEST_NAME} tripleoscillator)
+	endif()
+
+	# Q050-291.1: the controller-conversion test puts CC lanes on a real instrument's parameters.
+	if(LMMS_TEST_NAME STREQUAL "ControllerConversionTest" AND TARGET tripleoscillator)
 		add_dependencies(${LMMS_TEST_NAME} tripleoscillator)
 	endif()
 
@@ -2428,6 +2815,13 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		add_dependencies(${LMMS_TEST_NAME} tripleoscillator)
 	endif()
 
+	# cluster new-p9-297: the random-LFO regression in NotePlaybackTest renders through the build's
+	# monstro module, which the test loads by name. Building the test must rebuild that module too;
+	# otherwise a fix reverted in the source leaves the fixed module in place and the test passes.
+	if(LMMS_TEST_NAME STREQUAL "NotePlaybackTest")
+		add_dependencies(${LMMS_TEST_NAME} monstro)
+	endif()
+
 	# The script's removeEffect undo cases load the build's own effect modules, and a
 	# targeted build of the test alone did not build them: every case skipped ("this
 	# build lists no loadable effect module") and the undo regression ran nowhere. The
@@ -2437,6 +2831,10 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "DeviceAbUndoTest")
 		# The A/B undo cases need at least one effect module so they exercise the command instead of skipping.
+		add_dependencies(${LMMS_TEST_NAME} amplifier)
+	endif()
+	# Q050-111: the clip-effect tests load the build's amplifier module; build it with them.
+	if((LMMS_TEST_NAME STREQUAL "ClipEffectsTest" OR LMMS_TEST_NAME STREQUAL "ClipEffectsDialogTest") AND TARGET amplifier)
 		add_dependencies(${LMMS_TEST_NAME} amplifier)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "DeviceToolsChainTest" AND TARGET amplifier)
@@ -2510,10 +2908,19 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# module (the enumeration path, not a stub): the module has to exist before
 	# ctest runs. It also constructs the plugin browser, so it needs a Qt
 	# platform plugin even on a headless machine.
+	if(LMMS_TEST_NAME STREQUAL "PluginScanWorkerTest")
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			LMMS_TEST_SCAN_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
+		add_dependencies(${LMMS_TEST_NAME} tripleoscillator)
+		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES
+			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	endif()
 	if(LMMS_TEST_NAME STREQUAL "PluginScanCacheTest")
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			LMMS_TEST_SCAN_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
 		add_dependencies(${LMMS_TEST_NAME} tripleoscillator)
+		# Q050-157: the cache-served effect lifetime reproducer copies the amplifier.
+		add_dependencies(${LMMS_TEST_NAME} amplifier)
 		if(TARGET lv2instrument)
 			add_dependencies(${LMMS_TEST_NAME} lv2instrument)
 		endif()
@@ -2526,11 +2933,19 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	if(LMMS_TEST_NAME STREQUAL "DevicePanelTest")
 		add_dependencies(${LMMS_TEST_NAME} tripleoscillator amplifier)
 	endif()
+	# Q050-331: the preset-binding tests load the build's tripleoscillator and amplifier modules.
+	if(LMMS_TEST_NAME STREQUAL "PresetBindingsTest" OR LMMS_TEST_NAME STREQUAL "PresetBindingsGuiTest")
+		add_dependencies(${LMMS_TEST_NAME} tripleoscillator amplifier)
+		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	endif()
 	# Q050-047: RackMenuTest's zones and empty-parallel-chain cases load a real effect module, so a targeted
 	# build (cmake --build build --target RackMenuTest) must build amplifier too; otherwise plugin.list has no
 	# loadable effect and both cases skip with "this host loads no effect module".
 	if(LMMS_TEST_NAME STREQUAL "RackMenuTest")
 		add_dependencies(${LMMS_TEST_NAME} amplifier)
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "PluginShortcutsTest")
+		add_dependencies(${LMMS_TEST_NAME} amplifier kicker tripleoscillator)
 	endif()
 	# OutOfProcessHostTest drives the whole out-of-process loop on a REAL client
 	# when this build has both halves of it: the ZynAddSubFx module (the only
@@ -2572,6 +2987,11 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	endif()
 endforeach()
 
+# BandLimitedWaveTest's two scenarios each run in a fresh process: generateWaves() caches its result in
+# s_wavesGenerated, so the fallback generator and the shipped-file load must not share one cache.
+add_test(NAME BandLimitedWaveFallback COMMAND BandLimitedWaveTest fallbackTablesHoldOnlyInBandHarmonics)
+add_test(NAME BandLimitedWaveShipped COMMAND BandLimitedWaveTest shippedTablesHoldOnlyInBandHarmonics)
+
 # Compile the FIFO header in its shared-memory mode independently of the host's
 # selected socket transport, so the ownership and semaphore regressions run on
 # every platform without changing RemotePluginBase's library class layout.
@@ -2581,7 +3001,8 @@ add_executable(RemotePluginShmFifoTest
 	${CMAKE_SOURCE_DIR}/src/common/SharedMemory.cpp
 	${CMAKE_SOURCE_DIR}/src/common/SystemSemaphore.cpp)
 target_include_directories(RemotePluginShmFifoTest PRIVATE
-	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>)
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+	${CMAKE_CURRENT_BINARY_DIR}/RemotePluginShmFifoTestGenerated)
 target_link_libraries(RemotePluginShmFifoTest PRIVATE ${QT_LIBRARIES} ${QT_QTTEST_LIBRARY})
 target_compile_features(RemotePluginShmFifoTest PRIVATE cxx_std_20)
 target_compile_definitions(RemotePluginShmFifoTest PRIVATE LMMS_STATIC_DEFINE LMMS_TESTING SYNC_WITH_SHM_FIFO)
@@ -2593,8 +3014,29 @@ add_library(RemotePluginShmFifoCompileCheck OBJECT ${CMAKE_SOURCE_DIR}/src/commo
 target_include_directories(RemotePluginShmFifoCompileCheck PRIVATE
 	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>)
 target_compile_features(RemotePluginShmFifoCompileCheck PRIVATE cxx_std_20)
-target_compile_definitions(RemotePluginShmFifoCompileCheck PRIVATE LMMS_TESTING SYNC_WITH_SHM_FIFO)
+# LMMS_STATIC_DEFINE: this TU defines LMMS_EXPORT members, and outside lmmsobjs
+# lmms_export.h makes those __declspec(dllimport) on Windows (cluster ci-v041-5).
+target_compile_definitions(RemotePluginShmFifoCompileCheck PRIVATE LMMS_STATIC_DEFINE LMMS_TESTING SYNC_WITH_SHM_FIFO)
 add_dependencies(RemotePluginShmFifoTest RemotePluginShmFifoCompileCheck)
+# RemotePluginBase.h on a host without <sys/ipc.h> (Windows): a shadow
+# lmmsconfig.h, first on this target's include path, takes the header's own
+# SYNC_WITH_SHM_FIFO branch on every host (cluster ci-v041-5).
+file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/RemotePluginShmFifoNoSysIpc/lmmsconfig.h
+	"#include \"${CMAKE_BINARY_DIR}/lmmsconfig.h\"\n#undef LMMS_HAVE_SYS_IPC_H\n")
+add_library(RemotePluginShmFifoNoSysIpcProbe OBJECT src/core/RemotePluginShmFifoNoSysIpcProbe.cpp)
+target_include_directories(RemotePluginShmFifoNoSysIpcProbe BEFORE PRIVATE
+	${CMAKE_CURRENT_BINARY_DIR}/RemotePluginShmFifoNoSysIpc)
+target_include_directories(RemotePluginShmFifoNoSysIpcProbe PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>)
+target_link_libraries(RemotePluginShmFifoNoSysIpcProbe PRIVATE ${QT_LIBRARIES})
+target_compile_features(RemotePluginShmFifoNoSysIpcProbe PRIVATE cxx_std_20)
+target_compile_definitions(RemotePluginShmFifoNoSysIpcProbe PRIVATE LMMS_STATIC_DEFINE LMMS_TESTING SYNC_WITH_SHM_FIFO)
+target_sources(RemotePluginShmFifoTest PRIVATE $<TARGET_OBJECTS:RemotePluginShmFifoNoSysIpcProbe>)
+
+# Tell the test whether each target compiles RemotePluginBase.cpp through the
+# static branch of lmms_export.h (cluster ci-v041-5).
+file(GENERATE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/RemotePluginShmFifoTestGenerated/RemotePluginShmFifoTargetDefinitions.h
+	CONTENT "#define ZENE_SHM_FIFO_TEST_IS_STATIC_EXPORT $<IN_LIST:LMMS_STATIC_DEFINE,$<TARGET_PROPERTY:RemotePluginShmFifoTest,COMPILE_DEFINITIONS>>\n#define ZENE_SHM_FIFO_COMPILE_CHECK_IS_STATIC_EXPORT $<IN_LIST:LMMS_STATIC_DEFINE,$<TARGET_PROPERTY:RemotePluginShmFifoCompileCheck,COMPILE_DEFINITIONS>>\n")
 
 # ImportFilter's exception-path proof uses a real, isolated importer plugin
 # module so the exception crosses the same PluginFactory/ImportFilter path as
@@ -2971,6 +3413,8 @@ if(TARGET sid AND TARGET SidInstrument)
 endif()
 if(TARGET tripleoscillator)
 	add_dependencies(SessionPlaybackRenderTest tripleoscillator)
+	add_dependencies(TrackSynthesisLoadTest tripleoscillator)
+	add_dependencies(SessionTransitionsTest tripleoscillator)
 	add_dependencies(SessionTuningTest tripleoscillator)
 	# Q050-022: the lane-child tests drive a real instrument's parameter.
 	add_dependencies(AutomationLaneChildrenTest tripleoscillator)
@@ -3081,7 +3525,7 @@ set_tests_properties(ScriptDawBindingTest ScriptDawRemovalUndoTest ScriptDawMode
 # full Engine and drive the mixer's own save/load, so they need the same
 # headless Qt platform as the test above - and the developer box has no display.
 set_tests_properties(RackMacrosTest RackZonesTest RackZoneRoutingTest InstrumentRoutingTest InstrumentLayersCommandsTest
-	InstrumentLayerZonePublishTest InstrumentLatencyPdcTest PROPERTIES
+	InstrumentLayerZonePublishTest InstrumentLatencyPdcTest InstrumentLowLatencyMonitorTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # The #602 modulation layer's two tests build a full Engine, a real Mixer and a
@@ -3241,26 +3685,39 @@ set_tests_properties(ShellTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen
 set_tests_properties(DesignTokensTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TouchLayoutTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(NoteEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(NoteMelodyTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(LaneReadoutTest SampleEditorDialogTest SampleEditorDocsTest CrossfadeEditorTest MixerModesTest MixerMeteringTest WorkflowFeedbackTest
-	ShellHomesTest TaskCenterTest TaskIndicatorTest CPULoadWidgetTest RecordRemainingTest RecordModeMenuTest CanvasKeyboardTest ItemListPanelTest ItemListButtonsTest PROPERTIES
+	ShellHomesTest TaskCenterTest TaskIndicatorTest CPULoadWidgetTest RecordRemainingTest CpuDiagnosticsDialogTest RecordModeMenuTest CanvasKeyboardTest ItemListPanelTest ItemListButtonsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(BackgroundTasksGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MixerSelectionIdentityTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(TrackSynthesisLoadTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(AudioDeviceDiagnosticsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" RUN_SERIAL TRUE)
+set_tests_properties(MixerInsertLatencyTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(RealtimeExportMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 300)
 set_tests_properties(MixerStripFeaturesTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(MixerZonesTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(DevicePanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(EffectRackAddTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PatcherCanvasTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PluginCompatEditorProbe PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(Lv2ViewBaseLifetimeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(LibraryMenusTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(BrowserTempoKeyGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(MasteringReleaseGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(BrowserProjectMediaTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(CommandPaletteTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(CommandFormTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(VcaStripViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(RevisionsDocsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SessionGridViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SessionGridRecordTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(SessionLibrarySaveTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(SessionCellPlaybackMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SessionTransportBarTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PerformViewTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MidiCommandBindingsGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(MidiWorkflowBindingsGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SessionSubSceneGridTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TouchWorkspaceTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TakeLanesPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -3269,16 +3726,20 @@ set_tests_properties(ShortcutsPageTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=o
 set_tests_properties(ShortcutsCommandsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ControlCommandsMacrosTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PanelShortcutsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(PluginShortcutsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(StartHubTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(HelpAccessTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(AgentSurfaceReportTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(WindowSelectStartupTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(OnlineHelpNoticeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 if(ZENE_HAVE_COLLAB)
 	set_tests_properties(CollabPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	set_tests_properties(ControlOscServerTest OscServerMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
 set_tests_properties(WorkspaceAccessTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PianoRollBenchmarkTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PianoRollRecordTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(TouchInstrumentSurfaceTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(StepRecorderWidgetTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # AccessibilityHelperTest constructs the shell, so it takes the same
 # platform registration (040/ui-precond). WcagContrastTest is guiless and needs
@@ -3304,12 +3765,17 @@ set_tests_properties(MixerSendsOnFadersTest PROPERTIES ENVIRONMENT "QT_QPA_PLATF
 set_tests_properties(ArrangerTimelineTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ArrangerTakePunchTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ArrangerFileDropTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(SampleClipWarpEditTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MidiClipLinkedEditTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MidiClipStepMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(XyPadPairTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TrackFolderMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(TrackAddRoutingTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(TrackRouteDropTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(DrumRackPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(FolderSummaryLaneTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(AutomationLaneChildGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(HybridTrackGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MainWindowGeometryTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(UndoHistoryPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ExportQualityControlsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -3319,17 +3785,51 @@ set_tests_properties(FollowActionEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATF
 set_tests_properties(PluginControlDialogsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(GraphWaveformEditorGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MixerWindowsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(MixerBusFreezeMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(MixerMaskingReportWindowTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(SurroundPannerTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(EffectDeviceMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(EffectPickerOrganiserTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PluginNativeEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(PluginGestureUndoTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(AuHostingTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+if(TARGET aueffect AND TARGET auinstrument)
+	add_dependencies(AuHostingTest aueffect auinstrument)
+endif()
+# Q050-481.1: the VST2 fixture (native and, where winegcc can build PE, Windows), the Carla runtime
+# tools/build-carla-runtime.sh puts in <build>/carla-runtime/lib (ahead of the weak stand-in on the
+# loader path), and a Wine prefix of the build's own. Without the runtime every case reports Skipped.
+set(ZENE_CARLA_RUNTIME_DIR "${CMAKE_BINARY_DIR}/carla-runtime/lib" CACHE PATH
+	"A real Carla runtime (libcarla_native-plugin, libcarla_host-plugin, bridges) for CarlaVst2HostingTest")
+set_tests_properties(CarlaVst2HostingTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 900)
+add_subdirectory(data/vst2-test-instrument)
+target_compile_definitions(CarlaVst2HostingTest PRIVATE
+	CARLA_VST2_NATIVE_FIXTURE_DIR="${LMMS_VST2_TEST_NATIVE_DIR}"
+	CARLA_VST2_WINE_FIXTURE_DIR="${LMMS_VST2_TEST_WINE_DIR}"
+	ZENE_TEST_WINEPREFIX="${CMAKE_BINARY_DIR}/carla-runtime/wineprefix"
+	ZENE_CARLA_RUNTIME_DIR="${ZENE_CARLA_RUNTIME_DIR}")
+add_dependencies(CarlaVst2HostingTest vst2-test-instrument)
+foreach(module carlavst2 tripleoscillator vst2-test-instrument-wine)
+	if(TARGET ${module})
+		add_dependencies(CarlaVst2HostingTest ${module})
+	endif()
+endforeach()
+if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.22)
+	set_tests_properties(CarlaVst2HostingTest PROPERTIES
+		ENVIRONMENT_MODIFICATION "LD_LIBRARY_PATH=path_list_prepend:${ZENE_CARLA_RUNTIME_DIR}")
+endif()
+set_tests_properties(UpdateCheckTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+if(ZENE_UPDATE_CHECK_ENABLED)
+	set_tests_properties(UpdateCheckWindowsTest UpdateCheckHiddenTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif()
 set_tests_properties(ReferenceProjectPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-set_tests_properties(TelemetryConsentDialogTest AafImportMenuTest TrackIconsLevelBarTest ArrangerKeysNavigatorTest NoteBackgroundAudioTest ArrangerOverlaysVideoLaneTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(TelemetryConsentDialogTest AafImportMenuTest TrackIconsLevelBarTest TrackGripContrastTest ArrangerKeysNavigatorTest NoteBackgroundAudioTest ArrangerOverlaysVideoLaneTest VideoClipsGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(NoteTransformActionsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MpeInputActionTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TempoMapPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(LivecodePanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ArticulationMapEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(ExternalMidiDeviceTest ExternalDeviceCardTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(BrowserTagMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(BrowserDragUrlTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(FileSearchJobTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -3341,8 +3841,9 @@ set_tests_properties(MidiControllerMenuTest LfoControllerUserWaveTest PROPERTIES
 set_tests_properties(ControllerTemplateMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TrackRenderMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(GrooveMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-set_tests_properties(ClipEditsMenuTest SampleClipWarpModeMenuTest ClipWaveformEditTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(ClipEditsMenuTest ClipEffectsDialogTest SampleClipWarpModeMenuTest ClipWaveformEditTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ChainPresetMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(ControllerMappingEditorTest ControllerScriptTest MidiOutTimingTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(RackMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(PinConnectorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ModulatorPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -3369,6 +3870,10 @@ target_compile_definitions(ThemeContrastTest PRIVATE
 # 0.5.0 L10: DeviceCopyTest builds a drum rack from the shipped drum samples.
 target_compile_definitions(DeviceCopyTest PRIVATE
 	ZENE_DRUM_SAMPLES_DIR="${CMAKE_SOURCE_DIR}/data/samples/drums")
+target_compile_definitions(DrumRackPadsTest PRIVATE
+	ZENE_DRUM_SAMPLES_DIR="${CMAKE_SOURCE_DIR}/data/samples/drums")
+target_compile_definitions(DrumRackPanelTest PRIVATE
+	ZENE_DRUM_SAMPLES_DIR="${CMAKE_SOURCE_DIR}/data/samples/drums")
 
 # MasteringTest drives a real Engine and the project render path, so it needs a
 # Qt platform plugin even though the test itself is guiless (same reason as
@@ -3380,6 +3885,14 @@ set_tests_properties(MasteringTest PROPERTIES
 # runs real `git` commands, so it needs a Qt platform plugin for the same reason
 # the tests above do.
 set_tests_properties(RevisionTimelineTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# ProjectRestoreMissingTargetTest starts a real Engine and drives the registry's
+# undo/redo, so it needs a Qt platform plugin for the same reason.
+set_tests_properties(ProjectRestoreMissingTargetTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# RevisionRestoreCreatedFileUndoTest drives a real Engine through the registry,
+# the same way RevisionTimelineTest does, so it needs the same Qt platform plugin.
+set_tests_properties(RevisionRestoreCreatedFileUndoTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # The dither and SRC-quality tests build a real Engine and drive the real
@@ -3402,7 +3915,7 @@ if(LMMS_HAVE_MP3LAME)
 	set_tests_properties(AudioFileMP3InitTest PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
-set_tests_properties(AudioResamplerRatioTest PROPERTIES
+set_tests_properties(AudioResamplerRatioTest AudioResamplerPoolMemoryTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # ---------------------------------------------------------------------------
@@ -3890,9 +4403,11 @@ target_include_directories(PluginPortsMigrationTest PRIVATE
 	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
 )
 target_static_libraries(PluginPortsMigrationTest PRIVATE lmmsobjs)
+# Cluster new-p17-172: the SID scheduler test drives the real reSID chip.
 target_link_libraries(PluginPortsMigrationTest PRIVATE
 	${QT_LIBRARIES}
 	${QT_QTTEST_LIBRARY}
+	resid
 )
 target_compile_features(PluginPortsMigrationTest PRIVATE cxx_std_20)
 target_compile_definitions(PluginPortsMigrationTest PRIVATE
@@ -4029,6 +4544,46 @@ target_compile_definitions(MultitapEchoBoundsTest PRIVATE
 # export header of the plugin target to exist first
 if(TARGET multitapecho)
 	add_dependencies(MultitapEchoBoundsTest multitapecho)
+endif()
+
+# Cluster new-p16-64: a NaN Dispersion control (frequency, resonance or
+# feedback, as a project saves it) must not reach the audio output. The plugin
+# sources are compiled into this test binary (the MultitapEchoBoundsTest
+# pattern), so the code under test is the shipped one and no plugin module is
+# loaded.
+add_executable(DispersionNonFiniteTest
+	src/plugins/DispersionNonFiniteTest.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Dispersion/Dispersion.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Dispersion/Dispersion.h
+	${CMAKE_SOURCE_DIR}/plugins/Dispersion/DispersionControls.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Dispersion/DispersionControls.h
+	${CMAKE_SOURCE_DIR}/plugins/Dispersion/DispersionControlDialog.cpp
+	${CMAKE_SOURCE_DIR}/plugins/Dispersion/DispersionControlDialog.h
+)
+add_test(NAME DispersionNonFiniteTest COMMAND DispersionNonFiniteTest)
+set_tests_properties(DispersionNonFiniteTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+target_include_directories(DispersionNonFiniteTest PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+	${CMAKE_SOURCE_DIR}/plugins/Dispersion
+	# the generated plugin_export.h (PLUGIN_EXPORT) of the dispersion plugin
+	${CMAKE_BINARY_DIR}/plugins/Dispersion
+)
+target_static_libraries(DispersionNonFiniteTest PRIVATE lmmsobjs)
+target_link_libraries(DispersionNonFiniteTest PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+)
+target_compile_features(DispersionNonFiniteTest PRIVATE cxx_std_20)
+target_compile_definitions(DispersionNonFiniteTest PRIVATE
+	LMMS_TESTING
+	PLUGIN_NAME=dispersion
+	# the test compiles the plugin sources itself, so PLUGIN_EXPORT must not
+	# be the import attribute of the plugin's own export header
+	PLUGIN_STATIC_DEFINE
+)
+if(TARGET dispersion)
+	add_dependencies(DispersionNonFiniteTest dispersion)
 endif()
 
 # Cluster new-p12-275: TripleOscillator's user-wave buffer and anti-alias table
@@ -4647,10 +5202,14 @@ if(TARGET lmms_clap)
 		CLAP_TEST_BROKEN_OLD_VERSION_PATH="$<TARGET_FILE:clap-test-broken-old-version>"
 		CLAP_TEST_BROKEN_INIT_FAILS_PATH="$<TARGET_FILE:clap-test-broken-init-fails>"
 		CLAP_TEST_BROKEN_NO_FACTORY_PATH="$<TARGET_FILE:clap-test-broken-no-factory>"
-		CLAP_TEST_BROKEN_NULL_CALLBACK_PATH="$<TARGET_FILE:clap-test-broken-null-callback>")
+		CLAP_TEST_BROKEN_NULL_CALLBACK_PATH="$<TARGET_FILE:clap-test-broken-null-callback>"
+		CLAP_TEST_BROKEN_NULL_FACTORY_COUNT_PATH="$<TARGET_FILE:clap-test-broken-null-factory-count>"
+		CLAP_TEST_BROKEN_NULL_FACTORY_DESCRIPTOR_PATH="$<TARGET_FILE:clap-test-broken-null-factory-descriptor>"
+		CLAP_TEST_BROKEN_NULL_FACTORY_CREATE_PATH="$<TARGET_FILE:clap-test-broken-null-factory-create>")
 	add_dependencies(ClapLoaderErrorTest clap-test-gain clap-test-broken-no-symbol
 		clap-test-broken-old-version clap-test-broken-init-fails clap-test-broken-no-factory
-		clap-test-broken-null-callback)
+		clap-test-broken-null-callback clap-test-broken-null-factory-count
+		clap-test-broken-null-factory-descriptor clap-test-broken-null-factory-create)
 
 	add_executable(ClapEffectIntegrationTest
 		src/plugins/ClapEffectIntegrationTest.cpp
@@ -4774,6 +5333,25 @@ if(TARGET lmms_clap)
 			CLAP_TEST_EFFECT_DIR="$<TARGET_FILE_DIR:clap-test-gain>")
 		add_dependencies(ControlDeviceCatalogueTest clap-test-gain clapeffect)
 	endif()
+	# Q050-490: the "Show plugin editor" button opens the CLAP fixture's editor in this platform's window.
+	if(TARGET clap-test-gain AND TARGET clapeffect AND TARGET PluginNativeEditorTest)
+		target_compile_definitions(PluginNativeEditorTest PRIVATE
+			CLAP_TEST_EFFECT_DIR="$<TARGET_FILE_DIR:clap-test-gain>")
+		add_dependencies(PluginNativeEditorTest clap-test-gain clapeffect)
+	endif()
+	# Q050-214: the CLAP fixtures report the scripted editor gesture from process().
+	if(TARGET clap-test-gain AND TARGET clap-test-instrument AND TARGET clapeffect AND TARGET clapinstrument AND TARGET PluginGestureUndoTest)
+		target_compile_definitions(PluginGestureUndoTest PRIVATE
+			CLAP_TEST_EFFECT_PATH="$<TARGET_FILE:clap-test-gain>"
+			CLAP_TEST_INSTRUMENT_PATH="$<TARGET_FILE:clap-test-instrument>")
+		add_dependencies(PluginGestureUndoTest clap-test-gain clap-test-instrument clapeffect clapinstrument)
+	endif()
+	# Cluster stress-3: the CLAP fixture's mono side-chain and no-audio layouts, through plugin.load.
+	if(TARGET clap-test-gain AND TARGET clapeffect AND TARGET ControlHostedBusLayoutTest)
+		target_compile_definitions(ControlHostedBusLayoutTest PRIVATE
+			CLAP_TEST_EFFECT_DIR="$<TARGET_FILE_DIR:clap-test-gain>")
+		add_dependencies(ControlHostedBusLayoutTest clap-test-gain clapeffect)
+	endif()
 	# MX-114 (plugin.output_*): the fixture's multi-output class is the instrument with output buses.
 	if(TARGET clap-test-instrument AND TARGET InstrumentLayersCommandsTest)
 		target_compile_definitions(InstrumentLayersCommandsTest PRIVATE
@@ -4790,6 +5368,15 @@ if(TARGET lmms_clap)
 		add_dependencies(InstrumentLatencyPdcTest clap-test-instrument)
 		if(TARGET clapinstrument)
 			add_dependencies(InstrumentLatencyPdcTest clapinstrument)
+		endif()
+	endif()
+	# Q050-174: the same latent CLAP subject for the low-latency monitoring proof.
+	if(TARGET clap-test-instrument AND TARGET InstrumentLowLatencyMonitorTest)
+		target_compile_definitions(InstrumentLowLatencyMonitorTest PRIVATE
+			CLAP_TEST_INSTRUMENT_DIR="$<TARGET_FILE_DIR:clap-test-instrument>")
+		add_dependencies(InstrumentLowLatencyMonitorTest clap-test-instrument)
+		if(TARGET clapinstrument)
+			add_dependencies(InstrumentLowLatencyMonitorTest clapinstrument)
 		endif()
 	endif()
 	# The F2 interface's output-bus surface drives the same multi-output class.
@@ -5298,6 +5885,54 @@ if(TARGET lmms_vst3_sdk)
 	if(WANT_VST3_TEST_INSTRUMENT)
 		add_subdirectory(data/vst3-test-instrument)
 
+		# Q050-490: the VST3 host's editor - open, host and plug-in resize, close, reopen, the
+		# named refusal, the zoom - against the fixture's view, on EVERY platform that builds
+		# the fixture: X11 on Linux, HWND on Windows, NSView on macOS (the fixture's bundle
+		# layout and entry point are per platform). It compiles the host sources itself, as
+		# Vst3InstrumentTest does.
+		add_executable(Vst3EditorTest
+			src/plugins/Vst3EditorTest.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3BusMap.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3Host.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3HostReports.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3EditorSession.cpp
+			${CMAKE_SOURCE_DIR}/src/core/PluginEditorHost.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3MidiEvent.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3MidiMapping.cpp
+			${CMAKE_SOURCE_DIR}/src/core/PluginHostChunking.cpp
+		)
+		add_test(NAME Vst3EditorTest COMMAND Vst3EditorTest)
+		target_compile_definitions(Vst3EditorTest PRIVATE LMMS_STATIC_DEFINE)
+		target_include_directories(Vst3EditorTest PRIVATE
+			${CMAKE_BINARY_DIR}
+			${CMAKE_BINARY_DIR}/src
+			${CMAKE_SOURCE_DIR}/include
+			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect
+		)
+		target_compile_features(Vst3EditorTest PRIVATE cxx_std_20)
+		target_link_libraries(Vst3EditorTest PRIVATE
+			${QT_LIBRARIES}
+			${QT_QTTEST_LIBRARY}
+			lmms_vst3_sdk
+			${CMAKE_DL_LIBS}
+		)
+		target_compile_definitions(Vst3EditorTest PRIVATE
+			LMMS_TESTING
+			VST3_TEST_INSTRUMENT_BUNDLE="${LMMS_VST3_TEST_BUNDLE_DIR}"
+		)
+		add_dependencies(Vst3EditorTest vst3-test-instrument)
+	endif()
+	# Q050-214: the VST3 fixture reports the scripted editor gesture through the handler the host gave it.
+	if(WANT_VST3_TEST_INSTRUMENT AND TARGET vst3effect AND TARGET vst3instrument AND TARGET PluginGestureUndoTest)
+		target_compile_definitions(PluginGestureUndoTest PRIVATE
+			VST3_TEST_INSTRUMENT_BUNDLE="${LMMS_VST3_TEST_BUNDLE_DIR}")
+		add_dependencies(PluginGestureUndoTest vst3-test-instrument vst3effect vst3instrument)
+	endif()
+	# The rest of the fixture's suite - the probe, the MIDI path, the product-level and
+	# socket-driven cases - has only ever run on the linux-x86_64 job, and stays there: the
+	# Windows and macOS jobs build the fixture for the editor cases above (Q050-490).
+	if(WANT_VST3_TEST_INSTRUMENT AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+
 		# A probe, not a QTest class: it is the independent check that the
 		# fixture really reads ProcessData::inputEvents and renders audio in
 		# response. Helper executables are explicitly out of scope for Gate 3
@@ -5459,6 +6094,13 @@ if(TARGET lmms_vst3_sdk)
 				vst3-test-instrument
 			)
 		endif()
+		# Cluster stress-3: the three-channel variant is hosted by vst3effect and vst3instrument.
+		if(TARGET vst3effect AND TARGET vst3instrument AND TARGET ControlHostedBusLayoutTest)
+			target_compile_definitions(ControlHostedBusLayoutTest PRIVATE
+				VST3_TEST_THREE_INSTRUMENT_BUNDLE="${LMMS_VST3_THREE_TEST_BUNDLE_DIR}")
+			add_dependencies(ControlHostedBusLayoutTest vst3effect vst3instrument
+				vst3-test-three-channel-instrument)
+		endif()
 		# The VST3 EFFECT half: plugin.list carries the SDK's gain sample and plugin.load hosts it in
 		# vst3effect.
 		if(TARGET vst3effect AND TARGET vst3-test-effect AND TARGET ControlDeviceCatalogueTest)
@@ -5570,6 +6212,19 @@ if(PYTHON3_EXECUTABLE)
 	set_tests_properties(GoldenAudioSelfTest PROPERTIES TIMEOUT 300)
 endif()
 
+# Qt 5 moc portability (cluster ci-v041-1, 2026-10-27). The Qt 5.15.3 moc of the hosted
+# linux-x86_64 job cannot parse a trailing return type on a meta-method (a slots:/signals:
+# member or a Q_INVOKABLE one) - "include/Song.h:706: Parse error" stopped AutoMoc and the
+# whole build - while the Qt 6 moc here accepts it. The check reads sources only, runs its
+# own red/green fixtures first, and is registered wherever a python3 is.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME MocQt5TrailingReturnCheck
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/moc-qt5-trailing-return-check.py
+			${CMAKE_SOURCE_DIR})
+	set_tests_properties(MocQt5TrailingReturnCheck PROPERTIES TIMEOUT 300)
+endif()
+
 # The real-time-safety WHOLE-TREE SWEEP (2026-09-16, lane 030/rt-safety, board task #678,
 # feature row 52). AGENTS.md's realtime rule - "no allocation, no locking, no unbounded
 # growth on audio-thread paths" - was held per feature until now: an allocation-counter
@@ -5604,6 +6259,19 @@ if(PYTHON3_EXECUTABLE)
 	set_tests_properties(RtSafetySelfTest PROPERTIES TIMEOUT 300)
 endif()
 
+# include/fenv.h (the macOS feenableexcept shim) must not take #include_next under
+# cl.exe, which rejects it (C1021, hosted msvc-x64 job, cluster ci-v041-6). The
+# check preprocesses the shim with the host GCC/Clang under cl.exe's predefines and
+# a fake Windows SDK layout, so it needs a GNU-style driver (not MSVC itself).
+if(PYTHON3_EXECUTABLE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND NOT MSVC)
+	add_test(NAME FenvShimMsvcInclude
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/fenv-shim-msvc-check.py
+			${CMAKE_CXX_COMPILER}
+			${CMAKE_SOURCE_DIR}/include)
+	set_tests_properties(FenvShimMsvcInclude PROPERTIES TIMEOUT 60)
+endif()
+
 # Multicore Slice 0+1 (SPEC-MULTICORE-SCHEDULING-DRAFT §6): the published
 # schedule (required/pending/class + ready list) versus the plan-order
 # execution, both walks against the committed reference render, plus the two
@@ -5618,6 +6286,12 @@ set_tests_properties(RoutingGraphScheduleTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 	TIMEOUT 300)
 
+if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE AND ZENE_UPDATE_CHECK_ENABLED)
+	# Q050-501: the update-check commands over the real socket, against a loopback feed.
+	add_test(NAME ControlUpdateCheck
+		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/control-update-check.py $<TARGET_FILE:zene>)
+	set_tests_properties(ControlUpdateCheck PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 120)
+endif()
 if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	add_test(NAME ControlSocketIntegration
 		COMMAND ${PYTHON3_EXECUTABLE}
@@ -5659,6 +6333,16 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			TIMEOUT 300
 			SKIP_RETURN_CODE 77
 		)
+		# Q050-489: a MIDI and an audio cell edited, undone and recorded to the arrangement while they play, read
+		# back, heard on the live master and the landed clips rendered (needs the tripleoscillator module).
+		add_test(NAME ControlSessionTransitions
+			COMMAND ${PYTHON3_EXECUTABLE}
+				${CMAKE_CURRENT_SOURCE_DIR}/control-session-transitions.py
+				$<TARGET_FILE:zene>)
+		set_tests_properties(ControlSessionTransitions PROPERTIES
+			ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+			TIMEOUT 300
+		)
 		# The GROUP's audit proof: one row per id for all ELEVEN session.* ids
 		# (docs/reports/SESSION-API-PROOF-2026-09-15.md). The two tests above
 		# drive the ids their FEATURE needs and between them touch all eleven;
@@ -5680,6 +6364,21 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			TIMEOUT 300
 			SKIP_RETURN_CODE 77
 		)
+		# Q050-273.1 stage 1: an audio launcher cell saved into the shared library with browser.save_clip
+		# {track, scene} - its own frames, tagged - read back through browser.query / browser.tags, undone
+		# and redone as ONE true-inverse step, then the project saved and reopened and the entry put in
+		# another audio cell with the same frames. The refusal/exhaustion matrix (missing, empty, damaged,
+		# unsupported, over-decoded-limit, MIDI, empty cell) and the deterministic allocation and write-fault
+		# seams each run in their own instance. No window: the agent drives the same command the grid's
+		# Save to Library... menu entry runs (SessionLibrarySaveTest drives that half).
+		add_test(NAME ControlSessionLibrarySave
+			COMMAND ${PYTHON3_EXECUTABLE}
+				${CMAKE_CURRENT_SOURCE_DIR}/control-session-library-save.py
+				$<TARGET_FILE:zene>)
+		set_tests_properties(ControlSessionLibrarySave PROPERTIES
+			ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+			TIMEOUT 600
+		)
 	# The export.* group (render settings): dither and the SRC converter. It had
 	# NO registered proof at all before the 2026-09-13 coverage audit - the only
 	# artefact that exercised it, tests/control-export-settings.py, was not in
@@ -5699,6 +6398,10 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)
+	add_test(NAME ControlExportSettingsCleanup
+		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/control-export-settings-cleanup.py
+			${CMAKE_CURRENT_SOURCE_DIR}/control-export-settings.py)
+	set_tests_properties(ControlExportSettingsCleanup PROPERTIES TIMEOUT 60)
 	# freeze / bounce-in-place (the engine-level Bar 2 gap): a track's output is
 	# rendered to a WAV and the track made to play it, driven END TO END through
 	# --control-socket. It is registered unconditionally - the bounce.*/freeze.*
@@ -5716,6 +6419,18 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	set_tests_properties(ControlFreezeCommandsTranscript PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 900
+	)
+	# Q050-124: freeze.bus / freeze.unfreeze_bus over the socket - the real child render capturing the bus, the take
+	# matching the live reference with the source deleted, save/open, one-step undo, refusals. 77 (Skipped) when
+	# this build has no loadable instrument to make the fixture audible.
+	add_test(NAME ControlBusFreezeTranscript
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-bus-freeze-transcript.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlBusFreezeTranscript PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 900
+		SKIP_RETURN_CODE 77
 	)
 	# transport.punch_* (0.3.0, punch in/out): set the region, assert the GATE
 	# flips with the transport position on both sides of both boundaries, and
@@ -5773,6 +6488,16 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)
+	# Q050-294.1: a MIDI clip's melodic step state over the socket - note.step_get_state, note.step_set
+	# (scale-aware pitch, velocity, chance, ratchet; one control.undo restores the exact note list).
+	add_test(NAME ControlNoteStep
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-note-step.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlNoteStep PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
 	# The 0.5.0 engine wiring (L01, research/daw-ui-specs/synthesis/engine-audit.md): devices at a
 	# slot and on rack chains, chain presets on rack chains, track.set_mixer_channel, the header's
 	# transport.record, and the Lua scripting spine (zene.command) - each proven over the socket.
@@ -5805,6 +6530,17 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)
+	# Q050-217.2: a MIDI binding that targets a SAVED WORKFLOW, driven over the socket - the target
+	# stored and read back with whether it resolves, the library in use (shared vs project) followed,
+	# and the binding surviving a real restart of the binary.
+	add_test(NAME ControlWorkflowBindings
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-workflow-bindings.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlWorkflowBindings PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
 	# The 0.5.0 L13 customisation surface: shortcuts, layouts, floating panels, the header,
 	# macros, arranger zoom/fit/tool and the pattern list - over the socket, on a throwaway config.
 	add_test(NAME ControlCustomisation
@@ -5812,6 +6548,16 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/control-customisation.py
 			$<TARGET_FILE:zene>)
 	set_tests_properties(ControlCustomisation PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
+	# Q050-255 and Q050-219 over the socket: a folder's summary clips resized, split, selected and edited
+	# together, a section moved with its material in both modes, each read back and undone in one step.
+	add_test(NAME ControlArrangementGroupEdits
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-arrangement-group-edits.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlArrangementGroupEdits PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)
@@ -5835,6 +6581,16 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)
+	# Q050-231.1 over the socket: mixer.masking_report names the pair, range and lower-priority target,
+	# repeats byte-identically, follows the priorities and changes no strip EQ and no undo depth.
+	add_test(NAME ControlMaskingReport
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-masking-report.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlMaskingReport PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
 	# Q050-486 over the socket: a project's drawn Watsyn wave and Wave Shaper curve reopen with identical
 	# values and an equal render (golden_audio_lib floor contract, with a negative control); a truncated
 	# wave and a NaN curve are reported in project.open's errors, keep the defaults and still render.
@@ -5846,6 +6602,28 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 600
 		SKIP_RETURN_CODE 77
+	)
+	# Q050-066 stage 1 over the socket: an old-style drum rack saves, reopens, reads back and renders the
+	# same; pads made and edited through track.drum_rack_pad_add / _pad_set read back as answered, each
+	# edit one undo step, and the edited rack survives a save and reopen field for field and in sound.
+	add_test(NAME ControlDrumRackPads
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-drum-rack-pads.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlDrumRackPads PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 600
+	)
+	# Q050-066 stage 2 over the socket: an amplifier at 0 % on one pad's channel silences that pad and no other
+	# (the rack renders as the other pad alone), reads back on that pad's chain only, undoes and redoes one step
+	# at a time, and survives a save and reopen in state and in sound.
+	add_test(NAME ControlDrumRackChains
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-drum-rack-chains.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlDrumRackChains PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 600
 	)
 	# The 0.5.0 L09 routing surface over the socket: the listen bus, sends from many channels, send pan,
 	# nested and linked VCA groups, the mixer view's sends-on-faders mode.
@@ -5870,6 +6648,15 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	# a mixer channel; the reply is what the two panels draw - the track's devices in chain order,
 	# a channel's inserts with the modulator beside the one it drives - and the panel follows a
 	# device removed and restored over the socket (docs/UI-SHELL.md §8).
+	# Q050-055.2: the keyboard's plug-in actions over the socket, across a real restart.
+	add_test(NAME ControlPluginShortcuts
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-plugin-shortcuts.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlPluginShortcuts PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
 	add_test(NAME ControlDevices
 		COMMAND ${PYTHON3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/control-devices.py
@@ -5965,6 +6752,21 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 600
 	)
+	# Q050-174 (MX-159): transport.low_latency on a record-armed LATENT instrument, over the socket of
+	# the real binary - the in-tree CLAP fixture (made latent by CLAP_TEST_INSTRUMENT_LATENCY, which the
+	# script sets) found by the binary's own scan of the fixture's directory. Needs the
+	# clap-test-instrument and clapinstrument targets built; the audio proof is InstrumentLowLatencyMonitorTest.
+	if(TARGET clap-test-instrument AND TARGET clapinstrument)
+		add_test(NAME ControlLowLatencyCommands
+			COMMAND ${PYTHON3_EXECUTABLE}
+				${CMAKE_CURRENT_SOURCE_DIR}/control-low-latency-commands.py
+				$<TARGET_FILE:zene>
+				$<TARGET_FILE_DIR:clap-test-instrument>)
+		set_tests_properties(ControlLowLatencyCommands PROPERTIES
+			ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+			TIMEOUT 600
+		)
+	endif()
 	# routing.* and the mixer group's routing verbs (0.3.0, feature rows 27-28):
 	# routing.get_state on a MEASURED graph - load effects and read the node set,
 	# the connections, the cached topological order and the output node back off
@@ -6048,6 +6850,15 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 600
 	)
+	# Q050-010: every long job over the real socket, under one id, through app.tasks, with pings between.
+	add_test(NAME ControlBackgroundTasks
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-background-tasks.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlBackgroundTasks PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
 	# plugin.scan_start / scan_status / scan_cancel + plugin.list's vendor
 	# (Q050-090 "Plug-in manager vendor and background scan"): the background
 	# rescan driven over --control-socket - a paced run is followed (progress,
@@ -6111,6 +6922,29 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	set_tests_properties(ControlRecordInputs PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 600
+	)
+	# Q050-074.1: mixer.cpu_load / track.overview report each instrument track's synthesis load by id, apart
+	# from the shared channel's, and the engine's late periods, headless on the Dummy device.
+	add_test(NAME ControlCpuDiagnostics
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-cpu-diagnostics.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlCpuDiagnostics PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
+	# Q050-074.2: mixer.cpu_load's audio_device on JACK - the real binary against a private
+	# `jackd -d dummy` (48 kHz, 256 frames): negotiated rate and period, latencies with their basis,
+	# an unavailable buffer, xruns apart from late periods. Exit 77 = skipped (no jackd here).
+	add_test(NAME ControlDeviceDiagnostics
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-device-diagnostics.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlDeviceDiagnostics PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		SKIP_RETURN_CODE 77
+		TIMEOUT 300
+		RUN_SERIAL TRUE
 	)
 	# JACK into the capture path (relief plan R2.3, owner decision 16): the real binary on the
 	# JACK backend against a private `jackd -d dummy`; the capture must report open, its frame
@@ -6263,6 +7097,16 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)
+	# Q050-221.1: note.generate_melody through --control-socket - same seed, same notes; another seed,
+	# another line; every key in the active (and a custom) scale; undo; the typed no-scale refusal.
+	add_test(NAME ControlNoteMelody
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-note-melody.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlNoteMelody PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
 	# The chord progression workflow (Q050-019): the suggestions the progression
 	# panel shows (chord.progression_list with a scale) and the write its button
 	# dispatches (chord.progression_generate), end to end through
@@ -6352,6 +7196,19 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		set_tests_properties(ControlStemCommands PROPERTIES
 			ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 			TIMEOUT 900
+			SKIP_RETURN_CODE 77
+		)
+		# Q050-062.3: the real-model quality benchmark (tools/stem_quality_bench.py,
+		# doc/STEM-SPLIT.md "End-to-end §5") checked hermetically - every quality
+		# runs through the CLI on the committed stub model and a synthetic
+		# reference set whose SDRs are known in closed form, and the record carries
+		# the model/CLI identity. No network: the MUSDB18-HQ fetch is not exercised.
+		add_test(NAME StemQualityBench
+			COMMAND ${PYTHON3_EXECUTABLE}
+				${CMAKE_CURRENT_SOURCE_DIR}/stem-quality-bench.py
+				${CMAKE_CURRENT_SOURCE_DIR}/data/stub-4stem-linear.onnx)
+		set_tests_properties(StemQualityBench PROPERTIES
+			TIMEOUT 300
 			SKIP_RETURN_CODE 77
 		)
 	ENDIF()
@@ -6530,6 +7387,17 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)
+	# Q050-317.1: the mastering release sequence over the control socket of the real binary -
+	# two audio-file songs, order/processing/gap/fades through mastering.song_*, and the
+	# save/reopen round trip measured on the wire and in the saved XML.
+	add_test(NAME ControlMasteringSequence
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-mastering-sequence.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlMasteringSequence PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
 	# The ControlSaveState regression of the 2026-09-25 free-form hunt; see the test's own
 	# header for the reproduction, the root cause and the red/green pair.
 	add_test(NAME ControlSaveState
@@ -6592,6 +7460,16 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/control-detect-commands.py
 			$<TARGET_FILE:zene>)
 	set_tests_properties(ControlDetectCommands PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 600
+	)
+	# 0.5.0 L05 (Q050-093): an imported loop's detected tempo and key, followed or kept, through clip.import_file's
+	# loop_mode and the import/loopwarp preference, read back by clip.source_get_state; one undo per import.
+	add_test(NAME ControlLoopImportWarp
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-loop-import-warp.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlLoopImportWarp PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 600
 	)
@@ -6737,9 +7615,24 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/control-media-agent-transcript.py
 			$<TARGET_FILE:zene>
 	)
+	# Q050-162: the transient Repeat / Gate warp modes over the socket - mode
+	# and rate through warp.stretch / warp.list, the A16 inverse, undo, two
+	# renders that differ, and a save/open that brings the same render back.
+	add_test(NAME ControlTransientRepeatTranscript
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-transient-repeat-transcript.py
+			$<TARGET_FILE:zene>
+	)
+	# Q050-283.1: the neutral track over the real socket - the same JSON-RPC surface MCP exposes.
+	add_test(NAME ControlHybridTrackTranscript
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-hybrid-track-transcript.py
+			$<TARGET_FILE:zene>
+	)
 	set_tests_properties(ControlShutdown ControlReadiness ControlNoAudioDevice
 		ControlNegativeControl ControlStableIdsSlice2 ControlStableIds
-		ControlReversibilityTranscript ControlMediaAgentTranscript PROPERTIES
+		ControlReversibilityTranscript ControlMediaAgentTranscript ControlTransientRepeatTranscript
+		ControlHybridTrackTranscript PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 420
 		SKIP_RETURN_CODE 77
@@ -6816,10 +7709,13 @@ set_tests_properties(ControlRecordingRoutesTest PROPERTIES
 # plugin even though nothing opens a window.
 set_tests_properties(ControlSampleOperatorTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(ControlSampleBakeGuardTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # Q050-106: real Engine, real clip checkpoints and a real project save/load.
 set_tests_properties(ControlSampleStereoTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ClipImportFileTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(LoopImportWarpTest LoopDropWarpTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # The warp.* group edits a SampleClip created through track.add/clip.add, which
 # also wants a real Qt platform plugin even though nothing opens a window.
 set_tests_properties(ControlWarpCommandsTest PROPERTIES
@@ -6830,7 +7726,8 @@ set_tests_properties(ControlWarpCommandsTest PROPERTIES
 # opens a window. AudioStretcherTest needs no Engine (it is pure DSP), but it is
 # built from the same objects; it is listed here only to keep the pair together
 # in one place whose reason is written down.
-set_tests_properties(SampleClipStretchTest SampleClipRubberBandTest SampleClipWarpModesTest TakeLaneCompPlaybackTest AudioStretcherTest PROPERTIES
+set_tests_properties(SampleClipStretchTest SampleClipRubberBandTest SampleClipWarpModesTest SampleClipTransientRepeatTest SampleClipTransientRepeatSafetyTest
+	TakeLaneCompPlaybackTest AudioStretcherTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # The link.* group drives the process-wide session model (and the Song's tempo,
 # for an adopted one) and starts the UI-thread service timer, so it wants a real
@@ -6850,12 +7747,19 @@ IF(LMMS_HAVE_ABLETON_LINK)
 	set_tests_properties(AbletonLinkSessionTest AbletonLinkInteropTest PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen" RUN_SERIAL TRUE)
 	target_link_libraries(AbletonLinkInteropTest PRIVATE ableton_link)
+	target_link_libraries(AbletonLinkAllocatorTest PRIVATE ableton_link)
+	# The ESP32 port's Context.hpp includes <freertos/...>; these host stand-ins
+	# provide it for this one test. Nothing else sees this directory.
+	target_link_libraries(AbletonLinkEsp32RunnerTest PRIVATE ableton_link)
+	target_include_directories(AbletonLinkEsp32RunnerTest PRIVATE
+		"${CMAKE_CURRENT_SOURCE_DIR}/src/core/esp32-freertos-host")
+	target_link_libraries(AbletonLinkWorkDispatcherTest PRIVATE ableton_link)
 ENDIF()
 # The browser.* group: BrowserCatalogTest drives libsndfile and the config
 # manager's working directory, ControlBrowserCommandsTest constructs a full
 # Engine and drives project-free commands through the registry. Neither opens a
 # window, both want a real Qt platform plugin.
-set_tests_properties(BrowserCatalogTest BrowserCatalogQueryTest ControlBrowserCommandsTest PROPERTIES
+set_tests_properties(BrowserCatalogTest BrowserCatalogQueryTest BrowserTempoKeyTest ControlBrowserCommandsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # The chain-preset group constructs a full Engine and drives real devices through
 # the registry (plugin.load, plugin.param_set, chain.save/apply), so it wants a
@@ -6898,7 +7802,7 @@ set_tests_properties(DawProjectInterchangeRoundTripTest DawProjectDeflateImportT
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # 0.5.0 wave 2: AAF import, the video track and hardware I/O build a real Engine and drive the
 # registry (the video window and lane are widgets), so they need a Qt platform plugin.
-set_tests_properties(AafImportTest VideoTrackTest LegacyPatternUpgradeTest HardwareIoTest SurroundTest SurroundExportTest PROPERTIES
+set_tests_properties(AafImportTest VideoTrackTest VideoClipsTest LegacyPatternUpgradeTest HardwareIoTest SurroundTest SurroundExportTest WideDiscreteBusTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # VideoTrackTest's Linux/macOS allocation-failure case interposes FFmpeg entry points from
 # the test executable, so its symbols must be exported - same reason plugin-loading tests carry ENABLE_EXPORTS.
@@ -6941,6 +7845,13 @@ ENDIF()
 IF(LMMS_HAVE_STEM_SPLIT)
 	# The controller regression exercises its progress and completion dialogs.
 	set_tests_properties(StemSplitPipelineTest PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	# Q050-010: the long-source regressions read the task list and the split's dialog.
+	set_tests_properties(StemSplitBackgroundTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 300)
+	target_compile_definitions(StemSplitBackgroundTest PRIVATE
+		LMMS_TEST_DS_FILE="${CMAKE_SOURCE_DIR}/data/samples/drumsynth/misc/verylong.ds")
+	# Q050-062.2: the menu test triggers the submenu and reads the job dialogs.
+	set_tests_properties(StemSplitMenuTest PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 ENDIF()
 # Headless load path (task #625, SPEC A13/A15): no modal dialog may block an
@@ -7307,6 +8218,19 @@ else()
 	message(STATUS "python3 not found: ControlMcpGroupCoverage is not registered")
 endif()
 
+# Q050-180.1 (L04): several positioned video clips driven through a REAL MCP stdio session - add two
+# clips, move one by id, undo/redo, save/new/open readback, render a range spanning both. Skipped (77)
+# without the ffmpeg program, without an interpreter carrying `mcp`, or in a build without FFmpeg.
+if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
+	add_test(NAME ControlVideoClipsMcp
+		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/control-video-clips-mcp.py $<TARGET_FILE:zene>)
+	set_tests_properties(ControlVideoClipsMcp PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 600
+		SKIP_RETURN_CODE 77
+	)
+endif()
+
 # board card #708: the livecode.* transcript - the registered proof that a
 # script scheduled ONCE edits a mixer value on every bar with no re-trigger,
 # that the EXPLICIT v0 trigger still runs an existing-shape script unchanged,
@@ -7316,6 +8240,17 @@ endif()
 # above) cannot hold an add_test() call.
 # AF_UNIX clients: registered where the control suite is (see CONTROL_SUITE_AVAILABLE).
 if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
+	# Q050-334.1: ordered, bounded project-change events over a real socket (includes one idle-timeout wait).
+	add_test(NAME ControlProjectEvents
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-project-events.py
+			$<TARGET_FILE:zene>
+	)
+	set_tests_properties(ControlProjectEvents PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
+	set_tests_properties(ControlEventHubTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	add_test(NAME ControlLivecodeCommands
 		COMMAND ${PYTHON3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/control-livecode-commands.py
@@ -7453,6 +8388,22 @@ if(PYTHON3_EXECUTABLE)
 		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/warp-docs-agree.py)
 endif()
 
+# Q050-362 (docs lane): the automation docs must say which clips are sample-accurate - a
+# Linear/CubicHermite clip ramps per sample by default, a Discrete clip keeps its step,
+# CubicHermite is approximated per tick, each per-block ramp holds 32 knots with the surplus
+# refused and counted, and a clip in a pattern is refused by automation.ramp_set. The old
+# "Automation is not sample-accurate" blanket line may survive only as a dated record.
+# AutomationDocsAgreeSelfTest is the gate's own red/green control: the blanket line back, the
+# 32-knot or pattern-refusal sentence dropped, feature row 9 back at "to build", the manual
+# paragraph gone, or the dated superseded marker removed must each fail the gate.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME AutomationDocsAgree
+		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/automation-docs-agree.py)
+	add_test(NAME AutomationDocsAgreeSelfTest
+		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/automation-docs-agree.py
+			--self-test)
+endif()
+
 # 0.5.0 F1 (MX-040/041/036/061): hardware outputs, interface channels, cue mixes and the hardware
 # insert ping driven end to end on a 4-output Dummy whose loopback carries outputs 3/4.
 if(PYTHON3_EXECUTABLE)
@@ -7461,6 +8412,19 @@ if(PYTHON3_EXECUTABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/control-hardware-io.py
 			$<TARGET_FILE:zene>)
 	set_tests_properties(ControlHardwareIo PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
+endif()
+
+# Q050-089.2: render.realtime through a hardware insert on the Dummy loopback (a box on the cable halves the level),
+# against render.render's dry offline file; refusals for a pair the device cannot carry and for a device with no input.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME ControlRealtimeExport
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-realtime-export.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlRealtimeExport PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)

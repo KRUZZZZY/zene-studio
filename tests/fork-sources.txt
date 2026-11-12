@@ -41,6 +41,11 @@
 # to the base - the regression for the control selection store keeping the selected notes' ids
 # - so it belongs in this manifest. Its entry is emitted in the sorted source list below; no
 # other entry changed.
+# 2026-10-29 (Q050-217.2, cluster MIDI workflow bindings): tests/src/core/MidiWorkflowBindingsTest.cpp and
+# tests/src/gui/MidiWorkflowBindingsGuiTest.cpp are fork-NEW test sources for the stage - a note and a CC bound
+# to a saved workflow run it through workflow.run, read back, survive a config reload and follow the library in
+# use, and the Launcher > Controller > Bind a Workflow entries drive the same path over the real application.
+# No other entry changed.
 # Regenerate with (base = 4e677cb6c6ab, the upstream commit this fork is based on):
 #   { git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- src include plugins tests/src/core tests/src/plugins tests/src/tracks \
 #       | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
@@ -739,6 +744,7 @@ include/Accessibility.h
 include/AccessibilityAudit.h
 include/AccessibleCanvas.h
 include/AccessibleWidgets.h
+include/AddTrackMenu.h
 include/Appearance.h
 include/ArrangementEdits.h
 include/ArrangementSections.h
@@ -756,6 +762,7 @@ include/ArticulationEvents.h
 include/ArticulationMap.h
 include/ArticulationMapEditor.h
 include/ArticulationRemap.h
+include/AuComponent.h
 include/AudioAlsaWrite.h
 include/AudioBus.h
 include/AudioWorkerWake.h
@@ -796,6 +803,7 @@ include/ClipAudioLoop.h
 include/ClipConsolidate.h
 include/ClipEdits.h
 include/ClipEditsMenu.h
+include/ClipGroupEdits.h
 include/ClipLinks.h
 include/ClipLockFeedback.h
 include/ClipPreFades.h
@@ -838,6 +846,7 @@ include/ControlDeviceMoves.h
 include/ControlDevicePlacement.h
 include/ControlDeviceSupport.h
 include/ControlEdit.h
+include/ControlEventHub.h
 include/ControlExportPresetSupport.h
 include/ControlGrooveSupport.h
 include/ControlHardwareIoSupport.h
@@ -860,9 +869,11 @@ include/ControlRoom.h
 include/ControlSampleArray.h
 include/ControlScaleShared.h
 include/ControlServer.h
+include/ControlStemSource.h
 include/ControlStemSupport.h
 include/ControlStructuralSupport.h
 include/ControlTrackCreation.h
+include/ControlTrackRouting.h
 include/ControlUndoCoalescing.h
 include/ControlVocabulary.h
 include/ControlWarpSupport.h
@@ -887,6 +898,8 @@ include/DevicePicker.h
 include/DirectChildOfType.h
 include/DocumentIndex.h
 include/DpiHelper.h
+include/DrumPadState.h
+include/DrumRackPanel.h
 include/DspLoadProbe.h
 include/EditLocks.h
 include/EffectDeviceMenu.h
@@ -897,6 +910,7 @@ include/ExportDitherMode.h
 include/ExportNoiseShaper.h
 include/ExportQualityControls.h
 include/ExportRenderSettings.h
+include/ExternalDeviceCard.h
 include/FeedbackModeAction.h
 include/FolderSummary.h
 include/FolderSummaryLane.h
@@ -953,6 +967,7 @@ include/MasterLoudnessTap.h
 include/MasteringChain.h
 include/MasteringJob.h
 include/MasteringReport.h
+include/MasteringSequence.h
 include/McuProtocol.h
 include/McuSurface.h
 include/MenuBarExtras.h
@@ -981,6 +996,7 @@ include/MixerPostInserts.h
 include/MixerRoutingMatrix.h
 include/MixerSendPan.h
 include/MixerSendsBanner.h
+include/MixerZones.h
 include/MixerSnapshots.h
 include/MixerStrip.h
 include/MixerStripInfo.h
@@ -997,6 +1013,7 @@ include/MonitorMode.h
 include/MpeExpression.h
 include/MpeInputAction.h
 include/MpeStreamSnapshot.h
+include/MpeSynthExpression.h
 include/MpscQueue.h
 include/MultiTrackRecorder.h
 include/MusicalTime.h
@@ -1018,7 +1035,9 @@ include/OutOfProcessHosting.h
 include/ParameterAliases.h
 include/ParameterControls.h
 include/ParameterGridDialog.h
+include/ParameterReadOnly.h
 include/PatchWiring.h
+include/PeakJobs.h
 include/PerformView.h
 include/PhaseScopeTap.h
 include/PhaseScopeView.h
@@ -1034,6 +1053,7 @@ include/PluginPaths.h
 include/PluginQuarantineMenu.h
 include/PluginScanCache.h
 include/PluginVendors.h
+include/PluginWindowSystem.h
 include/PortMapping.h
 include/PortMappingCodec.h
 include/PreviewOutput.h
@@ -1057,6 +1077,7 @@ include/RackSplit.h
 include/RackZoneFeed.h
 include/RackZoneInputs.h
 include/RackZones.h
+include/RealtimeExport.h
 include/RealtimeScope.h
 include/RecordLaunchMenus.h
 include/RecordOptions.h
@@ -1204,6 +1225,27 @@ include/WorkspaceWindows.h
 include/XmlDepthGuard.h
 include/XyPad.h
 include/zene/api/ControlApi.h
+plugins/AuEffect/AuCocoaView.cpp
+plugins/AuEffect/AuEffect.cpp
+plugins/AuEffect/AuEffect.h
+plugins/AuEffect/AuEffectControlDialog.cpp
+plugins/AuEffect/AuEffectControlDialog.h
+plugins/AuEffect/AuEffectControls.cpp
+plugins/AuEffect/AuEffectControls.h
+plugins/AuEffect/AuHost.cpp
+plugins/AuEffect/AuHost.h
+plugins/AuEffect/AuKnobGrid.h
+plugins/AuEffect/AuParameter.cpp
+plugins/AuEffect/AuParameter.h
+plugins/AuEffect/AuState.cpp
+plugins/AuEffect/AuSubPluginFeatures.cpp
+plugins/AuEffect/AuSubPluginFeatures.h
+plugins/AuEffect/logo.png
+plugins/AuInstrument/AuInstrument.cpp
+plugins/AuInstrument/AuInstrument.h
+plugins/AuInstrument/AuInstrumentView.cpp
+plugins/AuInstrument/AuInstrumentView.h
+plugins/AuInstrument/logo.png
 plugins/CarlaBase/CarlaMidiHandoff.h
 plugins/ClapEffect/ClapBusMap.cpp
 plugins/ClapEffect/ClapBusMap.h
@@ -1341,6 +1383,7 @@ src/core/ArrangementEdits.cpp
 src/core/ArrangementSections.cpp
 src/core/ArticulationMap.cpp
 src/core/ArticulationRemap.cpp
+src/core/AuComponent.cpp
 src/core/AudioBus.cpp
 src/core/AudioInputPath.cpp
 src/core/AudioIoSetup.cpp
@@ -1367,6 +1410,7 @@ src/core/ChordVocabulary.cpp
 src/core/ClipAudioLoop.cpp
 src/core/ClipConsolidate.cpp
 src/core/ClipEdits.cpp
+src/core/ClipGroupEdits.cpp
 src/core/ClipLinks.cpp
 src/core/ClipPreFades.cpp
 src/core/ClipTransients.cpp
@@ -1437,6 +1481,7 @@ src/core/ControlCommandsConsoleStrip.cpp
 src/core/ControlCommandsConsolidate.cpp
 src/core/ControlCommandsControl.cpp
 src/core/ControlCommandsController.cpp
+src/core/ControlCommandsControllerConvert.cpp
 src/core/ControlCommandsControllerMap.cpp
 src/core/ControlCommandsControllerTemplates.cpp
 src/core/ControlCommandsCrash.cpp
@@ -1452,9 +1497,12 @@ src/core/ControlCommandsDeviceTools.cpp
 src/core/ControlCommandsDocuments.cpp
 src/core/ControlCommandsDrumRack.cpp
 src/core/ControlCommandsDsp.cpp
+src/core/ControlCommandsEvents.cpp
 src/core/ControlCommandsExport.cpp
 src/core/ControlCommandsExportPresets.cpp
+src/core/ControlCommandsExternalDevice.cpp
 src/core/ControlCommandsFeedback.cpp
+src/core/ControlCommandsFolderSpans.cpp
 src/core/ControlCommandsFreeze.cpp
 src/core/ControlCommandsGroove.cpp
 src/core/ControlCommandsGrooveEdit.cpp
@@ -1473,6 +1521,7 @@ src/core/ControlCommandsInterchange.cpp
 src/core/ControlCommandsKeyNames.cpp
 src/core/ControlCommandsLaunchBindings.cpp
 src/core/ControlCommandsLibraryClips.cpp
+src/core/LibraryCellAudio.cpp
 src/core/ControlCommandsLink.cpp
 src/core/ControlCommandsLinkAudio.cpp
 src/core/ControlCommandsLivecode.cpp
@@ -1480,6 +1529,7 @@ src/core/ControlCommandsLowLatency.cpp
 src/core/ControlCommandsMarkers.cpp
 src/core/ControlCommandsMastering.cpp
 src/core/ControlCommandsMasteringRun.cpp
+src/core/ControlCommandsMasteringSequence.cpp
 src/core/ControlCommandsMcu.cpp
 src/core/ControlCommandsMeter.cpp
 src/core/ControlCommandsMeterFile.cpp
@@ -1489,6 +1539,7 @@ src/core/ControlCommandsMidiReconnectEdit.cpp
 src/core/ControlCommandsMidiReconnectShared.h
 src/core/ControlCommandsMixer.cpp
 src/core/ControlCommandsMixerListen.cpp
+src/core/ControlCommandsMixerMasking.cpp
 src/core/ControlCommandsMixerMeters.cpp
 src/core/ControlCommandsMixerRename.cpp
 src/core/ControlCommandsMixerRoutes.cpp
@@ -1506,8 +1557,10 @@ src/core/ControlCommandsNoteAcross.cpp
 src/core/ControlCommandsNoteClipboard.cpp
 src/core/ControlCommandsNoteCurves.cpp
 src/core/ControlCommandsNoteEdit.cpp
+src/core/ControlCommandsNoteStep.cpp
 src/core/ControlCommandsNoteExpression.cpp
 src/core/ControlCommandsNoteHarmony.cpp
+src/core/ControlCommandsNoteMelody.cpp
 src/core/ControlCommandsNoteMoves.cpp
 src/core/ControlCommandsNotePlayback.cpp
 src/core/ControlCommandsNoteProbability.cpp
@@ -1568,6 +1621,7 @@ src/core/ControlCommandsRecordingRoutes.cpp
 src/core/ControlCommandsReference.cpp
 src/core/ControlCommandsRemote.cpp
 src/core/ControlCommandsRenderQueue.cpp
+src/core/ControlCommandsRenderRealtime.cpp
 src/core/ControlCommandsRenderStems.cpp
 src/core/ControlCommandsRevisions.cpp
 src/core/ControlCommandsRouting.cpp
@@ -1614,6 +1668,7 @@ src/core/ControlCommandsTrackLooks.cpp
 src/core/ControlCommandsTrackMidiOut.cpp
 src/core/ControlCommandsTrackOffset.cpp
 src/core/ControlCommandsTrackPresets.cpp
+src/core/ControlCommandsTrackRouting.cpp
 src/core/ControlCommandsTrackSpacers.cpp
 src/core/ControlCommandsTrackVersions.cpp
 src/core/ControlCommandsTransport.cpp
@@ -1629,6 +1684,7 @@ src/core/ControlCommandsVcaMix.cpp
 src/core/ControlCommandsVcaNest.cpp
 src/core/ControlCommandsVcaShared.h
 src/core/ControlCommandsVideo.cpp
+src/core/ControlCommandsVideoRender.cpp
 src/core/ControlCommandsW3Engine.cpp
 src/core/ControlCommandsWarp.cpp
 src/core/ControlCommandsWarpEdit.cpp
@@ -1638,6 +1694,7 @@ src/core/ControlCommandsWasmEdit.cpp
 src/core/ControlCommandsWasmRender.cpp
 src/core/ControlCompSupport.cpp
 src/core/ControlDetectSupport.cpp
+src/core/ControlDeviceAu.cpp
 src/core/ControlDeviceCatalogue.cpp
 src/core/ControlDeviceClap.cpp
 src/core/ControlDeviceHosted.cpp
@@ -1648,6 +1705,7 @@ src/core/ControlDeviceSupport.cpp
 src/core/ControlDeviceTools.h
 src/core/ControlDeviceVst3.cpp
 src/core/ControlEditSupport.cpp
+src/core/ControlEventHub.cpp
 src/core/ControlExportPresetSupport.cpp
 src/core/ControlGrooveSupport.cpp
 src/core/ControlHardwareIoSupport.cpp
@@ -1721,14 +1779,17 @@ src/core/ControlSampleArray.cpp
 src/core/ControlScaleSupport.cpp
 src/core/ControlSchema.cpp
 src/core/ControlServer.cpp
+src/core/ControlServerEvents.cpp
 src/core/ControlServerSocket.cpp
 src/core/ControlServerWin32.cpp
 src/core/ControlSession.cpp
 src/core/ControlStemModel.cpp
+src/core/ControlStemSource.cpp
 src/core/ControlStemSupport.cpp
 src/core/ControlStemWav.cpp
 src/core/ControlStructuralSupport.cpp
 src/core/ControlTrackCreation.cpp
+src/core/ControlTrackRouting.cpp
 src/core/ControlTransactions.cpp
 src/core/ControlUndoCoalescing.cpp
 src/core/ControlVocabulary.cpp
@@ -1751,6 +1812,7 @@ src/core/DawProjectZipShared.h
 src/core/DeltaTap.cpp
 src/core/DeviceOptions.cpp
 src/core/DocumentIndex.cpp
+src/core/DrumPadState.cpp
 src/core/EditLocks.cpp
 src/core/EffectChainPatcher.cpp
 src/core/ExportDither.cpp
@@ -1793,11 +1855,13 @@ src/core/MasterLoudnessTap.cpp
 src/core/MasteringChain.cpp
 src/core/MasteringJob.cpp
 src/core/MasteringReport.cpp
+src/core/MasteringSequence.cpp
 src/core/McuProtocol.cpp
 src/core/McuSurface.cpp
 src/core/MetronomeOptions.cpp
 src/core/MidiClipControllers.cpp
 src/core/MidiClock.cpp
+src/core/MidiClockCapture.cpp
 src/core/MidiClockState.cpp
 src/core/MidiClockTracker.cpp
 src/core/MidiInputTransform.cpp
@@ -1817,6 +1881,7 @@ src/core/ModulationLayer.cpp
 src/core/ModulationLayerPublisher.cpp
 src/core/ModulationVoices.cpp
 src/core/MpeExpressionStreamPlayback.cpp
+src/core/MpeSynthExpression.cpp
 src/core/MusicalTime.cpp
 src/core/NamespaceRegistry.cpp
 src/core/NoteConditions.cpp
@@ -1830,6 +1895,7 @@ src/core/PatchWiring.cpp
 src/core/PhaseScopeTap.cpp
 src/core/PitchTrack.cpp
 src/core/PluginEditorHost.cpp
+src/core/PeakJobs.cpp
 src/core/PluginFactoryBackgroundScan.cpp
 src/core/PluginFactoryScanDetail.h
 src/core/PluginHostChunking.cpp
@@ -1864,6 +1930,7 @@ src/core/RackSplit.cpp
 src/core/RackZoneFeed.cpp
 src/core/RackZoneInputs.cpp
 src/core/RackZones.cpp
+src/core/RealtimeExport.cpp
 src/core/RecordOptions.cpp
 src/core/RecorderTaps.cpp
 src/core/RecordingJournal.cpp
@@ -1914,6 +1981,7 @@ src/core/SessionPlayback.cpp
 src/core/SessionSceneFollow.cpp
 src/core/SessionScheduler.cpp
 src/core/SessionSubScenes.cpp
+src/core/SessionTransitions.cpp
 src/core/SessionTuning.cpp
 src/core/SessionTuningMtsEsp.cpp
 src/core/SessionTuningScala.cpp
@@ -1964,6 +2032,7 @@ src/gui/AccessibleAnnouncements.cpp
 src/gui/AccessibleCanvas.cpp
 src/gui/AccessibleMode.cpp
 src/gui/AccessibleWidgets.cpp
+src/gui/DrumRackPanel.cpp
 src/gui/ValueAnnouncementState.h
 src/gui/ArrangerAids.cpp
 src/gui/ArrangerClipKeys.cpp
@@ -2044,6 +2113,7 @@ src/gui/MixerModeBar.cpp
 src/gui/MixerOverlays.cpp
 src/gui/MixerRoutingMatrix.cpp
 src/gui/MixerSendsBanner.cpp
+src/gui/MixerZones.cpp
 src/gui/MixerStripInfo.cpp
 src/gui/MixerStripTags.cpp
 src/gui/MixerViewOptions.cpp
@@ -2085,6 +2155,13 @@ src/gui/TaskIndicator.cpp
 src/gui/TelemetryConsentDialog.cpp
 src/gui/TempoMapPanel.cpp
 src/gui/ToolWindowMemory.cpp
+# Q050-488 (2026-10): cooperative MIDI input shutdown - the gate, regressions, feature doc and report (fork-NEW).
+include/MidiInputGate.h
+tests/src/core/MidiInputGateTest.cpp
+tests/src/core/MidiAlsaSeqShutdownTest.cpp
+tests/src/core/MidiAlsaRawShutdownTest.cpp
+docs/050-features/Q050-488.md
+docs/qwen-fixes-2026-10/cluster-Q050-488.md
 # 0.5.0 Q050-141: a finger's touch event as the mouse gesture the widget already handles.
 src/gui/TouchInput.cpp
 src/gui/TrackFolderMenu.cpp
@@ -2106,10 +2183,17 @@ src/gui/XyPad.cpp
 src/gui/clips/ClipLockFeedback.cpp
 src/gui/clips/ClipViewTheme.cpp
 src/gui/clips/SampleClipOverlays.cpp
+src/gui/editors/AddTrackMenu.cpp
+include/SampleClipWarpEdit.h
+include/WarpPublication.h
+src/gui/clips/SampleClipWarpEdit.cpp
+tests/src/gui/Warp/SampleClipWarpEditTest.cpp
+tests/src/gui/Warp/SampleClipWarpEditTestSupport.h
 src/gui/editors/AutomationEditorFades.cpp
 src/gui/editors/AutomationEditorKeys.cpp
 src/gui/editors/AutomationPointEdit.cpp
 src/gui/editors/ItemListAutomationSource.cpp
+src/gui/instrument/ExternalDeviceCard.cpp
 src/gui/modals/EffectPickerOrganiser.cpp
 src/gui/noteeditor/ArticulationMapEditor.cpp
 src/gui/noteeditor/ControllerLaneView.cpp
@@ -2181,6 +2265,8 @@ src/wasm/WasmWorkerPool.h
 tests/agent-surface-gate.py
 tests/agent_surface_lib.py
 tests/control-absent-socket.py
+tests/control-arrangement-group-edits.py
+tests/control-background-tasks.py
 tests/control-bus-commands.py
 tests/control-chain-presets.py
 tests/control-clock-commands.py
@@ -2200,7 +2286,9 @@ tests/control-import-lifetime.py
 tests/control-link-interop.py
 tests/control-link-sync.py
 tests/control-livecode-commands.py
+tests/control-low-latency-commands.py
 tests/control-mastering-commands.py
+tests/control-mastering-sequence.py
 tests/control-mastering-quit.py
 tests/control-mastering-run-bound.py
 tests/control-mcp-group-coverage.py
@@ -2226,6 +2314,7 @@ tests/control-routing-commands.py
 tests/control-save-state.py
 tests/control-session-api-proof.py
 tests/control-session-lifecycle-transcript.py
+tests/control-session-library-save.py
 tests/control-session-m1.py
 tests/control-shell.py
 tests/control-shutdown.py
@@ -2241,11 +2330,13 @@ tests/control-undo-structural.py
 tests/control-vca-commands.py
 tests/control-warp-commands-transcript.py
 tests/control-wasm-sandbox.py
+tests/control-workflow-bindings.py
 tests/control-workflow-models.py
 tests/control_detect_fixtures.py
 tests/control_instance_diagnosis.py
 tests/control_pipe_client.py
 tests/control_socket_flows.py
+tests/control_clock_capture_checks.py
 tests/control_socket_harness.py
 tests/control_vendor_libs.py
 # Q050-145: product-new static documentation gate - re-verifies the README's
@@ -2253,6 +2344,9 @@ tests/control_vendor_libs.py
 # product-source search on every run (ctest DocPricingModelGate).
 tests/doc-pricing-model-gate.py
 tests/exprtk.hpp
+# cluster ci-v041-6: checks include/fenv.h takes no #include_next under cl.exe's
+# predefines (MSVC C1021), by preprocessing it with the host GCC/Clang (ctest FenvShimMsvcInclude).
+tests/fenv-shim-msvc-check.py
 tests/freeze_bounce_evidence.py
 tests/golden_audio_lib.py
 tests/golden_audio_record.py
@@ -2317,10 +2411,25 @@ tests/session_api_proof_lib.py
 tests/session_api_proof_rows.py
 # Q050-035 (R-platform-26): the docs-truth gate for offline HTDemucs stem separation - built in,
 # local and ON by default. Reads CMakeLists.txt, the release-honesty manifest and the user docs.
+tests/src/core/AuComponentTest.cpp
+tests/src/core/ControlEventHubTest.cpp
+tests/src/core/DrumRackPadsTest.cpp
+tests/src/core/ExternalMidiDeviceTest.cpp
+tests/src/gui/AuHostingTest.cpp
+tests/src/gui/BackgroundTasksGuiTest.cpp
+tests/src/core/AbletonLinkEsp32RunnerTest.cpp
+tests/src/core/DrumRackPadsTest.cpp
+tests/src/core/esp32-freertos-host/freertos/FreeRTOS.h
+tests/src/core/esp32-freertos-host/freertos/task.h
+tests/src/gui/DrumRackPanelTest.cpp
+tests/src/gui/ExternalDeviceCardTest.cpp
+tests/src/plugins/AuParameterHandoffTest.cpp
 tests/stem-availability-docs-gate.py
 tests/src/core/AafImportTest.cpp
+tests/src/core/AbletonLinkAllocatorTest.cpp
 tests/src/core/AbletonLinkInteropTest.cpp
 tests/src/core/AbletonLinkSessionTest.cpp
+tests/src/core/AbletonLinkWorkDispatcherTest.cpp
 tests/src/core/ArrangeToolsTest.cpp
 tests/src/core/ArrangementModesTest.cpp
 tests/src/core/ArrangingCatchUpTest.cpp
@@ -2330,6 +2439,8 @@ tests/src/core/AudioAlsaCaptureErrorTest.cpp
 tests/src/core/AudioAlsaPollDescriptorTest.cpp
 tests/src/core/AudioAlsaWriteTest.cpp
 tests/src/core/AudioAnalysisTest.cpp
+tests/src/core/PeakJobsTest.cpp
+tests/src/core/PitchTrackCmndBoundary.h
 tests/src/core/AudioAutomationToolsTest.cpp
 tests/src/core/AudioBusHandleTest.cpp
 tests/src/core/AudioBurstSupport.h
@@ -2352,7 +2463,9 @@ tests/src/core/AutomationWriteToEndTest.cpp
 tests/src/core/BiquadSectionTest.cpp
 tests/src/core/BounceInPlaceTest.cpp
 tests/src/core/BrowserCatalogQueryTest.cpp
+tests/src/core/BrowserTempoKeyTest.cpp
 tests/src/core/AutomationThinTest.cpp
+tests/src/core/BandLimitedWaveTest.cpp
 tests/src/core/BasicFiltersSampleRateTest.cpp
 tests/src/core/BrowserCatalogTest.cpp
 tests/src/core/BrowserFeaturesWindowTest.cpp
@@ -2400,16 +2513,19 @@ tests/src/core/ControlSuccessPathsTest.cpp
 tests/src/core/ControlSessionRecordLandTest.cpp
 tests/src/core/ControlSessionRecordLandUndoTest.cpp
 tests/src/core/ControlShutdownHookTest.cpp
+tests/src/core/ControlSampleBakeGuardTest.cpp
 tests/src/core/ControlSampleOperatorTest.cpp
 tests/src/core/ControlRegistryNestingTest.cpp
 tests/src/core/ControlSampleArrayTest.cpp
 tests/src/core/ControlShutdownHookTest.cpp
 tests/src/core/ControlSurfaceReferenceTest.cpp
 tests/src/core/ControlStemExportTest.cpp
+tests/src/core/ControlStemWavTest.cpp
 tests/src/core/ControlVerbInverseTest.cpp
 tests/src/core/ControlWarpCommandsTest.cpp
 tests/src/core/ControlWasmRenderTest.cpp
 tests/src/core/CustomAccessTest.cpp
+tests/src/core/DataFileContainerRecoveryTest.cpp
 tests/src/core/DataFileSaveIntegrityTest.cpp
 tests/src/core/DeviceAbUndoTest.cpp
 tests/src/core/DeviceCopyTest.cpp
@@ -2431,35 +2547,46 @@ tests/src/core/FreezeRegionRepairTest.cpp
 tests/src/core/FrozenTakeHandoffTest.cpp
 tests/src/core/FrozenTakeRoundTwoTest.cpp
 tests/src/core/HardwareIoTest.cpp
+tests/src/core/HardwareOutputBusTest.cpp
 tests/src/core/HydrogenImportTest.cpp
 tests/src/core/ImportDetectionTest.cpp
 tests/src/core/ImportTrackIoTest.cpp
 tests/src/core/InputChannelMeterTest.cpp
 tests/src/core/InputMeterTest.cpp
 tests/src/core/InstrumentLatencyPdcTest.cpp
+tests/src/core/InstrumentLowLatencyMonitorTest.cpp
 # cluster new-p8-127 (2026-10-07): import journalling exception regression and throwing importer fixture.
 tests/src/core/ImportFilterTest.cpp
 tests/src/core/InstrumentLayersCommandsTest.cpp
 tests/src/core/InstrumentLayerZonePublishTest.cpp
 tests/src/core/InstrumentNoteOffProbe.h
 tests/src/core/InstrumentRoutingTest.cpp
+tests/src/core/JournallingObjectRestoreTest.cpp
 tests/src/core/LadspaManagerTest.cpp
 tests/src/core/LadspaPortCountFixture.cpp
 tests/src/core/LibraryBrowserTest.cpp
 tests/src/core/LibraryProjectsTest.cpp
+tests/src/core/BrowserCollectionStoreWriteTest.cpp
+tests/src/core/MidiWorkflowBindingsTest.cpp
+tests/src/core/PluginScanWorkerTest.cpp
+tests/src/core/RenderTaskLifecycleTest.cpp
+tests/src/core/StemJobLoaderTest.cpp
 tests/src/core/TrackPresetCommandsTest.cpp
+tests/src/core/LinkAudioCodecTest.cpp
 tests/src/core/LinkAudioStreamTest.cpp
 tests/src/core/LinkAudioStreamTestSupport.h
 tests/src/core/LinkPhaseLockTest.cpp
 tests/src/core/LinkRealtimeProbe.h
 tests/src/core/LinkedClipEditsTest.cpp
 tests/src/core/LinkedClipGroupEditsTest.cpp
+tests/src/core/LinkedModelGroupsTest.cpp
 tests/src/core/LufsMeterTest.cpp
 tests/src/core/Lv2StateTest.cpp
 tests/src/core/McuSurfaceFeedbackTest.cpp
 tests/src/core/MasteringTest.cpp
 tests/src/core/McuSurfaceTest.cpp
 tests/src/core/MidiClockTest.cpp
+tests/src/core/MidiClockCaptureOutputTest.cpp
 tests/src/core/MidiClockSourceTest.cpp
 tests/src/core/MidiExportTest.cpp
 tests/src/core/MidiInputTransformTest.cpp
@@ -2513,6 +2640,7 @@ tests/src/core/ProjectContainerSaveTest.cpp
 tests/src/core/ProjectContainerTest.cpp
 tests/src/core/ProjectMarkersTest.cpp
 tests/src/core/ProjectOpenIntegrityTest.cpp
+tests/src/core/ProjectRestoreMissingTargetTest.cpp
 tests/src/core/ProjectRevIdsTest.cpp
 tests/src/core/ProjectRevisionRestoreStagingTest.cpp
 tests/src/core/ProjectSectionTest.cpp
@@ -2557,8 +2685,10 @@ tests/src/core/ReversibilityContractTest.cpp
 tests/src/core/ReversibilityTestSupport.h
 tests/src/core/ReversibilityUndoDeviceTest.cpp
 tests/src/core/ReversibilityUndoTest.cpp
+tests/src/core/RevisionRestoreCreatedFileUndoTest.cpp
 tests/src/core/RevisionTimelineTest.cpp
 tests/src/core/RoutingGraphScheduleTest.cpp
+tests/src/core/SampleBufferNoEngineTest.cpp
 tests/src/core/SampleBufferResampleTest.cpp
 tests/src/core/SaSpectrumViewTest.cpp
 tests/src/core/ScaleIntervalOverflowTest.cpp
@@ -2631,16 +2761,23 @@ tests/src/core/VideoFfmpegTest.cpp
 tests/src/core/VideoTestClip.h
 tests/src/core/VideoTestClipTest.cpp
 tests/src/core/VideoTrackTest.cpp
+# Q050-180.1 (L04): several positioned video clips - the core, lane and MCP proofs.
+tests/src/core/VideoClipsTest.cpp
+tests/src/gui/VideoClipsGuiTest.cpp
+tests/control-video-clips-mcp.py
 tests/src/core/VstSubPluginFeaturesTest.cpp
 tests/src/core/W3EngineTest.cpp
 tests/src/core/WarpQuantizeTest.cpp
+tests/src/core/WideDiscreteBusTest.cpp
 tests/src/core/WriteRefusalGateTest.cpp
+tests/src/gui/MidiWorkflowBindingsGuiTest.cpp
 tests/src/tracks/HeadlessGuiGuardTest.cpp
 # cluster new-p15-83: the instrument track's render path - it reads no GUI state (the piano roll's
 # recording state is published for the audio thread), it collects the clips it plays into storage
 # reserved on the control thread, and the MPE expression a live note plays with is one atomic
 # snapshot. One file, three slots.
 tests/src/tracks/InstrumentTrackRenderPathTest.cpp
+tests/src/gui/BrowserTempoKeyGuiTest.cpp
 tests/src/gui/MidiCommandBindingsGuiTest.cpp
 tests/src/gui/ModulatorPanelTest.cpp
 tests/src/plugins/CarlaParamFloatModelTest.cpp
@@ -2650,6 +2787,9 @@ tests/src/plugins/ClapInstrumentViewTest.cpp
 tests/src/plugins/ClapTestInstrumentUnitTest.cpp
 tests/src/gui/DelayControlsDialog.h
 tests/src/gui/EqFader.h
+tests/src/gui/TrackAddRoutingTest.cpp
+tests/src/gui/TrackRouteDropTest.cpp
+tests/src/gui/StemSplitBackgroundTest.cpp
 tests/src/gui/XyPadPairTest.cpp
 tests/src/plugins/HydrogenImportLocalFileMngTest.cpp
 tests/src/plugins/ZynNoteOffTest.cpp
@@ -2722,10 +2862,23 @@ tests/stem_commands_lib.py
 # and the QtTest of the quality table and hop formula the backends share.
 tests/stem_quality_lib.py
 tests/src/core/StemQualityTest.cpp
+# cluster Q050-062.2 (2026-10): the QtTest that triggers the sample clip's Split to stems
+# quality submenu, and the unit's feature record and report.
+tests/src/gui/StemSplitMenuTest.cpp
+docs/050-features/Q050-062.2.md
+docs/qwen-fixes-2026-10/cluster-Q050-062.2.md
+# cluster Q050-062.3 (2026-10): the hermetic check of tools/stem_quality_bench.py (ctest
+# StemQualityBench), and the unit's feature record and report (the measured bench record,
+# docs/050-features/Q050-062.3-bench.md, is data, not source, and is not listed).
+tests/stem-quality-bench.py
+tools/stem_quality_bench.py
+docs/050-features/Q050-062.3.md
+docs/qwen-fixes-2026-10/cluster-Q050-062.3.md
 # cluster Q050-148 (2026-10): the docs regression test the rework asked for - it checks the
 # warp docs keep stating the three warp.stretch modes, the per-algorithm caveats and the
 # runnable reviewer example, and rejects the old "pitch-preserving stretch is not built"
 # blanket claims (runs offline against docs/; also registered as ctest WarpDocsAgree).
+tests/stem_task_checks.py
 tests/warp-docs-agree.py
 # Shared SF2 patch-list iteration policy exercised by PluginPortsMigrationTest.
 plugins/Sf2Player/PatchPresetIteration.h
@@ -2761,6 +2914,7 @@ tools/local-ci.sh
 tests/src/core/ControlRenderOutputPathTest.cpp
 tools/ncpu-shim.c
 tests/src/core/InputChannelRingTest.cpp
+tests/src/core/ControllerConversionTest.cpp
 tests/src/core/MidiClipControllersLoadTest.cpp
 tests/src/gui/ArrangerFileDropTest.cpp
 tests/src/gui/MidiClipLinkedEditTest.cpp
@@ -2769,11 +2923,15 @@ tests/src/gui/AgentSurfaceReportTest.cpp
 tests/src/gui/ProjectContainerSaveAsGuiTest.cpp
 tests/src/gui/ShortcutsCommandsTest.cpp
 tests/src/gui/MainWindowTest.cpp
+tests/src/gui/MasteringReleaseGuiTest.cpp
 tests/src/gui/LivecodePanelTest.cpp
 tests/src/gui/LmmsStyleTest.cpp
 tests/src/gui/PianoRollRecordTest.cpp
 tests/src/gui/FollowActionEditorTest.cpp
 tests/src/gui/MixerSelectionIdentityTest.cpp
+tests/src/gui/MixerZonesTest.cpp
+tests/src/gui/MixerInsertLatencyTest.cpp
+tests/src/gui/RealtimeExportMenuTest.cpp
 tests/src/gui/MixerStripFeaturesTest.cpp
 tests/src/gui/PinConnectorTest.cpp
 tests/src/gui/TrackViewDeferredLifetimeTest.cpp
@@ -2789,17 +2947,25 @@ tests/src/gui/PluginNativeEditorTest.cpp
 tests/src/gui/ReferenceProjectPanelTest.cpp
 tests/src/gui/TelemetryConsentDialogTest.cpp
 tests/src/gui/AafImportMenuTest.cpp
+tests/src/gui/TrackGripContrastTest.cpp
 tests/src/gui/TrackIconsLevelBarTest.cpp
 tests/src/gui/ArrangerKeysNavigatorTest.cpp
 tests/src/gui/NoteBackgroundAudioTest.cpp
 tests/src/gui/ArrangerOverlaysVideoLaneTest.cpp
 tests/src/gui/ArrangerTakePunchTest.cpp
+tests/src/gui/NoteMelodyTest.cpp
 tests/src/plugins/BusesTestInstrument.cpp
 tests/src/plugins/CarlaMidiHandoffTest.cpp
 tests/src/plugins/FakeHostModule.cpp
 tests/src/plugins/NeuralAmpModelLoadTest.cpp
+plugins/VstBase/PeMachineType.h
 plugins/VstBase/VstMidiEventBatch.h
 tests/src/core/VstMidiEventBatchTest.cpp
+# cluster new-p15-169: the channel counts a VST plugin reports are refused when the host cannot hold them, not wrapped.
+plugins/VstBase/VstChannelCount.h
+tests/src/core/VstChannelCountTest.cpp
+# The VST host's PE machine-type probe (plugins/VstBase/PeMachineType.h): a truncated or malformed binary is rejected, never read past the mapping.
+tests/src/core/VstPeMachineTypeTest.cpp
 include/MidiHandoffQueue.h
 tests/src/core/MidiHandoffQueueTest.cpp
 # cluster new-p12-141: ordered MIDI overflow recovery cuts and verification report.
@@ -2874,6 +3040,8 @@ tests/src/plugins/TripleOscillatorUserWaveTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p12-275.md
 # cluster new-p12-279 (2026-10): EffectControls audio-thread visibility atomic-regression test (fork-NEW).
 tests/src/core/EffectControlsVisibilityTest.cpp
+# cluster new-p10-284 (2026-10): a ParameterControls key names one parameter in the save file (fork-NEW).
+tests/src/core/ParameterControlsTest.cpp
 # review-43592d093 (2026-10): ALREADY-FIXED report for the VCA advertised-inverse also:true finding.
 docs/qwen-fixes-2026-10/cluster-review-43592d093.md
 
@@ -2883,6 +3051,7 @@ include/ChordProgressionPanel.h
 src/gui/ChordProgressionPanel.cpp
 tests/src/gui/ChordProgressionPanelTest.cpp
 tests/control-chord-progression.py
+tests/control-note-step.py
 # cluster review-4ec3067be: ALREADY-FIXED report for the Follow Action jump_to fraction/huge-number coercion (fixed earlier in 5784cb570).
 docs/qwen-fixes-2026-10/cluster-review-4ec3067be.md
 
@@ -2932,6 +3101,8 @@ tests/src/gui/CPULoadWidgetTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p11-43-port.md
 # cluster new-p12-278 (2026-10): Vibed waveform handoff regression test (fork-NEW).
 tests/src/plugins/VibedWaveformHandoffTest.cpp
+# cluster new-p15-238 (2026-10): Vibed note render below the base sample rate (fork-NEW).
+tests/src/plugins/VibedSubBaseRateTest.cpp
 # Q050-103 (2026-10-21): the sampler's voice pool and its envelope/voice-reuse test (fork-NEW).
 plugins/AudioFileProcessor/SamplerVoicePool.h
 tests/src/core/SamplerEnvelopeTest.cpp
@@ -2946,6 +3117,7 @@ plugins/SfzPlayer/SfzPlayerView.h
 plugins/SfzPlayer/SfzSynth.cpp
 plugins/SfzPlayer/SfzSynth.h
 tests/src/plugins/SfzFilePoolTest.cpp
+tests/src/plugins/SfzFlexEnvelopeZeroStageTest.cpp
 tests/src/plugins/SfzEffectBusViewTest.cpp
 tests/src/plugins/SfzPlayerRealtimeTest.cpp
 tests/src/plugins/SfzPlayerTest.cpp
@@ -2956,6 +3128,8 @@ tests/src/plugins/HistoricalBufferEmptyTest.cpp
 # cluster new-p23-90: sfizz EQHolder writes its outputs when the buffer pool is exhausted.
 tests/src/plugins/SfzEQPoolExhaustionTest.cpp
 tests/src/plugins/SfizzLeakDetectorTest.cpp
+# cluster new-p21-156: sfizz FilterHolder and EQHolder pass through before setup() and after reset().
+tests/src/plugins/SfzFilterEqDescriptionTest.cpp
 tests/src/plugins/SfzSimdHelperAlignmentTest.cpp
 tests/src/plugins/SfzTestSupport.h
 # cluster new-p21-182: the sfizz AVX gain kernel advances per-sample gains across vector blocks.
@@ -2980,6 +3154,9 @@ tests/src/plugins/WatsynWaveSnapshotTest.cpp
 # cluster new-p12-162-port-port (2026-10): Multitap Echo constructor graph-bounds guard test (fork-NEW).
 tests/src/plugins/MultitapEchoBoundsTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p12-162-port-port.md
+# cluster new-p16-64 (2026-10): Dispersion non-finite control guard test (fork-NEW).
+tests/src/plugins/DispersionNonFiniteTest.cpp
+docs/qwen-fixes-2026-10/cluster-new-p16-64.md
 # cluster new-p12-44-port-port (2026-10): the landing pass checkpoints one track once - report for the fix ported onto the newest line.
 docs/qwen-fixes-2026-10/cluster-new-p12-44-port-port.md
 tests/src/plugins/Lb302NotePathTest.cpp
@@ -3071,6 +3248,13 @@ tests/src/gui/MicrotunerScaleFileTest.cpp
 # registered by name rather than derived, and `bash tests/fork-sources-gate.sh` accepts either.
 tests/src/gui/TouchWorkspaceTest.cpp
 tests/control-touch-workspace.py
+# cluster Q050-321.1 (2026-10): stage 1 of the touch keyboard / drum-pad pair - the multi-touch
+# contact bookkeeping (a fork-NEW product source shared by both surfaces), its PianoView half, and
+# the GUI test that drives real QTouchEvent sequences through the instrument keyboard.
+include/TouchContacts.h
+src/gui/TouchContacts.cpp
+src/gui/instrument/PianoViewTouch.cpp
+tests/src/gui/TouchInstrumentSurfaceTest.cpp
 # Clusters new-p23-4/new-p22-32/new-p23-5 (2026-10): workflow names, saved-step schemas and read-only recording regression.
 tests/src/gui/ControlCommandsMacrosTest.cpp
 # cluster new-p17-202 (2026-10): the real-time-safe Watsyn parameter hand-off regression test (fork-NEW).
@@ -3087,6 +3271,7 @@ docs/qwen-fixes-2026-10/cluster-5564.md
 # cluster 5110 batch (2026-10): startup-scale, dump/compress and session-marker regressions.
 tests/src/core/AppearanceStartupTest.cpp
 tests/src/core/MainCliStartupTest.cpp
+tests/src/core/MasteringSequenceTest.cpp
 # cluster 5110 batch (2026-10): verdicts, negative-control evidence and completion record.
 docs/qwen-fixes-2026-10/cluster-5110.md
 # 2026-10-20 (Q050-156): record a bounded input take straight into AudioFileProcessor / SlicerT.
@@ -3138,6 +3323,9 @@ src/gui/PanelShortcuts.cpp
 src/gui/ControlCommandsAutomationMode.cpp
 tests/src/gui/PanelShortcutsTest.cpp
 tests/control-panel-shortcuts.py
+src/gui/ControlCommandsPluginActions.cpp
+tests/src/gui/PluginShortcutsTest.cpp
+tests/control-plugin-shortcuts.py
 # Q050-055.1 integration onto train 17 (2026-10-27): the shortcuts.* registration table split from
 # ControlCommandsShortcuts.cpp once the panel scopes and the Q050-202 presets both landed in it.
 src/gui/ControlCommandsShortcutsRegister.cpp
@@ -3152,6 +3340,185 @@ tests/src/gui/GraphWaveformEditorGuiTest.cpp
 docs/050-features/Q050-486.md
 docs/qwen-fixes-2026-10/cluster-Q050-486.md
 tests/src/core/MixerOrderByTracksTest.cpp
+tests/control-session-transitions.py
+tests/src/core/SessionTransitionsTest.cpp
+tests/src/plugins/Vst3EditorTest.cpp
+tests/control-drum-rack-chains.py
+tests/control-drum-rack-pads.py
+
+# cluster new-p9-503 (2026-10): VibratingString oversampling-count regression test (fork-NEW).
+tests/src/plugins/VibratingStringTest.cpp
+# cluster new-p23-25 (2026-10): regression for window.select during GuiApplication startup (fork-NEW).
+tests/src/gui/WindowSelectStartupTest.cpp
+tests/control-realtime-export.py
+tests/moc-qt5-trailing-return-check.py
+tests/src/core/RemotePluginShmFifoNoSysIpcProbe.cpp
+docs/qwen-fixes-2026-10/cluster-ci-v041-5.md
+include/HostedTrackChannels.h
+include/PluginInstantiationFailure.h
+src/core/PluginInstantiationFailure.cpp
+tests/src/core/ControlHostedBusLayoutTest.cpp
+docs/qwen-fixes-2026-10/cluster-stress-3.md
+include/PluginWindowPlatform.h
+src/core/PluginWindowPlatform.cpp
+tests/src/core/PluginWindowPlatformTest.cpp
+docs/050-features/Q050-502.md
+docs/qwen-fixes-2026-10/cluster-Q050-502.md
+include/ClipEffectsDialog.h
+src/core/SampleClipEffects.cpp
+src/gui/ClipEffectsDialog.cpp
+src/gui/UpdateCheckWindows.cpp
+tests/src/core/ClipEffectsTest.cpp
+tests/src/gui/ClipEffectsDialogTest.cpp
+docs/050-features/Q050-111.md
+docs/qwen-fixes-2026-10/cluster-Q050-111.md
+include/CpuDiagnosticsDialog.h
+include/RenderDiagnostics.h
+src/core/RenderDiagnostics.cpp
+src/gui/shell/CpuDiagnosticsDialog.cpp
+tests/control-cpu-diagnostics.py
+tests/control-update-check.py
+tests/src/core/TrackSynthesisLoadTest.cpp
+tests/src/gui/CpuDiagnosticsDialogTest.cpp
+# Q050-331 (2026-10): controller bindings saved with track and chain presets - the manifest, the restore scope, tests (fork-NEW).
+include/ConnectionRestoreScope.h
+include/PresetBindings.h
+src/core/PresetBindings.cpp
+tests/src/core/PresetBindingsTest.cpp
+tests/src/gui/PresetBindingsGuiTest.cpp
+# Q050-081 (2026-10): Lua control-surface scripts bound to MIDI ports - runtime, controller.script_* commands and rows, tests (fork-NEW).
+include/ControllerScript.h
+src/core/ControllerScript.cpp
+src/core/ControlCommandsControllerScripts.cpp
+tests/src/core/ControllerScriptTest.cpp
+tests/src/gui/ControllerMappingEditorTest.cpp
+# Q050-205 (2026-10): the opt-in OSC control server - codec/bridge, UDP listener, osc.* commands and rows, tests (fork-NEW).
+include/OscBridge.h
+include/OscCommands.h
+include/OscServer.h
+include/UpdateCheck.h
+include/UpdateCheckWindows.h
+src/core/OscBridge.cpp
+src/core/OscServer.cpp
+src/core/ControlCommandsOsc.cpp
+src/core/ControlCommandsUpdateCheck.cpp
+src/core/ControlReversibilityTableOsc.cpp
+src/core/UpdateCheck.cpp
+tests/src/core/ControlOscServerTest.cpp
+tests/src/gui/OscServerMenuTest.cpp
+# Q050-246 (2026-10): repeated 1/32-note MIDI output timing through an ALSA loopback (fork-NEW).
+tests/src/core/MidiOutTimingTest.cpp
+tests/src/core/UpdateCheckTest.cpp
+tests/src/core/UpdateFeedFixture.h
+tests/src/gui/SessionCellPlaybackMenuTest.cpp
+tests/src/gui/UpdateCheckHiddenTest.cpp
+tests/src/gui/UpdateCheckWindowsTest.cpp
+# cluster new-p10-290 (2026-10): fix and verification report for pitchAt's window bound (fork-NEW).
+docs/qwen-fixes-2026-10/cluster-new-p10-290.md
+
+# SRC converter memory regression and transcript child cleanup.
+tests/src/core/AudioResamplerPoolMemoryTest.cpp
+tests/control-export-settings-cleanup.py
+# Q050-273.1 (2026-10): the launcher cell's source audio saved into the shared library - bounded by DECODED
+# bytes (not the input file's size) and written atomically, with deterministic allocation/write-fault seams.
+include/LibraryCellAudio.h
+tests/src/gui/SessionLibrarySaveTest.cpp
+docs/050-features/Q050-273.1.md
+docs/qwen-fixes-2026-10/cluster-Q050-273.1.md
+# Q050-162 (2026-10): transient Repeat / Gate warp modes - the rate type, the transient table and
+# the render half, their render/command/persistence test and socket transcript (fork-NEW).
+include/TransientRepeat.h
+src/core/TransientRepeat.cpp
+tests/src/tracks/SampleClipTransientRepeatTest.cpp
+tests/src/tracks/SampleClipTransientRepeatSafetyTest.cpp
+tests/control-transient-repeat-transcript.py
+# Q050-162 (2026-10): the unit's feature record and report (fork-NEW).
+docs/050-features/Q050-162.md
+docs/qwen-fixes-2026-10/cluster-Q050-162.md
+include/LoopImportWarp.h
+include/LoopSource.h
+src/core/LoopImportWarp.cpp
+tests/src/core/LoopFixture.h
+tests/src/core/LoopImportWarpTest.cpp
+tests/src/gui/LoopDropWarpTest.cpp
+tests/control-loop-import-warp.py
+# Q050-214: a hosted plug-in's editor gesture as one project-history step.
+include/PluginGestureHistory.h
+include/PluginParamGesture.h
+tests/data/clap-test-plugin/clap-test-gesture.h
+tests/src/gui/PluginGestureUndoTest.cpp
+tests/src/core/PluginParamGestureTest.cpp
+docs/qwen-fixes-2026-10/cluster-Q050-214.md
+tests/control-project-events.py
+# Q050-263 (2026-11): per-slice SlicerT controls - shared names/ranges, the plugin.slice_get/slice_set commands, their test.
+include/SlicerSliceControls.h
+src/core/ControlCommandsSlicerSlices.cpp
+tests/src/gui/SlicerTSliceControlsTest.cpp
+docs/050-features/Q050-263.md
+docs/qwen-fixes-2026-10/cluster-Q050-263.md
+# Q050-481.1 (2026-11): VST2 instruments hosted through Carla (stage 1 of Q050-481) - the carlavst2 module, the vst2
+# half of the device catalogue, the in-tree VST2 test instrument (native and a Wine PE build), its hosting test, the
+# script that builds a real Carla runtime from the submodule, and the unit's feature record and report (fork-NEW).
+plugins/CarlaVst2/CMakeLists.txt
+plugins/CarlaVst2/CarlaVst2.cpp
+plugins/CarlaVst2/CarlaVst2Discovery.cpp
+plugins/CarlaVst2/CarlaVst2Discovery.h
+plugins/CarlaVst2/CarlaVst2Instrument.h
+plugins/CarlaVst2/CarlaVst2Renderer.cpp
+plugins/CarlaVst2/CarlaVst2Renderer.h
+plugins/CarlaVst2/logo.png
+src/core/ControlDeviceVst2.cpp
+tests/data/vst2-test-instrument/BuildWineFixture.cmake
+tests/data/vst2-test-instrument/CMakeLists.txt
+tests/data/vst2-test-instrument/vst2-test-instrument.c
+tests/data/vst2-test-instrument/zene_vst2_abi.h
+tests/src/gui/CarlaVst2HostingTest.cpp
+tests/src/gui/CarlaVst2TestSupport.h
+tools/build-carla-runtime.sh
+docs/050-features/Q050-481.1.md
+docs/qwen-fixes-2026-10/cluster-Q050-481.1.md
+include/AudioDeviceDiagnostics.h
+src/core/AudioDeviceDiagnostics.cpp
+tests/src/core/AudioDeviceDiagnosticsTest.cpp
+tests/control-device-diagnostics.py
+# Q050-124 (2026-11): freeze a mixer bus - the take on the MixerChannel, its commands, the strip menu entry, tests (fork-NEW).
+include/MixerBusFreeze.h
+include/MixerBusFreezeMenu.h
+src/core/ControlCommandsBusFreeze.cpp
+src/core/MixerBusFreeze.cpp
+src/gui/MixerBusFreezeMenu.cpp
+tests/src/core/MixerBusFreezeTest.cpp
+tests/src/gui/MixerBusFreezeMenuTest.cpp
+tests/control-bus-freeze-transcript.py
+docs/050-features/Q050-124.md
+docs/qwen-fixes-2026-10/cluster-Q050-124.md
+tests/src/core/MpeSynthExpressionTest.cpp
+tests/automation-docs-agree.py
+# Q050-438 (2026-11): the documented Revisions list - Project tools > Revisions... and
+# revisions.list's live sources, columns and row actions held against the manual and known
+# limitations by a GUI test (fork-NEW).
+tests/src/gui/RevisionsDocsTest.cpp
+docs/050-features/Q050-438.md
+docs/qwen-fixes-2026-10/cluster-Q050-438.md
+# Q050-231.1 (2026-11): mixer.masking_report - cross-track masking clashes and cut proposals (fork-NEW).
+tests/src/core/MixerMaskingReportTest.cpp
+tests/control-masking-report.py
+include/MixerMaskingReport.h
+src/gui/MixerMaskingReport.cpp
+docs/050-features/Q050-231.1.md
+docs/qwen-fixes-2026-10/cluster-Q050-231.1.md
+tests/src/gui/MixerMaskingReportWindowTest.cpp
+tests/control-note-melody.py
+# Q050-283.1 (2026-11, R-workflow-286): the neutral arrangement track (stage 1 of 3) - class, row, tests and report (fork-NEW).
+include/NeutralTrack.h
+include/NeutralTrackView.h
+src/tracks/NeutralTrack.cpp
+src/gui/tracks/NeutralTrackView.cpp
+tests/src/core/HybridTrackRoundTripTest.cpp
+tests/src/gui/HybridTrackGuiTest.cpp
+tests/control-hybrid-track-transcript.py
+docs/qwen-fixes-2026-10/cluster-Q050-283.1.md
+tests/src/gui/LadspaDescriptionTest.cpp
 # Q050-054.1 (2026-10-27): MIDI takes recorded on armed instrument tracks by transport.record - the realtime
 # capture queue, the main-thread recorder, the three commands, the core and GUI tests and the transcript.
 include/MidiTakeCapture.h

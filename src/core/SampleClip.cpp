@@ -34,8 +34,11 @@
 #include <QFileInfo>
 
 #include "AudioEngine.h"
+#include "ClipTransients.h"
 #include "ControlEdit.h"
+#include "EffectChain.h"
 #include "Engine.h"
+#include "LoopImportWarp.h"
 #include "PatternStore.h"
 #include "PathUtil.h"
 #include "RecordOptions.h"
@@ -51,6 +54,7 @@ SampleClip::SampleClip(Track* _track, Sample sample, bool isPlaying):
 	Clip(_track),
 	m_sample(std::move(sample)),
 	m_window(SampleWindow::full(m_sample.sampleSize())),
+	m_clipEffects(std::make_unique<EffectChain>(this)),  // Q050-111: empty and off until a device is added
 	m_isPlaying(false),
 	m_startFrameOffset(0)
 {
@@ -84,6 +88,10 @@ SampleClip::SampleClip(Track* _track, Sample sample, bool isPlaying):
 	// Without this, the model's entry sits in front of the arm's step and a second undo does nothing.
 	m_recordModel.setJournalling( false );
 	updateTrackClips();
+	// Q050-162: a Repeat / Gate clip re-reads its transients when its audio or
+	// window changes (queued when the change is announced off this thread).
+	connect(this, &SampleClip::sampleChanged, this, &SampleClip::refreshTransients);
+	connect(this, &SampleClip::wasReversed, this, &SampleClip::refreshTransients);
 }
 
 SampleClip::SampleClip(Track* track)
@@ -97,9 +105,11 @@ SampleClip::SampleClip(const SampleClip& orig) :
 	m_window(orig.m_window),
 	// The warp members moved to Clip (SPEC-ARCH-4 census row 5);
 	// Clip(const Clip&) copies them for every clip type now.
+	m_clipEffects(std::make_unique<EffectChain>(this)),
 	m_isPlaying(orig.m_isPlaying),
 	m_startFrameOffset(orig.m_startFrameOffset),
-	m_leadFrames(orig.leadFrames())
+	m_leadFrames(orig.leadFrames()),
+	m_loopSource(orig.m_loopSource)
 {
 	saveJournallingState( false );
 	setSampleFile( "" );
@@ -135,6 +145,11 @@ SampleClip::SampleClip(const SampleClip& orig) :
 	// A copy carries the mode (Clip's copy constructor) but never the source's
 	// voices: each clip claims from its own pool.
 	ensureRubberBandPool();
+	// Q050-111: and its own devices, built from the source's chain document (never the source's instances).
+	copyClipEffects(orig);
+	connect(this, &SampleClip::sampleChanged, this, &SampleClip::refreshTransients);
+	connect(this, &SampleClip::wasReversed, this, &SampleClip::refreshTransients);
+	prepareWarpStretchMode(warpStretchMode());
 }
 
 
@@ -474,7 +489,7 @@ void SampleClip::setSampleFile(const QString& sf)
 		// A different source: the markers were anchored to frames of the old
 		// one, so they go with it. `setSampleFile("")` (the copy constructor)
 		// deliberately keeps them - the source has not changed.
-		m_warp.clear();
+		publishWarp(WarpMarkers{});
 		setLeadFrames(0);  // ED-021: the lead was a frame of the old source too
 		m_sample = Sample(SampleBuffer::fromFile(sf));
 		resetWindowToFullBuffer();
@@ -585,6 +600,21 @@ void SampleClip::setLeadFrames(f_cnt_t frames)
 
 f_cnt_t SampleClip::leadOutputFramesAt(TimePos at) const
 {
+	// Q050-063: a warped clip is heard where its map says. The pass starts at sourceFrameAt(at), which the map
+	// clamps to the window's start; when the map puts that frame later than `at` (the first marker dragged past
+	// the audio's natural place), the silence before it is owed here, as a frame-exact lead is. A clip's lead is
+	// linear-only (a warped clip's frame edits are refused), so the two never combine. Pure arithmetic on the pass's
+	// generation of the map (SampleTrack::play holds it, Clip::WarpPassScope): audio-thread safe.
+	if (!passWarp().empty())
+	{
+		const float framesPerTick = clipFramesPerTick();
+		if (framesPerTick <= 0.0f) { return 0; }
+		const tick_t relative = at.getTicks() - startPosition().getTicks() - startTimeOffset().getTicks();
+		const tick_t arrives = passWarp().timelineOffsetAt(m_window.sourceIn, m_window.sourceIn, framesPerTick);
+		if (arrives <= relative) { return 0; }
+		return static_cast<f_cnt_t>(std::llround(static_cast<double>(arrives - relative)
+			* Engine::framesPerTick(Engine::audioEngine()->outputSampleRate())));
+	}
 	const f_cnt_t lead = leadFrames();
 	if (lead == 0) { return 0; }
 	const double framesPerTick = clipFramesPerTick();
@@ -616,12 +646,12 @@ int SampleClip::windowTicksFor(const SampleWindow& window) const
 	// behaviour. The same rule leadOutputFramesAt() and restoreState() already
 	// apply to this value.
 	if (framesPerTick <= 0.0f) { return 0; }
-	if (m_warp.empty())
+	if (passWarp().empty())
 	{
 		return static_cast<int>(window.length() / framesPerTick);
 	}
-	return m_warp.timelineOffsetAt(window.sourceOut, window.sourceIn, framesPerTick)
-		- m_warp.timelineOffsetAt(window.sourceIn, window.sourceIn, framesPerTick);
+	return passWarp().timelineOffsetAt(window.sourceOut, window.sourceIn, framesPerTick)
+		- passWarp().timelineOffsetAt(window.sourceIn, window.sourceIn, framesPerTick);
 }
 
 
@@ -643,12 +673,15 @@ float SampleClip::clipFramesPerTick() const
 
 bool SampleClip::setWarpMarkers(std::span<const WarpMarker> markers)
 {
-	if (!m_warp.set(markers))
+	// Validated off to the side: a refused set changes nothing and never waits for the audio thread.
+	WarpMarkers candidate;
+	if (!candidate.set(markers))
 	{
 		Engine::getSong()->collectError(tr("Warp markers rejected: the set is not "
 			"strictly increasing in source frame and timeline position."));
 		return false;
 	}
+	publishWarp(candidate);
 	Engine::getSong()->setModified();
 	emit sampleChanged();
 	return true;
@@ -657,8 +690,8 @@ bool SampleClip::setWarpMarkers(std::span<const WarpMarker> markers)
 
 void SampleClip::clearWarpMarkers()
 {
-	if (m_warp.empty()) { return; }
-	m_warp.clear();
+	if (passWarp().empty()) { return; }
+	publishWarp(WarpMarkers{});
 	Engine::getSong()->setModified();
 	emit sampleChanged();
 }
@@ -693,11 +726,67 @@ void SampleClip::setWarpStretchMode(WarpStretchMode mode)
 	// handle construction, so a change takes effect on the next playback pass.
 	if (m_stretchMode == mode) { return; }
 	// Voices first, mode second (both on this control thread): the render thread
-	// reads the mode with an acquire load, so a mode it sees has its pool published.
-	ensureRubberBandPool(mode);
+	// reads the mode with an acquire load, so a mode it sees has its pool (and,
+	// Q050-162, its transients) published.
+	prepareWarpStretchMode(mode);
 	m_stretchMode.store(mode, std::memory_order_release);
 	Engine::getSong()->setModified();
 	emit sampleChanged();
+}
+
+
+void SampleClip::setTransientRepeatRate(const TransientRepeatRate& rate)
+{
+	if (transientRepeatRate() == rate) { return; }
+	m_transientRate.store(rate.pack(), std::memory_order_release);
+	Engine::getSong()->setModified();
+	emit sampleChanged();
+}
+
+
+void SampleClip::prepareWarpStretchMode(WarpStretchMode mode)
+{
+	ensureRubberBandPool(mode);
+	if (warpModeRepeatsTransients(mode)) { analyseTransients(); }
+}
+
+
+void SampleClip::refreshTransients()
+{
+	if (warpModeRepeatsTransients(warpStretchMode())) { analyseTransients(); }
+}
+
+
+void SampleClip::analyseTransients()
+{
+	const auto buffer = m_sample.buffer();
+	const bool reversed = m_sample.reversed();
+	if (buffer != nullptr && m_transientsBuffer.lock() == buffer && m_window == m_transientsWindow && reversed == m_transientsReversed)
+	{
+		return;
+	}
+	// The detector reports SOURCE frames; the warp map, and so the segments,
+	// speak play frames (the mirror, for a reversed source).
+	std::vector<f_cnt_t> frames = clipTransientFrames(*this);
+	for (f_cnt_t& frame : frames) { frame = playFrameFor(frame); }
+	std::sort(frames.begin(), frames.end());
+	// A transient within 20 ms of the window's head or of the previous kept one
+	// is the same attack (the detector reports an onset at the very head one hop
+	// late): segmenting there would cut a sliver off the attack.
+	const auto minimumGap = static_cast<f_cnt_t>(m_sample.sampleRate() / 50);
+	std::vector<f_cnt_t> kept;
+	f_cnt_t previous = m_window.sourceIn;
+	for (const f_cnt_t frame : frames)
+	{
+		if (frame < previous + minimumGap) { continue; }
+		kept.push_back(frame);
+		previous = frame;
+	}
+	frames = std::move(kept);
+	m_transients.publish(frames);
+	m_transientsBuffer = buffer;
+	m_transientsWindow = m_window;
+	m_transientsReversed = reversed;
 }
 
 
@@ -838,7 +927,7 @@ f_cnt_t SampleClip::sourceFrameAt(TimePos timelinePos) const
 	const auto originTicks = startPosition().getTicks() + startTimeOffset().getTicks();
 	const auto relativeTicks = timelinePos.getTicks() - originTicks;
 
-	if (m_warp.empty())
+	if (passWarp().empty())
 	{
 		const auto elapsed = relativeTicks > 0
 			? TimePos(relativeTicks).frames(framesPerTick)
@@ -849,7 +938,7 @@ f_cnt_t SampleClip::sourceFrameAt(TimePos timelinePos) const
 		return std::clamp(m_window.sourceIn + relative, m_window.sourceIn, m_window.sourceOut);
 	}
 
-	return m_warp.sourceFrameAt(relativeTicks, m_window.sourceIn, m_window.sourceOut, framesPerTick);
+	return passWarp().sourceFrameAt(relativeTicks, m_window.sourceIn, m_window.sourceOut, framesPerTick);
 }
 
 
@@ -905,13 +994,13 @@ TimePos SampleClip::timelinePosAt(f_cnt_t sourceFrame) const
 	// window's edge - the same rule the rest of the clip model reads the direction by.
 	const auto frame = playFrameFor(sourceFrame);
 
-	if (m_warp.empty())
+	if (passWarp().empty())
 	{
 		return TimePos(originTicks
 			+ static_cast<int>(TimePos::fromFrames(frame - m_window.sourceIn + leadFrames(), framesPerTick)));
 	}
 
-	return TimePos(originTicks + m_warp.timelineOffsetAt(frame, m_window.sourceIn, framesPerTick));
+	return TimePos(originTicks + passWarp().timelineOffsetAt(frame, m_window.sourceIn, framesPerTick));
 }
 
 
@@ -973,6 +1062,10 @@ void SampleClip::saveSettings( QDomDocument & _doc, QDomElement & _this )
 	{
 		_this.setAttribute("reversed", "true");
 	}
+	// Q050-111: the clip's own effects - an `<fxchain>` child, written only when the chain holds a device.
+	saveClipEffects(_doc, _this);
+	// Q050-093: what an import detected and applied; additive (a clip no import analysed writes nothing).
+	if (m_loopSource.analysed) { loopwarp::saveLoopSource(_doc, _this, m_loopSource); }
 }
 
 
@@ -1076,6 +1169,10 @@ void SampleClip::loadSettings( const QDomElement & _this )
 		m_sample.setReversed(reversed);
 		emit wasReversed(); // tell SampleClipView to update the view
 	}
+	// Q050-111: reset on absence, so an older project (and a checkpoint taken before the first device) has none.
+	loadClipEffects(_this);
+	// Q050-093: reset on absence, so a checkpoint taken before the import's analysis takes it back.
+	m_loopSource = loopwarp::loadLoopSource(_this);
 }
 
 

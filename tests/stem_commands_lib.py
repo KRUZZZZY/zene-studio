@@ -325,7 +325,7 @@ def start_job(session, recorder, source, label):
     return started["job_id"]
 
 
-def poll_until(session, job_id, wanted, timeout=JOB_TIMEOUT):
+def poll_until(session, job_id, wanted, timeout=JOB_TIMEOUT, interval=POLL_INTERVAL):
     """Poll stem.job_status until the state is in `wanted`; returns (state, seen, seconds)."""
     deadline = time.time() + timeout
     seen = []
@@ -337,7 +337,7 @@ def poll_until(session, job_id, wanted, timeout=JOB_TIMEOUT):
             seen.append(state)
         if state in wanted:
             return state, seen, time.time() - started
-        time.sleep(POLL_INTERVAL)
+        time.sleep(interval)
     return (seen[-1] if seen else None), seen, time.time() - started
 
 
@@ -409,7 +409,8 @@ def check_cancel(session, recorder, source, outdir):
     job_id = start_job(session, recorder, source, "the cancel job")
     if job_id is None:
         return
-    state, seen, _ = poll_until(session, job_id, ("running",), timeout=60.0)
+    # Polled fast: the in-process backend can finish this source inside one POLL_INTERVAL.
+    state, seen, _ = poll_until(session, job_id, ("running",), timeout=60.0, interval=0.01)
     recorder.check("the slowed job reaches `running` (the cancel has a subject)",
                    state == "running", "state=%r seen=%r" % (state, seen))
     accepted, cancelled = session.ok_and_result("stem.job_cancel", {"job_id": job_id})

@@ -33,6 +33,8 @@
 #include <QJsonArray>
 #include <QJsonObject>
 
+#include <limits>
+
 #include "Clip.h"
 #include "ClipEdits.h"
 #include "ControlEdit.h"
@@ -150,6 +152,39 @@ private slots:
 		QCOMPARE(trim.errorKind, ControlErrorKind::InvalidArgs);
 		QCOMPARE(clipPosition(pair.anchor), 1000);
 		QCOMPARE(clipLength(pair.anchor), 500);
+	}
+
+	void aLockedTrimThatWouldUnderflowAnOffsetWritesNothing()
+	{
+		const Pair pair = lockedPair(QStringLiteral("instrument"));
+		const tick_t minimumOffset = std::numeric_limits<tick_t>::min();
+		clipOf(pair.anchor)->setStartTimeOffset(TimePos(minimumOffset));
+
+		const ControlResult trim = run(QStringLiteral("vca.edit_trim"),
+			edit(pair, {{QStringLiteral("start"), 1100}}));
+		QCOMPARE(trim.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(clipPosition(pair.anchor), 1000);
+		QCOMPARE(clipLength(pair.anchor), 500);
+		QCOMPARE(clipOf(pair.anchor)->startTimeOffset().getTicks(), minimumOffset);
+		QCOMPARE(clipPosition(pair.other), 1000);
+		QCOMPARE(clipLength(pair.other), 500);
+		QCOMPARE(clipOf(pair.other)->startTimeOffset().getTicks(), 0);
+	}
+
+	void aSingleClipTrimThatWouldUnderflowAnOffsetWritesNothing()
+	{
+		const Pair pair = lockedPair(QStringLiteral("instrument"));
+		const tick_t minimumOffset = std::numeric_limits<tick_t>::min();
+		clipOf(pair.anchor)->setStartTimeOffset(TimePos(minimumOffset));
+		QVERIFY(run(QStringLiteral("vca.set_phase_lock"), {{QStringLiteral("group"), pair.group},
+			{QStringLiteral("locked"), false}}).ok);
+
+		const ControlResult trim = run(QStringLiteral("clip.trim"),
+			{{QStringLiteral("clip"), pair.anchor}, {QStringLiteral("start"), 1100}});
+		QVERIFY2(trim.errorKind == ControlErrorKind::InvalidArgs, qPrintable(trim.errorMessage));
+		QCOMPARE(clipPosition(pair.anchor), 1000);
+		QCOMPARE(clipLength(pair.anchor), 500);
+		QCOMPARE(clipOf(pair.anchor)->startTimeOffset().getTicks(), minimumOffset);
 	}
 
 	void aLockedSlipMovesEveryMembersContentByTheSameDelta()

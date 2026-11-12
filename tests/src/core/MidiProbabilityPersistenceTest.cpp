@@ -44,6 +44,7 @@
 #include "DocumentIndex.h"
 #include "Note.h"
 #include "NoteRandom.h"
+#include "Song.h"
 
 using namespace lmms;
 
@@ -473,6 +474,75 @@ private slots:
 		QVERIFY( timedLoaded.restoreTiming() );
 		QCOMPARE( static_cast<int>( timedLoaded.pos().getTicks() ), 24 );
 		QCOMPARE( static_cast<int>( timedLoaded.length().getTicks() ), 48 );
+	}
+
+	//! (g) A saved pre-quantise timing must describe a note the song can hold.
+	//! loadSettings clamps a note's own pos and len to MaxSongLength, but
+	//! loadUnquantisedTiming accepted any qpos/qlen that fit an int: a file with
+	//! <note qpos="2147483647" qlen="1"> restored the note past the song's end,
+	//! and a pos+len sum past the int range wrapped the note's end tick. Only a
+	//! pos in [0, MaxSongLength) with pos + len <= MaxSongLength is accepted.
+	void unquantisedTimingOutsideTheSongIsNotRestored()
+	{
+		QDomDocument doc;
+		QDomElement root = doc.createElement( QStringLiteral( "notes" ) );
+		const int limit = static_cast<int>( MaxSongLength );
+		const int maximum = std::numeric_limits<int>::max();
+
+		for ( const auto& pair : { std::make_pair( limit, 1 ), std::make_pair( maximum, 1 ),
+				 std::make_pair( 96, limit ), std::make_pair( limit - 1, 2 ),
+				 std::make_pair( maximum, maximum ) } )
+		{
+			const QByteArray label = QStringLiteral( "qpos=%1 qlen=%2" )
+				.arg( pair.first ).arg( pair.second ).toLatin1();
+			QDomElement element = noteElementWith( doc, root, "1", "0" );
+			element.setAttribute( QStringLiteral( "pos" ), QStringLiteral( "24" ) );
+			element.setAttribute( QStringLiteral( "len" ), QStringLiteral( "48" ) );
+			element.setAttribute( QStringLiteral( "qpos" ), QString::number( pair.first ) );
+			element.setAttribute( QStringLiteral( "qlen" ), QString::number( pair.second ) );
+
+			Note loaded;
+			loaded.restoreState( element );
+			QVERIFY2( !loaded.hasUnquantisedTiming(), label.constData() );
+			QVERIFY2( !loaded.restoreTiming(), label.constData() );
+			QCOMPARE( static_cast<int>( loaded.pos().getTicks() ), 24 );
+			QCOMPARE( static_cast<int>( loaded.length().getTicks() ), 48 );
+		}
+
+		// The song's own bounds are legal: a note that starts on the last tick, or
+		// that ends exactly at the song's end, keeps its timing.
+		for ( const auto& pair : { std::make_pair( 0, limit ), std::make_pair( limit - 1, 1 ) } )
+		{
+			const QByteArray label = QStringLiteral( "qpos=%1 qlen=%2" )
+				.arg( pair.first ).arg( pair.second ).toLatin1();
+			QDomElement element = noteElementWith( doc, root, "1", "0" );
+			element.setAttribute( QStringLiteral( "pos" ), QStringLiteral( "24" ) );
+			element.setAttribute( QStringLiteral( "len" ), QStringLiteral( "48" ) );
+			element.setAttribute( QStringLiteral( "qpos" ), QString::number( pair.first ) );
+			element.setAttribute( QStringLiteral( "qlen" ), QString::number( pair.second ) );
+
+			Note loaded;
+			loaded.restoreState( element );
+			QVERIFY2( loaded.hasUnquantisedTiming(), label.constData() );
+			QVERIFY2( loaded.restoreTiming(), label.constData() );
+			QCOMPARE( static_cast<int>( loaded.pos().getTicks() ), pair.first );
+			QCOMPARE( static_cast<int>( loaded.length().getTicks() ), pair.second );
+		}
+	}
+
+	//! A malformed project key of -1 loads as key 0. A legacy tone of -1 also gives -1, so the loader's
+	//! max() keeps the negative and only the clamp on load floors it. scale.detect indexes by key % 12.
+	void negativeProjectKeyLoadsAsKeyZero()
+	{
+		QDomDocument doc;
+		QDomElement element = doc.createElement( "note" );
+		element.setAttribute( "key", "-1" );
+		element.setAttribute( "tone", "-1" );
+		element.setAttribute( "pos", "0" );
+		element.setAttribute( "len", "24" );
+		Note loaded;
+		loaded.restoreState( element );
+		QCOMPARE( loaded.key(), 0 );
 	}
 };
 

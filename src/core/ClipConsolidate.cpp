@@ -26,6 +26,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <limits>
 #include <span>
 
 #include <QDir>
@@ -52,22 +54,28 @@ constexpr f_cnt_t BlockFrames = 512;
 //! content offset, from the source frame under that tick to the one under its end.
 void mixClip(SampleClip* clip, tick_t start, double framesPerTick, std::vector<SampleFrame>* mix)
 {
-	const tick_t clipStart = clip->startPosition().getTicks();
-	const tick_t from = std::max(clipStart, clipStart + clip->startTimeOffset().getTicks());
-	const tick_t to = clip->endPosition().getTicks();
+	// The tick sums are taken in 64 bits: start + offset and start + length can pass the largest
+	// tick, which in tick_t wraps to an early one. A part past the largest tick has no tick the
+	// mix can hold, so the clip's end is clamped to it.
+	const std::int64_t clipStart = clip->startPosition().getTicks();
+	const std::int64_t from = std::max(clipStart, clipStart + clip->startTimeOffset().getTicks());
+	const std::int64_t to = std::min(clipStart + clip->length().getTicks(),
+		std::int64_t{std::numeric_limits<tick_t>::max()});
 	// The range can start inside the clip: only the audio from the later of the two is in it, and
 	// it is read from the source frame under THAT tick. (Rendering from `from` would place the
 	// clip's first frame before the start of the mix.)
-	const tick_t begin = std::max(from, start);
+	const std::int64_t begin = std::max(from, std::int64_t{start});
 	if (begin >= to) { return; }
-	const SampleWindow window{clip->sourceFrameAt(TimePos(begin)), clip->sourceFrameAt(clip->endPosition())};
+	const auto beginTick = static_cast<tick_t>(begin);
+	const auto endTick = static_cast<tick_t>(to);
+	const SampleWindow window{clip->sourceFrameAt(TimePos(beginTick)), clip->sourceFrameAt(TimePos(endTick))};
 	if (window.sourceIn >= window.sourceOut) { return; }
 
 	SamplePlayHandle handle(clip, window);
 	handle.setIgnoresTrackMute(true);
 	// Tick differences in double: a far negative range start must not overflow tick_t.
 	const auto at = static_cast<f_cnt_t>(std::llround((static_cast<double>(begin) - start) * framesPerTick));
-	const auto span = static_cast<f_cnt_t>(std::llround((static_cast<double>(to) - begin) * framesPerTick));
+	const auto span = static_cast<f_cnt_t>(std::llround(static_cast<double>(to - begin) * framesPerTick));
 	const f_cnt_t room = static_cast<f_cnt_t>(mix->size()) > at ? static_cast<f_cnt_t>(mix->size()) - at : 0;
 	const f_cnt_t length = std::min({span, room, handle.totalFrames()});
 

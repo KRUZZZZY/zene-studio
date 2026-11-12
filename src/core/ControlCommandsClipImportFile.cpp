@@ -32,7 +32,10 @@
  *  clip to clean up. One call is one undo step. Audio from the system's temporary folder - what a plug-in
  *  writes for a drag and deletes right after - is embedded in the clip (the way a generated or dragged buffer
  *  is), so the clip plays, saves and reloads when the file is gone; any other file is referenced by path, as
- *  the browser's drag does. */
+ *  the browser's drag does.
+ *  0.5.0 L05 (Q050-093): every audio import is analysed (tempo and key, LoopImportWarp.h) and takes a loop mode -
+ *  `loop_mode` follow_project or keep_unstretched, or the remembered preference when absent - inside the same one
+ *  undo step; clip.source_get_state reads back what was detected and what the clip plays. */
 
 #include <cmath>
 
@@ -46,13 +49,16 @@
 #include "ControlRegistry.h"
 #include "ControlRegistryGroups.h"
 #include "ControlTrackCreation.h"
+#include "ControlTrackRouting.h"
 #include "ControlVocabulary.h"
 #include "EditLocks.h"
 #include "Engine.h"
 #include "InstrumentTrack.h"
+#include "LoopImportWarp.h"
 #include "MidiClip.h"
 #include "PathUtil.h"
 #include "PluginFactory.h"
+#include "ProjectKey.h"
 #include "SampleBuffer.h"
 #include "SampleClip.h"
 #include "SampleDecoder.h"
@@ -80,6 +86,10 @@ struct Prepared
 	std::shared_ptr<const SampleBuffer> buffer;      //!< audio
 	qint64 lengthTicks = 0;                          //!< the clip's length: exact for MIDI, an estimate for audio
 	bool embedded = false;                           //!< audio read from the temporary folder
+	LoopSource loop;                                 //!< audio: what the detector found (Q050-093)
+	QString analysisError;                           //!< audio: why the detector found nothing at all
+	loopwarp::Mode loopMode = loopwarp::Mode::KeepUnstretched;
+	bool loopModeFromPreference = true;
 };
 
 bool isMidiFile(const QString& path)
@@ -186,6 +196,8 @@ bool prepareAudio(const QString& path, Prepared* out, ControlResult* error)
 	out->embedded = inTemporaryFolder(path);
 	out->buffer = std::make_shared<SampleBuffer>(std::move(decoded->data), decoded->sampleRate,
 		out->embedded ? QString() : PathUtil::toShortestRelative(path));
+	// Q050-093: never a refusal - a file the detector cannot read is still imported, and says so.
+	out->loop = loopwarp::analyse(path, &out->analysisError);
 	return true;
 }
 
@@ -263,6 +275,42 @@ QJsonObject clipReport(Clip* clip, Track* track, const Prepared& file, bool crea
 	return result;
 }
 
+//! Q050-093: the loop mode the import takes - the `loop_mode` argument, or the remembered preference.
+bool readLoopMode(const QJsonObject& args, Prepared* file, ControlResult* error)
+{
+	const QString name = args.value(QStringLiteral("loop_mode")).toString(QStringLiteral("preference"));
+	file->loopModeFromPreference = name == QStringLiteral("preference");
+	if (file->loopModeFromPreference) { file->loopMode = loopwarp::preferredMode(); return true; }
+	if (loopwarp::modeFromName(name, &file->loopMode)) { return true; }
+	*error = invalid(QStringLiteral("'loop_mode' must be follow_project, keep_unstretched or preference"));
+	return false;
+}
+
+//! Q050-093: the new sample clip follows the project or keeps its own rate; the report says what was applied.
+QJsonObject applyLoopMode(SampleClip* clip, const Prepared& file)
+{
+	QStringList notes;
+	if (!file.loop.analysed) { notes.append(QStringLiteral("the file could not be analysed: %1").arg(file.analysisError)); }
+	notes += loopwarp::apply(clip, file.loop, file.loopMode, Engine::getSong()->projectKey());
+	QJsonObject loop = loopwarp::clipStateJson(*clip);
+	loop.insert(QStringLiteral("loop_mode"), loopwarp::modeName(file.loopMode));
+	loop.insert(QStringLiteral("mode_from"), file.loopModeFromPreference ? QStringLiteral("preference") : QStringLiteral("argument"));
+	loop.insert(QStringLiteral("notes"), QJsonArray::fromStringList(notes));
+	return loop;
+}
+
+//! The clip's preflight duration after applyTempo, or its source duration when this import will not follow a tempo.
+qint64 resultingLengthTicks(const Prepared& file)
+{
+	if (file.midi || file.loopMode != loopwarp::Mode::FollowProject || !file.loop.tempoFound) { return file.lengthTicks; }
+	const float sourceTempo = static_cast<float>(std::lround(file.loop.bpm));
+	const float projectTempo = static_cast<float>(Engine::getSong()->getTempo());
+	if (sourceTempo <= 0.0f || projectTempo <= 0.0f) { return file.lengthTicks; }
+	const float framesPerTick = Engine::framesPerTick(file.buffer->sampleRate()) * projectTempo / sourceTempo;
+	if (framesPerTick <= 0.0f) { return file.lengthTicks; }
+	return static_cast<qint64>(static_cast<double>(file.buffer->size()) / framesPerTick);
+}
+
 //! Every check of an import, before the first change: the file read in full, the clip's end inside the song, the
 //! track (if one is named) of the right kind and not locked. False with \a error filled when any fails.
 bool validateImport(const QJsonObject& args, Prepared* file, Track** track, ControlResult* error)
@@ -274,8 +322,9 @@ bool validateImport(const QJsonObject& args, Prepared* file, Track** track, Cont
 		return false;
 	}
 	const auto position = static_cast<tick_t>(args.value(QStringLiteral("position")).toDouble(0.0));
+	if (!readLoopMode(args, file, error)) { return false; }
 	if (!prepareFile(path, file, error)) { return false; }
-	if (static_cast<qint64>(position) + file->lengthTicks > static_cast<qint64>(MaxSongLength))
+	if (static_cast<qint64>(position) + resultingLengthTicks(*file) > static_cast<qint64>(MaxSongLength))
 	{
 		*error = invalid(QStringLiteral("a clip at tick %1 would end past the song's limit of %2").arg(position).arg(MaxSongLength));
 		return false;
@@ -291,7 +340,7 @@ void recordImport(QJsonObject* result, Clip* clip, Track* track, const QJsonObje
 	QJsonObject inverseArgs;
 	if (created)
 	{
-		recordCreatedTrack(track);
+		recordCreatedRoutedTrack(track);
 		inverseArgs.insert(QStringLiteral("track"), trackIdOf(track));
 		result->insert(QStringLiteral("__transaction"), transactionPayload(before, QStringLiteral("track.remove"), inverseArgs, true,
 			QStringLiteral("action checkpoint: the recorded undo step removes the created track, and its clip with it")));
@@ -331,12 +380,62 @@ ControlResult importFile(const QJsonObject& args)
 	}
 	clip->setName(file.name);
 	if (file.midi) { fillMidi(static_cast<MidiClip*>(clip), file); }
-	else { static_cast<SampleClip*>(clip)->setSampleBuffer(file.buffer); }
+	QJsonObject loop;
+	if (!file.midi)
+	{
+		static_cast<SampleClip*>(clip)->setSampleBuffer(file.buffer);
+		loop = applyLoopMode(static_cast<SampleClip*>(clip), file);
+	}
 
 	QJsonObject result = clipReport(clip, track, file, created);
+	if (!file.midi) { result.insert(QStringLiteral("loop"), loop); }
 	recordImport(&result, clip, track, before, created);
 	Engine::getSong()->setModified();
 	return ControlResult::success(result);
+}
+
+//! Q050-093: clip.source_get_state - what an import detected in a sample clip's file, and what the clip plays now.
+void registerSourceGetState(ControlRegistry& registry)
+{
+	ControlCommand cmd;
+	cmd.id = QStringLiteral("clip.source_get_state");
+	cmd.group = QStringLiteral("clip");
+	cmd.verb = QStringLiteral("source_get_state");
+	cmd.description = QStringLiteral("Read a sample clip's loop source: whether clip.import_file analysed its file, the detected "
+		"source tempo (BPM) and key (tonic pitch class and scale), the loop mode the import took (follow_project or "
+		"keep_unstretched), whether the tempo and the key were followed and the semitones applied - and what the clip plays "
+		"now: its warp tempo mode (source = leads at warp_source_tempo, follow = its own rate), stretch mode, transpose and "
+		"length in ticks. Writes nothing.");
+	cmd.argsSchema = objectSchema({{QStringLiteral("clip"), stringProperty()}}, {QStringLiteral("clip")});
+	cmd.resultSchema = objectSchema({
+		{QStringLiteral("clip"), stringProperty()},
+		{QStringLiteral("analysed"), booleanProperty()},
+		{QStringLiteral("source_tempo"), objectProperty()},
+		{QStringLiteral("source_key"), objectProperty()},
+		{QStringLiteral("loop_mode"), stringProperty()},
+		{QStringLiteral("tempo_followed"), booleanProperty()},
+		{QStringLiteral("key_followed"), booleanProperty()},
+		{QStringLiteral("transpose_applied"), integerProperty()},
+		{QStringLiteral("tempo_mode"), stringProperty()},
+		{QStringLiteral("warp_source_tempo"), numberProperty()},
+		{QStringLiteral("stretch"), stringProperty()},
+		{QStringLiteral("transpose"), integerProperty()},
+		{QStringLiteral("length"), integerProperty()},
+	});
+	cmd.handler = [](const QJsonObject& args) {
+		ClipRef ref;
+		ControlResult error;
+		if (!resolveClip(args.value(QStringLiteral("clip")).toString(), &ref, &error)) { return error; }
+		const auto* sample = dynamic_cast<const SampleClip*>(ref.clip);
+		if (sample == nullptr)
+		{
+			return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("%1 is not a sample clip").arg(clipId(ref.id)));
+		}
+		QJsonObject state = loopwarp::clipStateJson(*sample);
+		state.insert(QStringLiteral("clip"), clipId(ref.id));
+		return ControlResult::success(state);
+	};
+	registry.registerCommand(cmd);
 }
 
 } // namespace
@@ -354,11 +453,18 @@ void registerClipImportFileCommands(ControlRegistry& registry)
 		"Everything that can fail is checked before anything changes: a missing, empty, malformed or unsupported file, a clip that "
 		"would end past the song, a track of the wrong kind or a locked one is refused and the project is left exactly as it was. "
 		"Audio read from the temporary folder (a plug-in's drag file, deleted right after) is embedded in the clip; other audio is "
-		"referenced by path. One undo step removes the clip (and a track it created).");
+		"referenced by path. One undo step removes the clip (and a track it created). An audio file is also analysed for its "
+		"tempo and key (the detect.analyze detector) and takes a loop mode: 'loop_mode' follow_project makes the clip lead at "
+		"its detected tempo (rounded to a whole BPM) so its beats land on the project grid, pitch kept, and transposes its "
+		"tonic to the project key's tonic; keep_unstretched leaves its own rate and pitch; preference (the default) takes the "
+		"remembered choice, config key import/loopwarp. The project's tempo and key are never changed; what could not be "
+		"applied is listed in loop.notes. clip.source_get_state reads the clip's detected and applied values back.");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("path"), stringProperty()},
 		{QStringLiteral("position"), integerProperty(0, MaxSongLength)},
 		{QStringLiteral("track"), stringProperty()},
+		{QStringLiteral("loop_mode"), enumProperty({QStringLiteral("follow_project"), QStringLiteral("keep_unstretched"),
+			QStringLiteral("preference")})},
 	}, {QStringLiteral("path")});
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("clip"), stringProperty()},
@@ -370,10 +476,12 @@ void registerClipImportFileCommands(ControlRegistry& registry)
 		{QStringLiteral("track_created"), booleanProperty()},
 		{QStringLiteral("note_count"), integerProperty()},
 		{QStringLiteral("embedded"), booleanProperty()},
+		{QStringLiteral("loop"), objectProperty()},
 	});
 	cmd.mutating = true;
 	cmd.handler = importFile;
 	registry.registerCommand(cmd);
+	registerSourceGetState(registry);
 }
 
 } // namespace lmms

@@ -201,6 +201,11 @@ private slots:
 		const ControlResult pan = run( QStringLiteral( "modulator.target_set" ),
 			routeArgs( rampId, kPanName, -0.5 ) );
 		QVERIFY2( pan.ok, qPrintable( pan.errorMessage ) );
+		// Q050-164: the per-sample switch, on the one route and left off on the other.
+		const ControlResult perSample = run( QStringLiteral( "modulator.per_sample_set" ),
+			{{QStringLiteral( "modulator" ), rampId}, {QStringLiteral( "target" ), 0},
+				{QStringLiteral( "per_sample" ), true}} );
+		QVERIFY2( perSample.ok, qPrintable( perSample.errorMessage ) );
 
 		verifyModulator( layer(), 0, QStringLiteral( "Wobble" ), ModulationShape::Sine, 2.5f,
 			0.125f, true );
@@ -253,6 +258,8 @@ private slots:
 		QCOMPARE( layer().modulator( 1 )->routeCount(), 1 );
 		QCOMPARE( layer().modulator( 1 )->routes[0].parameter, QStringLiteral( "Panning" ) );
 		QCOMPARE( layer().modulator( 1 )->routes[0].depth, -0.5f );
+		QVERIFY( !layer().modulator( 0 )->routes[0].perSample );
+		QVERIFY( layer().modulator( 1 )->routes[0].perSample );
 
 		QCOMPARE( layerXml( layer() ), authored );
 
@@ -267,6 +274,8 @@ private slots:
 			QStringLiteral( "Wobble" ) );
 		QCOMPARE( modulators.at( 1 ).toObject().value( QStringLiteral( "name" ) ).toString(),
 			QStringLiteral( "Ramp" ) );
+		QVERIFY( modulators.at( 1 ).toObject().value( QStringLiteral( "targets" ) ).toArray().at( 0 ).toObject()
+			.value( QStringLiteral( "per_sample" ) ).toBool() );
 
 		evidence( "project-round-trip",
 			QStringLiteral( "2 modulators authored on the surface: saved, cleared, reopened "

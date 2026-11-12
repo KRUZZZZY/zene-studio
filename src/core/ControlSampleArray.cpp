@@ -93,6 +93,33 @@ ControlResult readInputArgument(const QJsonObject& args, std::uint32_t frames,
 	return readSampleArray(args.value(QStringLiteral("input")).toArray(), frames, out);
 }
 
+ControlResult readSampleRateArgument(const QJsonObject& args, float fallback, float* out)
+{
+	// An ABSENT rate is the caller's default, as an absent 'input' is the ramp.
+	if (!args.contains(QStringLiteral("sample_rate")))
+	{
+		*out = fallback;
+		return ControlResult::success();
+	}
+
+	const QJsonValue value = args.value(QStringLiteral("sample_rate"));
+	const double rate = value.toDouble();
+	const double maxFloat = static_cast<double>(std::numeric_limits<float>::max());
+	// The rate reaches the module as a float. A double outside the float range
+	// (1e300) converts to an infinity, and a negative or zero rate is not a
+	// rate at all; both would be run as if they were valid. The float cast is
+	// checked last, and only for a value already in range, because a positive
+	// double can still round to a float zero (1e-60).
+	const bool inRange = value.isDouble() && std::isfinite(rate) && rate > 0.0 && rate <= maxFloat;
+	if (!inRange || !(static_cast<float>(rate) > 0.0f))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'sample_rate' must be a finite, positive number within the float range"));
+	}
+	*out = static_cast<float>(rate);
+	return ControlResult::success();
+}
+
 } // namespace control
 
 } // namespace lmms

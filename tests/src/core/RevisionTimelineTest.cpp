@@ -1007,9 +1007,11 @@ private slots:
 		QVERIFY(QFileInfo(createdProject).isDir());
 	}
 
-	//! A dangling symlink is still a path undo must remove, even though
-	//! QFileInfo::exists() follows it and reports false.
-	void undoOfRestoreCreatedDanglingSymlinkRemovesPath()
+	//! BUG 9 (cluster new-p15-27): a dangling symlink written at the path after the
+	//! restore created the file is a NEWER entry, not the bytes the restore wrote,
+	//! so undo must leave it alone. QFileInfo::exists() follows the link and reports
+	//! false, so the check looks at the link itself.
+	void undoOfRestoreCreatedDanglingSymlinkLeavesTheNewerEntry()
 	{
 		buildFixture();
 		QString projectName = QStringLiteral("dangling-song.mmp");
@@ -1034,9 +1036,12 @@ private slots:
 		QVERIFY(!QFileInfo(createdProject).exists());
 
 		const ControlResult undo = registry->invoke(QStringLiteral("control.undo"), QJsonObject());
-		QVERIFY2(undo.ok, qPrintable(undo.errorMessage));
-		QVERIFY(!QFileInfo(createdProject).isSymLink());
-		QVERIFY(!QFileInfo(createdProject).exists());
+		QVERIFY2(!undo.ok, "control.undo answered success and removed a symlink written after the "
+			"restore - the file the restore created was no longer at the path");
+		QCOMPARE(undo.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(undo.errorMessage.contains(QStringLiteral("revisions.restore")),
+			qPrintable(undo.errorMessage));
+		QVERIFY(QFileInfo(createdProject).isSymLink());
 	}
 
 
@@ -1174,6 +1179,33 @@ private slots:
 			QStringLiteral("autosave"));
 		QCOMPARE(findRevision(QString(), unsavedAutosave, QStringLiteral("autosave_prev")).id,
 			QStringLiteral("autosave_prev"));
+	}
+
+	//! A sidecar over the read bound is malformed by definition, so it is treated
+	//! as absent and its autosave is reported as an upstream one would be. The
+	//! sidecar is otherwise valid and names ANOTHER project: without the bound it is
+	//! parsed in full and the autosave is wrongly excluded from this timeline. The
+	//! padding is 1 MiB, well past the bound in ProjectRecovery.h.
+	void anOversizedIdentitySidecarIsUnavailableNotRead()
+	{
+		const QString dir = path(QStringLiteral("oversized"));
+		QVERIFY(QDir().mkpath(dir));
+		const QString project = dir + QStringLiteral("/song.mmp");
+		const QString recovery = dir + QStringLiteral("/recover.mmp");
+		const QString other = dir + QStringLiteral("/other.mmp");
+		QVERIFY(writeBytes(project, documentWith(3)));
+		QVERIFY(writeBytes(recovery, documentWith(4)));
+
+		const QByteArray sidecar = QByteArray("version=1\nproject=") + other.toUtf8()
+			+ QByteArray("\nsavedUTC=2026-09-15T10:00:00Z\n#") + QByteArray(1024 * 1024, 'x')
+			+ QByteArray("\n");
+		QVERIFY(writeBytes(recovery + QStringLiteral(".info"), sidecar));
+
+		const QJsonObject state = revisionTimelineState(project, recovery, false);
+		const QJsonObject autosave = entryById(state, QStringLiteral("autosave"));
+		QVERIFY2(!autosave.isEmpty(), "an oversized sidecar must not hide the autosave");
+		QVERIFY(!autosave.value(QStringLiteral("detail")).toString()
+			.contains(QStringLiteral("other.mmp")));
 	}
 };
 

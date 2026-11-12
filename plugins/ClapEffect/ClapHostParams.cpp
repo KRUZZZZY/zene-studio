@@ -173,7 +173,7 @@ void HostedPlugin::Impl::serviceRescan(std::uint32_t flags)
 	// A rescan of values, text or info re-reads the values; info re-reads the descriptors in place, and text only
 	// needs what shows them to draw again. A rescan of the whole list was taken when it was asked for
 	// (paramsRescan): it waits for the next prepare(), deactivated.
-	if ((flags & (CLAP_PARAM_RESCAN_VALUES | CLAP_PARAM_RESCAN_TEXT | CLAP_PARAM_RESCAN_INFO)) != 0) { mirrorParamValues(); }
+	if ((flags & (CLAP_PARAM_RESCAN_VALUES | CLAP_PARAM_RESCAN_TEXT | CLAP_PARAM_RESCAN_INFO)) != 0) { mirrorParamValues(true); }
 	if ((flags & CLAP_PARAM_RESCAN_INFO) != 0) { refreshParamInfo(); }
 	else if ((flags & CLAP_PARAM_RESCAN_TEXT) != 0) { ++paramsRevision; }
 }
@@ -187,6 +187,15 @@ auto HostedPlugin::paramPlain(std::uint32_t id) const -> double
 	const auto& impl = *m_impl;
 	const auto index = impl.indexOfParam(id);
 	return index >= 0 ? impl.paramSlots[index].value.load(std::memory_order_relaxed) : 0.0;
+}
+
+void HostedPlugin::readParamEdits(std::uint32_t id, PluginParamGesture::Edits* edits)
+{
+	auto& impl = *m_impl;
+	const auto index = impl.indexOfParam(id);
+	if (index < 0) { *edits = {}; return; }
+	auto& slot = impl.paramSlots[index];
+	slot.gesture.read(slot.value, edits);
 }
 
 auto HostedPlugin::paramNormalized(std::uint32_t id) const -> float

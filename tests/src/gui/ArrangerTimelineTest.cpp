@@ -37,17 +37,23 @@
 
 #include <QtTest>
 
+#include <cfenv>
 #include <cstdlib>
 #include <limits>
+#include <tuple>
+#include <utility>
+#include <vector>
 
 #include <QAbstractSlider>
 #include <QApplication>
+#include <QContextMenuEvent>
 #include <QMenu>
 #include <QRegularExpression>
 #include <QMouseEvent>
 #include <QImage>
 #include <QPainter>
 #include <QScrollBar>
+#include <QTimer>
 #include <QToolBar>
 #include <QWheelEvent>
 
@@ -56,6 +62,7 @@
 #include "ArrangerEditPreview.h"
 #include "ArrangerLandmarks.h"
 #include "ArrangerNavigator.h"
+#include "ArrangementSections.h"
 #include "ArrangerOverlays.h"
 #include "ArrangerRulerLanes.h"
 #include "ArrangerZoom.h"
@@ -542,6 +549,53 @@ private slots:
 		QCOMPARE(notePixelX - 4, 1); // x=1 repeats at x=5; x=1 itself lies under the clip border.
 	}
 
+	void anEmptyPatternStorePaintDoesNotRaiseInvalidFloatException()
+	{
+		QCOMPARE(Engine::patternStore()->tracks().size(), size_t(0));
+		PatternTrack* patternTrack = nullptr;
+		for (Track* track : Engine::getSong()->tracks())
+		{
+			patternTrack = dynamic_cast<PatternTrack*>(track);
+			if (patternTrack != nullptr) { break; }
+		}
+		if (patternTrack == nullptr)
+		{
+			Engine::getSong()->addPatternTrack();
+			QCoreApplication::processEvents();
+			for (Track* track : Engine::getSong()->tracks())
+			{
+				patternTrack = dynamic_cast<PatternTrack*>(track);
+				if (patternTrack != nullptr) { break; }
+			}
+		}
+		QVERIFY(patternTrack != nullptr);
+
+		auto* patternClip = dynamic_cast<PatternClip*>(patternTrack->createClip(TimePos(0)));
+		QVERIFY(patternClip != nullptr);
+		QCoreApplication::processEvents();
+		PatternClipView* view = nullptr;
+		for (PatternClipView* candidate : m_editor->findChildren<PatternClipView*>())
+		{
+			if (candidate->getClip() == patternClip) { view = candidate; break; }
+		}
+		QVERIFY(view != nullptr);
+		view->setFixedWidth(40);
+		view->setFixedHeight(40);
+		view->setNeedsUpdate(true);
+
+		QImage image(view->size(), QImage::Format_ARGB32_Premultiplied);
+		image.fill(Qt::transparent);
+		QPainter painter(&image);
+		std::fenv_t previousEnvironment;
+		QVERIFY(std::fegetenv(&previousEnvironment) == 0);
+		QVERIFY(std::feclearexcept(FE_ALL_EXCEPT) == 0);
+		view->render(&painter);
+		const int raisedExceptions = std::fetestexcept(FE_INVALID);
+		QVERIFY(std::fesetenv(&previousEnvironment) == 0);
+		painter.end();
+		QCOMPARE(raisedExceptions, 0);
+	}
+
 	void theDragPreviewShowsWhatTheDropWillDo()
 	{
 		QVERIFY(run(QStringLiteral("arrangement.modes"), {{QStringLiteral("overlap"), QStringLiteral("trim")}}).ok);
@@ -920,6 +974,120 @@ private slots:
 		ArrangerRange::instance().clear();
 	}
 
+	void theRulerShowsASectionCanBeMovedAndAClickStillSelects()
+	{
+		Track* second = nullptr;
+		Track* third = nullptr;
+		sectionSong(&second, &third);
+		auto* lanes = m_editor->findChild<ArrangerRulerLanes*>();
+		const int y = lanes->laneRect(ArrangerRulerLanes::Lane::Sections).center().y();
+		const QPoint on(m_editor->timeLine()->markerX(TimePos(5 * Bar)), y);
+		const QPoint off(m_editor->timeLine()->markerX(TimePos(20 * Bar)), y);
+		const auto hover = [lanes](const QPoint& pos) {
+			QMouseEvent moved(QEvent::MouseMove, pos, lanes->mapToGlobal(pos), Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+			QApplication::sendEvent(lanes, &moved);
+		};
+		hover(on);
+		QCOMPARE(lanes->cursor().shape(), Qt::OpenHandCursor);
+		hover(off);
+		QVERIFY(lanes->cursor().shape() != Qt::OpenHandCursor);
+		QTest::mouseClick(lanes, Qt::LeftButton, Qt::NoModifier, on);
+		QVERIFY(ArrangerRange::instance().active());
+		QCOMPARE(ArrangerRange::instance().start(), 4 * Bar);
+		QCOMPARE(ArrangerRange::instance().end(), 8 * Bar);
+		QCOMPARE(ArrangementSections::instance().at(5 * Bar)->name, QStringLiteral("Chorus"));  // nothing moved
+	}
+
+	void aSectionDragInGapModeMovesOnlyItsMaterial()
+	{
+		QVERIFY(run(QStringLiteral("arrangement.modes"), {{QStringLiteral("ripple"), QStringLiteral("off")}}).ok);
+		Track* second = nullptr;
+		Track* third = nullptr;
+		const QString id = sectionSong(&second, &third);
+		const auto before = std::make_tuple(layoutOf(m_track), layoutOf(second), layoutOf(third));
+		dragChorus(8);
+		using Layout = std::vector<std::pair<tick_t, tick_t>>;
+		QCOMPARE(layoutOf(m_track), (Layout{{0, 2 * Bar}, {8 * Bar, 2 * Bar}, {12 * Bar, 4 * Bar}}));
+		QCOMPARE(layoutOf(second), (Layout{{3 * Bar, Bar}, {12 * Bar, 2 * Bar}}));  // cut at the edge: only the inside moved
+		QCOMPARE(layoutOf(third), (Layout{{9 * Bar, Bar}}));
+		QCOMPARE(ArrangementSections::instance().at(13 * Bar)->name, QStringLiteral("Chorus"));
+		QCOMPARE(ArrangementSections::instance().at(13 * Bar)->color, QStringLiteral("#336699"));
+		QCOMPARE(ArrangementSections::instance().at(9 * Bar)->name, QStringLiteral("Bridge"));  // gap: the other stays
+		QVERIFY(ArrangementSections::instance().at(5 * Bar) == nullptr);
+
+		QVERIFY(run(QStringLiteral("control.undo")).ok);  // ONE step: every clip and the section
+		QCOMPARE(std::make_tuple(layoutOf(m_track), layoutOf(second), layoutOf(third)), before);
+		QCOMPARE(ArrangementSections::instance().at(5 * Bar)->name, QStringLiteral("Chorus"));
+		QCOMPARE(ArrangementSections::instance().at(5 * Bar)->end, 8 * Bar);
+		QVERIFY(ArrangementSections::instance().at(13 * Bar) == nullptr);
+	}
+
+	void aSectionDragInRippleModeReordersTheSong()
+	{
+		QVERIFY(run(QStringLiteral("arrangement.modes"), {{QStringLiteral("ripple"), QStringLiteral("all")}}).ok);
+		Track* second = nullptr;
+		Track* third = nullptr;
+		sectionSong(&second, &third);
+		const auto before = std::make_tuple(layoutOf(m_track), layoutOf(second), layoutOf(third));
+		using Layout = std::vector<std::pair<tick_t, tick_t>>;
+
+		dragChorus(8);  // later, to bar 12: what lay in bars 8..16 comes 4 bars earlier, closing the gap
+		QCOMPARE(layoutOf(m_track), (Layout{{0, 2 * Bar}, {4 * Bar, 2 * Bar}, {12 * Bar, 4 * Bar}}));
+		QCOMPARE(layoutOf(second), (Layout{{3 * Bar, Bar}, {12 * Bar, 2 * Bar}}));
+		QCOMPARE(layoutOf(third), (Layout{{5 * Bar, Bar}}));
+		QCOMPARE(ArrangementSections::instance().at(13 * Bar)->name, QStringLiteral("Chorus"));
+		QCOMPARE(ArrangementSections::instance().at(5 * Bar)->name, QStringLiteral("Bridge"));  // went with its material
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(std::make_tuple(layoutOf(m_track), layoutOf(second), layoutOf(third)), before);
+		QCOMPARE(ArrangementSections::instance().at(9 * Bar)->name, QStringLiteral("Bridge"));
+
+		dragChorus(-4);  // earlier, to bar 0: what lay in bars 0..4 goes 4 bars later
+		QCOMPARE(layoutOf(m_track), (Layout{{0, 4 * Bar}, {4 * Bar, 2 * Bar}, {8 * Bar, 2 * Bar}}));
+		QCOMPARE(layoutOf(second), (Layout{{0, 2 * Bar}, {7 * Bar, Bar}}));
+		QCOMPARE(layoutOf(third), (Layout{{9 * Bar, Bar}}));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(std::make_tuple(layoutOf(m_track), layoutOf(second), layoutOf(third)), before);
+
+		dragChorus(8, Qt::ShiftModifier);  // Shift: the other behaviour for this drag - a gap
+		QCOMPARE(layoutOf(third), (Layout{{9 * Bar, Bar}}));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QVERIFY(run(QStringLiteral("arrangement.modes"), {{QStringLiteral("ripple"), QStringLiteral("off")}}).ok);
+	}
+
+	void aSectionMoveIsRefusedOverALockedClip()
+	{
+		Track* second = nullptr;
+		Track* third = nullptr;
+		const QString id = sectionSong(&second, &third);
+		const auto before = layoutOf(second);
+		QVERIFY(run(QStringLiteral("clip.set_locked"), {{QStringLiteral("clip"), control::clipIdOf(second->getClips().front())}, {QStringLiteral("locked"), true}}).ok);
+		QCOMPARE(run(QStringLiteral("section.move"), {{QStringLiteral("section"), id}, {QStringLiteral("start"), 12 * Bar}}).errorKind, ControlErrorKind::Refused);
+		QCOMPARE(layoutOf(second), before);
+		QCOMPARE(ArrangementSections::instance().at(5 * Bar)->name, QStringLiteral("Chorus"));
+	}
+
+	void theLanesMenuChoosesGapOrRipple()
+	{
+		QVERIFY(run(QStringLiteral("arrangement.modes"), {{QStringLiteral("ripple"), QStringLiteral("off")}}).ok);
+		auto* lanes = m_editor->findChild<ArrangerRulerLanes*>();
+		bool triggered = false;
+		QTimer::singleShot(0, this, [&triggered] {
+			auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget());
+			if (menu == nullptr) { return; }
+			for (QAction* action : menu->actions())
+			{
+				if (action->text().startsWith(QStringLiteral("Ripple"))) { triggered = true; action->trigger(); }
+			}
+			menu->close();
+		});
+		const QPoint at(m_editor->timeLine()->markerX(TimePos(Bar)), lanes->laneRect(ArrangerRulerLanes::Lane::Sections).center().y());
+		QContextMenuEvent event(QContextMenuEvent::Mouse, at, lanes->mapToGlobal(at));
+		QApplication::sendEvent(lanes, &event);
+		QVERIFY(triggered);
+		QCOMPARE(run(QStringLiteral("arrangement.modes")).result.value(QStringLiteral("ripple")).toString(), QStringLiteral("all"));
+		QVERIFY(run(QStringLiteral("arrangement.modes"), {{QStringLiteral("ripple"), QStringLiteral("off")}}).ok);
+	}
+
 	void theLandmarksAreFoundAndNamed()
 	{
 		using landmarks::Landmark;
@@ -1199,6 +1367,46 @@ private slots:
 	}
 
 private:
+	//! Q050-219: the song the section-move cases share - a section over bars 4..8, material inside it on one track,
+	//! crossing its start on another, past it on a third, and a second section over bars 9..10.
+	QString sectionSong(Track** second, Track** third)
+	{
+		*second = Track::create(Track::Type::Sample, Engine::getSong());
+		*third = Track::create(Track::Type::Sample, Engine::getSong());
+		clipAt(m_track, 0, 2 * Bar);
+		clipAt(m_track, 4 * Bar, 4 * Bar);
+		clipAt(m_track, 8 * Bar, 2 * Bar);
+		clipAt(*second, 3 * Bar, 3 * Bar);
+		clipAt(*third, 9 * Bar, Bar);
+		run(QStringLiteral("section.add"), {{QStringLiteral("start"), 9 * Bar}, {QStringLiteral("end"), 10 * Bar}, {QStringLiteral("name"), QStringLiteral("Bridge")}});
+		const ControlResult added = run(QStringLiteral("section.add"), {{QStringLiteral("start"), 4 * Bar}, {QStringLiteral("end"), 8 * Bar},
+			{QStringLiteral("name"), QStringLiteral("Chorus")}, {QStringLiteral("color"), QStringLiteral("#336699")}});
+		QCoreApplication::processEvents();
+		return added.result.value(QStringLiteral("section")).toString();
+	}
+
+	//! Press on the Chorus block (bars 4..8), let go @a bars later (or earlier).
+	void dragChorus(int bars, Qt::KeyboardModifiers mods = Qt::NoModifier)
+	{
+		auto* lanes = m_editor->findChild<ArrangerRulerLanes*>();
+		const int y = lanes->laneRect(ArrangerRulerLanes::Lane::Sections).center().y();
+		const QPoint from(m_editor->timeLine()->markerX(TimePos(5 * Bar)), y);
+		const QPoint to(m_editor->timeLine()->markerX(TimePos((5 + bars) * Bar)), y);
+		QTest::mousePress(lanes, Qt::LeftButton, Qt::NoModifier, from);
+		QMouseEvent held(QEvent::MouseMove, to, lanes->mapToGlobal(to), Qt::NoButton, Qt::LeftButton, mods);
+		QApplication::sendEvent(lanes, &held);
+		QCOMPARE(lanes->cursor().shape(), Qt::ClosedHandCursor);
+		QTest::mouseRelease(lanes, Qt::LeftButton, mods, to);
+	}
+
+	static std::vector<std::pair<tick_t, tick_t>> layoutOf(const Track* track)
+	{
+		std::vector<std::pair<tick_t, tick_t>> out;
+		for (const Clip* clip : track->getClips()) { out.emplace_back(clip->startPosition().getTicks(), clip->length().getTicks()); }
+		std::sort(out.begin(), out.end());
+		return out;
+	}
+
 	QTemporaryDir m_home;
 	SongEditor* m_editor = nullptr;
 	Track* m_track = nullptr;

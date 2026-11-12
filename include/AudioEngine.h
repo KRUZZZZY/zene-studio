@@ -47,6 +47,7 @@
 #include "AudioEngineProfiler.h"
 #include "MasterLoudnessTap.h"
 #include "PunchWindow.h"
+#include "RenderDiagnostics.h"
 #include "PlayHandle.h"
 #include "AudioWideInputStage.h"
 #include "HardwareOutputBus.h"
@@ -334,6 +335,11 @@ public:
 		return m_profiler.detailLoad(type);
 	}
 
+	//! Q050-074.1: how many periods the engine has started rendering - the clock SynthesisLoad::percent() reads.
+	std::uint64_t renderedPeriods() const noexcept { return m_renderedPeriods.load(std::memory_order_relaxed); }
+	//! Q050-074.1: the render periods that missed their deadline, at their song positions (not backend xruns).
+	const LatePeriodLog& latePeriods() const noexcept { return m_latePeriods; }
+
 	sample_rate_t baseSampleRate() const { return m_baseSampleRate; }
 
 
@@ -497,9 +503,15 @@ public:
 	/*! A device (re)start: the capture path has delivered nothing yet, and the
 	 *  next device publishes its own blocks. The wide-path flag follows it, so
 	 *  a device that does not use the wide path at all drains the stereo ring
-	 *  on its own (cluster 3705). */
+	 *  on its own (cluster 3705). The frames staged before the stop go too
+	 *  (cluster new-p14-402): the next render must not take them as new input.
+	 *  Called by AudioDevice::startProcessing, which follows stopProcessing(): that call has
+	 *  waited out every open backend callback (AudioDevice::CallbackScope), so no render and no
+	 *  capture publish is running and neither staging ring is being read or written here. */
 	void resetInputStream()
 	{
+		if (m_inputStage != nullptr) { m_inputStage->discardStaged(); }
+		if (m_wideInputStage != nullptr) { m_wideInputStage->discardStaged(); }
 		m_inputStreamStarted.store(false, std::memory_order_relaxed);
 		m_captureWideInUse.store(false, std::memory_order_relaxed);
 	}
@@ -727,6 +739,10 @@ private:
 	void renderStageInstruments();
 	void renderStageEffects();
 	void renderStageMix();
+	//! Q050-074.1: folds STAGE 1's per-track synthesis time into each track's SynthesisLoad (render thread).
+	void foldSynthesisLoads(std::uint64_t period) noexcept;
+	//! Q050-074.1: records the period just rendered in m_latePeriods when it took longer than it lasts.
+	void noteLatePeriod() noexcept;
 
 
 	void swapBuffers();
@@ -789,6 +805,8 @@ private:
 	//! taken by the render thread before the song advances (renderStageNoteSetup).
 	double m_periodStartFrame = 0.0;
 	bool m_periodSongPlaying = false;
+	//! Q050-074.1: the same start as a song tick (the late-period mark's position).
+	tick_t m_periodStartTick = 0;
 
 	//! Retrospective AUDIO capture (feature row 16). Its ring is allocated in
 	//! this object's constructor - i.e. off the audio thread - and the audio
@@ -857,6 +875,9 @@ private:
 	QString m_midiClientName;
 
 	AudioEngineProfiler m_profiler;
+	//! Q050-074.1: the render thread's period count and its late periods (RenderDiagnostics.h).
+	std::atomic<std::uint64_t> m_renderedPeriods{0};
+	LatePeriodLog m_latePeriods;
 
 	bool m_clearSignal;
 	std::atomic<bool> m_sanitizationEnabled = false;

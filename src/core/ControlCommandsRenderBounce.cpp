@@ -188,6 +188,11 @@ QJsonObject applyFreeze(const std::shared_ptr<BounceContext>& context,
 	const QString path = rendered.path;
 	const tick_t start = context->wholeTrack ? 0 : context->range.start;
 	const tick_t end = rendered.range.end;
+	if (!context->wholeTrack && !Track::isValidRegionWindow(start, end))
+	{
+		*error = QStringLiteral("the rendered region does not end past its start; no edit was applied");
+		return {};
+	}
 	// One Track checkpoint BEFORE the cuts and the freeze, exactly as freeze.region does: one control.undo
 	// puts back the pre-cut arrangement and takes the freeze off (a redo re-freezes), in a single journal step.
 	source->addJournalCheckPoint();
@@ -421,6 +426,13 @@ ControlResult captureOperationState(const std::shared_ptr<BounceContext>& contex
 		return ControlResult::failure(ControlErrorKind::Refused,
 			QStringLiteral("%1 is already frozen; freeze.unfreeze first").arg(control::trackIdOf(first)));
 	}
+	if (context->operation == QLatin1String("flatten"))
+	{
+		if (const QString refusal = control::flattenRefusal(first); !refusal.isEmpty())
+		{
+			return ControlResult::failure(ControlErrorKind::Refused, refusal);
+		}
+	}
 	if (context->operation == QLatin1String("flatten")
 		&& !captureTrackXml(first, &context->sourceXml, StructuralSnapshotLimit))
 	{
@@ -511,7 +523,7 @@ ControlResult queueBounceImpl(const QJsonObject& args, bool allowOutputOnly, boo
 	}
 	if (startImmediately) { queue.start(); }
 	const RenderJob* accepted = queue.job(id);
-	return ControlResult::success({{QStringLiteral("job"), id}, {QStringLiteral("kind"), QStringLiteral("bounce")},
+	return ControlResult::success({{QStringLiteral("job"), id}, {QStringLiteral("task"), QStringLiteral("render-%1").arg(id)}, {QStringLiteral("kind"), QStringLiteral("bounce")},
 		{QStringLiteral("operation"), operation}, {QStringLiteral("state"), accepted != nullptr ? RenderQueue::stateName(accepted->state) : QStringLiteral("queued")},
 		{QStringLiteral("out"), outPath}});
 }

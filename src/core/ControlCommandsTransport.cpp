@@ -58,20 +58,7 @@ void setTransportPosition(Song* song, tick_t ticks)
 
 QString trackTypeName(Track::Type type)
 {
-	switch (type)
-	{
-		case Track::Type::Instrument: return QStringLiteral("instrument");
-		case Track::Type::Pattern: return QStringLiteral("pattern");
-		case Track::Type::Sample: return QStringLiteral("sample");
-		case Track::Type::Event: return QStringLiteral("event");
-		case Track::Type::Video: return QStringLiteral("video");
-		case Track::Type::Automation: return QStringLiteral("automation");
-		case Track::Type::HiddenAutomation: return QStringLiteral("hidden_automation");
-		// A folder track (owner items 3+20+21).
-		case Track::Type::Folder: return QStringLiteral("folder");
-		case Track::Type::Count: break;
-	}
-	return QStringLiteral("unknown");
+	return control::trackTypeNameOf(type);
 }
 
 QJsonObject trackState(Track* track, int index)

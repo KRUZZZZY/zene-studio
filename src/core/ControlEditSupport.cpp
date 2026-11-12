@@ -27,6 +27,7 @@
 #include "ControlVocabulary.h"
 
 #include <algorithm>
+#include <cstddef>
 
 #include <QDomDocument>
 #include <QDomElement>
@@ -38,6 +39,7 @@
 #include "GuiApplication.h"
 #include "MidiClip.h"
 #include "Note.h"
+#include "NoteConditions.h"
 #include "SampleClip.h"
 #include "Song.h"
 #include "SongEditor.h"
@@ -63,21 +65,15 @@ namespace control
 
 QString trackTypeNameOf(Track::Type type)
 {
-	switch (type)
-	{
-		case Track::Type::Instrument: return QStringLiteral("instrument");
-		case Track::Type::Pattern: return QStringLiteral("pattern");
-		case Track::Type::Sample: return QStringLiteral("sample");
-		case Track::Type::Event: return QStringLiteral("event");
-		case Track::Type::Video: return QStringLiteral("video");
-		case Track::Type::Automation: return QStringLiteral("automation");
-		case Track::Type::HiddenAutomation: return QStringLiteral("hidden_automation");
-		// A folder track (owner items 3+20+21): the type track.add takes as
-		// "folder" and every read reports.
-		case Track::Type::Folder: return QStringLiteral("folder");
-		case Track::Type::Count: break;
-	}
-	return QStringLiteral("unknown");
+	// A TABLE indexed by the enum, not a switch: the complexity ratchet counts every `case`, and a name
+	// per type is data. The static_assert makes a new Track::Type fail the build until it has a name.
+	static const char* const names[] = {"instrument", "pattern", "sample", "event", "video", "automation",
+		"hidden_automation", "folder", "neutral"};
+	static_assert(sizeof(names) / sizeof(names[0]) == static_cast<std::size_t>(Track::Type::Count),
+		"every Track::Type needs a name");
+	const int index = static_cast<int>(type);
+	if (index < 0 || index >= static_cast<int>(Track::Type::Count)) { return QStringLiteral("unknown"); }
+	return QString::fromLatin1(names[index]);
 }
 
 namespace
@@ -374,6 +370,14 @@ QJsonObject noteState(const Note* note, int index)
 	entry.insert(QStringLiteral("midi_velocity"), note->midiVelocity(127));
 	entry.insert(QStringLiteral("pan"), static_cast<double>(note->getPanning()));
 	entry.insert(QStringLiteral("slide"), note->slide());
+	// Q050-242: the note's recurrence (ED-133), reported for EVERY note so the note editor's
+	// properties box and an agent read back the pair note.edit's recur_length / recur_mask wrote,
+	// and can compare it with the same pair after one control.undo. 0 / 0 is neutral (every pass);
+	// a positive length with mask 0 plays on no pass; bit n of the mask selects pass n of the
+	// pattern (pass % length, NoteConditions::recursOnPass).
+	const NoteConditions& conditions = note->conditions();
+	entry.insert(QStringLiteral("recur_length"), conditions.recurLength);
+	entry.insert(QStringLiteral("recur_mask"), conditions.recurMask);
 	return entry;
 }
 

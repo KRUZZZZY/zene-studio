@@ -54,6 +54,7 @@
 #include <QStringList>
 
 #include "ControlDeviceSupport.h" // ControlDeviceEntry, ControlResult
+#include "PresetBindings.h"
 #include "lmms_export.h"
 
 namespace lmms
@@ -77,6 +78,9 @@ struct ControlChainPresetDevice
 	QString file;      //!< hosted_file, empty for a built-in device
 	QString label;     //!< hosted_id (the LADSPA label), empty otherwise
 	QString uri;       //!< hosted_uri (the LV2 URI), empty otherwise
+	//! Q050-331: the MIDI controller bindings the state carries, named relative to the device (the manifest
+	//! written beside the state; empty for a preset older than it).
+	QList<presetbindings::Binding> bindings;
 };
 
 //! One stored chain preset: its name, its file and its devices in order.

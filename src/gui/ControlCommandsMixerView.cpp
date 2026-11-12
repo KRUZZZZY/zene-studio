@@ -48,6 +48,7 @@
 #include "MixerStripInfo.h"
 #include "MixerView.h"
 #include "MixerViewOptions.h"
+#include "MixerZones.h"
 #include "PhaseScopeTap.h"
 #include "PhaseScopeView.h"
 
@@ -132,6 +133,14 @@ void syncMixerViewSoon()
 	QTimer::singleShot(0, gui::getGUI()->mixerView(), &gui::MixerView::syncWithMixer);
 }
 
+//! MX-021: set the follow preference through the same path the GUI toggle uses.
+void applyFollowSelection(const QJsonObject& args)
+{
+	if (!args.contains(QStringLiteral("follow_selection"))) { return; }
+	gui::mixerviewoptions::setFollowSelection(args.value(QStringLiteral("follow_selection")).toBool());
+	syncMixerViewSoon();
+}
+
 QJsonObject mixerViewState()
 {
 	QJsonArray folded;
@@ -147,6 +156,13 @@ QJsonObject mixerViewState()
 	state.insert(QStringLiteral("strips"), stripInfos());
 	state.insert(QStringLiteral("folded"), folded);
 	state.insert(QStringLiteral("selected_channels"), gui::mixerviewoptions::selectionJson());  // MX-005
+	state.insert(QStringLiteral("follow_selection"), gui::mixerviewoptions::followSelection());  // MX-021
+	QJsonArray visible;
+	for (int i = 0; i < Engine::mixer()->numChannels(); ++i)
+	{
+		if (gui::mixerviewoptions::shows(i)) { visible.append(channelIdOf(Engine::mixer()->mixerChannel(i))); }
+	}
+	state.insert(QStringLiteral("visible_channels"), visible);
 	return state;
 }
 
@@ -167,6 +183,7 @@ ControlResult mixerView(const QJsonObject& args)
 	if (!gui::mixerviewoptions::merge(args, &next, &error)) { return ControlResult::failure(ControlErrorKind::InvalidArgs, error); }
 	// Everything is checked before anything is set: a refused call changes no mode.
 	if (args.contains(QStringLiteral("selected_channels"))) { gui::mixerviewoptions::setSelectedChannels(selection); }
+	applyFollowSelection(args);
 	if (sendsGiven)
 	{
 		gui::mixeroverlays::setSendsOnFaders(index);
@@ -268,6 +285,96 @@ void registerInputMeters(ControlRegistry& registry)
 	registry.registerCommand(cmd);
 }
 
+/*! Q050-227.1: window.mixer_zones - where the mixer's regions are docked and how wide their separators
+ *  leave them. The arrangement lives with the layout the project keeps (window.layout_project_save's
+ *  snapshot, under `mixer_zones`), so this command answers it and one layout save carries it. The
+ *  arguments: an optional 'dock' ("<region>" or "<region>=<left|right>"), an optional 'sizes'
+ *  ({region: pixels}), 'reset', and 'live' - which a separator drag sends with the widths it just left,
+ *  so the interface's own resize is this command's write too, and no relayout happens mid-gesture.
+ *  Every argument is checked before anything is applied. */
+QJsonObject zonesState()
+{
+	const gui::mixerzones::Layout& layout = gui::mixerzones::MixerZoneState::instance()->layout();
+	QJsonObject docks;
+	QJsonObject sizes;
+	for (const QString& id : gui::mixerzones::regionIds())
+	{
+		if (const QString dock = layout.docks.value(id); !dock.isEmpty()) { docks.insert(id, dock); }
+		if (const int size = layout.sizes.value(id, 0); size > 0) { sizes.insert(id, size); }
+	}
+	return {{QStringLiteral("zones"), docks}, {QStringLiteral("sizes"), sizes},
+		{QStringLiteral("mixer_zones"), gui::mixerzones::toJson(layout)}};
+}
+
+//! The 'dock' argument: "<region>=<dock>", or just "<region>" for the side it is not on. False, with
+//! @a error, unless it names a side region (the channels never move, so they have another side).
+bool applyDockArg(const QString& arg, const gui::mixerzones::Layout& before, QJsonObject* zones, QString* error)
+{
+	const int eq = arg.indexOf(QLatin1Char('='));
+	const QString id = eq < 0 ? arg : arg.left(eq);
+	if (!gui::mixerzones::sideRegionIds().contains(id))
+	{
+		*error = QStringLiteral("'dock' names a side region (%1)").arg(gui::mixerzones::sideRegionIds().join(QStringLiteral(" / ")));
+		return false;
+	}
+	QString target = eq < 0 ? QString() : arg.mid(eq + 1);
+	if (target.isEmpty()) { target = before.docks.value(id) == QStringLiteral("left") ? QStringLiteral("right") : QStringLiteral("left"); }
+	zones->insert(id, target);
+	return true;
+}
+
+//! Put @a layout into force. A live report (a separator drag) sets ONLY the widths, through the state's
+//! sizes-only path, because the splitter already shows them: re-laying it under the mouse would fight the
+//! gesture. Anything else applies the whole arrangement and re-lays the view.
+void applyZones(gui::MixerView* view, const gui::mixerzones::Layout& layout, bool live)
+{
+	if (live) { gui::mixerzones::MixerZoneState::instance()->setSizes(layout.sizes); return; }
+	gui::mixerzones::MixerZoneState::instance()->set(layout);
+	view->relayoutZones();  // the state's changed() signal does this too; this also covers a test with no loop yet
+}
+
+//! 'live' is the separator drag's own call: the widths on screen, reported so they are saved like any
+//! other. It may carry nothing else - a dock or a reset during a gesture would re-lay the splitter under
+//! the mouse, and it would also mean the drag is asking for something it never showed.
+QString liveRefusal(const QJsonObject& args)
+{
+	if (!args.value(QStringLiteral("live")).toBool(false)) { return QString(); }
+	if (args.contains(QStringLiteral("dock")) || args.contains(QStringLiteral("reset")) || args.contains(QStringLiteral("zones")))
+	{
+		return QStringLiteral("'live' reports the widths a separator drag left; it takes only 'sizes'");
+	}
+	return QString();
+}
+
+ControlResult mixerZones(const QJsonObject& args)
+{
+	if (controlMainWindow() == nullptr) { return noInterface(QStringLiteral("window.mixer_zones")); }
+	gui::MixerView* view = gui::getGUI() != nullptr ? gui::getGUI()->mixerView() : nullptr;
+	if (view == nullptr) { return noInterface(QStringLiteral("window.mixer_zones")); }
+	if (const QString misuse = liveRefusal(args); !misuse.isEmpty())
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, misuse);
+	}
+	const gui::mixerzones::Layout before = gui::mixerzones::MixerZoneState::instance()->layout();
+	gui::mixerzones::Layout next = args.value(QStringLiteral("reset")).toBool(false)
+		? gui::mixerzones::defaultLayout() : before;
+	// One region per call: "<region>" asks for that region's other side, "<region>=<dock>" names it.
+	// The 'zones' object (the saved shape) may also be sent whole; the two merge. Every argument is
+	// checked before anything is applied, so a refused call changes nothing.
+	QJsonObject zonesArg = args.value(QStringLiteral("zones")).toObject();
+	QString error;
+	if (args.contains(QStringLiteral("dock"))
+		&& !applyDockArg(args.value(QStringLiteral("dock")).toString(), before, &zonesArg, &error))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, error);
+	}
+	QJsonObject checked = args;
+	if (!zonesArg.isEmpty()) { checked.insert(QStringLiteral("zones"), zonesArg); }
+	if (!gui::mixerzones::parse(checked, &next, &error)) { return ControlResult::failure(ControlErrorKind::InvalidArgs, error); }
+	applyZones(view, next, args.value(QStringLiteral("live")).toBool(false));
+	return ControlResult::success(zonesState());
+}
+
 } // namespace
 
 void registerMixerViewCommands(ControlRegistry& registry)
@@ -289,7 +396,10 @@ void registerMixerViewCommands(ControlRegistry& registry)
 		"(track.folder_set_collapsed folds). MX-005: 'selected_channels' (ch-<n> ids, never the master) are the channels the "
 		"'selected' filter shows - interface state, never saved, forgotten when the mixer is cleared for another project; a "
 		"Ctrl+click on a strip adds or removes its channel, and the mode bar's 'Pick...' chooses them; the answer lists them in "
-		"mixer order. The view options, kept in the config file (ui/mixerview): 'show_sends', "
+		"mixer order. MX-021: 'follow_selection' makes the 'selected' filter show the focused arranger track's (or clip "
+		"owner's) mixer channel instead, keeping the manual set for when it is turned off; it is saved in the config file "
+		"(ui/followchannel, off when absent), and the answer adds it with 'visible_channels' (the channels the filter shows "
+		"now, master included). The view options, kept in the config file (ui/mixerview): 'show_sends', "
 		"'show_pan', 'show_number', 'show_meter_info', 'show_inserts', 'show_macros' (a strip's sections - the meter line is "
 		"the gain reduction and the clip light, the inserts are listed by name, the macros are the rack's first four as knobs), 'show_console' (Q050-088: the Console section - "
 		"knobs and switches for the channel's trim, polarity, EQ and its Console's drive and glue compressor, each running "
@@ -320,15 +430,47 @@ void registerMixerViewCommands(ControlRegistry& registry)
 	QJsonObject args = fields;
 	args.insert(QStringLiteral("sends_on_faders"), stringProperty());
 	args.insert(QStringLiteral("selected_channels"), arrayProperty());  // MX-005
+	args.insert(QStringLiteral("follow_selection"), booleanProperty());  // MX-021
 	QJsonObject result = args;
 	result.insert(QStringLiteral("folded"), arrayProperty());
 	result.insert(QStringLiteral("sends_on_faders_name"), stringProperty());
 	result.insert(QStringLiteral("faders"), arrayProperty());
 	result.insert(QStringLiteral("strips"), arrayProperty());
+	result.insert(QStringLiteral("visible_channels"), arrayProperty());
 	cmd.argsSchema = objectSchema(args);
 	cmd.resultSchema = objectSchema(result);
 	cmd.handler = mixerView;
 	registry.registerCommand(cmd);
+
+	// Q050-227.1: the mixer's docked regions and their separators, saved with the project's layout.
+	ControlCommand zones;
+	zones.id = QStringLiteral("window.mixer_zones");
+	zones.group = QStringLiteral("window");
+	zones.verb = QStringLiteral("mixer_zones");
+	zones.mutating = false;
+	zones.requiresEngine = false;
+	zones.description = QStringLiteral("Q050-227.1: where the mixer's regions are docked and how wide their separators leave "
+		"them, set and answered. The regions are 'master' (the master strip), 'channels' (the scrolling channel area), 'vca' "
+		"(the VCA strips) and 'rack' (the effect rack). 'channels' is always 'middle'; 'master', 'vca' and 'rack' dock 'left' "
+		"or 'right' of it. 'dock' takes one side region, either alone (put it on the other side) or as '<region>=<left|right>', "
+		"and 'zones' takes the whole arrangement as an object ({region: dock}). 'sizes' sets a region's width in pixels (%1..%2); "
+		"dragging a separator in the interface sends the same 'sizes' back through this very command, with 'live': true, so the "
+		"interface's own resize and an agent's are one path ('live' takes only 'sizes' and never re-lays the splitter, which is "
+		"what makes it safe mid-gesture). 'reset' puts the default arrangement back: master "
+		"left, channels middle, VCA and rack right. The answer is what the mixer shows now: 'zones' and 'sizes' (the portable "
+		"arrangement), and 'mixer_zones', the one object window.layout_project_save keeps inside the project's window layout, "
+		"so saving that layout and reopening the project brings the arrangement and the widths back. Projects and layouts "
+		"saved before this feature carry no 'mixer_zones' and open with the default arrangement. Interface state, kept with the "
+		"layout: this command writes no project data of its own and records no undo step (the layout save is the step).")
+		.arg(gui::mixerzones::MinZoneSize).arg(gui::mixerzones::MaxZoneSize);
+	const QJsonObject zoneFields{{QStringLiteral("dock"), stringProperty()},
+		{QStringLiteral("zones"), objectProperty()}, {QStringLiteral("sizes"), objectProperty()},
+		{QStringLiteral("reset"), booleanProperty()}, {QStringLiteral("live"), booleanProperty()}};
+	zones.argsSchema = objectSchema(zoneFields);
+	zones.resultSchema = objectSchema({{QStringLiteral("zones"), objectProperty()},
+		{QStringLiteral("sizes"), objectProperty()}, {QStringLiteral("mixer_zones"), objectProperty()}});
+	zones.handler = mixerZones;
+	registry.registerCommand(zones);
 }
 
 } // namespace lmms

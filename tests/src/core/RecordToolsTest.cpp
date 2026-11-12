@@ -30,10 +30,12 @@
 
 #include <QApplication>
 #include <QDir>
+#include <QDomDocument>
 #include <QJsonArray>
 #include <QScopeGuard>
 #include <QTemporaryDir>
 #include <QStorageInfo>
+#include <limits>
 #include <sys/stat.h>
 
 #include "AudioEngine.h"
@@ -289,6 +291,56 @@ private slots:
 		QVERIFY(record.value(QStringLiteral("reversible")).toBool());
 		QVERIFY(record.value(QStringLiteral("before")).toObject().contains(QStringLiteral("composite")));
 		QCOMPARE(record.value(QStringLiteral("inverse")).toObject().value(QStringLiteral("op")).toString(), QStringLiteral("control.undo"));
+	}
+
+	//! addLane() returns -1 once the track's lane numbers are used up (a project file can start the
+	//! count at the limit). splitPasses ignored that: it cut the clip, tagged the pass past the last
+	//! free number with lane -1 (which setLaneIndex clamps to the base lane) and reported success with
+	//! a composite it never set. Now the lane numbers are checked before the clip is touched.
+	void splittingPassesRefusesWhenTheTrackHasTooFewLaneNumbers()
+	{
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		Clip* take = track->createClip(TimePos(192));
+		take->changeLength(TimePos(192 * 3));  // three passes, but only two lane numbers are left
+		Engine::getSong()->getTimeline(Song::PlayMode::Song).setLoopPoints(TimePos(192), TimePos(384));
+		QDomDocument doc;
+		QDomElement lanes = doc.createElement(QStringLiteral("takelanes"));
+		lanes.setAttribute(QStringLiteral("nextlane"), std::numeric_limits<int>::max() - 2);
+		track->takeLanes().loadSettings(lanes);
+		const ControlResult split = run(QStringLiteral("comp.split_passes"), {{QStringLiteral("clip"), control::clipIdOf(take)}});
+		QCOMPARE(split.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(track->getClips().size(), std::size_t{1});
+		QCOMPARE(take->length().getTicks(), tick_t{192 * 3});
+		QCOMPARE(track->takeLanes().laneCount(), 0);
+		QCOMPARE(track->takeLanes().segments().size(), std::size_t{0});
+	}
+
+	//! The same track with two passes: exactly the lane numbers left, so the split still happens and
+	//! every pass lands on a lane of its own.
+	void splittingPassesUsesTheLastLaneNumbersTheTrackHas()
+	{
+		auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		Clip* take = track->createClip(TimePos(192));
+		take->changeLength(TimePos(192 * 2));  // two passes
+		Engine::getSong()->getTimeline(Song::PlayMode::Song).setLoopPoints(TimePos(192), TimePos(384));
+		QDomDocument doc;
+		QDomElement lanes = doc.createElement(QStringLiteral("takelanes"));
+		lanes.setAttribute(QStringLiteral("nextlane"), std::numeric_limits<int>::max() - 2);
+		track->takeLanes().loadSettings(lanes);
+		const ControlResult split = run(QStringLiteral("comp.split_passes"), {{QStringLiteral("clip"), control::clipIdOf(take)}});
+		QVERIFY2(split.ok, qPrintable(split.errorMessage));
+		QCOMPARE(split.result.value(QStringLiteral("passes")).toInt(), 2);
+		QCOMPARE(track->getClips().size(), std::size_t{2});
+		QCOMPARE(track->takeLanes().laneCount(), 2);
+		QVERIFY(track->takeLanes().hasLane(std::numeric_limits<int>::max() - 2));
+		QVERIFY(track->takeLanes().hasLane(std::numeric_limits<int>::max() - 1));
+		QCOMPARE(take->laneIndex(), std::numeric_limits<int>::max() - 2);
+		for (const Clip* clip : track->getClips())
+		{
+			if (clip != take) { QCOMPARE(clip->laneIndex(), std::numeric_limits<int>::max() - 1); }
+		}
+		QCOMPARE(track->takeLanes().segments().size(), std::size_t{1});
+		QCOMPARE(track->takeLanes().segments()[0].laneIndex, std::numeric_limits<int>::max() - 1);
 	}
 
 	//! A16 §3: a mutating command records what it wrote - the composite before the edit and the

@@ -25,6 +25,7 @@
 #include "FolderSummary.h"
 
 #include <algorithm>
+#include <iterator>
 #include <utility>
 
 #include "Clip.h"
@@ -95,6 +96,21 @@ std::vector<Track*> folderTracksWithin(const TrackFolder& folder, tick_t from, t
 			return start >= from && start < to;
 		});
 		if (holds) { out.push_back(track); }
+	}
+	return out;
+}
+
+std::vector<Clip*> folderSpanClips(const TrackFolder& folder, const FolderSpan& span)
+{
+	std::vector<Clip*> out;
+	if (folder.trackContainer() == nullptr) { return out; }
+	for (const Track* track : folder.trackContainer()->tracks())
+	{
+		if (!insideFolder(track, folder)) { continue; }
+		std::copy_if(track->getClips().begin(), track->getClips().end(), std::back_inserter(out), [&span](const Clip* clip) {
+			const tick_t start = clip->startPosition().getTicks();
+			return start >= span.start && start < span.end;
+		});
 	}
 	return out;
 }

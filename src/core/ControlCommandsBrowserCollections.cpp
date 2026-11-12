@@ -92,10 +92,27 @@ bool readForEdit(QJsonObject* all, ControlResult* error)
 
 bool writeAll(const QJsonObject& all)
 {
+	const QByteArray bytes = QJsonDocument(all).toJson(QJsonDocument::Indented);
 	QSaveFile file(storePath());
 	if (!file.open(QIODevice::WriteOnly)) { return false; }
-	file.write(QJsonDocument(all).toJson(QJsonDocument::Indented));
+	// Written whole or not at all: a write the kernel cuts short is cancelled, never committed as the store.
+	if (file.write(bytes) != bytes.size())
+	{
+		file.cancelWriting();
+		return false;
+	}
 	return file.commit();
+}
+
+//! The store snapshot an undo (@a isUndo) or a redo writes. A write that fails is recorded with
+//! recordActionRestoreFailure, so control.undo / control.redo refuse instead of answering success over a
+//! store that still holds what it held before the step.
+void writeStep(const QJsonObject& snapshot, bool isUndo)
+{
+	if (writeAll(snapshot)) { return; }
+	recordActionRestoreFailure(QStringLiteral("the collections file %1 was NOT %2 - the write failed, so the store still "
+		"holds what it held when the %3 ran").arg(storePath(), isUndo ? QStringLiteral("restored") : QStringLiteral("re-applied"),
+		isUndo ? QStringLiteral("undo") : QStringLiteral("redo")));
 }
 
 //! Replace the store with @a next as one undo step.
@@ -108,7 +125,7 @@ ControlResult store(const QJsonObject& next, const QJsonObject& answer)
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the collections file %1 could not be written").arg(storePath()));
 	}
-	addUndoStep([before]() { writeAll(before); }, [next]() { writeAll(next); });
+	addUndoStep([before]() { writeStep(before, true); }, [next]() { writeStep(next, false); });
 	return ControlResult::success(answer);
 }
 
@@ -119,7 +136,9 @@ ControlResult save(const QJsonObject& args)
 	QJsonObject query;
 	// 0.5.0 L11 (WF-007): the category facet rides along, so a collection saved
 	// from a category-filtered search runs the same filter later.
-	for (const char* key : {"text", "tags", "kind", "root", "category"})
+	// 0.5.0 L11 (Q050-316.1): so do the tempo and key facets, validated by the
+	// same reader below - a collection that could never run is refused at save.
+	for (const char* key : {"text", "tags", "kind", "root", "category", "tempo_min", "tempo_max", "key"})
 	{
 		if (args.contains(QLatin1String(key))) { query.insert(QLatin1String(key), args.value(QLatin1String(key))); }
 	}
@@ -185,12 +204,15 @@ void add(ControlRegistry& registry, const char* verb, const QString& description
 void registerBrowserCollectionCommands(ControlRegistry& registry)
 {
 	add(registry, "collection_save", QStringLiteral("Save a search as a smart collection: 'name' and browser.query's 'text' (a "
-		"substring or an expression - OR, -word, \"phrase\", name: path: tag: kind: ext:), 'tags', 'kind', 'root' and "
-		"'category'. A collection of the same name is replaced. Kept beside the browser tags in the config directory, not the "
-		"project; one undo step."),
+		"substring or an expression - OR, -word, \"phrase\", name: path: tag: kind: ext:), 'tags', 'kind', 'root', "
+		"'category', 'tempo_min', 'tempo_max' and 'key' (the measured tempo range and pitch class, as browser.query takes "
+		"them, so a tempo/key-filtered search runs again later). A collection of the same name is replaced. Kept beside the "
+		"browser tags in the config directory, not the project; one undo step."),
 		objectSchema({{QStringLiteral("name"), stringProperty()}, {QStringLiteral("text"), stringProperty()},
 			{QStringLiteral("tags"), arrayProperty()}, {QStringLiteral("kind"), stringProperty()},
-			{QStringLiteral("root"), stringProperty()}, {QStringLiteral("category"), stringProperty()}},
+			{QStringLiteral("root"), stringProperty()}, {QStringLiteral("category"), stringProperty()},
+			{QStringLiteral("tempo_min"), numberProperty()}, {QStringLiteral("tempo_max"), numberProperty()},
+			{QStringLiteral("key"), stringProperty()}},
 			{QStringLiteral("name")}), save, true);
 	add(registry, "collection_remove", QStringLiteral("Remove a smart collection ('name'). One undo step."),
 		objectSchema({{QStringLiteral("name"), stringProperty()}}, {QStringLiteral("name")}), remove, true);

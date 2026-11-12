@@ -40,6 +40,8 @@
  */
 
 #include "CollabCommands.h"
+#include "OscCommands.h"
+#include "ControllerScript.h"
 #include "ControlHardwareIoSupport.h"
 #include "ControlRegistry.h"
 #include "ControlWindowCommands.h"
@@ -99,6 +101,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerRangeCommands(registry);
 	registerClipEnvelopeCommands(registry);
 	registerClipControllerCommands(registry);
+	registerClipControllerConvertCommands(registry);
 	registerInputTransformCommands(registry);
 	registerWarpQuantizeCommand(registry);
 	registerNoteCurveCommands(registry);
@@ -123,6 +126,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerSessionCaptureCommand(registry);
 	registerSessionAudioRecordCommands(registry);
 	registerSamplerTakeCommands(registry);
+	registerSlicerSliceCommands(registry);
 	registerLowLatencyCommand(registry);
 	registerBrowserCollectionCommands(registry);
 	registerTrackPresetCommands(registry);
@@ -134,6 +138,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerNoteShapeCommands(registry);
 	registerKeyNameCommands(registry);
 	registerNoteToolCommands(registry);
+	registerNoteMelodyCommands(registry);
 	registerNoteMoveCommands(registry);
 	registerNoteHarmonyCommands(registry);
 	registerNotePlaybackCommands(registry);
@@ -144,6 +149,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerRecordToolCommands(registry);
 	registerArrangeToolCommands(registry);
 	registerSectionCommands(registry);
+	registerFolderSpanCommands(registry);
 	registerSampleToolCommands(registry);
 	registerAutomationToolCommands(registry);
 	registerAudioAnalysisCommands(registry);
@@ -151,13 +157,19 @@ void registerControlCommands(ControlRegistry& registry)
 	registerSampleRangeCommands(registry);
 	registerSampleStereoCommands(registry);  // 0.5.0 L05 (Q050-106): sample.split_stereo
 	registerMixerMeterCommands(registry);
+	registerMixerMaskingCommands(registry);  // 0.5.0 L08 (Q050-231.1)
 	registerHardwareIoCommands(registry);  // 0.5.0 F1: audio.io_*, mixer.hardware_*, mixer.cue_*
 	registerTrackMidiOutCommands(registry);
+	registerExternalDeviceCommands(registry);  // 0.5.0 L09 (Q050-252.1): device.external_*
 	registerTrackVersionCommands(registry);
 	registerScoreExportCommands(registry);
 	registerThemeCommands(registry);
 	registerTrackLookCommands(registry);
 	registerAssistantCommands(registry);
+#ifdef ZENE_UPDATE_CHECK_ENABLED
+	registerUpdateCheckCommands(registry);
+	registerUpdateCheckWindowCommands(registry);
+#endif
 	registerWorkspaceCommands(registry);
 	registerViewMemoryCommands(registry);
 	registerHistoryJumpCommand(registry);
@@ -182,6 +194,8 @@ void registerControlCommands(ControlRegistry& registry)
 	registerVideoCommands(registry);  // 0.5.0 F5 (ED-054)
 	registerTaskCommands(registry);  // 0.5.0 theme 24: the background task area
 	registerCollabCommands(registry);  // 0.5.0 F6 (WF-050/WF-052)
+	registerOscCommands(registry);  // Q050-205: the opt-in OSC control server
+	registerControllerScriptCommands(registry);  // Q050-081: Lua control-surface scripts
 #ifdef ZENE_TELEMETRY_ENABLED
 	// The telemetry.* group travels with the client. -DZENE_TELEMETRY=OFF
 	// removes the client, so the registry must not carry ids that would
@@ -210,7 +224,9 @@ void registerControlCommands(ControlRegistry& registry)
 	registerNoteCommands(registry);
 	registerNoteProbabilityCommands(registry);
 	registerNoteEditCommands(registry);
+	registerNoteStepCommands(registry);
 	registerTrackChannelCommands(registry);
+	registerTrackRoutingCommands(registry);
 	registerCollectMediaCommand(registry);
 	registerBounceLandCommand(registry);
 	registerRenderStemsCommands(registry);
@@ -244,6 +260,8 @@ void registerControlCommands(ControlRegistry& registry)
 	// ScriptEngine, reached through hooks (bar/beat/transport) instead of only
 	// an explicit run.
 	registerLivecodeCommands(registry);
+	// Q050-334.1: ordered, bounded project-change events for local control clients.
+	registerEventsCommands(registry);
 	// board card #712: the session-wide dynamic-tuning table (MTS-ESP
 	// host-wide tuning) - the mts.* group over include/SessionTuning.h.
 	registerMtsCommands(registry);
@@ -317,6 +335,7 @@ void registerControlCommands(ControlRegistry& registry)
 	// switch: the render is the product's own CLI render path and the take is a
 	// plain value on Track, so its ids are honest in every configuration.
 	registerFreezeCommands(registry);
+	registerBusFreezeCommands(registry);  // Q050-124: the same verbs for a mixer bus
 	// Folder tracks (owner items 3+20+21): a Track subclass that references its
 	// children, its two modes and the named visibility sets. No compile-time
 	// switch - a folder is a plain Track type and the sets are container state,
@@ -381,6 +400,10 @@ void registerControlCommands(ControlRegistry& registry)
 	// meter are in every configuration, so its ids are honest in every one.
 	registerMasteringCommands(registry);
 	registerMasteringRunCommands(registry);
+	// The mastering release sequence (Q050-317.1): the ordered songs of a release with their
+	// processing, fades and gaps. No compile-time switch - the candidate set it names is in
+	// every configuration.
+	registerMasteringSequenceCommands(registry);
 	// Import detection (feature row 34: transient / BPM / key detection on
 	// import). No compile-time switch: the engine's own decoder, the Qt-free
 	// arithmetic and the project's `<detected-key>` field are in every

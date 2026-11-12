@@ -24,6 +24,7 @@ IF(LMMS_HAVE_STEM_SPLIT)
 		# it there is no engine for any of them to drive; each file is split the
 		# way this tree splits a group, for the file-length ratchet.
 		core/ControlStemSupport.cpp
+		core/ControlStemSource.cpp
 		core/ControlStemModel.cpp
 		core/ControlStemWav.cpp
 		core/ControlCommandsStems.cpp
@@ -64,6 +65,10 @@ SET(LMMS_COLLAB_SRCS
 	core/CollabPolicy.cpp
 	core/ControlCommandsCollab.cpp
 	core/ControlReversibilityTableCollab.cpp
+	# Q050-205: the OSC server's commands and its wire codec are always built; the UDP listener needs Qt Network.
+	core/ControlCommandsOsc.cpp
+	core/ControlReversibilityTableOsc.cpp
+	core/OscBridge.cpp
 )
 IF(ZENE_HAVE_COLLAB)
 	LIST(APPEND LMMS_COLLAB_SRCS
@@ -77,12 +82,18 @@ IF(ZENE_HAVE_COLLAB)
 		core/PortMappingCodec.cpp
 		core/PortMappingPmp.cpp
 		core/PortMappingUpnp.cpp
+		core/OscServer.cpp
 	)
 ENDIF()
 
 # The telemetry.* command group is the client's agent surface, so it travels with
 # the client (SPEC A15). Kept in its own variable so the big source list below
 # keeps the position it has always had.
+# Q050-501: the update check, with its own packager switch (not telemetry's).
+SET(LMMS_UPDATE_CHECK_SRCS)
+IF(ZENE_UPDATE_CHECK_ENABLED)
+	LIST(APPEND LMMS_UPDATE_CHECK_SRCS core/UpdateCheck.cpp core/ControlCommandsUpdateCheck.cpp)
+ENDIF()
 SET(LMMS_TELEMETRY_COMMAND_SRCS)
 IF(ZENE_TELEMETRY_ENABLED)
 	LIST(APPEND LMMS_TELEMETRY_COMMAND_SRCS core/ControlCommandsTelemetry.cpp)
@@ -118,6 +129,8 @@ SET(LMMS_SESSION_SRCS
 		# its own TU because SessionScheduler.h is AT the file-length limit, so
 		# the new declarations' bodies cannot live beside their class.
 		core/SessionPlayback.cpp
+		# Q050-489: the one boundary that keeps the launcher in step with grid edits, undo, redo and pattern renumbering.
+		core/SessionTransitions.cpp
 		# The session.* control-surface group (SPEC A11-A16): always compiled
 		# with the data layer since ARCH-4 S10 removed WANT_SESSION_VIEW.
 		core/ControlCommandsSession.cpp
@@ -136,6 +149,8 @@ SET(LMMS_SESSION_SRCS
 		core/ControlCommandsSessionRecordLand.cpp
 		# 0.5.0 L02 (WF-055): the audio take a launcher cell records (include/SessionAudioRecorder.h).
 		core/SessionAudioRecorder.cpp
+		# Q050-089.2: render.realtime's capture of the master mix (include/RealtimeExport.h).
+		core/RealtimeExport.cpp
 		# ...and a launched audio cell rendering its clip through its sample track (include/SessionAudioCells.h).
 		core/SessionAudioCells.cpp
 		core/SessionAudioBake.cpp
@@ -176,6 +191,7 @@ set(LMMS_SRCS
 	core/BrowserCatalog.cpp
 	core/BrowserMetadata.cpp
 	core/BrowserPeakCache.cpp
+	core/PeakJobs.cpp
 	core/BrowserSearch.cpp
 	core/BrowserTagStore.cpp
 	# Import detection (feature row 34 of docs/FEATURE-LIST-0.3.0.md): the Qt-free
@@ -215,6 +231,8 @@ set(LMMS_SRCS
 	core/ControlCommandsConsolidate.cpp
 	core/ControlCommandsMonitor.cpp
 	core/ControlCommandsPluginEditor.cpp
+	# Q050-502: the Qt platform a Wayland desktop runs on, so plug-in editors can embed (XWayland).
+	core/PluginWindowPlatform.cpp
 	core/ControlBounceSupport.cpp
 	core/ControlCommandsBounceLand.cpp
 	core/ControlCommandsBrowserCollections.cpp
@@ -276,6 +294,7 @@ set(LMMS_SRCS
 	core/ControlCommandsMixerRename.cpp
 	core/ControlCommandsDeviceCopy.cpp
 	core/ControlCommandsDrumRack.cpp
+	core/DrumPadState.cpp
 	core/ControlCommandsHandoff.cpp
 	core/ControlCommandsImportTracks.cpp
 	core/ControlCommandsLaunchBindings.cpp
@@ -289,6 +308,8 @@ set(LMMS_SRCS
 	core/ControlCommandsSessionAudioRecord.cpp
 	# 0.5.0 L10 (Q050-156): record.sampler_capture / _stop / _status / _land - an input take into a sampler.
 	core/ControlCommandsSamplerTake.cpp
+	# 0.5.0 L10 (Q050-263): plugin.slice_get / plugin.slice_set - the per-slice SlicerT controls.
+	core/ControlCommandsSlicerSlices.cpp
 	core/ControlCommandsTrackPresets.cpp
 	core/ControlCommandsRemote.cpp
 	core/ControlDeviceMoves.cpp
@@ -320,6 +341,10 @@ set(LMMS_SRCS
 	core/ControlMasteringSupport.cpp
 	core/ControlCommandsMastering.cpp
 	core/ControlCommandsMasteringRun.cpp
+	# 0.5.0 L12 (Q050-317.1): the release sequence of a mastering document - the model
+	# (MasteringSequence.h, a ProjectSection) and the mastering.song_* commands that edit it.
+	core/MasteringSequence.cpp
+	core/ControlCommandsMasteringSequence.cpp
 	# Import detection (feature row 34): detect.analyze (the SUGGESTION - one audio
 	# file in, tempo + first transient + key out, nothing written), detect.apply
 	# (the acceptance: the tempo into the tempo map and the key into the project's
@@ -374,6 +399,8 @@ set(LMMS_SRCS
 	core/ControlCommandsNoteProbability.cpp
 	# note.edit (0.5.0 note editor): a batch of note edits as one journal checkpoint.
 	core/ControlCommandsNoteEdit.cpp
+	# note.step_get_state / note.step_set (Q050-294.1): the melodic step grid view of a MIDI clip.
+	core/ControlCommandsNoteStep.cpp
 	# The 0.3.0 note/scale/device wave (board task #648; feature-list rows 11, 66 and
 	# 81): the note randomisation verbs (note.random_seed_get/_set, note.randomize),
 	# the slide verbs (note.slide_set / note.slide_clear), the three note transforms,
@@ -467,6 +494,8 @@ set(LMMS_SRCS
 	# render.sections (0.5.0 L12, Q050-009): the song's named sections exported one
 	# bounded file each, through render.render.
 	core/ControlCommandsRenderSections.cpp
+	# render.realtime (Q050-089.2): the project played through the device, so hardware inserts are heard.
+	core/ControlCommandsRenderRealtime.cpp
 	core/ControlCommandsRack.cpp
 	core/ControlCommandsRackMacros.cpp
 	core/ControlCommandsRackZones.cpp
@@ -485,6 +514,9 @@ set(LMMS_SRCS
 	# signal-graph submode (get_state / enable / disable) and its engine seam.
 	core/ControlCommandsFeedback.cpp
 	core/ControlCommandsFreeze.cpp
+	# Q050-124: freeze.bus / freeze.unfreeze_bus and the bus's frozen take.
+	core/ControlCommandsBusFreeze.cpp
+	core/MixerBusFreeze.cpp
 	# The session tempo/phase sync model and its wire (D11 "Ableton Link sync"):
 	# the model, the transport seam, the UDP multicast transport, and the
 	# link.* commands that make the whole of it drivable. See docs/LINK-SYNC.md.
@@ -510,8 +542,11 @@ set(LMMS_SRCS
 	# ControlCommandsArrangement.cpp is at the file-length ratchet.
 	core/ControlCommandsStructure.cpp
 	${LMMS_TELEMETRY_COMMAND_SRCS}
+	${LMMS_UPDATE_CHECK_SRCS}
 	core/ControlCommandsTransport.cpp
 	core/ControlCommandsTrackChannel.cpp
+	core/ControlCommandsTrackRouting.cpp
+	core/ControlTrackRouting.cpp
 	core/ControlCommandsTrackFolder.cpp
 	core/ControlCommandsTrackFolderSets.cpp
 	# VCA / mix-and-edit groups (OWNER-31 item 11): the group+entity half, the
@@ -578,16 +613,24 @@ set(LMMS_SRCS
 	# (core/ControlDeviceHosted.cpp). Its own translation unit so neither of
 	# those files grows for a format they do not own.
 	core/ControlDeviceVst3.cpp
+	core/ControlDeviceVst2.cpp
 	# The CLAP half of the device catalogue (feature row 79, board task #669):
 	# plugin.list enumerates the CLAP hosts' own classes - the effect host's and
 	# the instrument host's this lane adds - and plugin.load loads one onto a
 	# track. Its own translation unit, the same rule as the VST3 half above.
 	core/ControlDeviceClap.cpp
+	# Q050-491: the Audio Unit half of the catalogue, and the format-neutral AU rules (component ids,
+	# scan-cache records and quarantine, status names) it and the macOS-only hosts share.
+	core/ControlDeviceAu.cpp
+	core/AuComponent.cpp
 	# The chain PRESET store and the chain.* group (the 0.3.0 ladder's
 	# "plugin-chain presets", OWNER-31 item 2): the store, its read/capture half
 	# and its edit half. A chain preset is NOT a rack chain - see
 	# control/ControlCommandsChain.cpp.
 	core/ControlChainPresetSupport.cpp
+	core/PresetBindings.cpp
+	core/ControllerScript.cpp
+	core/ControlCommandsControllerScripts.cpp
 	core/ControlCommandsChain.cpp
 	core/ControlCommandsChainEdit.cpp
 	# The chord engine (feature row 35): the read-only view over the piano roll's
@@ -815,6 +858,9 @@ set(LMMS_SRCS
 	core/ControlVocabulary.cpp
 	core/ControlServer.cpp
 	core/ControlServerSocket.cpp
+	core/ControlServerEvents.cpp
+	core/ControlEventHub.cpp
+	core/ControlCommandsEvents.cpp
 	# The one reader of a caller's sample array (include/ControlSampleArray.h):
 	# the rules an 'input' array has to satisfy before a render or a process
 	# is driven with it. Pure Qt and no wasmtime, so it is compiled in EVERY
@@ -893,6 +939,7 @@ set(LMMS_SRCS
 	core/MidiClipControllers.cpp
 	core/MidiInputTransform.cpp
 	core/MidiClock.cpp
+	core/MidiClockCapture.cpp
 	core/MidiClockState.cpp
 	core/MidiClockTracker.cpp
 	core/MixHelpers.cpp
@@ -919,6 +966,7 @@ set(LMMS_SRCS
 	core/VideoAudioExtract.cpp
 	core/VideoFramePump.cpp
 	core/ControlCommandsVideo.cpp
+	core/ControlCommandsVideoRender.cpp
 	core/ControlReversibilityTableVideo.cpp
 	# 0.5.0 theme 24: the background task area's reporting API and task.* commands.
 	core/TaskCenter.cpp
@@ -934,6 +982,7 @@ set(LMMS_SRCS
 	# Q050-016: scheduled playback of a note's MPE expression event streams -
 	# the per-note pitch/pressure/timbre points, each sent at its own offset.
 	core/MpeExpressionStreamPlayback.cpp
+	core/MpeSynthExpression.cpp
 	# ARCH-4 S1a: the document format's namespace table and the resolver that
 	# reads it (design/specs/SPEC-ARCH-4-DOCUMENT-MODEL-DRAFT.md 1.3). Additive
 	# on purpose - nothing in the load or save path consults it yet.
@@ -966,6 +1015,8 @@ set(LMMS_SRCS
 	core/PluginScanCache.cpp
 	# The vendor each VST3 / CLAP class's own factory reports, recorded by the hosts' discovery.
 	core/PluginVendors.cpp
+	# Cluster stress-3: the reason a hosted plug-in module's entry point produced no plug-in.
+	core/PluginInstantiationFailure.cpp
 	# 0.5.0 Q050-018: the placeholders a project open could not load (name, format, vendor)
 	core/MissingDevices.cpp
 	core/PresetPreviewPlayHandle.cpp
@@ -989,6 +1040,8 @@ set(LMMS_SRCS
 	core/RecordOptions.cpp
 	core/MusicalTime.cpp
 	core/RemoteControls.cpp
+	core/RenderDiagnostics.cpp
+	core/AudioDeviceDiagnostics.cpp
 	core/RemotePlugin.cpp
 	core/Rack.cpp
 	core/RackMacros.cpp
@@ -1019,6 +1072,7 @@ set(LMMS_SRCS
 	core/SampleBuffer.cpp
 	core/SampleBufferResample.cpp
 	core/SampleClip.cpp
+	core/SampleClipEffects.cpp
 	core/SampleDecoder.cpp
 	core/SamplePlayHandle.cpp
 	core/SampleRecordHandle.cpp
@@ -1117,6 +1171,7 @@ set(LMMS_SRCS
 	core/ControlCommandsAutomationLanes.cpp
 	core/ControlCommandsClipArrange.cpp
 	core/ControlCommandsClipControllers.cpp
+	core/ControlCommandsControllerConvert.cpp
 	core/ControlCommandsClipEnvelope.cpp
 	core/ControlCommandsKeyNames.cpp
 	core/ControlCommandsMarkers.cpp
@@ -1126,6 +1181,7 @@ set(LMMS_SRCS
 	core/ControlCommandsNoteClipboard.cpp
 	core/ControlCommandsRackMacroPair.cpp
 	core/ControlCommandsNoteTools.cpp
+	core/ControlCommandsNoteMelody.cpp
 	core/ControlCommandsNoteMoves.cpp
 	core/ControlCommandsNoteHarmony.cpp
 	core/ControlCommandsNotePlayback.cpp
@@ -1138,6 +1194,8 @@ set(LMMS_SRCS
 	core/MetronomeOptions.cpp
 	core/ControlCommandsArrangeTools.cpp
 	core/FolderSummary.cpp
+	core/ClipGroupEdits.cpp
+	core/ControlCommandsFolderSpans.cpp
 	core/ControlCommandsSections.cpp
 	core/ArrangementSections.cpp
 	core/ControlCommandsSampleTools.cpp
@@ -1146,6 +1204,7 @@ set(LMMS_SRCS
 	core/ControlCommandsAudioAnalysis.cpp
 	core/SmfNoteRead.cpp
 	core/ControlCommandsClipImportFile.cpp
+	core/LoopImportWarp.cpp
 	# 0.5.0 W3 L13 / L14: customisation and access.
 	core/JsonFile.cpp
 	core/TrackLooks.cpp
@@ -1175,6 +1234,9 @@ set(LMMS_SRCS
 	# 0.5.0 L11 (W3): a clip into the library, the library index and similar sounds, thumbnails and the
 	# matched preview, the browser's history and remembered sources.
 	core/ControlCommandsLibraryClips.cpp
+	# Q050-273.1: one launcher cell's source audio, saved to the library - bounded by DECODED size,
+	# written atomically through QSaveFile (the decoded-memory hole the 512 MiB input check left).
+	core/LibraryCellAudio.cpp
 	core/ControlCommandsBrowserIndex.cpp
 	core/ControlCommandsBrowserMedia.cpp
 	core/ControlCommandsBrowserNavigation.cpp
@@ -1194,10 +1256,12 @@ set(LMMS_SRCS
 	# Q050-106: the stereo pair - sample.split_stereo writes the two channels as mono WAVs.
 	core/ControlCommandsSampleStereo.cpp
 	core/ControlCommandDef.cpp
+	core/ControlCommandsMixerMasking.cpp
 	core/ControlCommandsMixerMeters.cpp
 	core/PreviewOutput.cpp
 	core/ControlRoom.cpp
 	core/ControlCommandsTrackMidiOut.cpp
+	core/ControlCommandsExternalDevice.cpp
 	core/TrackVersions.cpp
 	core/ControlCommandsTrackVersions.cpp
 	core/ProjectSectionRegistry.cpp
@@ -1249,6 +1313,7 @@ set(LMMS_SRCS
 	core/UnclaimedElements.cpp
 	core/Clip.cpp
 	core/ClipTransients.cpp
+	core/TransientRepeat.cpp
 	core/ValueBuffer.cpp
 	core/VstSyncController.cpp
 	core/StepRecorder.cpp

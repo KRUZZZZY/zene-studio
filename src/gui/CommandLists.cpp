@@ -128,8 +128,7 @@ ListSpec pluginManager()
 		act("Hide", "plugin.organise", device, {{QStringLiteral("hidden"), true}}),
 		act("Show", "plugin.organise", device, {{QStringLiteral("hidden"), false}}),
 		act("Move to Folder...", "plugin.organise", device, {}, true)};
-	out.extras = {extra("Rescan", "plugin.rescan", {}, false),
-		extra("Rescan in Background", "plugin.scan_start", {}, false),
+	out.extras = {extra("Rescan", "plugin.scan_start", {}, false),
 		extra("Scan Progress", "plugin.scan_status", {}, false),
 		extra("Cancel Scan", "plugin.scan_cancel", {}, false),
 		readExtra("Plug-in Folders", "plugin.paths_get"),
@@ -145,8 +144,7 @@ ListSpec pluginModules()
 	out.actions = {act("Quarantine...", "plugin.scan_cache_quarantine_add", path, {}, true),
 		act("Release", "plugin.scan_cache_quarantine_remove", path)};
 	out.summaryKeys = QStringList{QStringLiteral("count"), QStringLiteral("load_failed_count")};
-	out.extras = {extra("Rescan", "plugin.rescan", {}, false),
-		extra("Rescan in Background", "plugin.scan_start", {}, false),
+	out.extras = {extra("Rescan", "plugin.scan_start", {}, false),
 		extra("Scan Progress", "plugin.scan_status", {}, false),
 		extra("Cancel Scan", "plugin.scan_cancel", {}, false)};
 	return out;
@@ -209,7 +207,9 @@ ListSpec shortcuts()
 		{{QStringLiteral("keys"), QString()}}), act("Reset", "shortcuts.reset", id)};
 	ListExtra resetAll = extra("Reset All", "shortcuts.reset", {}, false);
 	resetAll.confirm = true;
-	out.extras = {extra("Export...", "shortcuts.export"), extra("Import...", "shortcuts.import"), resetAll};
+	// Q050-055.2: a chosen plug-in gets a row of its own once it has a key.
+	out.extras = {extra("Bind a Plug-in...", "shortcuts.bind_plugin"), extra("Export...", "shortcuts.export"),
+		extra("Import...", "shortcuts.import"), resetAll};
 	return out;
 }
 
@@ -381,6 +381,28 @@ ListSpec subprojects()
 	open.caution = tr("It replaces the open project, and its unsaved changes are lost.");  // project.open keeps no snapshot
 	out.actions = {act("Render Again", "project.subproject_refresh", {{QStringLiteral("track"), QStringLiteral("track")}}), open};
 	out.extras = {extra("Add Subproject...", "project.subproject_add")};
+	return out;
+}
+
+ListSpec masteringSequence()
+{
+	// Q050-317.1: the mastering release sequence. The rows are the songs in release order, and
+	// every entry is one of the mastering.song_* commands - so the page and an agent edit the
+	// same list, and every edit is one undo step. "Move to Top"/"Move to Bottom" (rather than
+	// up/down) keep the row actions to arguments the row itself carries; the form of "Move to
+	// Position..." reaches any other place in the release.
+	ListSpec out = spec("Mastering Release", "mastering.sequence_list", "songs",
+		{QStringLiteral("index"), QStringLiteral("title"), QStringLiteral("processing"), QStringLiteral("fade_in_ms"),
+			QStringLiteral("fade_out_ms"), QStringLiteral("gap_ms"), QStringLiteral("source")});
+	out.summaryKeys = QStringList{QStringLiteral("count"), QStringLiteral("document_type")};
+	const QHash<QString, QString> song{{QStringLiteral("song"), QStringLiteral("song")}};
+	RowAction remove = act("Remove", "mastering.song_remove", song);
+	remove.confirm = true;
+	out.actions = {act("Edit...", "mastering.song_set", song, {}, true),
+		act("Move to Top", "mastering.song_move", song, {{QStringLiteral("to"), 0}}),
+		act("Move to Bottom", "mastering.song_move", song, {{QStringLiteral("to"), 511}}),
+		act("Move to Position...", "mastering.song_move", song, {}, true), remove};
+	out.extras = {extra("Add Song...", "mastering.song_add")};
 	return out;
 }
 

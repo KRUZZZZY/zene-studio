@@ -88,15 +88,12 @@ void LinkedModelGroup::addModel(AutomatableModel *model, const QString &name)
 		return;
 	}
 	model->setObjectName(name);
-	m_models.emplace(name.toStdString(), ModelInfo(name, model));
+	// the name the model is registered under; a later rename must not change it
+	const std::string key(name.toUtf8().data());
+	m_models.emplace(key, ModelInfo(name, model));
 	connect(model, &AutomatableModel::destroyed,
-				this, [this, model](jo_id_t){
-					// erase only this model's entry: the name may belong to another model
-					if(getModel(model->objectName().toStdString()) == model)
-					{
-						emit modelRemoved(model);
-						eraseModel(model->objectName());
-					}
+				this, [this, model, key](jo_id_t){
+					eraseRegisteredModel(key, model);
 				},
 				Qt::DirectConnection);
 
@@ -110,12 +107,19 @@ void LinkedModelGroup::addModel(AutomatableModel *model, const QString &name)
 
 void LinkedModelGroup::removeControl(AutomatableModel* mdl)
 {
-	// only this model's entry: the name may belong to another model
-	if(getModel(mdl->objectName().toStdString()) == mdl)
-	{
-		emit modelRemoved(mdl);
-		eraseModel(mdl->objectName());
-	}
+	eraseRegisteredModel(mdl->objectName().toStdString(), mdl);
+}
+
+
+
+
+void LinkedModelGroup::eraseRegisteredModel(const std::string& key, AutomatableModel* model)
+{
+	const auto itr = m_models.find(key);
+	if (itr == m_models.end() || itr->second.m_model != model) { return; }
+
+	emit modelRemoved(model);
+	m_models.erase(key);
 }
 
 

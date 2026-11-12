@@ -270,6 +270,12 @@ ControlResult splitPasses(const QJsonObject& args)
 		// Capping the cuts would leave every pass past the 32nd merged into the last take.
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the clip spans %1 passes; at most 32 can be split").arg(passes));
 	}
+	// addLane() returns -1 once the track's lane numbers run out, and setLaneIndex would clamp that to the
+	// base lane. Refuse before the clip is cut: one lane per piece must be available, or none is taken.
+	if (!ref.track->takeLanes().canAddLanes(static_cast<int>(passes)))
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the track has no lane numbers left for the clip's %1 passes").arg(passes));
+	}
 	const QString id = trackIdOf(ref.track);
 	// A16 §3: the Track checkpoint below is what control.undo replays, so the record says so and
 	// carries the composite as it was - like its siblings comp.move_edge and comp.select_group.

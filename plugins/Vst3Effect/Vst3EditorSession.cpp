@@ -31,6 +31,7 @@
 #include <map>
 
 #include "PluginEditorHost.h"
+#include "PluginWindowSystem.h"
 #include "pluginterfaces/gui/iplugview.h"
 #include "pluginterfaces/gui/iplugviewcontentscalesupport.h"
 #include "pluginterfaces/vst/ivsteditcontroller.h"
@@ -47,6 +48,26 @@ namespace
 //! Linux::IRunLoop::iid failed to link on macOS (hosted run 36691164314). A view on another platform
 //! never asks for a run loop; the answer is the same bytes everywhere.
 const TUID kRunLoopIid = INLINE_UID(0x18C35366, 0x97764F1A, 0x9C5B8385, 0x7A871389);
+
+//! Q050-490: the IPlugView platform type of each window system (nullptr: none to embed in).
+FIDString platformTypeOf(PluginWindowSystem system)
+{
+	switch (system)
+	{
+	case PluginWindowSystem::X11: return kPlatformTypeX11EmbedWindowID;
+	case PluginWindowSystem::Win32: return kPlatformTypeHWND;
+	case PluginWindowSystem::Cocoa: return kPlatformTypeNSView;
+	case PluginWindowSystem::None: break;
+	}
+	return nullptr;
+}
+
+//! The refusal open() returns: the reason goes to @a error when the caller asked for it, then false.
+bool refuseOpen(QString* error, const QString& why)
+{
+	if (error != nullptr) { *error = why; }
+	return false;
+}
 } // namespace
 
 /*! The frame a view is given: IPlugFrame (the view asks to be resized) and Linux::IRunLoop
@@ -123,6 +144,7 @@ public:
 
 	tresult PLUGIN_API queryInterface(const TUID iid, void** obj) SMTG_OVERRIDE
 	{
+		if (obj == nullptr) { return kInvalidArgument; }
 		if (FUnknownPrivate::iidEqual(iid, IPlugFrame::iid) || FUnknownPrivate::iidEqual(iid, FUnknown::iid))
 		{
 			*obj = static_cast<IPlugFrame*>(this);
@@ -178,35 +200,39 @@ bool Vst3EditorSession::open(void* parentWindow, QString* error)
 	if (isOpen()) { return true; }
 	if (m_controller == nullptr)
 	{
-		*error = QStringLiteral("the plug-in has no edit controller");
-		return false;
+		return refuseOpen(error, QStringLiteral("the plug-in has no edit controller"));
+	}
+	// Q050-490: the platform's own window type - an X11 id, an HWND or an NSView, as winId() gives.
+	const PluginWindowSystem system = m_windowSystem.value_or(currentPluginWindowSystem());
+	const FIDString type = platformTypeOf(system);
+	if (type == nullptr)
+	{
+		return refuseOpen(error, noPluginWindowSystemError());
 	}
 	IPlugView* view = m_controller->createView(Vst::ViewType::kEditor);
 	if (view == nullptr)
 	{
-		*error = QStringLiteral("the plug-in offers no editor view (createView returned nothing)");
-		return false;
+		return refuseOpen(error, QStringLiteral("the plug-in offers no editor view (createView returned nothing)"));
 	}
-	if (view->isPlatformTypeSupported(kPlatformTypeX11EmbedWindowID) != kResultTrue)
+	if (view->isPlatformTypeSupported(type) != kResultTrue)
 	{
 		view->release();
-		*error = QStringLiteral("the plug-in's editor cannot embed in an X11 window");
-		return false;
+		return refuseOpen(error, QStringLiteral("the plug-in's editor cannot embed on %1 (VST3 platform type %2)")
+			.arg(pluginWindowSystemName(system), QLatin1String(type)));
 	}
 	auto* frame = new HostPlugFrame;
 	view->setFrame(frame);
-	if (view->attached(parentWindow, kPlatformTypeX11EmbedWindowID) != kResultOk)
+	if (view->attached(parentWindow, type) != kResultOk)
 	{
 		view->setFrame(nullptr);
 		frame->dropAll();
 		frame->release();
 		view->release();
-		*error = QStringLiteral("the plug-in's editor refused to attach");
-		return false;
+		return refuseOpen(error, QStringLiteral("the plug-in's editor refused to attach"));
 	}
 	m_view = view;
 	m_frame = frame;
-	applyScale();
+	applyScale(system);
 	return true;
 }
 
@@ -215,13 +241,15 @@ bool Vst3EditorSession::open(void* parentWindow, QString* error)
  *  that scales itself is told the factor and asks for its new size through the frame, as the SDK
  *  prescribes; any other view that can resize is given the scaled size, through its own constraint. A
  *  view that can do neither keeps its size. At 1 nothing is asked of the view, so an editor opens
- *  exactly as it did before the option existed. */
-void Vst3EditorSession::applyScale()
+ *  exactly as it did before the option existed. On macOS the SDK keeps IPlugViewContentScaleSupport
+ *  out (an NSView's coordinates are logical: the OS applies the screen's factor itself), so there the
+ *  zoom is only ever the window's (Q050-490). */
+void Vst3EditorSession::applyScale(PluginWindowSystem system)
 {
 	m_scaling = EditorScaling::Unscaled;
 	if (m_scale == 1.0) { return; }
 	IPlugViewContentScaleSupport* scalable = nullptr;
-	if (m_view->queryInterface(IPlugViewContentScaleSupport::iid, reinterpret_cast<void**>(&scalable)) == kResultOk
+	if (system != PluginWindowSystem::Cocoa && m_view->queryInterface(IPlugViewContentScaleSupport::iid, reinterpret_cast<void**>(&scalable)) == kResultOk
 		&& scalable != nullptr)
 	{
 		const bool handled = scalable->setContentScaleFactor(static_cast<float>(m_scale)) == kResultTrue;
@@ -293,8 +321,17 @@ std::uint32_t Vst3EditorSession::timerDeliveries() const
 auto HostedPlugin::openEditor(void* parentWindow, QString* error) -> bool
 {
 	if (m_editor == nullptr) { m_editor = std::make_unique<Vst3EditorSession>(editController()); }
-	if (!m_editor->isOpen()) { m_editor->setScale(m_editorScale); }
+	if (!m_editor->isOpen())
+	{
+		m_editor->setScale(m_editorScale);
+		if (m_editorWindowSystem) { m_editor->setWindowSystem(*m_editorWindowSystem); }
+	}
 	return m_editor->open(parentWindow, error);
+}
+
+void HostedPlugin::setEditorWindowSystem(PluginWindowSystem system)
+{
+	m_editorWindowSystem = system;
 }
 
 void HostedPlugin::setEditorScale(double scale)

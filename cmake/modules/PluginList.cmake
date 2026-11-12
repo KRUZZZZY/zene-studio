@@ -24,12 +24,15 @@ ENDIF()
 SET(LMMS_PLUGIN_LIST
 	${MINIMAL_LIST}
 	Amplifier
+	AuEffect
+	AuInstrument
 	BassBooster
 	BitInvader
 	Bitcrush
 	CarlaBase
 	CarlaPatchbay
 	CarlaRack
+	CarlaVst2
 	ClapEffect
 	ClapInstrument
 	Compressor

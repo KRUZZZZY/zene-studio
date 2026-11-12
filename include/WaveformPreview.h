@@ -43,7 +43,9 @@ class LMMS_EXPORT WaveformPreview : public QWidget
 public:
 	explicit WaveformPreview(QWidget* parent = nullptr);
 
-	//! Show @a path's waveform (empty clears it). Returns whether peaks were read.
+	/*! Show @a path's waveform (empty clears it). A long file not in the peak cache is analysed in the background
+	 *  (browser.peaks_start, Q050-010): this returns false at once and the waveform appears when the job ends.
+	 *  Selecting something else cancels the job. Returns whether peaks were read now. */
 	bool setPath(const QString& path);
 	QString path() const { return m_path; }
 	//! The peaks drawn, as (min, max) pairs; empty when none.
@@ -56,6 +58,11 @@ protected:
 	void paintEvent(QPaintEvent* event) override;
 
 private:
+	bool readPeaks();
+	void showMessage(const QString& message);
+	void cancelPending();
+
+	QString m_pendingTask;  //!< the app.tasks id of the analysis this view waits for, if any
 	QString m_path;
 	QString m_message;
 	QVector<QPair<float, float>> m_peaks;

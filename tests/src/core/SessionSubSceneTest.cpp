@@ -327,7 +327,68 @@ private slots:
 		QVERIFY2(section.contains(QStringLiteral("scene=\"abc\"")) && section.contains(QStringLiteral("name=\"Bad\"")), qPrintable(section));
 	}
 
+	//! Text, CDATA or a processing instruction beside the rows is content this section does not model: the section is not
+	//! claimed (no row is read from it) and goes back into the file as it came, so the next save does not drop it.
+	//! Whitespace-only text and CDATA, the layout of a project file, is not content and still claims the section.
+	void aSectionWithOtherContentIsKeptNotDropped()
+	{
+		const QString open = QStringLiteral("<z:subscenes v=\"1\">");
+		const QString row = QStringLiteral("<z:subscene name=\"Outer\" scene=\"1\" tracks=\"0,2\"/>");
+		const QString close = QStringLiteral("</z:subscenes>");
+		std::size_t rows = 0;
+		QString resaved;
+
+		loadWithSection(QStringLiteral("text"), open + row + QStringLiteral("KEEP-TEXT") + close, &rows, &resaved);
+		QCOMPARE(rows, std::size_t(0));
+		QVERIFY2(resaved.contains(QStringLiteral("KEEP-TEXT")) && resaved.contains(QStringLiteral("name=\"Outer\"")), qPrintable(resaved));
+
+		loadWithSection(QStringLiteral("cdata"), open + row + QStringLiteral("<![CDATA[KEEP-CDATA]]>") + close, &rows, &resaved);
+		QCOMPARE(rows, std::size_t(0));
+		QVERIFY2(resaved.contains(QStringLiteral("KEEP-CDATA")), qPrintable(resaved));
+
+		loadWithSection(QStringLiteral("instruction"), open + row + QStringLiteral("<?keep KEEP-PI?>") + close, &rows, &resaved);
+		QCOMPARE(rows, std::size_t(0));
+		QVERIFY2(resaved.contains(QStringLiteral("KEEP-PI")), qPrintable(resaved));
+
+		loadWithSection(QStringLiteral("layout"), open + QStringLiteral("\n  ") + row + QStringLiteral("\n  <![CDATA[ \n ]]>\n") + close,
+			&rows, &resaved);
+		QCOMPARE(rows, std::size_t(1));
+		QVERIFY2(resaved.contains(QStringLiteral("name=\"Outer\"")), qPrintable(resaved));
+	}
+
 private:
+	//! Saves a project with a sub-scene, replaces its <z:subscenes> section with @a section and loads the file: how many rows
+	//! were read, and the section the next save writes.
+	void loadWithSection(const QString& name, const QString& section, std::size_t* rows, QString* resaved)
+	{
+		Song* song = Engine::getSong();
+		std::vector<SubScene> kept = song->sessionModel().subScenes();
+		SubScene seed;
+		seed.name = QStringLiteral("Seed");
+		seed.tracks = {0};
+		song->sessionModel().setSubScenes({seed});
+		const QString base = m_dir.filePath(name + QStringLiteral("-base.mmp"));
+		const bool saved = song->saveProjectFile(base, false);
+		song->sessionModel().setSubScenes(std::move(kept));
+		QVERIFY(saved);
+		QString text = QString::fromUtf8(readFileBytes(base));
+		const int from = text.indexOf(QStringLiteral("<z:subscenes"));
+		const int to = text.indexOf(QStringLiteral("</z:subscenes>"));
+		QVERIFY(from > 0 && to > from);
+		text.replace(from, to + int(qstrlen("</z:subscenes>")) - from, section);
+		const QString path = m_dir.filePath(name + QStringLiteral(".mmp"));
+		QFile file(path);
+		QVERIFY(file.open(QIODevice::WriteOnly));
+		file.write(text.toUtf8());
+		file.close();
+		song->loadProject(path);
+		QVERIFY2(song->loadRefusal().isEmpty(), qPrintable(song->loadRefusal()));
+		*rows = song->sessionModel().subScenes().size();
+		const QString out = m_dir.filePath(name + QStringLiteral("-resaved.mmp"));
+		QVERIFY(song->saveProjectFile(out, false));
+		*resaved = sectionText(out, QStringLiteral("z:subscenes"));
+	}
+
 	//! Drop what is queued or playing: the reset is taken on the scheduler's next period, with what was queued before it.
 	static void settle(SessionScheduler& scheduler)
 	{

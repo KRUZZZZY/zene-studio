@@ -27,12 +27,14 @@
 #include <QComboBox>
 #include <QGroupBox>
 #include <QImageReader>
+#include <QJsonObject>
 #include <QLabel>
 #include <QLayout>
 #include <QLineEdit>
 #include <QScrollArea>
 
 #include "AudioEngine.h"
+#include "ControlRegistry.h"
 #include "embed.h"
 #include "Engine.h"
 #include "FileDialog.h"
@@ -92,6 +94,8 @@ inline void labelWidget(QWidget * w, const QString & txt)
 
 
 SetupDialog::SetupDialog(ConfigTab tab_to_open) :
+	m_autoTrackChannel(ConfigManager::inst()->value(
+			"app", "autotrackchannel", "0").toInt()),
 	m_tooltips(!ConfigManager::inst()->value(
 			"tooltips", "disabled").toInt()),
 	m_displayWaveform(ConfigManager::inst()->value(
@@ -238,6 +242,8 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open) :
 	QGroupBox * guiGroupBox = new QGroupBox(tr("Graphical user interface (GUI)"), generalControls);
 	QVBoxLayout * guiGroupLayout = new QVBoxLayout(guiGroupBox);
 
+	addCheckBox(tr("Give each new instrument or sample track its own named mixer channel"), guiGroupBox, guiGroupLayout,
+		m_autoTrackChannel, SLOT(toggleAutoTrackChannel(bool)), false);
 	addCheckBox(tr("Enable tooltips"), guiGroupBox, guiGroupLayout,
 		m_tooltips, SLOT(toggleTooltips(bool)), true);
 	addCheckBox(tr("Enable master oscilloscope by default"), guiGroupBox, guiGroupLayout,
@@ -299,6 +305,26 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open) :
 	guiGroupLayout->addWidget(m_autoScrollComboBox);
 
 	generalControlsLayout->addWidget(guiGroupBox);
+
+	// Q050-501: absent where the commands are (a build or a copy updated by something else).
+	const QString updateGetId = QStringLiteral("app.update_check_get");
+	if (ControlRegistry::instance()->hasCommand(updateGetId))
+	{
+		const QJsonObject updates = ControlRegistry::instance()->invoke(updateGetId).result;
+		auto* updatesGroupBox = new QGroupBox(tr("Updates"), generalControls);
+		auto* updatesLayout = new QVBoxLayout(updatesGroupBox);
+		m_updateCheck = new QCheckBox(tr("Check once a day for a newer version"), updatesGroupBox);
+		m_updateCheck->setObjectName(QStringLiteral("updateCheckEnabled"));
+		m_updateCheck->setChecked(updates.value(QStringLiteral("enabled")).toBool());
+		m_updateCheck->setToolTip(tr("One request to %1, naming only the version and platform (%2). Nothing is downloaded or installed.")
+			.arg(updates.value(QStringLiteral("feed")).toString(), updates.value(QStringLiteral("user_agent")).toString()));
+		m_updatePrereleases = new QCheckBox(tr("Include pre-releases"), updatesGroupBox);
+		m_updatePrereleases->setObjectName(QStringLiteral("updateCheckPrereleases"));
+		m_updatePrereleases->setChecked(updates.value(QStringLiteral("prereleases")).toBool());
+		updatesLayout->addWidget(m_updateCheck);
+		updatesLayout->addWidget(m_updatePrereleases);
+		generalControlsLayout->addWidget(updatesGroupBox);
+	}
 
 	generalControlsLayout->addSpacing(10);
 
@@ -979,12 +1005,50 @@ SetupDialog::~SetupDialog()
 
 
 
+void SetupDialog::toggleAutoTrackChannel(bool enabled)
+{
+	m_autoTrackChannel = enabled;
+}
+
+
+
+
 void SetupDialog::accept()
 {
 	/* Hide dialog before setting values. This prevents an obscure bug
 	where non-embedded VST windows would steal focus and prevent LMMS
 	from taking mouse input, rendering the application unusable. */
 	QDialog::accept();
+
+	// Q050-212: the one setting of this dialog an agent's own settings.set is the path for, so the two cannot differ.
+	if (m_autoTrackChannel != (ConfigManager::inst()->value("app", "autotrackchannel", "0").toInt() != 0))
+	{
+		ControlRegistry::instance()->invoke(QStringLiteral("settings.set"),
+			{{QStringLiteral("key"), QStringLiteral("app/autotrackchannel")},
+				{QStringLiteral("value"), QString::number(m_autoTrackChannel)}});
+	}
+
+	// Q050-501: the same command agents run, and only for what changed: an untouched box answers no question.
+	if (m_updateCheck != nullptr)
+	{
+		const QJsonObject before = ControlRegistry::instance()->invoke(QStringLiteral("app.update_check_get")).result;
+		QJsonObject changes;
+		if (m_updateCheck->isChecked() != before.value(QStringLiteral("enabled")).toBool())
+		{
+			changes.insert(QStringLiteral("enabled"), m_updateCheck->isChecked());
+		}
+		if (m_updatePrereleases->isChecked() != before.value(QStringLiteral("prereleases")).toBool())
+		{
+			changes.insert(QStringLiteral("prereleases"), m_updatePrereleases->isChecked());
+		}
+		if (!changes.isEmpty())
+		{
+			// This dialog holds the journal off while it is open, and the choice is one undo step like any other caller's.
+			Engine::projectJournal()->setJournalling(true);
+			ControlRegistry::instance()->invoke(QStringLiteral("app.update_check_set"), changes);
+			Engine::projectJournal()->setJournalling(false);
+		}
+	}
 
 	ConfigManager::inst()->setValue("tooltips", "disabled",
 					QString::number(!m_tooltips));

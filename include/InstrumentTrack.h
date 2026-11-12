@@ -46,6 +46,7 @@
 #include "NotePlayHandle.h"
 #include "Piano.h"
 #include "Plugin.h"
+#include "RenderDiagnostics.h"
 #include "Track.h"
 
 //! cluster 5186: the modulation-lifetime regression installs a watchable instrument in a track.
@@ -163,6 +164,12 @@ public:
 	void playNote( NotePlayHandle * _n, std::span<SampleFrame> workingBuffer );
 
 	QString instrumentName() const;
+#ifdef LMMS_TESTING
+	/*! Q050-311 test seam: install an instrument the test constructed itself (a built-in compiled into
+	 *  the test executable, because a Windows test host cannot load plug-in modules) the same way
+	 *  loadInstrument() installs one. The track takes ownership. */
+	void setInstrumentForTest( Instrument* instrument );
+#endif
 	//! 0.5.0 Q050-018: the original `<instrument>` XML the file carried, kept while the instrument is a placeholder
 	//! (its module or hosted plug-in binary is missing) and written back unchanged on save; null otherwise.
 	const QDomElement& preservedInstrument() const { return m_preservedInstrument; }
@@ -299,6 +306,10 @@ public:
 	{
 		return &m_lastKeyModel;
 	}
+
+	//! Q050-074.1: this track's share of the engine's synthesis stage (its play handles feed it).
+	SynthesisLoad& synthesisLoad() { return m_synthesisLoad; }
+	const SynthesisLoad& synthesisLoad() const { return m_synthesisLoad; }
 
 	bool keyRangeImport() const;
 	bool isKeyMapped(int key) const;
@@ -499,6 +510,7 @@ private:
 	IntModel m_baseNoteModel;	//!< The "A4" or "440 Hz" key (default 69)
 	IntModel m_firstKeyModel;	//!< First key the instrument reacts to
 	IntModel m_lastKeyModel;	//!< Last key the instrument reacts to
+	SynthesisLoad m_synthesisLoad;	//!< Q050-074.1: written by the render workers, read by mixer.cpu_load
 
 	bool m_hasAutoMidiDev;
 	static InstrumentTrack *s_autoAssignedTrack;

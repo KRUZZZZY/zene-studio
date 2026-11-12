@@ -87,7 +87,10 @@ float loadMidiDepthValue( const QDomElement& element, const char* attribute, flo
 //! timing, which is what -1 says. Both are required together, and both must
 //! parse - QString::toInt() reports a failed conversion by yielding 0, which
 //! would otherwise read as "the author had this note at tick 0, one tick long"
-//! and let note.restore_timing move the note there.
+//! and let note.restore_timing move the note there. The pair must also be a
+//! note the song can hold, as loadSettings clamps the note's own pos and len:
+//! a position inside the song and pos + len no longer than MaxSongLength. The
+//! sum is taken in 64 bits, so checking it cannot itself overflow.
 void loadUnquantisedTiming( const QDomElement& element, tick_t& pos, tick_t& length )
 {
 	pos = -1;
@@ -98,6 +101,7 @@ void loadUnquantisedTiming( const QDomElement& element, tick_t& pos, tick_t& len
 	const int storedPos = element.attribute( "qpos" ).toInt( &posOk );
 	const int storedLength = element.attribute( "qlen" ).toInt( &lengthOk );
 	if( !posOk || !lengthOk || storedPos < 0 || storedLength < 1 ) { return; }
+	if( storedPos >= MaxSongLength || static_cast<qint64>( storedPos ) + storedLength > MaxSongLength ) { return; }
 
 	pos = storedPos;
 	length = storedLength;
@@ -256,6 +260,7 @@ void Note::setReleaseVelocity( int velocity )
 
 int Note::releaseVelocityFromMidi( int midiVelocity, int midiBaseVelocity )
 {
+	if( midiBaseVelocity <= 0 ) { return 0; }
 	// Q050-039: round-half-up. With truncation the round trip through the
 	// volume scale lost a unit (an incoming 96 landed on 152 and came back as
 	// 95 at the default base velocity 63); rounding makes this the exact

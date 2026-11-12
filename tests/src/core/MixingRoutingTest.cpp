@@ -461,6 +461,50 @@ private slots:
 		mixer->deleteChannelSend(incoming);
 		mixer->deleteSidechainSend(sidechain);
 	}
+
+	void routeChangesMarkTheProjectModified()
+	{
+		// A route is part of the saved project: creating, changing or removing one must mark the song
+		// modified, or closing it without a save skips the prompt and the change is lost.
+		Song* song = Engine::getSong();
+		QVERIFY(song != nullptr);
+		const QJsonObject sendEnds{{QStringLiteral("channel"), ch(2)}, {QStringLiteral("to"), ch(4)}};
+		const QJsonObject sidechainEnds{{QStringLiteral("channel"), ch(3)}, {QStringLiteral("to"), ch(1)}};
+		QJsonObject sidechainRemove = sidechainEnds;
+		sidechainRemove.insert(QStringLiteral("sidechain"), true);
+		// Start with neither route present, whatever earlier cases left behind.
+		run(QStringLiteral("mixer.route_remove"), sendEnds);
+		run(QStringLiteral("mixer.route_remove"), sidechainRemove);
+
+		song->noteProjectSaved(QStringLiteral("route-clean.mmpz"));  // the product's way back to clean
+		QVERIFY2(run(QStringLiteral("mixer.route_to"), sendEnds).ok, "mixer.route_to failed");
+		QVERIFY2(song->isModified(), "mixer.route_to created a send without marking the song modified");
+
+		song->noteProjectSaved(QStringLiteral("route-clean.mmpz"));  // the product's way back to clean
+		QJsonObject auxiliary = sendEnds;
+		auxiliary.insert(QStringLiteral("amount"), 0.5);
+		QVERIFY2(run(QStringLiteral("mixer.send_to"), auxiliary).ok, "mixer.send_to failed");
+		QVERIFY2(song->isModified(), "mixer.send_to changed a send without marking the song modified");
+
+		song->noteProjectSaved(QStringLiteral("route-clean.mmpz"));  // the product's way back to clean
+		QVERIFY2(run(QStringLiteral("mixer.route_remove"), sendEnds).ok, "mixer.route_remove failed");
+		QVERIFY2(song->isModified(), "mixer.route_remove removed a send without marking the song modified");
+
+		// A refused change writes nothing, so it must not mark the song.
+		song->noteProjectSaved(QStringLiteral("route-clean.mmpz"));  // the product's way back to clean
+		QVERIFY(!run(QStringLiteral("mixer.route_remove"), sendEnds).ok);
+		QVERIFY2(!song->isModified(), "a refused mixer.route_remove marked the song modified");
+
+		song->noteProjectSaved(QStringLiteral("route-clean.mmpz"));  // the product's way back to clean
+		QJsonObject sidechain = sidechainEnds;
+		sidechain.insert(QStringLiteral("amount"), 0.5);
+		QVERIFY2(run(QStringLiteral("mixer.sidechain_to"), sidechain).ok, "mixer.sidechain_to failed");
+		QVERIFY2(song->isModified(), "mixer.sidechain_to created a sidechain without marking the song modified");
+
+		song->noteProjectSaved(QStringLiteral("route-clean.mmpz"));  // the product's way back to clean
+		QVERIFY2(run(QStringLiteral("mixer.route_remove"), sidechainRemove).ok, "sidechain route_remove failed");
+		QVERIFY2(song->isModified(), "mixer.route_remove removed a sidechain without marking the song modified");
+	}
 };
 
 QTEST_MAIN(MixingRoutingTest)

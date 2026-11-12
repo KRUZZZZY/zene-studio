@@ -46,6 +46,7 @@
 #include "MeterSpeech.h"
 #include "SessionAnnouncements.h"
 #include "AboutDialog.h"
+#include "ArrangerFileDrop.h"
 #include "AudioEngine.h"
 #include "AutomationEditor.h"
 #include "BrowserPanel.h"
@@ -115,6 +116,7 @@
 #include "ToolPlugin.h"
 #include "VersionedSaveDialog.h"
 #include "VideoDecoder.h"
+#include "VideoLane.h"
 
 #include "lmmsversion.h"
 
@@ -427,6 +429,8 @@ void MainWindow::finalize()
 	addMidiClockMenu(edit_menu);
 	addSessionTuningMenu(edit_menu);
 	addPluginQuarantineMenu(edit_menu);
+	// Q050-093: the remembered loop mode of a dropped audio loop (settings.set on import/loopwarp).
+	arrangerdrop::addLoopWarpAction(edit_menu);
 
 	// Saved MIDI mapping sets (controller.template_*), re-read each time the submenu opens.
 	QMenu* templatesMenu = edit_menu->addMenu(tr("Controller Templates"));
@@ -1394,6 +1398,10 @@ void MainWindow::updateViewMenu()
 	// 0.5.0 ED-054: the project's video in its floating window (greyed out in a build without FFmpeg).
 	declares(m_viewMenu->addAction(tr("Video Window"), this, []() { dispatchShellCommand(QStringLiteral("video.window_show")); }),
 		"video.window_show")->setEnabled(VideoDecoder::available());
+	// Q050-180.1: a clip at the play position - the way to the first clip, while the arranger's video lane is hidden.
+	declares(m_viewMenu->addAction(tr("Add Video Clip..."), this, [this]() {
+		VideoLane::addClipFromDialog(this, Engine::getSong()->getPlayPos(Song::PlayMode::Song).getTicks());
+	}), "video.clip_add")->setEnabled(VideoDecoder::available());
 	m_viewMenu->addSeparator();
 
 	declares(m_viewMenu->addAction(embed::getIconPixmap( "fullscreen" ),

@@ -52,12 +52,15 @@ struct ControlDeviceEntry
 	QString name;        //!< plugin name ("amplifier"), LADSPA label ("amp_mono")
 	                     //!< or, for LV2, the plugin URI
 	QString displayName; //!< human name ("Amplifier")
-	QString format;      //!< "builtin" | "ladspa" | "lv2" | "vst3"
+	QString format;      //!< "builtin" | "ladspa" | "lv2" | "vst3" | "clap" | "au" | "vst2"
 	QString kind;        //!< "effect" | "instrument" | "tool" | "other"
 	QString file;        //!< LADSPA file stem, empty for other formats
 	QString label;       //!< LADSPA label, empty for other formats
 	QString uri;         //!< LV2 plugin URI, empty for other formats
 	QString className;   //!< VST3 class name, empty for other formats
+	QString component;   //!< Audio Unit "type:subtype:manufacturer" (Q050-491), empty for other formats
+	QString vst2Id;      //!< VST2 unique id, decimal (Q050-481.1), empty for other formats
+	QString vst2Binary;  //!< VST2 binary kind: "native" | "win64" | "win32" (Q050-481.1), empty for other formats
 	bool loadable;       //!< plugin.load accepts this entry
 };
 
@@ -87,6 +90,18 @@ LMMS_EXPORT void controlLv2DeviceEntries(QList<ControlDeviceEntry>* out);
 //! dev-<n> ids of the formats that were already there.
 LMMS_EXPORT void controlClapDeviceEntries(QList<ControlDeviceEntry>* out);
 
+//! Q050-491: appends this build's Audio Unit (AUv2) components to \a out, through the AU hosts' own
+//! discovery (the system component registry, behind SubPluginFeatures::listSubPluginKeys()). The
+//! hosts are built on macOS only, so everywhere else this is a no-op and plugin.list has no "au"
+//! format. Called after the CLAP block, so the formats already there keep their dev-<n> ids.
+LMMS_EXPORT void controlAuDeviceEntries(QList<ControlDeviceEntry>* out);
+
+//! Q050-481.1: appends the VST2 instruments the Carla-backed VST2 host (plugins/CarlaVst2, module
+//! "carlavst2") discovers, through its own SubPluginFeatures::listSubPluginKeys() - Carla's
+//! out-of-process discovery tools, native and through Wine. A no-op when the build has no such host
+//! or no Carla runtime is installed. Called after every other format, so no existing dev-<n> moves.
+LMMS_EXPORT void controlVst2DeviceEntries(QList<ControlDeviceEntry>* out);
+
 //! The build's device catalogue in the stable order the dev-<n> ids use:
 //! built-in effects, built-in instruments, LADSPA (sorted by name), then LV2
 //! (sorted by URI). The order is deterministic for a binary, which is what
@@ -110,17 +125,18 @@ LMMS_EXPORT QJsonObject controlDeviceJson(const ControlDeviceEntry& entry, int i
 //! read, so the wire and the window cannot disagree.
 LMMS_EXPORT QString controlDeviceVendor(const ControlDeviceEntry& entry);
 
-//! A plugin.* target: a Song track or a mixer channel and the effect chain it owns.
+//! A plugin.* target: a Song track, a mixer channel or (Q050-111) an audio clip, and the effect chain it owns.
 struct ControlTarget
 {
-	QString id;                      //!< "trk-<n>" / "ch-<n>"
-	QString kind;                    //!< "track" | "channel"
+	QString id;                      //!< "trk-<n>" / "ch-<n>" / "clip-<n>"
+	QString kind;                    //!< "track" | "channel" | "clip"
 	QString typeName;                //!< the track's type, or "channel"
 	EffectChain* chain = nullptr;    //!< never null on success
 	InstrumentTrack* instrumentTrack = nullptr;
 };
 
-//! Resolves "trk-<n>" or "ch-<n>"; false and *error set on failure.
+//! Resolves "trk-<n>", "ch-<n>" or "clip-<n>" (an audio clip's own effects, Q050-111); false and *error set
+//! on failure.
 LMMS_EXPORT bool resolveControlTarget(const QString& id, ControlTarget* target, ControlResult* error);
 
 //! The effect addressed by \a pluginId ("fx-<n>") inside \a target.
@@ -198,6 +214,21 @@ LMMS_EXPORT bool controlVst3DeviceModule(const ControlDeviceEntry& entry, QStrin
 //! module it named is gone.
 LMMS_EXPORT bool controlClapDeviceModule(const ControlDeviceEntry& entry, QString* pluginName,
 	Plugin::Descriptor::SubPluginFeatures::Key* key, bool* useKey, ControlResult* error);
+
+//! Q050-491: the same for an Audio Unit entry: the host module ("aueffect" / "auinstrument") and the
+//! "component" key plugins/AuEffect/AuSubPluginFeatures.cpp builds. False and *error set (Refused) on
+//! a build without an AU host - every build but macOS - and when the entry names no valid component.
+LMMS_EXPORT bool controlAuDeviceModule(const ControlDeviceEntry& entry, QString* pluginName,
+	Plugin::Descriptor::SubPluginFeatures::Key* key, bool* useKey, ControlResult* error);
+
+//! Q050-481.1: the same for a VST2 entry: the "carlavst2" module and the (file, name, uniqueid,
+//! binary) key plugins/CarlaVst2 builds and a saved project stores. False and *error set when the
+//! build has no such host, when the entry is not an instrument, or when its binary is gone.
+LMMS_EXPORT bool controlVst2DeviceModule(const ControlDeviceEntry& entry, QString* pluginName,
+	Plugin::Descriptor::SubPluginFeatures::Key* key, bool* useKey, ControlResult* error);
+
+//! Q050-491: true when this build hosts Audio Units (macOS). plugin.list offers "au" only then.
+LMMS_EXPORT bool controlAuHostingBuilt();
 
 //! True when the module is present and exposes lmms_plugin_main - the check
 //! that keeps Plugin::instantiate()'s modal error box out of a headless call.

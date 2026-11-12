@@ -215,6 +215,30 @@ void describeAudioBuses(IComponent* component, BusDirection direction, std::vect
 	}
 }
 
+//! An instrument whose output buses are all off by default still plays into the first one, as its
+//! event input does (resolveEventInputBus): Vitalium (DISTRHO-Ports) reports its only output that way,
+//! and with no bus mapped it renders nothing (cluster stress-2). Returns whether @a outputs changed.
+auto preferFirstOutputBus(std::vector<BusDescriptor>* outputs) -> bool
+{
+	const auto active = [](const BusDescriptor& bus) { return bus.active && bus.channelCount > 0; };
+	if (outputs->empty() || std::any_of(outputs->begin(), outputs->end(), active)) { return false; }
+	if (outputs->front().channelCount <= 0) { return false; }
+	outputs->front().active = true;
+	return true;
+}
+
+//! Activates the audio buses of @a component in @a direction that the layout maps. kDefaultActive only
+//! asks the host to do it ("activateBus call is requested", ivstcomponent.h): a bus starts inactive, and
+//! a JUCE plug-in writes its audio only into a host-activated bus (cluster stress-2).
+void activateMappedAudioBuses(IComponent* component, BusDirection direction, const std::vector<BusDescriptor>& buses)
+{
+	for (std::size_t i = 0; i < buses.size(); ++i)
+	{
+		if (!buses[i].active || buses[i].channelCount <= 0) { continue; }
+		component->activateBus(kAudio, direction, static_cast<int32>(i), true);
+	}
+}
+
 } // namespace
 
 auto HostedPlugin::load(const QString& modulePath, const QString& classId, QString* error) -> bool
@@ -264,6 +288,11 @@ auto HostedPlugin::load(const QString& modulePath, const QString& classId, QStri
 		describeAudioBuses(d.component.get(), kInput, &d.inputBusDescs, &buses);
 		describeAudioBuses(d.component.get(), kOutput, &d.outputBusDescs, &buses);
 	}
+	if (d.instrument && preferFirstOutputBus(&d.outputBusDescs))
+	{
+		buses = d.inputBusDescs;
+		buses.insert(buses.end(), d.outputBusDescs.begin(), d.outputBusDescs.end());
+	}
 	d.layout = mapBuses(buses);
 
 	// event input bus - the MIDI path
@@ -308,14 +337,25 @@ auto HostedPlugin::load(const QString& modulePath, const QString& classId, QStri
 		}
 		std::sort(d.indexById.begin(), d.indexById.end());
 		d.paramValues = std::make_unique<std::atomic<float>[]>(d.params.size());
+		d.paramGestures = std::make_unique<PluginParamGesture[]>(d.params.size());
 		for (std::size_t i = 0; i < d.params.size(); ++i)
 		{
 			d.paramValues[i].store(d.params[i].defaultNormalized, std::memory_order_relaxed);
 		}
+		// What the processor already holds: the values the plug-in reported. process() sends a parameter
+		// only when the host's value moves away from the last one sent, across prepare()s too. Sending
+		// every reported value on the first block pushed values some plug-ins report but do not play over
+		// their patch (Dexed's controller says 0 for Output and Cutoff), and Dexed and Surge XT then
+		// rendered silence (cluster stress-2).
+		d.lastParamValues.assign(d.params.size(), 0.f);
+		for (std::size_t i = 0; i < d.params.size(); ++i)
+		{
+			d.lastParamValues[i] = d.params[i].defaultNormalized;
+		}
 	}
 
 	if (d.handlerImpl != nullptr) { d.handlerImpl->detach(); }
-	auto* handler = new Vst3ComponentHandler(d.paramValues.get(), &d.indexById);
+	auto* handler = new Vst3ComponentHandler(d.paramValues.get(), &d.indexById, d.paramGestures.get());
 	handler->setOnLatencyChanged(d.onLatencyChanged);
 	d.handlerImpl = handler;
 	d.handler = owned(handler);
@@ -406,6 +446,13 @@ void HostedPlugin::notifyController(std::uint32_t id, float normalized)
 		d.controller->setParamNormalized(static_cast<ParamID>(id),
 			sanitizedNormalized(normalized, keep));
 	}
+}
+
+void HostedPlugin::readParamEdits(std::uint32_t id, PluginParamGesture::Edits* edits)
+{
+	const auto index = paramIndex(id);
+	if (index < 0) { *edits = {}; return; }
+	m_impl->paramGestures[index].read(m_impl->paramValues[index], edits);
 }
 
 auto HostedPlugin::paramNormalized(std::uint32_t id) const -> float
@@ -504,6 +551,10 @@ auto HostedPlugin::prepare(double sampleRate, int maxBlockSize, QString* error) 
 	setup.maxSamplesPerBlock = maxBlockSize;
 	setup.sampleRate = sampleRate;
 	if (d.processor->setupProcessing(setup) != kResultOk) { return refuse(error, "setupProcessing() failed"); }
+	// The buses ProcessData carries, activated while the component is still inactive: after
+	// setupProcessing() and before setActive(true), on every prepare.
+	activateMappedAudioBuses(d.component.get(), kInput, d.inputBusDescs);
+	activateMappedAudioBuses(d.component.get(), kOutput, d.outputBusDescs);
 	if (d.component->setActive(true) != kResultOk) { return refuse(error, "setActive() failed"); }
 	// The SDK's AudioEffect base class returns kNotImplemented here and the
 	// SDK's own host ignores the return value (audiohost/audioclient.cpp:
@@ -542,7 +593,6 @@ auto HostedPlugin::prepare(double sampleRate, int maxBlockSize, QString* error) 
 		d.scratchOutput.assign(static_cast<std::size_t>(maxBlockSize), 0.f);
 		d.inputParamChanges.setMaxParameters(static_cast<int32>(d.params.size()));
 		d.chunkParamChanges.setMaxParameters(static_cast<int32>(d.params.size()));
-		d.lastParamValues.assign(d.params.size(), std::numeric_limits<float>::lowest());
 
 		// MIDI: the event list is already sized (its constructor did it), the
 		// ordering scratch is sized here, and the queue starts empty. All three
@@ -862,6 +912,11 @@ auto HostedPlugin::paramDisplayValue(std::uint32_t id, float normalized) const -
 auto HostedPlugin::lastChunkEventCount() const -> int
 {
 	return m_impl->chunkEvents.getEventCount();
+}
+
+auto HostedPlugin::lastParameterChangeCount() const -> int
+{
+	return m_impl->inputParamChanges.getParameterCount();
 }
 
 auto HostedPlugin::lastChunkEventOffset(int index) const -> int

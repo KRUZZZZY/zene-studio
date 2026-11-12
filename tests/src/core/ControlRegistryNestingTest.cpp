@@ -571,6 +571,35 @@ private slots:
 		QCOMPARE(registry->transactions().last().toObject().value(QStringLiteral("command")).toString(),
 			QStringLiteral("mixer.set_volume"));
 	}
+
+	//! destroy() ends the instance the application had told "the model is up". The
+	//! instance that instance() builds next has not been told, so it must not report
+	//! startup as complete, and its readiness report still says "still starting".
+	void recreatedRegistryDoesNotInheritReadiness()
+	{
+		ControlRegistry::setReady(true);
+		ControlRegistry::destroy();
+		ControlRegistry::instance();
+
+		QVERIFY2(!ControlRegistry::startupComplete(),
+			"destroy() left the readiness flag set for the registry that instance() builds next");
+		QVERIFY(!ControlRegistry::isEngineReady());
+		const ControlRegistry::ReadinessReport state = ControlRegistry::readinessReport();
+		QVERIFY(!state.ready);
+		QCOMPARE(state.code, QStringLiteral("engine_starting"));
+	}
+
+	//! The recreated registry becomes ready only when the application says so again.
+	void applicationReadinessReachesTheRecreatedRegistry()
+	{
+		ControlRegistry::setReady(true);
+		ControlRegistry::destroy();
+		ControlRegistry::instance();
+		QVERIFY(!ControlRegistry::startupComplete());
+
+		ControlRegistry::setReady(true);
+		QVERIFY(ControlRegistry::startupComplete());
+	}
 };
 
 QTEST_GUILESS_MAIN(ControlRegistryNestingTest)

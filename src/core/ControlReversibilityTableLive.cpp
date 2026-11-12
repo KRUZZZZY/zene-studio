@@ -218,8 +218,10 @@ const ReversibilityRow kRows[] = {
 		"ProjectJournal (Clip checkpoint)",
 		""),
 	R("note.edit", RC::TrueInverse, true,
-		"every field it writes (position, key, length, volume, panning, probability) is part of the "
-		"clip's saved note list, and the whole batch is one checkpoint",
+		"every field it writes (position, key, length, volume, panning, probability, muted, release "
+		"velocity, velocity spread, repeats, recurrence length and pass mask, articulation, group, "
+		"slide, MPE timbre/pressure/pitch) is part of the clip's saved note list, and the whole batch "
+		"is one checkpoint; the recurrence pair is captured together, because a new length cuts the mask",
 		"ProjectJournal (one MidiClip checkpoint for the batch); inverse: note.edit with the previous values",
 		""),
 	RC("mixer.set_volume", RC::TrueInverse, true,
@@ -280,7 +282,8 @@ const ReversibilityRow kRows[] = {
 		"ProjectJournal (Clip checkpoint): SampleClip::saveSettings writes the "
 		"attribute and SampleClip::loadSettings re-reads it, so one undo "
 		"restores the previous mode. The recorded inverse is warp.stretch "
-		"re-issued with the before-state's own mode",
+		"re-issued with the before-state's own mode and (Q050-162) its "
+		"repeat rate - the 'repeat_rate' attribute of the same element",
 		""),
 	R("plugin.bypass", RC::TrueInverse, true,
 		"the On/Off control is the Effect's enabled model",
@@ -459,6 +462,21 @@ const ReversibilityRow kRows[] = {
 		"absence and re-loads the clips' muted flags from the XML, so one undo "
 		"brings the exact take back - re-running freeze.track would render a new "
 		"one)",
+		""),
+	// Q050-124: the bus half. The take is ONE value on the MixerChannel (MixerBusFreeze.h) - its file - and the
+	// mixer's own checkpoint would destroy and recreate every channel (the bus.create row's reason), so each
+	// verb records the ACTION: install or clear the take on the channel named by its stable id.
+	R("freeze.bus", RC::TrueInverse, true,
+		"the freeze sets the bus's frozen take (the mixerchannel element's frozenAudio attribute) and makes "
+		"the bus play it in place of its inputs and devices; the bus's routing, devices, fader and the tracks "
+		"feeding it are NOT touched, so the whole change is that one value",
+		"action checkpoint: ONE recorded step clears the take on the channel with this stable id "
+		"(busfreeze::clear); its redo re-installs the same file",
+		"the rendered WAV stays on disk - undoing a freeze is not a delete"),
+	R("freeze.unfreeze_bus", RC::TrueInverse, true,
+		"dropping the take removes the bus's frozenAudio attribute, a change to its serialized state",
+		"action checkpoint: ONE recorded step re-installs the same take file on the channel with this "
+		"stable id (re-running freeze.bus would render a new one)",
 		""),
 
 	// The two CLIP-editing verbs of the groove group (docs/GROOVE-POOL.md).

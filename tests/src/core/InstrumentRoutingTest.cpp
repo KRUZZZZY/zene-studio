@@ -55,6 +55,15 @@
 
 using namespace racktest;
 
+namespace lmms
+{
+
+LMMS_EXPORT void resetMixerIndexLookupCountsForTesting();
+LMMS_EXPORT auto mixerIndexCacheHitsForTesting() -> int;
+LMMS_EXPORT auto mixerIndexFallbacksForTesting() -> int;
+
+} // namespace lmms
+
 namespace
 {
 
@@ -358,6 +367,21 @@ private slots:
 		silenceChannel(target.index);
 	}
 
+	//! A master route (mixer index zero) is cached after its first lookup.
+	void outputBusMasterIndexIsCached()
+	{
+		InstrumentOutputBuses buses;
+		buses.setLayout({{QStringLiteral("Main"), 2, 0}, {QStringLiteral("Out"), 2, 2}});
+		const int masterId = Engine::mixer()->mixerChannel(0)->id();
+		QVERIFY(buses.route(1, masterId));
+		QCOMPARE(buses.routedIndex(1), 0); // prime the cache
+
+		resetMixerIndexLookupCountsForTesting();
+		QCOMPARE(buses.routedIndex(1), 0);
+		QCOMPARE(mixerIndexCacheHitsForTesting(), 1);
+		QCOMPARE(mixerIndexFallbacksForTesting(), 0);
+	}
+
 	//! A newly routed Slot must not become visible to the render worker before the model guard.
 	void outputBusSlotPublicationWaitsForRenderPeriod()
 	{
@@ -533,6 +557,21 @@ private slots:
 		QCOMPARE(loaded.zones().zone(1)->chain, 2);
 		loaded.loadSettings(doc.createElement(QStringLiteral("instrumenttrack")));
 		QVERIFY(!loaded.active());
+	}
+
+	//! MX-114: a note-on made after the parts were cleared forgets the channel an earlier note-on of its key used,
+	//! so its note-off keeps its own fallback channel; a note that started on a part still ends on that part.
+	void midiPartsForgetChannelAfterClear()
+	{
+		InstrumentMidiParts parts;
+		parts.zones().addZone(zoneOf(0, 127, 0, 200, 1));
+		QCOMPARE(parts.noteOnChannel(60, 100, 0), 1);
+		QCOMPARE(parts.noteOnChannel(61, 100, 0), 1);
+		parts.zones().assign({});                      // parts cleared while both notes still sound
+		QCOMPARE(parts.noteOffChannel(61, 9), 1);      // a note that started on a part still ends there
+		QCOMPARE(parts.noteOnChannel(60, 100, 0), 0);  // retriggered with no parts: the fallback channel
+		QCOMPARE(parts.channelOfKey(60, 9), 9);        // nothing remembered: key pressure keeps its channel
+		QCOMPARE(parts.noteOffChannel(60, 9), 9);      // not channel 1, where the earlier note-on of key 60 went
 	}
 
 	//! MX-112: a layer rack stacks - matchMask reports every matching chain, resolve() still the first zone.

@@ -60,6 +60,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <semaphore>
 #include <string>
@@ -125,6 +126,7 @@ bool writeMemoryGrowthModule(QTemporaryFile& file)
 	(global (export "channels") i32 (i32.const 2))
 	(func (export "process") (param $in i32) (param $out i32)
 		(param $frames i32) (param $sample_rate f32) (result i32)
+		(i32.store (i32.const 8192) (i32.const 1))
 		(f32.store (local.get $out) (f32.const 42))
 		(drop (memory.grow (i32.const 1)))
 		(f32.store (i32.add (local.get $out) (i32.const 4)) (f32.const 7))
@@ -134,6 +136,80 @@ bool writeMemoryGrowthModule(QTemporaryFile& file)
 			== static_cast<qint64>(bytes.size())
 		&& file.flush();
 }
+
+//! A module whose growth request fails (memory.grow answers -1: one page plus
+//! 65536 is past the 4 GiB limit) and which then stores past its memory, so
+//! the call traps. The host must report that as a failed render.
+bool writeInvalidGrowthModule(QTemporaryFile& file)
+{
+	std::vector<std::uint8_t> bytes;
+	std::string error;
+	static constexpr char wat[] = R"WAT((module
+	(memory (export "memory") 1)
+	(global (export "channels") i32 (i32.const 1))
+	(func (export "process") (param $in i32) (param $out i32)
+		(param $frames i32) (param $sample_rate f32) (result i32)
+		(if (i32.eq (memory.grow (i32.const 65536)) (i32.const -1))
+			(then (f32.store (i32.const 2147483640) (f32.const 1))))
+		(i32.const 0))))WAT";
+	return WasmSandbox::assembleWat(wat, bytes, error) && file.open()
+		&& file.write(reinterpret_cast<const char*>(bytes.data()), static_cast<qint64>(bytes.size()))
+			== static_cast<qint64>(bytes.size())
+		&& file.flush();
+}
+
+//! What the host sees of linear memory, gated on the module's own progress:
+//! the growth module stores 1 at kProcessMarker as soon as process() starts.
+//! Before that the host gets a private buffer (the "old mapping"); afterwards
+//! it gets what `afterProcess` says. A host that keeps the pointer it took
+//! before the call therefore reads the private buffer, not what the module
+//! wrote.
+constexpr std::size_t ProcessMarkerOffset = 8192;
+
+struct ProcessGatedView
+{
+	enum class After { Real, Shrunk, Null };
+
+	std::array<std::uint8_t, 4096> staleView{};
+	After afterProcess = After::Real;
+	std::atomic<int> staleHandouts{0};
+	std::atomic<int> postProcessQueries{0};
+};
+
+void gateMemoryView(void* context, bool dataQuery, std::uint8_t*& data, std::size_t& size)
+{
+	auto& view = *static_cast<ProcessGatedView*>(context);
+	if (data == nullptr || size <= ProcessMarkerOffset + sizeof(std::int32_t))
+	{
+		return;
+	}
+	std::int32_t marker = 0;
+	std::memcpy(&marker, data + ProcessMarkerOffset, sizeof(marker));
+	if (marker == 0)
+	{
+		if (dataQuery)
+		{
+			view.staleHandouts.fetch_add(1, std::memory_order_relaxed);
+			data = view.staleView.data();
+			size = view.staleView.size();
+		}
+		return;
+	}
+	view.postProcessQueries.fetch_add(1, std::memory_order_relaxed);
+	if (view.afterProcess == ProcessGatedView::After::Shrunk)
+	{
+		size = 1;
+	}
+	else if (view.afterProcess == ProcessGatedView::After::Null && dataQuery)
+	{
+		data = nullptr;
+	}
+}
+
+struct ClearMemoryViewHook
+{
+	~ClearMemoryViewHook() { WasmSandbox::setMemoryViewTestHook(nullptr, nullptr); }
+};
 
 bool writeLoggingModule(QTemporaryFile& file)
 {
@@ -223,6 +299,10 @@ private slots:
 	void testWasmWorkerRefreshesMemoryAfterGrowth();
 	void testWasmWorkerReacquiresRelocatedHostView();
 	void testOfflineRenderRefreshesMemoryAfterGrowth();
+	void testOfflineRenderReadsTheRefreshedViewNotTheOneTakenBeforeProcess();
+	void testOfflineRenderFailsWhenTheViewIsInvalidAfterProcess_data();
+	void testOfflineRenderFailsWhenTheViewIsInvalidAfterProcess();
+	void testOfflineRenderReportsAFailedGrowthTrapAsAFailedRender();
 	void testOfflineRenderIsDeterministicWithinTheMeasuredFloor();
 	void testComparatorDetectsADifference();
 	void testADifferentStimulusRendersDifferently();
@@ -660,6 +740,118 @@ void WasmWorkerPoolTest::testOfflineRenderRefreshesMemoryAfterGrowth()
 	QCOMPARE(outcome.control[0].output[1], 7.0f);
 	QCOMPARE(outcome.runs[0].output[0], 42.0f);
 	QCOMPARE(outcome.runs[0].output[1], 7.0f);
+}
+
+void WasmWorkerPoolTest::testOfflineRenderReadsTheRefreshedViewNotTheOneTakenBeforeProcess()
+{
+	QTemporaryFile module;
+	QVERIFY(writeMemoryGrowthModule(module));
+
+	// Until the module starts running, the host's view of memory is a private
+	// buffer; after it, the real memory. The pointer taken for the stimulus is
+	// therefore stale by the time process() has returned, in the control render
+	// and in the pooled one. Reading the output plane through it gives zeros.
+	ProcessGatedView view;
+	WasmSandbox::setMemoryViewTestHook(&gateMemoryView, &view);
+	ClearMemoryViewHook clearHook;
+
+	const OfflineRenderOutcome outcome = renderOffline(module.fileName().toStdString(), 2, 2, 2,
+		TestSampleRate, std::vector<float>(4, 0.0f));
+	QVERIFY2(outcome.ok, outcome.error.c_str());
+	// Control pair + two pooled runs each took a stale pre-call view, so the
+	// hook really was in the path of every render.
+	QVERIFY2(view.staleHandouts.load() >= 4, "the stale view was not handed out");
+	QVERIFY2(view.postProcessQueries.load() >= 4, "the post-process view was not queried");
+	for (const OfflineRender& render : outcome.control)
+	{
+		QCOMPARE(render.output.size(), std::size_t(2));
+		QCOMPARE(render.output[0], 42.0f);
+		QCOMPARE(render.output[1], 7.0f);
+	}
+	for (const OfflineRender& render : outcome.runs)
+	{
+		QCOMPARE(render.output.size(), std::size_t(2));
+		QCOMPARE(render.output[0], 42.0f);
+		QCOMPARE(render.output[1], 7.0f);
+	}
+}
+
+void WasmWorkerPoolTest::testOfflineRenderFailsWhenTheViewIsInvalidAfterProcess_data()
+{
+	QTest::addColumn<int>("after");
+	QTest::newRow("memory view shrinks below one block") << static_cast<int>(ProcessGatedView::After::Shrunk);
+	QTest::newRow("memory view is gone") << static_cast<int>(ProcessGatedView::After::Null);
+}
+
+void WasmWorkerPoolTest::testOfflineRenderFailsWhenTheViewIsInvalidAfterProcess()
+{
+	QFETCH(int, after);
+	QTemporaryFile module;
+	QVERIFY(writeMemoryGrowthModule(module));
+
+	ProcessGatedView view;
+	view.afterProcess = static_cast<ProcessGatedView::After>(after);
+	WasmSandbox::setMemoryViewTestHook(&gateMemoryView, &view);
+	ClearMemoryViewHook clearHook;
+
+	// process() itself returns ok, so only the refresh check can notice that
+	// the output plane is no longer inside the view. The render must fail with
+	// a message, not read through the view and call the result deterministic.
+	const OfflineRenderOutcome outcome = renderOffline(module.fileName().toStdString(), 2, 2, 2,
+		TestSampleRate, std::vector<float>(4, 0.0f));
+	QVERIFY2(!outcome.ok, "a render whose output view was invalid reported success");
+	QVERIFY2(outcome.error.find("no longer holds the requested block") != std::string::npos,
+		outcome.error.c_str());
+	QVERIFY2(outcome.error.find("control render failed") != std::string::npos,
+		outcome.error.c_str());
+	QVERIFY(!outcome.deterministic);
+	QVERIFY(outcome.runs.empty());
+	QVERIFY2(view.postProcessQueries.load() >= 1, "the post-process view was never queried");
+
+	// The same condition on the pooled path: the worker quarantines the module
+	// (Corrupted) instead of copying a block out of an invalid view, so the
+	// block does not come back as a render of the module's output.
+	WasmWorker worker;
+	std::string error;
+	QVERIFY2(worker.start(module.fileName().toStdString(), error), error.c_str());
+	const std::array<SampleFrame, 2> input{SampleFrame(0.0f, 0.0f), SampleFrame(0.0f, 0.0f)};
+	std::array<SampleFrame, 2> output{};
+	QVERIFY(worker.submit(input.data(), static_cast<std::uint32_t>(input.size()), TestSampleRate));
+	QVERIFY(worker.waitForIdle(5000));
+	QVERIFY(worker.collect(output.data(), static_cast<std::uint32_t>(output.size())));
+	QCOMPARE(output[0][0], 0.0f); // dry passthrough of the silent input, not 42
+	QCOMPARE(output[1][0], 0.0f);
+	worker.stop();
+}
+
+void WasmWorkerPoolTest::testOfflineRenderReportsAFailedGrowthTrapAsAFailedRender()
+{
+	QTemporaryFile module;
+	QVERIFY(writeInvalidGrowthModule(module));
+	const std::string path = module.fileName().toStdString();
+
+	// The sandbox's own result: a trap, not an ok call with a stale view.
+	{
+		WasmSandbox sandbox;
+		std::string error;
+		QVERIFY2(sandbox.loadModuleFile(path, error), error.c_str());
+		const std::size_t before = sandbox.memorySize();
+		const CallResult call = sandbox.callProcess(0, 4, 1, TestSampleRate);
+		QVERIFY(call.status == CallResult::Status::Trap);
+		QVERIFY(!call.ok());
+		QCOMPARE(sandbox.memorySize(), before); // the growth was refused, memory is unchanged
+	}
+
+	const OfflineRenderOutcome outcome = renderOffline(path, 2, 2, 2, TestSampleRate,
+		std::vector<float>(4, 0.0f));
+	QVERIFY2(!outcome.ok, "a render of a module that trapped after a refused growth succeeded");
+	QVERIFY2(outcome.error.find("control render failed") != std::string::npos, outcome.error.c_str());
+	QVERIFY(!outcome.deterministic);
+	QVERIFY(outcome.runs.empty());
+	QCOMPARE(outcome.control.size(), std::size_t(1));
+	QVERIFY(!outcome.control[0].ok);
+	QCOMPARE(outcome.control[0].trappedBlocks, std::uint64_t(1));
+	QVERIFY(outcome.control[0].output.size() == 2);
 }
 
 void WasmWorkerPoolTest::testOfflineRenderIsDeterministicWithinTheMeasuredFloor()

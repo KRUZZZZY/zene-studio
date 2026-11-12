@@ -74,6 +74,16 @@ LMMS_EXPORT const Action* action(const QString& scope, const QString& id);
 //! The action whose id is @a id (ids are unique across scopes), or nullptr.
 LMMS_EXPORT const Action* actionById(const QString& id);
 
+/*! Q050-055.2: a chosen plug-in bound to a key is one more action of a scope, but the user makes it, so it is not in
+ *  the table: its id ("Arranger ▸ Load Plug-in ▸ amplifier") is stored in the scope's map like any other binding and
+ *  names the device by pluginorganiser's key, the identity that survives a rescan (dev-<n> moves when a plug-in is
+ *  installed). Export, import, undo and a restart therefore carry it without a store of their own. */
+LMMS_EXPORT QString pluginActionId(const QString& scope, const QString& deviceKey);
+//! Whether @a id is the id of a bound plug-in in @a scope (a well-formed one; the device may be gone).
+LMMS_EXPORT bool isPluginAction(const QString& scope, const QString& id);
+//! The unbound row of the plug-in action @a id: what shortcuts.set finds for a plug-in not bound yet.
+LMMS_EXPORT ShortcutMap::Binding pluginBinding(const QString& scope, const QString& id);
+
 //! The stored panel overrides, nested scope -> action id -> portable key text ("" = deliberately
 //! unbound). Nested rather than flattened under a separator character: the store is a config XML
 //! attribute, and a control character in it makes the next start's config parse fail (found by the
@@ -87,14 +97,15 @@ LMMS_EXPORT QJsonValue stored(const QJsonObject& panels, const QString& scope, c
 LMMS_EXPORT QJsonObject withStored(const QJsonObject& panels, const QString& scope, const QString& id,
 	const QJsonValue& keys);
 
-//! Every panel action with its live keys: the override when it has one, else empty.
+//! Every panel action with its live keys: the override when it has one, else empty - and the plug-ins bound in each scope.
 LMMS_EXPORT QList<ShortcutMap::Binding> bindings();
 
 //! Whether @a event is the key of any action in @a scope (the panel claims it over a window shortcut).
 LMMS_EXPORT bool claims(const QString& scope, const QKeyEvent* event);
 /*! Act on @a event when it is a key bound in @a scope: run that action's command. True when the key
  *  was bound (the event is consumed even if the command refused, so the key never falls through to a
- *  different panel's meaning). A text-entry widget with the focus keeps its keys: false. */
+ *  different panel's meaning; a refusal is shown, because a key has no form to show it in). A
+ *  text-entry widget with the focus keeps its keys: false. */
 LMMS_EXPORT bool handle(const QString& scope, QKeyEvent* event);
 
 //! @a event's portable key text ("Ctrl+Alt+J"); empty for a modifier key or an unparsable one.

@@ -280,6 +280,65 @@ def check_refusals(session, recorder, outdir):
     # carries both ticks; the section-list refusals above are the ones this verb adds.
 
 
+#: Bytes that are not a WAV, put where a section's file will go: a batch that would write there is refused.
+STALE_BYTES = b"stale: not a WAV from an earlier export\n"
+
+
+def check_existing_file_refuses_batch(session, recorder, outdir):
+    """render.sections refuses a batch whose generated path already holds something, before anything renders.
+
+    Bridge is listed FIRST and has no file; Chorus already has one. Rendering in order would write Bridge.wav and
+    then replace Chorus.wav, so the batch must be refused with Chorus.wav kept byte for byte and no Bridge.wav
+    written. Once that file is gone the same batch succeeds (a refusal is not a lasting block). A dangling
+    symbolic link named after a section is refused too, and the link's target is not created.
+    """
+    bridge = session.result("section.add", {"start": 3 * ONE_BAR, "end": 4 * ONE_BAR, "name": "Bridge"})
+    chorus = session.result("section.add", {"start": 4 * ONE_BAR, "end": 5 * ONE_BAR, "name": "Chorus"})
+    outro = session.result("section.add", {"start": 5 * ONE_BAR, "end": 6 * ONE_BAR, "name": "Outro"})
+    named = "error" not in bridge and "error" not in chorus and "error" not in outro
+    recorder.check("section.add names the Bridge, Chorus and Outro sections", named,
+                   repr((bridge, chorus, outro))[:300])
+    if not named:
+        return
+    directory = os.path.join(outdir, "sections-existing")
+    os.makedirs(directory, exist_ok=True)
+    chorus_path = os.path.join(directory, "Chorus.wav")
+    with open(chorus_path, "wb") as handle:
+        handle.write(STALE_BYTES)
+    batch = {"out": directory, "sections": [bridge["section"], chorus["section"]]}
+    refused = session.result("render.sections", batch, timeout=SECTIONS_TIMEOUT)
+    error = refused.get("error", {})
+    recorder.check("render.sections refuses a batch whose Chorus.wav already exists",
+                   error.get("kind") == "refused" and "Chorus.wav" in error.get("message", ""),
+                   repr(refused)[:300])
+    with open(chorus_path, "rb") as handle:
+        kept = handle.read()
+    recorder.check("the existing Chorus.wav is left byte for byte", kept == STALE_BYTES, "first bytes=%r" % (kept[:12],))
+    listing = sorted(os.listdir(directory))
+    recorder.check("no earlier section is written: the directory holds only Chorus.wav",
+                   listing == ["Chorus.wav"], "listing=%r" % (listing,))
+    os.remove(chorus_path)
+    rerun = session.result("render.sections", batch, timeout=SECTIONS_TIMEOUT)
+    recorder.check("the same batch succeeds once the existing file is gone",
+                   "error" not in rerun and rerun.get("count") == 2, repr(rerun)[:300])
+
+    link_path = os.path.join(directory, "Outro.wav")
+    link_target = os.path.join(directory, "missing-target.wav")
+    try:
+        os.symlink(link_target, link_path)
+    except (OSError, NotImplementedError) as exc:
+        print("symbolic links are not available here: the dangling-link case is not exercised (%s)" % exc)
+        return
+    refused_link = session.result("render.sections", {"out": directory, "sections": [outro["section"]]},
+                                  timeout=SECTIONS_TIMEOUT)
+    link_error = refused_link.get("error", {})
+    recorder.check("a dangling symbolic link named Outro.wav refuses the batch",
+                   link_error.get("kind") == "refused" and "Outro.wav" in link_error.get("message", ""),
+                   repr(refused_link)[:300])
+    recorder.check("the link's target is not created", not os.path.lexists(link_target),
+                   "target=%r" % (link_target,))
+
+
 def check_quit(session, instance, recorder):
     reply = session.call("control.quit")
     if reply.get("ok") is not True:
@@ -311,6 +370,7 @@ def run_checks(session, instance, recorder, outdir):
     check_sections(session, recorder, outdir)
     check_portable_names(session, recorder, outdir)
     check_stems_follow_the_selection(session, recorder, outdir)
+    check_existing_file_refuses_batch(session, recorder, outdir)
 
 
 def main(argv):

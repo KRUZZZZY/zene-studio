@@ -88,7 +88,7 @@ QJsonObject recordSessionEdit(const QString& captured, const QJsonObject& before
 		Song* song = Engine::getSong();
 		if (song != nullptr)
 		{
-			restoreSessionBlock(song->sessionModel(), block);
+			restoreSessionBlockAndSync(*song, block);  // Q050-489: and the launcher follows the grid back
 			song->setModified();
 		}
 	};
@@ -97,6 +97,7 @@ QJsonObject recordSessionEdit(const QString& captured, const QJsonObject& before
 	// SessionModel is not a JournallingObject and holds no Song back-pointer of its own: nothing
 	// else marks the song.
 	if (Song* song = Engine::getSong(); song != nullptr) { song->setModified(); }
+	syncLauncherFrom(sessionModelOf(captured));  // Q050-489: a playing cell sounds (or stops for) what the edit left
 	control::addUndoStep([restore, captured]() { restore(captured); }, [restore, edited]() { restore(edited); });
 	// The inverse is the journal step just pushed: no registered command replays a
 	// <session> block, so control.undo reaches it through the journal (it checks
@@ -302,8 +303,8 @@ void registerSessionSetGrid(ControlRegistry& registry)
 	grid.group = QStringLiteral("session");
 	grid.verb = QStringLiteral("set_grid");
 	grid.description = QStringLiteral("Resize the Session View grid (column = a song track, "
-		"row = a scene). Existing cells keep their content and position; new cells are empty. "
-		"Reversible through the ProjectJournal (action checkpoint on the <session> block).");
+		"row = a scene). Existing cells keep their content and position; new cells are empty; a playing "
+		"cell the grid no longer holds stops. Reversible through the ProjectJournal (action checkpoint on the <session> block).");
 	grid.argsSchema = objectSchema({
 		{QStringLiteral("tracks"), integerProperty(0, 256)},
 		{QStringLiteral("scenes"), integerProperty(0, 512)},
@@ -374,6 +375,19 @@ bool sceneColorValid(const QJsonObject& args, ControlResult* error)
 	return false;
 }
 
+//! A scene's `tempo` argument: a tempo override is a Song tempo, so it takes the engine's own range
+//! (Song.h MinTempo..MaxTempo). Outside it, or not a number, false with @a error - before anything is
+//! written. The project load does not apply this: a saved value is read back as it was stored.
+bool sceneTempoValid(const QJsonObject& args, ControlResult* error)
+{
+	if (!args.contains(QStringLiteral("tempo"))) { return true; }
+	const double tempo = args.value(QStringLiteral("tempo")).toDouble();
+	if (tempo >= static_cast<double>(MinTempo) && tempo <= static_cast<double>(MaxTempo)) { return true; }
+	*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("tempo %1 is outside the engine's %2..%3 BPM")
+		.arg(tempo).arg(static_cast<double>(MinTempo)).arg(static_cast<double>(MaxTempo)));
+	return false;
+}
+
 //! session.set_scene's writes: the follow chain, the name, the overrides, the colour - each only if supplied.
 void applySceneEdits(Scene& scene, const QJsonObject& args, const std::optional<std::vector<FollowAction>>& chain)
 {
@@ -428,6 +442,7 @@ void registerSessionSetScene(ControlRegistry& registry)
 		std::optional<std::vector<FollowAction>> chain;
 		if (!followActionsArg(args, model->sceneCount(), &chain, &error)) { return error; }
 		if (!sceneColorValid(args, &error)) { return error; }
+		if (!sceneTempoValid(args, &error)) { return error; }
 		const QString captured = captureSession(*model);
 		const QJsonObject before = gridState(*model, clipSlots(*model));
 		Scene& sceneModel = model->scene(index);
@@ -452,7 +467,7 @@ void registerSessionSetSlot(ControlRegistry& registry)
 		"'pattern'), an audio clip ('type':'audio' + 'source'), or empty ('type':'empty'); plus its "
 		"launch mode, launch quantisation and playback settings, and `follow_actions`, the cell's "
 		"persisted Follow Action chain ([] clears it; session.follow_set arms it). Only the fields "
-		"supplied are written. Reversible through the ProjectJournal (action checkpoint on the <session> block).");
+		"supplied are written; a playing cell sounds its new content at once, and one emptied stops. Reversible through the ProjectJournal (action checkpoint on the <session> block).");
 	slot.argsSchema = objectSchema({
 		{QStringLiteral("track"), integerProperty(0, 255)},
 		{QStringLiteral("scene"), integerProperty(0, 511)},
@@ -510,7 +525,8 @@ void registerSessionClearSlot(ControlRegistry& registry)
 	clearSlot.id = QStringLiteral("session.clear_slot");
 	clearSlot.group = QStringLiteral("session");
 	clearSlot.verb = QStringLiteral("clear_slot");
-	clearSlot.description = QStringLiteral("Empty one grid cell, whatever it held. Reversible "
+	clearSlot.description = QStringLiteral("Empty one grid cell, whatever it held; if it is playing or "
+		"queued it stops, as session.stop_slot stops it. Undo puts the clip back without launching it. Reversible "
 		"through the ProjectJournal (action checkpoint on the <session> block).");
 	clearSlot.argsSchema = objectSchema({
 		{QStringLiteral("track"), integerProperty(0, 255)},
@@ -548,7 +564,7 @@ void registerSessionClear(ControlRegistry& registry)
 	clear.group = QStringLiteral("session");
 	clear.verb = QStringLiteral("clear");
 	clear.description = QStringLiteral("Empty the whole Session View: no grid, no slot, no scene "
-		"override, default quantisation. A project that never used the session then re-saves "
+		"override, default quantisation; every playing cell stops. A project that never used the session then re-saves "
 		"byte-identically (the <session> block is dropped). Reversible through the ProjectJournal.");
 	clear.argsSchema = objectSchema();
 	clear.resultSchema = objectSchema({

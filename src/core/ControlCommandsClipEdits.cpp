@@ -36,6 +36,7 @@
 // in docs/KNOWN-LIMITATIONS.md.
 
 #include <algorithm>
+#include <cmath>
 
 #include <QJsonObject>
 
@@ -344,7 +345,8 @@ void registerClipSetGain(ControlRegistry& registry)
 			return error;
 		}
 		const double db = args.value(QStringLiteral("gain_db")).toDouble();
-		if (db < kMinGainDb || db > kMaxGainDb)
+		// isfinite FIRST: a NaN compares false against both bounds and would pass.
+		if (!std::isfinite(db) || db < kMinGainDb || db > kMaxGainDb)
 		{
 			return ControlResult::failure(ControlErrorKind::InvalidArgs,
 				QStringLiteral("gain_db %1 is outside %2..%3 dB")

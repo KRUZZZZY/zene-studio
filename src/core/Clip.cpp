@@ -35,6 +35,7 @@
 #include "AutomationEditor.h"
 #include "AutomationClip.h"
 #include "ClipLinks.h"
+#include "AudioEngine.h"
 #include "Engine.h"
 #include "GuiApplication.h"
 #include "ProjectIds.h"
@@ -94,6 +95,7 @@ Clip::Clip(const Clip& other):
 	m_tempoMode(other.m_tempoMode),
 	m_sourceTempo(other.m_sourceTempo),
 	m_stretchMode(other.m_stretchMode.load(std::memory_order_relaxed)),
+	m_transientRate(other.m_transientRate.load(std::memory_order_relaxed)),
 	m_track(other.m_track),
 	m_name(other.m_name),
 	// A COPY IS A NEW CLIP: it gets its own id and does NOT inherit the
@@ -114,6 +116,8 @@ Clip::Clip(const Clip& other):
 	m_activeTakeLane(other.m_activeTakeLane.load(std::memory_order_relaxed)),
 	m_linkId(other.m_linkId)
 {
+	// Before the track holds this clip: a pass must never find the copy without its generation.
+	if (!m_warp.empty()) { m_warpLive.publish(m_warp); }
 	if (getTrack())
 	{
 		getTrack()->addClip(this);
@@ -554,8 +558,9 @@ void Clip::saveWarp(QDomDocument& doc, QDomElement& element) const
 	{
 		return;
 	}
+	const TransientRepeatRate rate = TransientRepeatRate::unpack(m_transientRate.load(std::memory_order_acquire));
 	if (!m_warp.empty() || m_tempoMode != WarpTempoMode::FollowProject
-		|| m_stretchMode != WarpStretchMode::Resample)
+		|| m_stretchMode != WarpStretchMode::Resample || !rate.isDefault())
 	{
 		QDomElement warp = doc.createElement( "warp" );
 		warp.setAttribute( "mode", m_tempoMode == WarpTempoMode::SourceTempo ? "source" : "follow" );
@@ -582,9 +587,14 @@ void Clip::saveWarp(QDomDocument& doc, QDomElement& element) const
 			case WarpStretchMode::Beats: warp.setAttribute("stretch", "beats"); break;
 			case WarpStretchMode::Tones: warp.setAttribute("stretch", "tones"); break;
 			case WarpStretchMode::Texture: warp.setAttribute("stretch", "texture"); break;
+			case WarpStretchMode::Repeat: warp.setAttribute("stretch", "repeat"); break;
+			case WarpStretchMode::Gate: warp.setAttribute("stretch", "gate"); break;
 			case WarpStretchMode::Resample: break;
 			}
 		}
+		// Q050-162: the Repeat / Gate interval ("1/8", "125ms"), only when it is
+		// not the default, so every file that never set it is unchanged.
+		if (!rate.isDefault()) { warp.setAttribute("repeat_rate", rate.name()); }
 		for (const auto& marker : m_warp.all())
 		{
 			QDomElement node = doc.createElement( "marker" );
@@ -797,27 +807,69 @@ void Clip::loadWarp(const QDomElement& element)
 		// engine does not know is the default, not an error (owner decision 12).
 		WarpStretchMode mode = WarpStretchMode::Resample;
 		warpStretchModeFromName(warpNode.attribute("stretch", "resample"), &mode);
+		// Q050-162: absent (or unreadable) is the default interval, before the
+		// mode is published so a handle that sees a Repeat mode sees its rate.
+		TransientRepeatRate rate;
+		TransientRepeatRate::fromName(warpNode.attribute("repeat_rate"), &rate);
+		m_transientRate.store(rate.pack(), std::memory_order_release);
 		// Voices first, mode second: a render thread that sees the mode finds its pool.
 		prepareWarpStretchMode(mode);
 		m_stretchMode.store(mode, std::memory_order_release);
 
-		m_warp.clear();
-		if (count > 0 && !m_warp.set(std::span<const WarpMarker>(markers.data(), count)))
+		WarpMarkers loaded;
+		if (count > 0 && !loaded.set(std::span<const WarpMarker>(markers.data(), count)))
 		{
 			Engine::getSong()->collectError(tr("Warp markers in the project file "
 				"are not strictly increasing; they were ignored."));
 		}
+		publishWarp(loaded);
 	}
 	else
 	{
 		// Reset-on-absence: see the function comment — this branch IS the
 		// negative control's subject (neuter it and the two tests named above
 		// fail, because a restored checkpoint would keep its warp).
-		m_warp.clear();
+		publishWarp(WarpMarkers{});
 		m_tempoMode = WarpTempoMode::FollowProject;
 		m_sourceTempo = 0.0f;
 		m_stretchMode.store(WarpStretchMode::Resample, std::memory_order_release);
+		m_transientRate.store(TransientRepeatRate{}.pack(), std::memory_order_release);
 	}
+}
+
+void Clip::publishWarp(const WarpMarkers& map)
+{
+	// Only this (control) thread touches m_warp. An old project's clip has no markers and publishes nothing on load.
+	if (m_warp == map) { return; }
+	m_warp = map;
+	m_warpLive.publish(m_warp);
+}
+
+namespace
+{
+const WarpMarkers s_noWarp{};
+thread_local const Clip* s_passClip = nullptr;
+thread_local const WarpMarkers* s_passMap = nullptr;
+} // namespace
+
+Clip::WarpPassScope::WarpPassScope(const Clip& clip, const WarpSnapshot& snapshot) noexcept :
+	m_previousClip(s_passClip),
+	m_previousMap(s_passMap)
+{
+	s_passClip = &clip;
+	s_passMap = snapshot.map();
+}
+
+Clip::WarpPassScope::~WarpPassScope()
+{
+	s_passClip = m_previousClip;
+	s_passMap = m_previousMap;
+}
+
+const WarpMarkers& Clip::passWarp() const noexcept
+{
+	if (s_passClip != this) { return m_warp; }
+	return s_passMap != nullptr ? *s_passMap : s_noWarp;
 }
 
 void Clip::setName(const QString& name)

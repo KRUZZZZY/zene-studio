@@ -90,6 +90,20 @@ const ReversibilityRow kLivecodeRows[] = {
 		"source BYTES only, so a poll never carries every definition): the definition it returns "
 		"was captured by livecode.schedule/unschedule, whose own snapshot rows carry the undo",
 		""),
+	R("events.subscribe", RC::NotMutating, false,
+		"subscribes this connection to project-change events (Q050-334.1): connection bookkeeping in memory, which "
+		"never touches the project, the undo stack or a project file",
+		"no project write. The subscription ends with events.unsubscribe, an overflow or the connection",
+		""),
+	R("events.unsubscribe", RC::NotMutating, false,
+		"ends this connection's subscription: connection bookkeeping in memory, which never touches the project, the "
+		"undo stack or a project file",
+		"no project write. events.subscribe starts a new subscription; undelivered events are not replayed",
+		""),
+	R("events.get_state", RC::NotMutating, false,
+		"reads the event stream's position, its subscriptions and their queue depths; it writes nothing",
+		"no write, so there is nothing to invert",
+		""),
 };
 
 constexpr int kLivecodeRowCount =

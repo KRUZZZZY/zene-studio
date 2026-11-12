@@ -1,5 +1,6 @@
 /*
- * DeviceToolsChainTest.cpp - post-fader inserts, the device delta, clip printing, plugin.replace and folding and options
+ * DeviceToolsChainTest.cpp - post-fader inserts, the device delta, clip printing, plugin.replace and folding and options,
+ *                              and the randomise and blend 'amount' (a non-finite one is refused)
  *                              (split out of DeviceToolsTest to keep both under the file-length ratchet)
  *
  * Copyright (c) 2026 Zene Studio contributors
@@ -36,6 +37,7 @@
 #include <QTemporaryDir>
 
 #include <cmath>
+#include <limits>
 #include <vector>
 
 #include "AudioBus.h"
@@ -428,6 +430,50 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QVERIFY(!effect->deviceOptions().folded);
 		QVERIFY(effect->deviceOptions().isDefault());
+	}
+
+	//! A non-finite number is refused before anything is written: a NaN compares false against both bounds of a range,
+	//! so a NaN 'amount' of plugin.randomise / plugin.blend (std::clamp hands it back) or 'editor_scale' of plugin.options
+	//! used to be written. A finite amount past 1 still clamps.
+	void aNonFiniteNumberIsRefusedNotWritten()
+	{
+		Effect* effect = effectOn(1);
+		if (effect == nullptr) { QSKIP("this build has no amplifier module"); }
+		const QString amp = control::effectIdOf(effect);
+		const QJsonObject device{{QStringLiteral("target"), ch(1)}, {QStringLiteral("plugin"), amp}};
+		QVERIFY(setParameter(ch(1), amp, QStringLiteral("Volume"), 100.0));
+		const double nan = std::numeric_limits<double>::quiet_NaN();
+		const double infinity = std::numeric_limits<double>::infinity();
+		QJsonObject zoom = device;
+		zoom.insert(QStringLiteral("editor_scale"), nan);
+		const float zoomBefore = effect->deviceOptions().editorScale;
+		QCOMPARE(run(QStringLiteral("plugin.options"), zoom).errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(effect->deviceOptions().editorScale, zoomBefore);
+		for (const double amount : {nan, infinity, -infinity})
+		{
+			QJsonObject random = device;
+			random.insert(QStringLiteral("amount"), amount);
+			random.insert(QStringLiteral("seed"), 7);
+			QCOMPARE(run(QStringLiteral("plugin.randomise"), random).errorKind, ControlErrorKind::InvalidArgs);
+			QCOMPARE(parameterValue(ch(1), amp, QStringLiteral("Volume")), 100.0);
+		}
+		QJsonObject store = device;
+		store.insert(QStringLiteral("action"), QStringLiteral("store"));
+		store.insert(QStringLiteral("slot"), QStringLiteral("a"));
+		QVERIFY(run(QStringLiteral("plugin.ab"), store).ok);
+		QVERIFY(setParameter(ch(1), amp, QStringLiteral("Volume"), 50.0));
+		store.insert(QStringLiteral("slot"), QStringLiteral("b"));
+		QVERIFY(run(QStringLiteral("plugin.ab"), store).ok);
+		QJsonObject blended = device;
+		blended.insert(QStringLiteral("amount"), nan);
+		QCOMPARE(run(QStringLiteral("plugin.blend"), blended).errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(parameterValue(ch(1), amp, QStringLiteral("Volume")), 50.0);
+		QVERIFY(setParameter(ch(1), amp, QStringLiteral("Volume"), 100.0));
+		QJsonObject past = device;
+		past.insert(QStringLiteral("amount"), 2.0);
+		// Clamped to 1: the value lands on B (50). Unclamped it would overshoot to 100 + 2 * (50 - 100) = 0.
+		QVERIFY2(run(QStringLiteral("plugin.blend"), past).ok, "a finite amount above 1 is clamped, not refused");
+		QCOMPARE(parameterValue(ch(1), amp, QStringLiteral("Volume")), 50.0);
 	}
 };
 

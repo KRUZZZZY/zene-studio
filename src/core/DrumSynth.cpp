@@ -89,6 +89,12 @@ thread_local float phi[1200];
 thread_local long wavewords, wavemode = 0;
 thread_local float mem_t = 1.0f, mem_o = 1.0f, mem_n = 1.0f, mem_b = 1.0f, mem_tune = 1.0f, mem_time = 1.0f;
 
+// The renderer holds an open envelope end for this long, in 44.1 kHz samples. The longest envelope in the
+// shipped library is 438020 samples (data/samples/drumsynth/misc/verylong.ds), so no real sample reaches it.
+constexpr float maxEnvelopeHold = 442000.f;
+// The largest stretch factor the parser allows; Stretch is clamped to 1000%.
+constexpr float maxStretch = 10.f;
+
 int DrumSynth::LongestEnv()
 {
 	float l = 0.f;
@@ -143,7 +149,7 @@ void DrumSynth::UpdateEnv(int e, long t)
 	envData[e][NEXTT] = envpts[e][0][static_cast<long>(envData[e][PNT] + 1.f)] * timestretch; // get next point
 	if (envData[e][NEXTT] < 0)
 	{
-		envData[e][NEXTT] = 442000 * timestretch; // if end point, hold
+		envData[e][NEXTT] = maxEnvelopeHold * timestretch; // if end point, hold
 	}
 	envData[e][ENV] = envpts[e][1][static_cast<long>(envData[e][PNT] + 0.f)] * 0.01f;		  // this level
 	float endEnv = envpts[e][1][static_cast<long>(envData[e][PNT] + 1.f)] * 0.01f;			  // next level
@@ -159,15 +165,15 @@ void DrumSynth::UpdateEnv(int e, long t)
 // Each envelope row has 32 points; the last slot is reserved for the end-of-envelope sentinel.
 constexpr int maxEnvelopePoints = 31;
 
-// Stores one parsed envelope value. Points past the capacity are dropped, and malformed or overlong
-// tokens become 0.
+// Stores one parsed envelope value. Points past the capacity are dropped, and malformed, empty or overlong
+// tokens become 0. sscanf returns EOF (not 0) for an empty token, so only exactly one conversion is accepted.
 static void storeEnvelopeValue(int env, int row, int point, const char* token, bool tokenTooLong)
 {
 	if (point >= maxEnvelopePoints)
 	{
 		return;
 	}
-	if (tokenTooLong || sscanf(token, "%f", &envpts[env][row][point]) == 0 || !std::isfinite(envpts[env][row][point]))
+	if (tokenTooLong || sscanf(token, "%f", &envpts[env][row][point]) != 1 || !std::isfinite(envpts[env][row][point]))
 	{
 		envpts[env][row][point] = 0.f;
 	}
@@ -190,12 +196,14 @@ void DrumSynth::GetEnv(int env, const char* sec, const char* key, QString ini)
 		{
 			storeEnvelopeValue(env, 0, ep, s, tokenTooLong);
 			o = 0;
+			s[0] = 0;
 			tokenTooLong = false;
 		}
 		else if (en[i] == ' ')
 		{
 			storeEnvelopeValue(env, 1, ep, s, tokenTooLong);
 			o = 0;
+			s[0] = 0;
 			tokenTooLong = false;
 			if (ep < maxEnvelopePoints)
 			{
@@ -381,6 +389,16 @@ float DrumSynth::GetPrivateProfileFloat(const char* sec, const char* key, float 
 //  an associative array or something once we have a datastructure to load in to.
 //  llama
 
+// Converts a noise-band step quotient to a whole step count of at least one. A NaN quotient (a negative
+// frequency makes the square root undefined) has no step and gives one. Other quotients are clamped into
+// the int range before the conversion, so the cast is always defined and in-range values are unchanged.
+long DrumSynth::noiseBandStepCount(double quotient)
+{
+	if (std::isnan(quotient)) { return 1; }
+	const double clamped = std::clamp(quotient, 0.0, static_cast<double>(std::numeric_limits<int>::max() - 1));
+	return 1 + static_cast<long>(clamped);
+}
+
 int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sample_rate_t Fs)
 {
 	using namespace std::numbers;
@@ -456,9 +474,9 @@ int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sa
 	{
 		timestretch = 0.2f;
 	}
-	if (timestretch > 10.f)
+	if (timestretch > maxStretch)
 	{
-		timestretch = 10.f;
+		timestretch = maxStretch;
 	}
 	// the unit of envelope lengths is a sample in 44100Hz sample rate, so correct it
 	timestretch *= Fs / 44100.f;
@@ -584,8 +602,7 @@ int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sa
 	BFStep = GetPrivateProfileInt(sec, "dF", 50, dsfile);
 	BQ = static_cast<float>(BFStep);
 	BQ = BQ * BQ / (10000.f - 6600.f * (std::sqrt(BF) - 0.19f));
-	BFStep = 1 + static_cast<int>((40.f - (BFStep / 2.5f)) / (BQ + 1.f + (1.f * BF)));
-	BFStep = std::max(BFStep, 1L);
+	BFStep = noiseBandStepCount((40.f - (BFStep / 2.5f)) / (BQ + 1.f + (1.f * BF)));
 
 	std::strcpy(sec, "NoiseBand2");
 	chkOn[4] = GetPrivateProfileInt(sec, "On", 0, dsfile);
@@ -598,8 +615,7 @@ int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sa
 	BFStep2 = GetPrivateProfileInt(sec, "dF", 50, dsfile);
 	BQ2 = static_cast<float>(BFStep2);
 	BQ2 = BQ2 * BQ2 / (10000.f - 6600.f * (std::sqrt(BF2) - 0.19f));
-	BFStep2 = 1 + static_cast<int>((40 - (BFStep2 / 2.5)) / (BQ2 + 1 + (1 * BF2)));
-	BFStep2 = std::max(BFStep2, 1L);
+	BFStep2 = noiseBandStepCount((40 - (BFStep2 / 2.5)) / (BQ2 + 1 + (1 * BF2)));
 
 	// read distortion parameters
 	std::strcpy(sec, "Distortion");
@@ -616,7 +632,10 @@ int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sa
 
 	if (DiON == 1)
 	{
-		DAtten = DGain * static_cast<short>(LoudestEnv());
+		// LoudestEnv() can exceed the short range (Level=50000 gives 2.5e9), and converting
+		// such a float to short is undefined, so clamp it first.
+		const float loudestEnv = std::clamp(LoudestEnv(), 0.f, 32767.f);
+		DAtten = DGain * static_cast<short>(loudestEnv);
 		clippoint = DAtten > 32700 ? 32700 : static_cast<short>(DAtten);
 		const int distortionBits = GetPrivateProfileInt(sec, "Bits", 0, dsfile);
 		if (distortionBits < 0 || distortionBits > 7) { return 0; }
@@ -632,6 +651,9 @@ int DrumSynth::GetDSFileSamples(QString dsfile, int16_t*& wave, int channels, sa
 		envData[i][PNT] = 0;
 	}
 	Length = LongestEnv();
+	// Refuse a duration past the renderer's own hold at the largest stretch, before any buffer is sized from it.
+	// LongestEnv adds a 2400 sample base and rounds down to whole blocks, so Length exceeds the envelope by at most 2400.
+	if (static_cast<float>(Length) > maxEnvelopeHold * maxStretch * (Fs / 44100.f) + 2400.f) { return 0; }
 	std::size_t waveSampleCount = 0;
 	if (!checkedWaveSampleCount(channels, Length, waveSampleCount)) { return 0; }
 

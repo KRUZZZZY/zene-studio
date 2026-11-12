@@ -59,6 +59,7 @@ public:
 
 protected:
 	//! Register @a model, saved under @a key. Call from the constructor, in the order to draw.
+	//! A @a key already registered is refused: the model is not registered and a warning is logged.
 	void addParameter(AutomatableModel* model, const QString& key);
 
 private:

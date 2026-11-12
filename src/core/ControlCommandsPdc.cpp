@@ -194,8 +194,11 @@ void registerPdcCommands(ControlRegistry& registry)
 		cmd.verb = QStringLiteral("report");
 		cmd.description = QStringLiteral("Plugin delay compensation as the mixer publishes it: the "
 			"total latency to the master output, every channel's alignment point and the latency its "
-			"own chain adds, the compensation applied at every send, and whether sidechain routing "
-			"exists. Read-only.");
+			"own chain adds, its hardware insert's effective latency (hardware_insert_latency_frames: "
+			"the typed override, else the measured ping; 0 while the insert is off or an export "
+			"bypasses it) and where that figure comes from (hardware_insert_latency_source: off, "
+			"bypassed, override, measured or unmeasured), the compensation applied at every send, and "
+			"whether sidechain routing exists. Read-only.");
 		cmd.argsSchema = objectSchema({});
 		cmd.resultSchema = objectSchema({
 			{QStringLiteral("total_latency_frames"), integerProperty()},

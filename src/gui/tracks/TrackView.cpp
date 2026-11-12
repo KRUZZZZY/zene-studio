@@ -201,8 +201,18 @@ TrackView::TrackView( Track * track, TrackContainerView * tcv ) :
 
 	m_trackContainerView->addTrackView( this );
 	// WF-107: the subclasses set their own height after this constructor; the spacer goes on after them.
+	// Q050-317.1: the runner is bound to this view, but the TRACK it reads is not owned by the view. A
+	// document replacement (project.new / project.new_document, an opened project) deletes the track while
+	// this zero-delay callback is still queued, and updateFolderIndent()/applySpacer() then dereference a
+	// freed Track - measured as a SIGSEGV in updateFolderIndent right after project.new_document answered.
+	// So the callback asks the view whether it still owns a live track before reading it: the view is
+	// destroyed with its Qt parent, which cancels the callback, and a view whose track went early is silent.
 	QTimer::singleShot(0, this, [this]
 	{
+		// The POINTER is compared, never dereferenced: by now it may name a freed Track, and only
+		// the container's live list can say whether the model this view was built for is still there.
+		const auto& live = m_trackContainerView->model()->tracks();
+		if (m_track == nullptr || std::find(live.begin(), live.end(), m_track) == live.end()) { return; }
 		updateFolderIndent();
 		applySpacer();
 	});
@@ -408,7 +418,7 @@ void TrackView::dropEvent( QDropEvent * de )
 	if (arrangerdrop::carriesFile(de->mimeData()))
 	{
 		const TimePos tick = arrangerdrop::tickAtContainerX(trackContainerView(), position(de).x());
-		if (arrangerdrop::dropFileAndReport(de->mimeData(), m_track, tick)) { de->acceptProposedAction(); }
+		if (arrangerdrop::dropFileAndReport(de->mimeData(), m_track, tick, arrangerdrop::dropModifiers(de))) { de->acceptProposedAction(); }
 		else { de->ignore(); }
 		return;
 	}

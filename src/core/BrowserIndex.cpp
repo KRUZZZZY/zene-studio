@@ -385,4 +385,18 @@ bool BrowserIndex::save(const std::vector<BrowserIndexEntry>& entries, const Sta
 	return file.commit();
 }
 
+QHash<QString, BrowserFeatures> browserMeasuredFeatures()
+{
+	// One copy, taken while entries() holds the lock and kept after it releases:
+	// a search must never hold the index's mutex across a filesystem walk (a
+	// background scan needs it to publish). Only measured entries are included: a
+	// file the index holds no measurement for stays unknown to a tempo/key filter.
+	QHash<QString, BrowserFeatures> out;
+	for (const BrowserIndexEntry& entry : BrowserIndex::instance().entries())
+	{
+		if (entry.features.valid) { out.insert(entry.path, entry.features); }
+	}
+	return out;
+}
+
 } // namespace lmms

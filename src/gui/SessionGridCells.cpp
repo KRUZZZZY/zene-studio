@@ -24,7 +24,10 @@
 
 #include "SessionGridCells.h"
 
+#include <cmath>
+
 #include <QObject>
+#include <QStringList>
 
 #include "Engine.h"
 #include "Song.h"
@@ -65,6 +68,41 @@ SceneState trackSceneState(int scene, int playingScene, const QString& phase)
 	if (phase == QLatin1String("launching")) { return SceneState::Queued; }
 	return phase == QLatin1String("playing") ? SceneState::Playing : SceneState::Empty;
 }
+
+//! @a value with its sign ("+12", "-6.0"); @a decimals after the point.
+QString signedText(double value, int decimals)
+{
+	return (value > 0.0 ? QStringLiteral("+") : QString()) + QString::number(value, 'f', decimals);
+}
+
+//! The audio-cell playback settings off their defaults, read once for the badge and the words.
+struct Playback
+{
+	bool audio = false;
+	double gainDb = 0.0;
+	int transpose = 0;
+	int detune = 0;
+	int loopStart = 0;
+	int loopLength = 0;
+	bool warp = false;
+	double warpBpm = 0.0;
+	bool ram = false;
+
+	explicit Playback(const QJsonObject& slot) :
+		audio(slot.value(QStringLiteral("type")).toString() == QLatin1String("audio")),
+		gainDb(slot.value(QStringLiteral("gain_db")).toDouble()),
+		transpose(slot.value(QStringLiteral("transpose")).toInt()),
+		detune(slot.value(QStringLiteral("detune")).toInt()),
+		loopStart(slot.value(QStringLiteral("loop_start")).toInt()),
+		loopLength(slot.value(QStringLiteral("loop_length")).toInt()),
+		warp(slot.value(QStringLiteral("warp")).toBool()),
+		warpBpm(slot.value(QStringLiteral("warp_bpm")).toDouble()),
+		ram(slot.value(QStringLiteral("ram")).toBool())
+	{
+	}
+	bool gained() const { return std::fabs(gainDb) >= 0.05; }  // what one decimal shows
+	bool looped() const { return loopStart > 0 || loopLength > 0; }
+};
 
 } // namespace
 
@@ -136,6 +174,38 @@ QString launchReplaces(const QString& name, const QString& playing)
 {
 	if (name.isEmpty() || playing.isEmpty()) { return QString(); }
 	return QObject::tr("Launching %1 replaces %2, which this track plays now").arg(name, playing);
+}
+
+QString playbackBadge(const QJsonObject& slot)
+{
+	const Playback p(slot);
+	if (!p.audio) { return QString(); }
+	QStringList parts;
+	if (p.gained()) { parts.append(signedText(p.gainDb, 1) + QStringLiteral("dB")); }
+	if (p.transpose != 0) { parts.append(signedText(p.transpose, 0) + QStringLiteral("st")); }
+	if (p.detune != 0) { parts.append(signedText(p.detune, 0) + QStringLiteral("ct")); }
+	if (p.looped()) { parts.append(QStringLiteral("\u27F2")); }  // ⟲ a loop region
+	if (p.warp) { parts.append(QStringLiteral("W") + QString::number(p.warpBpm, 'g', 6)); }
+	if (p.ram) { parts.append(QStringLiteral("RAM")); }
+	return parts.join(QLatin1Char(' '));
+}
+
+QString playbackWords(const QJsonObject& slot)
+{
+	const Playback p(slot);
+	if (!p.audio) { return QString(); }
+	QStringList parts;
+	if (p.gained()) { parts.append(QObject::tr("gain %1 dB").arg(signedText(p.gainDb, 1))); }
+	if (p.transpose != 0) { parts.append(QObject::tr("transposed %1 semitones").arg(signedText(p.transpose, 0))); }
+	if (p.detune != 0) { parts.append(QObject::tr("detuned %1 cents").arg(signedText(p.detune, 0))); }
+	if (p.looped())
+	{
+		parts.append(p.loopLength > 0 ? QObject::tr("looping %1 ticks from tick %2").arg(p.loopLength).arg(p.loopStart)
+			: QObject::tr("looping from tick %1 to the end").arg(p.loopStart));
+	}
+	if (p.warp) { parts.append(QObject::tr("warped to the song tempo from %1 BPM").arg(QString::number(p.warpBpm, 'g', 6))); }
+	if (p.ram) { parts.append(QObject::tr("RAM mode enabled")); }
+	return parts.join(QStringLiteral(", "));
 }
 
 } // namespace lmms::gui::sessiongrid

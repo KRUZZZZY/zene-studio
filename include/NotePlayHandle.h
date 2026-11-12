@@ -34,6 +34,7 @@
 
 #include "ArticulationEvents.h"
 #include "BasicFilters.h"
+#include "MpeSynthExpression.h"
 #include "Note.h"
 #include "PlayHandle.h"
 #include "Track.h"
@@ -163,6 +164,9 @@ public:
 
 	/*! Returns whether the play handle plays on a certain track */
 	bool isFromTrack( const Track* _track ) const override;
+
+	//! Q050-074.1: the note's rendering counts toward its instrument track's synthesis load.
+	SynthesisLoad* synthesisLoad() noexcept override;
 
 	/*! Releases the note (and plays release frames) */
 	void noteOff( const f_cnt_t offset = 0 );
@@ -379,6 +383,16 @@ public:
 	 *  sample-accurately. */
 	int effectiveMpePitchCents() const;
 
+	/*! Q050-311: the note's MPE pressure / CC74 timbre at the current play
+	 *  position - the stream's value at this tick when the note carries a
+	 *  stream for that axis, else the scalar snapshot. MpeSynthExpression reads
+	 *  these once per period to shape a built-in synthesiser's note. */
+	int effectiveMpePressure() const;
+	int effectiveMpeTimbre() const;
+
+	//! Q050-311: the per-note running state of MpeSynthExpression (audio thread only).
+	MpeSynthExpression::State& mpeSynthState() { return m_mpeSynthState; }
+
 	/*! Q050-016: send the expression events whose point falls in this period,
 	 *  each at its own frame offset inside the period, so the stream's pitch,
 	 *  pressure and timbre reach the instrument where the points name them.
@@ -451,6 +465,7 @@ private:
 											// figuring out whether a whole note
 											// has been played
 	std::uint64_t m_generation = 0;			// bumped per construction/reuse (see generation())
+	MpeSynthExpression::State m_mpeSynthState;	// Q050-311: pressure/timbre shaping state
 	f_cnt_t m_framesBeforeRelease;			// number of frames after which note
 											// is released
 	f_cnt_t m_releaseFramesToDo;			// total numbers of frames to be

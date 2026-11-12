@@ -29,8 +29,10 @@
 #include "MidiClock.h"
 #include "MidiLearn.h"
 #include "MidiPort.h"
+#include "RenderPeriodClock.h"
 
 #include <cerrno>
+#include <chrono>
 #include <cstring>
 
 #ifdef LMMS_HAVE_ALSA
@@ -174,6 +176,20 @@ MidiAlsaSeq::MidiAlsaSeq() :
 	}
 	snd_seq_queue_tempo_free( tempo );
 
+	// Q050-246: the queue delivers a scheduled event on its timer's tick. The default tick is 1 ms, which put
+	// up to a whole millisecond of jitter on every frame-placed event; ask for 4 kHz (0.25 ms). A sequencer that
+	// refuses keeps its default timer - the events still go out, on the coarser grid.
+	snd_seq_queue_timer_t * queueTimer = nullptr;
+	if( snd_seq_queue_timer_malloc( &queueTimer ) >= 0 )
+	{
+		if( snd_seq_get_queue_timer( m_seqHandle, m_queueID, queueTimer ) >= 0 )
+		{
+			snd_seq_queue_timer_set_resolution( queueTimer, QueueTimerHz );
+			snd_seq_set_queue_timer( m_seqHandle, m_queueID, queueTimer );
+		}
+		snd_seq_queue_timer_free( queueTimer );
+	}
+
 	if( int err = snd_seq_start_queue( m_seqHandle, m_queueID, nullptr ); err < 0 )
 	{
 		qCritical( "MidiAlsaSeq: cannot start queue: %s", snd_strerror( err ) );
@@ -229,24 +245,8 @@ MidiAlsaSeq::MidiAlsaSeq(PipeOnlyForTesting) :
 
 MidiAlsaSeq::~MidiAlsaSeq()
 {
-	if( isRunning() )
-	{
-		m_quit = true;
-		// Join without a deadline. The budget here was EventPollTimeOut*2 (500 ms)
-		// and it is the same defect the engine's own workers had: when the budget
-		// expired the thread was still running, and this object IS a QThread - so
-		// ~QThread destroyed it while its thread ran and Qt answered with
-		//   qFatal("QThread: Destroyed while thread is still running")
-		// i.e. an unconditional SIGABRT during shutdown, blamed on whatever was
-		// closing. Measured: 1 abort in a 3-run suite sweep from
-		// tests/control-shutdown.py under load, with the QFATAL stack naming
-		// Engine::destroy -> ~AudioEngine -> delete m_midiClient -> ~MidiAlsaSeq.
-		// run() leaves its loop within one poll interval of m_quit being set, so
-		// wait() terminates; the trade is the engine workers' trade - a thread
-		// that never returns now blocks the shutdown instead of aborting it.
-		wait();
-
-	}
+	stopWorker();
+	drainOutQueue();
 	if( m_seqHandle != nullptr )
 	{
 		QMutexLocker locker( &m_seqMutex );
@@ -278,6 +278,48 @@ MidiAlsaSeq::~MidiAlsaSeq()
 
 
 
+void MidiAlsaSeq::stopWorker()
+{
+	m_quit = true;
+	if( m_pipe[1] >= 0 )
+	{
+		// The poll set's first entry: the worker returns at once instead of after EventPollTimeOut.
+		// Non-blocking; a full pipe already holds a wake.
+		const char wake = 0;
+		const ssize_t written = ::write( m_pipe[1], &wake, 1 );
+		static_cast<void>( written );
+	}
+	// Join without a deadline. The budget here was EventPollTimeOut*2 (500 ms)
+	// and it is the same defect the engine's own workers had: when the budget
+	// expired the thread was still running, and this object IS a QThread - so
+	// ~QThread destroyed it while its thread ran and Qt answered with
+	//   qFatal("QThread: Destroyed while thread is still running")
+	// i.e. an unconditional SIGABRT during shutdown, blamed on whatever was
+	// closing. Measured: 1 abort in a 3-run suite sweep from
+	// tests/control-shutdown.py under load, with the QFATAL stack naming
+	// Engine::destroy -> ~AudioEngine -> delete m_midiClient -> ~MidiAlsaSeq.
+	// run() leaves its loop within one dispatch of m_quit being set, so
+	// wait() terminates; the trade is the engine workers' trade - a thread
+	// that never returns now blocks the shutdown instead of aborting it.
+	wait();
+	m_workerStopped = true;
+}
+
+
+
+
+void MidiAlsaSeq::drainOutQueue()
+{
+	MidiOutQueue::Command command;
+	while( m_outQueue.pop( command ) )
+	{
+		processQueuedOutEvent( command );
+	}
+}
+
+
+
+
 QString MidiAlsaSeq::probeDevice()
 {
 	QString dev = ConfigManager::inst()->value( "Midialsaseq", "device" );
@@ -297,17 +339,61 @@ QString MidiAlsaSeq::probeDevice()
 
 void MidiAlsaSeq::processOutEvent( const MidiEvent& event, const TimePos& time, const MidiPort* port )
 {
+	enqueueOutEvent( event, time, port, 0 );
+}
+
+
+
+
+void MidiAlsaSeq::processOutEventAt( const MidiEvent& event, const TimePos& time, const MidiPort* port,
+					f_cnt_t offset )
+{
+	// Q050-246: the event's real-time due point. Inside a render period (the render thread or one of its
+	// workers) that is the period's start plus the frame offset; anywhere else (a test, a control thread) the
+	// offset counts from now. One clock read and integer arithmetic: nothing here allocates, locks or waits.
+	const auto start = RenderPeriodClock::inPeriod() ? RenderPeriodClock::periodStart()
+		: std::chrono::steady_clock::now();
+	const sample_rate_t rate = Engine::audioEngine() != nullptr ? Engine::audioEngine()->outputSampleRate() : 0;
+	const std::int64_t offsetNs = rate > 0
+		? static_cast<std::int64_t>( offset ) * 1000000000LL / static_cast<std::int64_t>( rate ) : 0;
+	const std::int64_t dueNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+		start.time_since_epoch() ).count() + offsetNs;
+	enqueueOutEvent( event, time, port, dueNs > 0 ? dueNs : 1 );
+}
+
+
+
+
+void MidiAlsaSeq::enqueueOutEvent( const MidiEvent& event, const TimePos& time, const MidiPort* port,
+					std::int64_t dueNs )
+{
 	// This is called from the audio path. The sequencer thread owns all ALSA
 	// calls and the mutex; enqueueing is bounded, lock-free, and allocation-free.
 	// Cluster 5129: the sequencer thread sleeps in poll() for up to EventPollTimeOut, so the first
 	// push after each drain writes one byte to the wake pipe. One non-blocking write per drain, not per event.
-	if( m_outQueue.pushAndRequestWake( event, time, port ) && m_pipe[1] >= 0 )
+	if( m_outQueue.pushAndRequestWake( event, time, port, dueNs ) && m_pipe[1] >= 0 )
 	{
 		const char wake = 0;
 		// A full pipe already holds a pending wake, so a short or refused write loses nothing.
 		const ssize_t written = ::write( m_pipe[1], &wake, 1 );
 		static_cast<void>( written );
 	}
+}
+
+
+bool MidiAlsaSeq::processNonAudioOutEvent( const MidiEvent& event, const MidiPort* port )
+{
+	// Not m_outQueue: its single producer is the audio thread (Q050-277). The caller holds MidiClient's off-audio
+	// mutex, so this queue has one producer too; the sequencer thread drains it beside m_outQueue.
+	if( !m_nonAudioQueue.push( event, TimePos(), port, 0 ) ) { return false; }
+	// Off the audio thread, so one wake byte per event is affordable (a full pipe already holds a pending wake).
+	if( m_pipe[1] >= 0 )
+	{
+		const char wakeByte = 0;
+		const ssize_t written = ::write( m_pipe[1], &wakeByte, 1 );
+		static_cast<void>( written );
+	}
+	return true;
 }
 
 
@@ -346,6 +432,21 @@ void MidiAlsaSeq::processQueuedOutEvent(const MidiOutQueue::Command& command)
 	if( clockMessage != MidiClockMessage::None )
 	{
 		snd_seq_ev_set_direct( &ev );
+	}
+	else if( command.dueNs != 0 )
+	{
+		// Q050-246: scheduled at its own frame inside the period, in real time relative to now. The
+		// integer tick below loses everything under one tick - at 120 BPM a whole 10 ms - so every event of
+		// a period left at the period's drain instead of at its frame. A due point already passed is
+		// scheduled at 0 on the same queue, which keeps the events' order.
+		const std::int64_t nowNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+			std::chrono::steady_clock::now().time_since_epoch() ).count();
+		const std::int64_t delayNs = command.dueNs > nowNs ? command.dueNs - nowNs : 0;
+		snd_seq_real_time_t delay;
+		delay.tv_sec = static_cast<unsigned int>( delayNs / 1000000000LL );
+		delay.tv_nsec = static_cast<unsigned int>( delayNs % 1000000000LL );
+		snd_seq_ev_schedule_real( &ev, m_queueID, 1, &delay );
+		ev.queue = m_queueID;
 	}
 	else
 	{
@@ -455,6 +556,11 @@ void MidiAlsaSeq::processQueuedOutEvent(const MidiOutQueue::Command& command)
 
 void MidiAlsaSeq::applyPortMode( MidiPort * _port )
 {
+	// After stopInput() nothing else sends the queue, and a queued event of a port whose
+	// sequencer port is gone is dropped: ~MidiPort disables the port's modes before it
+	// removes it, so here and in removePort() a track's last note-offs still leave first.
+	if( m_workerStopped ) { drainOutQueue(); }
+
 	m_seqMutex.lock();
 
 	// determine port-capabilities
@@ -574,6 +680,8 @@ void MidiAlsaSeq::applyPortName( MidiPort * _port )
 
 void MidiAlsaSeq::removePort( MidiPort * _port )
 {
+	if( m_workerStopped ) { drainOutQueue(); }
+
 	QMutexLocker locker( &m_seqMutex );
 	const auto it = m_portIDs.find( _port );
 	if( it != m_portIDs.end() )
@@ -779,6 +887,11 @@ void MidiAlsaSeq::run()
 		{
 			processQueuedOutEvent(command);
 		}
+		// Q050-277: the off-audio queue (the clock's capture sender), drained by this same thread - one consumer.
+		while (m_nonAudioQueue.pop(command))
+		{
+			processQueuedOutEvent(command);
+		}
 
 #ifdef LMMS_TESTING
 		m_pollWaitActiveForTesting.store(true, std::memory_order_release);
@@ -816,8 +929,9 @@ void MidiAlsaSeq::run()
 
 		// Process one input operation per lock scope. Dispatching below may
 		// re-enter port management, and every path (including continue/error)
-		// must release exactly the lock it acquired.
-		while( true )
+		// must release exactly the lock it acquired. A stop ends the batch, so a
+		// device that never stops sending cannot hold the join back (Q050-488).
+		while( !m_quit )
 		{
 			snd_seq_event_t * ev = nullptr;
 			int pending = 0;

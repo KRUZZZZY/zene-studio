@@ -118,6 +118,12 @@ int quantizePositions( const NoteVector& notes, int grid, QuantizeMode mode );
  *  number of notes whose key actually changed. */
 int snapToScale( const NoteVector& notes, const std::vector<int>& scaleDegrees );
 
+/*! The nearest in-scale key to `key` for a scale given as semitone offsets or
+ *  pitch classes, a tie resolving downward - the rule snapToScale() applies to
+ *  each note, asked for one key. `key` itself when it is already in the scale
+ *  or the scale is empty (Q050-294.1: note.step_set snaps new pitches with it). */
+int snapKeyToScale( int key, const std::vector<int>& scaleDegrees );
+
 /*! How many of `notes` a transpose by `semitones` would move: the rule
  *  transpose() applies, asked WITHOUT changing anything.
  *

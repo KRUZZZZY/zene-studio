@@ -177,6 +177,9 @@ public:
 	 *  ENTITY id is allocated here too (the `lane-` family, exactly as the
 	 *  Track and Clip constructors allocate theirs - SPEC-ARCH-4 1.5 R4). */
 	int addLane(const QString& name = QString());
+	//! Whether addLane() can hand out \p count more indices. addLane() returns -1 once the
+	//! high-water mark is at its limit, so a caller that needs several lanes checks the count first.
+	bool canAddLanes(int count) const;
 	/*! Removes the lane; every segment naming it falls back to the base lane. Refused (nothing
 	 *  removed) when the lane is unknown or the result would exceed the playback span budget. */
 	bool removeLane(int index);

@@ -104,10 +104,10 @@ void rebuild(QMenu* menu, const QString& refusal)
 		rebuild(menu, added.ok ? QString() : QMenu::tr("Refused: %1").arg(added.errorMessage));
 	});
 	QAction* rescan = menu->addAction(QMenu::tr("Rescan Plugins"));
-	rescan->setData(QStringLiteral("plugin.rescan"));
-	rescan->setToolTip(QMenu::tr("Run a plugin scan now, so a quarantine edit takes effect"));
+	rescan->setData(QStringLiteral("plugin.scan_start"));
+	rescan->setToolTip(QMenu::tr("Scan the plugins in the background, so a quarantine edit takes effect; the Tasks list shows it with Cancel"));
 	QObject::connect(rescan, &QAction::triggered, menu, [menu] {
-		const ControlResult scanned = invoke("plugin.rescan");
+		const ControlResult scanned = invoke("plugin.scan_start");
 		rebuild(menu, scanned.ok ? QString() : QMenu::tr("Refused: %1").arg(scanned.errorMessage));
 	});
 }

@@ -122,13 +122,13 @@ void registerClipAdd(ControlRegistry& registry)
 		ControlResult error;
 		Track* track = control::resolveTrack(args.value(QStringLiteral("track")).toString(), &error);
 		if (track == nullptr) { return error; }
-		// A folder track holds no clips: TrackFolder::createClip() returns null. Refuse
+		// A folder or neutral track holds no clips: their createClip() returns null. Refuse
 		// before the checkpoint below, so a refused add leaves no no-op undo step and
 		// does not clear the redo history.
-		if (track->type() == Track::Type::Folder)
+		if (track->type() == Track::Type::Folder || track->type() == Track::Type::Neutral)
 		{
 			return ControlResult::failure(ControlErrorKind::Refused,
-				QStringLiteral("a folder track holds no clips; add the clip to a track that carries clips"));
+				QStringLiteral("a folder or neutral track holds no clips; add the clip to a track that carries clips"));
 		}
 		const int clipCount = track->numOfClips();
 		QJsonObject before;

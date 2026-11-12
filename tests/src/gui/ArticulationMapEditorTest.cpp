@@ -32,6 +32,7 @@
 #include <QTableWidget>
 #include <QTemporaryDir>
 
+#include "ArticulationMap.h"
 #include "ArticulationMapEditor.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
@@ -288,6 +289,24 @@ private slots:
 		QCOMPARE(editor.entries().front().name, QStringLiteral("Staccato"));
 		QCOMPARE(editor.entries().front().value, 90);
 		QCOMPARE(editor.entries().front().keyswitch, 24);
+	}
+
+	void anEmptiedMapLeavesNoStaleAttributeOnAReusedElement()
+	{
+		// An empty map writes nothing, and it must also take away what an earlier save left on the same element.
+		QDomDocument doc;
+		QDomElement element = doc.createElement(QStringLiteral("instrumenttrack"));
+		ArticulationMap map;
+		map.set({Articulation{QStringLiteral("One"), 20}});
+		map.save(element);
+		QVERIFY(element.hasAttribute(QStringLiteral("articulations")));
+		map.set({});
+		map.save(element);
+		ArticulationMap reloaded;
+		reloaded.set({Articulation{QStringLiteral("Stale"), 21}});
+		reloaded.load(element);
+		QVERIFY2(reloaded.empty(), "reloading the element restored the articulations that were removed");
+		QVERIFY2(!element.hasAttribute(QStringLiteral("articulations")), "the emptied map left its old attribute on the element");
 	}
 };
 

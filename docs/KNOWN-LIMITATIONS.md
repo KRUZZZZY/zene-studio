@@ -210,6 +210,54 @@ library to work.
   chain keeps a saved one as its placeholder, state intact, as before.
   `ControlDeviceCatalogueTest::hostedEffectsListAndLoadThroughTheSurface` lists and loads the in-tree VST3
   and CLAP effect fixtures through the surface. Still true: no third-party effect has been loaded by us.
+- *(Added 2026-10-28, Q050-491.)* **Audio Units (AUv2) are hosted on macOS - and that host has not yet run.** The
+  `aueffect` and `auinstrument` modules (`plugins/AuEffect`, `plugins/AuInstrument`) are built on macOS only; every
+  other build compiles the format out and `plugin.list` has no `au` format there. Discovery is the system component
+  registry, each component recorded in the plug-in scan cache under its own path (`/AudioUnits/<type>/<subtype>/<maker>`)
+  and hidden by a quarantine entry for that path. Stereo in and out only; MIDI SysEx is not passed to an instrument;
+  AUv3 app extensions, side-chain buses, multiple output buses and the unit's factory presets are not offered.
+  **What was proved, and where:**
+  - **Linux (this lane):** `AuComponentTest` (the format-neutral rules: component keys, scan-cache records,
+    quarantine, persistence, typed errors) and the every-build half of `AuHostingTest` (no `au` format, a hand-made AU
+    device refused by name). The macOS sources were checked for syntax only: the seven plain C++ files with GCC against
+    the real headers, and `AuHost.cpp` (Objective-C++) with clang against stub Apple headers. **They have not been
+    compiled against the macOS SDK.**
+  - **Hosted macOS jobs (not yet observed; the lane is not pushed):** the rest of `AuHostingTest` against Apple's
+    AUBandpass, AUDistortion and DLSMusicDevice - listing, scan cache and quarantine, audio through an effect,
+    parameters and automation, state through a file and a project, MIDI to an instrument, the device picker, and the
+    editor button. Under the jobs' offscreen Qt platform the editor is refused by name (no NSView exists there), so the
+    Cocoa view itself is only opened on a real Mac.
+  - **For the owner's Mac mini:** open AUBandpass and DLSMusicDevice editors under the normal (cocoa) platform; play
+    DLSMusicDevice from a MIDI keyboard; load a third-party AU effect and instrument, save, quit, reopen; quarantine a
+    unit in Plug-in Modules and rescan; a project saved there opened on Linux keeps the AU device as a placeholder.
+- *(Added 2026-10-27, Q050-490.)* **VST3 and CLAP editors now try to open on Windows and macOS too.** The host
+  chooses the platform's native window when an editor opens (`include/PluginWindowSystem.h`): VST3 `HWND` /
+  CLAP `win32` on Windows, VST3 `NSView` / CLAP `cocoa` on macOS, and X11 on Linux as before. Before this change
+  every non-X11 view was refused. A plug-in that cannot embed in the platform's window is refused with the platform
+  and window API named (*"cannot embed on macOS (CLAP window API cocoa)"*). No editor is created, so no empty
+  window stays open. A native Wayland session is refused the same way (start with `QT_QPA_PLATFORM=xcb`).
+  **What was proved, and where:**
+  - **Linux:** every test named here was run, including the explicit Windows and macOS cases. `ClapHostTest`,
+    `Vst3EditorTest` and `ClapEffectIntegrationTest` choose the window system themselves, so all three paths
+    run on any machine.
+  - **Windows and macOS, hosted CI:** the hosted macOS, msvc and msys2 jobs build and run `ClapHostTest` and
+    `ClapEffectIntegrationTest` on their own native path. The macOS and msvc jobs now also pass
+    `WANT_VST3_TEST_INSTRUMENT=ON`: the VST3 fixture is laid out per platform (a Windows `.vst3` package with
+    `dllmain.cpp`; a macOS CFBundle with `macmain.cpp` and an `Info.plist`), and `Vst3EditorTest` opens,
+    resizes (host and plug-in), closes and reopens its editor as an `HWND` / `NSView` there. Those hosted runs had
+    **not yet been observed** when this was written, because lanes are not pushed; the Windows and macOS builds of
+    the fixture were not compiled on the Linux box either. The rest of the VST3 fixture suite
+    (`Vst3InstrumentTest`, the probe, the integration cases) still runs on Linux only.
+  - **Still to check on a real machine (the owner's Windows laptop and Mac mini):** a real third-party VST3 and
+    CLAP editor that opens, draws, resizes (host and plug-in), closes and reopens.
+  **Limits:**
+  - **Content scale on macOS:** both APIs use logical points on macOS and the OS applies the screen's factor
+    itself. So a VST3 view there is given the scaled size instead of `setContentScaleFactor`, and a CLAP editor
+    is never sent `set_scale`. `editor_scale` therefore has no effect on a CLAP editor on macOS.
+  - **Plug-in resizes:** a resize the plug-in asks for is granted to the view, but the host window keeps the
+    size it opened at, on every platform (as on X11 before).
+  - **Run loop:** the run loop for editor timers and file descriptors (Linux `IRunLoop`, CLAP fd/timer support) is
+    the same Qt loop on every platform.
 - *(Added 2026-10-07, plugin-hosting lane, MX-094.)* **A VST3 effect's own window now opens at the device's
   zoom** (`plugin.options editor_scale`, 0.5 to 3), as a CLAP effect's already did. A view that scales itself
   (`IPlugViewContentScaleSupport`) is told the factor. Any other view that can resize is given the scaled size.
@@ -219,6 +267,20 @@ library to work.
   button in `src/gui/Lv2ViewBase.cpp` sits behind `if (false)`), so there is no UI to send `ui:scaleFactor` to, and no
   LV2 UI fixture exists. Proved offscreen against the in-tree VST3 fixture only; no third-party editor has
   been zoomed on a real display.
+- *(Added 2026-10-27, Q050-502.)* **Plug-in editors on a Wayland desktop run through XWayland.** Both formats' editors
+  embed only in X11 windows (VST3 `kPlatformTypeX11EmbedWindowID`, CLAP `CLAP_WINDOW_API_X11`). On Qt's native
+  `wayland` platform a widget's window id is not an X11 window: measured in a nested KWin session, a heap pointer that
+  X11 answers with `BadWindow`, while `plugin.editor_open` still reported `open: true` for both in-tree fixtures. At
+  start-up a Wayland session (`WAYLAND_DISPLAY` or `XDG_SESSION_TYPE=wayland`) that has XWayland (`DISPLAY` set) now
+  runs on `QT_QPA_PLATFORM=xcb;wayland`, as other Linux DAWs do (`src/core/PluginWindowPlatform.cpp`). A
+  `QT_QPA_PLATFORM` or `-platform` set by the user is never overridden. Limits: on native Wayland (the user's choice,
+  no XWayland, or a Qt without its xcb plug-in) every hosted editor refuses with a typed `requires` that names the
+  reason, and there is no Wayland-native embedding. Running through XWayland means XWayland's scaling, so on a
+  fractionally scaled KDE screen the whole window can look soft (KDE's "Legacy Applications (X11)" scaling setting
+  decides this). The choice is made only when Zene starts: there is no setting in the interface, only the environment
+  variable. Proved in a nested headless `kwin_wayland --virtual --xwayland` against the in-tree fixtures. On 2026-10-27,
+  the live KDE Wayland session was also checked on XWayland `:0` with the pinned third-party DPF Nekobi VST3 and DPF ProM
+  CLAP editor probes (forced to `xcb`); both opened, drew for one second and closed. Their fractional-scaling appearance was not checked.
 - *(Updated 2026-09-30, R4.1/R4.2/R4.4.)* **A VST3 plug-in's own editor now opens** - in a window of its
   own, through `plugin.editor_open` (the host's `Vst3EditorSession`: createView, X11 embedding, resize,
   IPlugFrame and Linux::IRunLoop on the Qt loop). What is proved is the contract, offscreen, against the
@@ -442,9 +504,12 @@ library to work.
   clip moves every clip inside it (`track.folder_move` with its new optional `start`/`end` span), Ctrl+drag
   copies them there (`range.copy` + `range.paste`), and its menu duplicates it after itself or deletes it
   (`range.delete`); each edit is one undo step and the arranger's own range is put back after it
-  (`FolderSummaryLaneTest`; `include/FolderSummaryLane.h`). Not done: a summary clip cannot be resized,
-  split or selected together with ordinary clips, and has no keyboard route; the copy uses (and so replaces)
-  the range clipboard; a delete follows the arranger's ripple mode. The paragraph below is the pre-M3 record.
+  (`FolderSummaryLaneTest`; `include/FolderSummaryLane.h`). *(Updated 2026-11-01, Q050-255.)* A summary clip can also be
+  selected (several, beside ordinary clips), resized by its edges, split, and edited from the keyboard
+  (`track.folder_span_*`; `docs/050-features/Q050-255.md`). Not done: the copy uses (and so replaces)
+  the range clipboard; the single-clip menu delete follows the arranger's ripple mode, the selection's
+  `track.folder_span_delete` does not; a group split takes no zero-crossing snap; lengthening moves only the
+  clips already at that edge. The paragraph below is the pre-M3 record.
   **Folder tracks, their two modes, pinning and the named visibility sets are drivable through the
   socket, not from the interface**: nothing in `src/gui/` creates a folder, indents a child, collapses
   a row, draws the relation, shows a pin or offers a set switcher — a folder's row is an ordinary
@@ -540,8 +605,10 @@ library to work.
   adds an LFO and removes one (`modulator.create` / `modulator.remove`), sets the selected one's shape and rate
   (`modulator.rate_set`), shows the parameters it drives with their depth, binds one from pickers over a mixer
   channel's effects and parameters (`modulator.target_set`) and unbinds it (`modulator.target_remove`)
-  (`ModulatorPanelTest`). Still socket-only: the per-sample switch and editing a bound route's depth in place
-  (`modulator.depth_set`); the layer still reaches mixer-channel racks only. The bullet below is the pre-panel
+  (`ModulatorPanelTest`). *(Corrected 2026-10-31, Q050-164.)* Each bound route has a **Per sample** switch in the
+  panel (`modulator.per_sample_set`). A route's depth is not socket-only either: an instrument's Modulation Assignments list has **Depth...**
+  (`modulator.depth_set`, `src/gui/InstrumentCommandMenus.cpp`). The Modulators panel still shows a bound route's depth
+  without editing it in place, and its Bind row reaches mixer-channel racks only. The bullet below is the pre-panel
   record.
 - **The modulation layer is in the engine and on the socket, and there is no interface for it.**
   Modulators (`modulator.*`, ten ids with `note.expression.*`) drive device parameters in a mixer channel's rack
@@ -766,11 +833,17 @@ library to work.
   the same reasoning that left the whole-tree ratchets red rather than grandfathered. The plan is on the record:
   build an effect fixture and instantiate the effect module, then decide the headless-untestable and
   deliberately-inert files individually, with their reasons.
-- **Automation is not sample-accurate.** Modes work (Read / Touch / Latch / Write) and riding a control in Read
-  cannot destroy written automation, but automation is evaluated once per tick, so it lands on a tick boundary
-  rather than a sample. Verified in the tree via the automation lane's own record: `docs/AUTOMATION-MODES.md`
-  states that automation is evaluated once per tick and names the line that stands between that and a
-  per-frame read.
+- **Automation clips carrying a curve are sample-accurate by default; a Discrete clip keeps its step.**
+  Modes work (Read / Touch / Latch / Write) and riding a control in Read cannot destroy written automation.
+  A Linear or CubicHermite clip publishes a per-block ramp at every sample by default, while a Discrete clip
+  keeps the per-tick step and a CubicHermite curve is approximated as one straight segment per tick. Each
+  ramp holds **32 knots**; a block that needs more is refused the surplus knots and counts them
+  (`refused_knots` in `automation.ramp_get`), never allocated for. A clip in a **pattern** has no single
+  block timeline, so `automation.ramp_set` refuses it (`Refused`). The detailed account, including the
+  consumers that must ask for the per-sample buffer and the one-block transport-jump case, is
+  **Sample-accurate automation (`automation.ramp_set`, `automation.ramp_get`) — feature row 9** below;
+  `docs/SAMPLE-ACCURATE-AUTOMATION.md` is the design record, and `docs/AUTOMATION-MODES.md` is the dated
+  pre-ramp record.
 - *(Updated 2026-09-30.)* **Every control's context menu now has an "Automation mode" submenu** (Off,
   Read, Touch, Latch, Write, the current one checked) that runs `automation.mode_set` for that parameter
   (`src/gui/AutomationModeMenu.cpp`, held by `AutomationModeMenuTest` against a real instrument). It
@@ -841,10 +914,16 @@ library to work.
   MPE-style input, stored backwards-compatibly on the note as `mpepitch` / `mpepressure` / `mpetimbre`, readable
   and editable through a headless API, with all three axes reaching the instrument through the playback path
   (`src/core/NotePlayHandle.cpp`). `src/core/midi/MpeExpression.cpp` is in the tree, and the lane
-  `post-alpha/mpe` is an ancestor of this tip. **What consumes the two new axes, stated plainly:** no built-in
-  synthesiser does — they are driven by a note's frequency and volume and never see MIDI — so a hosted
-  instrument (Vestige / LV2 / CLAP / Carla) or a MIDI output port is where a musician hears pressure and timbre,
-  and the *proof* applies them to an in-tree MIT test instrument
+  `post-alpha/mpe` is an ancestor of this tip. *(Updated 2026-11-04, Q050-311: the built-in per-note synthesisers
+  now DO sound pressure and timbre - `MpeSynthExpression` maps pressure to intensity (gain 1 + p/127) and CC74 to
+  brightness (high-band emphasis around 1 kHz) on every instrument that is not single-streamed, after the note's
+  envelopes; measured on TripleOscillator by `MpeSynthExpressionTest`. Single-streamed built-ins (LB302, OpulenZ, SF2/GIG,
+  ZynAddSubFx, the sfz player) and hosted plug-ins are unchanged: they get the axes as MIDI and map them
+  themselves, or not at all. The mapping is fixed - there is no per-instrument mapping editor.)* **What consumes
+  the two new axes, stated plainly:** the per-note built-in synthesisers, through `MpeSynthExpression` (above);
+  the single-streamed built-ins do not. The built-ins never see MIDI themselves - they are driven by a note's
+  frequency and volume - so on a hosted instrument (Vestige / LV2 / CLAP / Carla) or a MIDI output port the
+  axes arrive as MIDI and that instrument's own mapping decides what is heard. The *MIDI-route proof* applies them to an in-tree MIT test instrument
   (`tests/src/plugins/MpeTestConsumer.cpp`, built from `tests/`, never installed), which is the vehicle of the
   registered ctest `MpePlaybackTest`. That test is a measured comparison, not a smoke test: one audio block
   rendered with the expression against the same block without it, and the level has to move by the ratio the
@@ -904,8 +983,8 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   `LibraryMenusTest`). The whole-library index takes no `probe` (it stores no embedded
   metadata), so the toggle is disabled while **Whole library** is on. `browser.query` re-reads
   the tag store file before matching, so a `tag:` search reflects tags written by another
-  instance or earlier in the session. The waveform peak cache and peak drawing stay socket-only
-  (`browser.peaks`): the Search view draws no waveforms. The bullets below are the earlier
+  instance or earlier in the session. The Search view draws no waveforms (the
+  browser's waveform view reads the peak cache since WF-010, in the background since Q050-010). The bullets below are the earlier
   records.
 - *(Updated 2026-09-30.)* **A file's context menu in the browser now has a Tags submenu**: every tag the
   library knows, the file's own checked - check to add (`browser.tag.add`), uncheck to remove
@@ -1278,10 +1357,19 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
   - A channel fed by a latent instrument has a non-zero alignment point, so its rack's key zones do not
     route notes (`RackZoneFeed` routes only through a channel aligned at 0) - the existing zone rule, now
     met by latent instruments too.
-  - Live playing through a latent instrument is late by its latency plus the alignment; nothing bypasses
-    an instrument the way the low-latency mode bypasses latent effects. *(Measured 2026-10-19, Q050-169:
+  - Live playing through a latent instrument is late by its latency plus the alignment unless low-latency
+    monitoring takes its path; nothing bypasses an instrument the way the low-latency mode bypasses latent
+    effects. *(Measured 2026-10-19, Q050-169:
     `InstrumentLatencyPdcTest::lowLatencyModeDoesNotBypassALatentInstrument` arms `transport.low_latency`,
     sees a latent EFFECT stopped and the latent INSTRUMENT's reference still delayed by its latency.)*
+    *(Updated 2026-10-27, Q050-174:)* the mode instead takes the **alignment** off a record-armed (or, with
+    `scope: all`, any) instrument track whose instrument reports more than `max_ms`: its track handle applies
+    no PDC delay, so it is heard after its own latency only, and its latency still counts in the graph, so
+    every other path stays aligned (`InstrumentLowLatencyMonitorTest::lowLatencyMonitorsTheArmedLatentInstrumentWithoutAlignment`).
+    Its limits: the instrument's own latency is still heard (it is the plug-in's); a delay PDC adds further
+    downstream - on a send from the channel it plays into to a later channel or the master - still applies;
+    a multi-output instrument's routed output buses keep their alignment; and the answer's
+    `alignment_skipped_frames` is the alignment as the mixer last published it (it moves once a period).
 - *(Updated 2026-09-30.)* **A mixer strip's tooltip now shows its delay compensation** - the latency its effects
   add and the point its input is aligned to, in frames and ms, and on the master the compensated total
   (`mixerLatencyText`, refreshed with the mixer's 500 ms sync; `MixerLatencyTextTest`). It is still not
@@ -2044,7 +2132,9 @@ What is bounded, stated rather than implied:
   own counter (`MidiPort::outputEventsWritten()`) is read where `m_midiClient->processOutEvent()` is
   called. That is a write reaching the client, **not** a proof that a lamp lit — with the dummy client
   `sendByte()` is a no-op, and nothing here has been run against a controller that could confirm it.
-- **OSC is out** — this is the MIDI controller surface only.
+- **OSC is a separate, opt-in server** (Q050-205, `osc.*`, Customise > OSC Control Server): it maps `/zene/<command-id>`
+  onto the registry; this controller-surface group stays MIDI. The OSC server sends replies to requests only - no
+  unsolicited feedback, subscriptions or meter streams - and is not remembered across restarts.
 - **No motorised-fader return path is proved.** `controller.feedback` writes the value the project
   holds; whether a given device acts on it (moves a fader rather than lighting a ring) is a property of
   the device, and is unverified here.
@@ -2117,11 +2207,12 @@ mixer channel and the socket-addressable chain from Lua and reads the engine bac
   revisions are listed with their source and their UTC time by `revisions.list` (group `revisions`,
   feature-list row 76 / OWNER-31 item 30): the **keep-3 rotation** `project.save` performs
   (`<file>.rev0` .. `<file>.rev2`, 8 MiB each), the **`<file>.bak`** a save from the interface leaves,
-  the **autosave** (`recover.mmp`, and `recover.mmp.bak` when it replaced one, each with its `.info`
-  sidecar's recorded time) and the project's own **git history** where it lives in a repository (one
-  bounded `git log`, 2500 ms, skipped entirely when no `git` is on the machine — the `git` object in the
-  reply says which). **No new store and no format change**: every entry is an artefact the engine
-  already writes. Stated limits, all structural or measured: **`revisions.compare` is a STRUCTURAL
+  the **autosave** (`recover.mmp`, timed by its `.info` sidecar's `savedUTC` value, and
+  `recover.mmp.bak` when present, timed by its file timestamp) and the project's own **git history** where it
+  lives in a repository (one bounded `git log`, 2500 ms, skipped entirely when no `git` is on the machine —
+  the `git` object in the reply says which). **No new store and no format change**: rotation, backup
+  and autosave entries are existing files; Git entries come from the project's existing repository
+  history. Stated limits, all structural or measured: **`revisions.compare` is a STRUCTURAL
   comparison** — each document's element count per tag and the tags that differ — and it is **not a
   semantic diff**; the musical diff of two project documents stays `tools/mmpz-git`'s (`mmpz-git diff`),
   outside this process; **a git entry carries no `sha256`** (hashing every listed commit would be one
@@ -2137,10 +2228,17 @@ mixer channel and the socket-addressable chain from Lua and reads the engine bac
   after `qUncompress`**, so a document over 64 MiB decompressed is reported unreadable rather than
   counted. Proof: the registered ctest `RevisionTimelineTest` (real documents, a real `.bak`/`.rev0`/
   autosave fixture, a real repository where git exists, all three ids driven through the registry).
-  **UI absence — one line: the revision timeline is drivable through the socket, not from the
-  interface** — `grep -rniI 'RevisionTimeline\|revisions\.list\|revisions\.restore\|RevisionEntry'
-  src/gui/` returns **0** hits: there is no revision panel, no timeline strip and no "restore this
-  revision" entry, and `revisions.list` is where a caller finds out what a project has.
+  **The interface (corrected 2026-11-05, Q050-438): Project tools ▸ Revisions...** opens the list over
+  `revisions.list` (`CommandLists::revisions`, `src/gui/CommandLists.cpp`) whose rows carry the id,
+  source, UTC timestamp and size; **Restore** (asking first) runs `revisions.restore` on the row's id,
+  and **Compare With Now** runs `revisions.compare` with the row as `a` and the live file as `b` and
+  shows the reply. The menu runs the same registered commands the socket and MCP expose, so the person
+  and an agent read one list and take one action. It keeps these limits: the list reports only the
+  artefacts above (at most 24 entries, 10 of them git commits) - a numbered **File ▸ Save as New
+  Version** file and a named **alternative** are separate files the session switches to, not sources;
+  the git half is optional and bounded as stated; **Compare With Now** is the structural summary, not
+  a musical diff; and **Restore** changes the file on disk only - the session already open keeps the
+  state it had, and `project.open` is how the restored bytes are read back.
 
 **Import detection (`detect.*`) suggests a tempo and a key, and it is drivable only through the socket.**
 `detect.analyze` reads one audio file and reports a tempo (BPM), the first transient it carries and a key;
@@ -2708,8 +2806,19 @@ Fleshed out, because both halves of that sentence hide something real:
 - PulseAudio, SDL, OSS, sndio and SoundIo stay stereo; routes beyond 1/2 answer
   `multichannel:false` / `stereo_backend`. PortAudio is not compiled in this build.
 - Input channel names and buses are labels only; JACK port names do not use them.
-- A hardware insert is bypassed during an export: the dry signal passes and it reports 0 latency.
-- `pdc.report` does not list the insert's latency per channel, although PDC includes it.
+- A hardware insert is bypassed during an (offline) export: the dry signal passes and it reports 0 latency.
+  Since Q050-089.2 (2026-10-27) `render.render` says so in its reply (`hardware_inserts`: hardware
+  `unavailable`, `bypassed`, the inserts that are on), and `render.realtime` (the channel's Hardware I/O >
+  Render Through Hardware (Real Time)...) plays the song through the device so the inserts are heard. Its
+  limits: the whole song only (no range, stems or per-track print), WAV only, at the device's sample rate
+  (no resampling to the export preset's rate), stereo master only, at most 600 s of song; the control surface
+  and the interface wait while it plays; MIDI hardware instruments are not printed. The project export
+  dialog does not offer it yet (Q050-089 stage 3).
+- ~~`pdc.report` does not list the insert's latency per channel, although PDC includes it.~~ Lifted by
+  Q050-089.1 (2026-10-27): every channel carries `hardware_insert_latency_frames` (the figure PDC counts)
+  and `hardware_insert_latency_source`, and the strip tooltip names the same frames. During an export the
+  source reads `bypassed` and the figure 0 - a real-time render (`render.realtime`, Q050-089.2) is not
+  an export, so the insert keeps its latency there.
 
 **F2, instruments (MX-114/112/120).**
 - Output buses have an interface: Instrument Setup > Output Buses on the track's header menu, its
@@ -2857,11 +2966,20 @@ Fleshed out, because both halves of that sentence hide something real:
 
 **Themes, shared controls and background tasks (themes 20, 23, 24).**
 - Theme changes apply at the next start, and every reply and the window say so.
-- *(Partly resolved 2026-10-16, Q050-090.)* The plug-in scan runs in the background on request
-  (`plugin.scan_start`, one file per event-loop turn) with progress and cancellation
-  (`plugin.scan_status`, `plugin.scan_cancel`) and appears in the task area; the synchronous
-  `plugin.rescan` stays for scripts. `render.render`, `render.stems` and `browser.peaks` stay
-  synchronous and are not in the task area.
+- **Long jobs and what still runs on the interface thread (Q050-010).** Plug-in scans (`plugin.scan_start`: library
+  loads on a worker, the rest one file per event-loop turn), renders (`render.queue_add`, `render.queue_bounce`), stem
+  separation (`stem.job_start`: decode, resample and separation on the worker) and waveform reads
+  (`browser.peaks_start`, the browser's waveform view) run in the background, and all four are listed and stopped
+  through `app.tasks` / `app.task_cancel` and the Tasks list. Compatibility routes that still answer only when done, so
+  they hold the interface for as long as the job takes: `plugin.rescan`, `browser.peaks` on an uncached file,
+  `render.render`, `render.stems`, `bounce.in_place`, `freeze.*`, `bounce.land`, `track.flatten` and `range.bounce`.
+  A scan resolves each descriptor on the interface thread, one per turn; a library that hangs in its load keeps its
+  worker but cannot hold the cancel. `stem.job_start` decodes nothing on the caller: a `.ds` or `.ogg` source is decoded by the job's worker (its
+  reply's `frames` is 0 until then), and any other file libsndfile cannot open is refused typed. Split to Stems writes
+  an in-memory clip's temporary WAV on a worker too, listed in the Tasks list as `stem_prepare` with Cancel.
+- *(Resolved for the interface, Q050-010; see "Long jobs and what still runs on the interface thread".)* Plug-in
+  scans, render-queue jobs, stem separation and waveform reads run in the background and are in the task area; the
+  synchronous `plugin.rescan`, `render.render`, `render.stems` and `browser.peaks` stay for scripts.
 - Accessible mode's larger targets are not re-applied if a knob later resets its own fixed size.
 
 ## 0.5.0 L08 metering — ballistics, the Selected filter, live input meters, the phase view (050/feat-meters, 2026-10-06)
@@ -2980,6 +3098,32 @@ into an empty launcher cell: it starts on the launch quantisation, stops on the 
   quantised stop, and the grid lands the take it started into the user's `samples/Recordings` folder. There is no
   record BUTTON on the cell itself, no keyboard shortcut for it, no count-in, and the grid does not land a take it
   did not start (an agent's take is left for the agent).
+- **Clock-synced capture (Q050-277)** (`session.record_slot` `clock_sync: true`, `bars` or `steps`): the MIDI clock master
+  sends START when the take starts and STOP at its end with exactly the span's pulses between. The audio thread only QUEUES
+  these messages (a fixed lock-free ring of 512 records, no I/O); a sender thread started when the capture is armed hands them
+  to the MIDI client in order, about a millisecond later, so no client's output path (a raw device write, Core MIDI) ever runs
+  on the audio thread. The bound is the master's own: the messages are what the engine handed its MIDI client, not bytes a
+  device received - the test fixture reads the emission monitor. START is queued in the period in which the cell starts
+  (period-granular, like the take); at the stop at most 64 pulses are queued to catch up the period it falls in, never a
+  backlog that scales with the capture. If the master is turned OFF mid-capture the span ends there with a STOP and no
+  catch-up while the take goes on to its length; if the ring ever fills (a sender starved for seconds) pulses are refused and
+  counted (`MidiClock::captureOutputDropped`). A span is admitted only when its START and STOP both fit the ring; when earlier
+  output still fills it, the new capture's span is refused BEFORE START (nothing is sent, the take records unclocked,
+  `session.record_slot_status` `clock.refused` counts it), so the synth is never started without its STOP. The external synth's own latency is not compensated
+  beyond the recording round trip the take already drops. While the span is open the song transport's own START/STOP/CONTINUE
+  are not sent. The sender never calls `processOutEvent()` (the audio thread's path, a single-producer queue on ALSA): it uses
+  `MidiClient::sendFromNonAudioThread()`, serialized by a mutex the audio thread never takes. ALSA's sequencer client gives it
+  its own queue that the sequencer thread drains beside the audio one; raw clients (OSS, sndio, ALSA raw, JACK) carry only the
+  one-byte real-time messages from it, which MIDI lets stand anywhere in a stream; Core MIDI and WinMM send through their
+  thread-safe system calls. The macOS and Windows paths were not run on this host. At engine shutdown the clock lets go of
+  the MIDI client first (`MidiClock::detachClient`): a send in flight finishes, capture output not yet sent is dropped
+  (counted), so a synth started by a capture the engine is torn down under gets no STOP from Zene. One take, one cell, empty cells only, as above.
+- *(Updated 2026-10-28, Q050-493.)* Since Q050-013 a launched audio cell also plays on an instrument track's column
+  and its gain, loop region, transpose, detune and tempo warp ARE applied (`docs/050-features/Q050-013.md`); the
+  sentences below about them are the earlier record. These settings are no longer socket-only: the cell's
+  right-click menu has Playback and Warp (every `session.set_slot` playback field in one form, Warp to Song Tempo
+  and RAM Mode On/Off, a reset), and the cell shows its non-default settings after its name
+  (`docs/050-features/Q050-493.md`). RAM mode is stored and editable but still changes nothing in playback.
 - **A launched audio cell renders only on a sample track's column**, through that track, from the clip's top (or
   its loop start), looping the whole file. The cell's gain, transpose, detune, RAM mode and loop LENGTH are not
   applied to audio, and there is no warping: a file plays at its own speed whatever the tempo. A file at another
@@ -3164,3 +3308,50 @@ that restores the whole project (`docs/A16-REVERSIBILITY.md` §1.2; `SessionChec
   builds before 0.5.0 refuse; ordinary saves stay legacy. The asset verbs (`project.missing_assets`,
   `project.hash_assets`, `project.relink`) and the revision compare do not read containers yet. See
   `docs/PROJECT-CONTAINER-V2.md`.
+
+## Plug-in editor gesture undo (Q050-214, 2026-10-31)
+
+A VST3 or CLAP editor gesture is one journal step per parameter, drained from a per-parameter queue by the 100 ms GUI poll.
+
+- **The queue is bounded.** It holds 32 marks, so 16 complete gestures on one parameter between two polls keep a step each. Marks
+  after that are dropped, not waited for: those gestures merge into one step and the plug-in's last value still arrives.
+- **A change in the same poll as a host edit.** A gesture still in the queue when a knob or an undo moves the model lands after
+  that edit, though the plug-in made it up to 100 ms before.
+- **One step per parameter.** An XY pad reporting two parameters is two steps; the journal has no group for them.
+- **Only reported changes.** Changes a plug-in reports with no gesture keep one step per polled change, as before; a change
+  it does not report as a parameter (its own preset browser's internal state) is not in the history.
+- **A plug-in that never ends a gesture** merges its later changes into that step until its next begin.
+- **The model's step applies.** A CLAP model rounds to 1 % of the range, as it always did, so an undo restores the model's
+  value rather than a finer value the plug-in held.
+- **The Undo History panel's list** still shows command steps only: a gesture is undoable from its buttons and has no row.
+- **`control.undo` after an undone agent edit** reports the newer edit as `unrecorded edit` (with its `step_serial`), the existing
+  label for a journal top the record does not match.
+
+## Update check (Q050-501, 2026-10-30)
+
+- **What is sent, exactly:** when the user has said yes, one bodyless HTTP GET of the configured feed (by default
+  `https://api.github.com/repos/KRUZZZZY/zene-studio/releases?per_page=10`; the `updatecheck/feed` config key) at most
+  once a day and on Help > Check for Updates, with `User-Agent: ZeneStudio/<version> (<kernel type>; <cpu>)`, a fixed
+  `Accept: application/json` and `Accept-Language: en`, the host, and Qt's `Accept-Encoding` and `Connection` transport
+  headers. No account, project, file, setting, locale or instance identifier. The feed's server (GitHub by default) still
+  sees the caller's IP address and the time, as with any web request. A system proxy, if set, is used.
+- **Installation stays manual.** Zene never downloads or installs anything: the notice's button opens the release's page in
+  the browser. Automatic download and installation are a later unit and need signed installers first.
+- **While the setting is off, or the question is unanswered, no request is made**, and Help > Check for Updates asks first.
+- **Hidden where something else updates the program:** a packager's `-DZENE_UPDATE_CHECK=OFF` compiles the checker, its
+  commands and its menu entry out; a Flatpak or Snap copy is recognised at run time (`/.flatpak-info`, `FLATPAK_ID`, `SNAP`)
+  and registers none of them. A distribution package that does not set the option is **not** detected, and would offer the
+  question like any other build.
+- Only https feeds and pages are followed (plain http to a loopback address exists for the tests); redirects never go from
+  https to http. Certificates are checked by Qt's normal TLS stack; the answer is not signed, so a compromised feed could
+  announce a release that does not exist and link to any https page. Nothing runs from it: its text is shown as plain text.
+- The default feed has **not been exercised by a test**: every test uses a loopback fixture and nothing leaves the machine.
+  If the repository is private or has no releases, the check reports a failure (HTTP 404) or "up to date".
+  GitHub's unauthenticated rate limit (a shared limit per IP address) can answer 403 or 429; that is a failed check and one
+  quiet line, and the next check is a day later.
+- A failed automatic check is not retried until the next day: the time of the request is stored whatever came of it.
+- The check's answer (`app.update_check_get`'s `result`, what `window.update_download_page` opens) lasts for the session.
+- The first-run question is asked once, whatever comes of it: quitting with it open leaves checks off and it does not come
+  back. Settings and Help > Check for Updates remain.
+- Answering in Settings or in the question is an undo step like any `app.update_check_set` (it can be undone with Edit > Undo).
+- The feed's version tags must be SemVer (`v1.2.3`, `1.2.3-rc.1`); a release tagged otherwise is passed over.

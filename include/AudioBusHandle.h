@@ -126,6 +126,14 @@ public:
 	//! What the PDC graph aligns this path by: its latency less its manual offset (may be negative).
 	int alignedLatencyFrames() const { return latencyFrames() - offsetFrames(); }
 
+	/*! Q050-174 (MX-159): low-latency monitoring of a latent instrument. While set, this handle applies NO
+	 *  alignment delay of its own (the delay PDC adds so the path lands on a later path's alignment point),
+	 *  so what is played through it is heard after the source's own latency only. Its latency still counts
+	 *  in the graph, so every other path is aligned exactly as before. Session state set by
+	 *  transport.low_latency on the control thread; a lock-free value the audio thread reads. Never saved. */
+	void setMonitorUnaligned(bool on) { m_monitorUnaligned.store(on, std::memory_order_relaxed); }
+	bool monitorUnaligned() const { return m_monitorUnaligned.load(std::memory_order_relaxed); }
+
 	//! @returns true if the processing outputted corrupted audio (infs/nans).
 	bool isCorrupted() const { return m_corrupted.load(std::memory_order_relaxed); }
 
@@ -224,6 +232,8 @@ private:
 	std::atomic<int> m_sourceLatencyFrames{0};
 	//! Q050-339: see setOffsetFrames().
 	std::atomic<int> m_offsetFrames{0};
+	//! Q050-174: see setMonitorUnaligned().
+	std::atomic<bool> m_monitorUnaligned{false};
 
 	friend class AudioEngine;
 	friend class AudioEngineWorkerThread;

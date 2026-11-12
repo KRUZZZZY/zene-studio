@@ -87,6 +87,9 @@
 #include "Mixer.h"
 #include "Plugin.h"
 #include "ProjectJournal.h"
+#include "SampleClip.h"
+#include "SessionModel.h"
+#include "SessionPlayback.h"
 #include "Song.h"
 #include "Track.h"
 #include "TrackContainer.h"
@@ -267,9 +270,11 @@ bool journalTrackRemoval(Track* track)
 
 	// The restored track's id, not its pointer (review W3-batchB #1): the redo finds it by id when it runs.
 	auto id = std::make_shared<int>(-1);
+	const std::vector<SessionCellCopy> cells = sessionCellsOfPatternTrack(track);
 	return addStructuralUndoStep(
-		[song, xml, index, id]() {
+		[song, xml, index, id, cells]() {
 			Track* restored = restoreTrackFromXml(xml, song);
+			restoreSessionPatternCells(cells, restored);  // Q050-489: the cells that played it play it again
 			*id = restored != nullptr ? restored->id() : -1;
 			// ... and where it was, not at the end: the restore path appends,
 			// the same way the project loader does when it builds a song.
@@ -303,6 +308,7 @@ struct GroupCapture
 	int index;
 	int id;
 	QString xml;
+	std::vector<SessionCellCopy> cells;  //!< Q050-489: the launcher cells that play it, if it is a pattern track
 };
 
 //! Captures every member of \a group, or nothing: a member that cannot be captured
@@ -315,7 +321,7 @@ bool captureGroup(Song* song, const std::vector<Track*>& group, std::vector<Grou
 		if (index < 0) { return false; }
 		const QString xml = captureTrack(each);
 		if (xml.isEmpty()) { return false; }
-		captures->push_back({index, each->id(), xml});
+		captures->push_back({index, each->id(), xml, sessionCellsOfPatternTrack(each)});
 	}
 	return true;
 }
@@ -328,6 +334,7 @@ void restoreGroup(Song* song, const std::vector<GroupCapture>& captures)
 		if (Track* restored = restoreTrackFromXml(capture.xml, song))
 		{
 			moveTrackToIndex(restored, capture.index);
+			restoreSessionPatternCells(capture.cells, restored);
 		}
 	}
 }
@@ -569,6 +576,12 @@ QJsonObject chainArgs(const EffectChain* chain)
 		ControlResult ignored;
 		const QString id = trackIdOf(track);
 		if (resolveControlTarget(id, &target, &ignored) && target.chain == chain) { return {{QStringLiteral("target"), id}}; }
+		// Q050-111: an audio clip's own effects, by the clip's persistent id (it survives the clip's undo rebuild).
+		for (Clip* clip : track->getClips())
+		{
+			const auto* audio = dynamic_cast<const SampleClip*>(clip);
+			if (audio != nullptr && audio->clipEffects() == chain) { return {{QStringLiteral("target"), clipIdOf(clip)}}; }
+		}
 	}
 	return channelChainArgs(chain);
 }

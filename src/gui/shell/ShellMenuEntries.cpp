@@ -36,6 +36,9 @@
 #include "ControlRegistry.h"
 #include "CrossfadeEditorDialog.h"
 #include "Engine.h"
+#include "ExternalDeviceCard.h"
+#include "GuiApplication.h"
+#include "MainWindow.h"
 #include "InstrumentTrack.h"
 #include "MidiClient.h"
 #include "MidiClip.h"
@@ -143,6 +146,14 @@ void trackMidiOutEntries(QMenu* menu, Track* track, const QJsonObject& self)
 		none->setProperty("controlCommand", QStringLiteral("track.midi_out"));  // what it would run, as every entry declares
 		none->setEnabled(false);
 	}
+	out->addSeparator();
+	// Q050-252.1: the External MIDI device's card (port, channel, bank, program, presets); each control in it is a device.external_* command
+	QAction* external = out->addAction(tr("External Device..."));
+	external->setProperty("controlCommand", QStringLiteral("device.external_set"));
+	const QString trackId = self.value(QStringLiteral("track")).toString();
+	QObject::connect(external, &QAction::triggered, out, [trackId] {
+		ExternalDeviceCard::open(trackId, getGUI() != nullptr ? static_cast<QWidget*>(getGUI()->mainWindow()) : nullptr);
+	});
 	out->addSeparator();
 	add(out, "Channel...", "track.midi_out", self, true, {{QStringLiteral("channel"), 1}});
 	add(out, "Stop Sending MIDI Out", "track.midi_out", with(self, "enabled", false), false);

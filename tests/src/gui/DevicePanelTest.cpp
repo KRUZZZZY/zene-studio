@@ -66,6 +66,7 @@
 
 #include <sndfile.h>
 
+#include "AudioBusHandle.h"
 #include "CommandForm.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
@@ -76,6 +77,7 @@
 #include "EffectControls.h"
 #include "Engine.h"
 #include "InspectorPanel.h"
+#include "Instrument.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
 #include "MusicalTime.h"
@@ -1478,6 +1480,43 @@ private slots:
 		QVERIFY(run(QStringLiteral("control.undo")).ok);
 		QCOMPARE(mixerChannel->m_name, before);
 		ShellSelection::instance()->setTrack(nullptr);
+	}
+
+	/*! Q050-174: Project -> Low-Latency Monitoring is the GUI half of transport.low_latency for a latent
+	 *  instrument: clicking On takes the armed track whose instrument reports more than 3 ms off its
+	 *  alignment (the same session flag the command sets), Off puts it back; an unarmed one is untouched. */
+	void theProjectMenuMonitorsAnArmedLatentInstrument()
+	{
+		QTemporaryDir takes;
+		QVERIFY(takes.isValid());
+		auto* armed = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		auto* unarmed = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(armed != nullptr && unarmed != nullptr);
+		for (InstrumentTrack* track : {armed, unarmed})
+		{
+			track->loadInstrument(QStringLiteral("tripleoscillator"));
+			QVERIFY(track->instrument() != nullptr);
+			track->instrument()->reportLatency(1000);  // ~23 ms, what a latent hosted instrument reports
+		}
+		QVERIFY(run(QStringLiteral("track.set_arm"), {{QStringLiteral("track"), control::trackIdOf(armed)},
+			{QStringLiteral("armed"), true}, {QStringLiteral("file"), takes.filePath(QStringLiteral("take.wav"))}}).ok);
+		QMenu project;
+		ShellCommandMenus::populateProject(&project);
+		QAction* on = menuAction(&project, {QStringLiteral("Low-Latency Monitoring"), QStringLiteral("On")});
+		QAction* off = menuAction(&project, {QStringLiteral("Low-Latency Monitoring"), QStringLiteral("Off")});
+		QVERIFY(on != nullptr && off != nullptr);
+		on->trigger();
+		QVERIFY2(armed->audioBusHandle()->monitorUnaligned(), "the menu's On left the armed latent instrument aligned");
+		QVERIFY(!unarmed->audioBusHandle()->monitorUnaligned());
+		const QJsonArray paths = run(QStringLiteral("transport.low_latency")).result.value(QStringLiteral("instruments")).toArray();
+		QCOMPARE(paths.size(), 1);
+		QCOMPARE(paths.at(0).toObject().value(QStringLiteral("track")).toString(), control::trackIdOf(armed));
+		off->trigger();
+		QVERIFY(!armed->audioBusHandle()->monitorUnaligned());
+		QVERIFY(run(QStringLiteral("track.set_arm"), {{QStringLiteral("track"), control::trackIdOf(armed)},
+			{QStringLiteral("armed"), false}}).ok);
+		delete armed;
+		delete unarmed;
 	}
 };
 

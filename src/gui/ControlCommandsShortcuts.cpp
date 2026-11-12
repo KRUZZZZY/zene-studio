@@ -251,7 +251,9 @@ ControlResult setShortcut(const QJsonObject& args)
 	const QString scope = args.value(QStringLiteral("scope")).toString();
 	if (const ControlResult bad = checkScope(scope); !bad.ok) { return bad; }
 	const QString id = args.value(QStringLiteral("id")).toString();
-	const QList<sm::Binding> all = allBindings(menus);
+	QList<sm::Binding> all = allBindings(menus);
+	// Q050-055.2: a plug-in action has its row only once it is bound; this is the set that binds it.
+	if (ps::isPluginAction(scope, id) && findBinding(all, id, scope) == nullptr) { all.append(ps::pluginBinding(scope, id)); }
 	const Resolved resolved = resolveSet(all, scope, id, args);
 	if (!resolved.error.ok) { return resolved.error; }
 	Stores stores{sm::overrides(), panelOverrides(), {}, {}};
@@ -557,7 +559,7 @@ void importPanelMap(const QJsonObject& incomingPanels, const QStringList& known,
 			const QString keys = importedKey(it.value(), &ok);
 			if (!ok) { out->invalid.append(scope.key() + QStringLiteral(" ▸ ") + it.key()); continue; }
 			*panels = ps::withStored(*panels, scope.key(), it.key(), keys);
-			if (!known.contains(scope.key() + QChar(0x1f) + it.key()))
+			if (!known.contains(scope.key() + QChar(0x1f) + it.key()) && !ps::isPluginAction(scope.key(), it.key()))
 			{
 				out->unknown.append(scope.key() + QStringLiteral(" ▸ ") + it.key());
 			}

@@ -144,6 +144,35 @@ private slots:
 		QVERIFY(!recorder.track(1).isArmed());
 	}
 
+	//! The constructor's default route mapping (the same rule the control command
+	//! applies): route k starts on channel k, and a route past the input width
+	//! starts on the LAST selectable channel - not on channel 0.
+	void DefaultRouteMappingStartsOnTheLastSelectableChannel()
+	{
+		MultiTrackRecorder narrow(3, 2);
+		QCOMPARE(narrow.trackCount(), 3);
+		QCOMPARE(narrow.track(0).inputChannel(), 0);
+		QCOMPARE(narrow.track(1).inputChannel(), 1);
+		QCOMPARE(narrow.track(2).inputChannel(), 1);
+
+		// A 2-route recorder over a 1-channel input: both routes read channel 0.
+		MultiTrackRecorder mono(2, 1);
+		QCOMPARE(mono.track(0).inputChannel(), 0);
+		QCOMPARE(mono.track(1).inputChannel(), 0);
+
+		// Every default is selectable, so every route can be armed as it stands.
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		for (int route = 0; route < narrow.trackCount(); ++route)
+		{
+			const int channel = narrow.track(route).inputChannel();
+			QVERIFY(narrow.track(route).inputChannelSelectable(channel));
+			QVERIFY2(narrow.armTrack(route, dir.filePath(QStringLiteral("default%1.wav").arg(route)).toStdString(),
+				48000, channel), "a default route channel must arm");
+		}
+		narrow.disarmAll();
+	}
+
 	//! 0.3.0 (recording crash recovery): arming a capture JOURNALS the take, the
 	//! disk-writer keeps the journal's frame count current, and a clean stop
 	//! RETIRES the journal. That last part is the whole design: "there is a

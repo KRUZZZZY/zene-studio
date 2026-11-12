@@ -20,6 +20,7 @@
 
 #include "PluginPortsHarness.h"
 #include "plugins/Sid/SidPlaybackScheduler.h"
+#include <sid.h>
 
 #include "AudioPlugin.h"
 #include "BasicFilters.h"
@@ -29,6 +30,9 @@
 #include "../../../plugins/MultitapEcho/MultitapEchoControlDialog.h"
 #define private public
 #include "../../../plugins/MultitapEcho/MultitapEcho.h"
+#undef private
+#define private public
+#include "../../../plugins/DynamicsProcessor/DynamicsProcessor.h"
 #undef private
 
 #include <cstddef>
@@ -961,6 +965,19 @@ namespace lmms
 		}
 	};
 
+	class DynProcEffectTestAccess
+	{
+	public:
+		// Raw byte of m_needsUpdate, so the poisoned value is inspected without
+		// reading an indeterminate bool.
+		static auto needsUpdateByte(const DynProcEffect& effect) -> unsigned char
+		{
+			unsigned char byte = 0;
+			std::memcpy(&byte, &effect.m_needsUpdate, sizeof(byte));
+			return byte;
+		}
+	};
+
 	class FrequencyShifterEffectTestAccess
 	{
 		static auto concrete(const Effect& effect) -> const FrequencyShifterEffect&
@@ -1037,6 +1054,7 @@ private slots:
 	void positiveFractionHandlesVeryLargePositiveValues();
 	void positiveFractionHandlesVeryLargeNegativeValues();
 	void positiveFractionPreservesOrdinaryValues();
+	void waveshaperLookupHandlesSamplesPastTheTableEnd();
 	void ladspaEffectSurvivesFailedInstantiationsDuringSampleRateChange();
 	void ladspaEffectProcessLockTakesNoExclusiveMutex();
 	void ladspaEffectRejectsZeroInputPlugin();
@@ -1062,8 +1080,11 @@ private slots:
 	void gigplayerSurvivesGlobalVoicePoolExhaustion();
 	void dispersionRemainsStableAboveNyquist();
 	void dynamicsProcessorRejectsShortWaveShape();
+	void dynamicsProcessorNeedsUpdateStartsCleared();
+	void dynamicsProcessorHugeLevelReadsLastCurvePoint();
 	void comparisonIsSensitive();
 	void sidShortSegmentsKeepRegisterWritesOrdered();
+	void sidSchedulerAdvancesThroughEveryRegisterWithReSid();
 	void watsynOverlappingNotesAreIndependentAndAllocationFree();
 	void watsynServesEveryAdmittedNoteWithoutAllocating();
 	void watsynKeepsTheWaveANoteStartedWith();
@@ -1072,6 +1093,7 @@ private slots:
 	void nonRealtimeLadspaEffectsAreInvalid();
 	void monoDelayUpdatesItsDelayAcrossSampleRateChanges();
 	void zeroLengthDelayPassesInputThrough();
+	void zeroCapacityDelayPassesInputThrough();
 	void nesNoiseFrequencyControlsRetuneHeldNotes();
 	void slice5InstrumentsAreLiveAndDistinct();
 	void organicDistortionLeavesPreOffsetFramesUnchanged();
@@ -1897,6 +1919,63 @@ void PluginPortsMigrationTest::positiveFractionPreservesOrdinaryValues()
 	QCOMPARE(lmms::positiveFraction(1.25f), 0.25f);
 	QCOMPARE(lmms::positiveFraction(-0.25f), 0.75f);
 	QCOMPARE(lmms::positiveFraction(-2.0f), 0.0f);
+}
+
+void PluginPortsMigrationTest::waveshaperLookupHandlesSamplesPastTheTableEnd()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	auto* lib = new QLibrary{QString::fromUtf8(PART_C_MIGRATED_waveshaper)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib->load(), qPrintable(lib->errorString()));
+	m_libraries.push_back(lib);
+
+	auto entry = reinterpret_cast<MainFn>(lib->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+	std::unique_ptr<lmms::Effect> effect{static_cast<lmms::Effect*>(entry(nullptr, nullptr))};
+	QVERIFY(effect != nullptr);
+
+	// Clip off, unity gains, fully wet. The last table entry is scaled down to
+	// 2^-20 so that a waveshaped out-of-table sample stays inside the +/-1000
+	// range that AudioBus::sanitize() applies to track output. Without that,
+	// the bus clamp would hide what the waveshaper itself produced.
+	constexpr auto tailGain = 0x1p-20f;
+	QDomDocument doc;
+	QDomElement root = doc.createElement("effect");
+	root.setAttribute("on", 1);
+	root.setAttribute("wet", 1);
+	root.setAttribute("autoquit", 0);
+	QDomElement controls = effect->controls()->saveState(doc, root);
+	controls.setAttribute("inputGain", 1);
+	controls.setAttribute("outputGain", 1);
+	controls.setAttribute("clipInput", 0);
+	effect->loadSettings(root);
+	const auto graphs = effect->controls()->findChildren<lmms::graphModel*>();
+	QCOMPARE(static_cast<int>(graphs.size()), 1);
+	graphs[0]->setSampleAt(199, tailGain);
+
+	// Frame 0: |x| * 200 is far beyond the int range (lookup must saturate, not wrap).
+	// Frame 1: |x| * 200 is about 4e9, also beyond the int range, with a finite result.
+	// Frame 2: |x| * 200 overflows float to +inf; the result must not turn into NaN.
+	// Frame 3: an in-table sample (|x| * 200 == 100) keeps the ordinary lookup covered.
+	std::vector<lmms::SampleFrame> data{{1e9f, -1e9f}, {2e7f, -2e7f}, {3e38f, -3e38f}, {0.5f, -0.5f}};
+	const lmms::f_cnt_t frames = static_cast<lmms::f_cnt_t>(data.size());
+	lmms::SampleFrame* busPointers[partc::ChannelPairs] = {data.data()};
+	lmms::AudioBus bus{busPointers, partc::ChannelPairs, frames};
+	effect->processAudioBuffer(bus);
+
+	QCOMPARE(data[0].left(), 1e9f * tailGain);
+	QCOMPARE(data[0].right(), -1e9f * tailGain);
+	QCOMPARE(data[1].left(), 2e7f * tailGain);
+	QCOMPARE(data[1].right(), -2e7f * tailGain);
+	// The bus clamps track output to +/-1000, and the waveshaped value is far above that.
+	QCOMPARE(data[2].left(), 1000.0f);
+	QCOMPARE(data[2].right(), -1000.0f);
+	QCOMPARE(data[3].left(), 0.5f);
+	QCOMPARE(data[3].right(), -0.5f);
 }
 
 void PluginPortsMigrationTest::ladspaEffectSurvivesFailedInstantiationsDuringSampleRateChange()
@@ -3940,6 +4019,106 @@ void PluginPortsMigrationTest::dynamicsProcessorRejectsShortWaveShape()
 	QCOMPARE(savedControls.attribute(QStringLiteral("waveShape")), expectedWaveShape);
 }
 
+// The envelope level is scaled by 200 to index the 200-point wave shape. A level
+// above the table (including one whose x200 is beyond the int range, about
+// 10.7 million) must read the last point. The curve here has samples[0] = 0.005
+// and samples[199] = 1.0, so a wrong index changes the output, not just the path.
+void PluginPortsMigrationTest::dynamicsProcessorHugeLevelReadsLastCurvePoint()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	std::array<float, 200> shape{};
+	for (int i = 0; i < static_cast<int>(shape.size()); ++i)
+	{
+		shape[i] = (static_cast<float>(i) + 1.0f) / 200.0f;
+	}
+	QString encodedShape;
+	lmms::base64::encode(reinterpret_cast<const char*>(shape.data()),
+		static_cast<int>(sizeof(shape)), encodedShape);
+
+	// Settles a fresh instance on a constant input level and returns the last output sample.
+	const auto settledOutput = [&](float level, float& last) {
+		QLibrary library{QString::fromUtf8(PART_C_MIGRATED_dynamicsprocessor)};
+		library.setLoadHints(QLibrary::PreventUnloadHint);
+		QVERIFY2(library.load(), qPrintable(library.errorString()));
+		auto entry = reinterpret_cast<MainFn>(library.resolve("lmms_plugin_main"));
+		QVERIFY(entry != nullptr);
+		auto effect = std::unique_ptr<lmms::Effect>{static_cast<lmms::Effect*>(entry(nullptr, nullptr))};
+		QVERIFY(effect != nullptr);
+
+		QDomDocument doc;
+		QDomElement root = doc.createElement("effect");
+		root.setAttribute("on", 1);
+		root.setAttribute("wet", 1);
+		root.setAttribute("autoquit", 0);
+		QDomElement controls = effect->controls()->saveState(doc, root);
+		controls.setAttribute("inputGain", "1");
+		controls.setAttribute("outputGain", "1");
+		controls.setAttribute("attack", "1");
+		controls.setAttribute("release", "1");
+		controls.setAttribute("stereoMode", "0");
+		controls.setAttribute("waveShape", encodedShape);
+		effect->loadSettings(root);
+
+		// 64 blocks of 128 frames: far longer than the 1 ms attack/release, so the envelope settles.
+		constexpr lmms::f_cnt_t frames = 128;
+		std::array<lmms::SampleFrame, frames> buffer{};
+		lmms::SampleFrame* busPointers[] = {buffer.data()};
+		for (int block = 0; block < 64; ++block)
+		{
+			buffer.fill(lmms::SampleFrame{level, level});
+			lmms::AudioBus bus{busPointers, 1, frames};
+			effect->processAudioBuffer(bus);
+			for (const auto& sample : buffer)
+			{
+				QVERIFY(std::isfinite(sample.left()) && std::isfinite(sample.right()));
+			}
+			last = buffer.back().left();
+		}
+	};
+
+	// Output = input * gain / envelope, so for a settled constant input the
+	// output is the table's last point, 1.0. Both levels are above the table range.
+	// 2.0 never overflowed the int conversion; 1.0e8 does (x200 is 2.0e10).
+	float overTable = 0.0f;
+	settledOutput(2.0f, overTable);
+	QVERIFY(std::abs(overTable - 1.0f) < 0.01f);
+	float overflowing = 0.0f;
+	settledOutput(1.0e8f, overflowing);
+	QVERIFY(std::abs(overflowing - 1.0f) < 0.01f);
+}
+
+/*!
+ * The constructor computes the RMS sizes and attack/release coefficients for the
+ * current sample rate, so m_needsUpdate must start cleared. The allocation is
+ * poisoned so that an unset member keeps a non-zero byte, which is what the
+ * first processImpl() would read.
+ */
+void PluginPortsMigrationTest::dynamicsProcessorNeedsUpdateStartsCleared()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	QLibrary library{QString::fromUtf8(PART_C_MIGRATED_dynamicsprocessor)};
+	library.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(library.load(), qPrintable(library.errorString()));
+	const auto entry = reinterpret_cast<MainFn>(library.resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	allocationSizeToPoison.store(sizeof(lmms::DynProcEffect), std::memory_order_relaxed);
+	auto* rawEffect = static_cast<lmms::DynProcEffect*>(entry(nullptr, nullptr));
+	std::unique_ptr<lmms::DynProcEffect> effect{rawEffect};
+	QVERIFY(effect != nullptr);
+	QCOMPARE(allocationSizeToPoison.load(std::memory_order_relaxed), std::size_t{0});
+
+	QCOMPARE(lmms::DynProcEffectTestAccess::needsUpdateByte(*effect), static_cast<unsigned char>(0));
+}
+
 /*!
  * Negative control: the comparison above must be able to fail. Comparing two
  * *different* plugins' renders has to produce different checksums; otherwise
@@ -4032,6 +4211,84 @@ void PluginPortsMigrationTest::sidShortSegmentsKeepRegisterWritesOrdered()
 	QVERIFY(sid.clockedCycles - cyclesBeforeNextSegment <= 26);
 	QCOMPARE(sid.overwrittenPendingWrites, 0);
 	QVERIFY(progress.registerIndex > 2);
+}
+
+/*!
+ * Cluster new-p17-172: the scheduler must advance through every SID register
+ * with the real reSID chip, not only with the probe above. reSID::SID::clock()
+ * takes its cycle count by reference and leaves the cycles it did not run in
+ * that count, so `consumed = requested - delta` is the work the chip did. The
+ * recorder forwards every call to a real chip and records the register writes.
+ */
+struct ReSidWriteRecorder
+{
+	reSID::SID sid;
+	std::vector<unsigned char> writes;
+	int clockedCycles = 0;
+
+	void write(unsigned char address, unsigned char value)
+	{
+		writes.push_back(address);
+		sid.write(address, value);
+	}
+
+	int clock(int& cycles, short* buffer, int samples)
+	{
+		const int before = cycles;
+		const int produced = sid.clock(cycles, buffer, samples);
+		clockedCycles += before - cycles;
+		return produced;
+	}
+};
+
+void PluginPortsMigrationTest::sidSchedulerAdvancesThroughEveryRegisterWithReSid()
+{
+	// C64 PAL clock and 44.1 kHz output, the same chip setup SidInstrument uses.
+	ReSidWriteRecorder chip;
+	chip.sid.set_sampling_parameters(985248.0, reSID::SAMPLE_FAST, 44100);
+	chip.sid.set_chip_model(reSID::MOS8580);
+	chip.sid.reset();
+
+	std::array<unsigned char, lmms::sidplayback::NumSidRegisters> registers{};
+	registers[0x18] = 0x0f;
+	lmms::sidplayback::RegisterWriteProgress progress;
+	std::array<short, 1> output{};
+	constexpr int CycleBudget = 26;
+	constexpr int MaxCalls = 1000;
+
+	// Short segments with one sample each: a sweep spans many calls, and every
+	// call must spend no more cycles than it was given.
+	int calls = 0;
+	while (chip.writes.size() < lmms::sidplayback::NumSidRegisters && calls < MaxCalls)
+	{
+		const int cyclesBefore = chip.clockedCycles;
+		const int samples = lmms::sidplayback::fillBuffer(registers.data(), &chip,
+			lmms::sidplayback::RegisterWriteOrder, CycleBudget, output.data(), 1, progress);
+		QVERIFY(samples <= 1);
+		QVERIFY(chip.clockedCycles - cyclesBefore <= CycleBudget);
+		++calls;
+	}
+
+	QVERIFY2(chip.writes.size() == lmms::sidplayback::NumSidRegisters,
+		"the scheduler stopped before writing every register");
+	for (std::size_t i = 0; i < lmms::sidplayback::NumSidRegisters; ++i)
+	{
+		QCOMPARE(static_cast<int>(chip.writes[i]),
+			static_cast<int>(lmms::sidplayback::RegisterWriteOrder[i]));
+	}
+	QVERIFY(chip.clockedCycles > 0);
+
+	// No budget means no progress: nothing is written and the position holds.
+	ReSidWriteRecorder idle;
+	idle.sid.set_sampling_parameters(985248.0, reSID::SAMPLE_FAST, 44100);
+	idle.sid.reset();
+	lmms::sidplayback::RegisterWriteProgress idleProgress;
+	const int idleSamples = lmms::sidplayback::fillBuffer(registers.data(), &idle,
+		lmms::sidplayback::RegisterWriteOrder, 0, output.data(), 1, idleProgress);
+	QCOMPARE(idleSamples, 0);
+	QVERIFY(idle.writes.empty());
+	QCOMPARE(idleProgress.registerIndex, std::size_t{0});
+	QVERIFY(idleProgress.stage == lmms::sidplayback::RegisterWriteStage::BeforeRegister);
 }
 
 /*!
@@ -4661,6 +4918,35 @@ void PluginPortsMigrationTest::zeroLengthDelayPassesInputThrough()
 	sample = 17.0f;
 	delay.tick(&sample);
 	QCOMPARE(sample, 17.0f);
+}
+
+void PluginPortsMigrationTest::zeroCapacityDelayPassesInputThrough()
+{
+	// A zero-second delay or a zero sample rate leaves no ring: m_maxLength is 0.
+	// tick() must return the input untouched rather than take the write index
+	// modulo that zero capacity.
+	lmms::MonoDelay zeroTime{0, 48000};
+	QCOMPARE(zeroTime.m_maxLength, 0);
+	zeroTime.setLength(5.0f);
+	QCOMPARE(zeroTime.m_length, 0.0f);
+
+	lmms::MonoDelay zeroRate{1, 0};
+	QCOMPARE(zeroRate.m_maxLength, 0);
+
+	lmms::MonoDelay reconfigured{1, 4};
+	reconfigured.setLength(2.0f);
+	reconfigured.setSampleRate(0);
+	QCOMPARE(reconfigured.m_maxLength, 0);
+
+	for (lmms::MonoDelay* delay : {&zeroTime, &zeroRate, &reconfigured})
+	{
+		for (int frame = 1; frame <= 8; ++frame)
+		{
+			lmms::sample_t sample = static_cast<lmms::sample_t>(frame);
+			delay->tick(&sample);
+			QCOMPARE(sample, static_cast<lmms::sample_t>(frame));
+		}
+	}
 }
 
 /*!

@@ -180,19 +180,58 @@ public:
 	~ScopedSwrConvertFailure() { swrConvertCallsBeforeFailure.store(-1); }
 };
 
-//! Run @a checkFailure with one FFmpeg allocation forced to fail; crashes stay inside the child.
-bool allocationFailureIsReported(const std::function<bool()>& checkFailure, std::atomic_bool& fail)
+//! The packet or frame allocation of this executable's own code that fails: the seam for the allocation-failure cases.
+//! Calls made inside FFmpeg's shared libraries (stream probing, for one) never count, so they cannot consume the fault.
+enum class OwnAllocation : int { None, Frame, Packet };
+std::atomic<OwnAllocation> targetAllocation{OwnAllocation::None};
+std::atomic_int targetOrdinal{0};  //!< the 1-based call of the targeted kind that fails
+std::atomic_int targetCalls{0};    //!< such calls seen since the target was armed (only counted in the child)
+
+//! True when @a caller is code of this executable (the product is linked into it), not of a shared library.
+bool calledFromThisExecutable(const void* caller)
+{
+	const void* self = reinterpret_cast<const void*>(&calledFromThisExecutable);
+	Dl_info callerInfo{};
+	Dl_info selfInfo{};
+	return dladdr(caller, &callerInfo) != 0 && dladdr(self, &selfInfo) != 0 && callerInfo.dli_fbase == selfInfo.dli_fbase;
+}
+
+//! True when this call of @a kind from @a caller is the one the armed target says to fail.
+bool failsTargetedCall(OwnAllocation kind, const void* caller)
+{
+	if (targetAllocation.load(std::memory_order_relaxed) != kind || !calledFromThisExecutable(caller)) { return false; }
+	return targetCalls.fetch_add(1, std::memory_order_relaxed) + 1 == targetOrdinal.load(std::memory_order_relaxed);
+}
+
+//! Run @a checkFailure in a forked child after @a arm has set the failure; crashes stay inside the child.
+bool failureIsReportedInChild(const std::function<bool()>& checkFailure, const std::function<void()>& arm)
 {
 	const pid_t child = fork();
 	if (child < 0) { return false; }
 	if (child == 0)
 	{
-		fail.store(true, std::memory_order_relaxed);
+		arm();
 		_exit(checkFailure() ? 0 : 1);
 	}
 	int status = 0;
 	if (waitpid(child, &status, 0) < 0) { return false; }
 	return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+}
+
+//! Run @a checkFailure with every FFmpeg allocation of the persistent @a fail flag forced to fail.
+bool allocationFailureIsReported(const std::function<bool()>& checkFailure, std::atomic_bool& fail)
+{
+	return failureIsReportedInChild(checkFailure, [&fail] { fail.store(true, std::memory_order_relaxed); });
+}
+
+//! Run @a checkFailure with this executable's @a ordinal-th @a kind allocation forced to fail.
+bool ownAllocationFailureIsReported(const std::function<bool()>& checkFailure, OwnAllocation kind, int ordinal)
+{
+	return failureIsReportedInChild(checkFailure, [kind, ordinal] {
+		targetOrdinal.store(ordinal, std::memory_order_relaxed);
+		targetCalls.store(0, std::memory_order_relaxed);
+		targetAllocation.store(kind, std::memory_order_relaxed);
+	});
 }
 
 } // namespace
@@ -202,7 +241,15 @@ bool allocationFailureIsReported(const std::function<bool()>& checkFailure, std:
 extern "C" AVFrame* av_frame_alloc()
 {
 	if (failFrameAllocation.load(std::memory_order_relaxed)) { return nullptr; }
+	if (failsTargetedCall(OwnAllocation::Frame, __builtin_return_address(0))) { return nullptr; }
 	static const auto real = reinterpret_cast<decltype(&av_frame_alloc)>(dlsym(RTLD_NEXT, "av_frame_alloc"));
+	return real == nullptr ? nullptr : real();
+}
+
+extern "C" AVPacket* av_packet_alloc()
+{
+	if (failsTargetedCall(OwnAllocation::Packet, __builtin_return_address(0))) { return nullptr; }
+	static const auto real = reinterpret_cast<decltype(&av_packet_alloc)>(dlsym(RTLD_NEXT, "av_packet_alloc"));
 	return real == nullptr ? nullptr : real();
 }
 
@@ -259,6 +306,26 @@ private:
 #endif
 		return !m_clip.isEmpty();
 	}
+
+#ifdef ZENE_HAVE_VIDEO_ALLOC_FAILURE_HOOKS
+	//! The decoder's open() of the test clip fails with an out-of-memory reason and stays closed.
+	bool decoderOpenReportsOutOfMemory() const
+	{
+		VideoDecoder decoder;
+		QString why;
+		return !decoder.open(m_clip, &why) && why.contains(QStringLiteral("out of memory")) && !decoder.isOpen();
+	}
+
+	//! The audio extraction of the test clip fails with an out-of-memory reason and writes no WAV.
+	bool extractionReportsOutOfMemory() const
+	{
+		const QString wav = m_dir.filePath(QStringLiteral("allocation-failure.wav"));
+		VideoAudio audio;
+		QString error;
+		return !extractVideoAudio(m_clip, wav, &audio, &error) && error.contains(QStringLiteral("out of memory"))
+			&& !QFileInfo::exists(wav);
+	}
+#endif
 
 private slots:
 	void initTestCase()
@@ -803,6 +870,76 @@ private slots:
 		QVERIFY2(allocationFailureIsReported([&frameCase] { return !videotest::allocateFrame(frameCase); },
 			failFrameAllocation),
 			"allocateFrame dereferenced the failed av_frame_alloc");
+#elif defined(ZENE_HAVE_FFMPEG)
+		QSKIP("FFmpeg allocation failure hooks require Linux or macOS");
+#else
+		QSKIP("this build has no FFmpeg");
+#endif
+	}
+
+	//! A failed shown-frame allocation in the decoder's open() is reported with a reason, never dereferenced.
+	void decoderFrameAllocationFailureIsReportedNotDereferenced()
+	{
+#ifdef ZENE_HAVE_VIDEO_ALLOC_FAILURE_HOOKS
+		if (!needClip()) { QSKIP("no FFmpeg in this build, or the test clip could not be made"); }
+		QVERIFY2(ownAllocationFailureIsReported([this] { return decoderOpenReportsOutOfMemory(); }, OwnAllocation::Frame, 1),
+			"VideoDecoder::open did not report a failed shown-frame av_frame_alloc");
+#elif defined(ZENE_HAVE_FFMPEG)
+		QSKIP("FFmpeg allocation failure hooks require Linux or macOS");
+#else
+		QSKIP("this build has no FFmpeg");
+#endif
+	}
+
+	//! A failed pending-frame allocation in the decoder's open(), after the shown frame exists, is reported.
+	void decoderPendingFrameAllocationFailureIsReportedNotDereferenced()
+	{
+#ifdef ZENE_HAVE_VIDEO_ALLOC_FAILURE_HOOKS
+		if (!needClip()) { QSKIP("no FFmpeg in this build, or the test clip could not be made"); }
+		QVERIFY2(ownAllocationFailureIsReported([this] { return decoderOpenReportsOutOfMemory(); }, OwnAllocation::Frame, 2),
+			"VideoDecoder::open did not report a failed pending-frame av_frame_alloc");
+#elif defined(ZENE_HAVE_FFMPEG)
+		QSKIP("FFmpeg allocation failure hooks require Linux or macOS");
+#else
+		QSKIP("this build has no FFmpeg");
+#endif
+	}
+
+	//! A failed packet allocation in the decoder's open(), after both frames exist, is reported with a reason.
+	void decoderPacketAllocationFailureIsReportedNotDereferenced()
+	{
+#ifdef ZENE_HAVE_VIDEO_ALLOC_FAILURE_HOOKS
+		if (!needClip()) { QSKIP("no FFmpeg in this build, or the test clip could not be made"); }
+		QVERIFY2(ownAllocationFailureIsReported([this] { return decoderOpenReportsOutOfMemory(); }, OwnAllocation::Packet, 1),
+			"VideoDecoder::open did not report a failed av_packet_alloc");
+#elif defined(ZENE_HAVE_FFMPEG)
+		QSKIP("FFmpeg allocation failure hooks require Linux or macOS");
+#else
+		QSKIP("this build has no FFmpeg");
+#endif
+	}
+
+	//! A failed frame allocation in the audio extraction is reported and leaves no WAV behind.
+	void audioExtractFrameAllocationFailureIsReportedNotDereferenced()
+	{
+#ifdef ZENE_HAVE_VIDEO_ALLOC_FAILURE_HOOKS
+		if (!needClip()) { QSKIP("no FFmpeg in this build, or the test clip could not be made"); }
+		QVERIFY2(ownAllocationFailureIsReported([this] { return extractionReportsOutOfMemory(); }, OwnAllocation::Frame, 1),
+			"the audio extraction did not report a failed av_frame_alloc");
+#elif defined(ZENE_HAVE_FFMPEG)
+		QSKIP("FFmpeg allocation failure hooks require Linux or macOS");
+#else
+		QSKIP("this build has no FFmpeg");
+#endif
+	}
+
+	//! A failed packet allocation in the audio extraction is reported and leaves no WAV behind.
+	void audioExtractPacketAllocationFailureIsReportedNotDereferenced()
+	{
+#ifdef ZENE_HAVE_VIDEO_ALLOC_FAILURE_HOOKS
+		if (!needClip()) { QSKIP("no FFmpeg in this build, or the test clip could not be made"); }
+		QVERIFY2(ownAllocationFailureIsReported([this] { return extractionReportsOutOfMemory(); }, OwnAllocation::Packet, 1),
+			"the audio extraction did not report a failed av_packet_alloc");
 #elif defined(ZENE_HAVE_FFMPEG)
 		QSKIP("FFmpeg allocation failure hooks require Linux or macOS");
 #else

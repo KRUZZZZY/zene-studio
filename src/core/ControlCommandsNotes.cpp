@@ -31,6 +31,7 @@
 #include "Engine.h"
 #include "MidiClip.h"
 #include "Note.h"
+#include "NoteConditions.h"
 #include "Song.h"
 
 namespace lmms
@@ -109,6 +110,8 @@ void registerNoteAdd(ControlRegistry& registry)
 		{QStringLiteral("pan"), control::numberProperty()},
 		{QStringLiteral("slide"), control::booleanProperty()},
 		{QStringLiteral("velocity"), control::numberProperty()},
+		{QStringLiteral("recur_length"), control::integerProperty(0, NoteConditions::MaxRecurLength)},
+		{QStringLiteral("recur_mask"), control::integerProperty(0, 65535)},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -337,6 +340,8 @@ void registerNoteResize(ControlRegistry& registry)
 		{QStringLiteral("position"), control::numberProperty()},
 		{QStringLiteral("slide"), control::booleanProperty()},
 		{QStringLiteral("velocity"), control::numberProperty()},
+		{QStringLiteral("recur_length"), control::integerProperty(0, NoteConditions::MaxRecurLength)},
+		{QStringLiteral("recur_mask"), control::integerProperty(0, 65535)},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {
@@ -411,6 +416,8 @@ void registerNoteVelocitySet(ControlRegistry& registry)
 		{QStringLiteral("pan"), control::numberProperty()},
 		{QStringLiteral("position"), control::numberProperty()},
 		{QStringLiteral("slide"), control::booleanProperty()},
+		{QStringLiteral("recur_length"), control::integerProperty(0, NoteConditions::MaxRecurLength)},
+		{QStringLiteral("recur_mask"), control::integerProperty(0, 65535)},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) {

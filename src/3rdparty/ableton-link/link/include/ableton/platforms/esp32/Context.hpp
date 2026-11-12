@@ -27,6 +27,8 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
+#include <stdexcept>
+
 namespace ableton
 {
 namespace platforms
@@ -64,16 +66,29 @@ class Context
       , mpWork(new ::asio::executor_work_guard<::asio::io_context::executor_type>(
           mpService->get_executor()))
     {
-      xTaskCreatePinnedToCore(run,
-                              "link",
-                              8192,
-                              this,
-                              2 | portPRIVILEGE_BIT,
-                              &mTaskHandle,
-                              LINK_ESP_TASK_CORE_ID);
+      // FreeRTOS can fail to allocate the task's stack or control block. Without
+      // the task nothing runs the service, so throw, as openUnicastSocket already
+      // does for an unknown protocol, rather than carry on with a runner that
+      // never runs.
+      if (xTaskCreatePinnedToCore(run,
+                                  "link",
+                                  8192,
+                                  this,
+                                  2 | portPRIVILEGE_BIT,
+                                  &mTaskHandle,
+                                  LINK_ESP_TASK_CORE_ID) != pdPASS)
+      {
+        throw std::runtime_error("Link: could not create the service task");
+      }
     }
 
-    ~ServiceRunner() { vTaskDelete(mTaskHandle); }
+    ~ServiceRunner()
+    {
+      if (mTaskHandle != nullptr)
+      {
+        vTaskDelete(mTaskHandle);
+      }
+    }
 
     template <typename Handler>
     void async(Handler handler)
@@ -84,7 +99,7 @@ class Context
     ::asio::io_context& service() const { return *mpService; }
 
   private:
-    TaskHandle_t mTaskHandle;
+    TaskHandle_t mTaskHandle = nullptr;
     std::unique_ptr<::asio::io_context> mpService;
     std::unique_ptr<::asio::executor_work_guard<::asio::io_context::executor_type>>
       mpWork;

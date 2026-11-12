@@ -37,6 +37,9 @@
 #include "ClapNoteQueue.h"
 #include "ClapParamDescriptor.h"
 #include "PluginHostChunking.h"
+#include "PluginParamGesture.h"
+
+namespace lmms { enum class PluginWindowSystem; }  // PluginWindowSystem.h
 
 namespace lmms::clap
 {
@@ -137,6 +140,8 @@ public:
 	auto paramsRevision() const -> std::uint32_t;
 	auto paramIndex(std::uint32_t id) const -> int;
 	auto paramPlain(std::uint32_t id) const -> double;
+	//! Lock free, GUI thread only: the plug-in's gesture reports since the last call, and the value (Q050-214)
+	void readParamEdits(std::uint32_t id, PluginParamGesture::Edits* edits);
 	auto paramNormalized(std::uint32_t id) const -> float;
 	auto paramDisplayValue(std::uint32_t id, double plainValue) const -> QString;
 
@@ -164,8 +169,12 @@ public:
 	// ---- R4.3: the plug-in's own editor, embedded (ClapHostGui.cpp) ---------------------
 	//! 0.5.0 L10 (MX-094): the zoom the next openEditor() asks for (1 = the plug-in's own size).
 	void setEditorScale(double scale);
-	//! Main thread: create the plug-in's X11 gui and embed it in @a parentWindow.
+	//! Main thread: create the plug-in's gui and embed it in @a parentWindow - the platform's native
+	//! window (Q050-490: an X11 window id, an HWND or an NSView*, whatever QWidget::winId() gives there).
 	auto openEditor(void* parentWindow, QString* error) -> bool;
+	//! Q050-490: the window system the next openEditor() embeds in, instead of the running one, so a
+	//! test proves the Windows and macOS selection on any machine. Nothing in the product calls it.
+	void setEditorWindowSystem(PluginWindowSystem system);
 	void closeEditor();
 	auto editorOpen() const -> bool;
 	//! The plug-in adjusts the size to what it can take (adjust_size), then applies it.

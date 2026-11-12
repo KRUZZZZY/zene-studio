@@ -46,6 +46,12 @@ namespace
 //! The organiser key a call names ('key', or the 'device' dev-<n> resolved), with the device's name.
 bool namedKey(const QJsonObject& args, QString* key, QString* name, ControlResult* error)
 {
+	// One device per call: with both, 'key' used to win and the device the caller named was silently ignored.
+	if (args.contains(QStringLiteral("key")) && args.contains(QStringLiteral("device")))
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("name one device: 'device' (dev-<n>) or 'key', not both"));
+		return false;
+	}
 	if (!args.contains(QStringLiteral("key")) && !args.contains(QStringLiteral("device")))
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("name the device: 'device' (dev-<n>) or 'key'"));

@@ -108,6 +108,16 @@ const char* recoveryVerdictName(RecoveryVerdict verdict);
 QString formatRecoveryIdentity(const QString& sourceProject, const QDateTime& savedAtUtc);
 bool parseRecoveryIdentity(const QString& text, QString& sourceProject, QDateTime& savedAtUtc);
 
+//! Largest identity sidecar that is read at all. A real sidecar is a few hundred
+//! bytes plus the project path; a larger one is malformed, so it is treated as
+//! absent and a stray or hostile `.info` costs at most this much to look at.
+constexpr qint64 MaxRecoveryIdentityBytes = 128 * 1024;
+
+//! Read the identity sidecar at \a sidecarPath, bounded to MaxRecoveryIdentityBytes.
+//! False when it is absent, unreadable or over the bound - each of which means the
+//! same as no sidecar at all.
+bool readRecoveryIdentityText(const QString& sidecarPath, QString& text);
+
 //! Read the recovery file and its sidecar from disk. Never throws, never logs.
 RecoveryInfo readRecoveryInfo(const QString& recoveryFile);
 

@@ -381,14 +381,7 @@ void DeviceCard::contextMenuEvent(QContextMenuEvent* event)
 
 void DeviceCard::openEditor()
 {
-	if (m_spec.effect == nullptr)
-	{
-		if (InstrumentTrackView* view = instrumentTrackView(m_spec.instrumentTrack))
-		{
-			view->getInstrumentTrackWindow()->toggleVisibility(true);
-		}
-		return;
-	}
+	if (m_spec.effect == nullptr) { openGenericEditor(); return; }
 	// A hosted plug-in's own window first (VST3 / CLAP); a built-in effect's control dialog when
 	// the device has no native editor.
 	const QJsonObject args{{QStringLiteral("target"), m_spec.target}, {QStringLiteral("plugin"), m_spec.plugin}};
@@ -400,6 +393,15 @@ void DeviceCard::openEditor()
 	// (the reason is the command's own, not a word of ours).
 	setEditorError(result.errorMessage);
 	announce(this, CommandCall{QStringLiteral("plugin.editor_open"), args, {}, QString(), false}, result);
+}
+
+bool DeviceCard::openGenericEditor()
+{
+	if (m_spec.effect != nullptr) { return openEffectDialog(); }
+	InstrumentTrackView* view = instrumentTrackView(m_spec.instrumentTrack);
+	if (view == nullptr) { return false; }
+	view->getInstrumentTrackWindow()->toggleVisibility(true);
+	return true;
 }
 
 bool DeviceCard::openEffectDialog()

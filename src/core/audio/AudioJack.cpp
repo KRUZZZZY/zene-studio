@@ -216,6 +216,9 @@ bool AudioJack::initJackClient()
 	// set shutdown-callback
 	jack_on_shutdown(m_client, shutdownCallback, this);
 
+	// Q050-074.2: the server's xruns, counted for the diagnostics
+	jack_set_xrun_callback(m_client, xrunCallback, this);
+
 	if (jack_get_sample_rate(m_client) != sampleRate()) { setSampleRate(jack_get_sample_rate(m_client)); }
 
 	for (ch_cnt_t ch = 0; ch < channels(); ++ch)
@@ -411,6 +414,11 @@ void AudioJack::renamePort(AudioBusHandle* port)
 int AudioJack::processCallback(jack_nframes_t nframes)
 {
 	crashreporter::installAlternateStackForCurrentThread();
+	// Open for the whole callback, whether or not the device runs: stopProcessing() waits for it, so
+	// no render or capture publish from this callback is still running once a stop has returned.
+	// JACK keeps the callback alive while the client is active, and a stopped device keeps its client
+	// active so that a restore reuses it (cluster new-p14-402).
+	const CallbackScope callback(*this);
 	// do midi processing first so that midi input can
 	// add to the following sound processing
 	if (m_midiClient && nframes > 0)
@@ -463,8 +471,9 @@ int AudioJack::processCallback(jack_nframes_t nframes)
 	// publisher (AudioDevice::publishCaptured), which feeds the N-channel path, the stereo
 	// bus and the capture counter - the stereo copy that indexed a SampleFrame per port
 	// (BUGS_FOUND 10.11) is gone with it.
+	// Only while running: a stopped device stages no input, and a restore discards what it staged.
 	const int width = static_cast<int>(m_inputPorts.size());
-	if (m_captureWide.size() >= static_cast<std::size_t>(nframes) * static_cast<std::size_t>(width))
+	if (isRunning() && m_captureWide.size() >= static_cast<std::size_t>(nframes) * static_cast<std::size_t>(width))
 	{
 		for (int c = 0; c < width; ++c)
 		{
@@ -485,6 +494,15 @@ int AudioJack::processCallback(jack_nframes_t nframes)
 int AudioJack::staticProcessCallback(jack_nframes_t nframes, void* udata)
 {
 	return static_cast<AudioJack*>(udata)->processCallback(nframes);
+}
+
+
+
+
+int AudioJack::xrunCallback(void* udata)
+{
+	static_cast<AudioJack*>(udata)->countBackendXrun();
+	return 0;
 }
 
 
@@ -713,6 +731,29 @@ f_cnt_t AudioJack::outputLatencyFrames() const
 	jack_latency_range_t range{};
 	jack_port_get_latency_range(m_outputPorts[0], JackPlaybackLatency, &range);
 	return static_cast<f_cnt_t>(range.max);
+}
+
+
+AudioDevice::DeviceTiming AudioJack::deviceTiming() const
+{
+	DeviceTiming timing;
+	timing.backend = name();
+	if (m_client == nullptr) { return timing; }
+	timing.sampleRate = static_cast<sample_rate_t>(jack_get_sample_rate(m_client));
+	timing.inputSampleRate = timing.sampleRate;  // one server clock for every port
+	timing.periodFrames = static_cast<f_cnt_t>(jack_get_buffer_size(m_client));
+	if (!m_inputPorts.empty() && m_inputPorts[0] != nullptr)
+	{
+		timing.inputLatencyFrames = inputLatencyFrames();
+		timing.inputLatencyBasis = QStringLiteral("jack_capture_latency_range");
+	}
+	if (!m_outputPorts.empty() && m_outputPorts[0] != nullptr)
+	{
+		timing.outputLatencyFrames = outputLatencyFrames();
+		timing.outputLatencyBasis = QStringLiteral("jack_playback_latency_range");
+	}
+	timing.countsXruns = true;
+	return timing;
 }
 
 

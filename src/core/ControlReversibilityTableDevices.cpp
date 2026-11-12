@@ -67,6 +67,13 @@ const ReversibilityRow kDeviceRows[] = {
 	R("track.drum_rack", RC::TrueInverse, true, "it adds a folder of pad tracks, a channel per pad and a bus channel",
 		"action checkpoint: the recorded undo step removes the rack's tracks and channels; its redo builds it again from "
 		"the same pads", ""),
+	// Q050-066 stage 1: the rack's pads, read back and edited.
+	R("track.drum_rack_get_state", RC::NotMutating, false, "it reads a drum rack's pads. Nothing is written", "no write", ""),
+	R("track.drum_rack_pad_add", RC::TrueInverse, true, "it adds a pad to a drum rack: a sampler track in the folder and a "
+		"channel of its own", "action checkpoint: the recorded undo step removes the pad's track and channel; its redo builds "
+		"the pad again under the same ids", ""),
+	R("track.drum_rack_pad_set", RC::TrueInverse, true, "it writes a pad's name, trigger key (base note) and sample",
+		"ProjectJournal (Track checkpoint): the pad's track carries its name, base note and sampler", ""),
 	// 0.5.0 L03 / L02, beside the device rows (one table for the W2 lanes after L09).
 	R("transport.record_options", RC::TrueInverse, true,
 		"it writes the count-in, pre-roll and record mode, a preference in the config file - three bounded scalars",
@@ -112,6 +119,11 @@ const ReversibilityRow kDeviceRows[] = {
 	R("record.sampler_capture_land", RC::TrueInverse, true, "it writes the take to a WAV and loads it into the "
 		"sampler device (its sample and, for SlicerT, its slices)",
 		"ProjectJournal (Track checkpoint): the device's previous sample and settings come back; the WAV stays on disk", ""),
+	// 0.5.0 L10 (Q050-263): the per-slice SlicerT controls (gain, pan, filter, random amount).
+	R("plugin.slice_get", RC::NotMutating, false, "it reads one or every slice's gain, pan, filter and random amount", "no write", ""),
+	R("plugin.slice_set", RC::TrueInverse, true, "it writes slice controls that are saved in the SlicerT's state",
+		"ProjectJournal (Track checkpoint): the SlicerT's saveSettings/loadSettings carry every slice's controls, "
+		"so one undo restores the previous values", ""),
 	// 0.5.0 L01 / L11 / L12 / L14.
 	R("transport.low_latency", RC::NotMutating, false, "it stops high-latency devices processing while monitoring: session "
 		"state (Effect::setDontRun, neither journalled nor saved)", "no project write (enabled:false puts them back)", ""),
@@ -145,6 +157,7 @@ const ReversibilityRow kDeviceRows[] = {
 	R("note.transpose_in_key", RC::TrueInverse, true, "it changes the keys of notes", "MidiClip journal checkpoint", ""),
 	R("note.repeat", RC::TrueInverse, true, "it adds copies of notes", "MidiClip journal checkpoint", ""),
 	R("note.generate", RC::TrueInverse, true, "it adds notes", "MidiClip journal checkpoint", ""),
+	R("note.generate_melody", RC::TrueInverse, true, "it adds notes, or changes the keys of notes", "MidiClip journal checkpoint", ""),
 	R("note.move_to_track", RC::TrueInverse, true, "it moves notes into a new clip on another track",
 		"journal checkpoints of the source clip and the destination track", ""),
 	R("note.split_by_pitch", RC::TrueInverse, true, "it adds one track per key", "action checkpoint: undo removes the tracks", ""),
@@ -172,8 +185,17 @@ const ReversibilityRow kDeviceRows[] = {
 		"action checkpoint: the recorded undo step removes the track", ""),
 	R("clip.import_file", RC::TrueInverse, true, "it adds one clip (and, with no track named, the track) made from a MIDI or audio file",
 		"Track checkpoint, or - when it created the track - an action checkpoint: the recorded undo step removes the track", ""),
+	// 0.5.0 L05 (Q050-093): an import's loop mode is applied inside clip.import_file's own step; this only reads.
+	R("clip.source_get_state", RC::NotMutating, false, "it reads what an import detected in a sample clip's file and what "
+		"the clip plays. Nothing is written", "no write", ""),
 	R("sample.spectrogram", RC::NotMutating, false, "it reads a clip's frequency content. Nothing is written", "no write", ""),
 	R("track.folder_move", RC::TrueInverse, true, "it moves every clip inside a folder", "journal checkpoints of the folder's tracks", ""),
+	R("track.folder_spans", RC::NotMutating, false, "it lists a folder's summary clips. Nothing is written", "no write", ""),
+	R("track.folder_span_select", RC::NotMutating, false, "it selects summary clips: interface state, never saved", "no write", ""),
+	R("track.folder_span_resize", RC::TrueInverse, true, "it trims, lengthens or removes the child clips at a summary clip's edge", "journal checkpoints of the tracks holding them, as one step", ""),
+	R("track.folder_span_split", RC::TrueInverse, true, "it cuts the child clips of summary clips at a tick", "journal checkpoints of the tracks holding them, as one step", ""),
+	R("track.folder_span_move", RC::TrueInverse, true, "it moves the child clips of summary clips", "journal checkpoints of the tracks holding them, as one step", ""),
+	R("track.folder_span_delete", RC::TrueInverse, true, "it deletes the child clips of summary clips", "journal checkpoints of the tracks holding them, as one step", ""),
 	R("clip.set_loop", RC::TrueInverse, true, "it sets a MIDI clip's content loop", "Clip journal checkpoint", ""),
 	R("clip.export_musicxml", RC::NotMutating, false, "it writes a MusicXML file at the caller's path; nothing in the session changes", "no write", ""),
 	R("clip.speed", RC::TrueInverse, true, "it sets an audio clip's speed ramp and speed fades", "Clip journal checkpoint", ""),
@@ -199,6 +221,8 @@ const ReversibilityRow kDeviceRows[] = {
 	R("section.add", RC::TrueInverse, true, "it adds a section", "action checkpoint: the recorded undo step puts the previous list back", ""),
 	R("section.set", RC::TrueInverse, true, "it changes a section", "action checkpoint: the recorded undo step puts the previous list back", ""),
 	R("section.remove", RC::TrueInverse, true, "it removes a section", "action checkpoint: the recorded undo step puts the previous list back", ""),
+	R("section.move", RC::TrueInverse, true, "it moves a section and the material inside it on every track, with ripple the material it passes too",
+		"journal checkpoints of every track and an action checkpoint for the section list, merged into one step", ""),
 	R("section.select", RC::NotMutating, false, "it selects the section's span through range.set: interface state", "no write", ""),
 	R("comp.move_edge", RC::TrueInverse, true, "it moves a boundary of the composite", "Track checkpoint", ""),
 	R("comp.split_passes", RC::TrueInverse, true, "it cuts a looped take into passes on their own lanes", "Track checkpoint", ""),
@@ -243,7 +267,17 @@ const ReversibilityRow kDeviceRows[] = {
 	R("routing.matrix", RC::NotMutating, false, "it reads the channels and their sends. Nothing is written", "no write", ""),
 	R("mixer.send_meters", RC::NotMutating, false, "it reads the sends' levels. Nothing is written", "no write", ""),
 	R("mixer.eq_compare", RC::NotMutating, false, "it reads two channels' EQ settings. Nothing is written", "no write", ""),
+	R("mixer.masking_report", RC::NotMutating, false, "it analyses the channels' audio clips and proposes cuts. No EQ is written, no undo step", "no write", ""),
 	R("track.midi_out", RC::TrueInverse, true, "it sets an instrument track's MIDI output ports and channel", "Track journal checkpoint", ""),
+	R("device.external_get_state", RC::NotMutating, false, "it reads an instrument track's External MIDI device. Nothing is written", "no write", ""),
+	R("device.external_set", RC::TrueInverse, true, "it sets the External MIDI device's output port, channel, bank and program",
+		"Track journal checkpoint: the track's own <midiport> (models and presets) is restored whole; the restored patch is sent to the output again", ""),
+	R("device.external_preset_save", RC::TrueInverse, true, "it saves the device's settings as a named preset inside the track",
+		"Track journal checkpoint: the preset list is part of the track's <midiport>", ""),
+	R("device.external_preset_recall", RC::TrueInverse, true, "it applies a saved preset's port, channel, bank and program and sends the patch",
+		"Track journal checkpoint: the previous settings come back and their patch is sent again", ""),
+	R("device.external_preset_remove", RC::TrueInverse, true, "it deletes a saved device preset",
+		"Track journal checkpoint: the preset list is part of the track's <midiport>", ""),
 	R("monitor.control_room", RC::NotMutating, false, "it changes what the speakers get - never the project or a render; trims are preferences", "no write", ""),
 	R("mixer.crossfader", RC::TrueInverse, true, "it moves the crossfader or puts a channel on a side", "closure plus a model journal step", ""),
 	R("browser.preview_output", RC::NotMutating, false, "it chooses where previews play, a preference in the config file; the project is untouched", "no write", ""),

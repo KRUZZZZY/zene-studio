@@ -23,13 +23,19 @@
 
 #include "StemSplitController.h"
 
+#include <QActionGroup>
 #include <QDir>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QMenu>
 #include <QMessageBox>
 #include <QProgressDialog>
+#include <QCoreApplication>
+#include <QFile>
+#include <QMetaObject>
 #include <QTemporaryFile>
+#include <QThreadPool>
 #include <QTimer>
 
 #include "ControlRegistry.h"
@@ -43,6 +49,8 @@
 #include "Song.h"
 #include "Track.h"
 
+#include "StemSeparation/StemTypes.h"
+
 namespace lmms::gui
 {
 
@@ -55,18 +63,26 @@ constexpr int PollIntervalMs = 150;
 //! Where pollJob reads a job's status from. Empty means stem.job_status through
 //! the registry; the pipeline test replaces it with a scripted reader.
 StemSplitController::StatusReader s_statusReader;
+//! Runs on the worker before an in-memory clip's WAV is written; a test holds the write there.
+std::function<void()> s_preparationHook;
 } // namespace
 
 StemSplitController::StemSplitController(QWidget* parent) :
 	QObject(parent),
-	m_parent(parent)
+	m_parent(parent),
+	m_lastQuality(QString::fromLatin1(stemQualityName(DefaultStemQuality)))
 {
 }
 
 
 
 
-StemSplitController::~StemSplitController() = default;
+StemSplitController::~StemSplitController()
+{
+	if (m_preparation) { m_preparation->cancel.store(true); }  // its worker, or its report, removes the file
+	TaskCenter::instance().forget(this);
+	releaseTemp();
+}
 
 
 
@@ -84,6 +100,68 @@ StemSplitController* StemSplitController::instance()
 		s_instance = new StemSplitController(parent);
 	}
 	return s_instance;
+}
+
+
+
+
+void StemSplitController::addSplitToStemsMenu(QMenu* menu, SampleClip* clip)
+{
+	if (menu == nullptr || clip == nullptr) { return; }
+	QMenu* sub = menu->addMenu(tr("Split to stems"));
+	// One item per quality stem.job_start accepts (Q050-062.1), in its order.
+	// The item hands the NAME to the registered command, which validates it -
+	// the menu has no quality logic of its own beyond the label.
+	const std::pair<StemQuality, QString> items[] = {
+		{StemQuality::Fast, tr("Fast (25% overlap)")},
+		{StemQuality::Standard, tr("Standard (50% overlap)")},
+		{StemQuality::High, tr("High quality (75% overlap, about 2x the time)")}};
+	const QString last = instance()->lastQuality();
+	auto* group = new QActionGroup(sub);
+	QPointer<SampleClip> target(clip);
+	for (const auto& [quality, text] : items)
+	{
+		const QString name = QString::fromLatin1(stemQualityName(quality));
+		QAction* action = sub->addAction(text);
+		action->setCheckable(true);
+		action->setChecked(name == last);
+		action->setData(name);
+		group->addAction(action);
+		QObject::connect(action, &QAction::triggered, sub, [target, name] {
+			if (!target.isNull()) { instance()->splitClipToStems(target.data(), name); }
+		});
+	}
+}
+
+
+
+
+QString StemSplitController::qualityText(const QJsonObject& job)
+{
+	QString name = job.value(QStringLiteral("inference_quality")).toString();
+	if (name.isEmpty()) { name = job.value(QStringLiteral("quality")).toString(); }
+	StemQuality quality = DefaultStemQuality;
+	if (!control::stemQualityFromName(name, &quality)) { return QString(); }
+	return tr("%1 quality, %2% overlap")
+		.arg(name)
+		.arg(qRound(stemOverlapFraction(quality) * 100.0));
+}
+
+
+
+
+QString StemSplitController::progressLabel(const QJsonObject& job) const
+{
+	const QString quality = qualityText(job);
+	if (job.value(QStringLiteral("fetching_model")).toBool(false))
+	{
+		return quality.isEmpty()
+			? tr("Downloading the stem model, then separating (offline job)...")
+			: tr("Downloading the stem model, then separating at %1 (offline job)...").arg(quality);
+	}
+	return quality.isEmpty()
+		? tr("Separating stems (offline job)...")
+		: tr("Separating stems at %1 (offline job)...").arg(quality);
 }
 
 
@@ -138,13 +216,13 @@ bool StemSplitController::ensureBackendReady(bool* fetching)
 
 
 
-void StemSplitController::splitClipToStems(SampleClip* clip)
+void StemSplitController::splitClipToStems(SampleClip* clip, const QString& quality)
 {
 	if (clip == nullptr)
 	{
 		return;
 	}
-	if (m_jobId >= 0)
+	if (m_jobId >= 0 || m_preparation)
 	{
 		QMessageBox::information(m_parent, tr("Split to stems"),
 			tr("A stem separation job is already running."));
@@ -169,7 +247,12 @@ void StemSplitController::splitClipToStems(SampleClip* clip)
 		QMessageBox::warning(m_parent, tr("Split to stems"), error);
 		return;
 	}
-	startJob(snapshot, source);
+	if (source.isEmpty())
+	{
+		beginPreparation(snapshot, quality);
+		return;
+	}
+	startJob(snapshot, source, quality);
 }
 
 
@@ -212,7 +295,7 @@ bool StemSplitController::resolveSourceFile(const ClipSnapshot& snapshot, QStrin
 		return false;
 	}
 	// The common case: the clip was loaded from a file, and the engine decodes
-	// that same file (and resamples it to the model's rate on its own worker).
+	// that same file and resamples it to the model's rate, both on its own worker.
 	const QString stored = buffer->audioFile();
 	if (!stored.isEmpty())
 	{
@@ -224,38 +307,129 @@ bool StemSplitController::resolveSourceFile(const ClipSnapshot& snapshot, QStrin
 			return true;
 		}
 	}
-	// An in-memory clip (recorded, pasted, generated) has no file. Write the
-	// clip's own audio to a temporary WAV so the job still travels through the
-	// same registered command; the file is removed when the controller resets.
-	releaseTemp();
-	m_temp = new QTemporaryFile(QDir(QDir::tempPath()).filePath(
-		QStringLiteral("zene-stem-XXXXXX.wav")), this);
-	if (!m_temp->open())
-	{
-		*error = tr("Could not create a temporary file for this clip.");
-		releaseTemp();
-		return false;
-	}
-	*path = m_temp->fileName();
-	m_temp->close();
-	if (!control::stemWriteWavFile(*path, *buffer, buffer->sampleRate(), error))
-	{
-		releaseTemp();
-		*path = QString();
-		return false;
-	}
+	// An in-memory clip (recorded, pasted, generated) has no file: an empty path sends it to beginPreparation().
+	path->clear();
 	return true;
 }
 
 
 
 
-bool StemSplitController::startJob(const ClipSnapshot& snapshot, const QString& source)
+/*! Q050-010: an in-memory clip's WAV is written on a pool worker, so a long clip cannot hold the window before its job
+ *  exists; the job then travels through the same registered stem.job_start. The writing is listed in the task area
+ *  (stem_prepare) and in the split's progress dialog, and either Cancel stops it and removes the file. */
+void StemSplitController::beginPreparation(const ClipSnapshot& snapshot, const QString& quality)
 {
-	const ControlResult started = ControlRegistry::instance()->invoke(
-		QStringLiteral("stem.job_start"), QJsonObject{{QStringLiteral("source"), source}});
+	QTemporaryFile temp(QDir(QDir::tempPath()).filePath(QStringLiteral("zene-stem-XXXXXX.wav")));
+	temp.setAutoRemove(false);
+	if (!temp.open())
+	{
+		QMessageBox::warning(m_parent, tr("Split to stems"), tr("Could not create a temporary file for this clip."));
+		return;
+	}
+	auto preparation = std::make_shared<Preparation>();
+	preparation->path = temp.fileName();
+	preparation->quality = quality;
+	preparation->snapshot = snapshot;
+	temp.close();
+	m_preparation = preparation;
+
+	preparation->token = TaskCenter::instance().begin(this, ++m_preparationLocal, {QStringLiteral("stem_prepare"),
+		tr("Prepare %1 for stems").arg(snapshot.name), [this, preparation] { cancelPreparation(preparation); }, {}, false});
+	showProgress(tr("Preparing the clip's audio..."), 0);
+	connect(m_dialog, &QProgressDialog::canceled, this, [this, preparation] { cancelPreparation(preparation); });
+
+	// The worker holds the buffer by shared_ptr and the path by value; only its report touches this object.
+	QThreadPool::globalInstance()->start([controller = QPointer<StemSplitController>(this), preparation, hook = s_preparationHook] {
+		if (hook) { hook(); }
+		QString error;
+		const SampleBuffer& buffer = *preparation->snapshot.source;
+		const bool ok = !preparation->cancel.load()
+			&& control::stemWriteWavFile(preparation->path, buffer, buffer.sampleRate(), &error);
+		if (preparation->cancel.load()) { QFile::remove(preparation->path); }
+		QMetaObject::invokeMethod(QCoreApplication::instance(), [controller, preparation, ok, error] {
+			if (controller == nullptr) { QFile::remove(preparation->path); return; }  // nobody left to use it
+			controller->preparationEnded(preparation, ok, error);
+		}, Qt::QueuedConnection);
+	});
+}
+
+
+
+
+void StemSplitController::cancelPreparation(const std::shared_ptr<Preparation>& preparation)
+{
+	if (m_preparation != preparation) { return; }
+	preparation->cancel.store(true);
+	m_preparation.reset();
+	TaskCenter::instance().finish(preparation->token, TaskState::Cancelled);
+	closeDialog();
+}
+
+
+
+
+void StemSplitController::preparationEnded(const std::shared_ptr<Preparation>& preparation, bool ok, const QString& error)
+{
+	if (m_preparation != preparation)  // cancelled: whatever the worker wrote goes
+	{
+		QFile::remove(preparation->path);
+		return;
+	}
+	m_preparation.reset();
+	if (!ok || !targetStillAvailable(preparation->snapshot))
+	{
+		closeDialog();
+		QFile::remove(preparation->path);
+		TaskCenter::instance().finish(preparation->token, ok ? TaskState::Cancelled : TaskState::Failed, error);
+		if (!ok) { QMessageBox::warning(m_parent, tr("Split to stems"), error); }
+		return;
+	}
+	TaskCenter::instance().finish(preparation->token, TaskState::Done);
+	m_tempPath = preparation->path;
+	startJob(preparation->snapshot, m_tempPath, preparation->quality);
+}
+
+
+
+
+void StemSplitController::setPreparationHookForTest(std::function<void()> hook)
+{
+	s_preparationHook = std::move(hook);
+}
+
+
+
+
+//! The one progress dialog of a split: its preparation, then its job, so the window does not flash between them.
+void StemSplitController::showProgress(const QString& label, int maximum)
+{
+	if (m_dialog == nullptr)
+	{
+		m_dialog = new QProgressDialog(label, tr("Cancel"), 0, maximum, m_parent);
+		m_dialog->setWindowTitle(tr("Split to stems"));
+		m_dialog->setWindowModality(Qt::WindowModal);
+		m_dialog->setMinimumDuration(0);
+		m_dialog->setAutoClose(false);
+		m_dialog->setAutoReset(false);
+	}
+	disconnect(m_dialog, &QProgressDialog::canceled, this, nullptr);
+	m_dialog->setLabelText(label);
+	m_dialog->setRange(0, maximum);
+	m_dialog->show();
+}
+
+
+
+
+bool StemSplitController::startJob(const ClipSnapshot& snapshot, const QString& source, const QString& quality)
+{
+	QJsonObject args{{QStringLiteral("source"), source}};
+	if (!quality.isEmpty()) { args.insert(QStringLiteral("quality"), quality); }
+	const ControlResult started = ControlRegistry::instance()->invoke(QStringLiteral("stem.job_start"), args);
 	if (!started.ok)
 	{
+		closeDialog();
 		releaseTemp();
 		QMessageBox::warning(m_parent, tr("Split to stems"),
 			tr("Stem separation could not start:\n\n%1").arg(started.errorMessage));
@@ -263,18 +437,15 @@ bool StemSplitController::startJob(const ClipSnapshot& snapshot, const QString& 
 	}
 
 	m_jobId = started.result.value(QStringLiteral("job_id")).toInt();
+	// The setting the command says it took, not the one asked for.
+	const QString effective = started.result.value(QStringLiteral("quality")).toString();
+	if (!effective.isEmpty()) { m_lastQuality = effective; }
 	m_song = snapshot.song;
 	m_trackId = snapshot.trackId;
 	m_clipPosition = snapshot.position;
 	m_clipName = snapshot.name;
 
-	m_dialog = new QProgressDialog(
-		tr("Separating stems (offline job)..."), tr("Cancel"), 0, 100, m_parent);
-	m_dialog->setWindowTitle(tr("Split to stems"));
-	m_dialog->setWindowModality(Qt::WindowModal);
-	m_dialog->setMinimumDuration(0);
-	m_dialog->setAutoClose(false);
-	m_dialog->setAutoReset(false);
+	showProgress(progressLabel(started.result), 100);
 	connect(m_dialog, &QProgressDialog::canceled, this, [this] {
 		if (m_jobId >= 0)
 		{
@@ -328,14 +499,7 @@ void StemSplitController::pollJob()
 	if (m_dialog != nullptr)
 	{
 		m_dialog->setValue(qRound(job.value(QStringLiteral("progress")).toDouble(0.0) * 100.0));
-		if (job.value(QStringLiteral("fetching_model")).toBool(false))
-		{
-			m_dialog->setLabelText(tr("Downloading the stem model, then separating (offline job)..."));
-		}
-		else
-		{
-			m_dialog->setLabelText(tr("Separating stems (offline job)..."));
-		}
+		m_dialog->setLabelText(progressLabel(job));
 	}
 	const QString state = job.value(QStringLiteral("state")).toString();
 	if (state == QLatin1String("completed")) { completeJob(job); }
@@ -371,10 +535,19 @@ void StemSplitController::completeJob(const QJsonObject& job)
 	}
 	else
 	{
-		QMessageBox::information(m_parent, tr("Split to stems"),
-			tr("Created %1 stem tracks in %2 s.")
-				.arg(created.result.value(QStringLiteral("track_count")).toInt())
-				.arg(job.value(QStringLiteral("since_submit_seconds")).toDouble(0.0), 0, 'f', 1));
+		// Q050-062.2: name the setting the worker actually ran, and say where the
+		// source is - stem.tracks_create adds tracks and never edits the clip.
+		const QString quality = qualityText(job);
+		QString text = quality.isEmpty()
+			? tr("Created %1 stem tracks in %2 s.")
+			: tr("Created %1 stem tracks at %3 in %2 s.");
+		text = text.arg(created.result.value(QStringLiteral("track_count")).toInt())
+			.arg(job.value(QStringLiteral("since_submit_seconds")).toDouble(0.0), 0, 'f', 1);
+		if (!quality.isEmpty()) { text = text.arg(quality); }
+		text += QLatin1Char('\n') + (m_clipName.isEmpty()
+			? tr("The original clip is unchanged on its track.")
+			: tr("The original clip \"%1\" is unchanged on its track.").arg(m_clipName));
+		QMessageBox::information(m_parent, tr("Split to stems"), text);
 	}
 	resetJob();
 }
@@ -443,11 +616,10 @@ void StemSplitController::resetJob()
 
 void StemSplitController::releaseTemp()
 {
-	if (m_temp != nullptr)
+	if (!m_tempPath.isEmpty())
 	{
-		m_temp->remove();
-		delete m_temp;
-		m_temp = nullptr;
+		QFile::remove(m_tempPath);
+		m_tempPath.clear();
 	}
 }
 
