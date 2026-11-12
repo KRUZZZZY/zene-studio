@@ -5782,7 +5782,6 @@ tests/src/gui/ShellHomesTest.cpp	# Automation tab click leaves the Note Editor p
 tests/src/gui/ShellHomesTest.cpp	# Pattern Editor tab click does not switch the lower panel
 tests/src/gui/ShellHomesTest.cpp	# Hide button click leaves the lower panel open
 tests/src/gui/ShellHomesTest.cpp	# Pattern Editor tab click leaves the Note Editor selected
-src/gui/editors/TimeLineWidget.cpp	gui-1106: the punch band row stays reserved across the ruler, but only the interval between the punch bounds is filled, outlined and labelled, and a handle whose bound is in view is kept wholly inside the content area; hit testing and the drag are unchanged. Held by ArrangerTakePunchTest::theArmedPunchRangeIsPaintedOnlyBetweenItsBounds.
 src/gui/editors/SongEditor.cpp	gui-1030-session-loop-a-range (2026-10-30): the arranger ruler gets a 32 px minimum height (setMinimumHeight(scaledPixels(32))) in the column that lays it out; a plain widget had no minimum, so the ruler was laid out at 0 px; covered by ArrangerTimelineTest::theRulerHasAUsableLayoutHeight.
 tests/src/gui/MixerModesTest.cpp	# Compact density choice is clipped in a narrow Mixer panel
 tests/src/gui/MixerModesTest.cpp	# Expanded density choice is clipped in a narrow Mixer panel
@@ -5821,3 +5820,4 @@ tests/CMakeLists.txt	cluster ci-12f4249981b085d6: registers Vst2FixtureDarwinHea
 # plugins/SfzPlayer's own call is scoped to its subtree). The block now finds the target in
 # its own scope, and the CMakeThreadsScope configure regression is registered beside it.
 tests/CMakeLists.txt	ci-748342d46d7e9dd9: the SfzFilePoolTest block resolves Threads::Threads in its own directory scope (MinGW64 had no ancestor target, so the generate step failed) and registers tests/cmake-threads-scope.sh as the CMakeThreadsScope configure regression.
+src/gui/editors/TimeLineWidget.cpp	gui-1106: the punch band is the interval between the punch bounds (a positive subpixel range keeps a one-pixel sliver), the paint fills/outlines/labels only that interval, and the handles clamp to the ruler content area (a handle whose bound is in view stays wholly visible; a range narrower than one handle keeps its handles on its markers; a bound outside the content area has no handle, so no edge sliver leaks onto the last column); hit testing and the drag are unchanged. Held by ArrangerTakePunchTest::theArmedPunchRangeIsPaintedOnlyBetweenItsBounds.
