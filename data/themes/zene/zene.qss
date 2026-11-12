@@ -156,6 +156,15 @@ QPushButton:focus, QToolButton:focus {
 	border-color: @focusRing;
 }
 
+/* A group box's title-bar LED is a pixmap button drawn at its pixmap's size; the push-button padding and
+   min-height above would stretch it to 30px, past the 11px title bar and under the box's contents, which
+   then take a click on its centre (gui-1106). */
+lmms--gui--GroupBox > lmms--gui--PixmapButton {
+	padding: 0px;
+	border: none;
+	min-height: 0px;
+}
+
 QToolButton {
 	background: transparent;
 	color: @text;
