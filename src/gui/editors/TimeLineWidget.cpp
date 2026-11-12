@@ -57,25 +57,38 @@ namespace
 	constexpr int PUNCH_MAX_BAND_HEIGHT = 14;
 	constexpr int PUNCH_BAND_GAP = 2;
 
-	//! gui-1106: the part of the punch band's row between the punch bounds, cut to the band (the
-	//! visible content area). Empty when the range is scrolled out of view.
+	//! gui-1106: the part of the punch band between the punch bounds, cut to the band itself (the
+	//! ruler already clips the band to its visible content area). Empty when the range is scrolled
+	//! out of view. A positive range that maps to less than a pixel keeps a one-pixel sliver, so a
+	//! subpixel range stays visible.
 	QRect punchIntervalRect(const QRect& band, int beginX, int endX)
 	{
 		const int left = std::max(band.left(), beginX);
 		const int right = std::min(band.left() + band.width(), endX);
-		return QRect(left, band.top(), std::max(0, right - left), band.height());
+		if (right > left) { return QRect(left, band.top(), right - left, band.height()); }
+		if (band.width() > 0 && beginX <= band.left() + band.width() - 1 && endX >= band.left())
+		{
+			return QRect(std::min(left, band.left() + band.width() - 1), band.top(), 1, band.height());
+		}
+		return {};
 	}
 
-	//! gui-1106: a handle centred on x, kept wholly inside the band so the in handle of a range
-	//! starting at the content edge is not half clipped away. A bound scrolled out of view keeps
-	//! its handle out of view too.
-	QRect punchHandleRect(const QRect& band, int x)
+	//! gui-1106: a handle centred on x, kept wholly inside the content area (the ruler's visible
+	//! columns) so the in handle of a range starting at the content edge is not half clipped away.
+	//! A bound scrolled out of view keeps its handle out of view too. A range narrower than one
+	//! handle keeps its handles on its markers: pulling them to the edge would detach them from
+	//! the sliver they mark. The band supplies only the handle's row and height.
+	QRect punchHandleRect(const QRect& band, int x, int rangeWidth, int contentLeft, int contentRight)
 	{
+		// A bound outside the content area has no handle: a slim handle centred just past the
+		// edge would otherwise leak a sliver onto the last column. Both accessors clamp within
+		// the content area, so an empty rect here also means the bound is scrolled out of view.
+		if (x < contentLeft || x > contentRight) { return {}; }
 		int left = x - PUNCH_HANDLE_WIDTH / 2;
-		if (x >= band.left() && x <= band.right())
+		if (rangeWidth >= PUNCH_HANDLE_WIDTH)
 		{
-			left = std::clamp(left, band.left(),
-				std::max(band.left(), band.left() + band.width() - PUNCH_HANDLE_WIDTH));
+			left = std::clamp(left, contentLeft,
+				std::max(contentLeft, contentRight - PUNCH_HANDLE_WIDTH + 1));
 		}
 		return QRect(left, band.top(), PUNCH_HANDLE_WIDTH, band.height());
 	}
@@ -247,8 +260,8 @@ void TimeLineWidget::paintEvent( QPaintEvent * )
 	// 0.5.0 L03 (Q050-147): the punch band. It is drawn apart from the loop brace, filled when
 	// armed and only outlined when disarmed (the bounds stay for another pass), with a handle
 	// at each end. A short range keeps the handles inside the band.
-	// gui-1106: the band is the row the range lives in; only the interval between the punch
-	// bounds is filled, outlined and labelled, so the range is visible against the rest of the row.
+	// gui-1106: the punch band is the range's interval, so the fill, outline and label mark exactly
+	// the bars that capture; the band and these stay clipped to the visible ruler.
 	if (!punchBand.isEmpty())
 	{
 		const bool armed = m_timeline->punchArmed();
@@ -339,14 +352,18 @@ QRect TimeLineWidget::punchBeginHandleRect() const
 {
 	const QRect band = punchBandRect();
 	if (band.isEmpty()) { return {}; }
-	return punchHandleRect(band, markerX(TimePos(m_timeline->punchBegin())));
+	const int beginX = markerX(TimePos(m_timeline->punchBegin()));
+	const int rangeWidth = std::abs(markerX(TimePos(m_timeline->punchEnd())) - beginX);
+	return punchHandleRect(band, beginX, rangeWidth, m_xOffset, width() - 1);
 }
 
 QRect TimeLineWidget::punchEndHandleRect() const
 {
 	const QRect band = punchBandRect();
 	if (band.isEmpty()) { return {}; }
-	return punchHandleRect(band, markerX(TimePos(m_timeline->punchEnd())));
+	const int endX = markerX(TimePos(m_timeline->punchEnd()));
+	const int rangeWidth = std::abs(endX - markerX(TimePos(m_timeline->punchBegin())));
+	return punchHandleRect(band, endX, rangeWidth, m_xOffset, width() - 1);
 }
 
 auto TimeLineWidget::getClickedTime(const int xPosition) const -> TimePos
