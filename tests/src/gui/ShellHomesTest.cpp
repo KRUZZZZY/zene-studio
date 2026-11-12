@@ -194,6 +194,37 @@ private slots:
 		}
 	}
 
+	//! gui-1105-main-automation: a real mouse click on the Automation tab, from a fresh layout with the Note
+	//! Editor open below, opens Automation in its place - also after the Inspector has gone to a window of its
+	//! own and the tabs have moved (the sweep's click had landed on that floating window, not on the tab).
+	void aMouseClickOnTheAutomationTabOpensIt()
+	{
+		World world;
+		QVERIFY(QTest::qWaitForWindowExposed(&world.shell));
+		ShellRegionTabs* tabs = world.shell.regionTabs(ShellRegion::Bottom);
+		const QString automation = QStringLiteral("automation");
+		const QString detail = QStringLiteral("detail");
+		auto clickTab = [&](const QString& id) {
+			const QRect rect = tabs->bar()->tabRect(static_cast<int>(tabs->tabIds().indexOf(id)));
+			QVERIFY(rect.isValid());
+			QTest::mouseClick(tabs->bar(), Qt::LeftButton, Qt::NoModifier, rect.center());
+		};
+		QCOMPARE(tabs->currentId(), detail);
+		clickTab(automation);
+		QVERIFY(world.shell.model().isVisible(automation));
+		QVERIFY(!world.shell.model().isVisible(detail));
+		QVERIFY(world.content.value(automation)->isVisible());
+		QCOMPARE(tabs->currentId(), automation);
+
+		clickTab(detail);
+		QCOMPARE(tabs->currentId(), detail);
+		QVERIFY(world.shell.detachPanel(QStringLiteral("inspector")));
+		clickTab(automation);
+		QVERIFY(world.shell.model().isVisible(automation));
+		QCOMPARE(tabs->currentId(), automation);
+		QVERIFY(world.shell.attachPanel(QStringLiteral("inspector")));
+	}
+
 	void aRegionWithOnePanelShowsNoTabs()
 	{
 		World world;
