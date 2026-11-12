@@ -990,6 +990,7 @@ include/MixerHardwareMenu.h
 include/MixerLatencyText.h
 include/MixerListen.h
 include/MixerModeBar.h
+include/MixerModeBarLayout.h
 include/MixerOptions.h
 include/MixerOverlays.h
 include/MixerPostInserts.h
@@ -2110,6 +2111,7 @@ src/gui/MidiLearnGui.cpp
 src/gui/MidiReconnectAction.cpp
 src/gui/MixerHardwareMenu.cpp
 src/gui/MixerModeBar.cpp
+src/gui/MixerModeBarLayout.cpp
 src/gui/MixerOverlays.cpp
 src/gui/MixerRoutingMatrix.cpp
 src/gui/MixerSendsBanner.cpp
@@ -2508,6 +2510,7 @@ tests/src/core/ControlPluginBusesTest.cpp
 # Template save undo/redo coverage for default, named, and new templates.
 tests/src/core/ControlProjectTemplateTest.cpp
 tests/src/core/ControlRecordingRoutesTest.cpp
+tests/src/core/ControlRegistryDisplayTest.cpp
 tests/src/core/ControlRegistryTest.cpp
 tests/src/core/ControlSuccessPathsTest.cpp
 tests/src/core/ControlSessionRecordLandTest.cpp
@@ -2613,6 +2616,7 @@ tests/src/core/ModulationRateTest.cpp
 tests/src/core/ModulatorToolsTest.cpp
 tests/src/core/MountNamespaceTestSupport.h
 tests/src/core/MpscQueueTest.cpp
+tests/src/core/NamModelEigenWarningProbe.cpp
 tests/src/core/NamModelLoaderTest.cpp
 tests/src/core/MultiTrackRecorderTest.cpp
 tests/src/core/NamModelPrewarmTest.cpp
@@ -2952,6 +2956,7 @@ tests/src/gui/TrackGripContrastTest.cpp
 tests/src/gui/TrackIconsLevelBarTest.cpp
 tests/src/gui/ArrangerKeysNavigatorTest.cpp
 tests/src/gui/ToolMenuAtPointerTest.cpp
+tests/src/gui/ArrangerClipboardKeysTest.cpp
 tests/src/gui/NoteBackgroundAudioTest.cpp
 tests/src/gui/ArrangerOverlaysVideoLaneTest.cpp
 tests/src/gui/ArrangerTakePunchTest.cpp
@@ -3472,6 +3477,8 @@ plugins/CarlaVst2/logo.png
 src/core/ControlDeviceVst2.cpp
 tests/data/vst2-test-instrument/BuildWineFixture.cmake
 tests/data/vst2-test-instrument/CMakeLists.txt
+tests/data/vst2-test-instrument/chunk-contract-check.c
+tests/data/vst2-test-instrument/darwin-feature-level-check.py
 tests/data/vst2-test-instrument/vst2-test-instrument.c
 tests/data/vst2-test-instrument/zene_vst2_abi.h
 tests/src/gui/CarlaVst2HostingTest.cpp
@@ -3531,3 +3538,18 @@ docs/qwen-fixes-2026-10/cluster-gui-1030-main-pop-out-the-note-editor-panel.md
 # cluster gui-1030-menu-edit-collaborate (2026-11): a refused menu command is said in the status bar (fork-NEW test).
 tests/src/gui/MenuRefusalNoticeTest.cpp
 docs/qwen-fixes-2026-10/cluster-gui-1105-main-delete.md
+# cluster gui-1105-main-loop-points (2026-11): n-state button activation regression test and its report (fork-NEW).
+tests/src/gui/NStateButtonActivationTest.cpp
+docs/qwen-fixes-2026-10/cluster-gui-1105-main-loop-points.md
+# cluster ci-512849fa221097db (2026-11): checks no exported class declares a thread_local data member (MSVC C2492), by scanning include/ and src/ headers (ctest ExportedClassTlsCheck).
+tests/exported-class-tls-check.py
+docs/qwen-fixes-2026-10/cluster-ci-512849fa221097db.md
+# cluster ci-12f4249981b085d6 (2026-11): the VST2 fixture's Darwin feature-macro regression - compiles the real
+# fixture with the host C compiler against a fake Darwin <stdio.h> (fork-NEW test).
+tests/vst2-fixture-darwin-headers-check.py
+tests/threads-target-windows-configure.py
+tests/cmake-threads-scope.sh
+tests/complexity-regression-check.py
+
+# Cumulative Terra integration: shared real-window visibility and hit-testing regression.
+tests/src/gui/MixerModeVisibilityTestSupport.h

@@ -294,6 +294,7 @@ SET(LMMS_SRCS
 	gui/MixerStripTags.cpp
 	gui/MeterSpeech.cpp
 	gui/MixerModeBar.cpp
+	gui/MixerModeBarLayout.cpp
 	gui/MixerRoutingMatrix.cpp
 	gui/MixerViewOptions.cpp
 	gui/MixerZones.cpp

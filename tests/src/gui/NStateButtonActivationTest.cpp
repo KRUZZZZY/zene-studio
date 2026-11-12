@@ -31,6 +31,7 @@
 
 #include <QtTest>
 
+#include <QAccessible>
 #include <QToolBar>
 #include <QToolButton>
 
@@ -48,6 +49,17 @@ using namespace lmms::gui;
 class NStateButtonActivationTest : public QObject
 {
 	Q_OBJECT
+
+private:
+	static void addTwoStates(NStateButton& button)
+	{
+		QPixmap off(16, 16);
+		off.fill(Qt::black);
+		QPixmap on(16, 16);
+		on.fill(Qt::white);
+		button.addState(off);
+		button.addState(on);
+	}
 
 private slots:
 	void initTestCase() { Engine::init(true); }
@@ -156,6 +168,117 @@ private slots:
 		QCOMPARE(scroll->state(), start);
 	}
 
+private slots:
+	// The finding: QAbstractButton::click() (no mouse event) must advance the state.
+	void programmaticClickAdvancesTheState()
+	{
+		NStateButton button(nullptr);
+		button.setGeneralToolTip("Loop points");
+		addTwoStates(button);
+		QSignalSpy spy(&button, &NStateButton::changedState);
+		QCOMPARE(button.state(), 0);
+
+		button.click();
+		QCOMPARE(button.state(), 1);
+		QCOMPARE(spy.count(), 1);
+		QCOMPARE(spy.at(0).at(0).toInt(), 1);
+
+		button.click();
+		QCOMPARE(button.state(), 0);
+		QCOMPARE(spy.count(), 2);
+	}
+
+	// The accessibility press action, the path Luna's sweep drove.
+	void accessiblePressActionAdvancesTheState()
+	{
+		NStateButton button(nullptr);
+		addTwoStates(button);
+		button.show();
+		QAccessibleInterface* iface = QAccessible::queryAccessibleInterface(&button);
+		QVERIFY(iface != nullptr);
+		QAccessibleActionInterface* actions = iface->actionInterface();
+		QVERIFY(actions != nullptr);
+		QVERIFY(actions->actionNames().contains(QAccessibleActionInterface::pressAction()));
+
+		actions->doAction(QAccessibleActionInterface::pressAction());
+		QCOMPARE(button.state(), 1);
+	}
+
+	// Keyboard activation (Space) goes through click() as well.
+	void spaceKeyAdvancesTheState()
+	{
+		NStateButton button(nullptr);
+		addTwoStates(button);
+		QTest::keyClick(&button, Qt::Key_Space);
+		QCOMPARE(button.state(), 1);
+	}
+
+	// A mouse click still advances exactly once, at press time as before.
+	void mouseClickAdvancesExactlyOnce()
+	{
+		NStateButton button(nullptr);
+		addTwoStates(button);
+		button.resize(20, 20);
+		QSignalSpy spy(&button, &NStateButton::changedState);
+
+		QTest::mousePress(&button, Qt::LeftButton, {}, QPoint(5, 5));
+		QCOMPARE(button.state(), 1);
+		QTest::mouseRelease(&button, Qt::LeftButton, {}, QPoint(5, 5));
+		QCOMPARE(button.state(), 1);
+		QCOMPARE(spy.count(), 1);
+	}
+
+	// A press released off the button keeps its press-time advance (no clicked()), and the
+	// next programmatic activation is not swallowed.
+	void pressReleasedOffTheButtonDoesNotSwallowTheNextClick()
+	{
+		NStateButton button(nullptr);
+		addTwoStates(button);
+		button.resize(20, 20);
+
+		QTest::mousePress(&button, Qt::LeftButton, {}, QPoint(5, 5));
+		QTest::mouseRelease(&button, Qt::LeftButton, {}, QPoint(200, 200));
+		QCOMPARE(button.state(), 1);
+
+		button.click();
+		QCOMPARE(button.state(), 0);
+	}
+
+	// If the button is disabled before release, QAbstractButton consumes that event without
+	// calling mouseReleaseEvent(); the interrupted mouse gesture must not poison the next click.
+	void disabledDuringMousePressDoesNotSwallowTheNextClick()
+	{
+		NStateButton button(nullptr);
+		addTwoStates(button);
+		button.resize(20, 20);
+
+		QTest::mousePress(&button, Qt::LeftButton, {}, QPoint(5, 5));
+		QCOMPARE(button.state(), 1);
+		button.setEnabled(false);
+		QTest::mouseRelease(&button, Qt::LeftButton, {}, QPoint(5, 5));
+		button.setEnabled(true);
+
+		button.click();
+		QCOMPARE(button.state(), 0);
+	}
+
+	// A right click does not advance on any path.
+	void rightClickDoesNotAdvance()
+	{
+		NStateButton button(nullptr);
+		addTwoStates(button);
+		button.resize(20, 20);
+		QTest::mouseClick(&button, Qt::RightButton, {}, QPoint(5, 5));
+		QCOMPARE(button.state(), 0);
+	}
+
+	// A button with no states ignores activation.
+	void emptyButtonIgnoresActivation()
+	{
+		NStateButton button(nullptr);
+		button.click();
+		QCOMPARE(button.state(), -1);
+	}
 private:
 	std::unique_ptr<TimeLineWidget> m_ruler;
 	std::unique_ptr<QToolBar> m_bar;
