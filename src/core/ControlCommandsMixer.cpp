@@ -26,6 +26,7 @@
 
 #include "ControlRegistry.h"
 
+#include "ControlMixerSupport.h"
 #include "ControlReversibility.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
@@ -96,6 +97,7 @@ QJsonObject channelState(MixerChannel* channel)
 		send.insert(QStringLiteral("to"), control::channelIdOf(route->receiver()));
 		send.insert(QStringLiteral("amount"), static_cast<double>(route->amount()->value()));
 		send.insert(QStringLiteral("pre_fader"), route->preFader());
+		control::addRouteChannels(&send, *route);  // Q050-155.2: only when a side is not stereo
 		sends.append(send);
 	}
 	entry.insert(QStringLiteral("sends"), sends);

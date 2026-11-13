@@ -2334,6 +2334,7 @@ tests/control-undo-structural.py
 tests/control-vca-commands.py
 tests/control-warp-commands-transcript.py
 tests/control-wasm-sandbox.py
+tests/control-wide-pin-routing.py
 tests/control-workflow-bindings.py
 tests/control-workflow-models.py
 tests/control_detect_fixtures.py
@@ -2775,6 +2776,7 @@ tests/src/core/VstSubPluginFeaturesTest.cpp
 tests/src/core/W3EngineTest.cpp
 tests/src/core/WarpQuantizeTest.cpp
 tests/src/core/WideDiscreteBusTest.cpp
+tests/src/core/WidePinRoutingTest.cpp
 tests/src/core/WriteRefusalGateTest.cpp
 tests/src/gui/MidiWorkflowBindingsGuiTest.cpp
 tests/src/tracks/HeadlessGuiGuardTest.cpp
@@ -2796,6 +2798,7 @@ tests/src/gui/EqFader.h
 tests/src/gui/TrackAddRoutingTest.cpp
 tests/src/gui/TrackRouteDropTest.cpp
 tests/src/gui/StemSplitBackgroundTest.cpp
+tests/src/gui/WidePinRoutingGuiTest.cpp
 tests/src/gui/XyPadPairTest.cpp
 tests/src/plugins/HydrogenImportLocalFileMngTest.cpp
 tests/src/plugins/ZynNoteOffTest.cpp

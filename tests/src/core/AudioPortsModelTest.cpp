@@ -475,6 +475,44 @@ private slots:
 	//! size the matrices. 134 was applied verbatim - a 134-channel matrix built from
 	//! the file, above the engine's own MaxChannelsPerAudioBuffer ceiling - and a
 	//! negative count wrapped into the unsigned ch_cnt_t.
+	//! Q050-155.2: a matrix saved with pins past the pair carries the track channels they need; a load grows the
+	//! matrix to that validated count so the pins come back, and an out-of-range count is ignored (nothing grows).
+	void loadSettingsGrowsToTheSavedTrackChannels()
+	{
+		TestAudioPortsModel saved{2, 2, false};
+		saved.growTrackChannels(64);
+		saved.out().setPin(40, 0, true);
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("audioengine"));
+		doc.appendChild(root);
+		saved.saveSettings(doc, root);
+		QCOMPARE(root.firstChildElement(QStringLiteral("pins")).attribute(QStringLiteral("track_channels")), QStringLiteral("42"));
+
+		TestAudioPortsModel loaded{2, 2, false};
+		loaded.loadSettings(root);
+		QVERIFY(loaded.trackChannelCount() >= 42);
+		QVERIFY(loaded.out().enabled(40, 0));
+
+		for (const char* wrong : {"999", "-4", "x", "0"})
+		{
+			QDomDocument bad;
+			QVERIFY(bad.setContent(QStringLiteral("<audioengine><pins inputs=\"2\" outputs=\"2\" track_channels=\"%1\">"
+				"<in_matrix c1_1=\"true\"/><out_matrix c41_1=\"true\"/></pins></audioengine>").arg(QString::fromLatin1(wrong))));
+			TestAudioPortsModel model{2, 2, false};
+			model.loadSettings(bad.documentElement());
+			QCOMPARE(model.trackChannelCount(), DEFAULT_CHANNELS);
+			QVERIFY(model.in().enabled(0, 0));
+		}
+
+		// A pair-only matrix (every older project) writes no count.
+		TestAudioPortsModel pairOnly{2, 2, false};
+		QDomDocument plain;
+		QDomElement plainRoot = plain.createElement(QStringLiteral("audioengine"));
+		plain.appendChild(plainRoot);
+		pairOnly.saveSettings(plain, plainRoot);
+		QVERIFY(!plainRoot.firstChildElement(QStringLiteral("pins")).hasAttribute(QStringLiteral("track_channels")));
+	}
+
 	void loadSettingsIgnoresOutOfRangeChannelCounts()
 	{
 		TestAudioPortsModel model{2, 2, false};

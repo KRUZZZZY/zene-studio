@@ -209,6 +209,19 @@ void AudioPortsModel::setTrackChannelCount(ch_cnt_t count)
 	emit propertiesChanged();
 }
 
+void AudioPortsModel::growTrackChannels(int count)
+{
+	const int wanted = std::min(count + count % 2, static_cast<int>(MaxTrackChannels));
+	if (wanted <= static_cast<int>(m_totalTrackChannels)) { return; }
+	setTrackChannelCount(static_cast<ch_cnt_t>(wanted));
+}
+
+namespace { thread_local int t_hostBusChannels = 0; } // HostBusScope's value, per loading thread
+
+AudioPortsModel::HostBusScope::HostBusScope(int channels) noexcept : m_previous{t_hostBusChannels} { t_hostBusChannels = channels; }
+AudioPortsModel::HostBusScope::~HostBusScope() noexcept { t_hostBusChannels = m_previous; }
+auto AudioPortsModel::HostBusScope::channels() noexcept -> int { return t_hostBusChannels; }
+
 void AudioPortsModel::setChannelCounts(ch_cnt_t inCount, ch_cnt_t outCount)
 {
 	const auto routingEdit = takeRoutingEditGuard(this);
@@ -295,6 +308,22 @@ void AudioPortsModel::setChannelCountOut(ch_cnt_t outCount)
 	setChannelCounts(in().channelCount(), outCount);
 }
 
+void AudioPortsModel::setPins(const std::vector<PinEdit>& edits)
+{
+	const auto routingEdit = takeRoutingEditGuard(this);
+	bool changed = false;
+	for (const PinEdit& edit : edits)
+	{
+		Matrix& matrix = edit.output ? m_out : m_in;
+		changed = changed || matrix.enabled(edit.trackChannel, edit.processorChannel) != edit.enabled;
+		matrix.setPinBatch(edit.trackChannel, edit.processorChannel, edit.enabled);
+	}
+	m_in.updateAllUsedChannels();
+	m_out.updateAllUsedChannels();
+	updateDirectRouting();
+	if (changed) { emit dataChanged(); }
+}
+
 void AudioPortsModel::saveSettings(QDomDocument& doc, QDomElement& elem)
 {
 	auto pins = doc.createElement(nodeName());
@@ -302,6 +331,10 @@ void AudioPortsModel::saveSettings(QDomDocument& doc, QDomElement& elem)
 
 	pins.setAttribute("inputs", in().channelCount());
 	pins.setAttribute("outputs", out().channelCount());
+	// Q050-155.2: pins past the stereo pair (a device pinned onto a discrete bus) record the track channels they
+	// need, so they load back even when the bus is narrower at save or load time. Pair-only pins - every older
+	// project - write nothing new.
+	if (m_trackChannelsUpperBound > DEFAULT_CHANNELS) { pins.setAttribute("track_channels", m_trackChannelsUpperBound); }
 
 	auto pinsIn = doc.createElement("in_matrix");
 	pins.appendChild(pinsIn);
@@ -334,6 +367,18 @@ void AudioPortsModel::loadSettings(const QDomElement& elem)
 	// effect, so a rejected load cannot erase the model's existing connections.
 	if (countsInRange && in().channelCount() == inputs && out().channelCount() == outputs)
 	{
+		// Q050-155.2: a device loading into a discrete-N mixer channel (HostBusScope) addresses N channels, and a
+		// matrix saved with pins past the pair recorded the track channels they need (`track_channels`, validated
+		// like the port counts: 2 .. MaxTrackChannels, else ignored). The matrix grows to the larger before the
+		// pins are read, so a pin saved while its bus was narrowed survives the round trip. Neither: nothing grows,
+		// and a pin name outside the matrix is still dropped (BUG-PINBOUNDS).
+		ch_cnt_t saved = 0;
+		if (pins.hasAttribute("track_channels")
+			&& !parseAttributeInRange(pins.attribute("track_channels"), DEFAULT_CHANNELS, static_cast<int>(MaxTrackChannels), &saved))
+		{
+			qWarning() << "Ignoring an out-of-range audio port track channel count";
+		}
+		growTrackChannels(std::max(HostBusScope::channels(), static_cast<int>(saved)));
 		m_in.loadSettings(pins.firstChildElement("in_matrix"));
 		m_out.loadSettings(pins.firstChildElement("out_matrix"));
 	}

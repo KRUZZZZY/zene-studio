@@ -376,9 +376,24 @@ room with an LFE send and spread, and a stereo master or a stereo export gets th
 A Discrete layout has no speaker positions at all: channel 1 goes to the first output, channel 2 to the next, and so on, with
 no speaker folding or reordering, and its channels are numbered rather than named. A Discrete channel sending into
 another Discrete channel carries channel i to channel i at the send's level; a receiver with fewer channels drops the
-ones it lacks, and a stereo receiver takes the first pair only. For now the extra channels come from another surround or
-Discrete channel's send (a 7.1 bus fed by the Surround Panner, say); a track or a device still feeds a channel its first
-pair only. Extra channels need a backend with more
+ones it lacks, and a stereo receiver takes the first pair only. The mixer's Routing view and Routing Matrix keep showing
+each send by channel; an agent reads what a route carries in <code>mixer.get_state</code> and <code>routing.matrix</code>:
+a route with a non-stereo side says how many <code>channels</code> reach the receiver and how
+(<code>channel_routing</code>: <code>index</code> for a Discrete side, <code>speakers</code> for two speaker layouts,
+<code>pair</code> otherwise).</p>
+
+<p id="discrete-pins"><b>Devices on a Discrete channel.</b> A device in a Discrete channel's effect chain reaches every one of
+the channel's channels, by number, through its pins. Open the device card's <b>pins</b> button: the Pin Connector lists the
+channel's 1..N channels (64 rows on a Discrete 64 channel), and its <b>Channels</b> menu moves the device onto any pair -
+Channels 41-42 puts a stereo compressor on those two channels and leaves the other 62 untouched. A click on a pin turns that
+one connection on or off. Each is one step that Edit &gt; Undo takes back, and an agent does the same with
+<code>port.set_pins</code> (a list of pins, one undo step) or <code>port.set_pin</code>; <code>port.get_state</code>'s
+<code>bus</code> says how many channels the device can reach. A channel with no pin on it passes the device untouched, so a
+device without pins (or with its default pins) still processes only channels 1-2, as before. Pins past the pair are saved
+with the project. If the channel is set back to a narrower layout, pins on channels it no longer has stay set and reach
+nothing. A Discrete channel's own extra channels come from another surround or Discrete channel's send or from a device
+pinned onto them; a track still feeds a channel its first pair only, and a rack's chains, the post-fader inserts and a
+speaker layout's (5.1, 7.1...) devices still see the pair only. Extra channels need a backend with more
 than two outputs (JACK or ALSA). With a surround master, the WAV export's Channels row can write it as it is - Surround: one
 channel per speaker (6 for 5.1, 8 for 7.1) in the standard WAV order with its speaker mask; Stereo, the default, folds it
 with the downmix.</p>

@@ -24,14 +24,22 @@
 
 #include "PinConnector.h"
 
+#include <algorithm>
+
+#include <QAction>
 #include <QBoxLayout>
+#include <QJsonObject>
+#include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QScrollArea>
 #include <QScrollBar>
 #include <QSizePolicy>
 #include <QStyle>
+#include <QToolButton>
 
+#include "CommandForm.h"
+#include "ControlDeviceSupport.h"
 #include "FontHelper.h"
 #include "GuiApplication.h"
 #include "MainWindow.h"
@@ -95,6 +103,16 @@ PinConnector::PinConnector(AudioPortsModel* model)
 	m_spacer->setFixedWidth(getSpacerWidth());
 	m_spacer->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
 
+	// Q050-155.2: the Channels menu, shown once the device sits on a bus wider than its pair.
+	m_channelsMenu = new QMenu{this};
+	m_channelsButton = new QToolButton{};
+	m_channelsButton->setText(tr("Channels"));
+	m_channelsButton->setToolTip(tr("Pin this device onto a pair of the bus's channels"));
+	m_channelsButton->setAccessibleName(m_channelsButton->toolTip());
+	m_channelsButton->setPopupMode(QToolButton::InstantPopup);
+	m_channelsButton->setMenu(m_channelsMenu);
+	m_channelsButton->hide();
+
 	// Horizontal layout
 	auto hLayout = new QHBoxLayout{};
 	hLayout->addStretch(1);
@@ -105,6 +123,7 @@ PinConnector::PinConnector(AudioPortsModel* model)
 
 	// Vertical layout
 	auto vLayout = new QVBoxLayout{this};
+	vLayout->addWidget(m_channelsButton, 0, Qt::AlignHCenter);
 	vLayout->addStretch(1);
 	vLayout->addLayout(hLayout);
 	vLayout->addSpacing(WindowMarginBottom.height());
@@ -173,6 +192,83 @@ void PinConnector::toggleVisibility()
 		m_scrollArea->show();
 		m_subWindow->show();
 	}
+}
+
+void PinConnector::setControlAddress(const QString& target, const QString& device)
+{
+	m_target = target;
+	m_device = device;
+	m_busChannels = controlHostBusChannels(target);
+	fitPinsToHostBus(target, castModel<AudioPortsModel>());
+	rebuildChannelsMenu();
+}
+
+void PinConnector::rebuildChannelsMenu()
+{
+	m_channelsMenu->clear();
+	m_channelsButton->setVisible(!m_target.isEmpty() && m_busChannels > 2);
+	for (int first = 0; first < m_busChannels; first += 2)
+	{
+		const QString text = first + 1 < m_busChannels ? tr("Channels %1-%2").arg(first + 1).arg(first + 2)
+			: tr("Channel %1").arg(first + 1);
+		QAction* action = m_channelsMenu->addAction(text);
+		action->setProperty("controlCommand", QStringLiteral("port.set_pins"));
+		connect(action, &QAction::triggered, this, [this, first] {
+			runCommand(this, CommandCall{QStringLiteral("port.set_pins"), {{QStringLiteral("target"), m_target},
+				{QStringLiteral("device"), m_device}, {QStringLiteral("pins"), pinsFrom(first)}}, {}, QString(), false});
+		});
+	}
+}
+
+namespace
+{
+
+QJsonObject pinJson(const AudioPortsModel::Matrix& m, int tc, int pc, bool on)
+{
+	return QJsonObject{{QStringLiteral("direction"), m.isOutput() ? QStringLiteral("out") : QStringLiteral("in")},
+		{QStringLiteral("track_channel"), tc}, {QStringLiteral("processor_channel"), pc}, {QStringLiteral("enabled"), on}};
+}
+
+//! Every pin of @a m that is on, switched off.
+void appendClears(const AudioPortsModel::Matrix& m, QJsonArray* pins)
+{
+	for (int tc = 0; tc < m.trackChannelCount(); ++tc)
+	{
+		for (int pc = 0; pc < m.channelCount(); ++pc)
+		{
+			if (m.enabled(tc, pc)) { pins->append(pinJson(m, tc, pc, false)); }
+		}
+	}
+}
+
+} // namespace
+
+auto PinConnector::pinsFrom(int firstChannel) const -> QJsonArray
+{
+	const auto* model = castModel<AudioPortsModel>();
+	QJsonArray pins;
+	if (model == nullptr) { return pins; }
+	for (const AudioPortsModel::Matrix* m : {&model->in(), &model->out()})
+	{
+		// Every pin that is on goes off, then processor channel i takes bus channel firstChannel + i.
+		appendClears(*m, &pins);
+		if (model->isInstrument() && !m->isOutput()) { continue; }  // an instrument's input stays unrouted
+		const int last = std::min(static_cast<int>(m->channelCount()), m_busChannels - firstChannel);
+		for (int pc = 0; pc < last; ++pc) { pins.append(pinJson(*m, firstChannel + pc, pc, true)); }
+	}
+	return pins;
+}
+
+auto PinConnector::dispatchPin(bool output, ch_cnt_t trackChannel, ch_cnt_t processorChannel, bool enabled) -> bool
+{
+	if (m_target.isEmpty()) { return false; }
+	// port.set_pins with the one pin: an undo step on the engine's history, so Edit > Undo takes it back too.
+	const QJsonObject pin{{QStringLiteral("direction"), output ? QStringLiteral("out") : QStringLiteral("in")},
+		{QStringLiteral("track_channel"), static_cast<int>(trackChannel)},
+		{QStringLiteral("processor_channel"), static_cast<int>(processorChannel)}, {QStringLiteral("enabled"), enabled}};
+	runCommand(this, CommandCall{QStringLiteral("port.set_pins"), {{QStringLiteral("target"), m_target},
+		{QStringLiteral("device"), m_device}, {QStringLiteral("pins"), QJsonArray{pin}}}, {}, QString(), false});
+	return true;
 }
 
 void PinConnector::closeWindow()
@@ -367,6 +463,7 @@ void PinConnector::updateProperties()
 PinConnector::MatrixView::MatrixView(const PinConnector* view, AudioPortsModel::Matrix& matrix)
 	: QWidget{}
 	, m_matrix{&matrix}
+	, m_owner{const_cast<PinConnector*>(view)}
 {
 	auto model = view->castModel<AudioPortsModel>();
 	assert(model != nullptr);
@@ -478,7 +575,11 @@ void PinConnector::MatrixView::mousePressEvent(QMouseEvent* me)
 	}
 
 	const auto [tc, pc] = *pin;
-	m_matrix->setPin(tc, pc, !m_matrix->enabled(tc, pc));
+	// Q050-155.2: through port.set_pin (one undo step) when the view knows its device's address.
+	if (!m_owner->dispatchPin(m_matrix->isOutput(), tc, pc, !m_matrix->enabled(tc, pc)))
+	{
+		m_matrix->setPin(tc, pc, !m_matrix->enabled(tc, pc));
+	}
 
 	me->accept();
 }

@@ -34,8 +34,10 @@
 #include <algorithm>
 #include <cmath>
 
+#include "AudioBus.h"
 #include "AudioDevice.h"
 #include "AudioEngine.h"
+#include "EffectChain.h"
 #include "Engine.h"
 #include "HardwareIo.h"
 #include "HardwareOutputBus.h"
@@ -260,6 +262,71 @@ void addSideChannels(MixerRoute& route, f_cnt_t frames)
 	}
 	const Matrix& m = matrix(from.format(), to);
 	for (int c = 2; c < channelCount(from.format()); ++c) { mixSideChannel(receiver, m, c, from.plane(c), gain, n); }
+}
+
+bool insertsTakeWideBus(const MixerChannel& channel, f_cnt_t frames)
+{
+	const ChannelSurround& s = channel.m_surround;
+	const int count = channelCount(s.format());
+	if (!isDiscrete(s.format()) || count <= 2) { return false; }
+	if (frames > s.frames() || (count + 1) / 2 > s.insertPairCapacity()) { return false; }
+	return channel.m_fxChain.isEnabled() && !channel.m_fxChain.effects().empty();
+}
+
+namespace
+{
+
+//! Side channels 2p and 2p + 1 into insert pair p (an odd count's last right half: a silent spare).
+void toPair(ChannelSurround& s, int p, int count, f_cnt_t frames)
+{
+	SampleFrame* pair = s.insertPair(p);
+	const float* left = s.plane(2 * p);
+	if (2 * p + 1 >= count)
+	{
+		for (f_cnt_t f = 0; f < frames; ++f) { pair[f] = SampleFrame(left[f], 0.f); }
+		return;
+	}
+	const float* right = s.plane(2 * p + 1);
+	for (f_cnt_t f = 0; f < frames; ++f) { pair[f] = SampleFrame(left[f], right[f]); }
+}
+
+//! Insert pair p back into side channels 2p and 2p + 1 (the spare is never read back).
+void fromPair(ChannelSurround& s, int p, int count, f_cnt_t frames)
+{
+	const SampleFrame* pair = s.insertPair(p);
+	float* left = s.plane(2 * p);
+	for (f_cnt_t f = 0; f < frames; ++f) { left[f] = pair[f][0]; }
+	if (2 * p + 1 >= count) { return; }
+	float* right = s.plane(2 * p + 1);
+	for (f_cnt_t f = 0; f < frames; ++f) { right[f] = pair[f][1]; }
+}
+
+} // namespace
+
+bool processWideInserts(MixerChannel& channel, f_cnt_t frames, const AudioBuffer* sidechain)
+{
+	ChannelSurround& s = channel.m_surround;
+	const int count = channelCount(s.format());
+	const int pairs = (count + 1) / 2;
+	std::array<SampleFrame*, MaxChannels / 2> pointers{};
+	pointers[0] = channel.m_buffer;
+	for (int p = 1; p < pairs; ++p)
+	{
+		toPair(s, p, count, frames);
+		pointers[static_cast<std::size_t>(p)] = s.insertPair(p);
+	}
+	AudioBus bus{pointers.data(), static_cast<ch_cnt_t>(pairs), frames};
+	// The pair's silence flags are the channel's own; a side channel is quiet when nothing wrote the sides.
+	bus.quietChannels()[0] = channel.m_bus.quietChannels()[0];
+	bus.quietChannels()[1] = channel.m_bus.quietChannels()[1];
+	for (int c = 2; c < 2 * pairs; ++c) { bus.quietChannels()[static_cast<std::size_t>(c)] = !s.written(); }
+	const bool running = sidechain != nullptr ? channel.m_fxChain.processAudioBuffer(bus, sidechain)
+		: channel.m_fxChain.processAudioBuffer(bus);
+	for (int p = 1; p < pairs; ++p) { fromPair(s, p, count, frames); }
+	s.markWritten();
+	channel.m_bus.quietChannels()[0] = bus.quietChannels()[0];
+	channel.m_bus.quietChannels()[1] = bus.quietChannels()[1];
+	return running;
 }
 
 void processChannel(MixerChannel& channel, f_cnt_t frames)
