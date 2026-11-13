@@ -21,7 +21,10 @@ WHAT IT ASSERTS:
     unknown name -> not_found, switch to the playing name -> refused,
     remove of an unknown name -> not_found; a refused call changes nothing;
   * a project with no versions writes no <track-versions element, saved, reopened
-    and saved again.
+    and saved again;
+  * a comp built from the named version A (track.version_to_lane, then comp.select
+    over 0..96) holds through a switch, a save and reload, and undo/redo of the
+    lane; a blank lane name -> invalid_args, an unknown version -> not_found.
 
 Usage:
     QT_QPA_PLATFORM=offscreen python3 control-track-playlists.py <zene-binary>
@@ -41,6 +44,9 @@ import control_socket_harness as H  # noqa: E402  (path set above)
 
 #: The track the checks build on.
 TRACK_NAME = "Playlists"
+
+#: The track the comp-source checks build on (a second track, so the set checks above are untouched).
+COMP_TRACK_NAME = "Comp source"
 
 #: The two named sets, as (start tick, length in ticks) pairs. A plays one
 #: 96-tick clip at tick 0; B plays a 192-tick clip at 192 and a 288-tick clip
@@ -291,6 +297,114 @@ def check_invalid_paths(session, track, recorder):
                    "before=%r after=%r" % (before, version_state(session, track)))
 
 
+def lane_list(session, track):
+    """The track's take lanes off comp.lane_list: [{lane, name, takes, ...}]."""
+    listed = session.result("comp.lane_list", {"track": track})
+    entries = listed.get("tracks") or []
+    return (entries[0].get("lanes") or []) if entries else []
+
+
+def lane_named(lanes, name):
+    """The lane called `name`, or None."""
+    for lane in lanes:
+        if lane.get("name") == name:
+            return lane
+    return None
+
+
+def comp_segments(session, track):
+    """The composite's segments as (lane, begin, end), off comp.get_state."""
+    state = session.result("comp.get_state", {"track": track})
+    segments = (state.get("composite") or {}).get("segments") or []
+    return [(seg.get("lane"), seg.get("begin"), seg.get("end")) for seg in segments]
+
+
+def track_id_named(session, name):
+    """The stable id of the track called `name`, off track.list (None when absent)."""
+    listed = session.result("track.list")
+    for entry in listed.get("tracks") or []:
+        if entry.get("name") == name:
+            return entry.get("id")
+    return None
+
+
+def check_comp_source(session, instance, recorder):
+    """A comp built from the named version A holds through a switch, a save and
+    reload, and undo/redo of the lane; typed error kinds for bad lane names."""
+    track = session.result("track.add", {"type": "sample", "name": COMP_TRACK_NAME}).get("track")
+    # A = one clip at 0..96 (saved while the live clip is there), B = SET_B
+    session.result("clip.add", {"track": track, "position": 0, "length": 96})
+    session.result("track.version_save", {"track": track, "name": "A"})
+    session.result("track.version_save", {"track": track, "name": "B"})
+    replace_clips(session, track, SET_B)
+    session.result("track.version_save", {"track": track, "name": "B"})
+
+    lane_reply = session.result("track.version_to_lane", {"track": track, "name": "A"})
+    lane = lane_reply.get("lane") or 0
+    lanes = lane_list(session, track)
+    named = lane_named(lanes, "A")
+    clips = track_clips(session, track)
+    recorder.check("version_to_lane adds lane A above lane 0 with takes, and copies A's clip in",
+                   "error" not in lane_reply and lane > 0 and named is not None
+                   and named.get("lane") == lane and bool(named.get("takes"))
+                   and clips == sorted([(0, 96)] + SET_B),
+                   "reply=%r lanes=%r clips=%r" % (lane_reply, lanes, clips))
+
+    # undo removes the lane; redo brings it back at the same index (the lane is the last step)
+    session.result("control.undo")
+    undone = lane_named(lane_list(session, track), "A")
+    session.result("control.redo")
+    redone = lane_named(lane_list(session, track), "A")
+    recorder.check("control.undo removes lane A and control.redo brings it back at the same index",
+                   undone is None and redone is not None and redone.get("lane") == lane,
+                   "undone=%r redone=%r want lane=%r" % (undone, redone, lane))
+
+    selected = session.result("comp.select", {"track": track, "lane": lane, "begin": 0, "end": 96})
+    segments = comp_segments(session, track)
+    recorder.check("comp.select over 0..96 on lane A makes that lane's segment the composite",
+                   "error" not in selected and (lane, 0, 96) in segments,
+                   "selected=%r segments=%r" % (selected, segments))
+
+    # a switch to A and back keeps the lane, the segment, and the lane copy in A's clips
+    session.result("track.version_switch", {"track": track, "name": "A"})
+    switched_lane = lane_named(lane_list(session, track), "A")
+    switched_segments = comp_segments(session, track)
+    switched_clips = track_clips(session, track)
+    recorder.check("through a switch to A the lane and the segment hold, and A's clips hold the copy too",
+                   switched_lane is not None and switched_segments == segments
+                   and switched_clips.count((0, 96)) >= 2,
+                   "lane=%r segments=%r clips=%r" % (switched_lane, switched_segments, switched_clips))
+    session.result("track.version_switch", {"track": track, "name": "B"})
+
+    # save, reopen: the lane, the segment, the names and the clip set come back
+    before_clips = track_clips(session, track)
+    path = os.path.join(instance.workspace, "comp-source.mmpz")
+    saved = session.result("project.save", {"path": path})
+    opened = session.result("project.open", {"path": path})
+    tid = track_id_named(session, COMP_TRACK_NAME)
+    reloaded_lane = lane_named(lane_list(session, tid), "A")
+    reloaded_segments = comp_segments(session, tid)
+    reloaded_versions = version_state(session, tid)
+    reloaded_clips = track_clips(session, tid)
+    recorder.check("after save and reload the comp's lane A and its segment are unchanged",
+                   saved.get("saved") is True and bool(opened.get("file"))
+                   and reloaded_lane is not None and reloaded_segments == segments,
+                   "saved=%r opened=%r lane=%r segments=%r want=%r"
+                   % (saved.get("saved"), opened.get("file"), reloaded_lane, reloaded_segments, segments))
+    recorder.check("after save and reload the versions are A and B with B playing, clips unchanged",
+                   reloaded_versions == ("B", ["A", "B"]) and reloaded_clips == before_clips,
+                   "versions=%r clips=%r want=%r" % (reloaded_versions, reloaded_clips, before_clips))
+
+    # bad lane names: blank -> invalid_args, unknown version -> not_found
+    kinds = {
+        "blank lane name": error_kind(session, "track.version_to_lane", {"track": tid, "name": "  "}),
+        "unknown version": error_kind(session, "track.version_to_lane", {"track": tid, "name": "nope"}),
+    }
+    want = {"blank lane name": "invalid_args", "unknown version": "not_found"}
+    recorder.check("version_to_lane answers invalid_args for a blank name and not_found for an unknown one",
+                   kinds == want, "kinds=%r want=%r" % (kinds, want))
+
+
 def check_quit(session, instance, recorder):
     reply = session.call("control.quit")
     if reply.get("ok") is not True:
@@ -345,6 +459,7 @@ def main(argv):
         check_save_reload(session, instance, track, recorder)
         check_undo_redo(session, track, recorder)
         check_invalid_paths(session, track, recorder)
+        check_comp_source(session, instance, recorder)
         check_quit(session, instance, recorder)
     transcript.dump()
     code = report(recorder)
