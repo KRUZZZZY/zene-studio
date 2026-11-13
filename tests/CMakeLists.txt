@@ -1262,6 +1262,8 @@ set(LMMS_TESTS
 	# 0.5.0 Q050-294.2: the melodic step grid - clicks and fields, each one note.step_set and one undo step,
 	# an agent's edit shown at once, and Notes > Tools > Open in Step Grid running window.step_grid.
 	src/gui/StepGridPanelTest.cpp
+	# 0.5.0 Q050-294.3: note.step_fill - seeded shape and random fills in the active scale, one undo step, refusals.
+	src/gui/StepGridFillTest.cpp
 	# 0.5.0 wave 3 theme 10/17: canvases by keyboard; the editable item list, the staged audit, announcements
 	src/gui/CanvasKeyboardTest.cpp
 	src/gui/ItemListPanelTest.cpp
@@ -3810,6 +3812,7 @@ set_tests_properties(TouchLayoutTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=off
 set_tests_properties(NoteEditorTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(NoteMelodyTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(StepGridPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(StepGridFillTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(LaneReadoutTest SampleEditorDialogTest SampleEditorDocsTest CrossfadeEditorTest MixerModesTest MixerMeteringTest WorkflowFeedbackTest
 	ShellHomesTest TaskCenterTest TaskIndicatorTest CPULoadWidgetTest NStateButtonActivationTest RecordRemainingTest CpuDiagnosticsDialogTest RecordModeMenuTest CanvasKeyboardTest ItemListPanelTest ItemListButtonsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
