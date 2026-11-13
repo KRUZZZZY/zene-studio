@@ -6462,6 +6462,23 @@ if(PYTHON3_EXECUTABLE)
 	set_tests_properties(MocQt5TrailingReturnCheck PROPERTIES TIMEOUT 300)
 endif()
 
+# Qt 5 overloaded-signal portability (cluster ci-8fceff87a3151aad, 2026-11-13). The hosted
+# windows-arm64 job builds against Qt 5.15, where QSpinBox declares valueChanged(int) AND a
+# deprecated valueChanged(const QString &): a bare `&QSpinBox::valueChanged` is an overload set
+# and the PMF connect() cannot deduce it - "FollowActionEditor.cpp:207:11: error: no matching
+# member function for call to 'connect'" stopped the whole build. Qt 6 dropped the QString
+# overload, so the Qt 6 build here never notices. The same trap exists for QDoubleSpinBox,
+# QComboBox, QButtonGroup, QProcess, QCompleter, QSignalMapper, QSqlDriver and QTextBrowser.
+# The check reads sources only, runs its own red/green fixtures first, and is registered
+# wherever a python3 is.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME Qt5OverloadedSignalCheck
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/qt5-overloaded-signal-check.py
+			${CMAKE_SOURCE_DIR})
+	set_tests_properties(Qt5OverloadedSignalCheck PROPERTIES TIMEOUT 300)
+endif()
+
 # Per-method complexity regression (cluster ci-6d61162ce0abfd39, 2026-11-10). Hosted CI failed
 # Gate 4 - the CCN <= 10 ratchet - at a1a98b67b2 with eight regressions, each a function that had
 # grown past the target. The repair is a behaviour-preserving extraction, so the complexity IS the
