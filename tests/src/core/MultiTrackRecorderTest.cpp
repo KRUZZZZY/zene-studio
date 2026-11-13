@@ -106,6 +106,8 @@ private slots:
 		QVERIFY(!failedArmReturned);
 		QVERIFY(recorder.track(0).isArmed());
 		QVERIFY(!QFileInfo::exists(recjournal::journalPathFor(retryTake)));
+		// The failed attempt's own WAV must not be left claiming the take.
+		QVERIFY(!QFileInfo::exists(retryTake));
 
 		QVERIFY(recorder.armTrack(1, retryTake.toStdString(), 48000, 1));
 		std::vector<SampleFrame> period(32, SampleFrame{0.25f, -0.5f});

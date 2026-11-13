@@ -27,6 +27,7 @@
 #include <algorithm>
 
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
 
@@ -285,6 +286,37 @@ int routeArg(const QJsonObject& args)
 	return args.contains(QStringLiteral("route")) ? args.value(QStringLiteral("route")).toInt() : -1;
 }
 
+void releaseDefaultTake(const QString& reservedPath)
+{
+	if (reservedPath.isEmpty()) { return; }
+	QFile::remove(reservedPath);
+	QFile::remove(journalPathFor(reservedPath));
+}
+
+QString reserveDefaultTake(const QString& directory, const QString& base)
+{
+	if (directory.isEmpty() || base.isEmpty()) { return QString(); }
+	for (int index = 0; index < TakeNameProbeBound; ++index)
+	{
+		const QString stem = index == 0 ? base
+			: QStringLiteral("%1-%2").arg(base).arg(index);
+		const QString candidate = QDir(directory).absoluteFilePath(stem + QStringLiteral(".wav"));
+		if (QFileInfo::exists(candidate) || QFileInfo::exists(journalPathFor(candidate)))
+		{
+			continue;
+		}
+		// Exclusive creation IS the reservation: it fails when the candidate
+		// appeared since the existence check (another allocator won the race).
+		QFile fresh(candidate);
+		if (fresh.open(QIODevice::WriteOnly | QIODevice::NewOnly))
+		{
+			fresh.close();
+			return candidate;
+		}
+	}
+	return QString();
+}
+
 QString takePathArg(const QJsonObject& args, int route, ControlResult* error)
 {
 	const QString file = args.value(QStringLiteral("file")).toString();
@@ -299,8 +331,17 @@ QString takePathArg(const QJsonObject& args, int route, ControlResult* error)
 		}
 		return file;
 	}
-	return QDir(defaultRecoveryDir()).absoluteFilePath(
-		QStringLiteral("zene-take-route%1.wav").arg(route));
+	const QString base = QStringLiteral("zene-take-route%1").arg(route);
+	const QString reserved = reserveDefaultTake(defaultRecoveryDir(), base);
+	if (reserved.isEmpty())
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("route %1 could not be armed: all %2 default take names "
+				"beside this instance's recovery file already hold a take or journal")
+				.arg(route).arg(TakeNameProbeBound));
+		return QString();
+	}
+	return reserved;
 }
 
 // ---------------------------------------------------------------------------
