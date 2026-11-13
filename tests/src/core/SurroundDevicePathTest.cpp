@@ -387,7 +387,40 @@ private:
 		QVERIFY(ok(QStringLiteral("mixer.hardware_output"), {{QStringLiteral("channel"), ch(0)}, {QStringLiteral("output"), QStringLiteral("127/128")}}));
 	}
 
-	//! Channel 1's chain cleared, both channels on @a layout, routed, amplifier k on speakers 2k/2k+1.
+	//! Pair @a k of channel 1's bus: one device pinned onto speakers 2k/2k+1 at its own gain.
+	//! Empty when the device's state matches; otherwise the first failure as text.
+	static QString pinPair(const QString& layout, int channels, int k)
+	{
+		const QString amp = loadAmplifier(ch(1));
+		if (amp.isEmpty()) { return QStringLiteral("no amplifier loaded at pair %1").arg(k); }
+		if (!ok(QStringLiteral("plugin.param_set"), {{QStringLiteral("target"), ch(1)}, {QStringLiteral("plugin"), amp},
+			{QStringLiteral("name"), QStringLiteral("Volume")}, {QStringLiteral("value"), volumeOf(k)}}))
+		{
+			return QStringLiteral("Volume did not take on pair %1").arg(k);
+		}
+		const ControlResult set = setPins(ch(1), amp, onto(2 * k));
+		if (!set.ok) { return amp + QStringLiteral(": ") + set.errorMessage; }
+		const QJsonObject state = portState(ch(1), amp);
+		const QString pair = QStringLiteral("%1:0,%2:1").arg(2 * k).arg(2 * k + 1);
+		for (const QString& direction : {QStringLiteral("in"), QStringLiteral("out")})
+		{
+			const QString got = pinsOf(state, direction).join(QLatin1Char(','));
+			if (got != pair) { return QStringLiteral("pair %1: ") + direction + QStringLiteral(" pins ") + got; }
+		}
+		const QJsonObject bus = state.value(QStringLiteral("bus")).toObject();
+		if (bus.value(QStringLiteral("channels")).toInt() != channels)
+		{
+			return QStringLiteral("pair %1: bus channels %2, expected %3").arg(k)
+				.arg(bus.value(QStringLiteral("channels")).toInt()).arg(channels);
+		}
+		if (bus.value(QStringLiteral("format")).toString() != layout)
+		{
+			return QStringLiteral("pair %1: bus format ").arg(k) + bus.value(QStringLiteral("format")).toString();
+		}
+		return QString();
+	}
+
+	//! Channel 1's chain cleared, both channels on @a layout, routed, a device on each speaker pair.
 	//! Returns the first failure as text (static, so it cannot use QVERIFY itself).
 	static QString pinSpeakers(Mixer& mixer, const QString& layout, int channels)
 	{
@@ -397,28 +430,8 @@ private:
 		routeThroughTheBus(mixer);
 		for (int k = 0; k < channels / 2; ++k)
 		{
-			const QString amp = loadAmplifier(ch(1));
-			if (amp.isEmpty()) { return QStringLiteral("no amplifier loaded at pair %1").arg(k); }
-			if (!ok(QStringLiteral("plugin.param_set"), {{QStringLiteral("target"), ch(1)}, {QStringLiteral("plugin"), amp},
-				{QStringLiteral("name"), QStringLiteral("Volume")}, {QStringLiteral("value"), volumeOf(k)}}))
-			{
-				return QStringLiteral("Volume did not take on pair %1").arg(k);
-			}
-			const ControlResult set = setPins(ch(1), amp, onto(2 * k));
-			if (!set.ok) { return amp + QStringLiteral(": ") + set.errorMessage; }
-			const QJsonObject state = portState(ch(1), amp);
-			const QString pair = QStringLiteral("%1:0,%2:1").arg(2 * k).arg(2 * k + 1);
-			if (pinsOf(state, QStringLiteral("in")).join(QLatin1Char(',')) != pair) { return QStringLiteral("pair %1: in pins ").arg(k) + pinsOf(state, QStringLiteral("in")).join(QLatin1Char(',')); }
-			if (pinsOf(state, QStringLiteral("out")).join(QLatin1Char(',')) != pair) { return QStringLiteral("pair %1: out pins ").arg(k) + pinsOf(state, QStringLiteral("out")).join(QLatin1Char(',')); }
-			if (state.value(QStringLiteral("bus")).toObject().value(QStringLiteral("channels")).toInt() != channels)
-			{
-				return QStringLiteral("pair %1: bus channels %2, expected %3").arg(k)
-					.arg(state.value(QStringLiteral("bus")).toObject().value(QStringLiteral("channels")).toInt()).arg(channels);
-			}
-			if (state.value(QStringLiteral("bus")).toObject().value(QStringLiteral("format")).toString() != layout)
-			{
-				return QStringLiteral("pair %1: bus format ").arg(k) + state.value(QStringLiteral("bus")).toObject().value(QStringLiteral("format")).toString();
-			}
+			const QString bad = pinPair(layout, channels, k);
+			if (!bad.isEmpty()) { return bad; }
 		}
 		return QString();
 	}
