@@ -5898,3 +5898,7 @@ tests/src/core/ExportNoiseShaperTest.cpp	# A NaN sample can poison the rest of a
 src/core/MixHelpers.cpp	cluster new-p14-190: AddSwappedMultipliedOp now caches both source channels in a swapped temporary before writing dst, so aliased dst==src uses the original left channel; covered by AudioBufferTest AddSwappedMultiplied_AliasedBufferUsesOriginalLeftChannel.
 tests/src/core/AudioBufferTest.cpp	cluster new-p14-190: regressions for MixHelpers::addSwappedMultiplied on aliased, disjoint multi-frame, and zero-frame inputs.
 include/SimpleTextFloat.h	# `SimpleTextFloat` can return a dangling source object
+include/AudioBuffer.h	cluster new-p9-557: replace defaulted move ctor/assignment with custom ones that rebind group pointers after moving; covered by AudioBufferTest MoveAssignment_AcrossResources_RebindsGroupsAndAccessBuffer.
+src/core/AudioBuffer.cpp	cluster new-p9-557: implement AudioBuffer move ctor/assignment + rebindAfterMove() that rebuilds the access table and rebinds every ChannelGroup after a move, so cross-resource moves no longer dangle; covered by AudioBufferTest.
+tests/src/core/AudioBufferTest.cpp	cluster new-p9-557: regressions for cross-resource move assignment (groups/access rebind), same-resource move assignment, and move construction.
+tests/src/core/SidechainInputsTest.cpp	cluster new-p9-557: movedSidechainKeepsGroupViews regression for cross-resource AudioBuffer move assignment feeding sidechainInputs.
