@@ -184,6 +184,27 @@ private slots:
 		stopAt(0);
 	}
 
+	//! Agents can inspect every persistent take field from both the commit and status command schemas.
+	void captureSchemasDescribePersistentTakes()
+	{
+		const ControlCommand* commit = ControlRegistry::instance()->command(QStringLiteral("record.midi_capture_commit"));
+		const ControlCommand* status = ControlRegistry::instance()->command(QStringLiteral("record.midi_capture_status"));
+		QVERIFY(commit != nullptr);
+		QVERIFY(status != nullptr);
+		const QJsonObject commitProperties = commit->resultSchema.value(QStringLiteral("properties")).toObject();
+		const QJsonObject takeArray = commitProperties.value(QStringLiteral("takes")).toObject();
+		const QJsonObject take = takeArray.value(QStringLiteral("items")).toObject();
+		const QJsonObject takeProperties = take.value(QStringLiteral("properties")).toObject();
+		for (const QString& field : {QStringLiteral("track"), QStringLiteral("clip"), QStringLiteral("position"),
+			QStringLiteral("length"), QStringLiteral("pass"), QStringLiteral("notes"), QStringLiteral("lane"),
+			QStringLiteral("group"), QStringLiteral("active")})
+		{
+			QVERIFY2(takeProperties.contains(field), qPrintable(QStringLiteral("take schema omits %1").arg(field)));
+		}
+		const QJsonObject statusProperties = status->resultSchema.value(QStringLiteral("properties")).toObject();
+		QCOMPARE(statusProperties.value(QStringLiteral("last_commit")).toObject(), commit->resultSchema);
+	}
+
 	// ------------------------------------------------------------------ the realtime half
 
 	//! The capture queue is bounded, counts what it drops, and its producer side allocates nothing.

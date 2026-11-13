@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-11-12T23:58:48Z",
+  "captured_at": "2026-11-13T01:07:30Z",
   "commands": [
     {
       "args_schema": {
@@ -25959,6 +25959,40 @@
             "type": "integer"
           },
           "takes": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "active": {
+                  "type": "boolean"
+                },
+                "clip": {
+                  "type": "string"
+                },
+                "group": {
+                  "type": "integer"
+                },
+                "lane": {
+                  "type": "integer"
+                },
+                "length": {
+                  "type": "integer"
+                },
+                "notes": {
+                  "type": "integer"
+                },
+                "pass": {
+                  "type": "integer"
+                },
+                "position": {
+                  "type": "integer"
+                },
+                "track": {
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "type": "object"
+            },
             "type": "array"
           }
         },
@@ -25982,12 +26016,84 @@
         "additionalProperties": false,
         "properties": {
           "armed_tracks": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "capturing": {
+                  "type": "boolean"
+                },
+                "dropped_events": {
+                  "type": "integer"
+                },
+                "events": {
+                  "type": "integer"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "track": {
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "type": "object"
+            },
             "type": "array"
           },
           "capacity_events": {
             "type": "integer"
           },
           "last_commit": {
+            "additionalProperties": false,
+            "properties": {
+              "dropped_events": {
+                "type": "integer"
+              },
+              "loop_recording": {
+                "type": "boolean"
+              },
+              "notes": {
+                "type": "integer"
+              },
+              "takes": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "active": {
+                      "type": "boolean"
+                    },
+                    "clip": {
+                      "type": "string"
+                    },
+                    "group": {
+                      "type": "integer"
+                    },
+                    "lane": {
+                      "type": "integer"
+                    },
+                    "length": {
+                      "type": "integer"
+                    },
+                    "notes": {
+                      "type": "integer"
+                    },
+                    "pass": {
+                      "type": "integer"
+                    },
+                    "position": {
+                      "type": "integer"
+                    },
+                    "track": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [],
             "type": "object"
           },
           "loop_recording": {
@@ -39677,8 +39783,8 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-054.1/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-_u1zgtt3/zene.sock",
-    "version": "0.4.0-alpha.6318+77701ea"
+    "source_socket": "/tmp/zctl-run-q0wx21_q/zene.sock",
+    "version": "0.4.0-alpha.6320+9f16451"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

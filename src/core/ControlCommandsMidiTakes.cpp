@@ -108,10 +108,32 @@ ControlResult captureCommit(const QJsonObject&)
 	return ControlResult::success(result);
 }
 
+QJsonObject takeArraySchema()
+{
+	QJsonObject takes = arrayProperty();
+	takes.insert(QStringLiteral("items"), objectSchema({
+		{QStringLiteral("track"), stringProperty()}, {QStringLiteral("clip"), stringProperty()},
+		{QStringLiteral("position"), integerProperty()}, {QStringLiteral("length"), integerProperty()},
+		{QStringLiteral("pass"), integerProperty()}, {QStringLiteral("notes"), integerProperty()},
+		{QStringLiteral("lane"), integerProperty()}, {QStringLiteral("group"), integerProperty()},
+		{QStringLiteral("active"), booleanProperty()}}));
+	return takes;
+}
+
 QJsonObject takeSchema()
 {
-	return objectSchema({{QStringLiteral("loop_recording"), booleanProperty()}, {QStringLiteral("takes"), arrayProperty()},
+	return objectSchema({{QStringLiteral("loop_recording"), booleanProperty()}, {QStringLiteral("takes"), takeArraySchema()},
 		{QStringLiteral("notes"), integerProperty()}, {QStringLiteral("dropped_events"), integerProperty()}});
+}
+
+QJsonObject armedTrackArraySchema()
+{
+	QJsonObject tracks = arrayProperty();
+	tracks.insert(QStringLiteral("items"), objectSchema({
+		{QStringLiteral("track"), stringProperty()}, {QStringLiteral("name"), stringProperty()},
+		{QStringLiteral("capturing"), booleanProperty()}, {QStringLiteral("events"), integerProperty()},
+		{QStringLiteral("dropped_events"), integerProperty()}}));
+	return tracks;
 }
 
 } // namespace
@@ -149,8 +171,8 @@ void registerMidiTakeCommands(ControlRegistry& registry)
 	cmd.argsSchema = objectSchema({});
 	cmd.resultSchema = objectSchema({{QStringLiteral("recording"), booleanProperty()},
 		{QStringLiteral("pending"), booleanProperty()}, {QStringLiteral("loop_recording"), booleanProperty()},
-		{QStringLiteral("capacity_events"), integerProperty()}, {QStringLiteral("armed_tracks"), arrayProperty()},
-		{QStringLiteral("session_tracks"), arrayProperty()}, {QStringLiteral("last_commit"), objectProperty()}});
+		{QStringLiteral("capacity_events"), integerProperty()}, {QStringLiteral("armed_tracks"), armedTrackArraySchema()},
+		{QStringLiteral("session_tracks"), arrayProperty()}, {QStringLiteral("last_commit"), takeSchema()}});
 	cmd.mutating = false;
 	cmd.handler = captureStatus;
 	registry.registerCommand(cmd);
