@@ -176,7 +176,11 @@ int sp_auxdata_alloc(sp_auxdata *aux, size_t size)
 
 int sp_auxdata_free(sp_auxdata *aux)
 {
-    free(aux->ptr);
+    if (aux != NULL) {
+        free(aux->ptr);
+        aux->ptr = NULL;
+        aux->size = 0;
+    }
     return SP_OK;
 }
 
