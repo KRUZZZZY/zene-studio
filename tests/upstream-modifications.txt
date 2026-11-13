@@ -5874,3 +5874,5 @@ src/gui/clips/PatternClipView.cpp	cluster new-p10-311: the repetition count of a
 tests/src/gui/ArrangerTimelineTest.cpp	cluster new-p10-311: add regression slot aZeroLengthMidiClipWithNotesPreviewsWithoutDividingByItsLength (offscreen render of a pattern preview whose MIDI clip has notes and zero length).
 plugins/PeakControllerEffect/PeakControllerEffect.cpp	cluster new-p10-318: processImpl returns early on a zero-frame block, so the RMS division never runs on zero frames and the controller keeps its last output (no NaN or spurious bound).
 tests/src/core/ControlVcaLockedEditsTest.cpp	# Head trimming shifts sample content in the wrong direction
+src/gui/widgets/Graph.cpp	cluster new-p15-74: changeSampleAt clamps the computed sample index to [0, length) before setSampleAt, so a plain press on either border emits a valid samplesChanged range (drawSampleAt already cropped the write). Regression tests/src/gui/ExportQualityControlsTest.cpp::plainClicksStayWithinGraphSamples
+tests/src/gui/ExportQualityControlsTest.cpp	# Clicking a Graph border may produce an out-of-range sample index
