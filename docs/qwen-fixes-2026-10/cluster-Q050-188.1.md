@@ -33,7 +33,7 @@ line, which is reproduced below where the log exists.
 | Gate 14 release-fitness | same run | FAIL, `git worktree add` refused by bunny-guard | 034 |
 | Gate 15 verification-debt | same run | FAIL, `git config` / `git add -A` refused by bunny-guard | 034 |
 | submit_check (before this report) | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> Q050-188.1` | 1, RESULT FAIL | 040 |
-| submit_check (after this report) | same | see final section | see final section |
+| submit_check (after this report) | same | 1, RESULT FAIL (clean-tree item only) | 041 |
 
 Base-commit comparison for Gate 7 (`effbba8a57`, extracted with `git archive` to a
 temp directory, file-length gate in check mode): exit 1, log 035. The 25
@@ -124,3 +124,15 @@ and reports version `0.4.0-alpha.6727+a6861ca`, in the `instance` block (capture
   reports "working tree clean" as FAIL.
 - Bunny-guard refused `git worktree add`, `git worktree list`, and `git worktree remove`. No
   worktree was created or removed; the base-tree proof used `git archive` instead.
+
+## Submit check (step D, after this report exists)
+
+Command: `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> Q050-188.1`, run through the quiet runner (exit 1, log 041).
+
+Result: 13 items PASS or WARN; the only FAIL is `working tree clean`, because the code and registration changes (src/gui/CMakeLists.txt, src/gui/shell/ShellCommandMenus.cpp, src/gui/shell/ShellCommandMenusCustomise.cpp, tests/all-sources.txt, tests/fork-sources.txt) are deliberately not committed (the packet allows only the report to be committed).
+
+Final line of the check:
+
+RESULT: FAIL - 1 item(s) to fix before submitting
+
+Open items: (1) commit or otherwise clear the five code and registration paths above; (2) the README canary figures WARN for the new command ids (control.quit, control.transactions, mastering.get_state, mastering.list_candidates, mastering.run); (3) the Self-check item 4 wording in this check asks for function names, not only file names; this report names files, and the touched functions are not yet listed.
