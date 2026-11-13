@@ -132,8 +132,8 @@ struct AddSwappedMultipliedOp
 
 	void operator()( SampleFrame& dst, const SampleFrame& src ) const
 	{
-		dst[0] += src[1] * m_coeff;
-		dst[1] += src[0] * m_coeff;
+		const SampleFrame swapped = { src[1], src[0] };
+		dst += swapped * m_coeff;
 	}
 
 	const float m_coeff;
