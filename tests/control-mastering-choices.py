@@ -18,6 +18,11 @@ every value this proof uses is in the product's own list, so the two cannot drif
                     over it is refused as invalid_args.
   DELIVERY_TARGETS  a closed, lower-case set.
 
+THE EMPTY-VALUE RULE. A PRESENT choice must be a member of its closed set, so a present-but-empty
+value is refused like any other unknown value; the way to ask for no choice is to OMIT the key,
+which the GUI form does, since it never sends an empty optional field (an absent key reads back
+as JSON null).
+
 The fixture is the shipped one (tools/auto-mastering-demo.py), loaded through
 tests/mastering_probe_lib.py, the same plumbing as control-mastering-commands.py.
 
@@ -59,6 +64,7 @@ REFUSED_CHOICES = [
     {"genre": "polka-deluxe"},
     {"genre": 5},
     {"genre": ""},
+    {"delivery_target": ""},
     {"delivery_target": "streaming-99"},
     {"delivery_target": ["streaming-14"]},
 ]
@@ -144,26 +150,42 @@ def check_accepted_ack(session, recorder, args):
                    and ack.get("poll") == "mastering.get_state" and ack.get("out_dir") == args["out_dir"],
                    "reply=%r" % reply)
     recorder.check("the ACK returns inside %.0f ms" % (ACK_BOUND_SECONDS * 1000),
-                   elapsed < ACK_BOUND_SECONDS, "elapsed=%.3fs" % elapsed)
+                   reply.get("ok") is True and elapsed < ACK_BOUND_SECONDS,
+                   "ok=%r elapsed=%.3fs" % (reply.get("ok"), elapsed))
     recorder.check("the ACK carries since_submit_seconds as a number",
                    isinstance(since, (int, float)) and not isinstance(since, bool),
                    "since_submit_seconds=%r" % (since,))
 
 
-def check_run_document(recorder, state, genre, target):
-    """The run's own document carries the choices, on the run and on every row."""
+def owns_run(recorder, state, directory):
+    """The run document is THIS run's: its out_dir is the directory this run was given."""
     last = state.get("last_run") or {}
+    owned = last.get("out_dir") == directory
+    recorder.check("the run document belongs to this run (out_dir is %r)" % directory,
+                   owned, "last_run.out_dir=%r" % last.get("out_dir"))
+    return owned
+
+
+def carries(row, key, value):
+    """A choice matches its expected value; an expected None means PRESENT JSON null."""
+    return is_null(row, key) if value is None else row.get(key) == value
+
+
+def check_run_document(recorder, state, directory, genre, target):
+    """The run's own document carries the choices, on the run and on every row."""
     recorder.check("the run reaches completed inside the bound",
                    state.get("state") == "completed",
                    "state=%r error=%r" % (state.get("state"), state.get("error")))
-    recorder.check("last_run.genre is %r" % genre, last.get("genre") == genre,
+    if not owns_run(recorder, state, directory):
+        return
+    last = state.get("last_run") or {}
+    recorder.check("last_run.genre is %r" % genre, carries(last, "genre", genre),
                    "genre=%r" % last.get("genre"))
-    recorder.check("last_run.delivery_target is %r" % target,
-                   last.get("delivery_target") == target,
+    recorder.check("last_run.delivery_target is %r" % target, carries(last, "delivery_target", target),
                    "delivery_target=%r" % last.get("delivery_target"))
     rows = last.get("candidates") or []
     echoed = [row.get("name") for row in rows
-              if row.get("genre") != genre or row.get("delivery_target") != target]
+              if not (carries(row, "genre", genre) and carries(row, "delivery_target", target))]
     recorder.check("every candidate row carries the run's genre and delivery_target (%d rows)" % len(rows),
                    bool(rows) and not echoed, "rows not carrying them=%r" % echoed)
 
@@ -174,10 +196,12 @@ def check_absent_choices(session, recorder, directory):
     recorder.check("an out_dir-only mastering.run is accepted", reply.get("ok") is True,
                    "reply=%r" % reply)
     state = settle(session)
-    last = state.get("last_run") or {}
-    rows = last.get("candidates") or []
     recorder.check("an out_dir-only run completes", state.get("state") == "completed",
                    "state=%r error=%r" % (state.get("state"), state.get("error")))
+    if not owns_run(recorder, state, directory):
+        return
+    last = state.get("last_run") or {}
+    rows = last.get("candidates") or []
     recorder.check("an out_dir-only run reports genre and delivery_target as JSON null",
                    is_null(last, "genre") and is_null(last, "delivery_target"),
                    "genre=%r delivery_target=%r" % (last.get("genre"), last.get("delivery_target")))
@@ -217,7 +241,7 @@ def check_boundary_genre_accepted(session, recorder, directory):
                          timeout=H.SOCKET_TIMEOUT)
     recorder.check("a genre of exactly %d characters is accepted" % GENRE_MAX_LENGTH,
                    reply.get("ok") is True, "reply=%r" % reply)
-    check_run_document(recorder, settle(session), GENRE_AT_MAX, None)
+    check_run_document(recorder, settle(session), directory, GENRE_AT_MAX, None)
 
 
 def check_quit(session, instance, recorder):
@@ -268,6 +292,7 @@ def main(argv):
             return 77
         choices_dir = os.path.join(instance.tmp, "choices")
         plain_dir = os.path.join(instance.tmp, "plain")
+        boundary_dir = os.path.join(instance.tmp, "boundary")
 
         H.wait_for_socket(instance)
         client = H.connect(instance)
@@ -285,13 +310,14 @@ def main(argv):
 
         # (1) + (2): accepted with choices, then retained on the run and on every row.
         check_accepted_ack(session, recorder, dict(CHOICE, out_dir=choices_dir))
-        check_run_document(recorder, settle(session), CHOICE["genre"], CHOICE["delivery_target"])
+        check_run_document(recorder, settle(session), choices_dir,
+                           CHOICE["genre"], CHOICE["delivery_target"])
         # (3): the behaviour-preserving case, no choices, JSON null everywhere.
         check_absent_choices(session, recorder, plain_dir)
         # (4): malformed choices are refused and change nothing.
         refused_unchanged(session, recorder, "malformed choices", REFUSED_CHOICES, plain_dir)
         # (5): the boundary, and the closed-set case rule.
-        check_boundary_genre_accepted(session, recorder, plain_dir)
+        check_boundary_genre_accepted(session, recorder, boundary_dir)
         refused_unchanged(session, recorder, "boundary and case", REFUSED_BOUNDARY, plain_dir)
         check_quit(session, instance, recorder)
 
