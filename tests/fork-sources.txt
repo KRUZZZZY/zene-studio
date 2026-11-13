@@ -3129,6 +3129,7 @@ tests/src/gui/AutomationLaneChildGuiTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p12-181-port.md
 # cluster new-p12-151-port (2026-10): NES audio-thread note-state allocation fix and verification report (fork-NEW).
 docs/qwen-fixes-2026-10/cluster-new-p12-151-port.md
+tests/src/core/AudioEngineNullRenderTest.cpp
 tests/src/core/AudioEngineProfilerTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p10-208-port.md
 # cluster new-p9-603-port (2026-10): BitInvader's per-note wavetable copy lives in the note handle, so the render path makes no heap allocation; the regression test is fork-NEW.
