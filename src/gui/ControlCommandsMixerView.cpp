@@ -247,6 +247,27 @@ QJsonObject mixerViewState()
 	return state;
 }
 
+//! The changes a checked 'window.mixer_view' call makes, in the order its keys are handled. Reached only once
+//! every argument has been accepted, so a refused call changes no mode.
+void applyMixerViewChanges(const QJsonObject& args, int index, bool sendsGiven, const QList<int>& selection,
+	const QStringList& pinned, const gui::mixerviewoptions::Options& next)
+{
+	const int pinKeys = pinKeysIn(args);
+	if (args.contains(QStringLiteral("selected_channels"))) { gui::mixerviewoptions::setSelectedChannels(selection); }
+	applyFollowSelection(args);
+	if (pinKeys > 0) { gui::mixerzones::MixerZoneState::instance()->setPinned(pinned); }  // Q050-227.2
+	if (sendsGiven)
+	{
+		gui::mixeroverlays::setSendsOnFaders(index);
+		syncMixerViewSoon();
+	}
+	if (args.size() - pinKeys > (sendsGiven ? 1 : 0))
+	{
+		gui::mixerviewoptions::setOptions(next);
+		syncMixerViewSoon();  // theme 16: the strips and the mode bar follow an agent's change at once
+	}
+}
+
 ControlResult mixerView(const QJsonObject& args)
 {
 	// Interface state needs no ready engine, but its answer names mixer channels and folders.
@@ -264,21 +285,7 @@ ControlResult mixerView(const QJsonObject& args)
 	gui::mixerviewoptions::Options next = gui::mixerviewoptions::options();
 	QString error;
 	if (!gui::mixerviewoptions::merge(args, &next, &error)) { return ControlResult::failure(ControlErrorKind::InvalidArgs, error); }
-	// Everything is checked before anything is set: a refused call changes no mode.
-	const int pinKeys = pinKeysIn(args);
-	if (args.contains(QStringLiteral("selected_channels"))) { gui::mixerviewoptions::setSelectedChannels(selection); }
-	applyFollowSelection(args);
-	if (pinKeys > 0) { gui::mixerzones::MixerZoneState::instance()->setPinned(pinned); }  // Q050-227.2
-	if (sendsGiven)
-	{
-		gui::mixeroverlays::setSendsOnFaders(index);
-		syncMixerViewSoon();
-	}
-	if (args.size() - pinKeys > (sendsGiven ? 1 : 0))
-	{
-		gui::mixerviewoptions::setOptions(next);
-		syncMixerViewSoon();  // theme 16: the strips and the mode bar follow an agent's change at once
-	}
+	applyMixerViewChanges(args, index, sendsGiven, selection, pinned, next);
 	return ControlResult::success(mixerViewState());
 }
 
