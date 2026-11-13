@@ -137,11 +137,43 @@ constexpr int MasteringChildStartMs = 10000;
  */
 constexpr int MasteringChildLifeMs = 600000;
 
+/*! One optional choice. An omitted key, or null, is no choice and is accepted; a
+ *  present value must be a non-empty string that is exactly one of \a accepted -
+ *  no case folding. Empty when usable (with \a value set), else the reason.
+ */
+QString validateChoice(const QJsonObject& args, const QString& key, const QStringList& accepted,
+	QString* value)
+{
+	value->clear();
+	const QJsonValue raw = args.value(key);
+	if (raw.isUndefined() || raw.isNull()) { return QString(); }
+	const QString list = accepted.join(QStringLiteral(", "));
+	if (!raw.isString())
+	{
+		return QStringLiteral("'%1' must be a string naming one accepted value; accepted values "
+			"are %2").arg(key, list);
+	}
+	const QString choice = raw.toString();
+	if (choice.isEmpty())
+	{
+		return QStringLiteral("'%1' is empty: to ask for no choice, omit the key; accepted values "
+			"are %2").arg(key, list);
+	}
+	if (!accepted.contains(choice))
+	{
+		return QStringLiteral("'%1' '%2' is not an accepted value (matched exactly, no case folding); "
+			"accepted values are %3").arg(key, choice, list);
+	}
+	*value = choice;
+	return QString();
+}
+
 /*! Everything that can refuse, checked BEFORE anything is written or launched
  *  (SPEC A16: a refusal leaves nothing behind). Empty when the request is
  *  usable, else the reason.
  */
-QString validateRunArgs(const QJsonObject& args, QString* outDir)
+QString validateRunArgs(const QJsonObject& args, QString* outDir, QString* genre,
+	QString* deliveryTarget)
 {
 	*outDir = args.value(QStringLiteral("out_dir")).toString();
 	if (outDir->isEmpty())
@@ -157,6 +189,13 @@ QString validateRunArgs(const QJsonObject& args, QString* outDir)
 	{
 		return QStringLiteral("'out_dir' must be an absolute path");
 	}
+	// The choices are checked before the song, so a refused choice never reads the session.
+	const QString genreRefusal = validateChoice(args, QStringLiteral("genre"),
+		masteringGenreNames(), genre);
+	if (!genreRefusal.isEmpty()) { return genreRefusal; }
+	const QString targetRefusal = validateChoice(args, QStringLiteral("delivery_target"),
+		masteringDeliveryTargetNames(), deliveryTarget);
+	if (!targetRefusal.isEmpty()) { return targetRefusal; }
 	if (Engine::getSong() == nullptr)
 	{
 		return QStringLiteral("this instance has no song to render");
@@ -212,6 +251,15 @@ bool startMasteringChild(MasteringPendingRun* run, ControlResult* error)
 		QStringLiteral("-f"), QStringLiteral("wav"),
 		QStringLiteral("-s"), QString::number(MasteringRenderSampleRate),
 		QStringLiteral("--report"), run->reportPath};
+	// The caller's choices reach the child only when made: an out_dir-only run's argv is unchanged.
+	if (!run->genre.isEmpty())
+	{
+		arguments << QStringLiteral("--genre") << run->genre;
+	}
+	if (!run->deliveryTarget.isEmpty())
+	{
+		arguments << QStringLiteral("--delivery-target") << run->deliveryTarget;
+	}
 	arguments += configArgs();
 
 	run->process = new QProcess();
@@ -234,7 +282,9 @@ bool startMasteringChild(MasteringPendingRun* run, ControlResult* error)
 ControlResult handleMasteringRun(const QJsonObject& args)
 {
 	QString outDir;
-	const QString invalid = validateRunArgs(args, &outDir);
+	QString genre;
+	QString deliveryTarget;
+	const QString invalid = validateRunArgs(args, &outDir, &genre, &deliveryTarget);
 	if (!invalid.isEmpty())
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs, invalid);
@@ -258,6 +308,8 @@ ControlResult handleMasteringRun(const QJsonObject& args)
 
 	auto* run = new MasteringPendingRun;
 	run->outDir = outDir;
+	run->genre = genre;
+	run->deliveryTarget = deliveryTarget;
 	run->before = before;
 	run->scratch = new QTemporaryDir(QDir::tempPath() + QStringLiteral("/zene-master-XXXXXX"));
 	if (!run->scratch->isValid())
@@ -329,6 +381,8 @@ ControlResult handleMasteringRun(const QJsonObject& args)
 	QJsonObject ack;
 	ack.insert(QStringLiteral("state"), QStringLiteral("running"));
 	ack.insert(QStringLiteral("out_dir"), outDir);
+	ack.insert(QStringLiteral("genre"), masteringChoiceJson(genre));
+	ack.insert(QStringLiteral("delivery_target"), masteringChoiceJson(deliveryTarget));
 	ack.insert(QStringLiteral("poll"), QStringLiteral("mastering.get_state"));
 	ack.insert(QStringLiteral("since_submit_seconds"), 0.0);
 	// The A16 record travels with the REPLY (ControlRegistry records it there),
@@ -375,9 +429,17 @@ void registerMasteringRunCommands(ControlRegistry& registry)
 		"without an inverse). The inverse is recorded when the run COMPLETES, so `control.undo` must "
 		"not be asked to take a run back until `mastering.get_state` reports it completed. "
 		"Names no best candidate: there is no validated preference scorer, so "
-		"the choice is the user's.");
+		"the choice is the user's. Two optional labels, `genre` and `delivery_target`, let the caller "
+			"record a choice: accepted genres are published by mastering.list_candidates (`genres`, "
+			"`genre_max_length`), and `delivery_target` must be one of its `delivery_targets` (the "
+			"engine's own named targets). An omitted key means no choice and reads back as null; a "
+			"present-but-empty key is refused. Both are retained on the run and on every candidate row, "
+			"and are LABELS ONLY - they change neither the candidate set, nor its measurements, nor "
+			"which candidate is preferred.");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("out_dir"), stringProperty()},
+		{QStringLiteral("genre"), enumProperty(masteringGenreNames())},
+		{QStringLiteral("delivery_target"), enumProperty(masteringDeliveryTargetNames())},
 	}, {QStringLiteral("out_dir")});
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("state"), enumProperty({QStringLiteral("running")})},
@@ -385,6 +447,8 @@ void registerMasteringRunCommands(ControlRegistry& registry)
 		{QStringLiteral("poll"), stringProperty()},
 		{QStringLiteral("since_submit_seconds"), numberProperty()},
 		{QStringLiteral("note"), stringProperty()},
+		{QStringLiteral("genre"), nullable(stringProperty())},
+		{QStringLiteral("delivery_target"), nullable(stringProperty())},
 	});
 	cmd.mutating = true;
 	cmd.handler = [](const QJsonObject& args) { return handleMasteringRun(args); };
