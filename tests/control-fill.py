@@ -9,8 +9,9 @@ fill, in the active scale. This driver starts the REAL `zene` binary headless an
      (ids included) and the grid's cells; a second identical fill gives the same note list;
   2. after a fill, roll.get_state and note.step_get_state list the same notes by id, key and
      position as note.list, and window.step_grid's cells have those ids with the same key and step;
-  3. a seeded random fill (density 25, seed 3) gives the same note list twice with an undo between;
-     a density-100 random fill leaves a note in every step column that held one before;
+  3. on an eight-column clip, a seeded random fill (density 25, seed 3) keeps notes and gives the
+     same non-empty note list twice with an undo between; a density-100 random fill leaves a note in
+     every one of the eight step columns;
   4. refusals - an unknown clip, seed -1, seed 1.5, an unknown kind, a low/high range of 60/61,
      and a fill with no scale - are typed, and each leaves note.list and undo_depth unchanged.
 
@@ -34,6 +35,15 @@ def make_clip(session):
     session.result("note.add_many", {"clip": clip, "notes": notes})
     session.result("scale.root_set", {"root": "C"})
     session.result("scale.set", {"scale": "Major"})
+    return clip
+
+
+def make_columns_clip(session, count=8, key=60):
+    """A fresh clip with one note in each of `count` step columns, so a random fill has columns to keep."""
+    track = session.result("track.add", {"type": "instrument", "name": "FillRandom"}).get("track")
+    clip = session.result("clip.add", {"track": track, "position": 0}).get("clip")
+    notes = [{"key": key, "position": i * 12, "length": 12, "velocity": 100} for i in range(count)]
+    session.result("note.add_many", {"clip": clip, "notes": notes})
     return clip
 
 
@@ -129,28 +139,37 @@ def check_shown(session, recorder, clip):
                    "cells=%r list=%r" % (cells, notes))
 
 
-def check_random(session, recorder, clip):
+RANDOM_SEED = 3  # density-25 seed 3 keeps at least one of the eight columns (checked below, not assumed)
+
+
+def check_random(session, recorder, _clip):
+    clip = make_columns_clip(session)  # its own eight-column clip, so the repeat compares non-empty lists
     start = listed(session, clip)
     d0 = depth(session)
-    random_args = {"kind": "random", "density": 25, "seed": 3}
-    session.result("note.step_fill", fill_args(clip, **random_args))
+    random_args = {"kind": "random", "density": 25, "seed": RANDOM_SEED}
+    reply = session.result("note.step_fill", fill_args(clip, **random_args))
     first = listed(session, clip)
+    recorder.check("the density-25 seed-3 random fill keeps at least one note before the repeat compares it",
+                   len(first) > 0, "seed=%r first=%r" % (RANDOM_SEED, first))
+    recorder.check("the random fill's filled count equals the distinct step columns it left",
+                   reply.get("filled") == len({n["position"] // 12 for n in first}),
+                   "filled=%r columns=%r" % (reply.get("filled"), sorted({n["position"] // 12 for n in first})))
     session.result("control.undo")
     recorder.check("one undo returns the random fill's start pattern", listed(session, clip) == start and depth(session) == d0,
                    "start=%r now=%r" % (start, listed(session, clip)))
     session.result("note.step_fill", fill_args(clip, **random_args))
     second = listed(session, clip)
-    recorder.check("a seeded random fill (density 25, seed 3) gives the same note list twice",
-                   second == first, "first=%r second=%r" % (first, second))
+    recorder.check("a seeded random fill (density 25, seed %d) gives the same non-empty note list twice" % RANDOM_SEED,
+                   bool(first) and second == first, "first=%r second=%r" % (first, second))
     session.result("control.undo")
-    # The density-100 fill runs on the pattern before the density-25 fill, which still holds notes.
-    reply = session.result("note.step_fill", fill_args(clip, kind="random", density=100, seed=3))
+    # The density-100 fill runs on the eight-column start pattern, which still holds one note per column.
+    reply = session.result("note.step_fill", fill_args(clip, kind="random", density=100, seed=RANDOM_SEED))
     step_ticks = reply.get("step_ticks") or 12
     held = {n["position"] // step_ticks for n in start}
     filled = {n["position"] // step_ticks for n in listed(session, clip)}
     session.result("control.undo")
-    recorder.check("a density-100 random fill leaves a note in every step column that held one before",
-                   bool(held) and held <= filled, "held=%r filled=%r" % (sorted(held), sorted(filled)))
+    recorder.check("a density-100 random fill leaves a note in every one of the eight columns that held one before",
+                   len(held) == 8 and held <= filled, "held=%r filled=%r" % (sorted(held), sorted(filled)))
 
 
 def check_refusals(session, recorder, clip):
