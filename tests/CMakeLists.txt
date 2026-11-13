@@ -67,6 +67,9 @@ set(LMMS_TESTS
 	src/core/AudioBusHandleTest.cpp
 	src/core/AudioBusTest.cpp
 	src/core/AudioEngineTeardownTest.cpp
+	# cluster null-1: an offline render of a unity sample clip at position 0 must
+	# BE its source frame for frame, at 44.1 and 48 kHz, with no alignment.
+	src/core/AudioEngineNullRenderTest.cpp
 	src/core/AudioEngineProfilerTest.cpp
 	# The flanger delay buffer is allocated as an array, so both release sites
 	# must use array delete.
