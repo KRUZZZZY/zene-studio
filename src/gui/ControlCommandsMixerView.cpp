@@ -125,6 +125,78 @@ bool selectionOf(const QJsonObject& args, QList<int>* indices, ControlResult* er
 	return true;
 }
 
+//! One ch-<n> id a caller named, as the channel's canonical id; false, with @a error, unless it is a string that
+//! names a channel other than the master (the master is its own dock; it is not pinned).
+bool pinIdOf(const QJsonValue& value, QString* id, ControlResult* error)
+{
+	if (!value.isString())
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("pins are ch-<n> ids (strings)"));
+		return false;
+	}
+	MixerChannel* channel = resolveMixerChannel(value.toString(), error);
+	if (channel == nullptr) { return false; }
+	if (channel->index() == 0)
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("the master is its own dock; it is not pinned"));
+		return false;
+	}
+	*id = channelIdOf(channel);
+	return true;
+}
+
+//! 'pinned_channels' replaces the list with the channels it names, in the order given (each once); false, with
+//! @a error, when it is not an array or an entry is refused. @a pinned changes only on success.
+bool replacePins(const QJsonValue& value, QStringList* pinned, ControlResult* error)
+{
+	if (!value.isArray())
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'pinned_channels' is an array of ch-<n> ids"));
+		return false;
+	}
+	QStringList replaced;
+	for (const QJsonValue& entry : value.toArray())
+	{
+		QString id;
+		if (!pinIdOf(entry, &id, error)) { return false; }
+		if (!replaced.contains(id)) { replaced.append(id); }
+	}
+	*pinned = replaced;
+	return true;
+}
+
+//! 'pin' appends one channel (when it is not pinned yet) and 'unpin' removes it; false, with @a error, when it
+//! names no pinnable channel.
+bool pinOne(const QJsonValue& value, bool pin, QStringList* pinned, ControlResult* error)
+{
+	QString id;
+	if (!pinIdOf(value, &id, error)) { return false; }
+	if (pin && !pinned->contains(id)) { pinned->append(id); }
+	if (!pin) { pinned->removeAll(id); }
+	return true;
+}
+
+//! How many of the pin keys ('pin', 'unpin', 'pinned_channels') a call gives. They are not view options.
+int pinKeysIn(const QJsonObject& args)
+{
+	return static_cast<int>(args.contains(QStringLiteral("pin"))) + static_cast<int>(args.contains(QStringLiteral("unpin")))
+		+ static_cast<int>(args.contains(QStringLiteral("pinned_channels")));
+}
+
+//! Pins start from the layout's list; 'pinned_channels' replaces it, then 'pin' is appended and 'unpin' removed.
+//! False, with @a error, on any refused name; with no pin key given, @a pinned is the layout's list.
+bool pinsOf(const QJsonObject& args, QStringList* pinned, ControlResult* error)
+{
+	*pinned = gui::mixerzones::MixerZoneState::instance()->layout().pinned;
+	if (args.contains(QStringLiteral("pinned_channels"))
+		&& !replacePins(args.value(QStringLiteral("pinned_channels")), pinned, error)) { return false; }
+	if (args.contains(QStringLiteral("pin"))
+		&& !pinOne(args.value(QStringLiteral("pin")), true, pinned, error)) { return false; }
+	if (args.contains(QStringLiteral("unpin"))
+		&& !pinOne(args.value(QStringLiteral("unpin")), false, pinned, error)) { return false; }
+	return true;
+}
+
 //! The mixer on screen follows a mode change now, not at its next half-second sync (queued: the call may
 //! come from a menu on one of its strips, which a sync can rebuild).
 void syncMixerViewSoon()
@@ -163,7 +235,37 @@ QJsonObject mixerViewState()
 		if (gui::mixerviewoptions::shows(i)) { visible.append(channelIdOf(Engine::mixer()->mixerChannel(i))); }
 	}
 	state.insert(QStringLiteral("visible_channels"), visible);
+	// Q050-227.2: the pins whose channel still exists, in mixer order (a pin of a removed channel is left out).
+	const QStringList pins = gui::mixerzones::MixerZoneState::instance()->layout().pinned;
+	QJsonArray pinned;
+	for (int i = 0; i < Engine::mixer()->numChannels(); ++i)
+	{
+		const QString id = channelIdOf(Engine::mixer()->mixerChannel(i));
+		if (pins.contains(id)) { pinned.append(id); }
+	}
+	state.insert(QStringLiteral("pinned_channels"), pinned);
 	return state;
+}
+
+//! The changes a checked 'window.mixer_view' call makes, in the order its keys are handled. Reached only once
+//! every argument has been accepted, so a refused call changes no mode.
+void applyMixerViewChanges(const QJsonObject& args, int index, bool sendsGiven, const QList<int>& selection,
+	const QStringList& pinned, const gui::mixerviewoptions::Options& next)
+{
+	const int pinKeys = pinKeysIn(args);
+	if (args.contains(QStringLiteral("selected_channels"))) { gui::mixerviewoptions::setSelectedChannels(selection); }
+	applyFollowSelection(args);
+	if (pinKeys > 0) { gui::mixerzones::MixerZoneState::instance()->setPinned(pinned); }  // Q050-227.2
+	if (sendsGiven)
+	{
+		gui::mixeroverlays::setSendsOnFaders(index);
+		syncMixerViewSoon();
+	}
+	if (args.size() - pinKeys > (sendsGiven ? 1 : 0))
+	{
+		gui::mixerviewoptions::setOptions(next);
+		syncMixerViewSoon();  // theme 16: the strips and the mode bar follow an agent's change at once
+	}
 }
 
 ControlResult mixerView(const QJsonObject& args)
@@ -177,23 +279,13 @@ ControlResult mixerView(const QJsonObject& args)
 	int index = -1;
 	QList<int> selection;
 	ControlResult refused;
-	if (!sendsTargetOf(args, &index, &refused) || !selectionOf(args, &selection, &refused)) { return refused; }
+	QStringList pinned;
+	if (!sendsTargetOf(args, &index, &refused) || !selectionOf(args, &selection, &refused)
+		|| !pinsOf(args, &pinned, &refused)) { return refused; }
 	gui::mixerviewoptions::Options next = gui::mixerviewoptions::options();
 	QString error;
 	if (!gui::mixerviewoptions::merge(args, &next, &error)) { return ControlResult::failure(ControlErrorKind::InvalidArgs, error); }
-	// Everything is checked before anything is set: a refused call changes no mode.
-	if (args.contains(QStringLiteral("selected_channels"))) { gui::mixerviewoptions::setSelectedChannels(selection); }
-	applyFollowSelection(args);
-	if (sendsGiven)
-	{
-		gui::mixeroverlays::setSendsOnFaders(index);
-		syncMixerViewSoon();
-	}
-	if (args.size() > (sendsGiven ? 1 : 0))
-	{
-		gui::mixerviewoptions::setOptions(next);
-		syncMixerViewSoon();  // theme 16: the strips and the mode bar follow an agent's change at once
-	}
+	applyMixerViewChanges(args, index, sendsGiven, selection, pinned, next);
 	return ControlResult::success(mixerViewState());
 }
 
@@ -414,7 +506,12 @@ void registerMixerViewCommands(ControlRegistry& registry)
 		"the mixer shows and sets both, the filter and the modes. The answer adds 'strips': per channel its 'type' (master, "
 		"return, group, track, channel), 'format' (stereo, LCR, Quad, 5.1, 7.1), 'inputs' and 'outputs' (by name; each "
 		"output with amount, pre_fader, enabled), 'hardware' (its hardware output's label, empty for none) and 'states' "
-		"(afl, pfl, solo_safe, surround_pan, cue, hardware_insert). Interface state: nothing is journalled.");
+		"(afl, pfl, solo_safe, surround_pan, cue, hardware_insert). Interface state: nothing is journalled. "
+		"Q050-227.2: 'pin' / 'unpin' (a ch-<n> id) and 'pinned_channels' (the whole list) pin channel strips beside the "
+		"scrolling channels, so they stay on screen while the channels scroll; the strip's menu Pin Strip / Unpin Strip runs "
+		"this command; the answer's 'pinned_channels' lists them in mixer order. The pins are interface state kept with the "
+		"project's window layout (window.layout_project_save, inside 'mixer_zones'), restored when the project reopens; "
+		"layouts without them open with none pinned.");
 	const QJsonObject fields{{QStringLiteral("show_sends"), booleanProperty()}, {QStringLiteral("show_pan"), booleanProperty()},
 		{QStringLiteral("show_number"), booleanProperty()}, {QStringLiteral("show_meter_info"), booleanProperty()},
 		{QStringLiteral("show_inserts"), booleanProperty()}, {QStringLiteral("show_macros"), booleanProperty()},
@@ -431,7 +528,12 @@ void registerMixerViewCommands(ControlRegistry& registry)
 	args.insert(QStringLiteral("sends_on_faders"), stringProperty());
 	args.insert(QStringLiteral("selected_channels"), arrayProperty());  // MX-005
 	args.insert(QStringLiteral("follow_selection"), booleanProperty());  // MX-021
+	args.insert(QStringLiteral("pin"), stringProperty());  // Q050-227.2
+	args.insert(QStringLiteral("unpin"), stringProperty());
+	args.insert(QStringLiteral("pinned_channels"), arrayProperty());
 	QJsonObject result = args;
+	result.remove(QStringLiteral("pin"));
+	result.remove(QStringLiteral("unpin"));
 	result.insert(QStringLiteral("folded"), arrayProperty());
 	result.insert(QStringLiteral("sends_on_faders_name"), stringProperty());
 	result.insert(QStringLiteral("faders"), arrayProperty());
@@ -460,7 +562,8 @@ void registerMixerViewCommands(ControlRegistry& registry)
 		"left, channels middle, VCA and rack right. The answer is what the mixer shows now: 'zones' and 'sizes' (the portable "
 		"arrangement), and 'mixer_zones', the one object window.layout_project_save keeps inside the project's window layout, "
 		"so saving that layout and reopening the project brings the arrangement and the widths back. Projects and layouts "
-		"saved before this feature carry no 'mixer_zones' and open with the default arrangement. Interface state, kept with the "
+		"saved before this feature carry no 'mixer_zones' and open with the default arrangement. 'mixer_zones' also carries "
+			"'pinned' (the pinned channel strips, ch-<n> ids in pin order; window.mixer_view pins them). Interface state, kept with the "
 		"layout: this command writes no project data of its own and records no undo step (the layout save is the step).")
 		.arg(gui::mixerzones::MinZoneSize).arg(gui::mixerzones::MaxZoneSize);
 	const QJsonObject zoneFields{{QStringLiteral("dock"), stringProperty()},
