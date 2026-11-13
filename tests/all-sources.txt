@@ -2647,6 +2647,7 @@ src/gui/shell/ModulatorCard.cpp
 src/gui/shell/Shell.cpp
 src/gui/shell/ShellChrome.cpp
 src/gui/shell/ShellCommandMenus.cpp
+src/gui/shell/ShellCommandMenusCustomise.cpp
 src/gui/shell/ShellFloating.cpp
 src/gui/shell/ShellIcons.cpp
 src/gui/shell/ShellLayout.cpp
@@ -3330,6 +3331,7 @@ tests/src/gui/LoopDropWarpTest.cpp
 tests/src/gui/Lv2ViewBaseLifetimeTest.cpp
 tests/src/gui/MainWindowGeometryTest.cpp
 tests/src/gui/MainWindowTest.cpp
+tests/src/gui/MasteringChoicesGuiTest.cpp
 tests/src/gui/MasteringReleaseGuiTest.cpp
 tests/src/gui/MenuRefusalNoticeTest.cpp
 tests/src/gui/MenuTestSupport.h
