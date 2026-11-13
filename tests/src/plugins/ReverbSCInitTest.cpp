@@ -34,6 +34,7 @@ extern "C"
 }
 
 extern "C" void* sp_revsc_test_malloc(std::size_t size);
+extern "C" void* sp_revsc_test_calloc(std::size_t count, std::size_t size);
 
 namespace
 {
@@ -86,6 +87,43 @@ int runInitChild()
 	return (refused && (computed == SP_NOT_OK)) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
+int runDestroyAfterFailedInitChild()
+{
+	sp_revsc* revsc = nullptr;
+	if (sp_revsc_create(&revsc) != SP_OK)
+	{
+		return EXIT_FAILURE;
+	}
+
+	/* The allocation inside init() is refused, so the state has no
+	 * auxiliary buffer. Destroying it must not hand garbage to
+	 * free(). The poison fill makes the uninitialised value
+	 * deterministic instead of relying on whatever malloc left. */
+	std::memset(&revsc->aux.ptr, 0xA5, sizeof(void*));
+	std::memset(&revsc->aux.size, 0xA5, sizeof(size_t));
+
+	const int result = sp_revsc_init(nullptr, revsc);
+	const bool refused = (result == SP_NOT_OK) && (revsc->initDone == 0);
+
+	const int destroyed = sp_revsc_destroy(&revsc);
+	return (refused && (destroyed == SP_OK) && (revsc == nullptr)) ? EXIT_SUCCESS : EXIT_FAILURE;
+}
+
+int runDestroyWithoutInitChild()
+{
+	sp_revsc* revsc = nullptr;
+	if (sp_revsc_create(&revsc) != SP_OK)
+	{
+		return EXIT_FAILURE;
+	}
+
+	std::memset(&revsc->aux.ptr, 0xA5, sizeof(void*));
+	std::memset(&revsc->aux.size, 0xA5, sizeof(size_t));
+
+	const int destroyed = sp_revsc_destroy(&revsc);
+	return ((destroyed == SP_OK) && (revsc == nullptr)) ? EXIT_SUCCESS : EXIT_FAILURE;
+}
+
 int runChild(const char* which)
 {
 	if (std::strcmp(which, "create") == 0)
@@ -95,6 +133,14 @@ int runChild(const char* which)
 	if (std::strcmp(which, "init") == 0)
 	{
 		return runInitChild();
+	}
+	if (std::strcmp(which, "destroy-failed-init") == 0)
+	{
+		return runDestroyAfterFailedInitChild();
+	}
+	if (std::strcmp(which, "destroy-without-init") == 0)
+	{
+		return runDestroyWithoutInitChild();
 	}
 	return EXIT_FAILURE;
 }
@@ -110,6 +156,16 @@ extern "C" void* sp_revsc_test_malloc(std::size_t size)
 	return std::malloc(size);
 }
 
+extern "C" void* sp_revsc_test_calloc(std::size_t count, std::size_t size)
+{
+	if (g_failNextAllocation != 0)
+	{
+		g_failNextAllocation = 0;
+		return nullptr;
+	}
+	return std::calloc(count, size);
+}
+
 class ReverbSCInitTest : public QObject
 {
 	Q_OBJECT
@@ -122,6 +178,16 @@ private slots:
 	void initReportsDelayLineAllocationFailure()
 	{
 		verifyChildRefuses("init");
+	}
+
+	void destroyAfterFailedInitIsSafe()
+	{
+		verifyChildRefuses("destroy-failed-init");
+	}
+
+	void destroyWithoutInitIsSafe()
+	{
+		verifyChildRefuses("destroy-without-init");
 	}
 
 	void initialisesDelayLinesWhenAllocationSucceeds()

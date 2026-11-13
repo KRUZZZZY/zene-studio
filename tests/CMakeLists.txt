@@ -3323,6 +3323,7 @@ target_link_libraries(ReverbSCInitTest PRIVATE
 target_compile_features(ReverbSCInitTest PRIVATE cxx_std_20)
 target_compile_definitions(ReverbSCInitTest PRIVATE
 	$<$<COMPILE_LANGUAGE:C>:malloc=sp_revsc_test_malloc>
+	$<$<COMPILE_LANGUAGE:C>:calloc=sp_revsc_test_calloc>
 )
 
 # ReverbSC's output buffer must hold one SPFLOAT per channel. The soundpipe
