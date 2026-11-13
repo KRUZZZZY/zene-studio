@@ -6776,6 +6776,17 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)
+	# Q050-294.3: seeded step fills over the socket - note.step_fill (shape and random, in the active scale)
+	# repeats from its seed, its notes show in roll.get_state, note.step_get_state and window.step_grid, and
+	# one control.undo restores the pattern; refusals are typed and change nothing.
+	add_test(NAME ControlFill
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-fill.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlFill PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
 	# The 0.5.0 engine wiring (L01, research/daw-ui-specs/synthesis/engine-audit.md): devices at a
 	# slot and on rack chains, chain presets on rack chains, track.set_mixer_channel, the header's
 	# transport.record, and the Lua scripting spine (zene.command) - each proven over the socket.
