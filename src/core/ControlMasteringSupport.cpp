@@ -353,8 +353,17 @@ QJsonObject runResultDocument(const QJsonObject& report, const QString& outDir,
 {
 	QJsonObject result = report;
 	result.insert(QStringLiteral("out_dir"), outDir);
-	result.insert(QStringLiteral("genre"), masteringChoiceJson(genre));
-	result.insert(QStringLiteral("delivery_target"), masteringChoiceJson(deliveryTarget));
+	// The child's own choice labels win: they are what the child wrote into its report.
+	// This side fills a key only when the child's document lacks it, so the two cannot
+	// silently disagree.
+	if (!result.contains(QStringLiteral("genre")))
+	{
+		result.insert(QStringLiteral("genre"), masteringChoiceJson(genre));
+	}
+	if (!result.contains(QStringLiteral("delivery_target")))
+	{
+		result.insert(QStringLiteral("delivery_target"), masteringChoiceJson(deliveryTarget));
+	}
 	// Every candidate row carries the same two labels, so a row read on its own still says
 	// what the run was asked for.
 	if (result.value(QStringLiteral("candidates")).isArray())
@@ -363,8 +372,14 @@ QJsonObject runResultDocument(const QJsonObject& report, const QString& outDir,
 		for (int i = 0; i < rows.size(); ++i)
 		{
 			QJsonObject row = rows.at(i).toObject();
-			row.insert(QStringLiteral("genre"), masteringChoiceJson(genre));
-			row.insert(QStringLiteral("delivery_target"), masteringChoiceJson(deliveryTarget));
+			if (!row.contains(QStringLiteral("genre")))
+			{
+				row.insert(QStringLiteral("genre"), masteringChoiceJson(genre));
+			}
+			if (!row.contains(QStringLiteral("delivery_target")))
+			{
+				row.insert(QStringLiteral("delivery_target"), masteringChoiceJson(deliveryTarget));
+			}
 			rows.replace(i, row);
 		}
 		result.insert(QStringLiteral("candidates"), rows);

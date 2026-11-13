@@ -307,7 +307,13 @@ void printHelp()
 		"          as a JSON document: one row per candidate with its\n"
 		"          LUFS-I, short-term maximum, measured true peak, crest\n"
 		"          and the verdict against its own named target. The\n"
-		"          printed table is unchanged\n\n",
+		"          printed table is unchanged\n"
+		"      --genre <genre>            Label recorded in the --report document; one of\n"
+		"          the genres mastering.list_candidates publishes. A label only:\n"
+		"          it changes no measurement and picks, grades or reorders no candidate\n"
+		"      --delivery-target <target> Label recorded in the --report document; one of\n"
+		"          the delivery_targets mastering.list_candidates publishes. A label\n"
+		"          only, as above\n\n",
 		LMMS_VERSION, LMMS_PROJECT_COPYRIGHT );
 }
 
@@ -501,6 +507,10 @@ int main( int argc, char * * argv )
 	// surface's mastering.run reads back from the child process it starts. Empty
 	// unless the caller asks for it, so the CLI's printed output is unchanged.
 	QString masteringReportPath;
+	// The run's choice labels (--genre, --delivery-target): recorded in the --report
+	// document, never used to pick, grade or reorder a candidate.
+	QString masteringGenre;
+	QString masteringDeliveryTarget;
 	// Whether the --report option was GIVEN, which is a different fact from
 	// the path it carries: `--report ''` gives an empty path, and that is a
 	// refusal, not a request for no report. The first parsing stage records
@@ -997,6 +1007,28 @@ int main( int argc, char * * argv )
 
 			masteringReportPath = QString::fromLocal8Bit( argv[i] );
 		}
+		else if( arg == "--genre" )
+		{
+			++i;
+
+			if( i == argc )
+			{
+				return usageError( "No genre specified" );
+			}
+
+			masteringGenre = QString::fromLocal8Bit( argv[i] );
+		}
+		else if( arg == "--delivery-target" )
+		{
+			++i;
+
+			if( i == argc )
+			{
+				return usageError( "No delivery target specified" );
+			}
+
+			masteringDeliveryTarget = QString::fromLocal8Bit( argv[i] );
+		}
 		else if( arg == "--format" || arg == "-f" )
 		{
 			++i;
@@ -1488,6 +1520,7 @@ int main( int argc, char * * argv )
 			// The job runs on this thread; the render runs on ProjectRenderer's.
 			// Nothing here is reachable from the audio callback.
 			MasteringJob job( os, eff, renderOut, MasteringJob::defaultCandidates() );
+			job.setRunChoices( masteringGenre, masteringDeliveryTarget );
 			QString error;
 			if( job.run( &error ) )
 			{
