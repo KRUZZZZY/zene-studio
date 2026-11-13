@@ -387,6 +387,8 @@ extern "C" void free(void* pointer)
 #define private public
 #include "../../../plugins/LadspaEffect/LadspaEffect.h"
 #undef private
+#include "../../../plugins/LadspaEffect/LadspaControlDialog.h"
+#include "../../../plugins/LadspaEffect/LadspaControls.h"
 #include "LmmsTypes.h"
 // Check ring bounds directly before the stale-bound path can reach undefined behavior.
 #define private public
@@ -1056,6 +1058,7 @@ private slots:
 	void positiveFractionPreservesOrdinaryValues();
 	void waveshaperLookupHandlesSamplesPastTheTableEnd();
 	void ladspaEffectSurvivesFailedInstantiationsDuringSampleRateChange();
+	void ladspaControlDialogSurvivesFailedInstantiationsDuringSampleRateChange();
 	void ladspaEffectProcessLockTakesNoExclusiveMutex();
 	void ladspaEffectRejectsZeroInputPlugin();
 	void typedDecodeRejectsIncompleteElement();
@@ -2026,6 +2029,50 @@ void PluginPortsMigrationTest::ladspaEffectSurvivesFailedInstantiationsDuringSam
 	auto editor = std::unique_ptr<lmms::gui::EffectControlDialog>{
 		(effect->controls()->*createView)()};
 	QVERIFY(editor != nullptr);
+	{
+		lmms::LadspaInstantiationFailure failure{managerKey};
+		QVERIFY(failure.isValid());
+		emit lmms::Engine::audioEngine()->sampleRateChanged();
+		QVERIFY(effect->controls() == nullptr);
+	}
+	QVERIFY(!effect->isOkay());
+}
+
+void PluginPortsMigrationTest::ladspaControlDialogSurvivesFailedInstantiationsDuringSampleRateChange()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	auto* lib = new QLibrary{QString::fromUtf8(PART_C_MIGRATED_ladspaeffect)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib->load(), qPrintable(lib->errorString()));
+	m_libraries.push_back(lib);
+
+	auto entry = reinterpret_cast<MainFn>(lib->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+	auto* descriptor = reinterpret_cast<const lmms::Plugin::Descriptor*>(
+		lib->resolve("ladspaeffect_plugin_descriptor"));
+	QVERIFY(descriptor != nullptr);
+
+	const auto& spec = partc::ladspaSpecs().front();
+	auto key = partc::ladspaKeyFor(descriptor, spec);
+	const lmms::ladspa_key_t managerKey{
+		key.attributes.value(QStringLiteral("file")),
+		key.attributes.value(QStringLiteral("plugin"))};
+	auto effect = std::unique_ptr<lmms::LadspaEffect>{
+		static_cast<lmms::LadspaEffect*>(entry(nullptr, &key))};
+	QVERIFY(effect != nullptr);
+	QVERIFY(effect->isOkay());
+	auto* controls = effect->controls();
+	QVERIFY(controls != nullptr);
+
+	// The plain control dialog is not the view createView() hands out, but it
+	// is compiled into the shipping module and stays connected to the controls
+	// model; a failed sample-rate re-instantiation emits
+	// effectModelChanged(nullptr) on that model.
+	lmms::gui::LadspaControlDialog dialog{static_cast<lmms::LadspaControls*>(controls)};
 	{
 		lmms::LadspaInstantiationFailure failure{managerKey};
 		QVERIFY(failure.isValid());
