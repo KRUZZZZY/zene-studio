@@ -29,6 +29,8 @@
 #include <QtTest>
 
 #include <QAction>
+#include <QApplication>
+#include <QDialog>
 #include <QMenu>
 #include <QTabBar>
 #include <QTabBar>
@@ -44,8 +46,8 @@
 #include "ProjectJournal.h"
 #include "Shell.h"
 #include "ShellRegionTabs.h"
-#include "Shell.h"
-#include "ShellRegionTabs.h"
+#include "Song.h"
+#include "UndoHistoryPanel.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -203,6 +205,45 @@ private slots:
 
 		pressShortcut(undoAction);
 		QCOMPARE(undone, 1);
+	}
+
+	//! Edit > Undo History on a FRESH project: starting one from the bundled default template must
+	//! leave nothing to undo. Song::loadProject turns journalling off for the whole load, but
+	//! clearProject() turned it back on halfway through, so the keymap state the load then restores
+	//! reached the GUI's MicrotunerConfig, whose form refresh journalled the keymap models - one
+	//! phantom step in a document the user never edited. This drives the startup path
+	//! (createNewProject) and then the same command Edit > Undo History dispatches, over the real
+	//! shell the sweep clicked.
+	void aFreshProjectOpensWithAnEmptyUndoHistory()
+	{
+		// The startup path (main.cpp): start a new project directly, not as a command - a
+		// project.new command deliberately records its own irreversible transaction row.
+		Engine::getSong()->createNewProject();
+
+		// The panel reads both of these on show: the stack `control.undo_depth` reports (the
+		// "N step(s) to undo" line) and the recorded commands the list shows.
+		const QJsonObject depth = run(QStringLiteral("control.undo_depth")).result;
+		QCOMPARE(depth.value(QStringLiteral("depth")).toInt(), 0);
+		QVERIFY(!depth.value(QStringLiteral("can_undo")).toBool());
+		const ControlResult opened = run(QStringLiteral("window.undo_history"));
+		QVERIFY2(opened.ok, qPrintable(opened.errorMessage));
+		QCOMPARE(opened.result.value(QStringLiteral("rows")).toInt(), 0);
+
+		// ...and the window the menu opens says so: "0 step(s) to undo".
+		UndoHistoryPanel* panel = nullptr;
+		for (QWidget* widget : QApplication::topLevelWidgets())
+		{
+			if (auto* dialog = qobject_cast<QDialog*>(widget);
+				dialog != nullptr && dialog->windowTitle() == QStringLiteral("Undo History"))
+			{
+				panel = dynamic_cast<UndoHistoryPanel*>(dialog);
+			}
+		}
+		QVERIFY(panel != nullptr);
+		QVERIFY2(panel->summary().contains(QStringLiteral("0 step(s) to undo")), qPrintable(panel->summary()));
+		QCOMPARE(panel->rowCount(), 0);
+		QCOMPARE(Engine::projectJournal()->undoDepth(), 0);
+		panel->close();
 	}
 
 	void aStepUnwoundThroughTheJournalRefreshesRedo()

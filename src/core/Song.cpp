@@ -1696,6 +1696,13 @@ void Song::clearProject()
 	m_containerV2Project = false;
 
 	m_documentIdentity = nextDocumentIdentity();
+	// The CALLER owns the journalling state across a project replacement: loadProject() turns it off
+	// for the whole load and on again when the load is done. Re-enabling it here unconditionally
+	// ended that window in the middle of the load, so every journalled write the rest of the load
+	// (or a GUI refresh it triggers) made became an undo step of the freshly loaded project - a
+	// fresh document then opened Edit > Undo History on one step to undo. clearProject() only has
+	// to keep journalling off while it clears; it restores what it found on the way out.
+	const bool wasJournalling = Engine::projectJournal()->isJournalling();
 	Engine::projectJournal()->setJournalling( false );
 	// The Song object survives project replacement, so issue a fresh path identity here.
 	setProperty("_zeneUnsavedProjectId", QUuid::createUuid().toString(QUuid::WithoutBraces));
@@ -1834,7 +1841,8 @@ void Song::clearProject()
 
 	Engine::projectJournal()->clearJournal();
 
-	Engine::projectJournal()->setJournalling( true );
+	// Restore the caller's state, not "on": see the top of this function.
+	Engine::projectJournal()->setJournalling( wasJournalling );
 }
 
 
