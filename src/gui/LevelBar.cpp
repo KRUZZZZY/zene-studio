@@ -31,10 +31,11 @@
 #include <QPointer>
 #include <QTimer>
 
+#include "AudioBusHandle.h"
 #include "AutomatableModel.h"
 #include "DesignTokens.h"
-#include "Engine.h"
-#include "Mixer.h"
+#include "InstrumentTrack.h"
+#include "SampleTrack.h"
 #include "Track.h"
 
 namespace lmms::gui
@@ -104,10 +105,12 @@ LevelBar* trackLevelBar(Track* track, QWidget* parent)
 {
 	const QPointer<Track> watched(track);  // the view can outlive its track by an event-loop turn
 	return new LevelBar([watched] {
-		const IntModel* channel = watched.isNull() ? nullptr : watched->mixerChannelModel();
-		if (channel == nullptr || channel->value() < 0 || channel->value() >= Engine::mixer()->numChannels()) { return 0.f; }
-		const MixerChannel* strip = Engine::mixer()->mixerChannel(channel->value());
-		return std::max(strip->m_rmsLeft.get(), strip->m_rmsRight.get());
+		// The track's own output, never its mixer channel's: tracks share channels (every new one feeds Master),
+		// so the channel's level lit every track's meter when one note played (owner, Windows tester 2026-10-29).
+		AudioBusHandle* bus = nullptr;
+		if (auto* instrument = qobject_cast<InstrumentTrack*>(watched.data())) { bus = instrument->audioBusHandle(); }
+		else if (auto* sample = qobject_cast<SampleTrack*>(watched.data())) { bus = sample->audioBusHandle(); }
+		return bus != nullptr ? bus->takePeak() : 0.f;
 	}, QObject::tr("The track's level"), parent);
 }
 
