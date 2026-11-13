@@ -239,7 +239,7 @@ private:
 
 	FloatModel * m_tensionModel;
 
-	AutomationClip * m_clip;
+	QPointer<AutomationClip> m_clip;
 	float m_minLevel;
 	float m_maxLevel;
 	float m_step;
