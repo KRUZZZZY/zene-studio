@@ -30,6 +30,7 @@
 #include <cmath>
 #include <initializer_list>
 #include <iterator>
+#include <limits>
 #include <utility>
 
 #include <QCheckBox>
@@ -103,6 +104,7 @@ StepGridPanel::StepGridPanel(QWidget* parent) :
 	setAccessibleName(tr("Melodic step grid"));
 	auto* layout = new QVBoxLayout(this);
 	buildHeader(layout);
+	buildFills(layout);
 	m_canvas = new StepGridCanvas(this);
 	auto* scroll = new QScrollArea(this);
 	scroll->setObjectName(QStringLiteral("stepGridScroll"));
@@ -198,6 +200,86 @@ void StepGridPanel::buildInspector(QVBoxLayout* layout)
 	row->addStretch();
 	row->addWidget(m_remove);
 	layout->addLayout(row);
+}
+
+void StepGridPanel::buildFills(QVBoxLayout* layout)
+{
+	m_fillKind = new QComboBox(this);
+	m_fillKind->setObjectName(QStringLiteral("stepGridFillKind"));
+	m_fillKind->setAccessibleName(tr("Shape"));
+	m_fillKind->addItem(tr("Shape"), QStringLiteral("shape"));
+	m_fillKind->addItem(tr("Random"), QStringLiteral("random"));
+	m_fillContour = new QComboBox(this);
+	m_fillContour->setObjectName(QStringLiteral("stepGridFillContour"));
+	m_fillContour->setAccessibleName(tr("Contour"));
+	for (const auto& [text, data] : {std::pair<QString, QString>{tr("Walk"), QStringLiteral("walk")},
+			 {tr("Rise"), QStringLiteral("rise")}, {tr("Fall"), QStringLiteral("fall")},
+			 {tr("Arch"), QStringLiteral("arch")}, {tr("Valley"), QStringLiteral("valley")}})
+	{
+		m_fillContour->addItem(text, data);
+	}
+	m_fillContour->setCurrentIndex(m_fillContour->findData(QStringLiteral("arch")));
+	m_fillSeed = new QSpinBox(this);
+	m_fillSeed->setObjectName(QStringLiteral("stepGridFillSeed"));
+	m_fillSeed->setAccessibleName(tr("Seed"));
+	m_fillSeed->setRange(0, std::numeric_limits<int>::max());
+	m_fillSeed->setKeyboardTracking(false);
+	m_fillSpread = spinBox(this, "stepGridFillSpread", tr("Spread"), {0, 12});
+	m_fillSpread->setValue(2);
+	m_fillDensity = spinBox(this, "stepGridFillDensity", tr("Density"), {1, 100});
+	m_fillDensity->setValue(100);
+	m_fillDensity->setSuffix(QStringLiteral(" %"));
+	m_fill = new QPushButton(tr("Fill"), this);
+	m_fill->setObjectName(QStringLiteral("stepGridFill"));
+	m_fill->setAccessibleName(tr("Fill"));
+	// As the Remove button: Return in a dialog must not press the fill.
+	m_fill->setAutoDefault(false);
+	for (QWidget* control : std::initializer_list<QWidget*>{m_fillKind, m_fillContour, m_fillSeed, m_fillSpread, m_fillDensity, m_fill})
+	{
+		control->setProperty("controlCommand", QStringLiteral("note.step_fill"));
+	}
+	connect(m_fillKind, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this] { showFill(); });
+	connect(m_fill, &QPushButton::clicked, this, [this] { fillSteps(); });
+	auto* row = new QHBoxLayout;
+	for (auto [text, widget] : {std::pair<QString, QWidget*>{tr("Shape"), m_fillKind}, {tr("Contour"), m_fillContour},
+			 {tr("Seed"), m_fillSeed}, {tr("Spread"), m_fillSpread}, {tr("Density"), m_fillDensity}})
+	{
+		auto* label = new QLabel(text, this);
+		label->setBuddy(widget);
+		row->addWidget(label);
+		row->addWidget(widget);
+	}
+	row->addStretch();
+	row->addWidget(m_fill);
+	layout->addLayout(row);
+	showFill();
+}
+
+void StepGridPanel::showFill()
+{
+	const bool open = !m_clipId.isEmpty();
+	const bool shape = m_fillKind->currentData().toString() == QStringLiteral("shape");
+	m_fillKind->setEnabled(open);
+	m_fillSeed->setEnabled(open);
+	m_fillSpread->setEnabled(open);
+	m_fill->setEnabled(open);
+	m_fillContour->setEnabled(open && shape);
+	m_fillDensity->setEnabled(open && !shape);
+}
+
+void StepGridPanel::fillSteps()
+{
+	if (m_clipId.isEmpty()) { say(tr("Open a MIDI clip first.")); return; }
+	QJsonObject args = readArgs();
+	args.insert(QStringLiteral("kind"), m_fillKind->currentData().toString());
+	args.insert(QStringLiteral("contour"), m_fillContour->currentData().toString());
+	args.insert(QStringLiteral("seed"), m_fillSeed->value());
+	args.insert(QStringLiteral("spread"), m_fillSpread->value());
+	args.insert(QStringLiteral("density"), m_fillDensity->value());
+	// The command is the whole edit and its own checkpoint; the clip's change repaints the grid through watchClip.
+	const ControlResult written = run("note.step_fill", args);
+	if (!written.ok) { say(written.errorMessage); return; }
+	say(QString());
 }
 
 void StepGridPanel::fillScales()
@@ -375,6 +457,7 @@ void StepGridPanel::showSelected()
 		m_ratchet->setValue(note.value(QStringLiteral("ratchet")).toInt());
 	}
 	m_filling = false;
+	showFill();
 }
 
 QString StepGridPanel::runSet(const QJsonArray& edits, QJsonObject* reply)

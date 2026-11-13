@@ -34,9 +34,11 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QJsonArray>
+#include <QLabel>
 #include <QPushButton>
 #include <QToolButton>
 #include <algorithm>
+#include <set>
 #include <tuple>
 #include <vector>
 
@@ -107,6 +109,14 @@ StepGridPanel* findOpenGrid()
 		if (auto* grid = dynamic_cast<StepGridPanel*>(widget); grid != nullptr && grid->isVisible()) { return grid; }
 	}
 	return nullptr;
+}
+
+//! The C major scale's keys in 48..72 (C3 to C5), the range the fills are checked against.
+bool inCMajor(int key)
+{
+	const int pitchClass = key % 12;
+	return key >= 48 && key <= 72 && (pitchClass == 0 || pitchClass == 2 || pitchClass == 4 || pitchClass == 5 || pitchClass == 7
+		|| pitchClass == 9 || pitchClass == 11);
 }
 
 } // namespace
@@ -322,6 +332,80 @@ private slots:
 		QCOMPARE(grid->clipId(), control::clipIdOf(m_clip));
 		QCOMPARE(grid->state().value(QStringLiteral("count")).toInt(), 4);
 		grid->close();  // WA_DeleteOnClose
+	}
+
+	//! A shape fill from a seed is one undo step; the same seed on the same clip gives the same notes; all are in C major.
+	void theFillRowFillsFromASeed()
+	{
+		const auto before = rowsOf(m_clip);
+		auto* contour = child<QComboBox>("stepGridFillContour");
+		contour->setCurrentIndex(contour->findData(QStringLiteral("arch")));
+		child<QSpinBox>("stepGridFillSeed")->setValue(7);
+		child<QSpinBox>("stepGridFillSpread")->setValue(2);
+		QTest::mouseClick(child<QPushButton>("stepGridFill"), Qt::LeftButton);
+		const auto keysAt = [this] {
+			std::vector<std::pair<int, int>> out;
+			for (const NoteRow& row : rowsOf(m_clip)) { out.emplace_back(std::get<0>(row), std::get<1>(row)); }
+			return out;
+		};
+		const auto first = keysAt();
+		QVERIFY(!first.empty());
+		for (const NoteRow& row : rowsOf(m_clip)) { QVERIFY2(inCMajor(std::get<1>(row)), "every filled key is a C major key in 48..72"); }
+		QVERIFY(undo());
+		QVERIFY(rowsOf(m_clip) == before);
+		QTest::mouseClick(child<QPushButton>("stepGridFill"), Qt::LeftButton);
+		QVERIFY2(keysAt() == first, "the same seed on the same clip fills the same positions and keys");
+		QVERIFY(undo());
+		QVERIFY(rowsOf(m_clip) == before);
+		QCOMPARE(child<QPushButton>("stepGridFill")->property("controlCommand").toString(), QStringLiteral("note.step_fill"));
+	}
+
+	//! A random fill at 25 % thins the steps, every key it leaves is in C major, the piano roll paints them and one undo restores them.
+	void aRandomFillEmptiesStepsAndThePianoRollShowsIt()
+	{
+		const auto before = rowsOf(m_clip);
+		auto* kind = child<QComboBox>("stepGridFillKind");
+		kind->setCurrentIndex(kind->findData(QStringLiteral("random")));
+		child<QSpinBox>("stepGridFillDensity")->setValue(25);
+		child<QSpinBox>("stepGridFillSeed")->setValue(3);
+		QTest::mouseClick(child<QPushButton>("stepGridFill"), Qt::LeftButton);
+		const auto after = rowsOf(m_clip);
+		const auto stepsOf = [](const std::vector<NoteRow>& rows) {
+			std::set<int> out;
+			for (const NoteRow& row : rows) { out.insert(std::get<0>(row) / 12); }
+			return out;
+		};
+		const std::set<int> stepsBefore = stepsOf(before);
+		const std::set<int> stepsAfter = stepsOf(after);
+		bool vanished = false;
+		for (int step : stepsBefore) { vanished = vanished || stepsAfter.count(step) == 0; }
+		QVERIFY2(vanished || after.size() < before.size(), "a 25 % random fill leaves some of the steps empty");
+		for (const NoteRow& row : after) { QVERIFY2(inCMajor(std::get<1>(row)), "every filled key is a C major key in 48..72"); }
+		NoteEditor editor;
+		editor.resize(900, 500);
+		editor.show();
+		QVERIFY(QTest::qWaitForWindowExposed(&editor));
+		editor.setClip(m_clip);
+		for (Note* note : m_clip->notes()) { QVERIFY(editor.canvas()->noteRect(*note).isValid()); }
+		QVERIFY(undo());
+		QVERIFY(rowsOf(m_clip) == before);
+	}
+
+	//! With No Scale there is nothing to fill in: the fill is refused, the clip and the undo depth stay, the status line says why.
+	void theFillIsRefusedWithNoScale()
+	{
+		const auto beforeMarker = rowsOf(m_clip);
+		clickCell(3, 67);  // one checkpoint of its own: the refused fill must leave it as the next undo
+		const auto before = rowsOf(m_clip);
+		QVERIFY(before != beforeMarker);
+		m_panel->setScaleChoice(QStringLiteral("none"), 0);
+		QTest::mouseClick(child<QPushButton>("stepGridFill"), Qt::LeftButton);
+		QVERIFY(rowsOf(m_clip) == before);
+		QLabel* status = child<QLabel>("stepGridStatus");
+		QVERIFY(status->isVisible());
+		QVERIFY(!status->text().isEmpty());
+		QVERIFY(undo());
+		QVERIFY(rowsOf(m_clip) == beforeMarker);
 	}
 };
 

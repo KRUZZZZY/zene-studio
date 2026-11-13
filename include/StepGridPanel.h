@@ -11,7 +11,8 @@
  *
  * WHAT IT DOES NOT DO. No music theory of its own: whether a row is in the scale, and which key
  * a written pitch snaps to, come from the commands' answers (the `scale` block's pitch classes and
- * note.step_set's scale_mode snap). No fills or generators (stage 3), no live step input.
+ * note.step_set's scale_mode snap). Shape and random fills run through note.step_fill, one checkpoint
+ * each, so one Undo takes a fill back; the grid still stores nothing of its own. No live step input.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -149,6 +150,11 @@ public:
 private:
 	void buildHeader(QVBoxLayout* layout);
 	void buildInspector(QVBoxLayout* layout);
+	void buildFills(QVBoxLayout* layout);
+	//! Enables the Fill row's controls: all need a clip, the contour only for shape, the density only for random.
+	void showFill();
+	//! note.step_fill with the row's kind, contour, seed, spread and density plus the grid's own clip and scale.
+	void fillSteps();
 	void fillScales();
 	void watchClip(MidiClip* clip);
 	QJsonObject readArgs() const;
@@ -178,6 +184,12 @@ private:
 	QSpinBox* m_chance = nullptr;
 	QSpinBox* m_ratchet = nullptr;
 	QPushButton* m_remove = nullptr;
+	QComboBox* m_fillKind = nullptr;
+	QComboBox* m_fillContour = nullptr;
+	QSpinBox* m_fillSeed = nullptr;
+	QSpinBox* m_fillSpread = nullptr;
+	QSpinBox* m_fillDensity = nullptr;
+	QPushButton* m_fill = nullptr;
 };
 
 } // namespace lmms::gui
