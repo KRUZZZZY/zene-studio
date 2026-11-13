@@ -5903,3 +5903,5 @@ include/AudioBuffer.h	cluster new-p9-557: replace defaulted move ctor/assignment
 src/core/AudioBuffer.cpp	cluster new-p9-557: implement AudioBuffer move ctor/assignment + rebindAfterMove() that rebuilds the access table and rebinds every ChannelGroup after a move, so cross-resource moves no longer dangle; covered by AudioBufferTest.
 tests/src/core/AudioBufferTest.cpp	cluster new-p9-557: regressions for cross-resource move assignment (groups/access rebind), same-resource move assignment, and move construction.
 tests/src/core/SidechainInputsTest.cpp	cluster new-p9-557: movedSidechainKeepsGroupViews regression for cross-resource AudioBuffer move assignment feeding sidechainInputs.
+tests/CMakeLists.txt	cluster new-p21-139: register SfzDistoBuffersTest and link it to the built sfizz library for direct Disto scratch-buffer regression coverage.
+plugins/SfzPlayer/sfizz/src/sfizz/effects/Disto.cpp	cluster new-p21-139: Disto tracks its scratch-buffer capacity, allocates initial buffers in the constructor, replaces both buffers transactionally in setSamplesPerBlock, and processes oversized blocks in bounded chunks without allocating on the audio thread.
