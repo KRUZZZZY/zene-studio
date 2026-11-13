@@ -225,6 +225,7 @@ void registerControlCommands(ControlRegistry& registry)
 	registerNoteProbabilityCommands(registry);
 	registerNoteEditCommands(registry);
 	registerNoteStepCommands(registry);
+	registerNoteStepFillCommands(registry);
 	registerTrackChannelCommands(registry);
 	registerTrackRoutingCommands(registry);
 	registerCollectMediaCommand(registry);
