@@ -26,6 +26,7 @@
  *  pins button opens the Pin Connector, whose matrix grows to the bus's 64 channels. The Channels menu's
  *  "Channels 41-42" entry runs port.set_pins (the agent's command) and moves the device onto that pair in one undo
  *  step; a click on a pin runs port.set_pins with that pin, also one step - and Edit > Undo (the main window's own
+ *  Q050-296.1: the same on a 5.1 bus, whose six speakers are the connector's rows and Channels entries.
  *  undo, the engine's journal) takes it back. */
 
 #include <functional>
@@ -188,6 +189,60 @@ private slots:
 		QTest::mouseClick(outView, Qt::LeftButton, Qt::NoModifier, QPoint{6 + 1 * cell, 6 + 41 * cell});
 		QCOMPARE(pinsOf(m_target, amp, QStringLiteral("out")).join(QLatin1Char(',')), QStringLiteral("0:0,1:1,41:1"));
 		getGUI()->mainWindow()->undo();
+		QCOMPARE(pinsOf(m_target, amp, QStringLiteral("out")).join(QLatin1Char(',')), QStringLiteral("0:0,1:1"));
+		delete card;
+	}
+
+	void aSurround51BusShowsItsSpeakers()
+	{
+		const QString catalogued = deviceNamed(QStringLiteral("amplifier"));
+		if (catalogued.isEmpty()) { QSKIP("this build has no amplifier module"); }
+		QVERIFY(run(QStringLiteral("mixer.channel_format"), {{QStringLiteral("channel"), m_target},
+			{QStringLiteral("format"), QStringLiteral("5.1")}}).ok);
+		const ControlResult loaded = run(QStringLiteral("plugin.load"), {{QStringLiteral("target"), m_target},
+			{QStringLiteral("device"), catalogued}});
+		QVERIFY2(loaded.ok, qPrintable(loaded.errorMessage));
+		const QString amp = loaded.result.value(QStringLiteral("id")).toString();
+		ControlTarget target;
+		ControlResult error;
+		QVERIFY(resolveControlTarget(m_target, &target, &error));
+		Effect* effect = resolveControlEffect(target, amp, &error);
+		QVERIFY(effect != nullptr && effect->audioPortsModel() != nullptr);
+		const AudioPortsModel* model = effect->audioPortsModel();
+
+		// The device card's pins button opens the connector, addressed to this device.
+		DeviceCard::Spec spec;
+		spec.target = m_target;
+		spec.plugin = amp;
+		spec.title = QStringLiteral("Amplifier 5.1");
+		spec.effect = effect;
+		auto* card = new DeviceCard(spec, {});
+		auto* pinsButton = findWidget<QToolButton>([card](QToolButton* button) {
+			return card->isAncestorOf(button) && button->accessibleName() == QStringLiteral("Route Amplifier 5.1's audio pins");
+		});
+		QVERIFY(pinsButton != nullptr);
+		QTest::mouseClick(pinsButton, Qt::LeftButton);
+		// A previous slot's connector may still be up; the 5.1 one is the connector with six rows (three pairs).
+		PinConnector* connector = nullptr;
+		for (QWidget* widget : QApplication::allWidgets())
+		{
+			auto* candidate = qobject_cast<PinConnector*>(widget);
+			if (candidate != nullptr && candidate->channelsMenu()->actions().size() == 3) { connector = candidate; }
+		}
+		QVERIFY(connector != nullptr);
+		QCOMPARE(static_cast<int>(model->trackChannelCount()), 6);  // its rows are the bus's six speakers
+
+		// Channels > Channels 5-6: one port.set_pins, one undo step.
+		QMenu* menu = connector->channelsMenu();
+		QCOMPARE(menu->actions().size(), 3);
+		QAction* entry = menu->actions().at(2);
+		QCOMPARE(entry->text(), QStringLiteral("Channels 5-6"));
+		QCOMPARE(entry->property("controlCommand").toString(), QStringLiteral("port.set_pins"));
+		entry->trigger();
+		QCOMPARE(pinsOf(m_target, amp, QStringLiteral("in")).join(QLatin1Char(',')), QStringLiteral("4:0,5:1"));
+		QCOMPARE(pinsOf(m_target, amp, QStringLiteral("out")).join(QLatin1Char(',')), QStringLiteral("4:0,5:1"));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(pinsOf(m_target, amp, QStringLiteral("in")).join(QLatin1Char(',')), QStringLiteral("0:0,1:1"));
 		QCOMPARE(pinsOf(m_target, amp, QStringLiteral("out")).join(QLatin1Char(',')), QStringLiteral("0:0,1:1"));
 		delete card;
 	}
