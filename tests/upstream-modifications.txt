@@ -5864,3 +5864,5 @@ tests/CMakeLists.txt	Q050-054.1: registers MidiTakeRecordTest, MidiTakeMenuTest 
 src/gui/CMakeLists.txt	Q050-054.1: builds gui/shell/ShellRecordMenu.cpp (the track menu's Record submenu, moved out of ShellCommandMenus.cpp with its MIDI take entries).
 tests/src/core/ClipConsolidateTest.cpp	# A valid large consolidation range can exhaust memory
 tests/src/core/NoteRandomTest.cpp	# NaN velocity jitter propagates into the velocity factor
+src/core/ControlChainPresetSupport.cpp	cluster new-p10-29: controlReadChainPreset refuses a chain preset whose version is missing or not the one this build writes (chainPresetVersion, shared with the writer)
+tests/src/core/ControlChainPresetTest.cpp	cluster new-p10-29: regression tests for the chain preset version refusal (aPresetRefusesAnUnsupportedVersion, aVersionlessEmptyPresetCannotClearAChain)
