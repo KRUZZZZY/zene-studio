@@ -2850,6 +2850,7 @@ tests/src/plugins/NeuralAmpProfileArgumentsTest.cpp
 # cluster new-p10-336: regression for RNNoise harness short/failed output writes.
 tests/src/plugins/RnnoiseHarnessOutputTest.cpp
 tests/src/plugins/PatmanLoadTest.cpp
+tests/src/plugins/PeakControllerEffectZeroFrameTest.cpp
 tests/src/plugins/SidInstrument.cpp
 tests/src/core/SerializingObjectHookTest.cpp
 tests/src/gui/ArrangerTimelineTest.cpp
@@ -3657,3 +3658,5 @@ docs/qwen-fixes-2026-10/cluster-Q050-054.1.md
 # unchanged out of ShellCommandMenus.cpp, which sits at the file-length gate's limit.
 include/ShellRecordMenu.h
 src/gui/shell/ShellRecordMenu.cpp
+# cluster new-p10-318 (2026-10): fix and verification report for the Peak Controller zero-frame block (fork-NEW).
+docs/qwen-fixes-2026-10/cluster-new-p10-318.md
