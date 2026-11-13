@@ -213,6 +213,20 @@ private slots:
 		QCOMPARE(clip->length().getTicks(), 1);
 	}
 
+	void nearestClipStaysRightWhenTheDistanceExceedsTickRange()
+	{
+		// The play head is 2e9 ticks before the origin, so the clip at 5e8 is 2.5e9 away: more than a tick_t holds.
+		// Subtracted in tick_t it wraps to about -1.79e9, which reads as nearer than the origin's 2e9 and wins.
+		Track* t = track();
+		Clip* origin = clipAt(t, 0, Bar);
+		clipAt(t, 500'000'000, Bar);
+		QCoreApplication::processEvents();
+		Engine::getSong()->setPlayPos(-2'000'000'000, Song::PlayMode::Song);
+		QVERIFY(press(Qt::Key_Down, Qt::ShiftModifier | Qt::AltModifier));
+		QCOMPARE(ShellSelection::instance()->clip(), origin);
+		Engine::getSong()->setPlayPos(0, Song::PlayMode::Song);
+	}
+
 	void ctrlShiftLOpensTheClipList()
 	{
 		clipAt(track(), 0, Bar);

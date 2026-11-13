@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 
 #include <QCoreApplication>
@@ -64,14 +65,21 @@ Qt::KeyboardModifiers modsOf(const QKeyEvent* event) { return event->modifiers()
 bool vertical(int key) { return key == Qt::Key_Up || key == Qt::Key_Down; }
 bool horizontal(int key) { return key == Qt::Key_Left || key == Qt::Key_Right; }
 
+//! Ticks between @a clip's start and @a tick. Widened before the subtraction: two tick_t values can differ by more
+//! than tick_t holds, and std::abs of the narrow minimum is undefined.
+std::int64_t distanceTo(const Clip* clip, tick_t tick)
+{
+	return std::abs(static_cast<std::int64_t>(clip->startPosition().getTicks()) - tick);
+}
+
 //! The clip on @a track starting nearest @a tick, or nullptr when it has none.
 Clip* nearestOn(const Track* track, tick_t tick)
 {
 	Clip* best = nullptr;
 	for (Clip* clip : track->getClips())
 	{
-		const auto distance = std::abs(clip->startPosition().getTicks() - tick);
-		if (best == nullptr || distance < std::abs(best->startPosition().getTicks() - tick)) { best = clip; }
+		const auto distance = distanceTo(clip, tick);
+		if (best == nullptr || distance < distanceTo(best, tick)) { best = clip; }
 	}
 	return best;
 }
