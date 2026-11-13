@@ -160,70 +160,104 @@ struct Repitch
 	int key;
 };
 
-ControlResult stepFill(const QJsonObject& args)
+//! The arguments of note.step_fill once read and checked: the kind, the contour, the step size, the seed, the
+//! scale keys (a key's index in them is its scale degree) and the 'low'..'high' pool a fill writes into.
+struct FillArgs
 {
-	ControlResult error;
-	ClipRef ref;
-	MidiClip* clip = resolveMidiClip(args.value(QStringLiteral("clip")).toString(), &ref, &error);
-	if (clip == nullptr) { return error; }
+	QString kind;
+	QString contour;
+	int stepTicks = DefaultFillStepTicks;
+	std::uint32_t seed = 0;
+	std::vector<int> keys;
+	std::vector<int> pool;
+	int spread = 2;
+	int density = 100;
+};
 
-	const QString kind = args.value(QStringLiteral("kind")).toString(QStringLiteral("shape"));
-	if (kind != QLatin1String("shape") && kind != QLatin1String("random"))
-	{
-		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'kind' is shape or random"));
-	}
-	const int stepTicks = args.value(QStringLiteral("step_ticks")).toInt(DefaultFillStepTicks);
-	if (stepTicks < 1 || stepTicks > MaxFillStepTicks)
-	{
-		return ControlResult::failure(ControlErrorKind::InvalidArgs,
-			QStringLiteral("'step_ticks' must be in [1, %1]").arg(MaxFillStepTicks));
-	}
+//! The plan of one fill: the notes to re-pitch, the notes to remove, and the written columns in step order.
+struct FillPlan
+{
+	std::vector<Repitch> repitches;
+	std::vector<Note*> removals;
+	std::vector<std::vector<Repitch>> columns;  // one entry per kept column, in step order
+	int stepCount = 0;                          // every step column the clip has, kept or not
+};
 
-	ResolvedScale resolved;
-	if (!resolveScale(args, &resolved, &error)) { return error; }
-	const std::vector<int> classes = resolved.classes;
-	if (classes.empty())
-	{
-		return ControlResult::failure(ControlErrorKind::Refused,
-			QStringLiteral("no scale is set: a fill is written in the active scale (scale.set, or the step grid's Scale box)"));
-	}
-	const std::vector<int> keys = scaleKeysOf(classes);
-	const int low = std::max(0, args.value(QStringLiteral("low")).toInt(48));
-	const int high = std::min(NumKeys - 1, args.value(QStringLiteral("high")).toInt(72));
+//! The keys of @a keys from @a low to @a high, inclusive, in order.
+std::vector<int> poolOf(const std::vector<int>& keys, int low, int high)
+{
 	std::vector<int> pool;
 	for (int key : keys)
 	{
 		if (key >= low && key <= high) { pool.push_back(key); }
 	}
-	if (pool.size() < 2)
-	{
-		return ControlResult::failure(ControlErrorKind::InvalidArgs,
-			QStringLiteral("keys %1..%2 hold %3 key(s) of the scale: a fill needs at least two").arg(low).arg(high).arg(pool.size()));
-	}
-	std::uint32_t seed = 0;
-	if (!fillSeed(args, &seed, &error)) { return error; }
+	return pool;
+}
 
-	// The step columns: every note whose position falls in the same 'step_ticks' slot, in time order.
+//! Reads and checks note.step_fill's arguments in order (kind, step_ticks, scale, pool, seed); false with @a error
+//! at the first one that is wrong.
+bool readFillArgs(const QJsonObject& args, FillArgs* out, ControlResult* error)
+{
+	out->kind = args.value(QStringLiteral("kind")).toString(QStringLiteral("shape"));
+	if (out->kind != QLatin1String("shape") && out->kind != QLatin1String("random"))
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'kind' is shape or random"));
+		return false;
+	}
+	out->stepTicks = args.value(QStringLiteral("step_ticks")).toInt(DefaultFillStepTicks);
+	if (out->stepTicks < 1 || out->stepTicks > MaxFillStepTicks)
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'step_ticks' must be in [1, %1]").arg(MaxFillStepTicks));
+		return false;
+	}
+
+	ResolvedScale resolved;
+	if (!resolveScale(args, &resolved, error)) { return false; }
+	if (resolved.classes.empty())
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("no scale is set: a fill is written in the active scale (scale.set, or the step grid's Scale box)"));
+		return false;
+	}
+	out->keys = scaleKeysOf(resolved.classes);
+	const int low = std::max(0, args.value(QStringLiteral("low")).toInt(48));
+	const int high = std::min(NumKeys - 1, args.value(QStringLiteral("high")).toInt(72));
+	out->pool = poolOf(out->keys, low, high);
+	if (out->pool.size() < 2)
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("keys %1..%2 hold %3 key(s) of the scale: a fill needs at least two").arg(low).arg(high).arg(out->pool.size()));
+		return false;
+	}
+	if (!fillSeed(args, &out->seed, error)) { return false; }
+
+	out->contour = args.value(QStringLiteral("contour")).toString(QStringLiteral("walk"));
+	out->spread = args.value(QStringLiteral("spread")).toInt(2);
+	out->density = std::clamp(args.value(QStringLiteral("density")).toInt(100), 1, 100);
+	return true;
+}
+
+//! The step columns of @a clip: every note whose position falls in the same 'step_ticks' slot, in time order.
+std::map<int, std::vector<Note*>> stepColumnsOf(MidiClip* clip, int stepTicks)
+{
 	std::map<int, std::vector<Note*>> columns;
 	for (Note* note : clip->notes()) { columns[note->pos().getTicks() / stepTicks].push_back(note); }
-	if (columns.empty())
-	{
-		return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("the clip has no notes: a fill re-pitches existing steps"));
-	}
+	return columns;
+}
 
-	std::mt19937 rng(seed);
-	const int top = static_cast<int>(pool.size()) - 1;
-	const int density = std::clamp(args.value(QStringLiteral("density")).toInt(100), 1, 100);
+//! The plan of a fill of @a columns (each one's notes sorted by key) from @a in, drawing from @a rng.
+FillPlan planFill(const FillArgs& in, std::map<int, std::vector<Note*>>& columns, std::mt19937& rng)
+{
+	FillPlan plan;
+	plan.stepCount = static_cast<int>(columns.size());
+	const int top = static_cast<int>(in.pool.size()) - 1;
 	std::vector<int> line;
-	if (kind == QLatin1String("shape"))
+	if (in.kind == QLatin1String("shape"))
 	{
-		line = lineIndices(args.value(QStringLiteral("contour")).toString(QStringLiteral("walk")), static_cast<int>(columns.size()),
-			top, args.value(QStringLiteral("spread")).toInt(2), rng);
+		line = lineIndices(in.contour, plan.stepCount, top, in.spread, rng);
 	}
 
-	std::vector<Repitch> repitches;
-	std::vector<Note*> removals;
-	std::vector<std::vector<Repitch>> writtenColumns;  // one entry per kept column, in step order
 	std::size_t ordinal = 0;
 	for (auto& column : columns)
 	{
@@ -231,51 +265,86 @@ ControlResult stepFill(const QJsonObject& args)
 		std::stable_sort(notes.begin(), notes.end(), [](const Note* a, const Note* b) { return a->key() < b->key(); });
 		int at = 0;
 		bool keep = true;
-		if (kind == QLatin1String("shape")) { at = line[ordinal]; }
+		if (in.kind == QLatin1String("shape")) { at = line[ordinal]; }
 		else
 		{
-			keep = draw(rng, 100) < density;
+			keep = draw(rng, 100) < in.density;
 			at = draw(rng, top + 1);
 		}
 		++ordinal;
 		if (!keep)
 		{
-			removals.insert(removals.end(), notes.begin(), notes.end());
+			plan.removals.insert(plan.removals.end(), notes.begin(), notes.end());
 			continue;
 		}
-		const int base = degreeOf(keys, notes.front()->key());  // the column's lowest note anchors the chord
+		const int base = degreeOf(in.keys, notes.front()->key());  // the column's lowest note anchors the chord
 		for (Note* note : notes)
 		{
-			const int index = std::clamp(at + degreeOf(keys, note->key()) - base, 0, top);
-			repitches.push_back({note, pool[static_cast<std::size_t>(index)]});
+			const int index = std::clamp(at + degreeOf(in.keys, note->key()) - base, 0, top);
+			plan.repitches.push_back({note, in.pool[static_cast<std::size_t>(index)]});
 		}
-		writtenColumns.emplace_back(repitches.end() - static_cast<std::ptrdiff_t>(notes.size()), repitches.end());
+		plan.columns.emplace_back(plan.repitches.end() - static_cast<std::ptrdiff_t>(notes.size()), plan.repitches.end());
 	}
+	return plan;
+}
 
+//! How many of @a plan's notes change key.
+int countPitched(const FillPlan& plan)
+{
 	int pitched = 0;
-	for (const Repitch& edit : repitches) { pitched += edit.key != edit.note->key() ? 1 : 0; }
-	const bool changes = pitched > 0 || !removals.empty();
-	// One checkpoint for the whole fill, and none for a fill that changes nothing (see checkpointNoteEdit).
-	checkpointNoteEdit(clip, changes);
-	if (changes)
-	{
-		for (const Repitch& edit : repitches) { edit.note->setKey(edit.key); }
-		for (Note* note : removals) { clip->removeNote(note); }
-	}
-	// The written columns in step order: each one's lowest key after the fill, and its note ids in pitch order.
+	for (const Repitch& edit : plan.repitches) { pitched += edit.key != edit.note->key() ? 1 : 0; }
+	return pitched;
+}
+
+//! Writes @a plan into @a clip: the new keys, then the removals.
+void applyFill(MidiClip* clip, const FillPlan& plan)
+{
+	for (const Repitch& edit : plan.repitches) { edit.note->setKey(edit.key); }
+	for (Note* note : plan.removals) { clip->removeNote(note); }
+}
+
+//! The note.step_fill reply for @a plan. The written columns in step order: each one's lowest key after the fill,
+//! and its note ids in pitch order.
+QJsonObject fillReply(const FillArgs& in, int pitched, const FillPlan& plan)
+{
 	QJsonArray lowestKeys;
 	QJsonArray noteIds;
-	for (std::vector<Repitch>& column : writtenColumns)
+	for (std::vector<Repitch> column : plan.columns)
 	{
 		std::stable_sort(column.begin(), column.end(), [](const Repitch& a, const Repitch& b) { return a.key < b.key; });
 		lowestKeys.append(column.front().key);
 		for (const Repitch& edit : column) { noteIds.append(control::noteIdOf(edit.note)); }
 	}
-	QJsonObject result{{QStringLiteral("kind"), kind}, {QStringLiteral("seed"), static_cast<double>(seed)},
-		{QStringLiteral("step_ticks"), stepTicks}, {QStringLiteral("columns"), static_cast<int>(columns.size())},
-		{QStringLiteral("pitched"), pitched}, {QStringLiteral("removed"), static_cast<int>(removals.size())},
-		{QStringLiteral("filled"), static_cast<int>(writtenColumns.size())},
+	return QJsonObject{{QStringLiteral("kind"), in.kind}, {QStringLiteral("seed"), static_cast<double>(in.seed)},
+		{QStringLiteral("step_ticks"), in.stepTicks}, {QStringLiteral("columns"), plan.stepCount},
+		{QStringLiteral("pitched"), pitched}, {QStringLiteral("removed"), static_cast<int>(plan.removals.size())},
+		{QStringLiteral("filled"), static_cast<int>(plan.columns.size())},
 		{QStringLiteral("keys"), lowestKeys}, {QStringLiteral("notes"), noteIds}};
+}
+
+ControlResult stepFill(const QJsonObject& args)
+{
+	ControlResult error;
+	ClipRef ref;
+	MidiClip* clip = resolveMidiClip(args.value(QStringLiteral("clip")).toString(), &ref, &error);
+	if (clip == nullptr) { return error; }
+
+	FillArgs in;
+	if (!readFillArgs(args, &in, &error)) { return error; }
+	std::map<int, std::vector<Note*>> columns = stepColumnsOf(clip, in.stepTicks);
+	if (columns.empty())
+	{
+		return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("the clip has no notes: a fill re-pitches existing steps"));
+	}
+
+	std::mt19937 rng(in.seed);
+	const FillPlan plan = planFill(in, columns, rng);
+	const int pitched = countPitched(plan);
+	const bool changes = pitched > 0 || !plan.removals.empty();
+	// One checkpoint for the whole fill, and none for a fill that changes nothing (see checkpointNoteEdit).
+	checkpointNoteEdit(clip, changes);
+	if (changes) { applyFill(clip, plan); }
+	QJsonObject result = fillReply(in, pitched, plan);
 	return ControlResult::success(finish(ref, clip, QStringLiteral("note.step_fill"), result, changes));
 }
 

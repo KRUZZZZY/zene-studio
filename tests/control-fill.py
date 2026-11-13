@@ -74,22 +74,28 @@ def reply_ids(reply):
     return [(n.get("note") or n.get("id")) if isinstance(n, dict) else n for n in reply.get("notes") or []]
 
 
+def same_ids(cells, roll_notes, step_notes, by_id):
+    """The grid's cells, the roll's notes and the step state name the same note ids as the note list."""
+    return {c["note"] for c in cells} == set(by_id) == {n["id"] for n in roll_notes} == {n["note"] for n in step_notes}
+
+
+def row_agrees(cell, roll, step, note):
+    """One note's grid cell, roll row and step row all carry the note list's key and position."""
+    if not (cell["key"] == note["key"] and cell["step"] == note["position"] // 12):
+        return False
+    if not (roll["key"] == note["key"] and roll["position"] == note["position"]):
+        return False
+    return step["key"] == note["key"] and step["step"] == note["position"] // 12
+
+
 def agrees(cells, roll_notes, step_notes, by_id):
     """The grid's cells, the roll's notes and the step state are the note list, id by id."""
-    cell_map = {c["note"]: c for c in cells}
-    if not (set(cell_map) == set(by_id) == {n["id"] for n in roll_notes} == {n["note"] for n in step_notes}):
+    if not same_ids(cells, roll_notes, step_notes, by_id):
         return False
+    cell_map = {c["note"]: c for c in cells}
     roll_map = {n["id"]: n for n in roll_notes}
     step_map = {n["note"]: n for n in step_notes}
-    for nid, note in by_id.items():
-        cell, roll, step = cell_map[nid], roll_map[nid], step_map[nid]
-        if not (cell["key"] == note["key"] and cell["step"] == note["position"] // 12):
-            return False
-        if not (roll["key"] == note["key"] and roll["position"] == note["position"]):
-            return False
-        if not (step["key"] == note["key"] and step["step"] == note["position"] // 12):
-            return False
-    return True
+    return all(row_agrees(cell_map[nid], roll_map[nid], step_map[nid], note) for nid, note in by_id.items())
 
 
 def check_fill_and_undo(session, recorder, clip):
@@ -123,17 +129,29 @@ def check_fill_and_undo(session, recorder, clip):
                    again == after, "first=%r second=%r" % (after, again))
 
 
-def check_shown(session, recorder, clip):
+def reads_agree(by_id, roll, step):
+    """The roll and the step state list the note list's notes, by id, key and position."""
+    return (ids_of(roll) == set(by_id) == {n["note"] for n in step}
+            and all(by_id[n["id"]]["key"] == n["key"] and by_id[n["id"]]["position"] == n["position"] for n in roll)
+            and all(by_id[n["note"]]["key"] == n["key"] and by_id[n["note"]]["position"] // 12 == n["step"] for n in step))
+
+
+def check_reads_agree(session, recorder, clip):
+    notes = listed(session, clip)
+    by_id = {n["note"]: n for n in notes}
+    roll = session.result("roll.get_state", {"clip": clip}).get("notes") or []
+    step = session.result("note.step_get_state", {"clip": clip}).get("notes") or []
+    recorder.check("roll.get_state and note.step_get_state list the same notes as note.list, by id, key and position",
+                   reads_agree(by_id, roll, step),
+                   "list=%r roll=%r step=%r" % (notes, roll, step))
+
+
+def check_grid_shows_fill(session, recorder, clip):
     notes = listed(session, clip)
     by_id = {n["note"]: n for n in notes}
     roll = session.result("roll.get_state", {"clip": clip}).get("notes") or []
     step = session.result("note.step_get_state", {"clip": clip}).get("notes") or []
     cells = grid_cells(session, clip)
-    recorder.check("roll.get_state and note.step_get_state list the same notes as note.list, by id, key and position",
-                   ids_of(roll) == set(by_id) == {n["note"] for n in step}
-                   and all(by_id[n["id"]]["key"] == n["key"] and by_id[n["id"]]["position"] == n["position"] for n in roll)
-                   and all(by_id[n["note"]]["key"] == n["key"] and by_id[n["note"]]["position"] // 12 == n["step"] for n in step),
-                   "list=%r roll=%r step=%r" % (notes, roll, step))
     recorder.check("window.step_grid shows the filled notes: same ids, keys and steps as note.list",
                    bool(notes) and agrees(cells, roll, step, by_id),
                    "cells=%r list=%r" % (cells, notes))
@@ -208,7 +226,8 @@ def main(argv):
         session = Session(client, transcript)
         clip = make_clip(session)
         check_fill_and_undo(session, recorder, clip)
-        check_shown(session, recorder, clip)
+        check_reads_agree(session, recorder, clip)
+        check_grid_shows_fill(session, recorder, clip)
         check_random(session, recorder, clip)
         check_refusals(session, recorder, clip)
     report_results(recorder)
