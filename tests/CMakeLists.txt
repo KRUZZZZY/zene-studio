@@ -7455,6 +7455,18 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		TIMEOUT 600
 		SKIP_RETURN_CODE 77
 	)
+	# Q050-188.1 (p1): RED socket proof that mastering.run ACCEPTS and RETAINS its run
+	# choices (genre, delivery_target). Registered beside ControlMasteringCommands;
+	# reports ctest *Skipped* (exit 77) - never *Passed* - when no fixture generator exists.
+	add_test(NAME ControlMasteringChoices
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-mastering-choices.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlMasteringChoices PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 600
+		SKIP_RETURN_CODE 77
+	)
 	# DEFECT-D3: `mastering.run` must be ANSWERED inside the client's own socket
 	# bound however long the render behind it takes, and the run must still be
 	# completable and readable afterwards. The render child is HELD past 30 s by

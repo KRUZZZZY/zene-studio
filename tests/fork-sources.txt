@@ -2295,6 +2295,7 @@ tests/control-mastering-commands.py
 tests/control-mastering-sequence.py
 tests/control-mastering-quit.py
 tests/control-mastering-run-bound.py
+tests/control-mastering-choices.py
 tests/control-mcp-group-coverage.py
 tests/control-midi-reconnect.py
 tests/control-named-pipe-smoke.py
