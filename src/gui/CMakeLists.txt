@@ -235,6 +235,7 @@ SET(LMMS_SRCS
 	gui/shell/Shell.cpp
 	gui/shell/ShellChrome.cpp
 	gui/shell/ShellCommandMenus.cpp
+	gui/shell/ShellCommandMenusCustomise.cpp
 	gui/shell/ShellMenuParts.cpp
 	gui/shell/ShellRecordMenu.cpp
 	gui/shell/ShellMenuEntries.cpp

@@ -307,7 +307,13 @@ void printHelp()
 		"          as a JSON document: one row per candidate with its\n"
 		"          LUFS-I, short-term maximum, measured true peak, crest\n"
 		"          and the verdict against its own named target. The\n"
-		"          printed table is unchanged\n\n",
+		"          printed table is unchanged\n"
+		"      --genre <genre>            Label recorded in the --report document; one of\n"
+		"          the genres mastering.list_candidates publishes. A label only:\n"
+		"          it changes no measurement and picks, grades or reorders no candidate\n"
+		"      --delivery-target <target> Label recorded in the --report document; one of\n"
+		"          the delivery_targets mastering.list_candidates publishes. A label\n"
+		"          only, as above\n\n",
 		LMMS_VERSION, LMMS_PROJECT_COPYRIGHT );
 }
 
@@ -501,6 +507,10 @@ int main( int argc, char * * argv )
 	// surface's mastering.run reads back from the child process it starts. Empty
 	// unless the caller asks for it, so the CLI's printed output is unchanged.
 	QString masteringReportPath;
+	// The run's choice labels (--genre, --delivery-target): recorded in the --report
+	// document, never used to pick, grade or reorder a candidate.
+	QString masteringGenre;
+	QString masteringDeliveryTarget;
 	// Whether the --report option was GIVEN, which is a different fact from
 	// the path it carries: `--report ''` gives an empty path, and that is a
 	// refusal, not a request for no report. The first parsing stage records
@@ -510,6 +520,10 @@ int main( int argc, char * * argv )
 	// Whether the path the --report option carries is empty (the option was
 	// given without one, or with an empty one).
 	bool reportPathEmpty = true;
+	// Whether --genre or --delivery-target was GIVEN, and which one named it: like
+	// --report, a choice only `master` reads is refused before any other action runs.
+	bool masteringChoiceGiven = false;
+	const char* masteringChoiceFlag = "--genre";
 	// One flag for "the user gave -o": the stem export's directory check and the
 	// mastering job's candidate-directory check read the same fact. The two lanes
 	// named it differently (outputSpecified / outputGiven); merge train 3C keeps
@@ -580,6 +594,13 @@ int main( int argc, char * * argv )
 			reportGiven = true;
 			++i;
 			reportPathEmpty = ( i >= argc ) || QString::fromLocal8Bit( argv[i] ).isEmpty();
+		}
+		else if (arg == "--genre" || arg == "--delivery-target")
+		{
+			// Stage-1 record only (see reportGiven): the option's value is consumed here too.
+			masteringChoiceGiven = true;
+			masteringChoiceFlag = ( arg == "--genre" ) ? "--genre" : "--delivery-target";
+			if( i + 1 < argc ) { ++i; }
 		}
 		else if (arg == "--allowroot")
 		{
@@ -700,6 +721,14 @@ int main( int argc, char * * argv )
 				"information.\n\n", argv[0] );
 			return EXIT_FAILURE;
 		}
+	}
+	// --genre / --delivery-target: the same defect class as --report. Only master reads
+	// these labels, so any other action would succeed and silently ignore them.
+	if( masteringChoiceGiven && !mastering )
+	{
+		fprintf( stderr, "\n%s is only valid with master.\n\nTry \"%s --help\" for more "
+			"information.\n\n", masteringChoiceFlag, argv[0] );
+		return EXIT_FAILURE;
 	}
 
 	// 0.5.0 L14 (WF-131): the interface scale the user chose; Qt reads it only before the application exists.
@@ -996,6 +1025,28 @@ int main( int argc, char * * argv )
 			}
 
 			masteringReportPath = QString::fromLocal8Bit( argv[i] );
+		}
+		else if( arg == "--genre" )
+		{
+			++i;
+
+			if( i == argc )
+			{
+				return usageError( "No genre specified" );
+			}
+
+			masteringGenre = QString::fromLocal8Bit( argv[i] );
+		}
+		else if( arg == "--delivery-target" )
+		{
+			++i;
+
+			if( i == argc )
+			{
+				return usageError( "No delivery target specified" );
+			}
+
+			masteringDeliveryTarget = QString::fromLocal8Bit( argv[i] );
 		}
 		else if( arg == "--format" || arg == "-f" )
 		{
@@ -1488,6 +1539,7 @@ int main( int argc, char * * argv )
 			// The job runs on this thread; the render runs on ProjectRenderer's.
 			// Nothing here is reachable from the audio callback.
 			MasteringJob job( os, eff, renderOut, MasteringJob::defaultCandidates() );
+			job.setRunChoices( masteringGenre, masteringDeliveryTarget );
 			QString error;
 			if( job.run( &error ) )
 			{
