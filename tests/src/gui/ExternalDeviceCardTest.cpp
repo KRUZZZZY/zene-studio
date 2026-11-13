@@ -46,6 +46,7 @@
 #include "MidiPort.h"
 #include "MenuTestSupport.h"
 #include "ShellCommandMenus.h"
+#include "ShellMenuParts.h"
 #include "Song.h"
 
 using namespace lmms;
@@ -268,6 +269,35 @@ private slots:
 		QVERIFY(opened->isVisible());
 		QCOMPARE(opened->state().value(QStringLiteral("track")).toString(), control::trackIdOf(track));
 		opened->close();
+	}
+
+	//! Track > Versions > Use as Comp Lane > A: one entry adds a take lane named A holding A's clip copy (Q050-275).
+	void versionsMenuUsesAVersionAsACompLane()
+	{
+		Track* track = Track::create(Track::Type::Sample, Engine::getSong());
+		const QString id = control::trackIdOf(track);
+		const QJsonObject self{{QStringLiteral("track"), id}};
+		QVERIFY(run(QStringLiteral("clip.add"), {{QStringLiteral("track"), id}, {QStringLiteral("position"), 0}, {QStringLiteral("length"), 96}}).ok);
+		QVERIFY(run(QStringLiteral("track.version_save"), {{QStringLiteral("track"), id}, {QStringLiteral("name"), QStringLiteral("A")}}).ok);
+		QVERIFY(run(QStringLiteral("clip.add"), {{QStringLiteral("track"), id}, {QStringLiteral("position"), 192}, {QStringLiteral("length"), 192}}).ok);
+		QVERIFY(run(QStringLiteral("track.version_save"), {{QStringLiteral("track"), id}, {QStringLiteral("name"), QStringLiteral("B")}}).ok);
+
+		QMenu menu;
+		menuparts::trackVersionEntries(&menu, track, self);
+		QAction* entry = test::menuAction(&menu, {QStringLiteral("Versions"), QStringLiteral("Use as Comp Lane"), QStringLiteral("A")});
+		QVERIFY2(entry != nullptr, "Versions > Use as Comp Lane has no entry for A");
+		QCOMPARE(entry->property("controlCommand").toString(), QStringLiteral("track.version_to_lane"));
+		entry->trigger();
+
+		const QJsonArray tracks = run(QStringLiteral("comp.lane_list"), {{QStringLiteral("track"), id}}).result.value(QStringLiteral("tracks")).toArray();
+		QCOMPARE(tracks.size(), 1);
+		QJsonObject lane;
+		for (const QJsonValue& value : tracks.first().toObject().value(QStringLiteral("lanes")).toArray())
+		{
+			if (value.toObject().value(QStringLiteral("name")).toString() == QLatin1String("A")) { lane = value.toObject(); }
+		}
+		QVERIFY2(!lane.isEmpty(), "the menu entry did not add a take lane named A");
+		QVERIFY2(!lane.value(QStringLiteral("takes")).toArray().isEmpty(), "the lane named A holds no copy of A's clips");
 	}
 };
 

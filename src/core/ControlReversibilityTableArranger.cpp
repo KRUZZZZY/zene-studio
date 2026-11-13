@@ -103,6 +103,7 @@ const ReversibilityRow kArrangerRows[] = {
 	R("track.version_save", RC::TrueInverse, true, "it keeps a track's clips as a named version", "closure: the previous versions put back", ""),
 	R("track.version_switch", RC::TrueInverse, true, "it swaps a track's clips for a stored version's", "Track journal checkpoint plus the previous versions put back", ""),
 	R("track.version_remove", RC::TrueInverse, true, "it forgets a stored version", "closure: the previous versions put back", ""),
+	R("track.version_to_lane", RC::TrueInverse, true, "it adds a take lane holding copies of a stored version's clips", "Track journal checkpoint plus the previous versions put back", ""),
 	R("arrangement.scroll", RC::NotMutating, false, "it scrolls the arranger: interface state", "no write", ""),
 	R("arrangement.modifier_tools", RC::NotMutating, false, "it binds tools to modifier keys, a preference in the config file",
 		"no write to the project, and the config write is not journalled (set the previous bindings)", ""),
