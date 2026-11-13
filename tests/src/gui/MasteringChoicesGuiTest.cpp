@@ -48,6 +48,7 @@
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "GuiTestApplication.h"
+#include "ListTable.h"
 #include "MenuTestSupport.h"
 #include "ShellCommandMenus.h"
 
@@ -162,15 +163,25 @@ private slots:
 		control::setMasteringLastRun(report);
 		control::setMasteringRunState(QStringLiteral("completed"));
 
-		CommandListDialog dialog(CommandLists::masteringReport());
-		dialog.refresh();
-		QCOMPARE(dialog.rowCount(), 2);
-		QCOMPARE(dialog.row(0).value(QStringLiteral("name")).toString(), QStringLiteral("Loud"));
-		QCOMPARE(dialog.row(0).value(QStringLiteral("genre")).toString(), QStringLiteral("electronic"));
-		QCOMPARE(dialog.row(0).value(QStringLiteral("delivery_target")).toString(), QStringLiteral("streaming-14"));
-		QCOMPARE(dialog.row(1).value(QStringLiteral("name")).toString(), QStringLiteral("Open"));
-		QCOMPARE(dialog.row(1).value(QStringLiteral("genre")).toString(), QStringLiteral("electronic"));
-		QCOMPARE(dialog.row(1).value(QStringLiteral("delivery_target")).toString(), QStringLiteral("streaming-16"));
+		QMenu menu;
+		ShellCommandMenus::populateProject(&menu);
+		QAction* entry = lmms::test::menuAction(&menu, {QStringLiteral("Mastering Report...")});
+		QVERIFY(entry != nullptr);
+		entry->trigger();
+		CommandListDialog* dialog = nullptr;
+		QTRY_VERIFY_WITH_TIMEOUT((dialog = visible<CommandListDialog>()) != nullptr, 3000);
+		QCOMPARE(dialog->rowCount(), 2);
+		ListTable* table = dialog->table();
+		// Assert the rendered table, not only its unfiltered source JSON: removing either visible
+		// choice column must make this regression fail even though the command still returns it.
+		QCOMPARE(table->columnCount(), 7);
+		QCOMPARE(table->horizontalHeaderItem(1)->text(), QStringLiteral("Genre"));
+		QCOMPARE(table->horizontalHeaderItem(2)->text(), QStringLiteral("Delivery target"));
+		QCOMPARE(table->item(0, 1)->text(), QStringLiteral("electronic"));
+		QCOMPARE(table->item(0, 2)->text(), QStringLiteral("streaming-14"));
+		QCOMPARE(table->item(1, 1)->text(), QStringLiteral("electronic"));
+		QCOMPARE(table->item(1, 2)->text(), QStringLiteral("streaming-16"));
+		dialog->close();
 	}
 
 	//! Auto-Master's form offers both choices with the published lists, refuses an off-list genre, and keeps both on a refusal.
