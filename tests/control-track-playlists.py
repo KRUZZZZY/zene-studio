@@ -328,9 +328,7 @@ def track_id_named(session, name):
     return None
 
 
-def check_comp_source(session, instance, recorder):
-    """A comp built from the named version A holds through a switch, a save and
-    reload, and undo/redo of the lane; typed error kinds for bad lane names."""
+def _comp_source_setup(session):
     track = session.result("track.add", {"type": "sample", "name": COMP_TRACK_NAME}).get("track")
     # A = one clip at 0..96 (saved while the live clip is there), B = SET_B
     session.result("clip.add", {"track": track, "position": 0, "length": 96})
@@ -338,7 +336,10 @@ def check_comp_source(session, instance, recorder):
     session.result("track.version_save", {"track": track, "name": "B"})
     replace_clips(session, track, SET_B)
     session.result("track.version_save", {"track": track, "name": "B"})
+    return track
 
+
+def _check_lane_from_version(session, track, recorder):
     lane_reply = session.result("track.version_to_lane", {"track": track, "name": "A"})
     lane = lane_reply.get("lane") or 0
     lanes = lane_list(session, track)
@@ -349,7 +350,10 @@ def check_comp_source(session, instance, recorder):
                    and named.get("lane") == lane and bool(named.get("takes"))
                    and clips == sorted([(0, 96)] + SET_B),
                    "reply=%r lanes=%r clips=%r" % (lane_reply, lanes, clips))
+    return lane
 
+
+def _check_lane_undo_redo(session, track, lane, recorder):
     # undo removes the lane; redo brings it back at the same index (the lane is the last step)
     session.result("control.undo")
     undone = lane_named(lane_list(session, track), "A")
@@ -359,12 +363,17 @@ def check_comp_source(session, instance, recorder):
                    undone is None and redone is not None and redone.get("lane") == lane,
                    "undone=%r redone=%r want lane=%r" % (undone, redone, lane))
 
+
+def _check_comp_select(session, track, lane, recorder):
     selected = session.result("comp.select", {"track": track, "lane": lane, "begin": 0, "end": 96})
     segments = comp_segments(session, track)
     recorder.check("comp.select over 0..96 on lane A makes that lane's segment the composite",
                    "error" not in selected and (lane, 0, 96) in segments,
                    "selected=%r segments=%r" % (selected, segments))
+    return segments
 
+
+def _check_switch_keeps_comp(session, track, segments, recorder):
     # a switch to A and back keeps the lane, the segment, and the lane copy in A's clips
     session.result("track.version_switch", {"track": track, "name": "A"})
     switched_lane = lane_named(lane_list(session, track), "A")
@@ -376,6 +385,8 @@ def check_comp_source(session, instance, recorder):
                    "lane=%r segments=%r clips=%r" % (switched_lane, switched_segments, switched_clips))
     session.result("track.version_switch", {"track": track, "name": "B"})
 
+
+def _check_reload_keeps_comp(session, instance, track, segments, recorder):
     # save, reopen: the lane, the segment, the names and the clip set come back
     before_clips = track_clips(session, track)
     path = os.path.join(instance.workspace, "comp-source.mmpz")
@@ -394,7 +405,10 @@ def check_comp_source(session, instance, recorder):
     recorder.check("after save and reload the versions are A and B with B playing, clips unchanged",
                    reloaded_versions == ("B", ["A", "B"]) and reloaded_clips == before_clips,
                    "versions=%r clips=%r want=%r" % (reloaded_versions, reloaded_clips, before_clips))
+    return tid
 
+
+def _check_bad_lane_names(session, tid, recorder):
     # bad lane names: blank -> invalid_args, unknown version -> not_found
     kinds = {
         "blank lane name": error_kind(session, "track.version_to_lane", {"track": tid, "name": "  "}),
@@ -403,6 +417,18 @@ def check_comp_source(session, instance, recorder):
     want = {"blank lane name": "invalid_args", "unknown version": "not_found"}
     recorder.check("version_to_lane answers invalid_args for a blank name and not_found for an unknown one",
                    kinds == want, "kinds=%r want=%r" % (kinds, want))
+
+
+def check_comp_source(session, instance, recorder):
+    """A comp built from the named version A holds through a switch, a save and
+    reload, and undo/redo of the lane; typed error kinds for bad lane names."""
+    track = _comp_source_setup(session)
+    lane = _check_lane_from_version(session, track, recorder)
+    _check_lane_undo_redo(session, track, lane, recorder)
+    segments = _check_comp_select(session, track, lane, recorder)
+    _check_switch_keeps_comp(session, track, segments, recorder)
+    tid = _check_reload_keeps_comp(session, instance, track, segments, recorder)
+    _check_bad_lane_names(session, tid, recorder)
 
 
 def check_quit(session, instance, recorder):
