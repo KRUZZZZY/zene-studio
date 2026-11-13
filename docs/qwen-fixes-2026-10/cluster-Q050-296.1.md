@@ -12,9 +12,11 @@ Branch `feat/050-Q050-296.1-oc`, feature record `docs/050-features/Q050-296.1.md
 | A distinct test signal on every 5.1/7.1 speaker is processed and appears on its matching output channel, without loss or reordering | `SurroundDevicePathTest::everySpeakerIsProcessedOnItsOwnOutput(5.1, 7.1)` and `WidePinRoutingGuiTest::aSurround51BusShowsItsSpeakers` | `cd build/tests && ctest -R '^(SurroundDevicePathTest\|WidePinRoutingGuiTest)$' --output-on-failure` | 8 -> 0 |
 | Pins survive a save and load. | `SurroundDevicePathTest::pinsSurviveASaveAndLoad` | same | 8 -> 0 |
 | One undo puts the device back on the pair. | `SurroundDevicePathTest::undoRestoresThePair` | same | 8 -> 0 |
-| A stereo device without pins is compatible. | `SurroundDevicePathTest::aStereoDeviceWithoutPinsLeavesSpeakersUntouched` | same | 8 -> 0 |
+| A stereo device without pins is compatible. | `SurroundDevicePathTest::aStereoDeviceWithoutPinsLeavesSpeakersUntouched` | same | 0 (slot passed in RED too: a control; the ctest entry exits 8 -> 0) |
 | The wide mix allocates nothing. | `SurroundDevicePathTest::theWideInsertMixAllocatesNothing` | same | 8 -> 0 |
-| An invalid format is refused. | `SurroundDevicePathTest::anInvalidFormatIsRefused` | same | 8 -> 0 |
+| An invalid format is refused. | `SurroundDevicePathTest::anInvalidFormatIsRefused` | same | 0 (slot passed in RED too: a control; the ctest entry exits 8 -> 0) |
+
+Exit codes are per ctest entry; in the RED run the slots everySpeakerIsProcessedOnItsOwnOutput(5.1, 7.1), pinsSurviveASaveAndLoad, undoRestoresThePair, theWideInsertMixAllocatesNothing and aSurround51BusShowsItsSpeakers failed, while the two control slots passed (see 009-red.log).
 
 RED: the product commit `5c7400499f`'s `src/` and `include/` hunks reverse-applied with
 `git apply -R /tmp/q050-296.1-logs/fix.patch`; build exit 0 (`/tmp/q050-296.1-logs/008-build-red.log`), ctest
@@ -30,14 +32,17 @@ exit 0, 100% of 2 (`/tmp/q050-296.1-logs/011-green.log`). The failing RED assert
 splitting the per-pair check into `pinPair` and looping over the channels - no assertion or behaviour change.
 
 `ReversibilityContractTest`: build exit 0 (`/tmp/q050-296.1-logs/014-build-rev.log`), ctest exit 0, 1 of 1
-(`/tmp/q050-296.1-logs/015-rev.log`). No command metadata changed, so no snapshot regen and no A16 change.
+(`/tmp/q050-296.1-logs/015-rev.log`). No command id or schema changed (no A16 change); the snapshot was regenerated live anyway, see Notes.
 
 ## Commits
 
-`git log --oneline 3ab01006f..HEAD` (the six commits of this branch; a plain `master..HEAD` also carries the
-whole `050/m0-train-28` history, 8499 commits):
+`git log --oneline 3ab01006f..HEAD` (the seven commits of this branch; a plain `master..HEAD` also carries
+the whole `050/m0-train-28` history, 8499 commits):
 
 ```
+this commit docs(mixer): Q050-296.1 report states the RED slots exactly (Q050-296.1)
+0cdbad48ed docs(mixer): Q050-296.1 cluster report and red/green evidence (Q050-296.1)
+09562356e7 docs(mixer): Q050-296.1 cluster report and red/green evidence (Q050-296.1)
 d79070ae6b test(mixer): keep pinSpeakers within the complexity gate (Q050-296.1)
 923ffd008e docs(mixer): correct Q050-296.1 metadata and which layouts take the wide bus (Q050-296.1)
 f3a22bf9b2 docs(mixer): 5.1/7.1 speakers through channel devices - manual and feature notes (Q050-296.1)
