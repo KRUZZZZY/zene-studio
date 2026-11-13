@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-11-12T17:48:48Z",
+  "captured_at": "2026-11-13T15:12:59Z",
   "commands": [
     {
       "args_schema": {
@@ -34235,6 +34235,32 @@
         "properties": {
           "name": {
             "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "name"
+        ],
+        "type": "object"
+      },
+      "description": "Add a take lane named 'name' holding copies of the stored version's clips as they are now (later edits to the version do not follow). The lane is a comp source. One undo step.",
+      "group": "track",
+      "id": "track.version_to_lane",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
           }
         },
         "required": [
@@ -39549,23 +39575,23 @@
       }
     }
   ],
-  "count": 924,
+  "count": 925,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-275/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-1erpv40w/zene.sock",
-    "version": "0.4.0-alpha.6721+9b825ee"
+    "source_socket": "/tmp/zctl-run-6a39d5ev/zene.sock",
+    "version": "0.4.0-alpha.6722+20fa43c"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 78,
-    "id_count": 924,
-    "ids_sha256": "fac3b27d98cbc91933c63f6608d20739a9d2d1000608af46ee5823a0c47077e1"
+    "id_count": 925,
+    "ids_sha256": "e7fd42df5633a46022d43cfce80b83f1828162d54241e96d5bf1d666fdc33dfd"
   }
 }

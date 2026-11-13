@@ -3580,3 +3580,5 @@ docs/qwen-fixes-2026-10/sol-train-27-ci-repair-integration.md
 # Retain independently reviewed macOS x86_64 and Linux ARM64 CI repair reports in the combined replay.
 docs/qwen-fixes-2026-10/cluster-ci-f0fa6219c5d4b443.md
 docs/qwen-fixes-2026-10/cluster-ci-7d1b70f4f0a0b12b.md
+# cluster Q050-275 (2026-11): named track versions as take-lane comp sources, feature record.
+docs/050-features/Q050-275.md
