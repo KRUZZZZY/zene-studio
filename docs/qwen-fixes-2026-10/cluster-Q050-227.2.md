@@ -36,12 +36,8 @@ Base `20fa43c90b` to `HEAD` (13 files, +747 / -32):
 | 5 | A legacy layout without `pinned` opens with nothing pinned. | `MixerPinnedStripsTest::pinningRefusesWhatCannotBePinnedAndToleratesOldLayouts` (legacy snapshot case) | same | 0 |
 | 6 | A pinned channel that is deleted does not crash, and the pins no longer name it. | `MixerPinnedStripsTest::pinningRefusesWhatCannotBePinnedAndToleratesOldLayouts` (deleted-channel case) | same | 0 |
 
-Known caveat (test isolation): `pinningRefusesWhatCannotBePinnedAndToleratesOldLayouts` needs at least four
-channels (`view->channelCount() >= 4`). `initTestCase()` creates one, and the earlier function adds the rest. Run
-on its own (`build/tests/MixerPinnedStripsTest pinningRefusesWhatCannotBePinnedAndToleratesOldLayouts`), it fails
-(exit 1, `p7-fn-b.log`). In the binary's normal order, which is what ctest runs, it passes. Run alone,
-`pinUnpinResizeSaveAndRestoreTogether` passes (exit 0, `p7-fn-a.log`). Fixing the test to build its own channels is
-a follow-up; this unit did not change the test.
+Run on its own (`build/tests/MixerPinnedStripsTest pinningRefusesWhatCannotBePinnedAndToleratesOldLayouts`), the
+slot passes (exit 0, `p8-fn-b.log`). The slot now creates the four channels it needs itself.
 
 ## RED / GREEN
 
@@ -88,8 +84,7 @@ with no version-specific calls. The check is in `feature_check` (`check-namespac
 2. **Each acceptance criterion is proven by a test run here.** Criteria 1, 2 and 3 are proven by
    `pinUnpinResizeSaveAndRestoreTogether`: ctest exit 0 (`p7-green-test.log`) and, run alone, exit 0
    (`p7-fn-a.log`). Criteria 4, 5 and 6 are proven by `pinningRefusesWhatCannotBePinnedAndToleratesOldLayouts`:
-   ctest exit 0 (`p7-green-test.log`). Run alone it exits 1 (`p7-fn-b.log`), the order dependency in the
-   Acceptance section.
+   ctest exit 0 (`p7-green-test.log`). Run alone it exits 0 (`p8-fn-b.log`).
 3. **Each edit is ONE undo step; each new or changed command has an honest reversibility class.** The snapshot
    declares `window.mixer_view` `"mutating": false` (`commands_snapshot.json`, `window.mixer_view` entry) and
    `window.mixer_zones` `"mutating": false` (same file). Pins are layout (GUI) state, not song data; the undo step
@@ -108,7 +103,7 @@ with no version-specific calls. The check is in `feature_check` (`check-namespac
 5. **Old projects still load and render as before; new data round-trips.** Legacy layouts (no `pinned` key) are
    covered by the legacy case in `pinningRefusesWhatCannotBePinnedAndToleratesOldLayouts` (ctest exit 0). The
    round-trip (save, reopen, restore) is covered by `pinUnpinResizeSaveAndRestoreTogether` (ctest exit 0). "Renders
-   exactly as before" is not checked by a pixel test; the stage-1 `MixerZonesTest` was not re-run in this unit.
+   exactly as before" is not checked by a pixel test; stage-1 `MixerZonesTest` re-run: ctest exit 0 (`p6-test.log`, `p8-test.log`).
 6. **Qt 5.15 / MSVC / macOS portability.** `git diff 20fa43c90b HEAD -- src include`, added lines only, grepped for
    `std::filesystem`, `windows.h`, `qMin`, `qMax`, `std::min`, `std::max`, `Q_OS_`, `Qt6` and `QT_VERSION`: no
    matching lines (empty output). The APIs used (`QRegularExpression`, `QJsonArray`, `QStringList`, `QObject`

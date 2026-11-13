@@ -306,6 +306,7 @@ private slots:
 	void pinningRefusesWhatCannotBePinnedAndToleratesOldLayouts()
 	{
 		MixerView* view = getGUI()->mixerView();
+		while (static_cast<int>(Engine::mixer()->numChannels()) < 4) { Engine::mixer()->createChannel(); } syncMixer();
 		QVERIFY(view->channelCount() >= 4);
 		const QString idA = control::channelIdOf(Engine::mixer()->mixerChannel(1));
 		const QString idB = control::channelIdOf(Engine::mixer()->mixerChannel(2));
@@ -314,7 +315,7 @@ private slots:
 		QVERIFY(run(QStringLiteral("window.mixer_view"), {{QStringLiteral("pin"), idA}}).ok);
 		QCOMPARE(pinnedOf(), QStringList{idA});
 
-		// Refusals: each one is InvalidArgs and changes no pin.
+		// Refusals: an unknown id is NotFound, the master and a non-array are InvalidArgs; none changes a pin.
 		const ControlResult noSuchChannel = run(QStringLiteral("window.mixer_view"), {{QStringLiteral("pin"), QStringLiteral("ch-99999")}});
 		QVERIFY(!noSuchChannel.ok);
 		QCOMPARE(noSuchChannel.errorKind, ControlErrorKind::NotFound);
