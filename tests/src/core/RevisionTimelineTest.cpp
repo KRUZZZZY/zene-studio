@@ -687,6 +687,46 @@ private slots:
 		QVERIFY(!noProject.ok); // an empty project path is a typed refusal too
 	}
 
+	//! A zero-byte artefact reads back SUCCESSFULLY with no bytes, and it is not
+	//! a project: restoring it is refused typed, and the live project, the
+	//! revision set and the directory are left exactly as they were. Covers the
+	//! timeline's own sources (backup, autosave) and the keep-3 rotation id,
+	//! which takes the policy's own restore.
+	void anEmptyRevisionIsRefusedAndTheLiveProjectKept()
+	{
+		buildFixture();
+		QVERIFY(writeBytes(path(QStringLiteral("song.mmp.bak")), QByteArray()));
+		QVERIFY(writeBytes(recoveryFile(), QByteArray()));
+		QVERIFY(writeBytes(projectRevisionPath(m_project, 0), QByteArray()));
+		const QByteArray live = readBytes(m_project);
+		const QStringList before = QDir(m_dir.path()).entryList(QDir::Files, QDir::Name);
+
+		ControlRegistry* registry = ControlRegistry::instance();
+		const QStringList ids{QStringLiteral("backup"), QStringLiteral("autosave"),
+			QStringLiteral("rev0")};
+		for (const QString& id : ids)
+		{
+			const ControlResult restored = registry->invoke(QStringLiteral("revisions.restore"),
+				QJsonObject{{QStringLiteral("project"), m_project},
+					{QStringLiteral("id"), id}});
+			QVERIFY2(!restored.ok, qPrintable(QStringLiteral("restoring the empty '%1' succeeded").arg(id)));
+			QCOMPARE(restored.errorKind, ControlErrorKind::Refused);
+			QVERIFY2(restored.errorMessage.contains(QStringLiteral("empty")),
+				qPrintable(restored.errorMessage));
+			QCOMPARE(readBytes(m_project), live);
+		}
+
+		// The direct policy call the undo path also takes refuses the same way.
+		QString error;
+		QVERIFY(!restoreProjectRevision(m_project, 0, &error));
+		QVERIFY2(error.contains(QStringLiteral("empty")), qPrintable(error));
+		QCOMPARE(readBytes(m_project), live);
+
+		// Nothing was rotated, staged or removed.
+		QCOMPARE(QDir(m_dir.path()).entryList(QDir::Files, QDir::Name), before);
+		buildFixture();
+	}
+
 	//! The git half, against a REAL repository with two commits of the project:
 	//! the commits are listed with their own times, and the BYTES of one commit
 	//! are what the timeline restores.
