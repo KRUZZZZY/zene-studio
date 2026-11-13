@@ -2959,6 +2959,7 @@ tests/src/gui/PianoRollRecordTest.cpp
 tests/src/gui/FollowActionEditorTest.cpp
 tests/src/gui/MixerSelectionIdentityTest.cpp
 tests/src/gui/MixerZonesTest.cpp
+tests/src/gui/MixerPinnedStripsTest.cpp
 tests/src/gui/MixerInsertLatencyTest.cpp
 tests/src/gui/RealtimeExportMenuTest.cpp
 tests/src/gui/MixerStripFeaturesTest.cpp
