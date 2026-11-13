@@ -27,9 +27,10 @@
  *  are built on the control thread (MixerSurround.cpp), and the only model reads are the ones the stereo
  *  path already makes on the same thread (a send's level, a fader, a trim, a pan, the VCA gain).
  *
- *  What the side channels do NOT get, and say so: the sends' delay compensation (a surround send's side
- *  channels arrive undelayed, so a send compensated for latency elsewhere is off by that delay on them),
- *  the channel's devices and post-fader inserts, its mono/polarity/swap/width/EQ stages and its meters. */
+ *  Q050-296.1: the side channels DO get the channel's devices, through the pins on the wide insert bus.
+ *  What they do NOT get, and say so: the sends' delay compensation (a surround send's side channels arrive
+ *  undelayed, so a send compensated for latency elsewhere is off by that delay on them), post-fader inserts,
+ *  the mono/polarity/swap/width/EQ stages and the meters. */
 
 #include <algorithm>
 #include <cmath>
@@ -268,7 +269,7 @@ bool insertsTakeWideBus(const MixerChannel& channel, f_cnt_t frames)
 {
 	const ChannelSurround& s = channel.m_surround;
 	const int count = channelCount(s.format());
-	if (!isDiscrete(s.format()) || count <= 2) { return false; }
+	if (!s.isSurround() || count <= 2) { return false; }
 	if (frames > s.frames() || (count + 1) / 2 > s.insertPairCapacity()) { return false; }
 	return channel.m_fxChain.isEnabled() && !channel.m_fxChain.effects().empty();
 }

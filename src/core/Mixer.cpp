@@ -787,7 +787,8 @@ void MixerChannel::processInserts(const f_cnt_t fpp)
 	}
 	else if( surround::insertsTakeWideBus( *this, fpp ) )
 	{
-		// Q050-155.2: a discrete layout's devices see all its channels, by index, through their pins.
+		// Q050-155.2 / Q050-296.1: any surround layout wider than the pair - discrete or named 5.1/7.1/... -
+		// sees all its channels, by index, through the devices' pins.
 		m_stillRunning = surround::processWideInserts( *this, fpp,
 			m_sidechainReceives.empty() ? nullptr : &m_sidechainBuffer );
 	}

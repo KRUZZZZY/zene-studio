@@ -3230,6 +3230,7 @@ tests/src/core/StemQualityTest.cpp
 tests/src/core/StemSplitPipelineTest.cpp
 tests/src/core/StereoDelay.cpp
 tests/src/core/StripMeterModeTest.cpp
+tests/src/core/SurroundDevicePathTest.cpp
 tests/src/core/SurroundExportTest.cpp
 tests/src/core/SurroundExportTestSupport.h
 tests/src/core/SurroundTest.cpp
