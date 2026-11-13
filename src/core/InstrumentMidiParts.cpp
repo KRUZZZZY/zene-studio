@@ -104,7 +104,7 @@ void InstrumentMidiParts::saveSettings(QDomDocument& doc, QDomElement& parent) c
 void InstrumentMidiParts::loadSettings(const QDomElement& parent)
 {
 	// A missing element reads as no zones, which clears the parts a preset or an undo step replaced.
-	m_zones.loadSettings(parent.firstChildElement(QStringLiteral("midiparts")));
+	m_zones.loadSettings(parent.firstChildElement(QStringLiteral("midiparts")), Channels);
 }
 
 } // namespace lmms
