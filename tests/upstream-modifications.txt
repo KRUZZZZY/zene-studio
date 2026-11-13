@@ -4785,7 +4785,7 @@ src/core/EffectChain.cpp	cluster 5051/new-p14-98: loadSettings holds the existin
 tests/src/core/RoutingGraphLiveTest.cpp	cluster new-p14-98: the loadSettings guard regression (probe after clear() proves the guard is held) sits beside the existing cluster 5051 clear-drops-nodes test.
 plugins/Stk/Mallets/Mallets.cpp	new-p17-90: restores the BandedWG "Bowed" checkbox (m_strikeLED): its creation and its model binding to m_strikeModel were commented out, so the setting had no control in the instrument view; nothing else changes.
 plugins/Stk/Mallets/Mallets.h	new-p17-90: declares the restored m_strikeLED member (was commented out).
-tests/CMakeLists.txt	new-p17-90: registers MalletsInstrumentViewTest (LMMS_TESTS entry gated on LMMS_HAVE_STK) and gives it the Mallets sources, the STK link and the offscreen environment; no existing registration changed.
+tests/CMakeLists.txt	new-p17-90: registers MalletsInstrumentViewTest (LMMS_TESTS entry gated on LMMS_HAVE_STK) and gives it the Mallets sources, the STK link and the offscreen environment; no existing registration changed. new-p21-232: adds MALLETS_TEST_PLUGIN_DIR so the test can pin the voice-budget declaration it reads; no other target property changes.
 include/AudioEngineWorkerThread.h	cluster 3714: test-only WorkerDrainProbe stages so RenderJobQueueTest can establish the worker's wake generation (BeforeWait), hold it in the mode-enable race window (BeforeQueue), and observe it leave the drain path (AfterQueue); no production caller installs a probe.
 src/core/AudioEngineWorkerThread.cpp	cluster 3714: test-only worker drain probe calls at the top of the worker loop and around the queue drain; no production caller installs a probe.
 tests/src/core/RenderJobQueueTest.cpp	cluster 3714: deterministic regression for the deterministic-mode enable race, using the WorkerDrainProbe handshake instead of sleeps or wall-clock waits.
@@ -5415,7 +5415,7 @@ tests/src/gui/ShellTest.cpp	# focusTarget dereferences a null frame
 src/core/LocklessAllocator.cpp	new-p10-226: reject allocator dimensions whose rounding, pool byte count or ptrdiff_t addressing would overflow before the pool is allocated; covered by ArrayVectorTest.
 tests/src/core/ArrayVectorTest.cpp	new-p10-226: test that overflowing LocklessAllocator dimensions are rejected with std::length_error.
 tests/src/core/LoudnessReportTest.cpp	# `addBlock()` does pointer arithmetic on null
-tests/src/plugins/MalletsInstrumentViewTest.cpp	# Mallets can index its scaler table with a project-supplied invalid preset
+tests/src/plugins/MalletsInstrumentViewTest.cpp	# Mallets can index its scaler table with a project-supplied invalid preset. new-p21-232: also pins the shared voice budget's declaration initialiser and exercises its three budget paths (fill to the limit, wait at the limit, release one voice).
 plugins/Vibed/VibratingString.cpp	new-p9-503: the oversampling count is clamped to at least one, and an output rate below the base rate counts as the base rate (no division by zero).
 plugins/Vibed/VibratingString.h	new-p9-503: declares the read-only oversampleCount() test seam used by the regression.
 tests/CMakeLists.txt	new-p9-503: registers src/plugins/VibratingStringTest.cpp and compiles the string model sources into it (the Vibed test shape).
