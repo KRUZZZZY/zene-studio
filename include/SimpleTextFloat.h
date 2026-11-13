@@ -25,6 +25,7 @@
 #ifndef LMMS_GUI_SIMPLE_TEXT_FLOAT_H
 #define LMMS_GUI_SIMPLE_TEXT_FLOAT_H
 
+#include <QPointer>
 #include <QWidget>
 
 #include "lmms_export.h"
@@ -63,15 +64,15 @@ public:
 	const QObject* source() const { return m_source; }
 
 	//! Sets which object is currently controlling this text float
-	void setSource(const QObject* source) { m_source = source; }
+	void setSource(const QObject* source) { m_source = const_cast<QObject*>(source); }
 
 private:
 	QLabel * m_textLabel;
 	QTimer * m_showTimer;
 	QTimer * m_hideTimer;
 
-	//! Which object is currently controlling this text float
-	const QObject* m_source = nullptr;
+	//! Which object is currently controlling this text float (null if it was destroyed)
+	QPointer<const QObject> m_source;
 };
 
 } // namespace lmms::gui
