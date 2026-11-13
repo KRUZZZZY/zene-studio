@@ -808,6 +808,13 @@ saved with one video before opens as one clip. A clip's sound can be extracted t
 across the internet, where your router allows it) join the project: you share an invite code, every edit is sent to the
 others, and a remote invite gives a phone or another machine the transport and faders only. Nothing listens until you host,
 and you are asked first.</p>
+<p><b>Auto-Master run choices.</b> Project Tools &gt; Auto-Master... asks for an optional <i>genre</i>, chosen from a closed
+list of lower-case genre names, and an optional <i>delivery target</i>, one of the four target names the candidates are
+graded against; leave either one blank and the run records none. Both choices are stored with the run, shown beside each
+candidate in the Mastering Report (Project Tools), and readable by an agent through <code>mastering.get_state</code>, which
+reports them on the last run and on each candidate row. Neither choice changes a candidate's measurements, its pass or
+fail verdict, or which candidate is recommended: they are labels that travel with the run, not a ranking. A refused choice
+(an unknown or differently cased value) stops the run before anything is rendered.</p>
 <p><b>Damaged drawn waveforms.</b> Watsyn, BitInvader, FreeBoy, Vibed and Xpressive save the waveforms you draw, and
 Wave Shaper, Dynamics Processor and Multitap Echo save their curves, inside the project or preset. When one of those
 saved graphs is damaged - cut short, too long, not readable, or holding values that are not numbers - Zene does not use

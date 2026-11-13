@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-11-12T17:48:48Z",
+  "captured_at": "2026-11-13T15:29:31Z",
   "commands": [
     {
       "args_schema": {
@@ -13123,7 +13123,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "The last auto-mastering run this instance performed: its `state` (idle, running, completed, failed - mastering.run is ASYNCHRONOUS, so this is the verb a caller polls after it, and `error` carries the child's own reason when the state is failed), the document the last COMPLETED run produced (one measured row per candidate - LUFS-I, the loudest 3 s window, measured dBTP, crest, the residual against that candidate's target and the two verdicts - plus the source render's own readings and the counted number of project renders), and the live state of the files it wrote, hashed now. `has_run` is false and `last_run` is null before the first run. `session_empty` is the fact mastering.run refuses on. Read-only.",
+      "description": "The last auto-mastering run this instance performed: its `state` (idle, running, completed, failed - mastering.run is ASYNCHRONOUS, so this is the verb a caller polls after it, and `error` carries the child's own reason when the state is failed), the document the last COMPLETED run produced (one measured row per candidate - LUFS-I, the loudest 3 s window, measured dBTP, crest, the residual against that candidate's target and the two verdicts - plus the source render's own readings and the counted number of project renders), and the live state of the files it wrote, hashed now. `has_run` is false and `last_run` is null before the first run. `session_empty` is the fact mastering.run refuses on. `candidates` is `last_run`'s own rows, verbatim: empty before a run, each carrying the run's `genre` and `delivery_target`. Read-only.",
       "group": "mastering",
       "id": "mastering.get_state",
       "mutating": false,
@@ -13131,6 +13131,9 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "candidates": {
+            "type": "array"
+          },
           "error": {
             "type": [
               "string",
@@ -13179,7 +13182,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "The mastering candidate set wave 1 generates: each candidate's name, the delivery target it is graded against (its integrated loudness, tolerance and true-peak ceiling, plus the published document the numbers come from), the dynamics stage's five numbers and the chain settings they imply. The set is the engine's own (MasteringJob::defaultCandidates) - it varies target loudness, ceiling and dynamics so the candidates are objectively distinguishable. This command writes nothing and starts no render: mastering.run is what masters and measures.",
+      "description": "The mastering candidate set wave 1 generates: each candidate's name, the delivery target it is graded against (its integrated loudness, tolerance and true-peak ceiling, plus the published document the numbers come from), the dynamics stage's five numbers and the chain settings they imply. The set is the engine's own (MasteringJob::defaultCandidates) - it varies target loudness, ceiling and dynamics so the candidates are objectively distinguishable. This command writes nothing and starts no render: mastering.run is what masters and measures. It also publishes the accepted values for mastering.run's `genre` and `delivery_target`: `genres` (a CLOSED, lower-case set, matched exactly with no case folding), `genre_max_length` and `delivery_targets` (the engine's own named targets).",
       "group": "mastering",
       "id": "mastering.list_candidates",
       "mutating": false,
@@ -13193,6 +13196,15 @@
           "count": {
             "type": "integer"
           },
+          "delivery_targets": {
+            "type": "array"
+          },
+          "genre_max_length": {
+            "type": "integer"
+          },
+          "genres": {
+            "type": "array"
+          },
           "note": {
             "type": "string"
           }
@@ -13205,6 +13217,29 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "delivery_target": {
+            "enum": [
+              "streaming-14",
+              "streaming-16",
+              "streaming-14-ceiling-2",
+              "ebu-r128"
+            ],
+            "type": "string"
+          },
+          "genre": {
+            "enum": [
+              "ambient",
+              "classical",
+              "contemporary-alt-r-and-b",
+              "electronic",
+              "folk",
+              "hip-hop",
+              "jazz",
+              "pop",
+              "rock"
+            ],
+            "type": "string"
+          },
           "out_dir": {
             "type": "string"
           }
@@ -13214,7 +13249,7 @@
         ],
         "type": "object"
       },
-      "description": "Auto-master the session, wave 1: render the mix ONCE (counted by the render machinery, returned as render_count), branch every candidate of MasteringJob::defaultCandidates() off that one render, write one wav per candidate into out_dir and measure each with the BS.1770-4 meter - integrated loudness, the loudest 3 s window, measured true peak and crest factor, plus the residual against that candidate's target and its loudness and true-peak verdicts. `out_dir` is required and absolute. The session is not modified (the render runs in a child process on a serialised copy). ASYNCHRONOUS, like the stems' own long work: this verb STARTS the render and answers with `state: \"running\"` in milliseconds, whatever the render costs - it never waits for it, so the control surface (control.ping included) stays answerable while a mastering run is in flight. The run's own document - the candidate measurements, the files and the counts - appears in `mastering.get_state`'s `last_run` once its `state` leaves \"running\", so the caller polls that verb; a run that fails reports `state: \"failed\"` and the child's own reason in `error` there. A second run while one is in flight is refused with `busy` rather than queued. REVERSIBLE through a recorded action checkpoint: the files this run created are removed and the revisions the directory already held are written back, byte for byte (bounded at 64 MiB of pre-existing wav files - beyond that the run is refused rather than performed without an inverse). The inverse is recorded when the run COMPLETES, so `control.undo` must not be asked to take a run back until `mastering.get_state` reports it completed. Names no best candidate: there is no validated preference scorer, so the choice is the user's.",
+      "description": "Auto-master the session, wave 1: render the mix ONCE (counted by the render machinery, returned as render_count), branch every candidate of MasteringJob::defaultCandidates() off that one render, write one wav per candidate into out_dir and measure each with the BS.1770-4 meter - integrated loudness, the loudest 3 s window, measured true peak and crest factor, plus the residual against that candidate's target and its loudness and true-peak verdicts. `out_dir` is required and absolute. The session is not modified (the render runs in a child process on a serialised copy). ASYNCHRONOUS, like the stems' own long work: this verb STARTS the render and answers with `state: \"running\"` in milliseconds, whatever the render costs - it never waits for it, so the control surface (control.ping included) stays answerable while a mastering run is in flight. The run's own document - the candidate measurements, the files and the counts - appears in `mastering.get_state`'s `last_run` once its `state` leaves \"running\", so the caller polls that verb; a run that fails reports `state: \"failed\"` and the child's own reason in `error` there. A second run while one is in flight is refused with `busy` rather than queued. REVERSIBLE through a recorded action checkpoint: the files this run created are removed and the revisions the directory already held are written back, byte for byte (bounded at 64 MiB of pre-existing wav files - beyond that the run is refused rather than performed without an inverse). The inverse is recorded when the run COMPLETES, so `control.undo` must not be asked to take a run back until `mastering.get_state` reports it completed. Names no best candidate: there is no validated preference scorer, so the choice is the user's. Two optional labels, `genre` and `delivery_target`, let the caller record a choice: accepted genres are published by mastering.list_candidates (`genres`, `genre_max_length`), and `delivery_target` must be one of its `delivery_targets` (the engine's own named targets). An omitted key means no choice and reads back as null; a present-but-empty key is refused. Both are retained on the run and on every candidate row, and are LABELS ONLY - they change neither the candidate set, nor its measurements, nor which candidate is preferred.",
       "group": "mastering",
       "id": "mastering.run",
       "mutating": true,
@@ -13222,6 +13257,18 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "delivery_target": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "genre": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "note": {
             "type": "string"
           },
@@ -39554,11 +39601,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-188.1/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-1erpv40w/zene.sock",
-    "version": "0.4.0-alpha.6721+9b825ee"
+    "source_socket": "/tmp/zctl-run-x6nk1z7t/zene.sock",
+    "version": "0.4.0-alpha.6727+a6861ca"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
