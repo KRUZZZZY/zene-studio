@@ -169,8 +169,6 @@ void readSizes(const QJsonObject& sizes, Layout* layout)
 	}
 }
 
-//! One region's dock in a caller's 'zones' object: false, with @a error, unless it names a region and a
-//! dock that region can take.
 //! True for a channel id: "ch-" and a positive integer written in digits only.
 bool isChannelId(const QString& id)
 {
@@ -191,6 +189,8 @@ QStringList pinsFrom(const QJsonValue& value)
 	return pinned;
 }
 
+//! One region's dock in a caller's 'zones' object: false, with @a error, unless it names a region and a
+//! dock that region can take.
 bool checkDock(const QString& region, const QString& dock, QString* error)
 {
 	if (!isRegion(region))
