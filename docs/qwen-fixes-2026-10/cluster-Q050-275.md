@@ -1,4 +1,4 @@
-IMPLEMENTED.
+IMPLEMENTED
 Every acceptance test passes. The `tests/run-all-gates.sh` failures are environmental (bunny-guard refuses the full build and the git fixture operations in this jail) or pre-existing (gate 7), and the branch changes no gate script or evidence exemption; it only regenerates the command snapshot (see Gates).
 
 # Q050-275 report: named track versions as take-lane comp sources
