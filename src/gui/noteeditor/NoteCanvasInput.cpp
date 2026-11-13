@@ -49,6 +49,17 @@ namespace lmms::gui
 namespace
 {
 
+//! Find the editor through the canvas's possible wrapper widgets.
+NoteEditor* containingNoteEditor(QWidget* parent)
+{
+	auto* editor = qobject_cast<NoteEditor*>(parent);
+	for (QWidget* widget = parent; editor == nullptr && widget != nullptr; widget = widget->parentWidget())
+	{
+		editor = qobject_cast<NoteEditor*>(widget);
+	}
+	return editor;
+}
+
 QJsonArray idsOf(const std::vector<Note*>& notes)
 {
 	QJsonArray ids;
@@ -155,11 +166,7 @@ void NoteCanvas::mousePressEvent(QMouseEvent* event)
 	{
 		// Owner 2026-10-29 (a Windows tester could not place a note): an empty editor is no dead end. A left click
 		// opens a clip on the selected instrument (clipForEmptyEditor) and goes on to place its note there.
-		auto* editor = qobject_cast<NoteEditor*>(parentWidget());
-		for (QWidget* w = parentWidget(); editor == nullptr && w != nullptr; w = w->parentWidget())
-		{
-			editor = qobject_cast<NoteEditor*>(w);
-		}
+		auto* editor = containingNoteEditor(parentWidget());
 		MidiClip* clip = event->button() == Qt::LeftButton && editor != nullptr ? clipForEmptyEditor() : nullptr;
 		if (clip == nullptr) { return; }
 		editor->setClip(clip);

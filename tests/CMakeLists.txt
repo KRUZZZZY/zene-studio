@@ -6479,6 +6479,13 @@ if(PYTHON3_EXECUTABLE)
 	set_tests_properties(Qt5OverloadedSignalCheck PROPERTIES TIMEOUT 300)
 endif()
 
+# Train 29: rerun the actual failed Gate 4 in non-writing mode alongside the
+# focused metric assertion and note-editor behavior tests.
+add_test(NAME NoteCanvasComplexityGate
+	COMMAND bash ${CMAKE_SOURCE_DIR}/tests/complexity-gate.sh --check)
+set_tests_properties(NoteCanvasComplexityGate PROPERTIES
+	WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} TIMEOUT 300)
+
 # Per-method complexity regression (cluster ci-6d61162ce0abfd39, 2026-11-10). Hosted CI failed
 # Gate 4 - the CCN <= 10 ratchet - at a1a98b67b2 with eight regressions, each a function that had
 # grown past the target. The repair is a behaviour-preserving extraction, so the complexity IS the

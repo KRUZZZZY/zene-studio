@@ -6,7 +6,7 @@ ratchet (CCN <= 10) - at a1a98b67b2 with eight regressions, reproduced locally w
 lizard (1.25.1). The repair is a behaviour-preserving extraction in each function; the only
 observable change IS the complexity, so that is what this check holds in place.
 
-The check measures the eight functions with lizard and asserts each is at or under the target.
+The check measures the repaired functions with lizard and asserts each is at or under the target.
 It runs its own red/green fixtures first (a 12-branch function must be flagged, a one-liner must
 not), so a scanner that cannot fail fails here instead. No build, no clock, no I/O beyond
 reading the sources and running lizard.
@@ -24,7 +24,8 @@ import tempfile
 
 CCN_LIMIT = 10
 
-# (repo-relative file, lizard's name for the function) - the eight Gate 4 regressions.
+# (repo-relative file, lizard's name for the function). Also holds the train-29
+# mousePressEvent regression: empty-editor activation must not grow the input dispatcher.
 TARGETS = [
 	("src/wasm/WasmSandbox.cpp", "lmms::wasm::WasmSandbox::loadModuleBytes"),
 	("tests/src/gui/XyPadPairTest.cpp", "dotCentreAlong"),
@@ -34,6 +35,7 @@ TARGETS = [
 	("src/core/ControlCommandsSessionRecordLand.cpp", "lmms::sessionrecord::landPairState"),
 	("tests/stem_commands_lib.py", "wav_facts"),
 	("src/core/VideoAudioExtract.cpp", "lmms::extract"),
+	("src/gui/noteeditor/NoteCanvasInput.cpp", "lmms::gui::NoteCanvas::mousePressEvent"),
 ]
 
 

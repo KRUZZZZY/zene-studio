@@ -2208,7 +2208,10 @@ src/gui/noteeditor/NoteBackgroundAudio.cpp
 src/gui/noteeditor/NoteCanvas.cpp
 src/gui/noteeditor/NoteCanvasAccess.cpp
 src/gui/noteeditor/NoteCanvasGestures.cpp
+# Train 29: isolate parent lookup to hold the mouse dispatcher under CCN 10; existing note gestures are unchanged.
 src/gui/noteeditor/NoteCanvasInput.cpp
+# Train 29 NoteCanvas complexity repair and verification report.
+docs/qwen-fixes-2026-10/sol-train-29-note-input-complexity.md
 src/gui/noteeditor/NoteCanvasKeys.cpp
 src/gui/noteeditor/NoteEditor.cpp
 src/gui/noteeditor/NoteEditorMenus.cpp
@@ -3627,6 +3630,7 @@ docs/qwen-fixes-2026-10/cluster-ci-165e1914b308f189.md
 tests/vst2-fixture-darwin-headers-check.py
 tests/threads-target-windows-configure.py
 tests/cmake-threads-scope.sh
+# Train 29: also holds NoteCanvas::mousePressEvent at CCN <= 10 (red before lookup extraction).
 tests/complexity-regression-check.py
 # cluster ci-3eb9bda8aa6785a3 (2026-11): the MinGW64 PPA signing key is committed and pinned with signed-by=
 # instead of fetched from a network keyserver at run time; the regression checks the script, verifies the real
