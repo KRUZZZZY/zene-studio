@@ -112,7 +112,10 @@ QString candidateSetNote()
 		"publishes one). NOTHING RANKS THESE CANDIDATES: no candidate is preferred, none is "
 		"called best and no score is attached to any of them - no validated preference scorer "
 		"exists for master variants of one song (docs/AUTO-MASTERING.md section 8), so the "
-		"choice is the user's. Mastering them writes files: see mastering.run");
+		"choice is the user's. Mastering them writes files: see mastering.run. The accepted values for "
+		"mastering.run's `genre` (a CLOSED, lower-case set, matched exactly with no case folding: the "
+		"`genres` field) and `delivery_target` (the `delivery_targets` field) are published alongside "
+		"this set, and the GUI form offers the genre set as a choice.");
 }
 
 //! Every output path the last run reported, source render first.
@@ -138,6 +141,10 @@ ControlResult handleMasteringListCandidates()
 	result.insert(QStringLiteral("candidates"), candidates);
 	result.insert(QStringLiteral("count"), candidates.size());
 	result.insert(QStringLiteral("note"), candidateSetNote());
+	result.insert(QStringLiteral("genres"), QJsonArray::fromStringList(masteringGenreNames()));
+	result.insert(QStringLiteral("delivery_targets"),
+		QJsonArray::fromStringList(masteringDeliveryTargetNames()));
+	result.insert(QStringLiteral("genre_max_length"), masteringGenreMaxLength());
 	return ControlResult::success(result);
 }
 
@@ -198,12 +205,18 @@ void registerMasteringListCandidates(ControlRegistry& registry)
 		"the dynamics stage's five numbers and the chain settings they imply. The set is the "
 		"engine's own (MasteringJob::defaultCandidates) - it varies target loudness, ceiling "
 		"and dynamics so the candidates are objectively distinguishable. This command writes "
-		"nothing and starts no render: mastering.run is what masters and measures.");
+		"nothing and starts no render: mastering.run is what masters and measures. It also publishes "
+		"the accepted values for mastering.run's `genre` and `delivery_target`: `genres` (a CLOSED, "
+		"lower-case set, matched exactly with no case folding), `genre_max_length` and "
+		"`delivery_targets` (the engine's own named targets).");
 	cmd.argsSchema = objectSchema({});
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("candidates"), arrayProperty()},
 		{QStringLiteral("count"), integerProperty()},
 		{QStringLiteral("note"), stringProperty()},
+		{QStringLiteral("genres"), arrayProperty()},
+		{QStringLiteral("delivery_targets"), arrayProperty()},
+		{QStringLiteral("genre_max_length"), integerProperty()},
 	});
 	cmd.mutating = false;
 	cmd.handler = [](const QJsonObject&) { return handleMasteringListCandidates(); };
