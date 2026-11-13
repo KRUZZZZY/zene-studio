@@ -1033,6 +1033,7 @@ set(LMMS_SRCS
 	# abnormal exit (0.3.0, docs/KNOWN-LIMITATIONS.md for the stated bound).
 	core/RecordingJournal.cpp
 	core/ProjectIds.cpp
+	core/OfflineRenderBarrier.cpp
 	core/ProjectRenderer.cpp
 	core/ProjectRevisions.cpp
 	core/ProjectVersion.cpp

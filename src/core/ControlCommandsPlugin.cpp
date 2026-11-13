@@ -102,8 +102,8 @@ void registerPluginList(ControlRegistry& registry)
 		"VST3, then CLAP, then AU, so adding a host does not renumber the ids of the formats that were "
 		"already there. macOS builds also list Audio Units (format 'au', from the system component "
 		"registry; each entry carries its 'component' type:subtype:manufacturer and the "
-		"'scan_cache_path' its quarantine entry uses); other builds have no 'au' format. VST2 instruments "
-		"(format 'vst2', Q050-481.1) come last: hosted through Carla, found by Carla's own out-of-process "
+		"'scan_cache_path' its quarantine entry uses); other builds have no 'au' format. VST2 instruments, "
+		"then VST2 effects (format 'vst2', Q050-481.1/.2), come last: hosted through Carla, found by Carla's own out-of-process "
 		"discovery under ZENE_VST2_PATH or else VST_PATH, the VST directory setting and ~/.vst; each carries "
 		"its 'file', VST2 'unique_id', 'binary' (native, win64, win32) and 'bridged' (a Windows binary run "
 		"through Carla's Wine bridge). None are listed when no Carla runtime is installed.");

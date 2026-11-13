@@ -69,6 +69,7 @@ QString formatOf(const QString& moduleName)
 		{QStringLiteral("clapinstrument"), QStringLiteral("clap")}, {QStringLiteral("clapeffect"), QStringLiteral("clap")},
 		{QStringLiteral("auinstrument"), QStringLiteral("au")}, {QStringLiteral("aueffect"), QStringLiteral("au")},  // Q050-491
 		{QStringLiteral("carlavst2"), QStringLiteral("vst2")},  // Q050-481.1: VST2 through Carla
+		{QStringLiteral("carlavst2effect"), QStringLiteral("vst2")},  // Q050-481.2: VST2 effects through Carla
 		{QStringLiteral("lv2instrument"), QStringLiteral("lv2")}, {QStringLiteral("lv2effect"), QStringLiteral("lv2")}};
 	return formats.value(moduleName.toLower(), QStringLiteral("native"));
 }

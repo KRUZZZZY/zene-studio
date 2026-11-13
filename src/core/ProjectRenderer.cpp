@@ -32,6 +32,7 @@
 #include "Song.h"
 #include "PerfLog.h"
 #include "LoudnessReport.h"
+#include "OfflineRenderBarrier.h"
 
 #include "AudioEngineWorkerThread.h"
 #include "CrashReporter.h"
@@ -292,6 +293,7 @@ void ProjectRenderer::run()
 
 	Engine::getSong()->startExport();
 	// Skip first empty buffer.
+	offlinerender::waitForAll();
 	Engine::audioEngine()->renderNextPeriod();
 
 	m_progress.store( 0, std::memory_order_relaxed );
@@ -304,6 +306,9 @@ void ProjectRenderer::run()
 	// Continually track and emit progress percentage to listeners.
 	while (!Engine::getSong()->isExportDone() && !m_abort)
 	{
+		// Q050-481.2: devices that render on threads of their own (VST2 through Carla) are waited for HERE,
+		// between periods - an export has no realtime deadline, but the render period itself never waits.
+		offlinerender::waitForAll();
 		const auto buffer = Engine::audioEngine()->renderNextPeriod();
 
 		// The loudness tap: measure the very block that is about to be written.

@@ -80,6 +80,7 @@ enum
 	zvCanDo = 51,
 	zvGetVstVersion = 58,
 
+	zvPlugCategoryEffect = 1,  /* Q050-481.2: the test effect */
 	zvPlugCategorySynth = 2,
 	zvMidiType = 1,
 

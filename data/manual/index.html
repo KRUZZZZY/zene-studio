@@ -525,8 +525,24 @@ plug-in, in a window of its own from Wine for a Windows one. Zene runs Carla for
 slow plug-in nor the Wine bridge can stall playback; the track compensates for those two periods. The plug-in's settings, including its private state (its chunk), are
 saved with the project, in presets (<code>plugin.preset_save</code> / <code>plugin.preset_load</code>) and with
 <code>plugin.state_save</code>, and come back when they are loaded. Without a Carla runtime no VST2 instrument is listed, and a
-project that used one keeps it as a placeholder until Carla is installed. VST2 effects through Carla, and opening projects saved with
-the older VeSTige and VST effect hosts as Carla devices, come in later releases; until then those older hosts are unchanged.</p>
+project that used one keeps it as a placeholder until Carla is installed. Opening projects saved with the older VeSTige and VST
+effect hosts as Carla devices comes in a later release; until then those older hosts are unchanged.</p>
+
+<p><strong>VST2 effects through Carla.</strong> VST2 effects are found the same way, in the same folders, and are hosted the same
+way: native ones in Carla, Windows ones through Carla's Wine bridge. They appear in the device picker that Add device (Device panel),
+Add effect (a track's or channel's effect rack), Insert and Replace open, with the format <em>VST2</em>, and in
+<code>plugin.list</code> as format <code>vst2</code>, kind <code>effect</code>, listed after the VST2 instruments; <code>plugin.load</code>
+adds one to a track's or a mixer channel's chain, and <code>control.undo</code> removes it again. Each one is a Carla Rack holding
+that plug-in. Its dialog (the effect's Controls button) has a knob for each of the plug-in's parameters and a Show plugin editor button
+that opens the plug-in's own editor through <code>plugin.editor_open</code>, as an agent does - inside a Zene window for a native
+plug-in, in a window of its own from Wine for a Windows one. Its parameters are <code>plugin.param_get</code> /
+<code>plugin.param_set</code> parameters (by name or index, one undo step each) and automation targets. The effect's Wet/Dry knob
+mixes its output with its input. Zene runs Carla for each VST2 effect on a thread of its own, two audio periods behind the audio
+thread, so neither a slow plug-in nor the Wine bridge can stall playback; the effect reports those two periods as its delay, and the
+chain compensates for it. While a project is exported Zene waits for each VST2 plug-in between audio periods (at most two seconds each), so no audio is dropped from the file, and playback itself never waits. The
+plug-in's settings, including its chunk, are saved with the project, in presets (<code>plugin.preset_save</code> /
+<code>plugin.preset_load</code>) and with <code>plugin.state_save</code> / <code>plugin.state_load</code>. Without a Carla runtime
+no VST2 effect is listed, and a project that used one keeps it as a placeholder until Carla is installed.</p>
 
 <p>Each device card has an Actions button (⋯), and the same menu opens on a right-click: Bypass, Open Editor, Presets, A/B, Replace With…, Move Left, Move Right and Remove, then Insert, Copy, Parameters and Hosting. Under the card's header a line says the device's state in words: Bypassed, which A/B setting you hear, the delay it adds, whether its plug-in host crashed or was quarantined, and the preset it last loaded or saved. When the chain changes, the cards that did not change stay where they are. Add device, Insert and Replace open the device picker. With a mixer channel selected, Add device fills the channel's selected parallel chain (Rack &gt; Route to); an empty parallel chain has its own Add device... button under its heading. Start typing to filter it by name, vendor, format or type. The arrow keys move through the list, Enter adds the highlighted device and Escape cancels. Each row shows the device's type, format, vendor and state; favourites come first.</p>
 <p>The Inspector keeps its place as you move through a project: a section that still shows the same track, clip or channel is left as it is, and a changed section keeps your keyboard focus and scroll position. When the selected notes differ, a field says 'Multiple values', and a key, velocity or length you type there is given to every selected note; a typed start moves the first note there and keeps the spacing. Volumes read in dB, velocities and pan in %, and times in the time format. Rename a track or a mixer channel by typing in its name field.</p>
