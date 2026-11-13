@@ -7,7 +7,7 @@ Manual: `data/manual/index.html` (pinned mixer strips paragraph). Builds on stag
 
 ## What changed
 
-Base `20fa43c90b` to `HEAD` (13 files, +747 / -32):
+Base `20fa43c90b` to `HEAD` (15 files, +883 / -34, including this report and the verifier's undo-coverage update):
 
 - `include/MixerZones.h`, `src/gui/MixerZones.cpp`: `mixerzones::Layout` gains `pinned` (an ordered list of
   `ch-<n>` ids; the master is never pinned). `MixerZoneState` holds it beside the dock and size data and emits
@@ -20,7 +20,7 @@ Base `20fa43c90b` to `HEAD` (13 files, +747 / -32):
 - Persistence rides the existing `mixer_zones` snapshot key, so `window.layout_project_save` and
   `window.layout_project_apply` save and restore pins. No second section, no second format. Layouts saved
   before this stage have no `pinned` key and open with nothing pinned.
-- `tests/src/gui/MixerPinnedStripsTest.cpp` (new, 406 lines), registered in `tests/CMakeLists.txt`,
+- `tests/src/gui/MixerPinnedStripsTest.cpp` (new, 424 lines), registered in `tests/CMakeLists.txt`,
   `tests/all-sources.txt`, `tests/fork-sources.txt`.
 - `tools/mcp-zene-control/zene_control/commands_snapshot.json`: regenerated live.
 - `data/manual/index.html`, `docs/050-features/Q050-227.2.md`: manual paragraph and feature record.
@@ -35,6 +35,7 @@ Base `20fa43c90b` to `HEAD` (13 files, +747 / -32):
 | 4 | Invalid input is refused (`InvalidArgs` for a non-array or the master; `NotFound` for an unknown id) and a refused call changes nothing. | `MixerPinnedStripsTest::pinningRefusesWhatCannotBePinnedAndToleratesOldLayouts` | same | 0 |
 | 5 | A legacy layout without `pinned` opens with nothing pinned. | `MixerPinnedStripsTest::pinningRefusesWhatCannotBePinnedAndToleratesOldLayouts` (legacy snapshot case) | same | 0 |
 | 6 | A pinned channel that is deleted does not crash, and the pins no longer name it. | `MixerPinnedStripsTest::pinningRefusesWhatCannotBePinnedAndToleratesOldLayouts` (deleted-channel case) | same | 0 |
+| 7 | One undo of the saved layout restores the previous pin list and width; reopening the saved project restores the new pins. | `MixerPinnedStripsTest::pinUnpinResizeSaveAndRestoreTogether` | same | 0 |
 
 Run on its own (`build/tests/MixerPinnedStripsTest pinningRefusesWhatCannotBePinnedAndToleratesOldLayouts`), the
 slot passes (exit 0, `p8-fn-b.log`). The slot now creates the four channels it needs itself.
@@ -45,7 +46,7 @@ Product diff reverted and restored with `git diff 20fa43c90b HEAD -- src include
 
 | Step | Command | Exit code | Log |
 | --- | --- | --- | --- |
-| RED build | `cmake --build build --target zene MixerPinnedStripsTest -- -j4` | 2 | `p7-red-build.log` (missing `populatePinAction`, `pinnedArea`, `channelScrollArea`) |
+| RED build | `cmake --build build --target zene MixerPinnedStripsTest -- -j4` | 2 | `p7-red-build.log` (missing `populatePinAction`, `pinnedArea`, `channelScrollArea`; the log predates the verifier's added undo assertions) |
 | RED ctest | `ctest -R '^MixerPinnedStripsTest$'` | 8 | `p7-red-test.log` (`Not Run`) |
 | GREEN build | same build command, product restored | 0 | `p7-green-build.log` |
 | GREEN ctest | same ctest command | 0 | `p7-green-test.log` (100% of 1, 3.21 s) |
@@ -85,13 +86,12 @@ with no version-specific calls. The check is in `feature_check` (`check-namespac
    `pinUnpinResizeSaveAndRestoreTogether`: ctest exit 0 (`p7-green-test.log`) and, run alone, exit 0
    (`p7-fn-a.log`). Criteria 4, 5 and 6 are proven by `pinningRefusesWhatCannotBePinnedAndToleratesOldLayouts`:
    ctest exit 0 (`p7-green-test.log`). Run alone it exits 0 (`p8-fn-b.log`).
-3. **Each edit is ONE undo step; each new or changed command has an honest reversibility class.** The snapshot
-   declares `window.mixer_view` `"mutating": false` (`commands_snapshot.json`, `window.mixer_view` entry) and
-   `window.mixer_zones` `"mutating": false` (same file). Pins are layout (GUI) state, not song data; the undo step
-   for layout changes is `window.layout_project_save` / `window.layout_project_apply`. This is a judgement call for
-   review: pin and unpin do change state, and `mutating: false` is set on the basis that the layout is not song
-   data. Not verified by a test: that a single pin or unpin is exactly one undo step. ReversibilityContractTest
-   exit 0 (`p5-ctest-rct.log`).
+3. **The saved layout is ONE undo step; the command classes are honest.** `window.mixer_view` and
+   `window.mixer_zones` are `not_mutating`: a direct call changes live interface state, while
+   `window.layout_project_save` is the `true_inverse` project write. The combined GUI test first remembers the
+   resized, unpinned layout, then makes a second separator resize and pins before saving once; one `control.undo`
+   restores the empty pin list and previous width. It then opens the saved project and verifies the new pins return. `ReversibilityContractTest` also passes
+   (exit 0, `p5-ctest-rct.log`).
 4. **Nothing added runs on the audio thread (the diff matched the audio-path hint).** The match is a false
    positive: the only case-insensitive hit in `git diff 20fa43c90b HEAD` is hunk header line 510,
    `@@ ... void MixerView::refreshDisplay()`, where `Display(` contains `play(`. The touched functions are GUI

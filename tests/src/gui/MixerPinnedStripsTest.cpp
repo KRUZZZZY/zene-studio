@@ -194,6 +194,17 @@ private slots:
 		QCoreApplication::processEvents();
 		const int masterDragged = sizesOf(run(QStringLiteral("window.mixer_zones"))).value(QStringLiteral("master")).toInt();
 		QVERIFY2(masterDragged > masterBefore, qPrintable(QStringLiteral("master %1 -> %2").arg(masterBefore).arg(masterDragged)));
+		// Remember the resized, unpinned layout; the later save groups its pin change into one undo step.
+		const ControlResult startingLayout = run(QStringLiteral("window.layout_project_save"));
+		QVERIFY2(startingLayout.ok, qPrintable(startingLayout.errorMessage));
+		QVERIFY(startingLayout.result.value(QStringLiteral("changed")).toBool());
+		// Make a second, independent width change after that save; it must join the pin in the next layout step.
+		dragHandle(zoneIndex(QStringLiteral("master")), 20);
+		QCoreApplication::processEvents();
+		const int masterAfterSecondDrag = sizesOf(run(QStringLiteral("window.mixer_zones")))
+			.value(QStringLiteral("master")).toInt();
+		QVERIFY2(masterAfterSecondDrag > masterDragged,
+			qPrintable(QStringLiteral("second master drag %1 -> %2").arg(masterDragged).arg(masterAfterSecondDrag)));
 
 		// (a) ten more strips, so the channel scroll area really scrolls at 1024 px.
 		const int wanted = 12;
@@ -270,6 +281,12 @@ private slots:
 		QVERIFY2(inView(view->channelView(last)).x() > inView(view->channelView(last - 1)).x(),
 			"the unpinned strip is not after its neighbour in the scrolling channels");
 		QVERIFY(run(QStringLiteral("window.mixer_zones"), {{QStringLiteral("reset"), true}}).ok);
+
+		// One undo takes back the saved layout as a whole, including both the pin and the resize.
+		const ControlResult undoneLayout = run(QStringLiteral("control.undo"));
+		QVERIFY2(undoneLayout.ok, qPrintable(undoneLayout.errorMessage));
+		QVERIFY(pinnedOf().isEmpty());
+		QCOMPARE(sizesOf(run(QStringLiteral("window.mixer_zones"))).value(QStringLiteral("master")).toInt(), masterDragged);
 
 		// (h) restore: the project brings the pin back on the same id, in the pinned area, with the same width.
 		Engine::getSong()->loadProject(path);
