@@ -50,6 +50,7 @@
 #include "SongEditor.h"
 #include "TrackFolder.h"
 #include "TrackFolderMenu.h"
+#include "TrackLabelButton.h"
 #include "TrackPinStrip.h"
 #include "TrackView.h"
 
@@ -127,6 +128,14 @@ private slots:
 		Track* child = Track::create(Track::Type::Sample, Engine::getSong());
 		QCoreApplication::processEvents();
 		QVERIFY(viewOf(child) != nullptr);
+
+		// The folder's row carries a header label showing the folder's own name, like every other row.
+		TrackView* folderView = viewOf(folder);
+		QVERIFY2(folderView != nullptr, "the folder has no row");
+		auto* folderLabel = folderView->getTrackSettingsWidget()->findChild<TrackLabelButton*>(
+			QString(), Qt::FindDirectChildrenOnly);
+		QVERIFY2(folderLabel != nullptr, "the folder's row has no track label");
+		QTRY_COMPARE(folderLabel->text(), folder->displayName());
 
 		// The child's Folder menu moves it in.
 		QMenu childMenu;
