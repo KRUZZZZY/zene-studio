@@ -1138,8 +1138,10 @@ after merging `050/m0-train-26`, 2026-11-12): `record.midi_capture_commit` adds 
 `track.set_midi_arm` and `record.midi_capture_status` two `not_mutating` rows -
 `rows=936 true_inverse=460 snapshot=42 irreversible=25 not_mutating=409`.
 
+**M0 merge train 28** (`050/m0-train-28`, 2026-11-13, automatic): `ReversibilityContractTest` on the merged tree measures `rows=940 true_inverse=463 snapshot=42 irreversible=25 not_mutating=410`.
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=934 true_inverse=460 snapshot=42 irreversible=25 not_mutating=407
+     measured: rows=940 true_inverse=463 snapshot=42 irreversible=25 not_mutating=410
      configuration: telemetry.status wasm.load session.get_state stem.get_state app.update_check_get
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5

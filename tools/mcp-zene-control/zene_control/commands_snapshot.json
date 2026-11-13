@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-11-12T17:48:48Z",
+  "captured_at": "2026-11-13T15:32:50Z",
   "commands": [
     {
       "args_schema": {
@@ -10750,6 +10750,50 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "out_dir": {
+            "type": "string"
+          },
+          "tracks": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "tracks"
+        ],
+        "type": "object"
+      },
+      "description": "Freeze two or more instrument or sample tracks ('tracks': ids) as ONE background task: their renders run at the same time (up to 'parallel' child renders), task.list shows one 'freeze' task with aggregate progress and task.cancel stops it. Returns at once with the batch, its task id and each track's output file. Nothing is applied until every render has succeeded; then every track is re-checked and all are frozen in ONE undo step (control.undo takes the whole batch off). A cancel, a failed render or a track, tempo or project that changed meanwhile ends the batch with no track frozen and no staged file left. Refused up front: fewer than two tracks, a repeated id, a track that is not an instrument or sample track, or one already frozen. 'out_dir' places the takes (default: the project's bounce folder). track.get_state reads each result.",
+      "group": "freeze",
+      "id": "freeze.tracks",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "batch": {
+            "type": "integer"
+          },
+          "parallel": {
+            "type": "integer"
+          },
+          "state": {
+            "type": "string"
+          },
+          "task": {
+            "type": "integer"
+          },
+          "tracks": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "track": {
             "type": "string"
           }
@@ -20324,7 +20368,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Every device this build can load: built-in effect and instrument modules plus the devices of the shipped hosting formats (LADSPA, LV2, VST3 and CLAP), each with a dev-<n> id that is deterministic for the binary. dev-<n> is a catalogue index, not a persisted project id, and 'loadable' says whether plugin.load accepts the entry. Each entry carries 'vendor' - who made it, as its own format reports it (\"Zene Studio\" for a built-in, the LADSPA maker, the LV2 author, the VST3 or CLAP factory's vendor; empty when the format reports none, which the device picker reads as \"Not reported\"). Format order is built-in, then LADSPA, then LV2, then VST3, then CLAP, then AU, so adding a host does not renumber the ids of the formats that were already there. macOS builds also list Audio Units (format 'au', from the system component registry; each entry carries its 'component' type:subtype:manufacturer and the 'scan_cache_path' its quarantine entry uses); other builds have no 'au' format. VST2 instruments (format 'vst2', Q050-481.1) come last: hosted through Carla, found by Carla's own out-of-process discovery under ZENE_VST2_PATH or else VST_PATH, the VST directory setting and ~/.vst; each carries its 'file', VST2 'unique_id', 'binary' (native, win64, win32) and 'bridged' (a Windows binary run through Carla's Wine bridge). None are listed when no Carla runtime is installed.",
+      "description": "Every device this build can load: built-in effect and instrument modules plus the devices of the shipped hosting formats (LADSPA, LV2, VST3 and CLAP), each with a dev-<n> id that is deterministic for the binary. dev-<n> is a catalogue index, not a persisted project id, and 'loadable' says whether plugin.load accepts the entry. Each entry carries 'vendor' - who made it, as its own format reports it (\"Zene Studio\" for a built-in, the LADSPA maker, the LV2 author, the VST3 or CLAP factory's vendor; empty when the format reports none, which the device picker reads as \"Not reported\"). Format order is built-in, then LADSPA, then LV2, then VST3, then CLAP, then AU, so adding a host does not renumber the ids of the formats that were already there. macOS builds also list Audio Units (format 'au', from the system component registry; each entry carries its 'component' type:subtype:manufacturer and the 'scan_cache_path' its quarantine entry uses); other builds have no 'au' format. VST2 instruments, then VST2 effects (format 'vst2', Q050-481.1/.2), come last: hosted through Carla, found by Carla's own out-of-process discovery under ZENE_VST2_PATH or else VST_PATH, the VST directory setting and ~/.vst; each carries its 'file', VST2 'unique_id', 'binary' (native, win64, win32) and 'bridged' (a Windows binary run through Carla's Wine bridge). None are listed when no Carla runtime is installed.",
       "group": "plugin",
       "id": "plugin.list",
       "mutating": false,
@@ -22402,7 +22446,7 @@
         ],
         "type": "object"
       },
-      "description": "A device's audio-ports model: the input and output pin matrices, their channel counts and names, and the engine's own used-channel caches. Read-only.",
+      "description": "A device's audio-ports model: the input and output pin matrices, their channel counts and names, the engine's own used-channel caches, and the bus its track channels address (a discrete-N mixer channel: N channels by index; any other host: the stereo pair). Read-only.",
       "group": "port",
       "id": "port.get_state",
       "mutating": false,
@@ -22410,6 +22454,9 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "bus": {
+            "type": "object"
+          },
           "device": {
             "type": "string"
           },
@@ -22499,6 +22546,87 @@
           },
           "track_channel": {
             "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "pins": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "direction": {
+                  "enum": [
+                    "in",
+                    "out"
+                  ],
+                  "type": "string"
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "processor_channel": {
+                  "maximum": 255,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "track_channel": {
+                  "maximum": 255,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "direction",
+                "track_channel",
+                "processor_channel",
+                "enabled"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "device",
+          "pins"
+        ],
+        "type": "object"
+      },
+      "description": "Set many pins of a device's audio-ports matrices as one routing edit (the render sees all of them or none). 'pins' lists {direction, track_channel, processor_channel, enabled}, up to 8192. A device in a discrete-N mixer channel reaches channels 0..N-1 by index (port.get_state's 'bus'). One undo step on the engine's own history (control.undo, Edit > Undo) puts back the values the pins held before; redo applies them again.",
+      "group": "port",
+      "id": "port.set_pins",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bus": {
+            "type": "object"
+          },
+          "device": {
+            "type": "string"
+          },
+          "ports": {
+            "type": "object"
+          },
+          "set": {
+            "type": "integer"
+          },
+          "target": {
+            "type": "string"
           }
         },
         "required": [],
@@ -25926,6 +26054,185 @@
           },
           "updated_utc": {
             "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Leave the MIDI captured by the last transport.record pass in the arrangement. Stop runs this by itself - the header's Stop, the space bar or transport.stop - so a client calls it only for a capture a refusal left pending (record.midi_capture_status 'pending'). A plain pass becomes one MIDI clip on its instrument track from the bar of its first note; a loop recording (the transport wrapped at least once) makes every pass that holds notes a take clip over the loop region, each on a new take lane of one take group, and the newest pass is the active take unless a take of that group was chosen (comp.take_select): a later loop recording over the same region joins the group and keeps that choice. In Replace record mode a plain pass erases the earlier notes it overlaps (notes only, never controller lanes or automation). Notes keep the velocity they sounded with. One undo step: control.undo removes the takes, control.redo restores them. Refused while recording and when nothing is pending.",
+      "group": "record",
+      "id": "record.midi_capture_commit",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "dropped_events": {
+            "type": "integer"
+          },
+          "loop_recording": {
+            "type": "boolean"
+          },
+          "notes": {
+            "type": "integer"
+          },
+          "takes": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "active": {
+                  "type": "boolean"
+                },
+                "clip": {
+                  "type": "string"
+                },
+                "group": {
+                  "type": "integer"
+                },
+                "lane": {
+                  "type": "integer"
+                },
+                "length": {
+                  "type": "integer"
+                },
+                "notes": {
+                  "type": "integer"
+                },
+                "pass": {
+                  "type": "integer"
+                },
+                "position": {
+                  "type": "integer"
+                },
+                "track": {
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The MIDI take recording state: 'armed_tracks' (each armed instrument track, whether it is capturing now, the events captured this pass and the events dropped because the bounded capture queue was full), 'recording' (a transport.record pass is capturing), 'pending' (a stopped pass whose takes were not committed), 'loop_recording', 'capacity_events' (the queue bound per track) and 'last_commit' (record.midi_capture_commit's last report: each take's track, clip, position, length, pass, notes, lane and take group). Reads only.",
+      "group": "record",
+      "id": "record.midi_capture_status",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "armed_tracks": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "capturing": {
+                  "type": "boolean"
+                },
+                "dropped_events": {
+                  "type": "integer"
+                },
+                "events": {
+                  "type": "integer"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "track": {
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "capacity_events": {
+            "type": "integer"
+          },
+          "last_commit": {
+            "additionalProperties": false,
+            "properties": {
+              "dropped_events": {
+                "type": "integer"
+              },
+              "loop_recording": {
+                "type": "boolean"
+              },
+              "notes": {
+                "type": "integer"
+              },
+              "takes": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "active": {
+                      "type": "boolean"
+                    },
+                    "clip": {
+                      "type": "string"
+                    },
+                    "group": {
+                      "type": "integer"
+                    },
+                    "lane": {
+                      "type": "integer"
+                    },
+                    "length": {
+                      "type": "integer"
+                    },
+                    "notes": {
+                      "type": "integer"
+                    },
+                    "pass": {
+                      "type": "integer"
+                    },
+                    "position": {
+                      "type": "integer"
+                    },
+                    "track": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "loop_recording": {
+            "type": "boolean"
+          },
+          "pending": {
+            "type": "boolean"
+          },
+          "recording": {
+            "type": "boolean"
+          },
+          "session_tracks": {
+            "type": "array"
           }
         },
         "required": [],
@@ -33085,6 +33392,9 @@
           "index": {
             "type": "number"
           },
+          "kept_roles": {
+            "type": "array"
+          },
           "monitor": {
             "enum": [
               "off",
@@ -33104,6 +33414,9 @@
           },
           "pinned": {
             "type": "boolean"
+          },
+          "role": {
+            "type": "string"
           },
           "soloed": {
             "type": "boolean"
@@ -33778,6 +34091,48 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "armed": {
+            "type": "boolean"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "armed"
+        ],
+        "type": "object"
+      },
+      "description": "Arm (armed: true) or disarm an instrument track for MIDI take recording: while transport.record runs, the MIDI played into an armed track - from a controller, the on-screen keyboard or any input routed to it - is captured, and Stop leaves it in the arrangement (record.midi_capture_commit): one MIDI clip for a plain pass, a take clip per pass on its own take lane for a loop recording, the newest pass active unless a take was chosen (comp.take_select). This is not track.set_arm, which records the audio input to a WAV file. Mode state, not saved with the project and not an undo step.",
+      "group": "track",
+      "id": "track.set_midi_arm",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "armed": {
+            "type": "boolean"
+          },
+          "capturing": {
+            "type": "boolean"
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "channel": {
             "type": "string"
           },
@@ -33952,6 +34307,79 @@
           },
           "track": {
             "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "instrument": {
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "neutral",
+              "instrument"
+            ],
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "role"
+        ],
+        "type": "object"
+      },
+      "description": "Give a neutral row an instrument (role 'instrument', naming the `instrument` plug-in), or switch an instrument track back to a neutral row (role 'neutral'). The row keeps its trk-<n> id, its position, name, mute/solo, colour and folder, and nothing else in the project changes. Switching to neutral KEEPS the instrument role - plug-in, settings, clips and the automation clips' links to its controls - with the row (track.get_state `kept_roles`, saved with the project); switching that row to 'instrument' again gives it back (omit `instrument`). One undo step.",
+      "group": "track",
+      "id": "track.set_role",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip_count": {
+            "type": "number"
+          },
+          "folder": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "index": {
+            "type": "integer"
+          },
+          "kept_roles": {
+            "type": "array"
+          },
+          "muted": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "soloed": {
+            "type": "boolean"
+          },
+          "track": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "visible": {
+            "type": "boolean"
           }
         },
         "required": [],
@@ -34822,7 +35250,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Start playback in record mode - the header's Record button dispatches this: sample tracks with recording enabled capture, and automation clips armed for recording write, while it plays (Song::playAndRecord). Starting from a stopped transport only: while the song is already playing the record mode cannot be switched on mid-run, so this is refused, typed - stop first. transport.stop ends it. Audio capture on a record route is armed per track (track.set_arm) and runs on its own.",
+      "description": "Start playback in record mode - the header's Record button dispatches this: sample tracks with recording enabled capture, and automation clips armed for recording write, while it plays (Song::playAndRecord). Starting from a stopped transport only: while the song is already playing the record mode cannot be switched on mid-run, so this is refused, typed - stop first. transport.stop ends it. Audio capture on a record route is armed per track (track.set_arm) and runs on its own. Instrument tracks armed with track.set_midi_arm record the MIDI played into them alongside (Q050-054.1): 'midi_tracks' lists them, and Stop leaves their takes in the arrangement through record.midi_capture_commit - one MIDI clip per plain pass, a take lane per loop pass.",
       "group": "transport",
       "id": "transport.record",
       "mutating": false,
@@ -34832,6 +35260,9 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "midi_tracks": {
+            "type": "array"
+          },
           "playing": {
             "type": "boolean"
           },
@@ -39043,6 +39474,76 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "root": {
+            "maximum": 11,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scale": {
+            "type": "string"
+          },
+          "scale_rows_only": {
+            "type": "boolean"
+          },
+          "step_ticks": {
+            "maximum": 3072,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Open a MIDI clip in the melodic step grid (Edit > Step Grid..., or the note editor's Notes > Tools > Open in Step Grid) and answer what the grid shows. Columns are steps of 'step_ticks' ticks (default 12, a sixteenth), rows are pitches; every lit cell is one ordinary note of the clip, so the piano roll (roll.get_state) and note.step_get_state read the same notes. 'scale' picks the scale the rows are read against: \"\" the project key (scale.set), \"none\" no scale, or a scale.list name on 'root' (0 = C); 'scale_rows_only' hides the out-of-scale rows that hold no note. With no 'clip' it opens the selected MIDI clip, or keeps the grid's own. The grid's clicks and fields each run ONE note.step_set (one undo step); this command only opens the view and edits nothing. The reply: 'clip', 'step_ticks', 'steps', 'rows' (keys, highest first), 'cells' (each note's id, step, key, velocity, chance, ratchet, length, in_scale) and 'selected'.",
+      "group": "window",
+      "id": "window.step_grid",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "cells": {
+            "type": "array"
+          },
+          "clip": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "array"
+          },
+          "scale": {
+            "type": "object"
+          },
+          "scale_choice": {
+            "type": "string"
+          },
+          "scale_rows_only": {
+            "type": "boolean"
+          },
+          "selected": {
+            "type": "string"
+          },
+          "shown": {
+            "type": "boolean"
+          },
+          "step_ticks": {
+            "type": "integer"
+          },
+          "steps": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {},
         "required": [],
         "type": "object"
@@ -39549,7 +40050,7 @@
       }
     }
   ],
-  "count": 924,
+  "count": 931,
   "instance": {
     "binary": null,
     "binary_bytes": null,
@@ -39557,15 +40058,15 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-1erpv40w/zene.sock",
-    "version": "0.4.0-alpha.6721+9b825ee"
+    "source_socket": "/tmp/zctl-run-x6o_840j/zene.sock",
+    "version": "0.4.0-alpha.6900+35e3050"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 78,
-    "id_count": 924,
-    "ids_sha256": "fac3b27d98cbc91933c63f6608d20739a9d2d1000608af46ee5823a0c47077e1"
+    "id_count": 931,
+    "ids_sha256": "bc0c9a3463e35d2e47399ffea83794680ce5c48ee7bf4c1acd0bd7a5872a35ec"
   }
 }
