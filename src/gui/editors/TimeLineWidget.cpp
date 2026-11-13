@@ -471,7 +471,17 @@ void TimeLineWidget::mousePressEvent(QMouseEvent* event)
 	else if (event->button() == Qt::LeftButton) // 0.5.0 L03: the punch band's own handles first
 	{
 		m_action = getPunchAction(event);
-		if (m_action == Action::MovePunchBegin || m_action == Action::MovePunchEnd || m_action == Action::MovePunch)
+		// Owner 2026-10-29 (a Windows tester could not set a loop): the loop's drawn handles take a plain drag, as in
+		// other DAWs; Shift was the only way. A press on either edge of the loop (within its handle) moves that edge.
+		const int grab = std::max(m_loopHandleWidth, 6);
+		if (m_action == Action::NoAction || m_action == Action::MovePositionMarker)
+		{
+			if (std::abs(pos.x() - markerX(m_timeline->loopBegin())) <= grab) { m_action = Action::MoveLoopBegin; }
+			else if (std::abs(pos.x() - markerX(m_timeline->loopEnd())) <= grab) { m_action = Action::MoveLoopEnd; }
+		}
+		if (m_action == Action::MoveLoopBegin || m_action == Action::MoveLoopEnd) { setCursor(actionCursor(m_action)); }
+		if (m_action == Action::MoveLoopBegin || m_action == Action::MoveLoopEnd) {}
+		else if (m_action == Action::MovePunchBegin || m_action == Action::MovePunchEnd || m_action == Action::MovePunch)
 		{
 			setCursor(actionCursor(m_action));
 			m_punchDragStart = getClickedTime(pos.x()).getTicks();
@@ -488,6 +498,7 @@ void TimeLineWidget::mousePressEvent(QMouseEvent* event)
 	if (m_action == Action::MoveLoopBegin || m_action == Action::MoveLoopEnd)
 	{
 		delete m_hint;
+		m_hint = nullptr;  // a release delivered while the float shows deletes m_hint too (ClipView has the same)
 		m_hint = TextFloat::displayMessage(tr("Hint"),
 			tr("Press <%1> to disable magnetic loop points.").arg(UI_CTRL_KEY),
 			embed::getIconPixmap("hint"), 0);
