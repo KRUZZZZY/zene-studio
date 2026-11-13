@@ -5863,3 +5863,4 @@ src/core/CMakeLists.txt	Q050-054.1: builds MidiTakeCapture.cpp, MidiTakeRecorder
 tests/CMakeLists.txt	Q050-054.1: registers MidiTakeRecordTest, MidiTakeMenuTest (headless Qt platform) and the ControlMidiTakeRecord transcript (Skipped, never Passed, without a real MIDI source).
 src/gui/CMakeLists.txt	Q050-054.1: builds gui/shell/ShellRecordMenu.cpp (the track menu's Record submenu, moved out of ShellCommandMenus.cpp with its MIDI take entries).
 tests/src/core/ClipConsolidateTest.cpp	# A valid large consolidation range can exhaust memory
+tests/src/core/NoteRandomTest.cpp	# NaN velocity jitter propagates into the velocity factor

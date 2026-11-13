@@ -32,6 +32,7 @@
 
 #include <QDomDocument>
 
+#include <limits>
 #include <vector>
 
 #include "NoteRandom.h"
@@ -215,6 +216,25 @@ private slots:
 		const float clamped = NoteRandom::velocityFactor( 4.f, 5, 60, 0, 24 );
 		QVERIFY( clamped >= 0.f );
 		QVERIFY( clamped <= 2.f );
+	}
+
+	//! A non-finite jitter is not velocity jitter (Note::setVelocityJitter maps it
+	//! to 0), so the factor is the neutral 1 for every note. NaN fails the `<= 0`
+	//! guard and +inf clamps to 1, which would spread the velocity; both must not.
+	void velocityJitterNonFiniteIsNeutral()
+	{
+		using namespace lmms;
+
+		const float nan = std::numeric_limits<float>::quiet_NaN();
+		const float inf = std::numeric_limits<float>::infinity();
+		for( const float jitter : { nan, inf, -inf } )
+		{
+			for( const TestNote& n : s_notes )
+			{
+				const float f = NoteRandom::velocityFactor( jitter, 5, n.key, n.pos, n.length );
+				QVERIFY( f == 1.f );
+			}
+		}
 	}
 
 	void velocityJitterIsSeeded()
