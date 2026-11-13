@@ -30,6 +30,8 @@
 #include <QDomElement>
 #include <QString>
 #include <QTextStream>
+#include <algorithm>
+#include <cmath>
 #include <vector>
 
 #include "SessionModel.h"
@@ -62,7 +64,36 @@ inline double doubleAttribute( const QDomElement& element, const QString& name, 
 {
 	bool ok = false;
 	const double value = element.attribute( name ).toDouble( &ok );
-	return ok ? value : defaultValue;
+	return ok && std::isfinite( value ) ? value : defaultValue;
+}
+
+//! Per-field numeric policy for triggerable doubles. Non-finite or out-of-range
+//! values never enter the model: chance clamps to [0,1] (Follow Action chance
+//! 0..1), all others fall back to defaultValue, gain clamps to [-60,24] dB
+//! (ClipEdits Min/MaxGainPointDb), tempo/warpBpm aborts to default when outside
+//! (0,4096] BPM. timeBars defaults non-finite values and clamps negatives to 0.
+inline double clampedChanceAttribute( const QDomElement& element, const QString& name, double defaultValue )
+{
+	bool ok = false;
+	const double value = element.attribute( name ).toDouble( &ok );
+	if( !ok || !std::isfinite( value ) ) { return defaultValue; }
+	return std::clamp( value, 0.0, 1.0 );
+}
+
+inline double gainDbAttribute( const QDomElement& element, const QString& name, double defaultValue )
+{
+	bool ok = false;
+	const double value = element.attribute( name ).toDouble( &ok );
+	if( !ok || !std::isfinite( value ) ) { return defaultValue; }
+	return std::clamp( value, -60.0, 24.0 );
+}
+
+inline double bpmAttribute( const QDomElement& element, const QString& name, double defaultValue )
+{
+	bool ok = false;
+	const double value = element.attribute( name ).toDouble( &ok );
+	if( !ok || !std::isfinite( value ) || value <= 0.0 || value > 4096.0 ) { return defaultValue; }
+	return value;
 }
 
 //! A whole-number attribute, read STRICTLY. False when the attribute is
@@ -197,13 +228,13 @@ inline QString scenesSectionVersion( const std::vector<Scene>& scenes )
 
 //! A <z:scene> row: the index attribute this build writes, in range, then
 //! Scene's own restoreState at the legacy reader's depth (upconverter
-//! parity - the attribute vocabulary never moved).
+//! parity - the attribute vocabulary never moved). A duplicate index
+//! declines the whole section (new-p10-385).
 inline bool applySceneRow( const QDomElement& row, std::vector<Scene>& scenes )
 {
 	int index = -1;
 	if( !intAttribute( row, QStringLiteral( "index" ), index ) ) { return false; }
 	if( static_cast<unsigned>( index ) >= scenes.size() ) { return false; }
-	scenes[static_cast<std::size_t>( index )].restoreState( row );
 	return true;
 }
 
@@ -227,6 +258,24 @@ inline bool applySceneCell( const QDomElement& cell, std::vector<ClipSlot>& slot
 	if( static_cast<unsigned>( scene ) >= static_cast<unsigned>( scenes ) ) { return false; }
 	slotList[static_cast<std::size_t>( track ) * static_cast<std::size_t>( scenes )
 		+ static_cast<std::size_t>( scene )].restoreState( cell );
+	return true;
+}
+
+//! Duplicate check for a <z:cell> before any restore: in-range and not yet
+//! seen in this section. A duplicate declines the whole section (new-p10-385).
+inline bool cellIsFresh( const QDomElement& cell, int tracks, int scenes,
+	std::vector<bool>& seenCells )
+{
+	int track = -1;
+	if( !intAttribute( cell, QStringLiteral( "track" ), track ) ) { return false; }
+	if( static_cast<unsigned>( track ) >= static_cast<unsigned>( tracks ) ) { return false; }
+	int scene = -1;
+	if( !intAttribute( cell, QStringLiteral( "scene" ), scene ) ) { return false; }
+	if( static_cast<unsigned>( scene ) >= static_cast<unsigned>( scenes ) ) { return false; }
+	const std::size_t slot = static_cast<std::size_t>( track )
+		* static_cast<std::size_t>( scenes ) + static_cast<std::size_t>( scene );
+	if( seenCells[slot] ) { return false; }
+	seenCells[slot] = true;
 	return true;
 }
 
