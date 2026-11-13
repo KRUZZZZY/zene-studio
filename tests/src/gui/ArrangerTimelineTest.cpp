@@ -88,6 +88,7 @@
 #include "PatternClipView.h"
 #include "PatternStore.h"
 #include "PatternTrack.h"
+#include "PositionLine.h"
 #include "ProjectMarkers.h"
 #include "SampleBuffer.h"
 #include "SampleClip.h"
@@ -1313,6 +1314,41 @@ private slots:
 		QVERIFY2(!ArrangerRange::instance().active(), "a tool change mid-audition still dispatched a range");
 		QVERIFY(run(QStringLiteral("transport.audition_stop")).ok);  // tidy whatever happened
 		QVERIFY(run(QStringLiteral("arrangement.set_tool"), {{QStringLiteral("tool"), QStringLiteral("select")}}).ok);
+	}
+
+	//! BUG new-p10-302: the song editor's position line takes its width from the zoom. A NaN or infinite zoom is refused
+	//! (the line keeps its width and place), and a huge finite zoom is clamped to the widget limit instead of being
+	//! converted to an int out of range. The real zoom path (arrangement.zoom) still sets the width as before.
+	void positionLineZoomRefusesNonFiniteAndClampsOversized()
+	{
+		PositionLine* line = m_editor->positionLine();
+		QVERIFY(line != nullptr);
+
+		line->zoomChange(1.0f);
+		QCOMPARE(line->width(), 8);
+		line->move(40, 0);
+
+		const float nonFinite[] = {
+			std::numeric_limits<float>::quiet_NaN(),
+			std::numeric_limits<float>::infinity(),
+			-std::numeric_limits<float>::infinity(),
+		};
+		for (const float zoom : nonFinite)
+		{
+			line->zoomChange(zoom);
+			QCOMPARE(line->width(), 8);
+			QCOMPARE(line->x(), 40);
+		}
+
+		// 3.0e8 * 8 is past the int range; FLT_MAX is far past it.
+		for (const float zoom : {3.0e8f, std::numeric_limits<float>::max()})
+		{
+			line->zoomChange(zoom);
+			QCOMPARE(line->width(), QWIDGETSIZE_MAX);
+		}
+
+		// Put the line back where the editor's own zoom path leaves it (SongEditor.cpp: pixelsPerBar / 128).
+		line->zoomChange(m_editor->pixelsPerBar() / 128.0f);
 	}
 
 	//! QtTest runs only the private slots. A test method declared under `private:` is never run, so this asks the
