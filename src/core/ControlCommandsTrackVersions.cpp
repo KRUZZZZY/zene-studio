@@ -24,6 +24,8 @@
 #include <QDomDocument>
 #include <QJsonArray>
 
+#include "AudioEngine.h"
+#include "Clip.h"
 #include "ControlCommandDef.h"
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
@@ -32,6 +34,8 @@
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "Song.h"
+#include "TakeLane.h"
+#include "TimePos.h"
 #include "Track.h"
 #include "TrackVersions.h"
 
@@ -132,6 +136,89 @@ ControlResult removeVersion(const QJsonObject& args)
 	return ControlResult::success(report(track, after));
 }
 
+//! True when every stored version parses. A version that does not is never copied (review L19 #15).
+bool allReadable(const Set& versions)
+{
+	for (auto version = versions.clips.constBegin(); version != versions.clips.constEnd(); ++version)
+	{
+		if (!QDomDocument().setContent(version.value())) { return false; }
+	}
+	return true;
+}
+
+//! The clips of @a stored (a <clips> document) added to @a track as clips of take lane @a lane, each a new clip
+//! (a fresh id, in no take group, not linked). Returns the new clips as a <clips> document.
+QString addLaneCopies(Track* track, const QString& stored, int lane)
+{
+	QDomDocument doc;
+	if (!doc.setContent(stored)) { return QString(); }
+	QDomDocument out;
+	QDomElement root = out.createElement(QStringLiteral("clips"));
+	out.appendChild(root);
+	// Same guard as TrackVersions::replaceClips: the audio thread walks the track's clips while these are added.
+	auto guard = Engine::audioEngine()->requestChangesGuard();
+	for (QDomElement element = doc.documentElement().firstChildElement(); !element.isNull(); element = element.nextSiblingElement())
+	{
+		element.removeAttribute(QStringLiteral("id"));  // no id: restoreState takes a fresh one, so the copy is a new clip
+		Clip* clip = track->createClip(TimePos(0));
+		clip->restoreState(element);
+		clip->clearTakeGroupId();
+		clip->setLinkId(0);
+		clip->setLaneIndex(lane);
+		clip->saveState(out, root);
+	}
+	return out.toString(-1);
+}
+
+//! @a versions with @a copies appended to every stored version, so switching versions keeps the lane's takes
+//! (the copies are kept with each version, not only with the one playing).
+Set withCopies(const Set& versions, const QString& copies)
+{
+	Set after = versions;
+	for (auto version = after.clips.begin(); version != after.clips.end(); ++version)
+	{
+		version.value() = TrackVersions::appendClips(version.value(), copies);
+	}
+	return after;
+}
+
+//! Adds the take lane for a version. Lane 0 is the base lane every untagged clip sits on, so a track with no
+//! lanes gets its base lane (named \p base) first: the version's lane is then never lane 0. Returns the
+//! version's lane index, or -1 when the model has no room.
+int addVersionLane(TakeLaneModel& lanes, const QString& base, const QString& name)
+{
+	if (lanes.laneCount() == 0 && lanes.addLane(base) < 0) { return -1; }
+	return lanes.addLane(name);
+}
+
+//! Makes the stored version 'name' a take lane of the track: the lane holds copies of its clips as they are now.
+//! The copy is taken at this moment; later edits to the version do not follow. One undo step.
+ControlResult versionToLane(const QJsonObject& args)
+{
+	Track* track = nullptr;
+	Set before;
+	ControlResult error;
+	if (!versionsOf(args, &track, &before, &error)) { return error; }
+	const QString name = args.value(QStringLiteral("name")).toString().trimmed();
+	if (name.isEmpty()) { return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("a take lane needs a name")); }
+	if (!before.clips.contains(name)) { return ControlResult::failure(ControlErrorKind::NotFound, QStringLiteral("the track has no version '%1'").arg(name)); }
+	if (!allReadable(before)) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("a stored version cannot be read; the track is left as it is")); }
+	const bool needsBase = track->takeLanes().laneCount() == 0;
+	if (!track->takeLanes().canAddLanes(needsBase ? 2 : 1)) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the track has no room for another take lane")); }
+	addUndoStep(QVector<JournallingObject*>{track});
+	// The base lane takes the active version's name, or 'Main' when that is empty or equals the requested name.
+	const bool baseNameFree = !before.active.isEmpty() && before.active != name;
+	const QString base = baseNameFree ? before.active : QStringLiteral("Main");
+	const int lane = addVersionLane(track->takeLanes(), base, name);
+	if (lane <= 0) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("the track could not add the take lane")); }
+	const QString copies = addLaneCopies(track, before.clips.value(name), lane);
+	const Set after = withCopies(before, copies);
+	commit(track->id(), before, after);
+	QJsonObject result = report(track, after);
+	result.insert(QStringLiteral("lane"), lane);
+	return ControlResult::success(result);
+}
+
 } // namespace
 
 void registerTrackVersionCommands(ControlRegistry& registry)
@@ -150,6 +237,9 @@ void registerTrackVersionCommands(ControlRegistry& registry)
 		named, both, true, switchVersion);
 	defineCommand(registry, QStringLiteral("track.version_remove"), QStringLiteral("Forget the track's version 'name'. The track's clips "
 		"stay as they are. One undo step."), named, both, true, removeVersion);
+	defineCommand(registry, QStringLiteral("track.version_to_lane"), QStringLiteral("Add a take lane named 'name' holding copies of the "
+		"stored version's clips as they are now (later edits to the version do not follow). The lane is a comp source. One undo step."),
+		named, both, true, versionToLane);
 }
 
 } // namespace lmms
