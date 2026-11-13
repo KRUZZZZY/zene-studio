@@ -65,9 +65,12 @@ is ControlMasteringCommands and `#850` is ControlMasteringChoices. Cite by name.
    MasteringTest 0 (038), ControlMasteringCommands 0 (039). Post-split re-run: all pass, exit 0 (043).
 
 3. One undo step per class. `ctest -R ReversibilityContractTest` was run after the split and
-   Passed (log 043, exit 0). The test source (tests/src/core/ReversibilityContractTest.cpp) does
-   not name `mastering.run`, so it contains NO `true_inverse` row for mastering.run; that claim
-   is not proven by this test. The evidence that mastering.run is recorded as true_inverse is
+   Passed (log 043, exit 0). The test is the CONTRACT test for the whole A16 table: it checks the
+   table's shape and the measured histogram generically (tests/src/core/ReversibilityContractTest.cpp:75
+   builds the `rows = ... true_inverse + ...` line; :450 asserts a coalescing target must be a
+   true_inverse row), and its histogram arithmetic covers every row, including this one. It does not
+   name `mastering.run`; the row itself lives at src/core/ControlReversibilityTableMastering.cpp:100 as
+   RC::TrueInverse. The direct evidence that a mastering.run transaction is recorded as true_inverse is
    the control.transactions transcript in log 029 (r2, not r1 log 009; log 009 here is a build log):
    `"class":"true_inverse","command":"mastering.run","commands":1,"inverse":{"applies":"journal_later"`
 
@@ -82,9 +85,10 @@ is ControlMasteringCommands and `#850` is ControlMasteringChoices. Cite by name.
    builds argv and is called from the dispatch path at :331). None is reachable from
    AudioEngine::renderNextPeriod (MasteringJob.h:113-116). I checked startMasteringChild's
    location and call site; the other functions were classified from the unit's design, not re-read
-   in this pass. Gate 12 rt-safety: PASS (log 034). TSan: not runnable here. Race reasoning: the
-   as designed, the render thread reads no mastering state and the job state reaches it only
-   through the control queue; this is reasoning from the design, not a TSan result.
+   in this pass. Gate 12 rt-safety: PASS (log 034). TSan: not runnable here. Race reasoning, from the
+   design: the choices and the run record are written and read on the control dispatch thread only,
+   the render child is a separate process, and nothing on the audio thread reads or writes any
+   mastering state. This is reasoning from the design, not a TSan result.
 
 5. Old projects and round trip.
    - No-choices render and measurements: MasteringTest cases `chainMeasurementMatchesTheKnownSignal`
@@ -99,8 +103,10 @@ is ControlMasteringCommands and `#850` is ControlMasteringChoices. Cite by name.
      appends `--genre`, and `if (!run->deliveryTarget.isEmpty())` appends `--delivery-target`.
      The source comment reads: "The caller's choices reach the child only when made: an out_dir-only
      run's argv is unchanged." So an out_dir-only run is byte-identical in argv.
-   - Choices are surface memory, not project state: this is the design claim; not separately
-     re-checked in this pass.
+   - Choices are surface memory, not project state: `mastering.get_state`'s `last_run` comes from
+     `control::masteringLastRun()`, which include/ControlMasteringSupport.h:228-233 documents as "NOT
+     project state and NOT persisted". The diff against effbba8a57 (excluding docs/) has no added line
+     matching `saveProject` or `<mastering`, so this unit writes no project XML attribute or element.
 
 6. Portability. `git diff effbba8a57 HEAD -- src` adds 4 lines mentioning `enumProperty`/`nullable`.
    Both are pre-existing helpers (base: src/core/ControlCommandsMasteringRun.cpp:383 uses
