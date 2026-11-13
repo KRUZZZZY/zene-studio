@@ -204,7 +204,10 @@ void FollowActionEditor::addRow(const QJsonObject& action)
 	const double scene = std::max(0.0, action.value(QStringLiteral("jump_to")).toDouble(0.0));
 	jump->setValue(static_cast<int>(std::clamp(scene, 0.0, kMaxScenes - 1.0)) + 1);
 	jump->setProperty("loaded", scene);
-	QObject::connect(jump, &QSpinBox::valueChanged, jump, [jump] { jump->setProperty("edited", true); });  // a step
+	// Qt 5 keeps a deprecated valueChanged(const QString &) beside valueChanged(int), so the bare member
+	// pointer is an overload set there and connect() cannot deduce it. Name the int overload a step emits;
+	// typing stays covered by the editor's textEdited below, exactly as it is on Qt 6.
+	QObject::connect(jump, QOverload<int>::of(&QSpinBox::valueChanged), jump, [jump] { jump->setProperty("edited", true); });  // a step
 	if (auto* text = jump->findChild<QLineEdit*>()) // typing, even the number the box already shows
 	{
 		QObject::connect(text, &QLineEdit::textEdited, jump, [jump] { jump->setProperty("edited", true); });
