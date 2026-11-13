@@ -5878,3 +5878,4 @@ src/gui/widgets/Graph.cpp	cluster new-p15-74: changeSampleAt clamps the computed
 tests/src/gui/ExportQualityControlsTest.cpp	# Clicking a Graph border may produce an out-of-range sample index
 tests/CMakeLists.txt	cluster new-p14-342 QA: make a targeted build of UndoHistoryPersistenceTest build the tripleoscillator module required by its existing real-instrument baseline; no test logic changed.
 include/MeterModel.h	# Tap handling divides by a zero time-signature numerator
+include/QuadratureLfo.h	new-p16-180: reject non-finite stereo offsets so a NaN or infinite offset keeps the previous offset and the right channel stays finite; regression DeviceDspTest::quadratureLfoIgnoresNonFiniteOffset in tests/src/core/DeviceDspTest.cpp.
