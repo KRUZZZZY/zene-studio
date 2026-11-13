@@ -2739,6 +2739,7 @@ tests/src/core/StableTrackIdsTest.cpp
 tests/src/core/StemExportTest.cpp
 tests/src/core/StemExportTestSupport.h
 tests/src/core/StemJobManagerTest.cpp
+tests/src/core/SurroundDevicePathTest.cpp
 tests/src/core/SurroundExportTest.cpp
 tests/src/core/SurroundExportTestSupport.h
 # Q050-059.1 (2026-10-28): the modular instrument (Modular Synth) - its graph, compiled program, instrument, window - and its test (fork-NEW).
@@ -2821,6 +2822,10 @@ tests/src/gui/XyPadPairTest.cpp
 tests/src/plugins/HydrogenImportLocalFileMngTest.cpp
 tests/src/plugins/ZynNoteOffTest.cpp
 tests/src/plugins/ReverbSCRawProcessingTest.cpp
+# Q050-296.1: a 5.1/7.1 channel's speakers through its devices - the user manual and feature notes.
+docs/050-features/Q050-296.1.md
+# cluster Q050-296.1: the implementation and verification report (fork-NEW).
+docs/qwen-fixes-2026-10/cluster-Q050-296.1.md
 # new-p10-532: Soundpipe lifecycle success statuses.
 tests/src/plugins/ReverbSCBaseTest.cpp
 # BUG 13 (new-p10-533): cover ReverbSC creation refusals and allocation failures.
