@@ -38,8 +38,11 @@
 
 #include <QtTest>
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 #include "ExportDither.h"
@@ -121,6 +124,124 @@ class ExportNoiseShaperTest : public QObject
 	Q_OBJECT
 
 private slots:
+//! Cluster new-p10-123: a non-finite sample must not poison the rest of the
+//! channel. AudioEngine::clip passes NaN straight through (its `s > 1` /
+//! `s < -1` guards are both false for NaN), so `lround` receives NaN - in
+//! this build it returns the long minimum and the value is clamped to
+//! -32768 - and `rounded - shaped` is NaN, which then lives in the channel's
+//! error history and turns later samples into NaN as well. The guarded unit
+//! below discards the non-finite sample as silence and resets that channel's
+//! history; the dither draws nothing while discarding, so later samples
+//! reproduce a fresh run sample for sample.
+void aNonFiniteSampleDoesNotPoisonLaterSamples()
+{
+	ExportNoiseShaper victim(1), reference(1);
+	const float nan = std::numeric_limits<float>::quiet_NaN();
+	QVERIFY2(victim.quantise16(nan, 0) == 0, "a NaN sample quantised to a non-silence value");
+	QVERIFY2(victim.quantise16(std::numeric_limits<float>::infinity(), 0) == reference.quantise16(std::numeric_limits<float>::infinity(), 0),
+		"Inf does not match the plain clipped path");
+	for (int n = 0; n < 64; ++n)
+	{
+		const std::int16_t got = victim.quantise16(0.25f, 0);
+		const std::int16_t want = reference.quantise16(0.25f, 0);
+		// Fresh-run equality requires the NaN to have advanced neither the
+		// history nor the dither; a poisoned run instead pins to -32768.
+		QVERIFY2(got == want, qPrintable(QStringLiteral(
+			"sample %1 after NaN: got %2, fresh reference %3 (poisoned history?)").arg(n).arg(got).arg(want)));
+	}
+
+	// quantiseFrames routes through quantise16, so the frame path must
+	// carry the same guard: a NaN frame is silence and the next frame
+	// must not be pinned.
+	ExportNoiseShaper frames(1), framesRef(1);
+	std::vector<SampleFrame> in(4);
+	for (int n = 0; n < 4; ++n) { in[n] = SampleFrame(0.25f, 0.0f); }
+	in[0] = SampleFrame(nan, nan);
+	std::vector<int_sample_t> out(4, 12345), refOut(4, 12345);
+	frames.quantiseFrames(in.data(), 4, 1, out.data(), false);
+	framesRef.quantiseFrames(std::vector<SampleFrame>(4, SampleFrame(0.25f, 0.0f)).data(), 4, 1, refOut.data(), false);
+	QVERIFY2(out[0] == 0, "the NaN frame was not written as silence");
+	for (int n = 1; n < 4; ++n)
+	{
+		QVERIFY2(out[n] == refOut[n - 1], qPrintable(QStringLiteral(
+			"frame %1 after NaN: got %2, fresh reference %3").arg(n).arg(out[n]).arg(refOut[n - 1])));
+	}
+}
+
+//! Cluster new-p20-45 pin: the feedback error is measured against the shaped
+//! target - `rounded - shaped` - i.e. the dither offset is part of the error
+//! the loop shapes, so the documented NTF (1.25x DC = -12 dB, 3.71x Nyquist)
+//! applies to the total noise. A reference model that replays the identical
+//! float arithmetic (ExportNoiseShaper::Coefficients, the same seeded
+//! ExportDither, the same clamp) must reproduce the shaper bit-exactly,
+//! while the alternative convention (`rounded - dithered`) diverges. The
+//! spectral test above already requires the <-3 dB low-band suppression
+//! this convention delivers.
+void theFeedbackShapesTheDitherOffsetAsDocumented()
+{
+	const std::vector<float> x = quietSine();
+	ExportNoiseShaper shaper(1);
+	ExportDither referenceDither;
+	std::array<float, 3> history{0.f, 0.f, 0.f};
+	int divergedFromAlternative = 0;
+	for (float v : x)
+	{
+		const std::int16_t got = shaper.quantise16(v, 0);
+		// Identical arithmetic to ExportNoiseShaper::quantise16: the
+		// inputs used here are strictly inside (-1, 1) so AudioEngine::clip
+		// is the identity on them.
+		const float target = v * kScale;
+		const float shaped = target - (ExportNoiseShaper::Coefficients[0] * history[0]
+			+ ExportNoiseShaper::Coefficients[1] * history[1]
+			+ ExportNoiseShaper::Coefficients[2] * history[2]);
+		const float dithered = shaped + referenceDither.nextOffset(1.0f);
+		const long rounded = std::clamp(std::lround(dithered), -32768L, 32767L);
+		const float error = std::clamp(static_cast<float>(rounded) - shaped,
+			-ExportNoiseShaper::MaxFeedbackLsb, ExportNoiseShaper::MaxFeedbackLsb);
+		QCOMPARE(got, static_cast<std::int16_t>(rounded));
+		const long alternative = std::clamp(std::lround(dithered), -32768L, 32767L);
+		const float alternativeError = std::clamp(static_cast<float>(alternative) - dithered,
+			-ExportNoiseShaper::MaxFeedbackLsb, ExportNoiseShaper::MaxFeedbackLsb);
+		divergedFromAlternative += (alternativeError != error);
+		history = {error, history[0], history[1]};
+	}
+	QVERIFY2(divergedFromAlternative > 0, "the alternative feedback convention never diverged");
+}
+
+//! Cluster new-p21-153 pin: the shaper rounds to nearest, exactly like the
+//! dithered path it mirrors - AudioFileWave::sampleRoundedToS16 does
+//! `std::lround(AudioEngine::clip(value) * OUTPUT_SAMPLE_MULTIPLIER)`
+//! (AudioFileWave.cpp:74-77). AudioDevice::convertToS16 truncates, but it is
+//! the UNDITHERED path: its own documented reason for rounding (ibid.)
+//! is that truncation quantises every sub-LSB dither offset back out again.
+//! The shaper therefore keeps rounding; a truncation replay of the same
+//! sequence must not reproduce it.
+void theQuantiserRoundsLikeTheDitheredPath()
+{
+	const std::vector<float> x = quietSine();
+	ExportNoiseShaper shaper(1);
+	ExportDither referenceDither;
+	std::array<float, 3> history{0.f, 0.f, 0.f};
+	int truncatedWouldDiffer = 0;
+	for (float v : x)
+	{
+		const std::int16_t got = shaper.quantise16(v, 0);
+		const float target = v * kScale;
+		const float shaped = target - (ExportNoiseShaper::Coefficients[0] * history[0]
+			+ ExportNoiseShaper::Coefficients[1] * history[1]
+			+ ExportNoiseShaper::Coefficients[2] * history[2]);
+		const float dithered = shaped + referenceDither.nextOffset(1.0f);
+		const long rounded = std::clamp(std::lround(dithered), -32768L, 32767L);
+		const float error = std::clamp(static_cast<float>(rounded) - shaped,
+			-ExportNoiseShaper::MaxFeedbackLsb, ExportNoiseShaper::MaxFeedbackLsb);
+		QCOMPARE(got, static_cast<std::int16_t>(rounded));
+		const long truncated = std::clamp(static_cast<long>(dithered), -32768L, 32767L);
+		truncatedWouldDiffer += (truncated != rounded);
+		history = {error, history[0], history[1]};
+	}
+	QVERIFY2(truncatedWouldDiffer > 0, "truncation never differed from rounding on this signal");
+}
+
 	void theSameSeedGivesTheSameSamplesAndResetReproduces()
 	{
 		const std::vector<float> x = quietSine();
