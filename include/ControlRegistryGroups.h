@@ -834,6 +834,9 @@ LMMS_EXPORT void registerRemoteCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerDrumRackCommand(ControlRegistry& registry);
 //! 0.5.0 L03 (WF-080 / WF-082 / ED-168): transport.record_options, comp.cycle (ControlCommandsRecordingPass.cpp).
 LMMS_EXPORT void registerRecordingPassCommands(ControlRegistry& registry);
+//! Q050-054.1: track.set_midi_arm, record.midi_capture_status / midi_capture_commit - MIDI takes recorded on armed
+//! instrument tracks by transport.record (ControlCommandsMidiTakes.cpp).
+LMMS_EXPORT void registerMidiTakeCommands(ControlRegistry& registry);
 //! 0.5.0 L02 (WF-069): session.bindings_connect / bind / bind_learn / unbind / bindings (ControlCommandsLaunchBindings.cpp).
 LMMS_EXPORT void registerLaunchBindingCommands(ControlRegistry& registry);
 //! 0.5.0 L02 (WF-055): session.capture_to_slot (ControlCommandsSessionCapture.cpp).

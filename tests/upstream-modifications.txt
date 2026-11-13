@@ -5856,3 +5856,9 @@ src/core/CMakeLists.txt	Q050-283.2: builds core/ControlCommandsTrackRole.cpp (tr
 src/gui/CMakeLists.txt	Q050-283.2: builds gui/TrackRoleMenu.cpp (the track menu's role items).
 tests/CMakeLists.txt	Q050-283.2: registers HybridTrackInstrumentRoleTest and HybridTrackRoleGuiTest (with the tripleoscillator module they load) and the ControlHybridTrackRoleTranscript socket test.
 data/manual/index.html	Q050-283.2: documents giving a neutral track an instrument, Make neutral (keep instrument), Restore, and track.set_role.
+include/InstrumentTrack.h	Q050-054.1: owns the track's MidiTakeCapture (declared before the MIDI port so it outlives it) and declares takePlays(), the active-take rule for loop-recorded MIDI takes.
+src/tracks/InstrumentTrack.cpp	Q050-054.1: processInEvent feeds live note edges to the armed track's lock-free MidiTakeCapture (before the monitoring gate); play() skips a loop-recorded MIDI take that is not its group's active take unless a composite, audition or play-all decides (takePlays) - clips with no take group are unchanged; covered by tests/src/core/MidiTakeRecordTest.cpp.
+src/core/Song.cpp	Q050-054.1: makes the MidiTakeRecorder (a child of the song), publishes the period's play position and loop pass for the MIDI take capture next to the retro-capture tick (one relaxed store), and hands the record point after a count-in to the recorder.
+src/core/CMakeLists.txt	Q050-054.1: builds MidiTakeCapture.cpp, MidiTakeRecorder.cpp and ControlCommandsMidiTakes.cpp.
+tests/CMakeLists.txt	Q050-054.1: registers MidiTakeRecordTest, MidiTakeMenuTest (headless Qt platform) and the ControlMidiTakeRecord transcript (Skipped, never Passed, without a real MIDI source).
+src/gui/CMakeLists.txt	Q050-054.1: builds gui/shell/ShellRecordMenu.cpp (the track menu's Record submenu, moved out of ShellCommandMenus.cpp with its MIDI take entries).

@@ -2048,6 +2048,12 @@ list(APPEND LMMS_TESTS src/core/WideDiscreteBusTest.cpp)
 # and the Pin Connector's Channels menu driving port.set_pins.
 list(APPEND LMMS_TESTS src/core/WidePinRoutingTest.cpp src/gui/WidePinRoutingGuiTest.cpp)
 
+# Q050-054.1: MIDI takes recorded on armed instrument tracks by transport.record - the capture queue,
+# plain and loop passes, undo/redo, the active-take model and save/load (core); the Record menu entry
+# and the header's Record/Stop buttons over the real application (gui). Registered late for the same
+# reason as the tests above: the negative control reads the high-numbered names out of `ctest -N`.
+list(APPEND LMMS_TESTS src/core/MidiTakeRecordTest.cpp src/gui/MidiTakeMenuTest.cpp)
+
 foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# TODO CMake 3.20: Use cmake_path
 	get_filename_component(LMMS_TEST_NAME ${LMMS_TEST_SRC} NAME_WE)
@@ -7233,6 +7239,25 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	# *Skipped* (exit 77) - never *Passed* - on a host with no ALSA-sequencer
 	# tooling or an engine that came up on the dummy MIDI client, because a test
 	# that cannot make its measurement must not report that it did.
+	# Q050-054.1: MIDI recorded into an armed instrument track by transport.record, alongside an audio
+	# clip - a known phrase played by the host's ALSA sequencer into the track's own port, the take and its
+	# notes read back, one undo/redo step, loop passes as take lanes. Skipped (77), never Passed, where the
+	# host cannot supply real MIDI input - the ControlRetroCapture precedent below.
+	add_test(NAME ControlMidiTakeRecord
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-midi-take-record.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlMidiTakeRecord PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+		SKIP_RETURN_CODE 77
+	)
+	# The transcript's timing check's own red/green control: 5-tick gap and length errors are rejected
+	# under its 4-tick contract (no binary, no MIDI host needed).
+	add_test(NAME ControlMidiTakeRecordSelfTest
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-midi-take-record.py --self-test)
+	set_tests_properties(ControlMidiTakeRecordSelfTest PROPERTIES TIMEOUT 60)
 	add_test(NAME ControlRetroCapture
 		COMMAND ${PYTHON3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/control-retro-capture.py
@@ -8764,3 +8789,6 @@ if(TARGET nam_harness)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 60)
 endif()
+
+# Q050-054.1: both construct the real Engine (the second the real application) and need a Qt platform plug-in.
+set_tests_properties(MidiTakeRecordTest MidiTakeMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

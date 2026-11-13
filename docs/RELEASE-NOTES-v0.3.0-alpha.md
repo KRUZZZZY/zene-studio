@@ -1133,6 +1133,11 @@ config lists back) and one `not_mutating` (`session.command_bindings`, a read) -
 
 **Q050-283.2** (2026-11-10): `track.set_role` adds one `true_inverse` row: `rows=934 true_inverse=460 snapshot=42 irreversible=25 not_mutating=407`.
 
+**Q050-054.1** (MIDI takes on armed instrument tracks, first measured on `050/m0-train-19`, 2026-10-27; re-measured
+after merging `050/m0-train-26`, 2026-11-12): `record.midi_capture_commit` adds one `true_inverse` row,
+`track.set_midi_arm` and `record.midi_capture_status` two `not_mutating` rows -
+`rows=936 true_inverse=460 snapshot=42 irreversible=25 not_mutating=409`.
+
 <!-- A16-HISTOGRAM-BEGIN
      measured: rows=934 true_inverse=460 snapshot=42 irreversible=25 not_mutating=407
      configuration: telemetry.status wasm.load session.get_state stem.get_state app.update_check_get

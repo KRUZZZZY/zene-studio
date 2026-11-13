@@ -62,6 +62,7 @@
 #include "NoteRandom.h"
 #include "MidiClip.h"
 #include "MidiPlayback.h"
+#include "MidiTakeRecorder.h"
 #include "MidiClock.h"
 #include "LinkAudioFollower.h"
 #include "PatternEditor.h"
@@ -253,6 +254,8 @@ Song::Song() :
 
 	// Inform VST plugins if the user moved the play head
 	connect(this, &Song::playbackPositionJumped, this, [this](){ m_vstSyncController.setPlaybackJumped(true); }, Qt::DirectConnection);
+	// Q050-054.1: armed instrument tracks record MIDI takes while transport.record runs.
+	new MidiTakeRecorder(this);  // a child of the song: MidiTakeRecorder::instance()
 }
 
 void queueAutomationClipWrite(AutomationClip* clip, const TimePos& time, float value) noexcept
@@ -514,6 +517,8 @@ void Song::processNextBuffer()
 	// a capture that is armed but not rolling stamps nothing new. Placed after
 	// followTempoMap() so the tick published is the one this block's tempo map sets.
 	RetroMidiCapture::publishTick( getPlayPos().getTicks() );
+	// Q050-054.1: the same position, with the loop pass, for the arrangement MIDI take capture. One relaxed store.
+	MidiTakeCapture::publishPosition( getPlayPos().getTicks(), m_loopWraps.load( std::memory_order_relaxed ) );
 
 	// At the beginning of the song, we have to reset the LFOs
 	if (m_playMode == PlayMode::Song && getPlayPos() == 0)
@@ -1088,6 +1093,8 @@ void Song::playAndRecord()
 	startSongPlayback( true );
 	// Stop goes back to where Record was pressed, not to the start of the count-in (review #4).
 	if (start >= 0) { getTimeline(PlayMode::Song).setPlayStartPosition(TimePos(start)); }
+	// Q050-054.1: a MIDI take keeps what was played from there on, too.
+	if (start >= 0) { MidiTakeRecorder::instance()->setRecordFrom(start); }
 }
 
 

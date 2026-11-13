@@ -651,6 +651,17 @@ them and sends the patch even when the settings were already those, and says so 
 tells the gear the patch that returns. Agents use device.external_get_state, device.external_set,
 device.external_preset_save, device.external_preset_recall and device.external_preset_remove for the same things. This
 stage covers the MIDI half: the audio return, monitoring and latency offset are separate.
+<b>MIDI takes.</b> An instrument track records the MIDI played into it - from a controller, the
+on-screen keyboard or any input routed to the track - while Record runs, alongside the audio tracks that record: arm it
+from its Record menu (Record MIDI Takes &gt; On; scripts and agents: track.set_midi_arm) - the record button in its header
+arms its audio input instead. When you press Stop, a plain pass becomes one MIDI clip from the bar of its first note,
+with each note at the time and velocity it was played; with the loop on, every pass that holds notes becomes a take clip over
+the loop region on a take lane of its own, and the newest pass plays - unless you chose another take of that loop
+(Next Take Here, the take-lanes view or comp.take_select), which then stays chosen through later loop recordings over the same
+region. A note held across the loop's end ends there. Replace erases the earlier notes a plain pass overlaps (notes only).
+One undo takes the whole recording back, and the clips, lanes and the chosen take are saved with the project. Record &gt;
+MIDI Take Status shows what is armed and what the last pass left (record.midi_capture_status); if Stop could not keep a
+pass, it waits there for Keep the Captured MIDI. Notes played during a count-in or pre-roll are heard, not recorded.
 AudioFileProcessor and SlicerT also record the input straight into the sampler: Record take in the
 instrument's window captures a bounded take (click again to stop, or let it reach its length), then loads it
 so the waveform and, for SlicerT, the slices are ready to play. The take is a WAV in Recordings; one undo
