@@ -2932,6 +2932,7 @@ tests/src/gui/ProjectContainerSaveAsGuiTest.cpp
 tests/src/gui/ShortcutsCommandsTest.cpp
 tests/src/gui/MainWindowTest.cpp
 tests/src/gui/MasteringReleaseGuiTest.cpp
+tests/src/gui/MasteringChoicesGuiTest.cpp
 tests/src/gui/LivecodePanelTest.cpp
 tests/src/gui/LmmsStyleTest.cpp
 tests/src/gui/PianoRollRecordTest.cpp

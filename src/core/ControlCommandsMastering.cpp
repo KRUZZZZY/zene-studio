@@ -174,6 +174,9 @@ ControlResult handleMasteringGetState()
 									 : QJsonValue(masteringRunError()));
 	result.insert(QStringLiteral("last_run"),
 		report.isEmpty() ? QJsonValue(QJsonValue::Null) : QJsonValue(report));
+	// last_run's own rows, verbatim: an empty array before a run. The Mastering Report list reads these,
+	// so a person sees the same rows an agent does.
+	result.insert(QStringLiteral("candidates"), report.value(QStringLiteral("candidates")).toArray());
 	result.insert(QStringLiteral("files"), facts);
 	result.insert(QStringLiteral("files_present"), present);
 	result.insert(QStringLiteral("session_empty"), song == nullptr || song->isEmpty());
@@ -189,7 +192,10 @@ ControlResult handleMasteringGetState()
 			"LIVE state of the files it wrote, hashed now, so a candidate set that was edited or "
 			"deleted after the run is visible as such. It is not project state and is not saved "
 			"or restored with a project: a fresh instance has no last run (has_run false, state "
-			"idle). `session_empty` is the pre-flight fact mastering.run refuses on"));
+			"idle). `session_empty` is the pre-flight fact mastering.run refuses on. `candidates` is `last_run`'s "
+				"own rows, verbatim (empty before a run; each carries the run's `genre` and "
+				"`delivery_target`), added so the Mastering Report list reads the same measurements an "
+				"agent reads."));
 	return ControlResult::success(result);
 }
 
@@ -237,7 +243,8 @@ void registerMasteringGetState(ControlRegistry& registry)
 		"candidate's target and the two verdicts - plus the source render's own readings and the "
 		"counted number of project renders), and the live state of the files it wrote, hashed now. "
 		"`has_run` is false and `last_run` is null before the first run. `session_empty` is the "
-		"fact mastering.run refuses on. Read-only.");
+		"fact mastering.run refuses on. `candidates` is `last_run`'s own rows, verbatim: empty before a "
+		"run, each carrying the run's `genre` and `delivery_target`. Read-only.");
 	cmd.argsSchema = objectSchema({});
 	cmd.resultSchema = objectSchema({
 		{QStringLiteral("has_run"), booleanProperty()},
@@ -245,6 +252,7 @@ void registerMasteringGetState(ControlRegistry& registry)
 			QStringLiteral("completed"), QStringLiteral("failed")})},
 		{QStringLiteral("error"), nullable(stringProperty())},
 		{QStringLiteral("last_run"), nullable(objectProperty())},
+		{QStringLiteral("candidates"), arrayProperty()},
 		{QStringLiteral("files"), arrayProperty()},
 		{QStringLiteral("files_present"), integerProperty()},
 		{QStringLiteral("session_empty"), booleanProperty()},

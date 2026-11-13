@@ -529,6 +529,7 @@ void populateProject(QMenu* menu)
 	list(menu, "Grooves...", [] { return CommandLists::grooves(); });
 	menu->addSeparator();
 	list(menu, "Mastering Release...", [] { return CommandLists::masteringSequence(); });  // Q050-317.1
+	list(menu, "Mastering Report...", [] { return CommandLists::masteringReport(); });
 	add(menu, "Auto-Master...", "mastering.run", {}, true);
 	add(menu, "Mastering Status", "mastering.get_state", {}, false, {}, true);
 	choices(menu, "Loudness Meter", "meter.arm", "enabled", {});
