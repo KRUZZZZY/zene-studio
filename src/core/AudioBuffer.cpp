@@ -133,6 +133,62 @@ AudioBuffer::AudioBuffer(f_cnt_t frames, ch_cnt_t channels,
 	}
 }
 
+AudioBuffer::AudioBuffer(AudioBuffer&& other) noexcept
+	: m_sourceBuffer{std::move(other.m_sourceBuffer)}
+	, m_accessBuffer{std::move(other.m_accessBuffer)}
+	, m_interleavedBuffer{std::move(other.m_interleavedBuffer)}
+	, m_groups{std::move(other.m_groups)}
+	, m_frames{other.m_frames}
+	, m_silenceFlags{other.m_silenceFlags}
+	, m_silenceTrackingEnabled{other.m_silenceTrackingEnabled}
+{
+	rebindAfterMove();
+}
+
+auto AudioBuffer::operator=(AudioBuffer&& other) noexcept -> AudioBuffer&
+{
+	if (this == &other)
+	{
+		return *this;
+	}
+	m_sourceBuffer = std::move(other.m_sourceBuffer);
+	m_accessBuffer = std::move(other.m_accessBuffer);
+	m_interleavedBuffer = std::move(other.m_interleavedBuffer);
+	m_groups = std::move(other.m_groups);
+	m_frames = other.m_frames;
+	m_silenceFlags = other.m_silenceFlags;
+	m_silenceTrackingEnabled = other.m_silenceTrackingEnabled;
+	rebindAfterMove();
+	return *this;
+}
+
+void AudioBuffer::rebindAfterMove() noexcept
+{
+	// Access entries are raw pointers into the source buffer, whose storage
+	// may have been copied (different resource) instead of stolen.
+	float* ptr = m_sourceBuffer.data();
+	for (std::size_t i = 0; i < m_accessBuffer.size(); ++i)
+	{
+		m_accessBuffer[i] = ptr;
+		ptr += m_frames;
+	}
+	// Group views are raw pointers into the access table, whose storage
+	// may have been reallocated by the move. Mirror addGroup()/setGroups().
+	ch_cnt_t channel = 0;
+	for (ChannelGroup& group : m_groups)
+	{
+		if (channel < static_cast<ch_cnt_t>(m_accessBuffer.size()))
+		{
+			group.setBuffers(&m_accessBuffer[channel]);
+		}
+		else
+		{
+			group.setBuffers(nullptr);
+		}
+		channel += group.channels();
+	}
+}
+
 void AudioBuffer::allocateInterleavedBuffer()
 {
 	m_interleavedBuffer.resize(checkedMultiply(checkedFrameCount(m_frames), 2));
