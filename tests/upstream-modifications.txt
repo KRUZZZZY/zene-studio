@@ -5876,3 +5876,4 @@ plugins/PeakControllerEffect/PeakControllerEffect.cpp	cluster new-p10-318: proce
 tests/src/core/ControlVcaLockedEditsTest.cpp	# Head trimming shifts sample content in the wrong direction
 src/gui/widgets/Graph.cpp	cluster new-p15-74: changeSampleAt clamps the computed sample index to [0, length) before setSampleAt, so a plain press on either border emits a valid samplesChanged range (drawSampleAt already cropped the write). Regression tests/src/gui/ExportQualityControlsTest.cpp::plainClicksStayWithinGraphSamples
 tests/src/gui/ExportQualityControlsTest.cpp	# Clicking a Graph border may produce an out-of-range sample index
+tests/CMakeLists.txt	cluster new-p14-342 QA: make a targeted build of UndoHistoryPersistenceTest build the tripleoscillator module required by its existing real-instrument baseline; no test logic changed.

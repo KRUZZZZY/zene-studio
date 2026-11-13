@@ -358,6 +358,74 @@ private slots:
 		QCOMPARE(textOf(resaved).count(QStringLiteral("<z:undostep")), 0);
 	}
 
+	//! Gives every element that carries a revision a new rev and writer; returns how many.
+	static int restamp(QDomElement element)
+	{
+		int count = 0;
+		if (element.hasAttribute(QStringLiteral("rev")))
+		{
+			element.setAttribute(QStringLiteral("rev"), QStringLiteral("99"));
+			element.setAttribute(QStringLiteral("writer"), QStringLiteral("another-process"));
+			count = 1;
+		}
+		for (QDomElement child = element.firstChildElement(); !child.isNull(); child = child.nextSiblingElement())
+		{
+			count += restamp(child);
+		}
+		return count;
+	}
+
+	static void parseInto(const QString& file, QDomDocument& document)
+	{
+		QFile in(file);
+		QVERIFY(in.open(QIODevice::ReadOnly) && document.setContent(&in));
+	}
+
+	static void writeDocument(const QDomDocument& document, const QString& file)
+	{
+		QFile out(file);
+		QVERIFY(out.open(QIODevice::WriteOnly));
+		QTextStream stream(&out);
+		document.save(stream, 1);
+	}
+
+	//! Saves \a file with a two-step history, after a load: the load sets each object's content baseline, so
+	//! the renames stamp revisions.
+	void saveRevisedAfterLoad(const Baseline& base, const QString& file)
+	{
+		QVERIFY(run(QStringLiteral("project.set_undo_history"), {{QStringLiteral("setting"), QStringLiteral("on")}}).ok);
+		const QString loaded = path(QStringLiteral("loaded-base.mmp"));
+		QVERIFY(run(QStringLiteral("project.save"), {{QStringLiteral("path"), loaded}}).ok);
+		QVERIFY(run(QStringLiteral("project.open"), {{QStringLiteral("path"), loaded}}).ok);
+		QVERIFY(run(QStringLiteral("track.rename"), {{QStringLiteral("track"), base.track}, {QStringLiteral("name"), QStringLiteral("one")}}).ok);
+		QVERIFY(run(QStringLiteral("track.rename"), {{QStringLiteral("track"), base.track}, {QStringLiteral("name"), QStringLiteral("two")}}).ok);
+		QVERIFY(run(QStringLiteral("project.save"), {{QStringLiteral("path"), file}}).ok);
+	}
+
+	//! A save that changes only the revision stamps (`rev`, and the `writer` that stamped it) is not an
+	//! edit: the history still describes the project. ProjectIds' content comparison already leaves both
+	//! out, and <head writer> is left out of the fingerprint for the same reason.
+	void aRevisionStampRewrittenWithoutAContentChangeKeepsTheHistory()
+	{
+		const Baseline base = buildBaseline();
+		QVERIFY(!base.track.isEmpty());
+		const QString file = path(QStringLiteral("stamped.mmp"));
+		saveRevisedAfterLoad(base, file);
+
+		QDomDocument document;
+		parseInto(file, document);
+		// Another build re-stamps every revised object: the same content under a new rev and writer.
+		const int stamped = restamp(document.documentElement());
+		QVERIFY2(stamped > 0, "the saved project carries no revision stamp to re-stamp");
+		const QString restamped = path(QStringLiteral("restamped.mmp"));
+		writeDocument(document, restamped);
+		QVERIFY(run(QStringLiteral("project.open"), {{QStringLiteral("path"), restamped}}).ok);
+		const QJsonObject load = historyState().value(QStringLiteral("last_load")).toObject();
+		QVERIFY2(load.value(QStringLiteral("found")).toBool() && load.value(QStringLiteral("loaded_steps")).toInt() == 2
+			&& load.value(QStringLiteral("discarded")).toString().isEmpty(),
+			qPrintable(compact(load)));
+	}
+
 	void anIncompleteSavedHistoryIsDiscarded()
 	{
 		const Baseline base = buildBaseline();
@@ -560,6 +628,32 @@ private slots:
 			QTextStream stream(&out);
 			document.save(stream, 1);
 		}
+		QVERIFY(run(QStringLiteral("project.open"), {{QStringLiteral("path"), old}}).ok);
+		const QJsonObject load = historyState().value(QStringLiteral("last_load")).toObject();
+		QVERIFY2(load.value(QStringLiteral("found")).toBool() && load.value(QStringLiteral("loaded_steps")).toInt() == 2
+			&& load.value(QStringLiteral("discarded")).toString().isEmpty(),
+			qPrintable(compact(load)));
+	}
+
+	//! A history whose fingerprint an EARLIER build wrote in the v2 scheme (the revision stamps counted too)
+	//! is still this project's: it loads, as it did before the stamps were left out.
+	void aCurrentFormatHistoryUsingTheSchemeV2FingerprintStillLoads()
+	{
+		const Baseline base = buildBaseline();
+		QVERIFY(!base.track.isEmpty());
+		const QString file = path(QStringLiteral("scheme-v2.mmp"));
+		saveRevisedAfterLoad(base, file);
+
+		QDomDocument document;
+		parseInto(file, document);
+		const QDomElement root = document.documentElement();
+		QDomElement history = root.firstChildElement(QStringLiteral("song")).firstChildElement(QStringLiteral("z:undohistory"));
+		QVERIFY(!history.isNull());
+		QVERIFY2(textOf(file).contains(QStringLiteral(" rev=\"")), "the saved project carries no revision stamp");
+		history.setAttribute(QStringLiteral("fingerprint"), UndoHistory::fingerprintV2(document, true,
+			root.attribute(QStringLiteral("version")), root.attribute(QStringLiteral("type"))));
+		const QString old = path(QStringLiteral("scheme-v2-fingerprint.mmp"));
+		writeDocument(document, old);
 		QVERIFY(run(QStringLiteral("project.open"), {{QStringLiteral("path"), old}}).ok);
 		const QJsonObject load = historyState().value(QStringLiteral("last_load")).toObject();
 		QVERIFY2(load.value(QStringLiteral("found")).toBool() && load.value(QStringLiteral("loaded_steps")).toInt() == 2

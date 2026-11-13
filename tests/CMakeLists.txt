@@ -2858,6 +2858,11 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	if(LMMS_TEST_NAME STREQUAL "UnmuteChaseTest")
 		add_dependencies(${LMMS_TEST_NAME} tripleoscillator)
 	endif()
+	# WF-033: UndoHistoryPersistenceTest's full undo round-trip needs the real instrument
+	# in its baseline, so a targeted build must provide the module before ctest runs.
+	if(LMMS_TEST_NAME STREQUAL "UndoHistoryPersistenceTest")
+		add_dependencies(${LMMS_TEST_NAME} tripleoscillator)
+	endif()
 
 	# Q050-291.1: the controller-conversion test puts CC lanes on a real instrument's parameters.
 	if(LMMS_TEST_NAME STREQUAL "ControllerConversionTest" AND TARGET tripleoscillator)
