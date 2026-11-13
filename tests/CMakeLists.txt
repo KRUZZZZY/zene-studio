@@ -2049,6 +2049,8 @@ list(APPEND LMMS_TESTS src/core/WideDiscreteBusTest.cpp)
 # Q050-155.2: devices pinned onto the channels of a discrete-64 bus, through the build's amplifier module,
 # and the Pin Connector's Channels menu driving port.set_pins.
 list(APPEND LMMS_TESTS src/core/WidePinRoutingTest.cpp src/gui/WidePinRoutingGuiTest.cpp)
+# Q050-296.1: 5.1/7.1 speakers processed by pinned channel devices and delivered on their matching outputs.
+list(APPEND LMMS_TESTS src/core/SurroundDevicePathTest.cpp)
 
 # Q050-054.1: MIDI takes recorded on armed instrument tracks by transport.record - the capture queue,
 # plain and loop passes, undo/redo, the active-take model and save/load (core); the Record menu entry
@@ -2752,7 +2754,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "ClipEffectsDialogTest"
 		# Q050-155.2: amplifiers pinned onto a discrete-64 bus (the render test and its GUI half).
 		OR LMMS_TEST_NAME STREQUAL "WidePinRoutingTest"
-		OR LMMS_TEST_NAME STREQUAL "WidePinRoutingGuiTest")
+		OR LMMS_TEST_NAME STREQUAL "WidePinRoutingGuiTest"
+		# Q050-296.1: the build's amplifier module on the speaker pairs.
+		OR LMMS_TEST_NAME STREQUAL "SurroundDevicePathTest")
 		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			LMMS_TEST_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
@@ -2807,7 +2811,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		add_dependencies(${LMMS_TEST_NAME} amplifier)
 	endif()
 	# Q050-155.2: the wide pin routing tests load the build's amplifier module.
-	if(LMMS_TEST_NAME STREQUAL "WidePinRoutingTest" OR LMMS_TEST_NAME STREQUAL "WidePinRoutingGuiTest")
+	if(LMMS_TEST_NAME STREQUAL "WidePinRoutingTest" OR LMMS_TEST_NAME STREQUAL "WidePinRoutingGuiTest"
+		OR LMMS_TEST_NAME STREQUAL "SurroundDevicePathTest")
 		add_dependencies(${LMMS_TEST_NAME} amplifier)
 	endif()
 
@@ -8100,7 +8105,7 @@ set_tests_properties(DawProjectInterchangeRoundTripTest DawProjectDeflateImportT
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # 0.5.0 wave 2: AAF import, the video track and hardware I/O build a real Engine and drive the
 # registry (the video window and lane are widgets), so they need a Qt platform plugin.
-set_tests_properties(AafImportTest VideoTrackTest VideoClipsTest LegacyPatternUpgradeTest HardwareIoTest SurroundTest SurroundExportTest WideDiscreteBusTest WidePinRoutingTest WidePinRoutingGuiTest PROPERTIES
+set_tests_properties(AafImportTest VideoTrackTest VideoClipsTest LegacyPatternUpgradeTest HardwareIoTest SurroundTest SurroundExportTest WideDiscreteBusTest WidePinRoutingTest WidePinRoutingGuiTest SurroundDevicePathTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # VideoTrackTest's Linux/macOS allocation-failure case interposes FFmpeg entry points from
 # the test executable, so its symbols must be exported - same reason plugin-loading tests carry ENABLE_EXPORTS.

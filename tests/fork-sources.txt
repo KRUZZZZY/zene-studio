@@ -2736,6 +2736,7 @@ tests/src/core/StableTrackIdsTest.cpp
 tests/src/core/StemExportTest.cpp
 tests/src/core/StemExportTestSupport.h
 tests/src/core/StemJobManagerTest.cpp
+tests/src/core/SurroundDevicePathTest.cpp
 tests/src/core/SurroundExportTest.cpp
 tests/src/core/SurroundExportTestSupport.h
 # Q050-059.1 (2026-10-28): the modular instrument (Modular Synth) - its graph, compiled program, instrument, window - and its test (fork-NEW).
