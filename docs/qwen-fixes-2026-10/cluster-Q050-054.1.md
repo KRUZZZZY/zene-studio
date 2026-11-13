@@ -2,9 +2,9 @@ IMPLEMENTED
 
 # Q050-054.1 - Record and comp MIDI takes on instrument tracks, stage 1/2: capture armed MIDI tracks into arrangement takes
 
-Branch `feat/050-Q050-054.1-oc`, cut from `050/m0-train-19` (`5c1c6715d9`). Feature record (design, commands, realtime
+Branch `feat/050-Q050-054.1-oc`, cut from `050/m0-train-19` (`5c1c6715d9`), merged with `050/m0-train-26` (`3f3371be92`) in round 4. Feature record (design, commands, realtime
 reasoning, format, known limits): `docs/050-features/Q050-054.1.md`. Logs: `~/.local/share/zene-bunny-fix/qwen/runs/Q050-054.1.r1/logs/`
-(file names in brackets); round 2's and 3's in `../Q050-054.1.r2/logs/` and `../Q050-054.1.r3/logs/` (marked `r2`, `r3`). Environment: the brief's, plus `CCACHE_TEMPDIR=/tmp/ccache-tmp-q0541` (see Self-check).
+(file names in brackets); round 2's, 3's and 4's in `../Q050-054.1.r2/logs/` and `../Q050-054.1.r3/logs/`, `../Q050-054.1.r4/logs/` (marked `r2`, `r3`, `r4`). Environment: the brief's, plus `CCACHE_TEMPDIR=/tmp/ccache-tmp-q0541` (see Self-check).
 
 **Change.** `track.set_midi_arm` arms an instrument track's `MidiTakeCapture` (a bounded lock-free MPSC queue fed by
 `InstrumentTrack::processInEvent`, stamped with the period's song tick and loop pass that `Song::processNextBuffer`
@@ -15,7 +15,56 @@ was chosen (a later loop recording over the region joins the group and keeps the
 MIDI take is silent (`InstrumentTrack::takePlays`). `record.midi_capture_status` reads it back. GUI: the track's
 Record menu - Record MIDI Takes On/Off, MIDI Take Status, Keep the Captured MIDI.
 
+## Round 4 (review r3: rework - the retry cap had no test that fails without it)
+
+Log names below are in `~/.local/share/zene-bunny-fix/qwen/runs/Q050-054.1.r4/logs/`.
+
+- **Merge `050/m0-train-26`.** Done before this session (`3f3371be92`, conflicts resolved keeping both sides). The
+  merge built (`zene`, MidiTakeRecordTest, MidiTakeMenuTest: EXIT=0 [build-9]).
+- **Retry bound, forced deterministically.** `MidiTakeCapture` gains a test seam, `setClaimGateForTesting(gate, ctx)`.
+  The gate is consulted before each claim attempt; returning false loses that attempt, as a spurious CAS failure would.
+  The product leaves it null, so the cost is one predictable branch. The new data-driven slot
+  `MidiTakeRecordTest::theClaimRetriesAreBounded` runs through `capture()` with the allocation probe on:
+  - *boundary* row: 63 losses, then the event is queued on attempt 64 (0 dropped);
+  - *exhausted* row: 64 losses, then `capture()` returns. Exactly 64 attempts are made, 1 drop is counted, nothing
+    is queued, and nothing is allocated or freed, even though attempt 65 would have won.
+  - Both rows then check that the next event still goes through (the queue is not wedged).
+  - **Negative control:** with the loop changed to `while (!claimed)` (the cap removed), build EXIT=0
+    [build-10-nocap] and ctest EXIT=8, "Actual (rival.attempts): 65, Expected (expectedAttempts): 64"
+    [test-9-nocap]. Restored, the slot passes (EXIT=0 [test-8, test-13, test-14]).
+- **Timing contract pinned.** `control-midi-take-record.py --self-test` is registered as ctest
+  `ControlMidiTakeRecordSelfTest` (no binary, no MIDI needed). It feeds `check_phrase` the exact phrase, gap errors of
+  ±4/±5 ticks and length errors of ±4/±5 ticks. It requires the 4-tick errors to be accepted and the 5-tick errors
+  rejected. EXIT=0 [test-8]. With `TOLERANCE = 6` it exits 8, failing on all four 5-tick cases [test-10-tol6].
+  Restored to 4 (`grep -n '^TOLERANCE' tests/control-midi-take-record.py` shows `TOLERANCE = 4`).
+- **Loop pre-roll negative control, re-run.** With `beforeRecordPoint` back to `return !loop;`, build EXIT=0
+  [build-11-nopreroll] and ctest EXIT=8: "aLoopPreRollIsNotRecorded ... Actual 3, Expected 1" [test-11-nopreroll].
+  Restored and rebuilt, EXIT=0 [build-12].
+- **Transcript regression after the merge, fixed in the test.** On the merged tree `ControlMidiTakeRecord` exited 8
+  [test-12]: "the audio clip is still armed after the pass". The follow-on failure was that undo unwound the test's
+  own `clip.set_record`. Cause:
+  - The wait for the alongside audio take polled a `record` field that `arrangement.get_state` never reports, so it
+    never waited.
+  - The audio take is installed after Stop by `SampleRecordHandle`'s 10 ms main-thread reaper
+    (`src/core/SampleRecordHandle.cpp:85-93`). On this tip it landed after the check.
+  - Measured with a scratch probe: the failure reproduces with no MIDI armed and nothing played, so it is not this
+    feature. With a 0.3 s wait the take is always installed.
+  - Fix: the transcript now waits a stated `AUDIO_TAKE_SETTLE_SECONDS = 2.0` before asking `clip.set_record`. No read
+    command exposes a sample clip's record flag, which is why this is a fixed wait. No assertion changed.
+  - Result: ControlMidiTakeRecord EXIT=0, 4/4 checks [test-13, test-14].
+- **File-length gate.** With the MIDI take entries, `ShellCommandMenus.cpp` was 507 code lines, over 500
+  [feature-check-3]. `recordMenu` moved unchanged to the new `src/gui/shell/ShellRecordMenu.cpp` and
+  `include/ShellRecordMenu.h`. The move is registered in `tests/fork-sources.txt`, in `tests/upstream-modifications.txt`
+  (`src/gui/CMakeLists.txt`) and in the re-derived `tests/all-sources.txt`. MidiTakeMenuTest still drives it from the
+  real menu: EXIT=0 [test-14].
+
+
 ## Acceptance
+
+Round 4, on the final build (`zene`, MidiTakeRecordTest, MidiTakeMenuTest built EXIT=0 [r4 build-14]). One ctest
+run from `build/tests`, EXIT=0, 12/12 [r4 test-14]: `ctest -R '^(MidiTakeRecordTest|MidiTakeMenuTest|ControlMidiTakeRecord|ControlMidiTakeRecordSelfTest|ControlCommandsSnapshot|ReversibilityContractTest|RecordingRealtimeTest|TakeLaneCompTest|TakeLaneTest|LanesUpconvertTest|TakeLanesPanelTest|TakeLaneCompPlaybackTest)$' --output-on-failure`.
+The reverted and no-capture runs are round 1 and round 2 (their logs are in the r1/r2 directories). The cap,
+tolerance and pre-roll controls are round 4.
 
 "Reverted" = the nine modified product files written back from `5c1c6715d9` and the five new product files moved out,
 tests unchanged, `zene` rebuilt; restored from the commit afterwards (`git diff HEAD -- src include` empty) and rebuilt.
@@ -32,7 +81,74 @@ Regression neighbours on the final build, one ctest run EXIT=0, 11/11 [test-11-f
 `ReversibilityContractTest`, `TakeLaneCompTest`, `TakeLaneTest`, `LanesUpconvertTest`, `TakeLanesPanelTest`,
 `TakeLaneCompPlaybackTest`, `ControlCommandsSnapshot` plus the three new tests.
 
+| Regression matrix (review r3) | Test | Without the fix | With it |
+| --- | --- | --- | --- |
+| Retry cap: boundary success at 64, exhaustion at 64 | `MidiTakeRecordTest::theClaimRetriesAreBounded` | cap removed: EXIT=8, 65 attempts [r4 test-9-nocap] | EXIT=0 [r4 test-14] |
+| Transcript tolerance stays 4 ticks | `ControlMidiTakeRecordSelfTest` | `TOLERANCE = 6`: EXIT=8 [r4 test-10-tol6] | EXIT=0 [r4 test-14] |
+| Loop pre-roll filtered on the first pass only | `MidiTakeRecordTest::aLoopPreRollIsNotRecorded` | filter reverted: EXIT=8, 3 notes for 1 [r4 test-11-nopreroll] | EXIT=0 [r4 test-14] |
+| Ordinary queue: unarmed inert, capacity drains, overflow counted, no allocation | `MidiTakeRecordTest::theCaptureQueueIsBoundedAndAllocationFree` | - | EXIT=0 [r4 test-14] |
+| Two producers keep their order, nothing lost | `MidiTakeRecordTest::twoProducersLoseNothing` | - | EXIT=0 [r4 test-14] |
+
 ## Self-check
+
+`submit_check.py` (round 4, [r4 submit-check-*]) passes every row except "gates", for the reason given in the gates
+bullet below.
+
+- **Each new test fails with the product change reverted, passes restored.** Round 4's new slot and self-test:
+  without the cap, EXIT=8 [r4 test-9-nocap]; with `TOLERANCE = 6`, EXIT=8 [r4 test-10-tol6]. With the pre-roll
+  filter reverted, EXIT=8 [r4 test-11-nopreroll]. Every source was restored (`git status` clean apart from the
+  intended edits), rebuilt (EXIT=0 [r4 build-12, build-14]), and passes (EXIT=0 [r4 test-14]). The feature tests'
+  reverted runs are round 1's (below): reverted, the transcript gives EXIT=8 and the QtTests fail to build (EXIT=2);
+  with no capture, all three give EXIT=8.
+- **Every acceptance criterion proven by a test I ran.**
+  - Criterion 1: ControlMidiTakeRecord EXIT=0 (real ALSA MIDI via `aplaymidi`; on a host without it, it skips with 77
+    and never reports Passed).
+  - Criterion 2: ControlMidiTakeRecord + MidiTakeRecordTest + ReversibilityContractTest + ControlCommandsSnapshot,
+    each EXIT=0.
+  - GUI path: MidiTakeMenuTest EXIT=0.
+  - All of these are from the single 12-test run, EXIT=0 [r4 test-14].
+- **One undo step; honest classes.** Unchanged this round:
+  - `record.midi_capture_commit` is `true_inverse`: one checkpoint of every changed track, and one `control.undo` /
+    `control.redo` covers it (transcript; `oneUndoStepCoversTheTake`).
+  - `track.set_midi_arm` and `record.midi_capture_status` are `not_mutating`.
+  - `transport.record` stays `not_mutating`.
+  - No command metadata changed in round 4. The snapshot was regenerated live anyway (`snapshot_live.py`, EXIT=0
+    [r4 snapshot-2]); only the capture time and version changed. `doc-figures-gate.py` EXIT=0 [r4 doc-figures-1].
+    ReversibilityContractTest and ControlCommandsSnapshot pass.
+- **Realtime.** The MIDI input threads (the ALSA sequencer thread, or the audio thread for JACK MIDI) gain only
+  `MidiTakeCapture::capture` / `push`:
+  - atomic loads, then at most 64 claim attempts, a 12-byte copy and a release store;
+  - round 4 adds one null-pointer test of the test seam per attempt;
+  - no allocation, free, lock, wait, I/O or signal;
+  - measured with zero allocations and frees, including on the forced 64-loss path (`theClaimRetriesAreBounded`).
+
+  The audio thread also gains `MidiTakeCapture::publishPosition` (one relaxed store, in `Song::processNextBuffer`) and
+  `InstrumentTrack::takePlays` (atomic loads). Everything else runs on the main thread. The seam pointer is written
+  only while no producer runs (stated in its comment; the test sets it before `capture()` on the same thread). TSan
+  does not run on this box; the race reasoning is in the feature record.
+- **Old projects / round trip.** Unchanged since round 1:
+  - Only MIDI clips with a take group are gated, and old projects have none.
+  - There is no format change.
+  - `takesRoundTripThroughSaveAndLoad` and `LanesUpconvertTest` pass [r4 test-14].
+  - No render comparison was run.
+- **Portability.**
+  - The seam is standard C++17: a `noexcept` function-pointer alias and a capture-less `noexcept` lambda converted
+    to it.
+  - The new GUI file uses only QMenu/QJsonObject, as before.
+  - No Qt-6-only API, no `small/near/far/interface/min/max` identifiers, no windows.h macro names, no
+    std::filesystem, and no POSIX call in product code.
+  - Built and run on Linux (Qt 6, GCC) only. The macOS, Windows and Qt 5.15 builds are not verified here.
+- **Gates.**
+  - `feature_check.py` writes its logs to `<worktree>/../<name>-feature-check/`, which is outside this lane's write
+    area, so the real script fails with PermissionError before checking anything [r4 feature-check-1]. The same
+    happens when `submit_check.py` calls it.
+  - I ran a copy in `/tmp/q0541/fc/` whose only changes are the log directory and the `ROOT` path
+    (`diff` shows those lines only). That copy gives RESULT: PASS, EXIT=0, all 8 rows PASS [r4 feature-check-4].
+  - Before the menu move it failed file-length (507 lines) [r4 feature-check-3].
+- **ccache.** Builds used `CCACHE_TEMPDIR=/tmp/ccache-tmp-q0541`. The configured temp dir is outside the write area:
+  without the override, build-8 failed with "Permission denied" (EXIT=2).
+
+### Earlier rounds (kept for the record)
 
 - **Each new test fails with the product change reverted, passes restored.** Yes - table above: reverted build of
   `zene` EXIT=0 [build-neg-01-zene], transcript EXIT=8, QtTests do not build (EXIT=2); the narrower "no capture"
