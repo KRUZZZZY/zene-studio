@@ -1127,6 +1127,8 @@ config lists back) and one `not_mutating` (`session.command_bindings`, a read) -
 
 **Q050-155.2** (64 channels through device pins and mixer routes, 2026-11-10): `port.set_pins` adds one `true_inverse` row (one journal step for a whole pin routing) - `rows=934 true_inverse=460 snapshot=42 irreversible=25 not_mutating=407`.
 
+**Q050-294.2** (melodic step grid, stage 2, 2026-11-10): `window.step_grid` adds one `not_mutating` row (it opens the grid; the grid's edits are `note.step_set`, which already has its row) - `rows=934 true_inverse=459 snapshot=42 irreversible=25 not_mutating=408`.
+
 <!-- A16-HISTOGRAM-BEGIN
      measured: rows=934 true_inverse=460 snapshot=42 irreversible=25 not_mutating=407
      configuration: telemetry.status wasm.load session.get_state stem.get_state app.update_check_get

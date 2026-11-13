@@ -208,6 +208,10 @@ SET(LMMS_SRCS
 	gui/noteeditor/NoteEditor.cpp
 	gui/noteeditor/NoteEditorParts.cpp
 	gui/noteeditor/NoteEditorMenus.cpp
+	# Q050-294.2: the melodic step grid (window.step_grid) over note.step_get_state / note.step_set.
+	gui/noteeditor/StepGridPanel.cpp
+	gui/noteeditor/StepGridCanvas.cpp
+	gui/ControlCommandsStepGrid.cpp
 	gui/noteeditor/NoteEditorToolbar.cpp
 	gui/noteeditor/NoteGrid.cpp
 	gui/noteeditor/NoteProperties.cpp

@@ -412,6 +412,9 @@ void MainWindow::finalize()
 		this, [](){ dispatchShellCommand(QStringLiteral("window.modulators")); }), "window.modulators");
 	declares(edit_menu->addAction(embed::getIconPixmap("automation"), tr("Progression..."),
 		this, [](){ dispatchShellCommand(QStringLiteral("window.progression")); }), "window.progression");
+	// Q050-294.2: the melodic step grid on the selected MIDI clip (window.step_grid; its edits are note.step_set).
+	declares(edit_menu->addAction(embed::getIconPixmap("piano"), tr("Step Grid..."),
+		this, [](){ dispatchShellCommand(QStringLiteral("window.step_grid")); }), "window.step_grid");
 	// Q050-154: the live-code panel - the socket-only livecode.* group from the interface.
 	declares(edit_menu->addAction(embed::getIconPixmap("tool"), tr("Live Code..."),
 		this, [](){ dispatchShellCommand(QStringLiteral("window.livecode")); }), "window.livecode");

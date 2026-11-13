@@ -99,6 +99,8 @@ void fillToolsMenu(QMenu* menu, const QJsonObject& scoped, const QJsonObject& wh
 	menu->addSeparator();
 	addCommandAction(menu, tr("Generate a Rhythm..."), QStringLiteral("note.generate"), run("note.generate", where, true));
 	addCommandAction(menu, tr("Generate a Melody..."), QStringLiteral("note.generate_melody"), run("note.generate_melody", where, true));
+	// Q050-294.2: this clip in the melodic step grid - the same window.step_grid Edit > Step Grid... runs.
+	addCommandAction(menu, tr("Open in Step Grid"), QStringLiteral("window.step_grid"), run("window.step_grid", where, false));
 	addCommandAction(menu, tr("Move to Track..."), QStringLiteral("note.move_to_track"), run("note.move_to_track", scoped, true));
 	addCommandAction(menu, tr("Split by Key into Tracks"), QStringLiteral("note.split_by_pitch"), run("note.split_by_pitch", where, false));
 	menu->addSeparator();
