@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-11-13T20:56:18Z",
+  "captured_at": "2026-11-13T23:39:37Z",
   "commands": [
     {
       "args_schema": {
@@ -13167,7 +13167,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "The last auto-mastering run this instance performed: its `state` (idle, running, completed, failed - mastering.run is ASYNCHRONOUS, so this is the verb a caller polls after it, and `error` carries the child's own reason when the state is failed), the document the last COMPLETED run produced (one measured row per candidate - LUFS-I, the loudest 3 s window, measured dBTP, crest, the residual against that candidate's target and the two verdicts - plus the source render's own readings and the counted number of project renders), and the live state of the files it wrote, hashed now. `has_run` is false and `last_run` is null before the first run. `session_empty` is the fact mastering.run refuses on. Read-only.",
+      "description": "The last auto-mastering run this instance performed: its `state` (idle, running, completed, failed - mastering.run is ASYNCHRONOUS, so this is the verb a caller polls after it, and `error` carries the child's own reason when the state is failed), the document the last COMPLETED run produced (one measured row per candidate - LUFS-I, the loudest 3 s window, measured dBTP, crest, the residual against that candidate's target and the two verdicts - plus the source render's own readings and the counted number of project renders), and the live state of the files it wrote, hashed now. `has_run` is false and `last_run` is null before the first run. `session_empty` is the fact mastering.run refuses on. `candidates` is `last_run`'s own rows, verbatim: empty before a run, each carrying the run's `genre` and `delivery_target`. Read-only.",
       "group": "mastering",
       "id": "mastering.get_state",
       "mutating": false,
@@ -13175,6 +13175,9 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "candidates": {
+            "type": "array"
+          },
           "error": {
             "type": [
               "string",
@@ -13223,7 +13226,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "The mastering candidate set wave 1 generates: each candidate's name, the delivery target it is graded against (its integrated loudness, tolerance and true-peak ceiling, plus the published document the numbers come from), the dynamics stage's five numbers and the chain settings they imply. The set is the engine's own (MasteringJob::defaultCandidates) - it varies target loudness, ceiling and dynamics so the candidates are objectively distinguishable. This command writes nothing and starts no render: mastering.run is what masters and measures.",
+      "description": "The mastering candidate set wave 1 generates: each candidate's name, the delivery target it is graded against (its integrated loudness, tolerance and true-peak ceiling, plus the published document the numbers come from), the dynamics stage's five numbers and the chain settings they imply. The set is the engine's own (MasteringJob::defaultCandidates) - it varies target loudness, ceiling and dynamics so the candidates are objectively distinguishable. This command writes nothing and starts no render: mastering.run is what masters and measures. It also publishes the accepted values for mastering.run's `genre` and `delivery_target`: `genres` (a CLOSED, lower-case set, matched exactly with no case folding), `genre_max_length` and `delivery_targets` (the engine's own named targets).",
       "group": "mastering",
       "id": "mastering.list_candidates",
       "mutating": false,
@@ -13237,6 +13240,15 @@
           "count": {
             "type": "integer"
           },
+          "delivery_targets": {
+            "type": "array"
+          },
+          "genre_max_length": {
+            "type": "integer"
+          },
+          "genres": {
+            "type": "array"
+          },
           "note": {
             "type": "string"
           }
@@ -13249,6 +13261,29 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "delivery_target": {
+            "enum": [
+              "streaming-14",
+              "streaming-16",
+              "streaming-14-ceiling-2",
+              "ebu-r128"
+            ],
+            "type": "string"
+          },
+          "genre": {
+            "enum": [
+              "ambient",
+              "classical",
+              "contemporary-alt-r-and-b",
+              "electronic",
+              "folk",
+              "hip-hop",
+              "jazz",
+              "pop",
+              "rock"
+            ],
+            "type": "string"
+          },
           "out_dir": {
             "type": "string"
           }
@@ -13258,7 +13293,7 @@
         ],
         "type": "object"
       },
-      "description": "Auto-master the session, wave 1: render the mix ONCE (counted by the render machinery, returned as render_count), branch every candidate of MasteringJob::defaultCandidates() off that one render, write one wav per candidate into out_dir and measure each with the BS.1770-4 meter - integrated loudness, the loudest 3 s window, measured true peak and crest factor, plus the residual against that candidate's target and its loudness and true-peak verdicts. `out_dir` is required and absolute. The session is not modified (the render runs in a child process on a serialised copy). ASYNCHRONOUS, like the stems' own long work: this verb STARTS the render and answers with `state: \"running\"` in milliseconds, whatever the render costs - it never waits for it, so the control surface (control.ping included) stays answerable while a mastering run is in flight. The run's own document - the candidate measurements, the files and the counts - appears in `mastering.get_state`'s `last_run` once its `state` leaves \"running\", so the caller polls that verb; a run that fails reports `state: \"failed\"` and the child's own reason in `error` there. A second run while one is in flight is refused with `busy` rather than queued. REVERSIBLE through a recorded action checkpoint: the files this run created are removed and the revisions the directory already held are written back, byte for byte (bounded at 64 MiB of pre-existing wav files - beyond that the run is refused rather than performed without an inverse). The inverse is recorded when the run COMPLETES, so `control.undo` must not be asked to take a run back until `mastering.get_state` reports it completed. Names no best candidate: there is no validated preference scorer, so the choice is the user's.",
+      "description": "Auto-master the session, wave 1: render the mix ONCE (counted by the render machinery, returned as render_count), branch every candidate of MasteringJob::defaultCandidates() off that one render, write one wav per candidate into out_dir and measure each with the BS.1770-4 meter - integrated loudness, the loudest 3 s window, measured true peak and crest factor, plus the residual against that candidate's target and its loudness and true-peak verdicts. `out_dir` is required and absolute. The session is not modified (the render runs in a child process on a serialised copy). ASYNCHRONOUS, like the stems' own long work: this verb STARTS the render and answers with `state: \"running\"` in milliseconds, whatever the render costs - it never waits for it, so the control surface (control.ping included) stays answerable while a mastering run is in flight. The run's own document - the candidate measurements, the files and the counts - appears in `mastering.get_state`'s `last_run` once its `state` leaves \"running\", so the caller polls that verb; a run that fails reports `state: \"failed\"` and the child's own reason in `error` there. A second run while one is in flight is refused with `busy` rather than queued. REVERSIBLE through a recorded action checkpoint: the files this run created are removed and the revisions the directory already held are written back, byte for byte (bounded at 64 MiB of pre-existing wav files - beyond that the run is refused rather than performed without an inverse). The inverse is recorded when the run COMPLETES, so `control.undo` must not be asked to take a run back until `mastering.get_state` reports it completed. Names no best candidate: there is no validated preference scorer, so the choice is the user's. Two optional labels, `genre` and `delivery_target`, let the caller record a choice: accepted genres are published by mastering.list_candidates (`genres`, `genre_max_length`), and `delivery_target` must be one of its `delivery_targets` (the engine's own named targets). An omitted key means no choice and reads back as null; a present-but-empty key is refused. Both are retained on the run and on every candidate row, and are LABELS ONLY - they change neither the candidate set, nor its measurements, nor which candidate is preferred.",
       "group": "mastering",
       "id": "mastering.run",
       "mutating": true,
@@ -13266,6 +13301,18 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "delivery_target": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "genre": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "note": {
             "type": "string"
           },
@@ -38699,6 +38746,12 @@
             ],
             "type": "string"
           },
+          "pin": {
+            "type": "string"
+          },
+          "pinned_channels": {
+            "type": "array"
+          },
           "selected_channels": {
             "type": "array"
           },
@@ -38734,6 +38787,9 @@
             ],
             "type": "string"
           },
+          "unpin": {
+            "type": "string"
+          },
           "view": {
             "enum": [
               "mix",
@@ -38745,7 +38801,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "The mixer view's modes, set and answered: 'sends_on_faders' (a ch-<n> return, or empty for the channel faders) makes every channel's fader drive its send to that return - a banner across the mixer names it, every fader is labelled with what it drives, and a channel with no send there keeps a dimmed, still 'No send' fader in place; the answer adds 'sends_on_faders_name' (the return's name) and 'faders' (per channel, what its fader drives: volume, send or no_send - the return's own fader and the master's stay volume); 'folded' answers the channel strips a collapsed folder hides (track.folder_set_collapsed folds). MX-005: 'selected_channels' (ch-<n> ids, never the master) are the channels the 'selected' filter shows - interface state, never saved, forgotten when the mixer is cleared for another project; a Ctrl+click on a strip adds or removes its channel, and the mode bar's 'Pick...' chooses them; the answer lists them in mixer order. MX-021: 'follow_selection' makes the 'selected' filter show the focused arranger track's (or clip owner's) mixer channel instead, keeping the manual set for when it is turned off; it is saved in the config file (ui/followchannel, off when absent), and the answer adds it with 'visible_channels' (the channels the filter shows now, master included). The view options, kept in the config file (ui/mixerview): 'show_sends', 'show_pan', 'show_number', 'show_meter_info', 'show_inserts', 'show_macros' (a strip's sections - the meter line is the gain reduction and the clip light, the inserts are listed by name, the macros are the rack's first four as knobs), 'show_console' (Q050-088: the Console section - knobs and switches for the channel's trim, polarity, EQ and its Console's drive and glue compressor, each running mixer.console_strip; off by default, hidden in the routing view and the compact density), 'strip_width' (narrow / normal / wide), 'filter' (all / instruments / audio / returns / used - the channels a track plays into or a send reaches -, selected), 'meter_mode' (peak - after the fader -, rms, pre_fader) and 'meter_scale' (db42 - the default range -, db60, db24, linear); MX-128, the meters' ballistics: 'meter_falloff' (fast - the default, about 116 dB/s -, medium - about 26 dB/s -, slow - about 12 dB/s, a peak programme meter's fall) and 'peak_hold' (how long the peak line holds: off, 1.5s - the default -, 3s, 6s). Theme 16: 'view' (mix - levels, pan and processing, the default -, routing - each strip lists where its signal comes from and goes by name, the sends row always shown, inserts and macros left to the mix view) and 'density' (expanded - the default, every section the options show -, compact - no inserts, no macros, in the mix view no sends row, routing on one line); a mode bar across the mixer shows and sets both, the filter and the modes. The answer adds 'strips': per channel its 'type' (master, return, group, track, channel), 'format' (stereo, LCR, Quad, 5.1, 7.1), 'inputs' and 'outputs' (by name; each output with amount, pre_fader, enabled), 'hardware' (its hardware output's label, empty for none) and 'states' (afl, pfl, solo_safe, surround_pan, cue, hardware_insert). Interface state: nothing is journalled.",
+      "description": "The mixer view's modes, set and answered: 'sends_on_faders' (a ch-<n> return, or empty for the channel faders) makes every channel's fader drive its send to that return - a banner across the mixer names it, every fader is labelled with what it drives, and a channel with no send there keeps a dimmed, still 'No send' fader in place; the answer adds 'sends_on_faders_name' (the return's name) and 'faders' (per channel, what its fader drives: volume, send or no_send - the return's own fader and the master's stay volume); 'folded' answers the channel strips a collapsed folder hides (track.folder_set_collapsed folds). MX-005: 'selected_channels' (ch-<n> ids, never the master) are the channels the 'selected' filter shows - interface state, never saved, forgotten when the mixer is cleared for another project; a Ctrl+click on a strip adds or removes its channel, and the mode bar's 'Pick...' chooses them; the answer lists them in mixer order. MX-021: 'follow_selection' makes the 'selected' filter show the focused arranger track's (or clip owner's) mixer channel instead, keeping the manual set for when it is turned off; it is saved in the config file (ui/followchannel, off when absent), and the answer adds it with 'visible_channels' (the channels the filter shows now, master included). The view options, kept in the config file (ui/mixerview): 'show_sends', 'show_pan', 'show_number', 'show_meter_info', 'show_inserts', 'show_macros' (a strip's sections - the meter line is the gain reduction and the clip light, the inserts are listed by name, the macros are the rack's first four as knobs), 'show_console' (Q050-088: the Console section - knobs and switches for the channel's trim, polarity, EQ and its Console's drive and glue compressor, each running mixer.console_strip; off by default, hidden in the routing view and the compact density), 'strip_width' (narrow / normal / wide), 'filter' (all / instruments / audio / returns / used - the channels a track plays into or a send reaches -, selected), 'meter_mode' (peak - after the fader -, rms, pre_fader) and 'meter_scale' (db42 - the default range -, db60, db24, linear); MX-128, the meters' ballistics: 'meter_falloff' (fast - the default, about 116 dB/s -, medium - about 26 dB/s -, slow - about 12 dB/s, a peak programme meter's fall) and 'peak_hold' (how long the peak line holds: off, 1.5s - the default -, 3s, 6s). Theme 16: 'view' (mix - levels, pan and processing, the default -, routing - each strip lists where its signal comes from and goes by name, the sends row always shown, inserts and macros left to the mix view) and 'density' (expanded - the default, every section the options show -, compact - no inserts, no macros, in the mix view no sends row, routing on one line); a mode bar across the mixer shows and sets both, the filter and the modes. The answer adds 'strips': per channel its 'type' (master, return, group, track, channel), 'format' (stereo, LCR, Quad, 5.1, 7.1), 'inputs' and 'outputs' (by name; each output with amount, pre_fader, enabled), 'hardware' (its hardware output's label, empty for none) and 'states' (afl, pfl, solo_safe, surround_pan, cue, hardware_insert). Interface state: nothing is journalled. Q050-227.2: 'pin' / 'unpin' (a ch-<n> id) and 'pinned_channels' (the whole list) pin channel strips beside the scrolling channels, so they stay on screen while the channels scroll; the strip's menu Pin Strip / Unpin Strip runs this command; the answer's 'pinned_channels' lists them in mixer order. The pins are interface state kept with the project's window layout (window.layout_project_save, inside 'mixer_zones'), restored when the project reopens; layouts without them open with none pinned.",
       "group": "window",
       "id": "window.mixer_view",
       "mutating": false,
@@ -38813,6 +38869,9 @@
               "6s"
             ],
             "type": "string"
+          },
+          "pinned_channels": {
+            "type": "array"
           },
           "selected_channels": {
             "type": "array"
@@ -38893,7 +38952,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Q050-227.1: where the mixer's regions are docked and how wide their separators leave them, set and answered. The regions are 'master' (the master strip), 'channels' (the scrolling channel area), 'vca' (the VCA strips) and 'rack' (the effect rack). 'channels' is always 'middle'; 'master', 'vca' and 'rack' dock 'left' or 'right' of it. 'dock' takes one side region, either alone (put it on the other side) or as '<region>=<left|right>', and 'zones' takes the whole arrangement as an object ({region: dock}). 'sizes' sets a region's width in pixels (24..4000); dragging a separator in the interface sends the same 'sizes' back through this very command, with 'live': true, so the interface's own resize and an agent's are one path ('live' takes only 'sizes' and never re-lays the splitter, which is what makes it safe mid-gesture). 'reset' puts the default arrangement back: master left, channels middle, VCA and rack right. The answer is what the mixer shows now: 'zones' and 'sizes' (the portable arrangement), and 'mixer_zones', the one object window.layout_project_save keeps inside the project's window layout, so saving that layout and reopening the project brings the arrangement and the widths back. Projects and layouts saved before this feature carry no 'mixer_zones' and open with the default arrangement. Interface state, kept with the layout: this command writes no project data of its own and records no undo step (the layout save is the step).",
+      "description": "Q050-227.1: where the mixer's regions are docked and how wide their separators leave them, set and answered. The regions are 'master' (the master strip), 'channels' (the scrolling channel area), 'vca' (the VCA strips) and 'rack' (the effect rack). 'channels' is always 'middle'; 'master', 'vca' and 'rack' dock 'left' or 'right' of it. 'dock' takes one side region, either alone (put it on the other side) or as '<region>=<left|right>', and 'zones' takes the whole arrangement as an object ({region: dock}). 'sizes' sets a region's width in pixels (24..4000); dragging a separator in the interface sends the same 'sizes' back through this very command, with 'live': true, so the interface's own resize and an agent's are one path ('live' takes only 'sizes' and never re-lays the splitter, which is what makes it safe mid-gesture). 'reset' puts the default arrangement back: master left, channels middle, VCA and rack right. The answer is what the mixer shows now: 'zones' and 'sizes' (the portable arrangement), and 'mixer_zones', the one object window.layout_project_save keeps inside the project's window layout, so saving that layout and reopening the project brings the arrangement and the widths back. Projects and layouts saved before this feature carry no 'mixer_zones' and open with the default arrangement. 'mixer_zones' also carries 'pinned' (the pinned channel strips, ch-<n> ids in pin order; window.mixer_view pins them). Interface state, kept with the layout: this command writes no project data of its own and records no undo step (the layout save is the step).",
       "group": "window",
       "id": "window.mixer_zones",
       "mutating": false,
@@ -40130,11 +40189,11 @@
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-294.3/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-92qaz6x8/zene.sock",
-    "version": "0.4.0-alpha.6907+9260074"
+    "source_socket": "/tmp/zctl-run-powt8hwe/zene.sock",
+    "version": "0.4.0-alpha.7036+d0edd14"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
