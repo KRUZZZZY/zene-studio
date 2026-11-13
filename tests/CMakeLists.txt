@@ -4543,6 +4543,9 @@ add_test(NAME OpulenZSpanSize COMMAND PluginPortsMigrationTest opulenzRendersThe
 set_tests_properties(OpulenZSpanSize PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 add_test(NAME OpulenZZeroFrameCount COMMAND PluginPortsMigrationTest opulenzZeroFrameCountStopsLoop)
 set_tests_properties(OpulenZZeroFrameCount PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# Cluster new-p16-157: Hz2fnum() range-checks the float before the unsigned conversion.
+add_test(NAME OpulenZHz2fnumRange COMMAND PluginPortsMigrationTest opulenzHz2fnumChecksRangeBeforeUnsignedCast)
+set_tests_properties(OpulenZHz2fnumRange PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 target_include_directories(PluginPortsMigrationTest PRIVATE
 	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
 )
