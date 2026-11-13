@@ -79,8 +79,16 @@ void sfz::FilterHolder::process(const float** inputs, float** outputs, unsigned 
     auto resonanceSpan = bufferPool.getBuffer(numFrames);
     auto gainSpan = bufferPool.getBuffer(numFrames);
 
-    if (!cutoffSpan || !resonanceSpan || !gainSpan)
+    if (!cutoffSpan || !resonanceSpan || !gainSpan) {
+        // No scratch buffer for the modulated parameters: bypass the filter for this block
+        // rather than leaving the outputs unwritten.
+        for (unsigned channelIdx = 0; channelIdx < filter->channels(); channelIdx++) {
+            // Voice processing is in-place; avoid passing identical ranges to std::copy.
+            if (inputs[channelIdx] != outputs[channelIdx])
+                copy<float>({ inputs[channelIdx], numFrames }, { outputs[channelIdx], numFrames });
+        }
         return;
+    }
 
     fill<float>(*cutoffSpan, baseCutoff);
     if (float* mod = mm.getModulation(cutoffTarget)) {
