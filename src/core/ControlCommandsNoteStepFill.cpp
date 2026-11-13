@@ -24,12 +24,13 @@
  *
  */
 /*! 0.5.0 Q050-294.3: note.step_fill - the notes of each step column (every note whose position
- *  falls in one 'step_ticks' slot) re-pitched in the active root and scale (scale.set, custom
- *  scales too). 'kind' shape follows a contour (walk, rise, fall, arch, valley) across the
+ *  falls in one 'step_ticks' slot) re-pitched in the active root and scale, or in the 'root' and
+ *  'scale' the call names (scale.set, custom scales too). 'kind' shape follows a contour (walk, rise, fall, arch, valley) across the
  *  columns, in 'low'..'high', moved by up to 'spread' degrees. 'kind' random picks one key per
  *  column from the same range and keeps each column with 'density' percent; the rest are removed.
  *  A chord keeps its shape in scale DEGREES: each note moves by the degrees it stood above its
- *  column's lowest note, so a triad stays a triad in the new key.
+ *  column's lowest note, so a triad stays a triad in the new key. The reply lists 'filled' (columns
+ *  written), 'keys' (each written column's lowest key after the fill) and 'notes' (ids still written).
  *
  *  Repeatable everywhere: the draw is std::mt19937 (its output sequence is fixed by the standard)
  *  mapped to a range by a 64-bit multiply here - never std::uniform_int_distribution, whose
@@ -178,12 +179,13 @@ ControlResult stepFill(const QJsonObject& args)
 			QStringLiteral("'step_ticks' must be in [1, %1]").arg(MaxFillStepTicks));
 	}
 
-	const ScaleContext& context = scaleContext();
-	const std::vector<int> classes = scalePitchClasses(context.root, scaleDegreesOf(context.scale));
+	ResolvedScale resolved;
+	if (!resolveScale(args, &resolved, &error)) { return error; }
+	const std::vector<int> classes = resolved.classes;
 	if (classes.empty())
 	{
 		return ControlResult::failure(ControlErrorKind::Refused,
-			QStringLiteral("no scale is set: a fill is written in the active scale (scale.set, or the note editor's scale menu)"));
+			QStringLiteral("no scale is set: a fill is written in the active scale (scale.set, or the step grid's Scale box)"));
 	}
 	const std::vector<int> keys = scaleKeysOf(classes);
 	const int low = std::max(0, args.value(QStringLiteral("low")).toInt(48));
@@ -221,6 +223,7 @@ ControlResult stepFill(const QJsonObject& args)
 
 	std::vector<Repitch> repitches;
 	std::vector<Note*> removals;
+	std::vector<std::vector<Repitch>> writtenColumns;  // one entry per kept column, in step order
 	std::size_t ordinal = 0;
 	for (auto& column : columns)
 	{
@@ -246,6 +249,7 @@ ControlResult stepFill(const QJsonObject& args)
 			const int index = std::clamp(at + degreeOf(keys, note->key()) - base, 0, top);
 			repitches.push_back({note, pool[static_cast<std::size_t>(index)]});
 		}
+		writtenColumns.emplace_back(repitches.end() - static_cast<std::ptrdiff_t>(notes.size()), repitches.end());
 	}
 
 	int pitched = 0;
@@ -258,9 +262,20 @@ ControlResult stepFill(const QJsonObject& args)
 		for (const Repitch& edit : repitches) { edit.note->setKey(edit.key); }
 		for (Note* note : removals) { clip->removeNote(note); }
 	}
+	// The written columns in step order: each one's lowest key after the fill, and its note ids in pitch order.
+	QJsonArray lowestKeys;
+	QJsonArray noteIds;
+	for (std::vector<Repitch>& column : writtenColumns)
+	{
+		std::stable_sort(column.begin(), column.end(), [](const Repitch& a, const Repitch& b) { return a.key < b.key; });
+		lowestKeys.append(column.front().key);
+		for (const Repitch& edit : column) { noteIds.append(control::noteIdOf(edit.note)); }
+	}
 	QJsonObject result{{QStringLiteral("kind"), kind}, {QStringLiteral("seed"), static_cast<double>(seed)},
 		{QStringLiteral("step_ticks"), stepTicks}, {QStringLiteral("columns"), static_cast<int>(columns.size())},
-		{QStringLiteral("pitched"), pitched}, {QStringLiteral("removed"), static_cast<int>(removals.size())}};
+		{QStringLiteral("pitched"), pitched}, {QStringLiteral("removed"), static_cast<int>(removals.size())},
+		{QStringLiteral("filled"), static_cast<int>(writtenColumns.size())},
+		{QStringLiteral("keys"), lowestKeys}, {QStringLiteral("notes"), noteIds}};
 	return ControlResult::success(finish(ref, clip, QStringLiteral("note.step_fill"), result, changes));
 }
 
@@ -275,14 +290,17 @@ void registerNoteStepFillCommands(ControlRegistry& registry)
 		{QStringLiteral("step_ticks"), integerProperty(1, MaxFillStepTicks)},
 		{QStringLiteral("seed"), integerProperty(0, kMaxSchemaInteger)},
 		{QStringLiteral("low"), integerProperty(0, 127)}, {QStringLiteral("high"), integerProperty(0, 127)},
-		{QStringLiteral("spread"), integerProperty(0, 12)}, {QStringLiteral("density"), integerProperty(1, 100)}};
+		{QStringLiteral("spread"), integerProperty(0, 12)}, {QStringLiteral("density"), integerProperty(1, 100)},
+		{QStringLiteral("root"), rootArgumentSchema()}, {QStringLiteral("scale"), stringProperty()}};
 	control::defineCommandWithSchema(registry, QStringLiteral("note.step_fill"),
 		QStringLiteral("Fill a clip's existing step columns (every note in one 'step_ticks' slot, 12 = a sixteenth) with new keys "
-			"of the active scale (scale.set; custom scales too) in 'low'..'high' (48..72 when left out). 'kind' shape moves the "
+			"of the active scale, or of the 'root' and 'scale' the call names (scale.set; custom scales too), in 'low'..'high' "
+			"(48..72 when left out). 'kind' shape moves the "
 			"columns along a 'contour' (walk, rise, fall, arch or valley, moved up to 'spread' degrees either way). 'kind' random "
 			"picks a key per column and keeps each column with 'density' percent (100 when left out); the others are removed. A "
 			"chord keeps its shape in scale degrees. The same 'seed' (the project's seed when left out) and the same clip give the "
-			"same notes. Refused when no scale is set. One undo step; none when the fill changes nothing."),
+			"same notes. Refused when no scale is set. The reply lists 'filled' (columns written), 'keys' (each one's lowest key "
+			"after the fill) and 'notes' (the ids still written). One undo step; none when the fill changes nothing."),
 		objectSchema(args, QJsonArray{QStringLiteral("clip")}), true, stepFill);
 }
 

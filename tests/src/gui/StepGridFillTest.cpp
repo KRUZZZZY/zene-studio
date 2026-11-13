@@ -30,9 +30,12 @@
 #include <QtTest>
 
 #include <QApplication>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QJsonValue>
 #include <algorithm>
+#include <map>
+#include <set>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -291,6 +294,73 @@ private slots:
 			{QStringLiteral("seed"), 1}, {QStringLiteral("low"), 60}, {QStringLiteral("high"), 72}})).ok);
 		QVERIFY(rowsOf(still) == stillBefore);
 		QCOMPARE(depth(), depthStill);
+	}
+
+	//! (f) A named root and scale win over the project's; a blank 'scale' is refused and changes nothing.
+	void namedScaleOverridesTheProject()
+	{
+		QVERIFY(run(QStringLiteral("scale.root_set"), {{QStringLiteral("root"), QStringLiteral("D")}}).ok);
+		QVERIFY(run(QStringLiteral("scale.set"), {{QStringLiteral("scale"), QStringLiteral("Major")}}).ok);
+		MidiClip* clip = clipOf(eightColumns(60));
+
+		// A natural minor on A (pitch classes 9, 11, 0, 2, 4, 5, 7), not the project's D major.
+		const std::vector<int> aMinor{9, 11, 0, 2, 4, 5, 7};
+		std::vector<int> named;
+		fillKeys(clip, {{QStringLiteral("scale"), QStringLiteral("Minor")}, {QStringLiteral("root"), QStringLiteral("A")},
+			{QStringLiteral("seed"), 5}, {QStringLiteral("low"), 48}, {QStringLiteral("high"), 72}}, &named);
+		QCOMPARE(static_cast<int>(named.size()), 8);
+		for (int key : named)
+		{
+			QVERIFY2(std::find(aMinor.begin(), aMinor.end(), key % 12) != aMinor.end(), "a named scale fills only its own keys");
+		}
+
+		// The same seed in the project's own scale (D major) is another fill.
+		std::vector<int> project;
+		fillKeys(clip, {{QStringLiteral("seed"), 5}, {QStringLiteral("low"), 48}, {QStringLiteral("high"), 72}}, &project);
+		QVERIFY(named != project);
+
+		// A blank scale clears the scale for this call, so there is nothing to fill in: refused, nothing changes.
+		expectRefusal(clip, withClip(clip, {{QStringLiteral("scale"), QStringLiteral("")}, {QStringLiteral("seed"), 5}}),
+			ControlErrorKind::Refused);
+	}
+
+	//! (g) The reply names what a fill wrote: 'filled' columns, each one's lowest key after the fill, and the ids still written.
+	void replyNamesTheWrittenColumns()
+	{
+		freshScale();
+		MidiClip* clip = clipOf(eightColumns(60));
+		const std::vector<NoteRow> before = rowsOf(clip);
+		const int depthBefore = depth();
+
+		const ControlResult r = run(StepFill, withClip(clip, {{QStringLiteral("kind"), QStringLiteral("shape")},
+			{QStringLiteral("contour"), QStringLiteral("arch")}, {QStringLiteral("seed"), 7}}));
+		QVERIFY(r.ok);
+
+		// What the clip holds now: the lowest key of each column by step, and every note's id.
+		std::map<int, int> lowest;
+		std::set<QString> ids;
+		for (const Note* note : clip->notes())
+		{
+			const int column = note->pos().getTicks() / 12;
+			const auto found = lowest.find(column);
+			if (found == lowest.end() || note->key() < found->second) { lowest[column] = note->key(); }
+			ids.insert(control::noteIdOf(note));
+		}
+
+		const QJsonObject reply = r.result;
+		QCOMPARE(reply.value(QStringLiteral("filled")).toInt(), static_cast<int>(lowest.size()));
+		const QJsonArray keys = reply.value(QStringLiteral("keys")).toArray();
+		QCOMPARE(keys.size(), static_cast<int>(lowest.size()));
+		int index = 0;
+		for (const auto& entry : lowest) { QCOMPARE(keys.at(index++).toInt(), entry.second); }
+
+		const QJsonArray noteIds = reply.value(QStringLiteral("notes")).toArray();
+		QCOMPARE(noteIds.size(), static_cast<int>(clip->notes().size()));
+		for (const QJsonValue& id : noteIds) { QVERIFY2(ids.count(id.toString()) == 1, "a named note must still be in the clip"); }
+
+		QVERIFY(undo());
+		QVERIFY(rowsOf(clip) == before);
+		QCOMPARE(depth(), depthBefore);
 	}
 
 	//! (e) Every refusal fails typed, changes no note and takes no undo step.
