@@ -31,6 +31,7 @@
 
 #include <algorithm>
 #include <iterator>
+#include <limits>
 
 #ifdef LMMS_BUILD_WIN32
 #include <windows.h>
@@ -951,8 +952,18 @@ auto RemotePlugin::updateAudioBuffer(ch_cnt_t channelsIn, ch_cnt_t channelsOut, 
 		m_hostOutputs = {};
 		m_sharedInputs = {};
 		m_audioOutputs = {};
-		m_audioBuffer.create((channelsIn + channelsOut) * frames);
-		m_hostBlock.assign((channelsIn + channelsOut) * frames, 0.f);
+		const auto totalChannels = static_cast<std::size_t>(channelsIn) + channelsOut;
+		const auto totalSamples = detail::checkedSizeFromCounts(totalChannels, frames);
+		if (totalSamples == std::numeric_limits<std::size_t>::max())
+		{
+			std::cerr << "Audio buffer size overflows size_t\n";
+			m_audioBuffer.detach();
+			m_hostBlock.clear();
+			m_hostBlock.shrink_to_fit();
+			return nullptr;
+		}
+		m_audioBuffer.create(totalSamples);
+		m_hostBlock.assign(totalSamples, 0.f);
 	}
 	catch (const std::exception& error)
 	{
@@ -967,8 +978,8 @@ auto RemotePlugin::updateAudioBuffer(ch_cnt_t channelsIn, ch_cnt_t channelsOut, 
 	m_channelsOut = channelsOut;
 	m_frames = frames;
 
-	const auto inputs = static_cast<std::size_t>(channelsIn * frames);
-	const auto outputs = static_cast<std::size_t>(channelsOut * frames);
+	const auto inputs = detail::checkedSizeFromCounts(channelsIn, frames);
+	const auto outputs = detail::checkedSizeFromCounts(channelsOut, frames);
 	m_sharedInputs = std::span{m_audioBuffer.get(), inputs};
 	m_audioOutputs = std::span{m_audioBuffer.get() + inputs, outputs};
 	m_hostInputs = std::span{m_hostBlock.data(), inputs};
