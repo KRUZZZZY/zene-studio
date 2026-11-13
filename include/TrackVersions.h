@@ -60,6 +60,9 @@ public:
 	//! when @a xml does not parse).
 	static QString clipsOf(Track* track);
 	static bool replaceClips(Track* track, const QString& xml);
+	//! @a xml (a <clips> document) with the clip elements of @a extra (also a <clips> document) appended.
+	//! @a xml is returned unchanged when either does not parse.
+	static QString appendClips(const QString& xml, const QString& extra);
 
 	QString elementName() const override { return QStringLiteral("track-versions"); }
 	//! Only for tracks the song still holds: a deleted track's versions stay in memory for an undo of the

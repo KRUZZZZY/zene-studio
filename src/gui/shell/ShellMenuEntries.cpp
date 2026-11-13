@@ -92,6 +92,16 @@ void trackVersionEntries(QMenu* menu, Track* track, const QJsonObject& self)
 		entry->setCheckable(true);
 		entry->setChecked(name == set.active);
 	}
+	if (!set.clips.isEmpty())
+	{
+		QMenu* lanes = versions->addMenu(tr("Use as Comp Lane"));
+		for (const QString& name : set.clips.keys())
+		{
+			const QJsonObject args = with(self, "name", name);
+			addCommandAction(lanes, name, QStringLiteral("track.version_to_lane"),
+				[args] { return CommandCall{QStringLiteral("track.version_to_lane"), args, {}, QString(), false}; });
+		}
+	}
 	if (!set.clips.isEmpty()) { versions->addSeparator(); }
 	add(versions, "Keep as a Version...", "track.version_save", self, true, {{QStringLiteral("name"), set.clips.isEmpty() ? tr("Main") : tr("Version %1").arg(set.clips.size() + 1)}});
 	if (!set.clips.isEmpty()) { add(versions, "Forget a Version...", "track.version_remove", self, true, {{QStringLiteral("name"), set.active}}); }

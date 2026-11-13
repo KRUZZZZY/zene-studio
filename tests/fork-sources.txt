@@ -2330,6 +2330,7 @@ tests/control-stem-export-verb.py
 tests/control-surface-hardening.py
 tests/control-tempo-map-persistence.py
 tests/control-track-folder.py
+tests/control-track-playlists.py
 tests/control-undo-structural.py
 tests/control-vca-commands.py
 tests/control-warp-commands-transcript.py
@@ -2761,6 +2762,7 @@ tests/src/core/TaskCenterTest.cpp
 tests/src/core/ThrowingImportFilterPlugin.cpp
 tests/src/core/ThreadPoolTest.cpp
 tests/src/core/TrackFolderNoChannelTestSupport.h
+tests/src/core/TrackVersionLanesTest.cpp
 # 2026-09-22 (040/arch4-s4, ARCH-4 slice S4): tests/src/core/WriteRefusalGateTest.cpp
 # enters the list - the write-refusal gate (SPEC-ARCH-4 1.7 Requirement 6): a text scan
 # of the write path that fails on a setter called for a value it does not own, and on a
@@ -3661,3 +3663,5 @@ include/ShellRecordMenu.h
 src/gui/shell/ShellRecordMenu.cpp
 # cluster new-p10-318 (2026-10): fix and verification report for the Peak Controller zero-frame block (fork-NEW).
 docs/qwen-fixes-2026-10/cluster-new-p10-318.md
+# cluster Q050-275 (2026-11): named track versions as take-lane comp sources, feature record.
+docs/050-features/Q050-275.md

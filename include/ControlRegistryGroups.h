@@ -929,7 +929,7 @@ LMMS_EXPORT void registerMixerMaskingCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerTrackMidiOutCommands(ControlRegistry& registry);
 //! 0.5.0 L09 (Q050-252.1, MX-062): device.external_* - an instrument track's External MIDI device (ControlCommandsExternalDevice.cpp).
 LMMS_EXPORT void registerExternalDeviceCommands(ControlRegistry& registry);
-//! 0.5.0 L04 (ED-049): track.version_list / save / switch / remove (ControlCommandsTrackVersions.cpp).
+//! 0.5.0 L04 (ED-049): track.version_list / save / switch / remove / to_lane (ControlCommandsTrackVersions.cpp).
 LMMS_EXPORT void registerTrackVersionCommands(ControlRegistry& registry);
 //! 0.5.0 L07 (ED-086): clip.export_musicxml (ControlCommandsScoreExport.cpp).
 LMMS_EXPORT void registerScoreExportCommands(ControlRegistry& registry);

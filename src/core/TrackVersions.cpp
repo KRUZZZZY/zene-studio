@@ -93,6 +93,19 @@ bool TrackVersions::replaceClips(Track* track, const QString& xml)
 	return true;
 }
 
+QString TrackVersions::appendClips(const QString& xml, const QString& extra)
+{
+	QDomDocument doc;
+	QDomDocument added;
+	if (!doc.setContent(xml) || !added.setContent(extra)) { return xml; }
+	QDomElement root = doc.documentElement();
+	for (QDomElement element = added.documentElement().firstChildElement(); !element.isNull(); element = element.nextSiblingElement())
+	{
+		root.appendChild(doc.importNode(element, true));
+	}
+	return doc.toString(-1);
+}
+
 bool TrackVersions::shouldPersist() const
 {
 	for (auto set = m_sets.constBegin(); set != m_sets.constEnd(); ++set)
