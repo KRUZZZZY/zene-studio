@@ -27,6 +27,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <chrono>
 #include <thread>
 #include <QThread>
@@ -271,6 +272,9 @@ void AudioBusHandle::doProcessing()
 
 	if (anyOutputAfterEffects || m_bufferUsage || m_compensation.delayFrames() > 0)
 	{
+		float peak = 0.f;
+		for (const SampleFrame& frame : m_buffer) { peak = std::max({peak, std::abs(frame.left()), std::abs(frame.right())}); }
+		recordPeak(peak);
 		// TODO: improve the flow here - convert to pull model
 		Engine::mixer()->mixToChannel(m_bus, m_nextMixerChannel); // send output to mixer
 		m_bufferUsage = false;

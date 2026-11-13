@@ -490,7 +490,7 @@ void NoteCanvas::paintOverlay(QPainter& p) const
 	{
 		p.setPen(pal.textMuted);
 		p.setFont(tokens::font(tokens::TextRole::Body));
-		p.drawText(rect(), Qt::AlignCenter, tr("Open a clip: double-click a MIDI clip in the arranger."));
+		p.drawText(rect(), Qt::AlignCenter, tr("Click to start a clip on the selected instrument, or double-click a MIDI clip in the arranger."));
 	}
 }
 

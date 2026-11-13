@@ -60,15 +60,11 @@ bool isAbletonLink(const QJsonObject& state)
 
 QString sessionSyncText(const QJsonObject& state)
 {
-	const bool ableton = isAbletonLink(state);
-	if (!state.value(QStringLiteral("enabled")).toBool())
-	{
-		return ableton ? QAction::tr("Ableton Link") : QAction::tr("Sync");
-	}
+	// Owner 2026-10-29: the button says Sync whichever backend runs (it read "Ableton Link"); the tooltip names it.
+	if (!state.value(QStringLiteral("enabled")).toBool()) { return QAction::tr("Sync"); }
 	const int peers = state.value(QStringLiteral("peer_count")).toInt();
-	const QString text = ableton ? QAction::tr("Ableton Link: %n peer(s), %1 BPM", nullptr, peers)
-		: QAction::tr("Sync: %n peer(s), %1 BPM", nullptr, peers);
-	return text.arg(state.value(QStringLiteral("session_tempo")).toDouble(), 0, 'f', 1);
+	return QAction::tr("Sync: %n peer(s), %1 BPM", nullptr, peers)
+		.arg(state.value(QStringLiteral("session_tempo")).toDouble(), 0, 'f', 1);
 }
 
 QString sessionSyncToolTip(const QJsonObject& state)
@@ -80,11 +76,11 @@ QString sessionSyncToolTip(const QJsonObject& state)
 			"instances on this machine or network (this build's zene-link-style fallback, not Ableton Link)");
 	}
 	const QString status = enabled
-		? QAction::tr("Ableton Link: Enabled - %n peer(s) connected.", nullptr,
+		? QAction::tr("Sync (Link): Enabled - %n peer(s) connected.", nullptr,
 			state.value(QStringLiteral("peer_count")).toInt())
-		: QAction::tr("Ableton Link: Disabled.");
+		: QAction::tr("Sync (Link): Disabled.");
 	return status + QLatin1Char(' ') + QAction::tr("Play in time with Ableton Live, Bitwig, Reason and other "
-		"Ableton Link apps on this network: tempo and beat phase, and play/stop when start/stop sync is on.");
+		"Link apps on this network: tempo and beat phase, and play/stop when start/stop sync is on.");
 }
 
 QAction* makeSessionSyncAction(QObject* parent)
