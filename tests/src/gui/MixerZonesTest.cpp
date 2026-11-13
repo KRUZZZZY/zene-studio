@@ -33,6 +33,7 @@
 #include <QtTest>
 #include "MixerModeVisibilityTestSupport.h"
 
+#include <QAction>
 #include <QApplication>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -119,6 +120,41 @@ void dragHandle(int beforeIndex, int dx)
 	QApplication::sendEvent(handle, &release);
 }
 
+//! The ids window.mixer_view names as pinned, in the order its answer lists them (mixer order).
+QStringList pinnedIn(const ControlResult& result)
+{
+	QStringList ids;
+	for (const QJsonValue& entry : result.result.value(QStringLiteral("pinned_channels")).toArray())
+	{
+		ids.append(entry.toString());
+	}
+	return ids;
+}
+
+QStringList pinnedOf()
+{
+	return pinnedIn(run(QStringLiteral("window.mixer_view")));
+}
+
+//! The menu entry that pins or unpins the strip at @a index, or nullptr when the strip has none (the master).
+QAction* pinActionFor(int index, QMenu* menu)
+{
+	getGUI()->mixerView()->populatePinAction(menu, index);
+	return menu->findChild<QAction*>(QStringLiteral("pinStripAction"));
+}
+
+bool inPinnedArea(int index)
+{
+	MixerView* view = getGUI()->mixerView();
+	return view->pinnedArea()->isAncestorOf(view->channelView(index));
+}
+
+//! @a widget's rect in the mixer view's own coordinates.
+QRect inView(QWidget* widget)
+{
+	return QRect(widget->mapTo(getGUI()->mixerView(), QPoint(0, 0)), widget->size());
+}
+
 } // namespace
 
 class MixerZonesTest : public QObject
@@ -154,6 +190,7 @@ private slots:
 	{
 		// Every case starts from the default arrangement, as a mixer with no stored layout shows.
 		QVERIFY(run(QStringLiteral("window.mixer_zones"), {{QStringLiteral("reset"), true}}).ok);
+		QVERIFY(pinnedOf().isEmpty());
 	}
 
 	//! Criterion 3: a mixer with no stored layout shows the arrangement it always had - the master
@@ -335,6 +372,211 @@ private slots:
 		QVERIFY2(zoneIndex(QStringLiteral("channels")) < zoneIndex(QStringLiteral("master")), "the restored master is not right");
 		QCOMPARE(splitter->sizes().at(zoneIndex(QStringLiteral("master"))), 140);
 		QCOMPARE(splitter->sizes().at(zoneIndex(QStringLiteral("rack"))), 300);
+	}
+
+	//! Q050-227.2: a strip is pinned from its menu beside the scrolling channels. Pinned, it stays put while the
+	//! channels scroll; the pin, a resize and a project save go through the same commands an agent calls, and
+	//! reopening the project brings the pin, the id and the width back. Unpinned, the strip scrolls again.
+	void pinUnpinResizeSaveAndRestoreTogether()
+	{
+		MainWindow* window = getGUI()->mainWindow();
+		MixerView* view = getGUI()->mixerView();
+
+		// (0) the master separator is dragged at the default size, where the existing separator test drags it.
+		const int masterBefore = sizesOf(run(QStringLiteral("window.mixer_zones"))).value(QStringLiteral("master")).toInt();
+		dragHandle(zoneIndex(QStringLiteral("master")), 40);
+		QCoreApplication::processEvents();
+		const int masterDragged = sizesOf(run(QStringLiteral("window.mixer_zones"))).value(QStringLiteral("master")).toInt();
+		QVERIFY2(masterDragged > masterBefore, qPrintable(QStringLiteral("master %1 -> %2").arg(masterBefore).arg(masterDragged)));
+
+		// (a) ten more strips, so the channel scroll area really scrolls at 1024 px.
+		const int wanted = 12;
+		while (static_cast<int>(Engine::mixer()->numChannels()) < wanted) { Engine::mixer()->createChannel(); }
+		syncMixer();
+		window->resize(1024, 768);
+		QCoreApplication::processEvents();
+		QVERIFY(view->channelCount() >= wanted);
+		QVERIFY(view->channelScrollArea()->horizontalScrollBar()->maximum() > 0);
+
+		// (b) pin the far-right strip through its menu entry; the command it runs is window.mixer_view.
+		const int last = view->channelCount() - 1;
+		const QString id = control::channelIdOf(Engine::mixer()->mixerChannel(last));
+		QVERIFY(!id.isEmpty());
+		QMenu menu;
+		QAction* pin = pinActionFor(last, &menu);
+		QVERIFY(pin != nullptr);
+		QCOMPARE(pin->property("controlCommand").toString(), QStringLiteral("window.mixer_view"));
+		QCOMPARE(pin->text(), QStringLiteral("Pin Strip"));
+		QVector<QJsonObject> ran;
+		collab::CommandTap::install({}, [&ran](const QString& command, const QJsonObject& args, bool, bool) {
+			if (command == QStringLiteral("window.mixer_view")) { ran.append(args); }
+		});
+		pin->trigger();
+		QCoreApplication::processEvents();
+		collab::CommandTap::clear();
+		QVERIFY2(!ran.isEmpty(), "the Pin Strip entry never invoked window.mixer_view");
+		QCOMPARE(ran.last().value(QStringLiteral("pin")).toString(), id);
+
+		// (c) the pin is in the layout, the strip sits in the pinned area, and that area is shown.
+		QCOMPARE(pinnedOf(), QStringList{id});
+		QVERIFY(inPinnedArea(last));
+		QVERIFY(view->pinnedArea()->isVisible());
+
+		// (d) scrolling: the pinned strip keeps its place; an unpinned strip moves with the scroll.
+		QScrollBar* bar = view->channelScrollArea()->horizontalScrollBar();
+		QVERIFY(bar->maximum() > 0);
+		MixerChannelView* strip = view->channelView(last);
+		MixerChannelView* other = view->channelView(1);
+		QWidget* channels = view->zoneWidget(QStringLiteral("channels"));
+		QVERIFY(channels != nullptr);
+		bar->setValue(bar->minimum());
+		QCoreApplication::processEvents();
+		QVERIFY(strip->isVisible());
+		QVERIFY2(inView(channels).contains(inView(strip)), "the pinned strip is outside the channels region at the left");
+		const QRect stripAtMin = inView(strip);
+		const QRect otherAtMin = inView(other);
+		bar->setValue(bar->maximum());
+		QCoreApplication::processEvents();
+		QVERIFY(strip->isVisible());
+		QVERIFY2(inView(channels).contains(inView(strip)), "the pinned strip is outside the channels region at the right");
+		QCOMPARE(inView(strip).x(), stripAtMin.x());
+		QVERIFY2(inView(other).x() != otherAtMin.x(), "the unpinned strip did not scroll");
+
+		// (e) the width the layout has now, after the resize: this is what the restore must bring back.
+		const int masterWidth = sizesOf(run(QStringLiteral("window.mixer_zones"))).value(QStringLiteral("master")).toInt();
+
+		// (f) save the project with the layout (the pins and the widths travel with it).
+		const ControlResult remembered = run(QStringLiteral("window.layout_project_save"));
+		QVERIFY2(remembered.ok, qPrintable(remembered.errorMessage));
+		const QString path = m_home.filePath(QStringLiteral("mixer-pins.mmp"));
+		QVERIFY2(Engine::getSong()->saveProjectFile(path), qPrintable(Engine::getSong()->saveRefusal()));
+
+		// (g) change it away: unpin through the menu, which now reads Unpin Strip.
+		QMenu unpinMenu;
+		QAction* unpin = pinActionFor(last, &unpinMenu);
+		QVERIFY(unpin != nullptr);
+		QCOMPARE(unpin->text(), QStringLiteral("Unpin Strip"));
+		unpin->trigger();
+		QCoreApplication::processEvents();
+		QVERIFY(pinnedOf().isEmpty());
+		QVERIFY(!inPinnedArea(last));
+		QVERIFY(view->channelScrollArea()->widget()->isAncestorOf(view->channelView(last)));
+		QVERIFY2(inView(view->channelView(last)).x() > inView(view->channelView(last - 1)).x(),
+			"the unpinned strip is not after its neighbour in the scrolling channels");
+		QVERIFY(run(QStringLiteral("window.mixer_zones"), {{QStringLiteral("reset"), true}}).ok);
+
+		// (h) restore: the project brings the pin back on the same id, in the pinned area, with the same width.
+		Engine::getSong()->loadProject(path);
+		QCoreApplication::processEvents();
+		syncMixer();
+		QCOMPARE(pinnedOf(), QStringList{id});
+		int restoredIndex = -1;
+		const int count = static_cast<int>(Engine::mixer()->numChannels());
+		for (int i = 0; i < count; ++i)
+		{
+			auto* channel = Engine::mixer()->mixerChannel(i);
+			if (channel != nullptr && control::channelIdOf(channel) == id) { restoredIndex = i; }
+		}
+		QVERIFY(restoredIndex > 0);
+		QVERIFY(inPinnedArea(restoredIndex));
+		QCOMPARE(sizesOf(run(QStringLiteral("window.mixer_zones"))).value(QStringLiteral("master")).toInt(), masterWidth);
+
+		// (i) finally unpin it again: back in the scrolling area, and no pins are left.
+		QMenu finalMenu;
+		QAction* again = pinActionFor(restoredIndex, &finalMenu);
+		QVERIFY(again != nullptr);
+		QCOMPARE(again->text(), QStringLiteral("Unpin Strip"));
+		again->trigger();
+		QCoreApplication::processEvents();
+		QVERIFY(pinnedOf().isEmpty());
+		QVERIFY(!inPinnedArea(restoredIndex));
+		QVERIFY(view->channelScrollArea()->widget()->isAncestorOf(view->channelView(restoredIndex)));
+		window->resize(1400, 900);
+		QCoreApplication::processEvents();
+	}
+
+	//! Q050-227.2: the pin command refuses what cannot be pinned and reads a whole list in mixer order; a
+	//! layout saved before pins existed opens with none, and garbage in 'pinned' is dropped, not fatal.
+	void pinningRefusesWhatCannotBePinnedAndToleratesOldLayouts()
+	{
+		MixerView* view = getGUI()->mixerView();
+		QVERIFY(view->channelCount() >= 4);
+		const QString idA = control::channelIdOf(Engine::mixer()->mixerChannel(1));
+		const QString idB = control::channelIdOf(Engine::mixer()->mixerChannel(2));
+		const QString master = control::channelIdOf(Engine::mixer()->mixerChannel(0));
+
+		QVERIFY(run(QStringLiteral("window.mixer_view"), {{QStringLiteral("pin"), idA}}).ok);
+		QCOMPARE(pinnedOf(), QStringList{idA});
+
+		// Refusals: each one is InvalidArgs and changes no pin.
+		const ControlResult noSuchChannel = run(QStringLiteral("window.mixer_view"), {{QStringLiteral("pin"), QStringLiteral("ch-99999")}});
+		QVERIFY(!noSuchChannel.ok);
+		QCOMPARE(noSuchChannel.errorKind, ControlErrorKind::NotFound);
+		QCOMPARE(pinnedOf(), QStringList{idA});
+		const ControlResult masterRefused = run(QStringLiteral("window.mixer_view"), {{QStringLiteral("pin"), master}});
+		QVERIFY(!masterRefused.ok);
+		QCOMPARE(masterRefused.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(pinnedOf(), QStringList{idA});
+		const ControlResult notAList = run(QStringLiteral("window.mixer_view"), {{QStringLiteral("pinned_channels"), QStringLiteral("x")}});
+		QVERIFY(!notAList.ok);
+		QCOMPARE(notAList.errorKind, ControlErrorKind::InvalidArgs);
+		QCOMPARE(pinnedOf(), QStringList{idA});
+
+		// The whole list, given reversed, is answered in mixer order.
+		const ControlResult whole = run(QStringLiteral("window.mixer_view"), {{QStringLiteral("pinned_channels"), QJsonArray{idB, idA}}});
+		QVERIFY2(whole.ok, qPrintable(whole.errorMessage));
+		QCOMPARE(pinnedIn(whole), QStringList({idA, idB}));
+		QCOMPARE(pinnedOf(), QStringList({idA, idB}));
+
+		// Unpinning a strip that is not pinned is a no-op that still answers.
+		const QString unpinned = control::channelIdOf(Engine::mixer()->mixerChannel(3));
+		const ControlResult noop = run(QStringLiteral("window.mixer_view"), {{QStringLiteral("unpin"), unpinned}});
+		QVERIFY2(noop.ok, qPrintable(noop.errorMessage));
+		QCOMPARE(pinnedOf(), QStringList({idA, idB}));
+
+		// The master has no pin entry at all.
+		QMenu masterMenu;
+		QVERIFY(pinActionFor(0, &masterMenu) == nullptr);
+
+		// Legacy: a snapshot whose mixer_zones has no 'pinned' key opens with none pinned.
+		Shell* shell = getGUI()->mainWindow()->shell();
+		QJsonObject snapshot = shell->snapshot();
+		QJsonObject zones = snapshot.value(QStringLiteral("mixer_zones")).toObject();
+		QVERIFY(!zones.value(QStringLiteral("pinned")).toArray().isEmpty());
+		zones.remove(QStringLiteral("pinned"));
+		snapshot.insert(QStringLiteral("mixer_zones"), zones);
+		shell->restoreSnapshot(snapshot);
+		QCoreApplication::processEvents();
+		syncMixer();
+		QVERIFY(pinnedOf().isEmpty());
+
+		// Garbage: non-strings and a repeated id are dropped; the one real channel is pinned once.
+		QJsonArray garbage;
+		garbage.append(5);
+		garbage.append(QStringLiteral("bogus"));
+		garbage.append(idA);
+		garbage.append(idA);
+		zones.insert(QStringLiteral("pinned"), garbage);
+		snapshot.insert(QStringLiteral("mixer_zones"), zones);
+		shell->restoreSnapshot(snapshot);
+		QCoreApplication::processEvents();
+		syncMixer();
+		QCOMPARE(pinnedOf(), QStringList{idA});
+
+		// Deleting a pinned channel: no crash, and the pins no longer name it.
+		const int victim = view->channelCount() - 1;
+		const QString victimId = control::channelIdOf(Engine::mixer()->mixerChannel(victim));
+		QMenu victimMenu;
+		QAction* victimPin = pinActionFor(victim, &victimMenu);
+		QVERIFY(victimPin != nullptr);
+		victimPin->trigger();
+		QCoreApplication::processEvents();
+		QVERIFY(pinnedOf().contains(victimId));
+		view->deleteChannel(victim);
+		QCoreApplication::processEvents();
+		syncMixer();
+		QVERIFY(!pinnedOf().contains(victimId));
+		QCOMPARE(pinnedOf(), QStringList{idA});
 	}
 
 	//! One undo step per layout edit: the layout save is one true_inverse step, and it puts BOTH the
