@@ -425,11 +425,19 @@ one connection on or off. Each is one step that Edit &gt; Undo takes back, and a
 device without pins (or with its default pins) still processes only channels 1-2, as before. Pins past the pair are saved
 with the project. If the channel is set back to a narrower layout, pins on channels it no longer has stay set and reach
 nothing. A Discrete channel's own extra channels come from another surround or Discrete channel's send or from a device
-pinned onto them; a track still feeds a channel its first pair only, and a rack's chains, the post-fader inserts and a
-speaker layout's (5.1, 7.1...) devices still see the pair only. Extra channels need a backend with more
+pinned onto them; a track still feeds a channel its first pair only, and a rack's chains, the post-fader inserts and an
+LCR or quad channel's devices still see the pair only. Extra channels need a backend with more
 than two outputs (JACK or ALSA). With a surround master, the WAV export's Channels row can write it as it is - Surround: one
 channel per speaker (6 for 5.1, 8 for 7.1) in the standard WAV order with its speaker mask; Stereo, the default, folds it
 with the downmix.</p>
+
+<p id="surround-devices"><b>Devices on a 5.1 or 7.1 channel.</b> A 5.1 or 7.1 mixer channel's devices now see all its
+speakers (L R C LFE Ls Rs, and Lrs Rrs on 7.1) as channels. A device with default pins still processes only L/R, and the
+other speakers pass through unchanged. Use the Pin Connector (device card <b>pins</b> button &gt; Channels menu, or click
+pins), or the agent command <code>port.set_pins</code>, to put a device on, e.g., channels 5-6 (Ls/Rs): one undo step.
+Each speaker then leaves on its own output when the channel's direct out or master sits on a device with enough outputs.
+Limits: post-fader inserts, send delay compensation, the mono/polarity/width/EQ stages and the meters still apply to L/R
+only.</p>
 
 <p>The mode bar across the top of the mixer shows and sets how it is laid out and what mode it is in. View: Mix shows levels, pan and processing; Routing shows, on every strip, where its signal comes from and where it goes, by channel name, with each send's amount and the hardware output. Density: Compact keeps only the essentials (no inserts or macro knobs, routing on one line); Expanded shows every section turned on in Mixer View. Strips never shrink below their width; use Show to filter channels, or scroll. The mode buttons name what the faders drive, the solo mode (exclusive or additive), who is listening (AFL or PFL) and where the master plays and in what speaker format; click one to change it. Every strip has a badge saying what it is (Master, Return, Group, Track, Channel or VCA, plus its surround format) and a line for the modes it is in (AFL/PFL, Solo safe, Surround pan, Cue, HW insert). Routing Matrix... opens every channel against every channel; filter the senders by name, and double-click or press Enter on a cell to make or change that send.</p>
 

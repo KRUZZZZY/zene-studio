@@ -26,8 +26,8 @@
  *  pins button opens the Pin Connector, whose matrix grows to the bus's 64 channels. The Channels menu's
  *  "Channels 41-42" entry runs port.set_pins (the agent's command) and moves the device onto that pair in one undo
  *  step; a click on a pin runs port.set_pins with that pin, also one step - and Edit > Undo (the main window's own
- *  Q050-296.1: the same on a 5.1 bus, whose six speakers are the connector's rows and Channels entries.
- *  undo, the engine's journal) takes it back. */
+ *  undo, the engine's journal) takes it back.
+ *  Q050-296.1: the same on a 5.1 bus, whose six speakers are the connector's rows and Channels entries. */
 
 #include <functional>
 
