@@ -76,3 +76,40 @@ locally, and no cross-thread state was added.
 Qt5/Qt6-common API only: `QRegularExpression`, `QJsonArray`, `QStringList`, `QObject` signals and `QJsonObject`,
 with no version-specific calls. The check is in `feature_check` (`check-namespace` and `no-tautology` both PASS,
 `p6-feature-check.log`), so no forbidden identifiers were added.
+
+## Self-check
+
+1. **Each new test FAILS with the product change reverted, then PASSES restored (exit codes?).** The test file is
+   new. With the product diff reverted (`git apply -R`), the RED build exits 2 (missing `populatePinAction`,
+   `pinnedArea`, `channelScrollArea`) and the RED ctest exits 8 (`Not Run`). With the product restored, the GREEN
+   build exits 0 and the GREEN ctest exits 0 (100% of 1). Caveat: this RED is a compile failure, not an assertion
+   failure; no assertion-level RED was run. Logs: `p7-red-build.log`, `p7-red-test.log`, `p7-green-build.log`,
+   `p7-green-test.log`.
+2. **Each acceptance criterion is proven by a test run here.** Criteria 1, 2 and 3 are proven by
+   `pinUnpinResizeSaveAndRestoreTogether`: ctest exit 0 (`p7-green-test.log`) and, run alone, exit 0
+   (`p7-fn-a.log`). Criteria 4, 5 and 6 are proven by `pinningRefusesWhatCannotBePinnedAndToleratesOldLayouts`:
+   ctest exit 0 (`p7-green-test.log`). Run alone it exits 1 (`p7-fn-b.log`), the order dependency in the
+   Acceptance section.
+3. **Each edit is ONE undo step; each new or changed command has an honest reversibility class.** The snapshot
+   declares `window.mixer_view` `"mutating": false` (`commands_snapshot.json`, `window.mixer_view` entry) and
+   `window.mixer_zones` `"mutating": false` (same file). Pins are layout (GUI) state, not song data; the undo step
+   for layout changes is `window.layout_project_save` / `window.layout_project_apply`. This is a judgement call for
+   review: pin and unpin do change state, and `mutating: false` is set on the basis that the layout is not song
+   data. Not verified by a test: that a single pin or unpin is exactly one undo step. ReversibilityContractTest
+   exit 0 (`p5-ctest-rct.log`).
+4. **Nothing added runs on the audio thread (the diff matched the audio-path hint).** The match is a false
+   positive: the only case-insensitive hit in `git diff 20fa43c90b HEAD` is hunk header line 510,
+   `@@ ... void MixerView::refreshDisplay()`, where `Display(` contains `play(`. The touched functions are GUI
+   widget code: `MixerView::refreshDisplay` (context only), `MixerView::relayoutPins` and
+   `MixerView::populatePinAction` (new), `MixerZoneState::setPinned` (new; emits `pinsChanged()` on the GUI thread),
+   and the handlers in `MixerChannelView.cpp` and `ControlCommandsMixerView.cpp`. None runs on the audio thread,
+   and none adds a lock, wait, allocation in the audio path, or I/O. Not verified here: the dispatch thread of each
+   control command was not re-checked beyond the feature doc's statement that the code is GUI-thread-only.
+5. **Old projects still load and render as before; new data round-trips.** Legacy layouts (no `pinned` key) are
+   covered by the legacy case in `pinningRefusesWhatCannotBePinnedAndToleratesOldLayouts` (ctest exit 0). The
+   round-trip (save, reopen, restore) is covered by `pinUnpinResizeSaveAndRestoreTogether` (ctest exit 0). "Renders
+   exactly as before" is not checked by a pixel test; the stage-1 `MixerZonesTest` was not re-run in this unit.
+6. **Qt 5.15 / MSVC / macOS portability.** `git diff 20fa43c90b HEAD -- src include`, added lines only, grepped for
+   `std::filesystem`, `windows.h`, `qMin`, `qMax`, `std::min`, `std::max`, `Q_OS_`, `Qt6` and `QT_VERSION`: no
+   matching lines (empty output). The APIs used (`QRegularExpression`, `QJsonArray`, `QStringList`, `QObject`
+   signals) exist in Qt 5.15. Not built here against Qt 5.15, MSVC or macOS; the build in this session is Linux.
