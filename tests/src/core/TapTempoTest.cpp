@@ -24,7 +24,10 @@
 
 #include <QtTest>
 
+#include <limits>
+
 #include "Engine.h"
+#include "MeterModel.h"
 #include "Song.h"
 #define private public
 #include "TapTempo.h"
@@ -84,6 +87,27 @@ private slots:
 		QCOMPARE(tapTempo.m_intervals[0], std::chrono::milliseconds{150});
 		QCOMPARE(tapTempo.m_intervals[1], std::chrono::milliseconds{100});
 		QCOMPARE(tapTempo.m_intervals[2], std::chrono::milliseconds{200});
+	}
+
+	void aNonFiniteNumeratorIsReadAsOneBeatNotAsADivisor()
+	{
+		// fittedValue() does not clamp NaN, so a malformed project or a NaN controller output can
+		// leave the numerator model holding NaN. The numerator is a divisor for the beat counter.
+		MeterModel& meter = Engine::getSong()->getTimeSigModel();
+		IntModel& numerator = meter.numeratorModel();
+		const float originalNumerator = numerator.value();
+		numerator.setValue(std::numeric_limits<float>::quiet_NaN());
+
+		TapTempo tapTempo;
+		const int beatsPerBar = meter.getNumerator();
+		tapTempo.tap(false);
+		tapTempo.tap(false);
+		tapTempo.tap(false);
+		const int beat = tapTempo.m_beat;
+
+		numerator.setValue(originalNumerator);
+		QVERIFY(beatsPerBar >= 1);
+		QVERIFY(beat >= 0 && beat < beatsPerBar);
 	}
 };
 
