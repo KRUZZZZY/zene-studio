@@ -137,6 +137,8 @@ set(LMMS_TESTS
 	src/core/ControlBounceRenderTest.cpp
 	# Cluster 917: cancellable bounce jobs apply edits on the main thread after stale-target checks.
 	src/core/ControlRenderJobTest.cpp
+	# Q050-327: freeze.tracks - concurrent renders behind one task, one undo step, cancel/failure/stale restore, and the menu.
+	src/core/BatchFreezeTest.cpp
 	# Q050-010: a render followed and cancelled through app.tasks, under the id its start reply named.
 	src/core/RenderTaskLifecycleTest.cpp
 	# Cluster new-p16-186: a render queued onto its own source project is refused, and the project kept.
@@ -3952,6 +3954,7 @@ set_tests_properties(ControlCommandsSaveVersionTest PROPERTIES ENVIRONMENT "QT_Q
 set_tests_properties(MidiControllerMenuTest LfoControllerUserWaveTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ControllerTemplateMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TrackRenderMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(BatchFreezeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(GrooveMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ClipEditsMenuTest ClipEffectsDialogTest SampleClipWarpModeMenuTest ClipWaveformEditTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ChainPresetMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -6601,6 +6604,17 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 	set_tests_properties(ControlFreezeCommandsTranscript PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 900
+	)
+	# Q050-327: freeze.tracks over the socket - two real child renders behind one task, one undo step, a
+	# cancel through task.cancel, refusals. 77 (Skipped) when this build has no loadable instrument.
+	add_test(NAME ControlFreezeTracksTranscript
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-freeze-tracks-transcript.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlFreezeTracksTranscript PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 900
+		SKIP_RETURN_CODE 77
 	)
 	# Q050-124: freeze.bus / freeze.unfreeze_bus over the socket - the real child render capturing the bus, the take
 	# matching the live reference with the source deleted, save/open, one-step undo, refusals. 77 (Skipped) when

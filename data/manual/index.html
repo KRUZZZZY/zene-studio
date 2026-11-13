@@ -366,6 +366,15 @@ nothing goes silent; unfreeze it, or put the file back. Freezing needs something
 tempo (turn the tempo map off first). The recording follows the song: while it is stopped, or past the recording's end,
 the bus is live. Agents use <code>freeze.bus</code> and <code>freeze.unfreeze_bus</code> with the bus's channel id, and
 <code>bus.list</code> shows <code>frozen</code>, <code>frozen_audio</code> and <code>frozen_audio_ready</code>.</p>
+<p>To freeze several tracks at once, open any unfrozen instrument or sample track's menu and choose Freeze several
+tracks...: tick two or more tracks (the one whose menu you opened starts ticked) and press Freeze. The tracks render at
+the same time, as one entry in the status bar's Tasks list with one progress bar and one Cancel. Nothing changes until
+every track has rendered; then all of them are frozen together, and one Undo unfreezes them all. If you cancel, if one
+render fails, or if one of the tracks, the tempo or the project changes while they render, no track is frozen and the
+partly written files are removed (a file already at a take's path is kept). A track that is already frozen, or that is not
+an instrument or sample track, cannot be part of a batch. Agents use <code>freeze.tracks</code> with the track ids; it
+answers at once with the batch's <code>task</code> id for <code>task.list</code> and <code>task.cancel</code>, and
+<code>track.get_state</code> reads each track afterwards.</p>
 <p>A channel's Hardware I/O menu sends it to your interface's outputs as well as the mix, builds up to four cue
 (headphone) mixes with their own sends, and adds a hardware insert: send to an output, return from an input, with the
 round trip measured by a ping and compensated. Hover the channel's strip to see the insert's latency in frames and

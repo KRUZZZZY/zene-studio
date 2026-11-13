@@ -3608,3 +3608,11 @@ docs/qwen-fixes-2026-10/sol-train-27-ci-repair-integration.md
 # Retain independently reviewed macOS x86_64 and Linux ARM64 CI repair reports in the combined replay.
 docs/qwen-fixes-2026-10/cluster-ci-f0fa6219c5d4b443.md
 docs/qwen-fixes-2026-10/cluster-ci-7d1b70f4f0a0b12b.md
+# Q050-327 (2026-11-10): freeze.tracks - several tracks rendered concurrently as one task and frozen in one undo step.
+include/BatchFreeze.h
+src/core/BatchFreeze.cpp
+src/core/ControlCommandsFreezeBatch.cpp
+tests/src/core/BatchFreezeTest.cpp
+tests/control-freeze-tracks-transcript.py
+docs/050-features/Q050-327.md
+docs/qwen-fixes-2026-10/cluster-Q050-327.md

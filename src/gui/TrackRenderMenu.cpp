@@ -25,15 +25,24 @@
 #include "TrackRenderMenu.h"
 
 #include <QApplication>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QFileDialog>
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QLabel>
+#include <QListWidget>
 #include <QMenu>
 #include <QMessageBox>
+#include <QPushButton>
+#include <QVBoxLayout>
 
 #include "ConfigManager.h"
 #include "ControlRegistry.h"
+#include "ControlTrackCreation.h"
 #include "ControlVocabulary.h"
+#include "Engine.h"
+#include "Song.h"
 #include "Track.h"
 #include "UnattendedRun.h"
 
@@ -81,14 +90,81 @@ QAction* item(QMenu* menu, const QString& text, const QString& command, const QS
 	return action;
 }
 
+bool canFreeze(const Track* track)
+{
+	return (track->type() == Track::Type::Instrument || track->type() == Track::Type::Sample) && !track->isFrozen();
+}
+
+//! The checked tracks' ids, in list order.
+QJsonArray checkedTracks(const QListWidget* list)
+{
+	QJsonArray ids;
+	for (int row = 0; row < list->count(); ++row)
+	{
+		if (list->item(row)->checkState() == Qt::Checked) { ids.append(list->item(row)->data(Qt::UserRole).toString()); }
+	}
+	return ids;
+}
+
 } // namespace
+
+QDialog* openBatchFreezeDialog(Track* preselected)
+{
+	auto* dialog = new QDialog(QApplication::activeWindow());
+	dialog->setObjectName(QStringLiteral("batchFreezeDialog"));
+	dialog->setAttribute(Qt::WA_DeleteOnClose);
+	dialog->setWindowTitle(QMenu::tr("Freeze tracks"));
+	auto* layout = new QVBoxLayout(dialog);
+	layout->addWidget(new QLabel(QMenu::tr("Tick two or more tracks. They render at the same time as one task "
+		"(Tasks in the status bar shows its progress and Cancel); one Undo unfreezes them all."), dialog));
+	auto* list = new QListWidget(dialog);
+	list->setObjectName(QStringLiteral("batchFreezeTracks"));
+	for (Track* track : Engine::getSong()->tracks())
+	{
+		if (!canFreeze(track)) { continue; }
+		auto* row = new QListWidgetItem(track->name(), list);
+		row->setData(Qt::UserRole, control::trackIdOf(track));
+		row->setFlags(row->flags() | Qt::ItemIsUserCheckable);
+		row->setCheckState(track == preselected ? Qt::Checked : Qt::Unchecked);
+	}
+	layout->addWidget(list);
+	auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dialog);
+	QPushButton* freeze = buttons->button(QDialogButtonBox::Ok);
+	freeze->setText(QMenu::tr("Freeze"));
+	const auto update = [list, freeze] { freeze->setEnabled(checkedTracks(list).size() >= 2); };
+	update();
+	QObject::connect(list, &QListWidget::itemChanged, dialog, update);
+	QObject::connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::reject);
+	QObject::connect(buttons, &QDialogButtonBox::accepted, dialog, [dialog, list] {
+		// The same registered command an agent sends; the task area follows the batch after this returns.
+		const ControlResult result = ControlRegistry::instance()->invoke(QStringLiteral("freeze.tracks"),
+			{{QStringLiteral("tracks"), checkedTracks(list)}});
+		if (!result.ok)
+		{
+			if (isUnattendedRun()) { qWarning("freeze.tracks refused: %s", qPrintable(result.errorMessage)); }
+			else { QMessageBox::warning(dialog, QMenu::tr("Freeze tracks"), result.errorMessage); }
+			return;
+		}
+		dialog->accept();
+	});
+	layout->addWidget(buttons);
+	dialog->open();
+	return dialog;
+}
 
 void addTrackRenderActions(QMenu* menu, Track* track)
 {
 	if (track == nullptr || (track->type() != Track::Type::Instrument && track->type() != Track::Type::Sample)) { return; }
 	const QString trackId = control::trackIdOf(track);
 	if (track->isFrozen()) { item(menu, QMenu::tr("Unfreeze track"), QStringLiteral("freeze.unfreeze"), trackId); }
-	else { item(menu, QMenu::tr("Freeze track"), QStringLiteral("freeze.track"), trackId); }
+	else
+	{
+		item(menu, QMenu::tr("Freeze track"), QStringLiteral("freeze.track"), trackId);
+		QAction* several = menu->addAction(QMenu::tr("Freeze several tracks..."));
+		several->setData(QStringLiteral("freeze.tracks"));
+		const int id = track->id();
+		QObject::connect(several, &QAction::triggered, menu, [id] { openBatchFreezeDialog(control::trackWithId(id)); });
+	}
 	item(menu, QMenu::tr("Bounce in place"), QStringLiteral("bounce.in_place"), trackId);
 }
 

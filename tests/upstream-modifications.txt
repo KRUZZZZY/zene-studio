@@ -5847,3 +5847,4 @@ src/gui/MainWindow.cpp	Q050-294.2: the Edit menu gains a Step Grid... action tha
 src/gui/CMakeLists.txt	Q050-294.2: compiles the melodic step grid (gui/noteeditor/StepGridPanel.cpp, StepGridCanvas.cpp) and window.step_grid (gui/ControlCommandsStepGrid.cpp); no existing source or option changes.
 tests/CMakeLists.txt	Q050-294.2: registers the StepGridPanelTest GUI test (offscreen) and the ControlStepGrid socket transcript; no existing test target or property changes.
 data/manual/index.html	Q050-294.2: the Editing notes section gains a Step Grid paragraph (Edit > Step Grid..., the cells, the inspector, one undo per gesture).
+tests/src/gui/TrackRenderMenuTest.cpp	# Freeze selected tracks as one parallel task
