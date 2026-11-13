@@ -7262,6 +7262,16 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 300
 	)
+	# Q050-275: named track playlists (track versions) through --control-socket -
+	# switch, save/reload, undo/redo and the typed error kinds, read back from the app.
+	add_test(NAME ControlTrackPlaylists
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-track-playlists.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlTrackPlaylists PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 300
+	)
 	# render.stems (0.3.0 verb wave, feature-tracker row 68): per-track stem
 	# export driven end to end through --control-socket, which is the half the
 	# engine's own StemExportTest cannot cover - that suite proves the four stems

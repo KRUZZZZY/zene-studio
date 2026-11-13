@@ -2330,6 +2330,7 @@ tests/control-stem-export-verb.py
 tests/control-surface-hardening.py
 tests/control-tempo-map-persistence.py
 tests/control-track-folder.py
+tests/control-track-playlists.py
 tests/control-undo-structural.py
 tests/control-vca-commands.py
 tests/control-warp-commands-transcript.py
