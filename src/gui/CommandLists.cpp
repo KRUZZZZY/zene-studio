@@ -406,6 +406,17 @@ ListSpec masteringSequence()
 	return out;
 }
 
+ListSpec masteringReport()
+{
+	// The rows are the last completed run's own candidate rows, and this surface reads the SAME command
+	// an agent reads (mastering.get_state). So the genre and delivery target a person chose are visible per
+	// candidate. `metrics` renders as a value count by design. Read-only: no row actions.
+	return spec("Mastering Report", "mastering.get_state", "candidates",
+		{QStringLiteral("name"), QStringLiteral("genre"), QStringLiteral("delivery_target"),
+			QStringLiteral("loudness_pass"), QStringLiteral("true_peak_pass"), QStringLiteral("file"),
+			QStringLiteral("metrics")});
+}
+
 ListSpec alternatives()
 {
 	ListSpec out = spec("Alternatives", "project.alternatives", "alternatives", {QStringLiteral("name"), QStringLiteral("active"),

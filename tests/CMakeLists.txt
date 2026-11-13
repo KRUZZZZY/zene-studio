@@ -1306,6 +1306,9 @@ set(LMMS_TESTS
 	# 0.5.0 L12 (Q050-317.1): Project Tools > Mastering Release... - the release page is the
 	# registered mastering.sequence_list, and its edits and an agent's are the same commands.
 	src/gui/MasteringReleaseGuiTest.cpp
+	# Q050-188.1: Project Tools > Mastering Report... reads last_run's own candidate rows, and Auto-Master's
+	# genre and delivery_target are the published lists - the choices a person makes, shown back per candidate.
+	src/gui/MasteringChoicesGuiTest.cpp
 	# Q050-121: Project Media's usage/state columns, the Unused view, and the injected
 	# confirmation proving Cancel keeps and Confirm removes only the selected unused file.
 	src/gui/BrowserProjectMediaTest.cpp
@@ -3831,6 +3834,7 @@ set_tests_properties(Lv2ViewBaseLifetimeTest PROPERTIES ENVIRONMENT "QT_QPA_PLAT
 set_tests_properties(LibraryMenusTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(BrowserTempoKeyGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MasteringReleaseGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(MasteringChoicesGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(BrowserProjectMediaTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(CommandPaletteTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(CommandFormTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -7634,6 +7638,18 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/control-mastering-commands.py
 			$<TARGET_FILE:zene>)
 	set_tests_properties(ControlMasteringCommands PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 600
+		SKIP_RETURN_CODE 77
+	)
+	# Q050-188.1 (p1): RED socket proof that mastering.run ACCEPTS and RETAINS its run
+	# choices (genre, delivery_target). Registered beside ControlMasteringCommands;
+	# reports ctest *Skipped* (exit 77) - never *Passed* - when no fixture generator exists.
+	add_test(NAME ControlMasteringChoices
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-mastering-choices.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlMasteringChoices PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 600
 		SKIP_RETURN_CODE 77

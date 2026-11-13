@@ -2235,6 +2235,7 @@ src/gui/shell/ModulatorCard.cpp
 src/gui/shell/Shell.cpp
 src/gui/shell/ShellChrome.cpp
 src/gui/shell/ShellCommandMenus.cpp
+src/gui/shell/ShellCommandMenusCustomise.cpp
 src/gui/shell/ShellFloating.cpp
 src/gui/shell/ShellIcons.cpp
 src/gui/shell/ShellLayout.cpp
@@ -2295,6 +2296,7 @@ tests/control-mastering-commands.py
 tests/control-mastering-sequence.py
 tests/control-mastering-quit.py
 tests/control-mastering-run-bound.py
+tests/control-mastering-choices.py
 tests/control-mcp-group-coverage.py
 tests/control-midi-reconnect.py
 tests/control-named-pipe-smoke.py
@@ -2952,6 +2954,7 @@ tests/src/gui/ProjectContainerSaveAsGuiTest.cpp
 tests/src/gui/ShortcutsCommandsTest.cpp
 tests/src/gui/MainWindowTest.cpp
 tests/src/gui/MasteringReleaseGuiTest.cpp
+tests/src/gui/MasteringChoicesGuiTest.cpp
 tests/src/gui/LivecodePanelTest.cpp
 tests/src/gui/LmmsStyleTest.cpp
 tests/src/gui/PianoRollRecordTest.cpp
