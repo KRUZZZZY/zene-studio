@@ -86,7 +86,7 @@ void SimpleTextFloat::show()
 
 void SimpleTextFloat::hide()
 {
-	m_source = nullptr;
+	m_source.clear();
 	m_showTimer->stop();
 	m_hideTimer->stop();
 	QWidget::hide();
