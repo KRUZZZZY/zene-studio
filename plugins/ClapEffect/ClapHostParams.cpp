@@ -35,7 +35,9 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <memory>
+#include <new>
 #include <vector>
 
 #include <clap/clap.h>
@@ -51,7 +53,10 @@ namespace
 //! CLAP wants a finite [min_value, max_value] with min <= max, and every host-side clamp/normalization
 //! depends on it (std::clamp is undefined behaviour with unordered bounds). A plug-in that reports
 //! anything else gets valid bounds here: non-finite ones become 0..1, a reversed pair is swapped, so the
-//! range stays as close to the plug-in's own as it can be validly expressed.
+//! range stays as close to the plug-in's own as it can be validly expressed. The SPAN must be finite too:
+//! -DBL_MAX..DBL_MAX has two finite endpoints but max - min overflows to +inf, and normalize() then divides
+//! by it (half-way normalizes to inf/inf = NaN, every ordinary value to 0), so such a range falls back to
+//! 0..1 like a non-finite endpoint does.
 void sanitizedRange(const clap_param_info_t& info, ParamDescriptor* descriptor)
 {
 	if (!std::isfinite(info.min_value) || !std::isfinite(info.max_value))
@@ -63,6 +68,13 @@ void sanitizedRange(const clap_param_info_t& info, ParamDescriptor* descriptor)
 	{
 		descriptor->minValue = std::min(info.min_value, info.max_value);
 		descriptor->maxValue = std::max(info.min_value, info.max_value);
+		// A span that overflows cannot be divided by. The pair is replaced by the same harmless 0..1 a
+		// non-finite bound gets; a finite span (0..DBL_MAX) is left exactly as the plug-in reported it.
+		if (!std::isfinite(descriptor->maxValue - descriptor->minValue))
+		{
+			descriptor->minValue = 0.0;
+			descriptor->maxValue = 1.0;
+		}
 	}
 	descriptor->defaultValue
 		= std::isfinite(info.default_value) ? info.default_value : descriptor->minValue;
@@ -243,6 +255,29 @@ void HostedPlugin::setParamNormalized(std::uint32_t id, float normalized)
 	setParamPlain(id, range > 0.0 ? descriptor.minValue + normalized * range : descriptor.minValue);
 }
 
+//! The clap.state output stream: the host's blob and whether a write was refused. A failed write is
+//! remembered here, because a plug-in is free to ignore write()'s answer and report success anyway.
+struct StateStream
+{
+	QByteArray* out;
+	bool failed = false;
+};
+
+//! Largest length QByteArray::append() can be handed on this Qt. Qt 6.8 added QByteArray::maxSize(); on
+//! earlier Qt 6 releases, bound it by qsizetype's signed maximum. Qt 5's append() takes an int, so the bound
+//! is the int maximum. These bounds stay inside the append length type; append() can still reject a lower
+//! allocation limit, which is handled below.
+constexpr auto maxStateWrite() -> std::uint64_t
+{
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+	return static_cast<std::uint64_t>(QByteArray::maxSize());
+#elif QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+	return static_cast<std::uint64_t>(std::numeric_limits<qsizetype>::max());
+#else
+	return static_cast<std::uint64_t>(std::numeric_limits<int>::max());
+#endif
+}
+
 auto HostedPlugin::saveState(QByteArray* state) const -> bool
 {
 	const auto& impl = *m_impl;
@@ -250,14 +285,45 @@ auto HostedPlugin::saveState(QByteArray* state) const -> bool
 	state->clear();
 	if (!impl.stateExt) { return false; }
 
+	StateStream sink{state};
 	clap_ostream_t stream{};
-	stream.ctx = state;
+	stream.ctx = &sink;
 	stream.write = [](const clap_ostream_t* self, const void* buffer, std::uint64_t size) -> std::int64_t {
-		auto* out = static_cast<QByteArray*>(self->ctx);
-		out->append(static_cast<const char*>(buffer), static_cast<qsizetype>(size));
+		auto* sink = static_cast<StateStream*>(self->ctx);
+		// The count is a uint64 and QByteArray's length is a SIGNED qsizetype (Qt 5: an int): narrowing
+		// it first turns a huge size negative, and append() then copies strlen(buffer) bytes while the
+		// callback reports the original size - a truncated blob reported as a complete save. Refuse the
+		// write instead, and let the plug-in see a short write (-1).
+		const auto written = static_cast<std::uint64_t>(sink->out->size());
+		const auto room = written < maxStateWrite() ? maxStateWrite() - written : 0;
+		if (size > room || (size > 0 && buffer == nullptr))
+		{
+			sink->failed = true;
+			return -1;
+		}
+		const auto before = sink->out->size();
+		try
+		{
+			sink->out->append(static_cast<const char*>(buffer), static_cast<qsizetype>(size));
+		}
+		catch (const std::bad_alloc&)
+		{
+			// Nothing escaped the host: the blob is rolled back to the length it had before this write.
+			sink->out->truncate(before);
+			sink->failed = true;
+			return -1;
+		}
 		return static_cast<std::int64_t>(size);
 	};
-	return impl.stateExt->save(impl.plugin, &stream);
+	const bool saved = impl.stateExt->save(impl.plugin, &stream);
+	if (!saved || sink.failed)
+	{
+		// Never hand a half-written blob to a caller: saveSettings() stores any non-empty QByteArray, so an
+		// empty one is what a failed save must leave behind (the "no state" answer it already understands).
+		state->clear();
+		return false;
+	}
+	return true;
 }
 
 auto HostedPlugin::loadState(const QByteArray& state) -> bool
