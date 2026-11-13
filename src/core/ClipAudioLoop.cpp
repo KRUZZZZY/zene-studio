@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include "SampleClip.h"
 #include "SamplePlayHandle.h"
@@ -47,12 +48,17 @@ bool comped(const SampleClip& clip)
 	return owner != nullptr && (!owner->takeLanes().segments().empty() || owner->takeLanes().auditionLane() >= 0);
 }
 
-//! Source frames for @a ticks at the clip's rate, signed (TimePos::frames takes no negative tick).
-std::int64_t framesFor(const SampleClip& clip, int ticks)
+/*! Source frames for @a ticks at the clip's rate, signed. The magnitude is taken in 64 bits: -INT_MIN has no int, and
+ *  std::abs(int) on it is undefined. The product and its guards are TimePos::frames' (which takes no negative tick). */
+std::int64_t framesFor(const SampleClip& clip, std::int64_t ticks)
 {
 	const float framesPerTick = clip.clipFramesPerTick();
-	const auto magnitude = static_cast<std::int64_t>(TimePos(std::abs(ticks)).frames(framesPerTick));
-	return ticks < 0 ? -magnitude : magnitude;
+	const std::int64_t magnitude = ticks < 0 ? -ticks : ticks;
+	const float frameCount = static_cast<float>(magnitude) * framesPerTick;
+	if (!std::isfinite(frameCount) || frameCount < 0.0f
+		|| static_cast<double>(frameCount) >= static_cast<double>(std::numeric_limits<f_cnt_t>::max())) { return 0; }
+	const auto frames = static_cast<std::int64_t>(frameCount);
+	return ticks < 0 ? -frames : frames;
 }
 
 } // namespace
@@ -79,9 +85,11 @@ bool engaged(const SampleClip& clip)
 
 std::int64_t elapsedFrames(const SampleClip& clip, TimePos at)
 {
-	const int origin = clip.startPosition().getTicks() + clip.startTimeOffset().getTicks();
+	const std::int64_t origin = static_cast<std::int64_t>(clip.startPosition().getTicks())
+		+ clip.startTimeOffset().getTicks();
 	// ED-021: a frame-exact edit's sub-tick lead holds the audio back, as sourceFrameAt does.
-	return framesFor(clip, at.getTicks() - origin) - static_cast<std::int64_t>(clip.leadFrames());
+	return framesFor(clip, static_cast<std::int64_t>(at.getTicks()) - origin)
+		- static_cast<std::int64_t>(clip.leadFrames());
 }
 
 std::int64_t fold(const ClipEdits& edits, std::int64_t position)
@@ -111,6 +119,11 @@ bool withLoop(const SampleClip& clip, int startTicks, int lengthTicks, ClipEdits
 	const std::int64_t start = static_cast<std::int64_t>(clip.sampleWindow().sourceIn) + framesFor(clip, startTicks);
 	const std::int64_t frames = framesFor(clip, lengthTicks);
 	const auto size = static_cast<std::int64_t>(sampleOf(clip).sampleSize());
+	if (start < 0)
+	{
+		*error = QStringLiteral("a loop starting %1 ticks from the clip's start falls before its audio").arg(startTicks);
+		return false;
+	}
 	if (frames <= 0 || start + frames > size)
 	{
 		*error = QStringLiteral("a loop of %1 ticks from %2 ticks after the clip's start runs past the end of its audio "
