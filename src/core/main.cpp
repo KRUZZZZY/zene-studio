@@ -520,6 +520,10 @@ int main( int argc, char * * argv )
 	// Whether the path the --report option carries is empty (the option was
 	// given without one, or with an empty one).
 	bool reportPathEmpty = true;
+	// Whether --genre or --delivery-target was GIVEN, and which one named it: like
+	// --report, a choice only `master` reads is refused before any other action runs.
+	bool masteringChoiceGiven = false;
+	const char* masteringChoiceFlag = "--genre";
 	// One flag for "the user gave -o": the stem export's directory check and the
 	// mastering job's candidate-directory check read the same fact. The two lanes
 	// named it differently (outputSpecified / outputGiven); merge train 3C keeps
@@ -590,6 +594,13 @@ int main( int argc, char * * argv )
 			reportGiven = true;
 			++i;
 			reportPathEmpty = ( i >= argc ) || QString::fromLocal8Bit( argv[i] ).isEmpty();
+		}
+		else if (arg == "--genre" || arg == "--delivery-target")
+		{
+			// Stage-1 record only (see reportGiven): the option's value is consumed here too.
+			masteringChoiceGiven = true;
+			masteringChoiceFlag = ( arg == "--genre" ) ? "--genre" : "--delivery-target";
+			if( i + 1 < argc ) { ++i; }
 		}
 		else if (arg == "--allowroot")
 		{
@@ -710,6 +721,14 @@ int main( int argc, char * * argv )
 				"information.\n\n", argv[0] );
 			return EXIT_FAILURE;
 		}
+	}
+	// --genre / --delivery-target: the same defect class as --report. Only master reads
+	// these labels, so any other action would succeed and silently ignore them.
+	if( masteringChoiceGiven && !mastering )
+	{
+		fprintf( stderr, "\n%s is only valid with master.\n\nTry \"%s --help\" for more "
+			"information.\n\n", masteringChoiceFlag, argv[0] );
+		return EXIT_FAILURE;
 	}
 
 	// 0.5.0 L14 (WF-131): the interface scale the user chose; Qt reads it only before the application exists.
