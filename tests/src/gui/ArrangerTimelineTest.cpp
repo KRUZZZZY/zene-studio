@@ -669,6 +669,65 @@ private slots:
 		QCOMPARE(raisedExceptions, 0);
 	}
 
+	void aZeroLengthMidiClipWithNotesPreviewsWithoutDividingByItsLength()
+	{
+		QVERIFY(run(QStringLiteral("arrangement.zoom"), {{QStringLiteral("pixels_per_bar"), 64},
+			{QStringLiteral("anchor"), QStringLiteral("start")}}).ok);
+		auto* instrumentTrack = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::patternStore()));
+		QVERIFY(instrumentTrack != nullptr);
+		QCoreApplication::processEvents();
+
+		PatternTrack* patternTrack = nullptr;
+		for (Track* track : Engine::getSong()->tracks())
+		{
+			patternTrack = dynamic_cast<PatternTrack*>(track);
+			if (patternTrack != nullptr) { break; }
+		}
+		QVERIFY(patternTrack != nullptr);
+
+		auto* midiClip = dynamic_cast<MidiClip*>(instrumentTrack->getClip(patternTrack->patternIndex()));
+		QVERIFY(midiClip != nullptr);
+		midiClip->addNote(Note(TimePos(96), TimePos(36), 60, 100), false);
+		midiClip->rearrangeAllNotes();
+		QVERIFY(!midiClip->notes().empty());
+		// Auto-resize is off, so nothing restores a bar: the clip keeps its notes and has no length.
+		midiClip->setAutoResize(false);
+		midiClip->changeLength(TimePos(0));
+		QCOMPARE(midiClip->length().getTicks(), 0);
+
+		auto* patternClip = dynamic_cast<PatternClip*>(patternTrack->createClip(TimePos(0)));
+		QVERIFY(patternClip != nullptr);
+		QCoreApplication::processEvents();
+
+		PatternClipView* view = nullptr;
+		for (PatternClipView* candidate : m_editor->findChildren<PatternClipView*>())
+		{
+			if (candidate->getClip() == patternClip) { view = candidate; break; }
+		}
+		QVERIFY(view != nullptr);
+		view->setGradient(false);
+		view->setProperty("noteColor", QColor(255, 0, 255));
+		view->setFixedWidth(128);
+		view->setFixedHeight(40);
+		view->setNeedsUpdate(true);
+
+		QImage image(view->size(), QImage::Format_ARGB32_Premultiplied);
+		image.fill(Qt::transparent);
+		QPainter painter(&image);
+		view->render(&painter); // Before the fix this divides by the zero clip length and the process dies with SIGFPE.
+		painter.end();
+
+		int notePixelX = -1;
+		for (int y = 3; y < image.height() - 3 && notePixelX < 0; ++y)
+		{
+			for (int x = 0; x < image.width(); ++x)
+			{
+				if (image.pixelColor(x, y) == QColor(255, 0, 255)) { notePixelX = x; break; }
+			}
+		}
+		QVERIFY2(notePixelX >= 0, "the note of a zero-length MIDI clip was not painted");
+	}
+
 	void theDragPreviewShowsWhatTheDropWillDo()
 	{
 		QVERIFY(run(QStringLiteral("arrangement.modes"), {{QStringLiteral("overlap"), QStringLiteral("trim")}}).ok);
