@@ -1009,6 +1009,8 @@ set(LMMS_TESTS
 	src/core/ExternalMidiDeviceTest.cpp
 	# 0.5.0 L08 (Q050-231.1): mixer.masking_report - deterministic clashes and cut proposals over fixed tones, read only.
 	src/core/MixerMaskingReportTest.cpp
+	# cluster new-p12-59: finite trims and dim values cannot overflow the published gain.
+	src/core/ControlRoomTest.cpp
 	# cluster new-p14-29 (BUG 14): order_by_tracks refuses an index that names no channel, observed before the read.
 	src/core/MixerOrderByTracksTest.cpp
 	# 0.5.0 L02 (W3): capture a scene, playlists, setlists, marker actions, release and jump.

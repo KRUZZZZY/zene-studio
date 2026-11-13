@@ -2906,6 +2906,7 @@ tests/src/core/ControlRegistryTest.cpp
 tests/src/core/ControlRenderJobTest.cpp
 tests/src/core/ControlRenderOutputPathTest.cpp
 tests/src/core/ControlResultSchemaTest.cpp
+tests/src/core/ControlRoomTest.cpp
 tests/src/core/ControlSampleArrayTest.cpp
 tests/src/core/ControlSampleBakeGuardTest.cpp
 tests/src/core/ControlSampleOperatorTest.cpp
