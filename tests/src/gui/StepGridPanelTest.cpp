@@ -111,6 +111,13 @@ StepGridPanel* findOpenGrid()
 	return nullptr;
 }
 
+//! A named child of the panel, or a clean test failure (the Fill row does not exist in every build).
+template<class T> T* must(QWidget* parent, const char* name)
+{
+	T* found = parent->findChild<T*>(QLatin1String(name));
+	return found;
+}
+
 //! The C major scale's keys in 48..72 (C3 to C5), the range the fills are checked against.
 bool inCMajor(int key)
 {
@@ -338,11 +345,18 @@ private slots:
 	void theFillRowFillsFromASeed()
 	{
 		const auto before = rowsOf(m_clip);
-		auto* contour = child<QComboBox>("stepGridFillContour");
+		auto* contour = must<QComboBox>(m_panel, "stepGridFillContour");
+		QVERIFY2(contour != nullptr, "the Fill row's stepGridFillContour is present");
+		auto* seed = must<QSpinBox>(m_panel, "stepGridFillSeed");
+		QVERIFY2(seed != nullptr, "the Fill row's stepGridFillSeed is present");
+		auto* spread = must<QSpinBox>(m_panel, "stepGridFillSpread");
+		QVERIFY2(spread != nullptr, "the Fill row's stepGridFillSpread is present");
+		auto* fill = must<QPushButton>(m_panel, "stepGridFill");
+		QVERIFY2(fill != nullptr, "the Fill row's stepGridFill is present");
 		contour->setCurrentIndex(contour->findData(QStringLiteral("arch")));
-		child<QSpinBox>("stepGridFillSeed")->setValue(7);
-		child<QSpinBox>("stepGridFillSpread")->setValue(2);
-		QTest::mouseClick(child<QPushButton>("stepGridFill"), Qt::LeftButton);
+		seed->setValue(7);
+		spread->setValue(2);
+		QTest::mouseClick(fill, Qt::LeftButton);
 		const auto keysAt = [this] {
 			std::vector<std::pair<int, int>> out;
 			for (const NoteRow& row : rowsOf(m_clip)) { out.emplace_back(std::get<0>(row), std::get<1>(row)); }
@@ -364,11 +378,18 @@ private slots:
 	void aRandomFillEmptiesStepsAndThePianoRollShowsIt()
 	{
 		const auto before = rowsOf(m_clip);
-		auto* kind = child<QComboBox>("stepGridFillKind");
+		auto* kind = must<QComboBox>(m_panel, "stepGridFillKind");
+		QVERIFY2(kind != nullptr, "the Fill row's stepGridFillKind is present");
+		auto* density = must<QSpinBox>(m_panel, "stepGridFillDensity");
+		QVERIFY2(density != nullptr, "the Fill row's stepGridFillDensity is present");
+		auto* seed = must<QSpinBox>(m_panel, "stepGridFillSeed");
+		QVERIFY2(seed != nullptr, "the Fill row's stepGridFillSeed is present");
+		auto* fill = must<QPushButton>(m_panel, "stepGridFill");
+		QVERIFY2(fill != nullptr, "the Fill row's stepGridFill is present");
 		kind->setCurrentIndex(kind->findData(QStringLiteral("random")));
-		child<QSpinBox>("stepGridFillDensity")->setValue(25);
-		child<QSpinBox>("stepGridFillSeed")->setValue(3);
-		QTest::mouseClick(child<QPushButton>("stepGridFill"), Qt::LeftButton);
+		density->setValue(25);
+		seed->setValue(3);
+		QTest::mouseClick(fill, Qt::LeftButton);
 		const auto after = rowsOf(m_clip);
 		const auto stepsOf = [](const std::vector<NoteRow>& rows) {
 			std::set<int> out;
@@ -399,7 +420,9 @@ private slots:
 		const auto before = rowsOf(m_clip);
 		QVERIFY(before != beforeMarker);
 		m_panel->setScaleChoice(QStringLiteral("none"), 0);
-		QTest::mouseClick(child<QPushButton>("stepGridFill"), Qt::LeftButton);
+		auto* fill = must<QPushButton>(m_panel, "stepGridFill");
+		QVERIFY2(fill != nullptr, "the Fill row's stepGridFill is present");
+		QTest::mouseClick(fill, Qt::LeftButton);
 		QVERIFY(rowsOf(m_clip) == before);
 		QLabel* status = child<QLabel>("stepGridStatus");
 		QVERIFY(status->isVisible());
