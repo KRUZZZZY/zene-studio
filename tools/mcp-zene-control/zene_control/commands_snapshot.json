@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-11-13T15:32:50Z",
+  "captured_at": "2026-11-13T20:56:18Z",
   "commands": [
     {
       "args_schema": {
@@ -18880,6 +18880,81 @@
       "description": "Split a clip by key: one new track per key it holds, each a copy of the clip's track (its instrument and effects) whose clip keeps only that key's notes - a drum loop into its drums. One undo step.",
       "group": "note",
       "id": "note.split_by_pitch",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "contour": {
+            "enum": [
+              "walk",
+              "rise",
+              "fall",
+              "arch",
+              "valley"
+            ],
+            "type": "string"
+          },
+          "density": {
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "high": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "shape",
+              "random"
+            ],
+            "type": "string"
+          },
+          "low": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "root": {
+            "description": "key index 0..11, or a name (\"C\", \"C#\", \"Db\")"
+          },
+          "scale": {
+            "type": "string"
+          },
+          "seed": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "spread": {
+            "maximum": 12,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "step_ticks": {
+            "maximum": 3072,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "Fill a clip's existing step columns (every note in one 'step_ticks' slot, 12 = a sixteenth) with new keys of the active scale, or of the 'root' and 'scale' the call names (scale.set; custom scales too), in 'low'..'high' (48..72 when left out). 'kind' shape moves the columns along a 'contour' (walk, rise, fall, arch or valley, moved up to 'spread' degrees either way). 'kind' random picks a key per column and keeps each column with 'density' percent (100 when left out); the others are removed. A chord keeps its shape in scale degrees. The same 'seed' (the project's seed when left out) and the same clip give the same notes. Refused when no scale is set. The reply lists 'filled' (columns written), 'keys' (each one's lowest key after the fill) and 'notes' (the ids still written). One undo step; none when the fill changes nothing.",
+      "group": "note",
+      "id": "note.step_fill",
       "mutating": true,
       "requires": [],
       "result_schema": {
@@ -40050,23 +40125,23 @@
       }
     }
   ],
-  "count": 931,
+  "count": 932,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-294.3/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-x6o_840j/zene.sock",
-    "version": "0.4.0-alpha.6900+35e3050"
+    "source_socket": "/tmp/zctl-run-92qaz6x8/zene.sock",
+    "version": "0.4.0-alpha.6907+9260074"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 78,
-    "id_count": 931,
-    "ids_sha256": "bc0c9a3463e35d2e47399ffea83794680ce5c48ee7bf4c1acd0bd7a5872a35ec"
+    "id_count": 932,
+    "ids_sha256": "3b318b4ce6bc29a26194052e8932b76418d03988314ffcce3785a06ecea5e944"
   }
 }

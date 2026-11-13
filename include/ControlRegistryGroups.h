@@ -880,6 +880,9 @@ LMMS_EXPORT void registerNoteToolCommands(ControlRegistry& registry);
 //! 0.5.0 Q050-221.1 (L07): note.generate_melody, a seeded melodic contour in the active scale
 //! (ControlCommandsNoteMelody.cpp).
 LMMS_EXPORT void registerNoteMelodyCommands(ControlRegistry& registry);
+//! 0.5.0 Q050-294.3: note.step_fill, a seeded shape or random fill of a clip's step columns in the active scale
+//! (ControlCommandsNoteStepFill.cpp).
+LMMS_EXPORT void registerNoteStepFillCommands(ControlRegistry& registry);
 //! 0.5.0 L07 (W3): note.move_to_track / split_by_pitch, scale.detect, transport.panic
 //! (ControlCommandsNoteMoves.cpp).
 LMMS_EXPORT void registerNoteMoveCommands(ControlRegistry& registry);

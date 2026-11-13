@@ -1777,6 +1777,7 @@ src/core/ControlCommandsNoteShape.cpp
 src/core/ControlCommandsNoteShared.h
 src/core/ControlCommandsNoteSlide.cpp
 src/core/ControlCommandsNoteStep.cpp
+src/core/ControlCommandsNoteStepFill.cpp
 src/core/ControlCommandsNoteTools.cpp
 src/core/ControlCommandsNoteTransform.cpp
 src/core/ControlCommandsNotes.cpp
@@ -3464,6 +3465,7 @@ tests/src/gui/SlicerTSliceControlsTest.cpp
 tests/src/gui/StartHubTest.cpp
 tests/src/gui/StemSplitBackgroundTest.cpp
 tests/src/gui/StemSplitMenuTest.cpp
+tests/src/gui/StepGridFillTest.cpp
 tests/src/gui/StepGridPanelTest.cpp
 tests/src/gui/StepRecorderWidgetTest.cpp
 tests/src/gui/SurroundPannerTest.cpp

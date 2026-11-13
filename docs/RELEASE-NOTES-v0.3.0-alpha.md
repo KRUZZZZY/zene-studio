@@ -1140,8 +1140,10 @@ after merging `050/m0-train-26`, 2026-11-12): `record.midi_capture_commit` adds 
 
 **M0 merge train 28** (`050/m0-train-28`, 2026-11-13, automatic): `ReversibilityContractTest` on the merged tree measures `rows=940 true_inverse=463 snapshot=42 irreversible=25 not_mutating=410`.
 
+**Q050-294.3** (melodic step fills, 2026-11-13): `note.step_fill` adds one `true_inverse` row (one MidiClip journal checkpoint per fill, none for a fill that changes nothing) - `rows=941 true_inverse=464 snapshot=42 irreversible=25 not_mutating=410`.
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=940 true_inverse=463 snapshot=42 irreversible=25 not_mutating=410
+     measured: rows=941 true_inverse=464 snapshot=42 irreversible=25 not_mutating=410
      configuration: telemetry.status wasm.load session.get_state stem.get_state app.update_check_get
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5
