@@ -257,6 +257,16 @@ MixerView::MixerView(Mixer* mixer) :
 	// relayoutZones() call.
 	m_zoneHosts.insert(QStringLiteral("master"), dockHost(QStringLiteral("master"), masterView));
 	m_zoneHosts.insert(QStringLiteral("channels"), m_middleHost);
+	// Q050-227.2: the pinned strips, left of the scrolling channels and never scrolled away; hidden until a strip is pinned.
+	m_pinnedArea = new QWidget(this);
+	m_pinnedArea->setObjectName(QStringLiteral("mixerPinnedStrips"));
+	m_pinnedArea->setAccessibleName(tr("Pinned mixer channels"));
+	m_pinnedLayout = new QHBoxLayout(m_pinnedArea);
+	m_pinnedLayout->setContentsMargins(0, 0, 0, 0);
+	m_pinnedLayout->setSpacing(0);
+	m_pinnedLayout->setAlignment(Qt::AlignLeft);
+	m_pinnedArea->hide();
+	ml->addWidget(m_pinnedArea, 0);
 	ml->addWidget(channelArea, 1);
 	ml->addWidget(addColumn, 0);
 	m_zoneHosts.insert(QStringLiteral("vca"), dockHost(QStringLiteral("vca"), m_vcaArea));
@@ -269,6 +279,10 @@ MixerView::MixerView(Mixer* mixer) :
 	relayoutZones();
 	connect(mixerzones::MixerZoneState::instance(), &mixerzones::MixerZoneState::changed,
 		this, &MixerView::relayoutZones);
+	// Q050-227.2: a pin or unpin re-lays the strips between the pinned area and the scrolling channels.
+	connect(mixerzones::MixerZoneState::instance(), &mixerzones::MixerZoneState::pinsChanged,
+		this, &MixerView::relayoutPins);
+	relayoutPins();
 	// A drag writes its widths back THROUGH THE REGISTERED COMMAND - the same window.mixer_zones an agent
 	// calls - with 'live': true so the command records them without re-laying the splitter under the
 	// mouse. The state then lives with the layout and is saved with the project. A relayout's own
@@ -436,6 +450,7 @@ int MixerView::addNewChannel()
 	// the new strip is already in place: the next sync pass has nothing to rebuild
 	m_channelOrderSignature = channelOrderSignatureOf(mix);
 	updateMaxChannelSelector();
+	relayoutPins();
 
 	return newChannelIndex;
 }
@@ -489,6 +504,7 @@ void MixerView::refreshDisplay()
 	m_channelOrderSignature = channelOrderSignatureOf(getMixer());
 	updateMaxChannelSelector();
 	refreshVcaStrips();
+	relayoutPins();
 }
 
 
@@ -770,6 +786,7 @@ void MixerView::deleteChannel(int index)
 	m_deletingOwnChannel = false;
 
 	chLayout->removeWidget(m_mixerChannelViews[index]);
+	m_pinnedLayout->removeWidget(m_mixerChannelViews[index]);
 	m_racksLayout->removeWidget(m_mixerChannelViews[index]);
 	// delete MixerChannelView later to prevent a crash when deleting from context menu
 	m_mixerChannelViews[index]->hide();
@@ -782,6 +799,7 @@ void MixerView::deleteChannel(int index)
 		m_mixerChannelViews[i]->setChannelIndex(i - 1);
 	}
 	m_mixerChannelViews.remove(index);
+	relayoutPins();
 
 	// the selection follows its channel: a channel deleted in front of it moved it down one
 	if (selLine > index) { --selLine; }
@@ -819,17 +837,13 @@ void MixerView::moveChannelLeft(int index)
 
 	m_mixer->moveChannelLeft(index);
 
-	const auto layoutIndex = chLayout->indexOf(m_mixerChannelViews[index]);
-	assert(layoutIndex >= 1);
-
-	chLayout->removeWidget(m_mixerChannelViews[index]);
-	chLayout->insertWidget(layoutIndex - 1, m_mixerChannelViews[index]);
-
 	m_mixerChannelViews[index]->setChannelIndex(index - 1);
 	m_mixerChannelViews[index - 1]->setChannelIndex(index);
 	std::swap(m_mixerChannelViews[index - 1], m_mixerChannelViews[index]);
 	// the strips moved with the channels, so the next sync pass has nothing to rebuild
 	m_channelOrderSignature = channelOrderSignatureOf(getMixer());
+	// Q050-227.2: the pinned and scrolling layouts follow the mixer order, pinned strips included.
+	relayoutPins();
 }
 
 
@@ -844,6 +858,53 @@ void MixerView::renameChannel(int index)
 	m_mixerChannelViews[index]->renameChannel();
 }
 
+
+// Q050-227.2: the stable id ("ch-<n>") of the mixer channel at @a index; empty when there is none.
+static QString channelIdAt(Mixer* mix, int index)
+{
+	if (mix == nullptr || index < 0 || index >= static_cast<int>(mix->numChannels())) { return QString(); }
+	MixerChannel* channel = mix->mixerChannel(index);
+	return channel != nullptr ? control::channelIdOf(channel) : QString();
+}
+
+void MixerView::relayoutPins()
+{
+	if (m_pinnedArea == nullptr || m_pinnedLayout == nullptr || chLayout == nullptr || m_channelAreaWidget == nullptr) { return; }
+	const QStringList pins = mixerzones::MixerZoneState::instance()->layout().pinned;
+	Mixer* mix = getMixer();
+	// take every strip out of both layouts first, then add each one to its own layout in mixer order
+	for (int i = 1; i < m_mixerChannelViews.size(); ++i)
+	{
+		if (m_mixerChannelViews[i] == nullptr) { continue; }
+		chLayout->removeWidget(m_mixerChannelViews[i]);
+		m_pinnedLayout->removeWidget(m_mixerChannelViews[i]);
+	}
+	for (int i = 1; i < m_mixerChannelViews.size(); ++i)
+	{
+		MixerChannelView* view = m_mixerChannelViews[i];
+		if (view == nullptr) { continue; }
+		const bool pinned = pins.contains(channelIdAt(mix, i));
+		(pinned ? m_pinnedLayout : chLayout)->addWidget(view);
+	}
+	m_pinnedArea->setVisible(m_pinnedLayout->count() > 0);
+	m_channelAreaWidget->adjustSize();
+}
+
+void MixerView::populatePinAction(QMenu* menu, int channelIndex)
+{
+	if (menu == nullptr || channelIndex <= 0) { return; }
+	const QString id = channelIdAt(getMixer(), channelIndex);
+	if (id.isEmpty()) { return; }
+	const bool pinned = mixerzones::MixerZoneState::instance()->layout().pinned.contains(id);
+	QAction* action = menu->addAction(pinned ? tr("Unpin Strip") : tr("Pin Strip"));
+	action->setObjectName(QStringLiteral("pinStripAction"));
+	action->setProperty("controlCommand", QStringLiteral("window.mixer_view"));
+	// the id and the direction are captured by value: a sync can rebuild the strip this menu belongs to
+	const QString key = pinned ? QStringLiteral("unpin") : QStringLiteral("pin");
+	connect(action, &QAction::triggered, this, [this, key, id] {
+		runCommand(this, CommandCall{QStringLiteral("window.mixer_view"), {{key, id}}, {}, QString(), false});
+	});
+}
 
 void MixerView::populatePeakWatchMenu(QMenu* menu) const
 {
