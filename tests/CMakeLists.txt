@@ -958,6 +958,8 @@ set(LMMS_TESTS
 	src/core/AutomationLaneChildrenTest.cpp
 	# 0.5.0 L04 (Q050-283.1): the neutral track - track.add, move, undo, save/load, clone, no clips.
 	src/core/HybridTrackRoundTripTest.cpp
+	# 0.5.0 L04 (Q050-283.2): track.set_role - a neutral row given an instrument and back, kept role, save/load.
+	src/core/HybridTrackInstrumentRoleTest.cpp
 	# ED-201: automation.write_to_end holds a value from a tick to the song's end.
 	src/core/AutomationWriteToEndTest.cpp
 	# ED-187: thinning keeps custom-segment endpoints and preserves the evaluated curve.
@@ -1378,6 +1380,8 @@ set(LMMS_TESTS
 	src/gui/AutomationLaneChildGuiTest.cpp
 	# 0.5.0 L04 (Q050-283.1): the Song Editor's Add neutral track button makes a drawn neutral row.
 	src/gui/HybridTrackGuiTest.cpp
+	# 0.5.0 L04 (Q050-283.2): the row's Actions menu assigns an instrument, makes it neutral and restores it.
+	src/gui/HybridTrackRoleGuiTest.cpp
 	# 0.5.0 theme 22: the main window opens where, and as large as, it was left (ui/main.geometry).
 	src/gui/MainWindowGeometryTest.cpp
 	# BUG new-p11-96: clicking the envelope graph turns a negative amount off.
@@ -2580,6 +2584,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		# The automation editor's keys move a point of one real instrument's parameter.
 		OR LMMS_TEST_NAME STREQUAL "AutomationEditorEditingTest"
 		OR LMMS_TEST_NAME STREQUAL "TrackAddRoutingTest"
+		# Q050-283.2: track.set_role loads a real instrument into a neutral row.
+		OR LMMS_TEST_NAME STREQUAL "HybridTrackInstrumentRoleTest"
+		OR LMMS_TEST_NAME STREQUAL "HybridTrackRoleGuiTest"
 		OR LMMS_TEST_NAME STREQUAL "TrackRouteDropTest"
 		OR LMMS_TEST_NAME STREQUAL "ControlChainPresetTest"
 		# The track menu's chain presets save and apply a chain holding one real effect.
@@ -2815,6 +2822,11 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# cluster new-p23-37: the replacement regression loads a real amplifier device.
 	if(LMMS_TEST_NAME STREQUAL "DeviceToolsChainTest")
 		add_dependencies(${LMMS_TEST_NAME} amplifier)
+	endif()
+
+	# Q050-283.2: track.set_role loads a real instrument (tripleoscillator) into the neutral row.
+	if(LMMS_TEST_NAME STREQUAL "HybridTrackInstrumentRoleTest" OR LMMS_TEST_NAME STREQUAL "HybridTrackRoleGuiTest")
+		add_dependencies(${LMMS_TEST_NAME} tripleoscillator)
 	endif()
 
 	# Q050-212: track.add's `instrument` loads a real plug-in.
@@ -3866,6 +3878,7 @@ set_tests_properties(DrumRackPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=o
 set_tests_properties(FolderSummaryLaneTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(AutomationLaneChildGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(HybridTrackGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(HybridTrackRoleGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MainWindowGeometryTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(UndoHistoryPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ExportQualityControlsTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -7833,10 +7846,16 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/control-hybrid-track-transcript.py
 			$<TARGET_FILE:zene>
 	)
+	# Q050-283.2: a neutral row given an instrument and back, over the real socket.
+	add_test(NAME ControlHybridTrackRoleTranscript
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-hybrid-track-role-transcript.py
+			$<TARGET_FILE:zene>
+	)
 	set_tests_properties(ControlShutdown ControlReadiness ControlNoAudioDevice
 		ControlNegativeControl ControlStableIdsSlice2 ControlStableIds
 		ControlReversibilityTranscript ControlMediaAgentTranscript ControlTransientRepeatTranscript
-		ControlHybridTrackTranscript PROPERTIES
+		ControlHybridTrackTranscript ControlHybridTrackRoleTranscript PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 420
 		SKIP_RETURN_CODE 77

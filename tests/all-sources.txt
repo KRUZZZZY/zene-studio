@@ -350,6 +350,8 @@ include/ControlStemSource.h
 include/ControlStemSupport.h
 include/ControlStructuralSupport.h
 include/ControlTrackCreation.h
+include/ControlTrackRole.h
+include/ControlTrackRoleLinks.h
 include/ControlTrackRouting.h
 include/ControlUndoCoalescing.h
 include/ControlVocabulary.h
@@ -950,6 +952,7 @@ include/TrackPinStrip.h
 include/TrackRecorder.h
 include/TrackRenameLineEdit.h
 include/TrackRenderMenu.h
+include/TrackRoleMenu.h
 include/TrackSpacers.h
 include/TrackVersions.h
 include/TrackView.h
@@ -1868,6 +1871,7 @@ src/core/ControlCommandsTrackLooks.cpp
 src/core/ControlCommandsTrackMidiOut.cpp
 src/core/ControlCommandsTrackOffset.cpp
 src/core/ControlCommandsTrackPresets.cpp
+src/core/ControlCommandsTrackRole.cpp
 src/core/ControlCommandsTrackRouting.cpp
 src/core/ControlCommandsTrackSpacers.cpp
 src/core/ControlCommandsTrackVersions.cpp
@@ -1993,6 +1997,7 @@ src/core/ControlStemSupport.cpp
 src/core/ControlStemWav.cpp
 src/core/ControlStructuralSupport.cpp
 src/core/ControlTrackCreation.cpp
+src/core/ControlTrackRoleLinks.cpp
 src/core/ControlTrackRouting.cpp
 src/core/ControlTransactions.cpp
 src/core/ControlUndoCoalescing.cpp
@@ -2558,6 +2563,7 @@ src/gui/TrackFolderMenu.cpp
 src/gui/TrackIcons.cpp
 src/gui/TrackPinStrip.cpp
 src/gui/TrackRenderMenu.cpp
+src/gui/TrackRoleMenu.cpp
 src/gui/UiConfigStore.cpp
 src/gui/UndoHistoryPanel.cpp
 src/gui/UpdateCheckWindows.cpp
@@ -2944,6 +2950,7 @@ tests/src/core/GrooveTemplateTest.cpp
 tests/src/core/GrooveTestSupport.h
 tests/src/core/HardwareIoTest.cpp
 tests/src/core/HardwareOutputBusTest.cpp
+tests/src/core/HybridTrackInstrumentRoleTest.cpp
 tests/src/core/HybridTrackRoundTripTest.cpp
 tests/src/core/HydrogenImportTest.cpp
 tests/src/core/ImportDetectionTest.cpp
@@ -3334,6 +3341,7 @@ tests/src/gui/GrooveMenuTest.cpp
 tests/src/gui/GuiTestApplication.h
 tests/src/gui/HelpAccessTest.cpp
 tests/src/gui/HybridTrackGuiTest.cpp
+tests/src/gui/HybridTrackRoleGuiTest.cpp
 tests/src/gui/InstrumentSetupUiTest.cpp
 tests/src/gui/ItemListButtonsTest.cpp
 tests/src/gui/ItemListPanelTest.cpp

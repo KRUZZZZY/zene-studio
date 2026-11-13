@@ -340,6 +340,7 @@ void registerControlCommands(ControlRegistry& registry)
 	// switch - a folder is a plain Track type and the sets are container state,
 	// so its ids are honest in every configuration.
 	registerTrackFolderCommands(registry);
+	registerTrackRoleCommands(registry);
 	// MIDI clock (0.3.0): the DAW as a clock master and as a clock slave. No
 	// compile-time switch; the bound it states is in docs/KNOWN-LIMITATIONS.md.
 	registerClockCommands(registry);
