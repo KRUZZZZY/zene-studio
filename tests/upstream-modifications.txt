@@ -5335,6 +5335,7 @@ src/tracks/InstrumentTrack.cpp	cluster new-p18-44: resets controller-lane lastSe
 src/gui/clips/MidiClipView.cpp	new-p18-54/new-p20-70: the arranger merge copies and rebases each controller lane, with later clips winning duplicate ticks; beat repaint visits steps only when each button has nonzero pixel width.
 include/MidiClipView.h	new-p20-70: declares the beat-step paint-count helper used by the painter and its deterministic geometry regression.
 tests/all-sources.txt	new-p18-54: regenerated the tracked source list from the recipe in its header after the source-manifest gate found stale vendored sfizz entries; gate limits and source scope are unchanged.
+tests/src/core/ControlNoteScaleVerbsTest.cpp	new-p15-16: regression proves note.velocity_scale refuses a NaN factor (readNumber range checks are comparisons, and NaN passes both).
 
 # Q050-088 / Q050-108 / Q050-339 / Q050-340 (2026-10-25, the strip-features batch): each change is skipped at its default, so an older project renders and saves as before; regressions in each unit's own test (ConsoleStripTest, StripMeterModeTest, TrackOffsetTest, InputChannelMeterTest) and the batch's GUI test.
 include/Mixer.h	Q050-108: MixerChannel gains the strip's own meter mode (an atomic int, 0 = follow the view), a VU needle (two MeterValues and fixed filter state) and an owned, lazily built loudness meter published through an atomic pointer; Q050-339: a manual offsetFrames() (atomic int, 0 by default) the PDC graph reads.
