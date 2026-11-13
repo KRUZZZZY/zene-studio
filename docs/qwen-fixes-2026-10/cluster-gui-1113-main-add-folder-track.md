@@ -51,9 +51,9 @@ All logs are in
 RED (test added, product code unmodified):
 
 ```
-cmake --build build --target TrackFolderMenuTest -j"$(nproc)" > LOGS/build-2.log 2>&1
+cmake --build build --target TrackFolderMenuTest -j"$(nproc)" > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1113-main-add-folder-track.r1/logs/build-2.log 2>&1
 # EXIT=0
-cd build/tests && ctest -R '^TrackFolderMenuTest$' --output-on-failure > LOGS/test-1-red.log 2>&1
+cd build/tests && ctest -R '^TrackFolderMenuTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1113-main-add-folder-track.r1/logs/test-1-red.log 2>&1
 # EXIT=8
 ```
 
@@ -62,40 +62,40 @@ The log records: `FAIL! : ... 'folderLabel != nullptr' returned FALSE. (the fold
 GREEN (fix applied):
 
 ```
-cmake --build build --target zene TrackFolderMenuTest -j"$(nproc)" > LOGS/build-3-green.log 2>&1
+cmake --build build --target zene TrackFolderMenuTest -j"$(nproc)" > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1113-main-add-folder-track.r1/logs/build-3-green.log 2>&1
 # EXIT=0
-cd build/tests && ctest -R '^TrackFolderMenuTest$' --output-on-failure > LOGS/test-2-green.log 2>&1
+cd build/tests && ctest -R '^TrackFolderMenuTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1113-main-add-folder-track.r1/logs/test-2-green.log 2>&1
 # EXIT=0  (100% tests passed out of 1)
 ```
 
 4b proof that the test catches the bug:
 
 ```
-git diff -- src/tracks/TrackFolder.cpp > LOGS/fix.patch && git apply -R LOGS/fix.patch
+git diff -- src/tracks/TrackFolder.cpp > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1113-main-add-folder-track.r1/logs/fix.patch && git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1113-main-add-folder-track.r1/logs/fix.patch
 # EXIT=0
-cmake --build build --target TrackFolderMenuTest -j"$(nproc)" > LOGS/build-4-reverted.log 2>&1
+cmake --build build --target TrackFolderMenuTest -j"$(nproc)" > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1113-main-add-folder-track.r1/logs/build-4-reverted.log 2>&1
 # EXIT=0
-cd build/tests && ctest -R '^TrackFolderMenuTest$' --output-on-failure > LOGS/test-3-reverted-red.log 2>&1
+cd build/tests && ctest -R '^TrackFolderMenuTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1113-main-add-folder-track.r1/logs/test-3-reverted-red.log 2>&1
 # EXIT=8
-git apply LOGS/fix.patch
+git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1113-main-add-folder-track.r1/logs/fix.patch
 # EXIT=0
-cmake --build build --target zene TrackFolderMenuTest -j"$(nproc)" > LOGS/build-5-restored.log 2>&1
+cmake --build build --target zene TrackFolderMenuTest -j"$(nproc)" > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1113-main-add-folder-track.r1/logs/build-5-restored.log 2>&1
 # EXIT=0
-cd build/tests && ctest -R '^TrackFolderMenuTest$' --output-on-failure > LOGS/test-4-restored-green.log 2>&1
+cd build/tests && ctest -R '^TrackFolderMenuTest$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1113-main-add-folder-track.r1/logs/test-4-restored-green.log 2>&1
 # EXIT=0
 ```
 
-Affected family (all built first, `LOGS/build-6-family.log` EXIT=0):
+Affected family (all built first, `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1113-main-add-folder-track.r1/logs/build-6-family.log` EXIT=0):
 
 ```
-cd build/tests && ctest -R '^(TrackFolderMenuTest|TrackFolderTest|FolderSummaryLaneTest|MixerSendsOnFadersTest|TrackIconsLevelBarTest)$' --output-on-failure > LOGS/test-5-family.log 2>&1
+cd build/tests && ctest -R '^(TrackFolderMenuTest|TrackFolderTest|FolderSummaryLaneTest|MixerSendsOnFadersTest|TrackIconsLevelBarTest)$' --output-on-failure > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1113-main-add-folder-track.r1/logs/test-5-family.log 2>&1
 # EXIT=0  (5/5 tests passed)
 ```
 
 Gates:
 
 ```
-python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > LOGS/gates-1.log 2>&1
+python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-gui-1113-main-add-folder-track > /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/gui-1113-main-add-folder-track.r1/logs/gates-1.log 2>&1
 # EXIT=0
 ```
 
