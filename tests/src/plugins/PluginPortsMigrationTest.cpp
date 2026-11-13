@@ -1043,6 +1043,7 @@ private slots:
 	void freeBoyExhaustedNoteRetriesWhenVoiceFrees();
 	void freeBoyOldSampleRatePoolsAreReclaimed();
 	void freeBoySampleRatePoolHandoffIsRealtimeSafe();
+	void freeBoySustainedNoteMigratesAfterSampleRateChange();
 	void invalidSbiSignatureIsRejected_data();
 	void invalidSbiSignatureIsRejected();
 	void waveSampleDefaultsInterpolationToDisabled();
@@ -1403,7 +1404,8 @@ void PluginPortsMigrationTest::freeBoyOldSampleRatePoolsAreReclaimed()
 	emit engine->sampleRateChanged();
 	QCOMPARE(poolCount(), poolsBefore + 2);
 	instrument->playNote(&handle, span);
-	QCOMPARE(handle.m_pluginData, oldVoice);
+	QVERIFY(handle.m_pluginData != nullptr);
+	QVERIFY(handle.m_pluginData != oldVoice);
 	instrument->deleteNotePluginData(&handle);
 	handle.m_pluginData = nullptr;
 	QCOMPARE(poolCount(), poolsBefore + 2);
@@ -1479,6 +1481,77 @@ void PluginPortsMigrationTest::freeBoySampleRatePoolHandoffIsRealtimeSafe()
 		instrument->deleteNotePluginData(&handle);
 		handle.m_pluginData = nullptr;
 	}
+}
+
+void PluginPortsMigrationTest::freeBoySustainedNoteMigratesAfterSampleRateChange()
+{
+	if (!testHostCanLoadPluginModules()) { QSKIP(PluginModuleHostSkipMessage); }
+
+	QLibrary library{QString::fromUtf8(PART_C_MIGRATED_freeboy)};
+	library.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(library.load(), qPrintable(library.errorString()));
+	auto entry = reinterpret_cast<MainFn>(library.resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+
+	auto* engine = lmms::Engine::audioEngine();
+	auto* device = engine->audioDev();
+	const auto originalRate = device->sampleRate();
+	struct RestoreRate
+	{
+		lmms::AudioEngine* engine;
+		lmms::AudioDevice* device;
+		lmms::sample_rate_t rate;
+		~RestoreRate()
+		{
+			device->setSampleRateForTesting(rate);
+			emit engine->sampleRateChanged();
+		}
+	} restoreRate{engine, device, originalRate};
+
+	partc::prepareInstrumentEnvironment("freeboy");
+	auto track = std::make_unique<lmms::InstrumentTrack>(lmms::Engine::getSong());
+	auto instrument = std::unique_ptr<lmms::Instrument>{
+		static_cast<lmms::Instrument*>(entry(track.get(), nullptr))};
+	QVERIFY(instrument != nullptr);
+	partc::applyInstrumentTestSettings(*instrument, "freeboy");
+	const auto frames = engine->framesPerPeriod();
+	const lmms::Note note{lmms::TimePos{static_cast<lmms::tick_t>(frames * 8)},
+		lmms::TimePos{0}, lmms::DefaultKey};
+	lmms::NotePlayHandle handle{track.get(), 0, frames * 8, note, nullptr, -1,
+		lmms::NotePlayHandle::Origin::MidiClip};
+	std::vector<lmms::SampleFrame> data(static_cast<std::size_t>(frames));
+	const std::span<lmms::SampleFrame> span{data};
+	std::fill(data.begin(), data.end(), lmms::SampleFrame{0.0f, 0.0f});
+	instrument->playNote(&handle, span);
+	QVERIFY(handle.m_pluginData != nullptr);
+	void* const oldVoice = handle.m_pluginData;
+
+	device->setSampleRateForTesting(originalRate + lmms::sample_rate_t{505});
+	emit engine->sampleRateChanged();
+	std::fill(data.begin(), data.end(), lmms::SampleFrame{0.0f, 0.0f});
+	partc::RealtimeAllocationWatch::begin();
+	instrument->playNote(&handle, span);
+	const auto renderCounts = partc::RealtimeAllocationWatch::end();
+	QVERIFY(handle.m_pluginData != nullptr);
+	QVERIFY2(handle.m_pluginData != oldVoice,
+		"a sustained note kept the voice that was configured for the old sample rate");
+	void* const newVoice = handle.m_pluginData;
+	QVERIFY(std::any_of(data.begin(), data.end(), [](const lmms::SampleFrame& frame) {
+		return frame.left() != 0.0f || frame.right() != 0.0f;
+	}));
+	QCOMPARE(renderCounts.allocations, std::size_t{0});
+	QCOMPARE(renderCounts.deallocations, std::size_t{0});
+
+	device->setSampleRateForTesting(originalRate + lmms::sample_rate_t{606});
+	emit engine->sampleRateChanged();
+	std::fill(data.begin(), data.end(), lmms::SampleFrame{0.0f, 0.0f});
+	instrument->playNote(&handle, span);
+	QVERIFY(handle.m_pluginData != nullptr);
+	QVERIFY(handle.m_pluginData != newVoice);
+	QVERIFY(handle.m_pluginData != oldVoice);
+
+	instrument->deleteNotePluginData(&handle);
+	handle.m_pluginData = nullptr;
 }
 
 void PluginPortsMigrationTest::invalidSbiSignatureIsRejected_data()

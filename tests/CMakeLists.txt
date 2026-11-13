@@ -4567,12 +4567,13 @@ add_test(NAME PluginPortsMigrationTest COMMAND PluginPortsMigrationTest)
 add_test(NAME FreeBoy COMMAND PluginPortsMigrationTest freeBoyExhaustedNoteRetriesWhenVoiceFrees)
 add_test(NAME FreeBoyPoolReclamation COMMAND PluginPortsMigrationTest freeBoyOldSampleRatePoolsAreReclaimed)
 add_test(NAME FreeBoySampleRateHandoff COMMAND PluginPortsMigrationTest freeBoySampleRatePoolHandoffIsRealtimeSafe)
+add_test(NAME FreeBoySustainedNoteMigration COMMAND PluginPortsMigrationTest freeBoySustainedNoteMigratesAfterSampleRateChange)
 # The harness constructs a full Engine, which needs a Qt platform plugin even
 # though the test itself is guiless. Without this, ctest aborts before the first
 # assertion on any machine with no display (CI, headless shell).
 set_tests_properties(PluginPortsMigrationTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
-set_tests_properties(FreeBoy FreeBoyPoolReclamation FreeBoySampleRateHandoff PROPERTIES
+set_tests_properties(FreeBoy FreeBoyPoolReclamation FreeBoySampleRateHandoff FreeBoySustainedNoteMigration PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # Cluster new-p9-326: the focused OpulenZ held-note regression. It runs in the
 # PluginPortsMigrationTest executable (the plugin-module host it needs lives
