@@ -51,13 +51,18 @@ namespace lmms::gui::mixerzones
  *
  *  Interface state, kept with the shell layout (`ui/shell.layout` and the project's own layout,
  *  window.layout_project_*): the project's layout is what saves and restores it, through the one
- *  undoable window.layout_project_save step - no separate project section, no second format. */
+ *  undoable window.layout_project_save step - no separate project section, no second format.
+ *
+ *  The layout also holds the pinned strips: the channel strips kept beside the scrolling area, so they
+ *  stay on screen while the channels scroll (Q050-227.2). Pins travel with the same saved layout. */
 struct Layout
 {
 	//! region id ("master", "channels", "vca", "rack") -> dock name ("left", "middle", "right")
 	QHash<QString, QString> docks;
 	//! region id -> width in logical pixels; a missing or unusable value falls back to defaultSize().
 	QHash<QString, int> sizes;
+	//! pinned mixer channels as ch-<n> ids, in pin order, never the master.
+	QStringList pinned;
 };
 
 //! The four regions, in the canonical order a side's regions are laid out in.
@@ -78,7 +83,7 @@ LMMS_EXPORT Layout defaultLayout();
 //! The width a region gets when no usable size was stored.
 LMMS_EXPORT int defaultSize(const QString& id);
 
-//! The portable form a layout is saved as: {"zones": {id: dock}, "sizes": {id: pixels}}.
+//! The portable form a layout is saved as: {"zones": {id: dock}, "sizes": {id: pixels}, "pinned": [ch-<n>, ...]}.
 LMMS_EXPORT QJsonObject toJson(const Layout& layout);
 //! Read a stored object tolerantly: unknown ids are ignored, an unusable dock or size falls back to
 //! the default for that region, and a missing object is the default layout. Never fails.
@@ -95,7 +100,8 @@ constexpr int MaxZoneSize = 4000;
 
 /*! The one live layout. The mixer view renders it and writes its last drag back through setSizes();
  *  the shell's layout snapshot saves toJson(layout()) and restores it through set(). A change of DOCKS
- *  emits changed() (the view re-lays its splitter at once); a change of SIZES only emits sizesChanged().
+ *  emits changed() (the view re-lays its splitter at once); a change of SIZES only emits sizesChanged();
+ *  a change of PINS emits pinsChanged(). set() emits pinsChanged() too, since a restored layout carries pins.
  *  GUI thread only. */
 class LMMS_EXPORT MixerZoneState : public QObject
 {
@@ -108,12 +114,15 @@ public:
 	void set(const Layout& layout);
 	//! The widths a separator drag left behind; they are saved, but do not re-lay the tree.
 	void setSizes(const QHash<QString, int>& sizes);
+	//! The pinned channels (ch-<n> ids, in pin order) that the layout keeps; emits pinsChanged().
+	void setPinned(const QStringList& ids);
 	//! Back to defaultLayout().
 	void reset();
 
 signals:
 	void changed();
 	void sizesChanged();
+	void pinsChanged();
 
 private:
 	MixerZoneState();
