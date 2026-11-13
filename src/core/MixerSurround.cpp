@@ -471,7 +471,8 @@ int savedDiscreteChannels(const QDomElement& channelElement)
 	const QDomElement element = channelElement.firstChildElement(QStringLiteral("surround"));
 	Format format = Format::Stereo;
 	if (element.isNull() || !formatFromName(element.attribute(QStringLiteral("format")), &format)) { return 0; }
-	return isDiscrete(format) ? channelCount(format) : 0;
+	const int count = channelCount(format);
+	return count > 2 ? count : 0;
 }
 
 } // namespace surround
@@ -509,10 +510,10 @@ void ChannelSurround::setFormat(surround::Format format)
 	{
 		m_side.resize(static_cast<std::size_t>(needed - 2) * m_frames);
 	}
-	// Q050-155.2: the insert bus of a discrete layout - one interleaved pair per two side channels - is grown
-	// here for the same reason, and never shrinks either.
+	// Q050-155.2 / Q050-296.1: the insert bus of any surround layout wider than its pair - one interleaved
+	// pair per two side channels - is grown here for the same reason, and never shrinks either.
 	const int pairs = (needed + 1) / 2;
-	if (surround::isDiscrete(format) && pairs > insertPairCapacity() && m_frames > 0)
+	if (pairs > insertPairCapacity() && m_frames > 0)
 	{
 		m_pairs.resize(static_cast<std::size_t>(pairs - 1) * m_frames);
 	}

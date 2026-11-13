@@ -163,8 +163,9 @@ LMMS_EXPORT int channelOf(Format format, Role role);
 LMMS_EXPORT QString formatName(Format format);
 LMMS_EXPORT bool formatFromName(const QString& name, Format* format);
 LMMS_EXPORT QStringList formatNames();
-//! Q050-155.2: the channel count of the discrete layout a saved mixer channel element names, or 0 (none, or not
-//! discrete). Read before the channel's devices load (AudioPortsModel::HostBusScope).
+//! Q050-155.2 / Q050-296.1: the channel count of the surround layout a saved mixer channel element names when
+//! it is wider than its pair (named 5.1/7.1/... or discrete), else 0. Read before the channel's devices load
+//! (AudioPortsModel::HostBusScope).
 LMMS_EXPORT int savedDiscreteChannels(const QDomElement& channelElement);
 //! Whether @a format is one of the role-less discrete layouts (Discrete2..Discrete64).
 LMMS_EXPORT bool isDiscrete(Format format);
@@ -262,9 +263,9 @@ LMMS_EXPORT void panSend(MixerRoute& route, const SampleFrame* src, f_cnt_t fram
 //! The receiver's worker, after a send's stereo part: a surround sender's side channels into the
 //! receiver - carried or folded (matrix()). Not for feedback sends (their snapshot is stereo).
 LMMS_EXPORT void addSideChannels(MixerRoute& route, f_cnt_t frames);
-/*! Q050-155.2: whether @a channel's insert chain runs on its wide bus this period: a discrete layout wider than
- *  its pair, a non-empty enabled chain, and an insert bus allocated for @a frames. A named speaker layout's
- *  side channels still bypass the devices, as before. */
+/*! Q050-155.2 / Q050-296.1: whether @a channel's insert chain runs on its wide bus this period: a surround
+ *  layout (named 5.1/7.1/... or discrete) wider than its pair, a non-empty enabled chain, and an insert bus
+ *  allocated for @a frames. */
 LMMS_EXPORT bool insertsTakeWideBus(const MixerChannel& channel, f_cnt_t frames);
 /*! The channel's worker, its insert stage (insertsTakeWideBus()): the chain on one bus of every channel - the
  *  pair, then the side channels as interleaved pairs in index order - so a device's pins reach channel 0 .. 63

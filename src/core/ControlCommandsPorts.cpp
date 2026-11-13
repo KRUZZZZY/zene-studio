@@ -183,8 +183,11 @@ QJsonObject portsModelJson(const AudioPortsModel* model)
 QJsonObject hostBusJson(const ControlTarget& target, const AudioPortsModel* model)
 {
 	const int channels = controlHostBusChannels(target.id);
-	const QString format = channels > 2 ? surround::formatName(surround::discreteFormat(channels))
-		: QStringLiteral("stereo");
+	// Q050-296.1: a named layout reports its own name; only a role-less one is named from its count.
+	ControlResult ignored;
+	const MixerChannel* channel = channels > 2 ? resolveMixerChannel(target.id, &ignored) : nullptr;
+	const QString format = channel != nullptr ? surround::formatName(channel->m_surround.format())
+		: channels > 2 ? surround::formatName(surround::discreteFormat(channels)) : QStringLiteral("stereo");
 	const int reached = std::min(channels, static_cast<int>(model->trackChannelCount()));
 	return QJsonObject{{QStringLiteral("format"), format}, {QStringLiteral("channels"), channels},
 		{QStringLiteral("reached_track_channels"), reached}};
@@ -429,8 +432,8 @@ int controlHostBusChannels(const QString& targetId)
 	ControlResult ignored;
 	if (!targetId.startsWith(QLatin1String("ch-"))) { return 2; }
 	const MixerChannel* channel = resolveMixerChannel(targetId, &ignored);
-	if (channel == nullptr || !surround::isDiscrete(channel->m_surround.format())) { return 2; }
-	return surround::channelCount(channel->m_surround.format());
+	const int count = channel != nullptr ? surround::channelCount(channel->m_surround.format()) : 2;
+	return count > 2 ? count : 2;
 }
 
 void fitPinsToHostBus(const QString& targetId, AudioPortsModel* model)
