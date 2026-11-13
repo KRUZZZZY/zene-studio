@@ -1018,6 +1018,8 @@ set(LMMS_TESTS
 	src/core/SampleBufferNoEngineTest.cpp
 	# 0.5.0 L04 (W3): the clip list, sections, remove silence, tab to transient, note rotation.
 	src/core/ArrangeToolsTest.cpp
+	# Q050-275 (r2): track versions used as comp lanes, split out of ArrangeToolsTest to stay under the file-length ratchet.
+	src/core/TrackVersionLanesTest.cpp
 	# 0.5.0 L05/L06 (W3): crop, unique copies, fade curves, asymmetric crossfades, automation switches, trim, moving a point.
 	src/core/AudioAutomationToolsTest.cpp
 	# 0.5.0 L05 (W3): the YIN pitch tracker, audio to MIDI, the spectrogram, a folder moved as one.

@@ -3210,6 +3210,7 @@ tests/src/core/TrackKeyNamesLoadTest.cpp
 tests/src/core/TrackOffsetTest.cpp
 tests/src/core/TrackPresetCommandsTest.cpp
 tests/src/core/TrackSynthesisLoadTest.cpp
+tests/src/core/TrackVersionLanesTest.cpp
 tests/src/core/TunerTapTest.cpp
 tests/src/core/TwoTrackAlsaCaptureProbe.cpp
 tests/src/core/TwoTrackRecordingHarness.cpp
