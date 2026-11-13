@@ -9,6 +9,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include <float.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -132,6 +133,23 @@ static void gain_param_info(clap_param_info_t* info, clap_id id, const char* nam
 		info->min_value = 1.0;
 		info->max_value = 0.0;
 		info->default_value = 0.5;
+	}
+	/* CLAP_TEST_GAIN_WIDE_RANGE: Gain reports the two FINITE extremes. Each endpoint is a valid double,
+	   but max - min overflows to +inf; a host that stores them verbatim divides by an infinite range. */
+	if (id == PARAM_GAIN && getenv("CLAP_TEST_GAIN_WIDE_RANGE") != NULL)
+	{
+		info->min_value = -DBL_MAX;
+		info->max_value = DBL_MAX;
+		info->default_value = 0.0;
+	}
+	/* CLAP_TEST_GAIN_HUGE_RANGE: Gain reports 0 .. DBL_MAX, whose span IS finite. A host may keep the
+	   endpoints, but its range must stay finite and normalizing must not divide a finite span by an
+	   infinite one. */
+	if (id == PARAM_GAIN && getenv("CLAP_TEST_GAIN_HUGE_RANGE") != NULL)
+	{
+		info->min_value = 0.0;
+		info->max_value = DBL_MAX;
+		info->default_value = 0.0;
 	}
 }
 
@@ -342,6 +360,15 @@ static bool gain_state_save(const clap_plugin_t* plugin, const clap_ostream_t* s
 	state.bypass = self->bypass;
 	state.frames_processed = self->frames_processed;
 	state.host_flushes = self->host_flushes;
+	/* CLAP_TEST_GAIN_HUGE_STATE: the plug-in asks the host to write more bytes than any blob can hold
+	   (SIZE_MAX - 8) and then IGNORES the answer, reporting success anyway - exactly the plug-in the host
+	   must not believe. A host that casts the uint64 size to a signed qsizetype appends strlen() of the
+	   buffer instead and still returns "success": the saved project gets a truncated blob. */
+	if (getenv("CLAP_TEST_GAIN_HUGE_STATE") != NULL)
+	{
+		(void)stream->write(stream, &state, (uint64_t)-1 - 8);
+		return true;
+	}
 	return stream->write(stream, &state, sizeof(state)) == (int64_t)sizeof(state);
 }
 
