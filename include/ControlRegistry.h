@@ -150,6 +150,12 @@ public:
 	//! Validate, check \c requires and the engine state, then run the handler on
 	//! the UI thread.
 	ControlResult invoke(const QString& id, const QJsonObject& args = QJsonObject());
+	/*! The application's own window running a command in this process (Q050-059.1): the same validation,
+	 *  handler, collaboration tap, journal step, coalescing and transaction record as invoke(), but an
+	 *  engine command needs only the engine to exist. The readiness flag (setReady) belongs to the opt-in
+	 *  agent socket and is never set when the program runs without one, so an edit made in a window must
+	 *  not depend on it. A refusal leaves the project as it was, exactly as it does for invoke(). */
+	ControlResult invokeInProcess(const QString& id, const QJsonObject& args = QJsonObject()) { return dispatch(id, args, true); }
 	//! The class an aggregate record of several mutating children carries: the weakest of their classes
 	//! ("irreversible" < "snapshot" < "true_inverse"), or "" when a child has no row or is not mutating.
 	static QString aggregateClassOf(const QStringList& childClasses);
@@ -298,6 +304,8 @@ public:
 private:
 	explicit ControlRegistry(QObject* parent = nullptr);
 	QString checkRequires(const ControlCommand& command) const;
+	//! invoke() and invokeInProcess(): they differ only in what makes an engine command addressable.
+	ControlResult dispatch(const QString& id, const QJsonObject& args, bool inProcess);
 	/*! Runs one handler with everything that has to happen around it: the
 	 *  one-command-one-step merge, the coalescing rule and the transaction
 	 *  record. Split out of invoke() so neither function carries the dispatch

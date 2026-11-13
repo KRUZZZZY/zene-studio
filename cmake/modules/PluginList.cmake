@@ -60,6 +60,7 @@ SET(LMMS_PLUGIN_LIST
 	Lv2Instrument
 	Lb302
 	MidiImport
+	ModularSynth
 	MidiExport
 	Modulation
 	MultitapEcho

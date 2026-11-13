@@ -495,6 +495,27 @@ project can find them: if the file is missing the player is silent and the proje
 track's SFZ Player with <code>plugin.open_file</code> (one undo step) and reads and sets the settings with
 <code>plugin.param_get</code> and <code>plugin.param_set</code>.</p>
 
+<p>The Modular Synth is an instrument built from modules wired into a graph. Add it from the instrument list like any other
+instrument (an agent: <code>plugin.load</code> with the device <code>plugin.list</code> names <code>modularsynth</code>). A new one
+holds the starter graph: an oscillator (Osc 1) through a filter (Filter 1) to the output, an envelope (Env 1) on the output's
+level and an LFO (LFO 1) on the filter's cutoff - play a note and it sounds. Its window has a row of knobs for each module and
+lists the wiring under them. The oscillator's Wave knob picks sine, saw, square or triangle (0 to 3), Coarse and Fine tune it in
+semitones and cents, Level sets its loudness; the envelope's Attack, Decay and Release are in milliseconds and Sustain is the level held
+while the key is down, and its release is the note's release; the filter's Mode picks low-pass, high-pass or band-pass (0 to 2),
+Cutoff is in Hz, Resonance sharpens it and Mod depth is how many octaves the LFO moves the cutoff; the LFO's Wave picks sine,
+triangle, saw or square, Rate is in Hz and Depth scales it; the output's Gain sets the instrument's level. Every knob can be
+automated, and an agent reads and sets each one by its name (for example <code>Filter 1 Cutoff</code>) with
+<code>plugin.param_get</code> and <code>plugin.param_set</code> on the track's <code>inst</code> plug-in. Turning a knob runs that
+same <code>plugin.param_set</code>, so one Undo takes back a whole turn of a knob, whether you or an agent made it, and whether
+or not Zene Studio was started with an agent socket. If the edit is refused (for example by the host of a collaboration
+session) the knob shows why and stays where it was. Automate a
+knob from the automation editor or with the automation commands: the knobs of this window have no right-click automation menu
+and no Ctrl-drag yet. The modules, their
+settings and their wiring are saved with the project; an instrument saved without a graph loads with the
+starter graph, and a graph that cannot be played (an unknown module, a missing output, a loop in the wiring) is replaced by the
+starter graph and reported when the project opens. Adding and wiring modules yourself comes in a later version: this one plays
+the graph it is given.</p>
+
 <p>Rack &gt; Chain Canvas... on a mixer channel opens its chain as a patcher graph: the input, one node per device in order, and the cables
 between them. Drag from a node's output port to another node's input port to connect; click a cable and press Delete to remove it;
 Shift-click a cable and drag to give its source a second destination while the first stays. Drag a node sideways (or Move Left / Move

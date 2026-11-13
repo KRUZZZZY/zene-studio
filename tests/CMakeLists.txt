@@ -1038,6 +1038,9 @@ set(LMMS_TESTS
 	# 0.5.0 Q050-484: the SFZ instrument (sfizz) - layers, round robins, key switches, state, the command and window routes.
 	src/plugins/SfzPlayerTest.cpp
 	src/plugins/SfzPlayerRealtimeTest.cpp
+	# 0.5.0 Q050-059.1: the modular instrument - its starter graph sounds, its state round-trips, its window and render path.
+	src/plugins/ModularSynthTest.cpp
+	src/gui/ModularSynthViewTest.cpp
 	# cluster new-p21-208: sfizz's shutdown leak diagnostic reports the actual residual instance count.
 	src/plugins/SfizzLeakDetectorTest.cpp
 	src/plugins/SfzFilePoolTest.cpp
@@ -2690,6 +2693,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "SamplerVoiceReuseTest"
 		OR LMMS_TEST_NAME STREQUAL "SfzPlayerTest"
 		OR LMMS_TEST_NAME STREQUAL "SfzPlayerRealtimeTest"
+		# Q050-059.1: plays notes through the build's modularsynth module.
+		OR LMMS_TEST_NAME STREQUAL "ModularSynthTest"
+		OR LMMS_TEST_NAME STREQUAL "ModularSynthViewTest"
 		# Cluster new-p17-205: the Watsyn save/load regression loads the watsyn module.
 		OR LMMS_TEST_NAME STREQUAL "WatsynSelectedGraphTest"
 		# Q050-486: the waveform-load regression loads the eight graph-saving modules.
@@ -2747,6 +2753,10 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# Q050-484: the SFZ tests load the build's sfzplayer module (sfizz) and render through it.
 	if((LMMS_TEST_NAME STREQUAL "SfzPlayerTest" OR LMMS_TEST_NAME STREQUAL "SfzPlayerRealtimeTest") AND TARGET sfzplayer)
 		add_dependencies(${LMMS_TEST_NAME} sfzplayer)
+	endif()
+	# Q050-059.1: the modular instrument tests load the build's modularsynth module.
+	if((LMMS_TEST_NAME STREQUAL "ModularSynthTest" OR LMMS_TEST_NAME STREQUAL "ModularSynthViewTest") AND TARGET modularsynth)
+		add_dependencies(${LMMS_TEST_NAME} modularsynth)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "SfzFilePoolTest")
 		# The block below links Threads::Threads directly, so it must be able to resolve
