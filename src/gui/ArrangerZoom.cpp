@@ -190,9 +190,9 @@ void remember(int value)
 	trim();
 }
 
-void finishPinch(int startValue, int currentValue, Qt::GestureState state)
+void finishPinch(int startValue, int currentValue, bool ended)
 {
-	if ((state == Qt::GestureFinished || state == Qt::GestureCanceled) && currentValue != startValue) { remember(startValue); }
+	if (ended && currentValue != startValue) { remember(startValue); }
 }
 
 bool takeEarlier(int current, int* earlier)

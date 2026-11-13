@@ -736,6 +736,22 @@
 # script; no binary). Measured before registering: every function is CCN <= 10 and the
 # file is under 500 code lines, so gates 4 and 7 measure it at their existing thresholds.
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/warp-docs-agree.py ; \
+
+# Train 29: retain independently accepted Linux Qt5 compile/scanner regressions and MinGW no-gestures regression.
+tests/qt5-signal-overload-check.py
+tests/qt5-signal-overload-arm-check.py
+tests/arranger-zoom-no-gestures-check.py
+docs/qwen-fixes-2026-10/cluster-ci-632a20737fe640fa.md
+docs/qwen-fixes-2026-10/cluster-ci-c22070dd8cbbc7c0.md
+docs/qwen-fixes-2026-10/cluster-ci-017caf2edd434b66.md
+docs/qwen-fixes-2026-10/sol-train-29-ci-integration.md
+
+# Failure 34: record reconciliation against the changed train selection and fresh verification.
+docs/qwen-fixes-2026-10/sol-train-29-ci-rebase.md
+
+# Failure 36: stable registration placement and verification for the updated selection.
+docs/qwen-fixes-2026-10/sol-train-29-ci-registration-rebase.md
+
 include/AafImport.h
 include/AafImportMenu.h
 include/AbletonLinkBridge.h

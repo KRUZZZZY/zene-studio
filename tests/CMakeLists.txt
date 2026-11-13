@@ -8918,3 +8918,52 @@ endif()
 
 # Q050-054.1: both construct the real Engine (the second the real application) and need a Qt platform plug-in.
 set_tests_properties(MidiTakeRecordTest MidiTakeMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# Qt 5 signal-overload portability (cluster ci-632a20737fe640fa, 2026-11-13). Qt 5 declares
+# QSpinBox::valueChanged twice (int and QString) and Qt 6 only once, so a bare
+# `&QSpinBox::valueChanged` was an unresolved overload on the hosted linux-x86_64 job
+# (src/gui/FollowActionEditor.cpp:207) while every Qt 6 host here compiled it. The check
+# scans every tracked first-party source, runs its own red/green fixtures, and - where a
+# Qt 5 development tree is present - compiles the known-bad and known-good takes. It is
+# registered wherever a python3 is, so the regression is red on the Qt 6 hosts too.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME Qt5SignalOverloadCheck
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/qt5-signal-overload-check.py
+			--root ${CMAKE_SOURCE_DIR}
+			--cxx ${CMAKE_CXX_COMPILER})
+	set_tests_properties(Qt5SignalOverloadCheck PROPERTIES TIMEOUT 300)
+endif()
+
+
+# Qt 5 signal-overload portability (cluster ci-c22070dd8cbbc7c0, 2026-11-13). The hosted
+# linux-arm64 job builds against Qt 5, which publishes a second `valueChanged(const QString&)`
+# on QSpinBox/QDoubleSpinBox (and a second overload on QComboBox, QProcess and QButtonGroup).
+# `&QSpinBox::valueChanged` is then an unresolved overload and the connect template cannot
+# deduce its argument - "src/gui/FollowActionEditor.cpp:207: error: no matching function for
+# call to ...connect(... <unresolved overloaded function type> ...)" stopped the build - while
+# this box's Qt 6 declares only the int one. The check reads sources only and runs its own
+# red/green fixtures, so it is registered wherever a python3 is, including the Qt 6 hosts
+# where the defect compiles.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME Qt5SignalOverloadArmCheck
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/qt5-signal-overload-arm-check.py
+			--root ${CMAKE_SOURCE_DIR})
+	set_tests_properties(Qt5SignalOverloadArmCheck PROPERTIES TIMEOUT 300)
+endif()
+
+
+# cluster ci-017caf2edd434b66: the arranger's gesture code must build on a Qt without gesture
+# support (the hosted mingw64 job's Qt 5 defines QT_NO_GESTURES, so Qt::GestureState and
+# QPinchGesture do not exist there). The hosted job runs no tests, so this check rebuilds the
+# affected translation units from this build's own compile_commands.json against a shadow
+# QtCore/qtcore-config.h with gestures off, and fails on the first one that no longer builds.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME ArrangerZoomNoGestures
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/arranger-zoom-no-gestures-check.py
+			--build-dir ${CMAKE_BINARY_DIR}
+			--moc $<TARGET_FILE:Qt${QT_VERSION_MAJOR}::moc>)
+	set_tests_properties(ArrangerZoomNoGestures PROPERTIES TIMEOUT 300)
+endif()

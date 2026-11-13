@@ -28,12 +28,14 @@
 
 #include <QCursor>
 #include <QEvent>
-#include <QGestureEvent>
 #include <QPainter>
-#include <QPinchGesture>
 #include <QPointer>
 #include <QTimer>
 #include <QWidget>
+#ifndef QT_NO_GESTURES
+#include <QGestureEvent>
+#include <QPinchGesture>
+#endif
 
 #include "ArrangerZoom.h"
 #include "AutomatableModel.h"
@@ -112,7 +114,10 @@ private:
 
 /*! A pinch on the arranger. 0.5.0 theme 9: it zooms continuously (as finely as the zoom model goes) around
  *  the tick under the pinch's centre where it began, and the zoom it started from joins the history
- *  arrangement.zoom_back walks once, when it ends or is canceled - not one entry per step. */
+ *  arrangement.zoom_back walks once, when it ends or is canceled - not one entry per step.
+ *  Compiled only where Qt has gestures: a Qt without them declares no QPinchGesture, no
+ *  QGestureEvent and no QWidget::grabGesture (MinGW Qt 5 in the hosted mingw64 job). */
+#ifndef QT_NO_GESTURES
 class PinchZoom : public QObject
 {
 public:
@@ -153,6 +158,7 @@ private:
 	int m_startValue = 0;
 	tick_t m_anchor = 0;
 };
+#endif // QT_NO_GESTURES
 
 QPointer<CrosshairOverlay> s_overlay;
 bool s_shown = false;
@@ -163,7 +169,9 @@ void installArrangerAids(QWidget* arranger)
 {
 	if (arranger == nullptr || !s_overlay.isNull()) { return; }
 	s_overlay = new CrosshairOverlay(arranger);
+#ifndef QT_NO_GESTURES
 	new PinchZoom(arranger);
+#endif
 	// A tap or one-finger drag selects clips: install where the content is, so the finger's event is
 	// delivered to the viewport under it rather than swallowed by the arranger that accepts touch for
 	// the pinch above.

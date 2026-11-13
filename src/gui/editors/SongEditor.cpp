@@ -166,8 +166,9 @@ SongEditor::SongEditor( Song * song ) :
 	m_mpsStatus = nullptr;
 
 
-	// Keep the ruler visible and clickable on high-DPI displays.
-	m_timeLine->setMinimumHeight(scaledPixels(32));
+	// The theme fixes timeline heights in em. Keep this arranger ruler at its
+	// accessible scaled height through later stylesheet polishing as well.
+	m_timeLine->setStyleSheet(QStringLiteral("min-height: %1px; max-height: %1px;").arg(scaledPixels(32)));
 	static_cast<QVBoxLayout *>( layout() )->insertWidget( 0, m_timeLine );
 
 	m_leftRightScroll = new QScrollBar( Qt::Horizontal, this );
