@@ -1,24 +1,24 @@
 /*
-	* LegacyVst2ProjectTest.cpp - legacy VST2 project and reference render.
-	*
-	* Copyright (c) 2026 Zene Studio contributors
-	*
-	* This file is part of LMMS - https://lmms.io
-	*
-	* This program is free software; you can redistribute it and/or
-	* modify it under the terms of the GNU General Public License as published
-	* by the Free Software Foundation; either version 2 of the License, or
-	* (at your option) any later version.
-	*
-	* This program is distributed in the hope that it will be useful,
-	* but WITHOUT ANY WARRANTY; without even the implied warranty of
-	* MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
-	* General Public License for more details.
-	*
-	* You should have received a copy of the GNU General Public License along
-	* with this program (see COPYING); if not, write to the Free Software
-	* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
-	*/
+ * LegacyVst2ProjectTest.cpp - legacy VST2 project and reference render.
+ *
+ * Copyright (c) 2026 Zene Studio contributors
+ *
+ * This file is part of LMMS - https://lmms.io
+ *
+ * This program is free software; you can redistribute it and/or
+ * modify it under the terms of the GNU General Public License as published
+ * by the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+ * General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program (see COPYING); if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
 
 #include "CarlaVst2EffectTestSupport.h"
 #include "AutomationClip.h"
@@ -26,6 +26,8 @@
 #include "EffectControls.h"
 #include "LegacyVst2Conversion.h"
 #include "OfflineRenderBarrier.h"
+#include "StartHub.h"
+#include <QListWidget>
 #include <functional>
 #include <QJsonDocument>
 
@@ -238,6 +240,26 @@ private slots:
 		QVERIFY(clip); QCOMPARE(clip->objects().size(), size_t(1));
 		auto* object = clip->objects().front().data(); QVERIFY(object); QCOMPARE(object->id(), decltype(object->id())(23571));
 		QVERIFY(track->instrument()->findChildren<AutomatableModel*>().contains(object));
+		requireReference(renderBars({1.5, 3.5}));
+	}
+	void theStartHubOpensALegacyProjectAsCarla()
+	{
+		if (const QString why = missing(); !why.isEmpty()) { QSKIP(qPrintable(why)); }
+		if (const QString why = missingEffectRuntime(); !why.isEmpty()) { QSKIP(qPrintable(why)); }
+		QVERIFY(run(QStringLiteral("project.new"), {}).ok);
+		QVERIFY(Engine::getSong()->projectFileName() != fixturePath());
+		lmms::gui::StartHub hub({fixturePath()}, {});
+		hub.show();
+		QVERIFY(QTest::qWaitForWindowExposed(&hub));
+		hub.recentList()->setCurrentRow(0);
+		hub.recentList()->setFocus();
+		QTest::keyClick(hub.recentList(), Qt::Key_Return);
+		QCOMPARE(Engine::getSong()->projectFileName(), fixturePath());
+		auto* track = firstInstrumentTrack(); QVERIFY(track); QVERIFY(track->instrument());
+		auto* effect = effectOn(track); QVERIFY(effect);
+		QCOMPARE(QString::fromLatin1(track->instrument()->descriptor()->name), QStringLiteral("carlavst2"));
+		QCOMPARE(QString::fromLatin1(effect->descriptor()->name), QStringLiteral("carlavst2effect"));
+		QVERIFY(std::abs(paramValue(track, 0) - 0.7) <= Tolerance);
 		requireReference(renderBars({1.5, 3.5}));
 	}
 	void aConvertedProjectSavesReopensAndRenders()

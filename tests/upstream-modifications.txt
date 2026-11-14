@@ -5934,4 +5934,5 @@ tests/src/gui/AutomationEditorEditingTest.cpp	# The automation editor can retain
 
 src/tracks/InstrumentTrack.cpp	Q050-481.3: convert legacy VeSTige/VST-effect devices to Carla on load
 src/core/EffectChain.cpp	Q050-481.3: convert legacy VeSTige/VST-effect devices to Carla on load
+plugins/Vestige/Vestige.cpp	Q050-481.3: a VeSTige plug-in that fails to load keeps its saved path (it was cleared, so saving the project lost which plug-in it was); held by LegacyVst2ProjectTest::aMissingBinaryKeepsTheLegacyDevice
 include/InstrumentTrack.h	Q050-481.3: declare the legacy instrument conversion helper.
