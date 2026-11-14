@@ -26,6 +26,13 @@ launch and 1.0 rules below remain unchanged; historical tags remain immutable.
 
 ## 3. Scope
 
+Queue update (owner, 2026-11-14): the canonical catalogue is
+`plans/queue-050.jsonl`, now 515 rows including the earlier owner additions and
+12 Rune rework units Q050-505–516. Rune is the top feature category at difficulty 3;
+see [RUNE-REWORK-SPEC.md](RUNE-REWORK-SPEC.md). The original 476-unit figures below
+describe the October baseline. Existing explicit exclusions and release gates
+remain in force; catalogue row count is not a count of verified shipped features.
+
 - **All 476 queue units** (`plans/queue-050.jsonl`: P0 51, P1 129, P2 163, P3 133) ship in the beta, including OMF/AAF,
   the immersive mixer, video/SMPTE, project tabs, LV2 plug-in windows, ASIO, bundled ONNX Runtime and the Qt 6 default.
   No deferral to 0.5.x, no release date (owner, 2026-10-08).

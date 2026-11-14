@@ -40,6 +40,6 @@ def annotate(unit):
 def order(unit):
     category = categories().get(unit.get('category'), {})
     priority = str(unit.get('priority', 'P99')).removeprefix('P')
-    return (category.get('order', 100), int(priority) if priority.isdigit() else 99,
-            unit.get('category_sequence', 999999), unit.get('rank', 999999),
+    return (category.get('order', 100), unit.get('category_sequence', 999999),
+            int(priority) if priority.isdigit() else 99, unit.get('rank', 999999),
             str(unit.get('cluster') or unit.get('queue_id', '')))
