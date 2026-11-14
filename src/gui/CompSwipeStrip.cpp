@@ -41,7 +41,9 @@
 #include "ControlRegistry.h"
 #include "DesignTokens.h"
 #include "Engine.h"
+#include "MidiClip.h"
 #include "MusicalTime.h"
+#include "Note.h"
 #include "SampleClip.h"
 #include "Song.h"
 #include "TimePos.h"
@@ -190,9 +192,8 @@ void CompSwipeStrip::paintEvent(QPaintEvent*)
 	QPainter p(this);
 	p.fillRect(rect(), palette().base());
 
-	// 0.5.0 L03 (Q050-123): each take's own waveform in its lane, at its own place on the strip's
-	// span. The active comp segments are drawn OVER the waveforms, translucent, so a musician sees
-	// both which take supplies a segment and the audio it was chosen for.
+	// 0.5.0 L03 (Q050-123, Q050-054.2): draw each audio waveform or MIDI take's notes
+	// in its lane at its own place on the strip. Translucent comp segments are drawn over them.
 	for (const TakeBand& band : m_takeBands)
 	{
 		const QRect visible = band.rect.intersected(rect());
@@ -201,6 +202,28 @@ void CompSwipeStrip::paintEvent(QPaintEvent*)
 		if (const auto* sample = dynamic_cast<const SampleClip*>(band.clip.data()); sample != nullptr)
 		{
 			m_waves.paint(p, *sample, band.rect, visible, palette().text().color());
+		}
+		else if (const auto* midi = dynamic_cast<const MidiClip*>(band.clip.data()); midi != nullptr && !midi->notes().empty())
+		{
+			int lowestKey = midi->notes().front()->key();
+			int highestKey = lowestKey;
+			for (const auto* note : midi->notes())
+			{
+				lowestKey = std::min(lowestKey, note->key());
+				highestKey = std::max(highestKey, note->key());
+			}
+			p.save();
+			p.setClipRect(visible);
+			for (const auto* note : midi->notes())
+			{
+				const int songTick = midi->startPosition().getTicks() + midi->startTimeOffset().getTicks() + note->pos().getTicks();
+				const int left = xOf(songTick);
+				const int right = std::max(left + 1, xOf(songTick + note->length().getTicks()));
+				const int y = highestKey == lowestKey ? band.rect.center().y() - 1
+					: band.rect.top() + (highestKey - note->key()) * (band.rect.height() - 2) / (highestKey - lowestKey);
+				p.fillRect(QRect(left, y, right - left, 2), palette().text().color());
+			}
+			p.restore();
 		}
 	}
 

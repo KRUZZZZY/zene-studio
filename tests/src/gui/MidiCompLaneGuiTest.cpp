@@ -96,6 +96,21 @@ QAction* lanesAction(const QString& id)
 	emit menu->aboutToShow();
 	return findAction(menu, QStringLiteral("takeLanes"));
 }
+bool inkAt(const QImage& image, const QRect& rect, int x)
+{
+	const QRect visible = rect.intersected(image.rect()).adjusted(0, 1, 0, -1);
+	if (visible.isEmpty() || x < visible.left() || x > visible.right()) { return false; }
+	QHash<QRgb, int> counts;
+	int total = 0;
+	for (int y = visible.top(); y <= visible.bottom(); ++y)
+	{
+		++counts[image.pixel(x, y)];
+		++total;
+	}
+	int mostCommon = 0;
+	for (auto it = counts.cbegin(); it != counts.cend(); ++it) { mostCommon = std::max(mostCommon, it.value()); }
+	return total - mostCommon > 0;
+}
 QList<int> noteKeys(const InstrumentTrack* track)
 {
 	QList<int> keys;
@@ -257,6 +272,51 @@ private slots:
 		panels.last()->refresh();
 		QCOMPARE(panels.last()->strip()->takeBands().size(), std::size_t{2});
 	}
+
+	void theStripDrawsAMidiTakesNotes()
+	{
+		const auto added = run(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("instrument")}});
+		QVERIFY(added.ok);
+		const QString id = added.result.value(QStringLiteral("track")).toString();
+		ControlResult error;
+		auto* track = dynamic_cast<InstrumentTrack*>(control::resolveTrack(id, &error));
+		QVERIFY(track != nullptr);
+		QVERIFY(track->loadInstrument("tripleoscillator"));
+		auto* first = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		auto* second = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		QVERIFY(first != nullptr && second != nullptr);
+		for (auto* clip : {first, second}) { clip->setAutoResize(false); clip->changeLength(TimePos(384)); }
+		first->addNote(Note(TimePos(96), TimePos(0), 60), false);
+		second->addNote(Note(TimePos(96), TimePos(192), 72), false);
+		QCoreApplication::processEvents();
+		const auto beforePanels = getGUI()->mainWindow()->findChildren<TakeLanesPanel*>().size();
+		QAction* action = lanesAction(id);
+		QVERIFY(action != nullptr && action->isEnabled());
+		action->trigger();
+		QCoreApplication::processEvents();
+		const auto panels = getGUI()->mainWindow()->findChildren<TakeLanesPanel*>();
+		QCOMPARE(panels.size(), beforePanels + 1);
+		auto* panel = panels.last();
+		QTest::mouseClick(panel->addLaneButton(), Qt::LeftButton);
+		QTest::mouseClick(panel->addLaneButton(), Qt::LeftButton);
+		QVERIFY(run(QStringLiteral("comp.assign"), {{QStringLiteral("clip"), control::clipIdOf(first)}, {QStringLiteral("lane"), 0}}).ok);
+		QVERIFY(run(QStringLiteral("comp.assign"), {{QStringLiteral("clip"), control::clipIdOf(second)}, {QStringLiteral("lane"), 1}}).ok);
+		panel->resize(640, 420); panel->show(); QCoreApplication::processEvents(); panel->refresh();
+		auto* strip = panel->strip();
+		QCOMPARE(strip->takeBands().size(), std::size_t{2});
+		QRect firstRect, secondRect;
+		for (const auto& band : strip->takeBands())
+		{
+			if (band.lane == 0) { firstRect = band.rect; }
+			if (band.lane == 1) { secondRect = band.rect; }
+		}
+		QVERIFY(!firstRect.isEmpty() && !secondRect.isEmpty());
+		const QImage drawn = strip->grab().toImage();
+		QVERIFY(inkAt(drawn, firstRect, strip->tickToX(48)));
+		QVERIFY(inkAt(drawn, secondRect, strip->tickToX(240)));
+		QVERIFY(!inkAt(drawn, firstRect, strip->tickToX(288)));
+	}
+
 private:
 	QTemporaryDir m_home;
 };
