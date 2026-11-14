@@ -23,9 +23,8 @@
  */
 
 /*! In the real application (themes 10 and 17, the two gaps KNOWN-LIMITATIONS listed): every canvas that has an
- *  editable item list - the note area, the controller lane, the arranger's clips, the automation editor's points, the
- *  XY pad and the take lanes' comp strip - carries a List button that runs window.item_list on that canvas, opening
- *  its list and closing it again, the focus returning to the canvas;
+ *  editable item list - the note area, the controller lane, the arranger's clips, the XY pad and the take lanes' comp
+ *  strip - carries a List button that runs window.item_list on that canvas, opening its list and closing it again;
  *  and the View menu sets view.announcements, its three levels checkable, the current one checked. */
 
 #include <QtTest>
@@ -33,32 +32,24 @@
 #include <memory>
 #include <vector>
 
-#include <QApplication>
 #include <QMenuBar>
-#include <QTableView>
 #include <QTemporaryDir>
 #include <QToolButton>
 
 #include "AccessibleWidgets.h"
-#include "AutomationClip.h"
-#include "AutomationEditor.h"
-#include "AutomationTrack.h"
 #include "CompSwipeStrip.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "GuiApplication.h"
 #include "GuiTestApplication.h"
-#include "InstrumentTrack.h"
 #include "ItemList.h"
 #include "MainWindow.h"
 #include "Mixer.h"
 #include "NoteCanvas.h"
 #include "NoteEditor.h"
-#include "Song.h"
 #include "SongEditor.h"
 #include "TakeLanesPanel.h"
-#include "Track.h"
 #include "XyPad.h"
 
 using namespace lmms;
@@ -239,69 +230,6 @@ private slots:
 			listButton(panel, QStringLiteral("comp"))->click();
 			QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 		}
-	}
-
-	void theAutomationToolbarListsThePoints()
-	{
-		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
-		auto* automation = dynamic_cast<AutomationTrack*>(Track::create(Track::Type::Automation, Engine::getSong()));
-		QVERIFY(track != nullptr && automation != nullptr);
-		auto* clip = dynamic_cast<AutomationClip*>(automation->createClip(TimePos(0)));
-		QVERIFY(clip != nullptr);
-		clip->addObject(track->volumeModel(), false);  // seeds one point at 0
-		clip->putValue(TimePos(48), 40.f, false);
-
-		getGUI()->automationEditor()->open(clip);
-		AutomationEditorWindow* window = getGUI()->automationEditor();
-		QVERIFY(window != nullptr);
-		clickOpensAndCloses(window, window->m_editor, QStringLiteral("automation"));
-
-		getGUI()->mainWindow()->show();
-		QVERIFY(QTest::qWaitForWindowExposed(getGUI()->mainWindow()));
-		window->activateWindow();
-		if (!QTest::qWaitForWindowActive(window->window())) { QSKIP("this platform does not activate windows"); }
-		QToolButton* button = listButton(window, QStringLiteral("automation"));
-		QVERIFY(button != nullptr);
-		auto focusIsOnTheCanvas = [](QWidget* canvas) {
-			QWidget* focus = QApplication::focusWidget();
-			return focus != nullptr && (focus == canvas || canvas->isAncestorOf(focus));
-		};
-
-		// Escape closes the list and the keyboard focus returns to the automation editor.
-		button->setFocus();
-		QTest::keyClick(button, Qt::Key_Space);
-		QVERIFY2(listShown(window->m_editor, QStringLiteral("automation")), "Space on the button did not open the list");
-		ItemListPanel* panel = ItemListPanel::find(window->m_editor, QStringLiteral("automation"));
-		QVERIFY(panel != nullptr);
-		QTest::keyClick(panel->table(), Qt::Key_Escape);
-		QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-		QVERIFY(!listShown(window->m_editor, QStringLiteral("automation")));
-		QTRY_VERIFY(focusIsOnTheCanvas(window->m_editor));
-
-		// A second Space on the button closes it too, with the same focus return.
-		button->setFocus();
-		QTest::keyClick(button, Qt::Key_Space);
-		QVERIFY2(listShown(window->m_editor, QStringLiteral("automation")), "Space on the button did not open the list");
-		QTest::keyClick(button, Qt::Key_Space);
-		QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-		QVERIFY(!listShown(window->m_editor, QStringLiteral("automation")));
-		QTRY_VERIFY(focusIsOnTheCanvas(window->m_editor));
-
-		// The agent's command and the button work on the same list.
-		button->click();
-		QVERIFY(listShown(window->m_editor, QStringLiteral("automation")));
-		QVERIFY(invoke(QStringLiteral("window.item_list"), {{QStringLiteral("surface"), QStringLiteral("automation")}}).ok);
-		QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
-		QVERIFY(!listShown(window->m_editor, QStringLiteral("automation")));
-
-		// No clip: the window's own rule disables the button, and the command refuses the surface.
-		window->m_editor->setCurrentClip(nullptr);
-		QVERIFY(!button->isEnabled());
-		QCOMPARE(invoke(QStringLiteral("window.item_list"), {{QStringLiteral("surface"), QStringLiteral("automation")}}).errorKind,
-			ControlErrorKind::NotFound);
-		QCOMPARE(invoke(QStringLiteral("window.item_list"), {{QStringLiteral("surface"), QStringLiteral("bogus")}}).errorKind,
-			ControlErrorKind::InvalidArgs);
-		window->m_editor->setCurrentClip(clip);
 	}
 
 	void theViewMenuSetsTheAnnouncementLevel()

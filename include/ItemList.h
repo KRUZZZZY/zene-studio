@@ -156,8 +156,6 @@ public:
 
 protected:
 	bool eventFilter(QObject* watched, QEvent* event) override;
-	//! Closing hands the keyboard focus back to the canvas when the list or its window had it (Q050-369).
-	void closeEvent(QCloseEvent* event) override;
 
 private:
 	void selectionEdited();
