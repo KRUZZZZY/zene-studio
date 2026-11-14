@@ -40,32 +40,42 @@ then changed to a malformed id (`nope`, InvalidArgs), and commit `8e8930e963` ad
 rebuild exit 0, `ctest -R '^(MixerMaskingReportTest|MixerMaskingReportWindowTest)$'` **exit 8**
 (`/tmp/q050-231.2-r1/logs/002-test-3-reverted.log`): the four apply slots fail plus
 `MixerMaskingReportWindowTest::applyingAProposalFromTheWindowIsOneUndoStep` (no Apply button). Restored: rebuild
-exit 0, ctest exit 0 (`/tmp/q050-231.2-r1/logs/004-test-4-restored.log`). Red/green notes:
+exit 0, ctest exit 0 (`/tmp/q050-231.2-r1/logs/004-test-4-restored.log`). The RED/GREEN run was made on
+`a3c41f5455`; the later refactor commits (`4a85efc946`, `6de49f3da1`) only restructure the helpers, and the listed
+tests were re-run green after the refactor: `ctest -R
+'^(MixerMaskingReportTest|MixerToolsTest|MixerMaskingReportWindowTest|ControlMaskingReport|ReversibilityContractTest|ControlCommandsSnapshot)$'`
+-> **exit 0**, 6/6 passed (`/tmp/zene-q050-231.2-logs/013-test-p8.log`). Red/green notes:
 `/tmp/q050-231.2-r1/logs/red-green.md`. The run folder's logs directory was not writable for the worker, so all logs
 are under `/tmp` at the paths above.
 
 ## Self-check
 
-Completion check: `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> Q050-231.2` -> **exit 1**
-(`/tmp/zene-q050-231.2-logs/008-submit-check.log`), 2 FAIL items. After the doc edits were committed the check was
-rerun: **exit 1** (`/tmp/zene-q050-231.2-logs/009-submit-check-2.log`), now 1 FAIL item. All other items PASS,
-including commits on the branch, report, feature record, GUI path and its test, live snapshot, canary figures, manual,
-audio-path scan, added tests and portability.
+Completion check: `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> Q050-231.2` -> **exit 0**
+(`/tmp/zene-q050-231.2-logs/017-submit-check-3.log`), **RESULT: PASS - submit**, no FAIL items. Earlier runs were red:
+**exit 1** (`/tmp/zene-q050-231.2-logs/008-submit-check.log`) with 2 FAIL items, then **exit 1**
+(`/tmp/zene-q050-231.2-logs/009-submit-check-2.log`) with 1 FAIL item. The complexity and file-length FAILs were then
+cleared by the p8 refactor commit (`4a85efc946`, splitting the proposal validation and moving the shared EQ write out
+of the 500-line tools file) and this packet's commit (`6de49f3da1`, splitting `check_apply` into small helpers).
 
-- **Working tree clean.** The first run flagged the two doc edits of this section as uncommitted. They are committed
-  (`776df70909`) and the rerun PASSes this item; `git status` is clean at the end of this unit.
-- **FAIL: gates (feature_check.py):** `FAIL complexity NEW: new function over target:
-  lmms::applyMaskingProposal@338-402@src/core/ControlCommandsMixerMasking.cpp (CCN 22); new function over target:
+- **Working tree clean.** The first run flagged the two doc edits of this section as uncommitted; they are committed
+  (`776df70909`). The final run PASSes commits and clean-tree, as well as report, feature record, GUI path and its
+  test, live snapshot, canary figures, manual, audio-path scan, added tests, portability and gates.
+- **Gates (feature_check.py).** The final run PASSes this item. The earlier `FAIL complexity NEW:
+  lmms::applyMaskingProposal@338-402@src/core/ControlCommandsMixerMasking.cpp (CCN 22)` and `FAIL complexity NEW:
   check_apply@76-119@tests/control-masking-report.py (CCN 17)` and `FAIL file-length NEW: new file over 500 lines:
-  src/core/ControlCommandsMixerTools.cpp (506)`. Both are reported, not fixed: lowering the CCN means splitting the
-  handler and its test driver (a code change outside this doc packet), and the 506-line file is existing code that
-  this unit only extended by the shared `applyChannelEq`. No gate was edited or weakened.
+  src/core/ControlCommandsMixerTools.cpp (506)` are gone; every function is now under the CCN target. No gate was
+  edited or weakened, and every check in the driver is kept with the same message.
+- **ControlMaskingReport after the refactor:** `ctest -R '^ControlMaskingReport$'` -> **exit 0**, 1/1 passed
+  (`/tmp/zene-q050-231.2-logs/016-test-p9.log`).
 
 - **Each new test FAILS with the product change reverted, then PASSES restored.** Product hunks
   (`git diff 40b4322860..a3c41f5455 -- src include`) reverse-applied, rebuild exit 0; `ctest -R
   '^(MixerMaskingReportTest|MixerMaskingReportWindowTest)$'` -> **exit 8**, 4 failed in `MixerMaskingReportTest` and
   1 in `MixerMaskingReportWindowTest` (`/tmp/q050-231.2-r1/logs/002-test-3-reverted.log`). Restored: rebuild exit 0,
-  same ctest -> **exit 0**, 2/2 passed (`/tmp/q050-231.2-r1/logs/004-test-4-restored.log`). Notes:
+  same ctest -> **exit 0**, 2/2 passed (`/tmp/q050-231.2-r1/logs/004-test-4-restored.log`). This run was made on
+  `a3c41f5455`; the two later refactor commits only restructure the helpers, and the tests were re-run green after
+  them: 6/6 passed, exit 0 (`/tmp/zene-q050-231.2-logs/013-test-p8.log`) and, after this packet's helper split,
+  `ctest -R '^ControlMaskingReport$'` -> **exit 0**, 1/1 passed (`/tmp/zene-q050-231.2-logs/016-test-p9.log`). Notes:
   `/tmp/q050-231.2-r1/logs/red-green.md`.
 - **Every acceptance criterion proven by a test I ran.** Criterion 1 (apply changes only the target, one reversible
   transaction): `ctest -R '^(MixerMaskingReportTest|MixerToolsTest)$'` -> 0
