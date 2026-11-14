@@ -3,14 +3,17 @@
 The SFZ Player (`SfzPlayer*.cpp/.h`, `SfzSynth*`, `RtPublished.h`) is Zene Studio code, GPL-2.0-or-later like the rest
 of the program. It plays SFZ instruments with **sfizz 1.2.3** (https://github.com/sfztools/sfizz, BSD-2-Clause),
 vendored under `sfizz/` and built into the module as static libraries on every platform. The sfizz release tarball
-(which carries its dependencies) is the source. **Two changes** were made to the files that were kept: in
+(which carries its dependencies) is the source. **Three changes** were made to the files that were kept: in
 `sfizz/src/sfizz/Synth.cpp`, `Synth::renderBlock` no longer waits for the background loaders when freewheeling and no
 longer runs the file pool's garbage collection, when the module is built with `ZENE_SFIZZ_NO_RENDER_THREAD_WAITS` (the
 module always is). Both took a lock or waited inside the render callback. Without the collection, a sample that was
 streamed to its end stays in memory until the synth is rebuilt (a reload, an export, a project close). And in
 `external/atomic_queue/include/atomic_queue/atomic_queue.h`, the ill-formed `Base::template do_pop_any(...)` /
 `Base::template do_push_any(...)` calls (a `template` keyword with no explicit template argument list, which current
-Clang rejects) lost the keyword; the queue semantics are unchanged.
+Clang rejects) lost the keyword; the queue semantics are unchanged. Finally,
+`external/st_audiofile/src/st_audiofile_sndfile.c` casts its memory source to
+`const unsigned char*` before adding the byte offset, replacing GNU-only `void*`
+arithmetic that MSVC rejects; read offsets and byte-copy behavior are unchanged.
 
 | Path under `sfizz/` | What | Licence |
 | --- | --- | --- |

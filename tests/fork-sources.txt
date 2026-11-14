@@ -809,6 +809,11 @@ include/AbletonLinkBridge.h
 include/AbletonLinkSession.h
 include/Accessibility.h
 include/AccessibilityAudit.h
+
+# Train 39: portable hosted compiler and executable-debug regression probes and repair evidence.
+tests/train-39-portability-check.py
+docs/qwen-fixes-2026-10/sol-train-29-hosted-portability.md
+
 include/AccessibleCanvas.h
 include/AccessibleWidgets.h
 include/AddTrackMenu.h
