@@ -1443,6 +1443,40 @@ private slots:
 		}
 	}
 
+	//! All takes from an armed three-pass loop recording, including Play all takes, are restored by one undo step.
+	void loopPassRecordingAndModeStateAreOneUndoStep()
+	{
+		lmms::recordoptions::setOptions({0, 0, lmms::recordoptions::Mode::Overdub});
+		auto* song = lmms::Engine::getSong();
+		song->stop();
+		auto* track = new lmms::SampleTrack(song);
+		const int trackId = track->id();
+		auto* clip = dynamic_cast<lmms::SampleClip*>(track->createClip(lmms::TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->changeLength(lmms::TimePos(song->ticksPerBar()));
+		clip->setAutoResize(false);
+
+		auto* journal = lmms::Engine::projectJournal();
+		const int depthBeforeArm = journal->undoDepth();
+		clip->setRecord(true);
+		QCOMPARE(journal->undoDepth(), depthBeforeArm + 1);
+
+		recordThreeLoopPasses(clip);
+		QCOMPARE(track->takeLanes().laneCount(), 3);
+		QVERIFY(track->takeLanes().playAllTakes());
+		QCOMPARE(journal->undoDepth(), depthBeforeArm + 1);
+		journal->undo();
+		QCOMPARE(journal->undoDepth(), depthBeforeArm);
+
+		lmms::SampleTrack* restored = trackById(trackId);
+		QVERIFY(restored != nullptr);
+		QCOMPARE(restored->takeLanes().laneCount(), 0);
+		QVERIFY(!restored->takeLanes().playAllTakes());
+		QCOMPARE(restored->getClips().size(), std::size_t{1});
+		lmms::recordoptions::setOptions({});
+		delete restored;
+	}
+
 	//! A plain recording (no loop pass) over an empty clip in Overdub is the clip's own content, as before: no
 	//! take lanes, and Play all takes stays off.
 	void aPlainRecordingInOverdubIsNotALoopPass()

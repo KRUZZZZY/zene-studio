@@ -469,8 +469,14 @@ private slots:
 			QCOMPARE(heardLane, track->takeLanes().activeTakeLane(clip->id()));
 			QVERIFY(!panel.playAllTakesBox()->isChecked());
 
+			const ControlResult before = run(QStringLiteral("control.undo_depth"));
+			QVERIFY(before.ok);
 			QTest::mouseClick(panel.playAllTakesBox(), Qt::LeftButton);
 			QVERIFY(track->takeLanes().playAllTakes());
+			const ControlResult after = run(QStringLiteral("control.undo_depth"));
+			QVERIFY(after.ok);
+			QCOMPARE(after.result.value(QStringLiteral("depth")).toInt(),
+				before.result.value(QStringLiteral("depth")).toInt() + 1);
 			panel.refresh();
 			QVERIFY(panel.playAllTakesBox()->isChecked());
 			QCOMPARE(panel.takeChoiceBox()->count(), 3);
@@ -479,6 +485,62 @@ private slots:
 				QVERIFY2(panel.takeChoiceBox()->itemText(i).endsWith(QStringLiteral(" - audible")),
 					qPrintable(panel.takeChoiceBox()->itemText(i)));
 			}
+			const ControlResult undone = run(QStringLiteral("control.undo"));
+			QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
+			QCOMPARE(undone.result.value(QStringLiteral("undone_command")).toString(),
+				QStringLiteral("comp.play_all_takes"));
+			QCOMPARE(undone.result.value(QStringLiteral("undone_commands")).toInt(), 1);
+			QVERIFY(!track->takeLanes().playAllTakes());
+			panel.refresh();
+			QCOMPARE(panel.takeChoiceBox()->count(), 3);
+			for (int i = 0; i < panel.takeChoiceBox()->count(); ++i)
+			{
+				const bool newest = panel.takeChoiceBox()->itemData(i, Qt::UserRole + 1).toInt() == heardLane;
+				const QString expected = newest ? QStringLiteral(" - audible") : QStringLiteral(" - muted");
+				QVERIFY(panel.takeChoiceBox()->itemText(i).endsWith(expected));
+			}
+		}
+		recordoptions::setOptions({});
+	}
+
+	//! A comp selects which take is heard even when it is not the active take; both the command state and panel say so.
+	void compedLoopTakesReportTheAudibleLane()
+	{
+		recordoptions::setOptions({0, 0, recordoptions::Mode::Replace});
+		const QString id = run(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("sample")}})
+			.result.value(QStringLiteral("track")).toString();
+		ControlResult error;
+		Track* track = control::resolveTrack(id, &error);
+		QVERIFY(track != nullptr);
+		auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->changeLength(TimePos(TimePos::ticksPerBar()));
+		clip->setAutoResize(false);
+		recordLoopPasses(clip);
+		QCOMPARE(track->takeLanes().activeTakeLane(clip->id()), 2);
+		QVERIFY(track->takeLanes().selectSegment(0, TimePos::ticksPerBar(), 0));
+
+		const ControlResult state = run(QStringLiteral("comp.get_state"),
+			{{QStringLiteral("track"), control::trackIdOf(track)}});
+		QVERIFY(state.ok);
+		const QJsonArray groups = state.result.value(QStringLiteral("take_groups")).toArray();
+		QCOMPARE(groups.size(), 1);
+		const QJsonArray takes = groups.first().toObject().value(QStringLiteral("takes")).toArray();
+		QCOMPARE(takes.size(), 3);
+		for (const QJsonValue& value : takes)
+		{
+			const QJsonObject take = value.toObject();
+			QCOMPARE(take.value(QStringLiteral("audible")).toBool(), take.value(QStringLiteral("lane")).toInt() == 0);
+		}
+
+		TakeLanesPanel panel(id);
+		panel.refresh();
+		QCOMPARE(panel.takeChoiceBox()->count(), 3);
+		for (int i = 0; i < panel.takeChoiceBox()->count(); ++i)
+		{
+			const bool compLane = panel.takeChoiceBox()->itemData(i, Qt::UserRole + 1).toInt() == 0;
+			const QString expected = compLane ? QStringLiteral(" - audible") : QStringLiteral(" - muted");
+			QVERIFY(panel.takeChoiceBox()->itemText(i).endsWith(expected));
 		}
 		recordoptions::setOptions({});
 	}
