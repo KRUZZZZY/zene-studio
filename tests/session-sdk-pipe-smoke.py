@@ -181,11 +181,64 @@ def path_gone(path):
     return not os.path.exists(path)
 
 
+def check_ready(instance, transcript, result):
+    """Poll control.ping until the engine reports engine_ready; returns the last ping result."""
+    # A pong is not readiness: engine commands are refused engine_starting until
+    # control.ping reports engine_ready. Poll, bounded by START_BOUND.
+    deadline = time.time() + START_BOUND
+    while not result.get("engine_ready"):
+        if time.time() > deadline:
+            raise Timeout("the engine never reported engine_ready within %ds; log tail:\n%s"
+                          % (START_BOUND, instance.log()[-4000:]))
+        if not instance.alive():
+            raise Failure("the instance exited (code %s) before the engine was ready; log tail:\n%s"
+                          % (instance.process.returncode, instance.log()[-4000:]))
+        time.sleep(0.2)
+        result = transcript.ok_call("control.ping", timeout_s=REPLY_BOUND)
+    ok("the engine reports engine_ready")
+    return result
+
+
+def run_sdk(node, sdk, path, instance):
+    command = [node, "--experimental-strip-types", "--disable-warning=ExperimentalWarning",
+               "test/pipe-smoke.ts", path]
+    try:
+        completed = subprocess.run(command, cwd=sdk, timeout=SDK_BOUND)
+    except subprocess.TimeoutExpired:
+        raise Failure("the SDK pipe smoke did not finish within %ds; log tail:\n%s"
+                      % (SDK_BOUND, instance.log()[-4000:]))
+    if completed.returncode != 0:
+        raise Failure("the SDK pipe smoke exited %d; log tail:\n%s"
+                      % (completed.returncode, instance.log()[-4000:]))
+    ok("the TypeScript SDK ran its pipe smoke over %s (see its PASS lines above)" % path)
+
+
+def check_quit(instance, path):
+    quitter = make_client(path, CONNECT_BOUND)
+    try:
+        reply = Client(quitter).call("control.quit", {"save": False}, timeout_s=REPLY_BOUND)
+        if reply.get("ok") is not True:
+            raise Failure("control.quit was refused: %s" % json.dumps(reply)[:300])
+        ok("control.quit answers")
+    finally:
+        quitter.close()
+
+    exited, code = instance.wait_for_exit(EXIT_BOUND)
+    if not exited:
+        raise Failure("the instance did not exit within %ds of control.quit; log:\n%s"
+                      % (EXIT_BOUND, instance.log()[-4000:]))
+    ok("the instance exits after control.quit (code %s)" % code)
+    if "FATAL: the normal shutdown did not finish" in instance.log():
+        raise Failure("the shutdown guard fired: the normal shutdown did not finish")
+    if not path_gone(path):
+        raise Failure("the control path %s is still there after the instance exited" % path)
+    ok("the control path is gone after the instance exits")
+
+
 def run(zene, node, sdk, path, tmp):
     problems = []
     instance = Instance(zene, tmp, path)
     client = None
-    quitter = None
     try:
         instance.spawn()
         client = wait_ready(instance)
@@ -197,59 +250,18 @@ def run(zene, node, sdk, path, tmp):
             raise Failure("control.ping answered %s, expected pong with proto 1"
                           % json.dumps(result)[:300])
         ok("control.ping answers (pong, proto 1)")
-        # A pong is not readiness: engine commands are refused engine_starting until
-        # control.ping reports engine_ready. Poll, bounded by START_BOUND.
-        deadline = time.time() + START_BOUND
-        while not result.get("engine_ready"):
-            if time.time() > deadline:
-                raise Timeout("the engine never reported engine_ready within %ds; log tail:\n%s"
-                              % (START_BOUND, instance.log()[-4000:]))
-            if not instance.alive():
-                raise Failure("the instance exited (code %s) before the engine was ready; log tail:\n%s"
-                              % (instance.process.returncode, instance.log()[-4000:]))
-            time.sleep(0.2)
-            result = transcript.ok_call("control.ping", timeout_s=REPLY_BOUND)
-        ok("the engine reports engine_ready")
+        check_ready(instance, transcript, result)
         client.close()
         client = None
 
-        command = [node, "--experimental-strip-types", "--disable-warning=ExperimentalWarning",
-                   "test/pipe-smoke.ts", path]
-        try:
-            completed = subprocess.run(command, cwd=sdk, timeout=SDK_BOUND)
-        except subprocess.TimeoutExpired:
-            raise Failure("the SDK pipe smoke did not finish within %ds; log tail:\n%s"
-                          % (SDK_BOUND, instance.log()[-4000:]))
-        if completed.returncode != 0:
-            raise Failure("the SDK pipe smoke exited %d; log tail:\n%s"
-                          % (completed.returncode, instance.log()[-4000:]))
-        ok("the TypeScript SDK ran its pipe smoke over %s (see its PASS lines above)" % path)
-
-        quitter = make_client(path, CONNECT_BOUND)
-        reply = Client(quitter).call("control.quit", {"save": False}, timeout_s=REPLY_BOUND)
-        if reply.get("ok") is not True:
-            raise Failure("control.quit was refused: %s" % json.dumps(reply)[:300])
-        ok("control.quit answers")
-        quitter.close()
-        quitter = None
-
-        exited, code = instance.wait_for_exit(EXIT_BOUND)
-        if not exited:
-            raise Failure("the instance did not exit within %ds of control.quit; log:\n%s"
-                          % (EXIT_BOUND, instance.log()[-4000:]))
-        ok("the instance exits after control.quit (code %s)" % code)
-        if "FATAL: the normal shutdown did not finish" in instance.log():
-            raise Failure("the shutdown guard fired: the normal shutdown did not finish")
-        if not path_gone(path):
-            raise Failure("the control path %s is still there after the instance exited" % path)
-        ok("the control path is gone after the instance exits")
+        run_sdk(node, sdk, path, instance)
+        check_quit(instance, path)
     except Exception as exc:
         problems.append(str(exc))
         print("FAIL: %s" % exc)
     finally:
-        for handle in (client, quitter):
-            if handle is not None:
-                handle.close()
+        if client is not None:
+            client.close()
         instance.close()
     return problems
 
