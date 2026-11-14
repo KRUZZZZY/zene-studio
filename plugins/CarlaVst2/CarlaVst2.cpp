@@ -42,6 +42,7 @@
 #include <QTimer>
 
 #include "CarlaVst2Discovery.h"
+#include "CarlaVst2Legacy.h"
 #include "CarlaVst2Instrument.h"
 #include "CarlaVst2SubPluginFeatures.h"
 #include "InstrumentTrack.h"
@@ -156,6 +157,11 @@ bool CarlaVst2Instrument::openHostApi(QString* error)
 	m_api.embedUi = reinterpret_cast<HostApi::EmbedUi>(m_hostLibrary.resolve("carla_embed_custom_ui"));
 	m_api.showUi = reinterpret_cast<HostApi::ShowUi>(m_hostLibrary.resolve("carla_show_custom_ui"));
 	m_api.setCallback = reinterpret_cast<HostApi::SetCallback>(m_hostLibrary.resolve("carla_set_engine_callback"));
+	m_api.programCount = reinterpret_cast<HostApi::Count>(m_hostLibrary.resolve("carla_get_program_count"));
+	m_api.setProgram = reinterpret_cast<HostApi::SetProgram>(m_hostLibrary.resolve("carla_set_program"));
+	m_api.setChunk = reinterpret_cast<HostApi::SetChunk>(m_hostLibrary.resolve("carla_set_chunk_data"));
+	m_api.parameterCount = reinterpret_cast<HostApi::Count>(m_hostLibrary.resolve("carla_get_parameter_count"));
+	m_api.setParameter = reinterpret_cast<HostApi::SetParameter>(m_hostLibrary.resolve("carla_set_parameter_value"));
 	if (!m_api.complete())
 	{
 		*error = QStringLiteral("the Carla host library '%1' lacks the host API this needs").arg(m_hostLibrary.fileName());
@@ -252,7 +258,30 @@ void CarlaVst2Instrument::loadSettings(const QDomElement& elem)
 	// key loaded. A preset or project saved by this host always carries one. The worker holds still meanwhile:
 	// Carla replaces its plug-in, and no parameter is pushed into one that is going away.
 	m_renderer.pause();
-	CarlaInstrument::loadSettings(elem);
+	const auto legacy = elem.firstChildElement(carlavst2::legacyStateTag());
+	if (legacy.isNull()) { CarlaInstrument::loadSettings(elem); }
+	else
+	{
+		if (!m_hostHandle || !m_api.programCount || !m_api.setProgram || !m_api.setChunk ||
+			!m_api.parameterCount || !m_api.setParameter)
+		{ m_loadError = QStringLiteral("Carla host API cannot restore legacy VST2 state"); }
+		else
+		{
+			carlavst2::applyLegacyState(legacy, {
+				[this] { return m_api.programCount(m_hostHandle, 0); },
+				[this](uint32_t p) { m_api.setProgram(m_hostHandle, 0, p); },
+				[this](const char* c) { m_api.setChunk(m_hostHandle, 0, c); },
+				[this] { return m_api.parameterCount(m_hostHandle, 0); },
+				[this](uint32_t i, float v) { m_api.setParameter(m_hostHandle, 0, i, v); }});
+		}
+		reloadParameters();
+		for (std::size_t i = 0; i < paramModels().size(); ++i)
+		{
+			const QString name = QStringLiteral("PARAM_KNOB_") + QString::number(i);
+			if (carlavst2::hasModelSettings(elem, name)) { paramModels()[i]->loadSettings(elem, name); }
+		}
+		carlavst2::warnExtraModelSettings(elem, paramModels().size());
+	}
 	std::fill(m_sentValues.begin(), m_sentValues.end(), std::numeric_limits<float>::quiet_NaN());
 	m_renderer.resume();
 	if (m_hostHandle != nullptr && m_api.pluginCount(m_hostHandle) == 0)

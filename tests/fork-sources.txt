@@ -3655,6 +3655,8 @@ plugins/CarlaVst2/CMakeLists.txt
 plugins/CarlaVst2/CarlaVst2.cpp
 plugins/CarlaBase/CarlaVst2Discovery.cpp
 plugins/CarlaBase/CarlaVst2Discovery.h
+plugins/CarlaBase/CarlaVst2Legacy.cpp
+plugins/CarlaBase/CarlaVst2Legacy.h
 plugins/CarlaVst2/CarlaVst2Instrument.h
 plugins/CarlaVst2/CarlaVst2Renderer.cpp
 plugins/CarlaVst2/CarlaVst2Renderer.h

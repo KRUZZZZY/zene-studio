@@ -91,12 +91,21 @@ private:
 		using EmbedUi = void* (*)(CarlaHostHandle, uint, void*);
 		using ShowUi = void (*)(CarlaHostHandle, uint, bool);
 		using SetCallback = void (*)(CarlaHostHandle, EngineCallbackFunc, void*);
+		using Count = uint32_t (*)(CarlaHostHandle, uint);
+		using SetProgram = void (*)(CarlaHostHandle, uint, uint32_t);
+		using SetChunk = void (*)(CarlaHostHandle, uint, const char*);
+		using SetParameter = void (*)(CarlaHostHandle, uint, uint32_t, float);
 		AddPlugin addPlugin = nullptr;
 		LastError lastError = nullptr;
 		PluginCount pluginCount = nullptr;
 		EmbedUi embedUi = nullptr;
 		ShowUi showUi = nullptr;
 		SetCallback setCallback = nullptr;
+		Count programCount = nullptr;
+		SetProgram setProgram = nullptr;
+		SetChunk setChunk = nullptr;
+		Count parameterCount = nullptr;
+		SetParameter setParameter = nullptr;
 		bool complete() const { return addPlugin && lastError && pluginCount && embedUi && showUi && setCallback; }
 	};
 

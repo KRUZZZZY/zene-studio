@@ -1067,6 +1067,8 @@ plugins/CarlaBase/CarlaConfig/config.h
 plugins/CarlaBase/CarlaMidiHandoff.h
 plugins/CarlaBase/CarlaVst2Discovery.cpp
 plugins/CarlaBase/CarlaVst2Discovery.h
+plugins/CarlaBase/CarlaVst2Legacy.cpp
+plugins/CarlaBase/CarlaVst2Legacy.h
 plugins/CarlaBase/DummyCarla.cpp
 plugins/CarlaPatchbay/CarlaPatchbay.cpp
 plugins/CarlaRack/CarlaRack.cpp

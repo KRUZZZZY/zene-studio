@@ -128,6 +128,11 @@ bool Rack::openHostApi(QString* error)
 	m_api.embedUi = reinterpret_cast<HostApi::EmbedUi>(m_hostLibrary.resolve("carla_embed_custom_ui"));
 	m_api.showUi = reinterpret_cast<HostApi::ShowUi>(m_hostLibrary.resolve("carla_show_custom_ui"));
 	m_api.setCallback = reinterpret_cast<HostApi::SetCallback>(m_hostLibrary.resolve("carla_set_engine_callback"));
+	m_api.programCount = reinterpret_cast<HostApi::Count>(m_hostLibrary.resolve("carla_get_program_count"));
+	m_api.setProgram = reinterpret_cast<HostApi::SetProgram>(m_hostLibrary.resolve("carla_set_program"));
+	m_api.setChunk = reinterpret_cast<HostApi::SetChunk>(m_hostLibrary.resolve("carla_set_chunk_data"));
+	m_api.parameterCount = reinterpret_cast<HostApi::Count>(m_hostLibrary.resolve("carla_get_parameter_count"));
+	m_api.setParameter = reinterpret_cast<HostApi::SetParameter>(m_hostLibrary.resolve("carla_set_parameter_value"));
 	if (!m_api.complete())
 	{
 		*error = QStringLiteral("the Carla host library '%1' lacks the host API this needs").arg(m_hostLibrary.fileName());
@@ -174,6 +179,17 @@ bool Rack::load(const QString& file, Binary binary, qint64 uniqueId, QString* er
 	}
 	return true;
 }
+
+bool Rack::hasLegacyApi() const
+{
+ return m_hostHandle && m_api.programCount && m_api.setProgram && m_api.setChunk && m_api.parameterCount && m_api.setParameter;
+}
+uint32_t Rack::programCount() const { return m_hostHandle && m_api.programCount ? m_api.programCount(m_hostHandle, 0) : 0; }
+void Rack::setProgram(uint32_t p) { if (m_hostHandle && m_api.setProgram) { m_api.setProgram(m_hostHandle, 0, p); } }
+void Rack::setChunk(const char* c) { if (m_hostHandle && m_api.setChunk) { m_api.setChunk(m_hostHandle, 0, c); } }
+
+uint32_t Rack::legacyParameterCount() const { return m_hostHandle && m_api.parameterCount ? m_api.parameterCount(m_hostHandle, 0) : 0; }
+void Rack::setLegacyParameterValue(uint32_t i, float v) { if (m_hostHandle && m_api.setParameter) { m_api.setParameter(m_hostHandle, 0, i, v); } }
 
 bool Rack::hasPlugin() const
 {
