@@ -20,7 +20,8 @@ command `view.earcons` (`category` enum, `enabled`, `level` 0..1, at least one o
 
 Logs: `/tmp/Q050-497.r2-logs/` (the runs/logs dir was not writable, so `DUET_LOG_DIR` pointed there). Build
 `001-build-ccn.log` exit 0; `002-ctest-ccn.log` `EarconsSettingsTest` exit 0; gates `003-gates.log` feature_check RESULT
-PASS; RED `004-build-red.log` exit 2; restored `005-build-green.log` exit 0; `006-ctest-green.log` exit 0.
+PASS; RED `004-build-red.log` exit 2; restored `005-build-green.log` exit 0; `006-ctest-green.log` exit 0; undo-depth
+assertions `009-build-depth.log` exit 0, `010-ctest-depth.log` exit 0 (1/1).
 
 ## Acceptance
 | Criterion | Test | Command | Exit |
@@ -30,7 +31,7 @@ PASS; RED `004-build-red.log` exit 2; restored `005-build-green.log` exit 0; `00
 | No allocation, lock, wait, I/O or signal on the audio thread | design (`include/Earcons.h` contract; `play` = atomic load + release `fetch_or`; `beginBuffer` = single-consumer `exchange`; `nextSample` reads preallocated banks) + `EarconsTest` `theAudioPathDoesNotAllocate`, `theRenderPathNeverConsumesAnEarcon` | `ctest -R '^EarconsTest$'` | 0 |
 | Not in render output or recorded takes | `EarconsRenderTest` `renderOutputIsIdenticalWithEarconsOn` (every category on + every sound queued: same frame count, every sample equal, non-silent, earcons still queued), `aRecordedTakeHasNoEarcons` (master-tap take all zero, earcons still queued and audible afterwards) | `ctest -R '^EarconsRenderTest$'` | 0 |
 
-Neighbours: `002-ctest-ccn.log` also ran the union of the affected GUI targets green. `ctest -R Earcons` on the restored
+Neighbours: `002-ctest-ccn.log` ran `EarconsSettingsTest` only (1/1, exit 0). `ctest -R Earcons` on the restored
 tree: 3/3 passed, exit 0 (`006-ctest-green.log`).
 
 ## Self-check
@@ -41,8 +42,8 @@ tree: 3/3 passed, exit 0 (`006-ctest-green.log`).
   per-case runtime RED. Restored and rebuilt: exit 0 (`005-build-green.log`); `ctest -R Earcons` 3/3 pass, exit 0
   (`006-ctest-green.log`).
 - **Every acceptance criterion is proven by a test I ran.** The table above names the test and its exit per criterion; all
-  four rows are exit 0 from `006-ctest-green.log`, plus `002-ctest-ccn.log` exit 0 for the GUI suite. No row rests on a
-  test I did not run.
+  four rows are exit 0 from `006-ctest-green.log`, plus `002-ctest-ccn.log` exit 0 for `EarconsSettingsTest`. No row rests
+  on a test I did not run.
 - **One undo step, honest reversibility.** `view.earcons` is `TrueInverse` in
   `src/core/ControlReversibilityTableW3Custom.cpp:136` with the reversibility flag set; the recorded undo step writes the
   previous `ui/earcons` object back and re-applies it. `theSocketWritesOneUndoStep` sets `enabled: true, level: 1.0` in
@@ -75,9 +76,11 @@ tree: 3/3 passed, exit 0 (`006-ctest-green.log`).
 - **The GUI test drives the visible control and checks the same registered command ran.** `EarconsSettingsTest` opens the
   real View menu (`aboutToShow`), finds the `earconsMenu` and the per-category submenu, and calls `trigger()` on the
   *Enabled* and *100%* actions - not the handler and not the registry directly - then asserts the state the registered
-  command wrote (`earcons::enabled`, `earcons::level`, `uistore::read("earcons")`) and that one `control.undo` is the
-  depth change. `theAutomationBoundaryIsHeard` and `anAppliedEditIsHeard` drive `QTest::keyClick` and a real
-  `runCommand`, and measure the monitoring output, not an internal flag.
+  command wrote (`earcons::enabled`, `earcons::level`, `uistore::read("earcons")`), that `control.undo_depth` grows by
+  one after each menu trigger (depth0, depth0+1, depth0+2), and that two `control.undo` calls restore first the level
+  (Edit still enabled) and then the switch (Edit disabled and not stored), back to depth0. This ran green: `010-ctest-depth.log`,
+  exit 0, 1/1 (`009-build-depth.log` exit 0). `theAutomationBoundaryIsHeard` and `anAppliedEditIsHeard` drive
+  `QTest::keyClick` and a real `runCommand`, and measure the monitoring output, not an internal flag.
 - **Qt 5.15 / MSVC / macOS portability.** Only Qt 5/6-common API (`QMenu`, `QAction`, `QJsonObject`, `QStringList`,
   `QStringLiteral`); no Qt-6-only API and no version guard needed. No `std::filesystem`, no `windows.h` macro-name
   identifiers (`small`, `near`, `far`, `interface`, `min`, `max`) in the added code; a grep of `git diff

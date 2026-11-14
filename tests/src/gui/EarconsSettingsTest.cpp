@@ -181,7 +181,9 @@ private slots:
 		QVERIFY(on != nullptr);
 		QVERIFY(on->isCheckable());
 		QVERIFY(!on->isChecked());
+		const int depth0 = undoDepth();
 		on->trigger();
+		QCOMPARE(undoDepth(), depth0 + 1);
 		QVERIFY(earcons::enabled(earcons::Category::Edit));
 		QVERIFY(storedEnabled(QStringLiteral("edit")));
 		QVERIFY(on->isChecked());
@@ -189,11 +191,23 @@ private slots:
 		QAction* full = levelAction(edit, 1.0);
 		QVERIFY(full != nullptr);
 		QVERIFY(full->isCheckable());
+		const float levelBefore = earcons::level(earcons::Category::Edit);
 		full->trigger();
+		QCOMPARE(undoDepth(), depth0 + 2);
 		QCOMPARE(earcons::level(earcons::Category::Edit), 1.0f);
 		QVERIFY(uistore::read(QStringLiteral("earcons")).value(QStringLiteral("edit")).toObject()
 			.value(QStringLiteral("level")).toDouble() == 1.0);
 		QVERIFY(full->isChecked());
+
+		QVERIFY(invoke(QStringLiteral("control.undo")).ok);
+		QCOMPARE(earcons::level(earcons::Category::Edit), levelBefore);
+		QVERIFY(earcons::enabled(earcons::Category::Edit));
+		QCOMPARE(undoDepth(), depth0 + 1);
+
+		QVERIFY(invoke(QStringLiteral("control.undo")).ok);
+		QVERIFY(!earcons::enabled(earcons::Category::Edit));
+		QVERIFY(!storedEnabled(QStringLiteral("edit")));
+		QCOMPARE(undoDepth(), depth0);
 	}
 
 	void theSocketWritesOneUndoStep()
@@ -314,6 +328,11 @@ private slots:
 	}
 
 private:
+	int undoDepth() const
+	{
+		return ControlRegistry::instance()->invoke(QStringLiteral("control.undo_depth")).result.value(QStringLiteral("depth")).toInt();
+	}
+
 	QTemporaryDir m_home;
 };
 
