@@ -67,6 +67,7 @@ set(LMMS_TESTS
 	src/plugins/LadspaChannelCountsTest.cpp
 	src/plugins/RnnoiseDenoiserEffectTest.cpp
 	src/plugins/VstEffectControlsTest.cpp
+	src/core/LegacyVst2ConversionTest.cpp
 	src/core/ArrayVectorTest.cpp
 	# Short ALSA writes must advance through every remaining frame in a period.
 	src/core/AudioAlsaWriteTest.cpp

@@ -503,6 +503,7 @@ include/LcdSpinBox.h
 include/LcdWidget.h
 include/LedCheckBox.h
 include/LeftRightNav.h
+include/LegacyVst2Conversion.h
 include/LevelBar.h
 include/LfoController.h
 include/LfoGraph.h
@@ -2085,6 +2086,7 @@ src/core/LadspaControl.cpp
 src/core/LadspaManager.cpp
 src/core/LatencyCompensation.cpp
 src/core/LaunchBindings.cpp
+src/core/LegacyVst2Conversion.cpp
 src/core/LfoController.cpp
 src/core/LibraryCellAudio.cpp
 src/core/LinkAudioCodec.cpp
@@ -3019,6 +3021,7 @@ tests/src/core/LadspaManagerTest.cpp
 tests/src/core/LadspaPortCountFixture.cpp
 tests/src/core/LanesUpconvertTest.cpp
 tests/src/core/LegacyPatternUpgradeTest.cpp
+tests/src/core/LegacyVst2ConversionTest.cpp
 tests/src/core/LfoControllerUserWaveTest.cpp
 tests/src/core/LibraryBrowserTest.cpp
 tests/src/core/LibraryProjectsTest.cpp

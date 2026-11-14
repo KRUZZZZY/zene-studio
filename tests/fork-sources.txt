@@ -3820,3 +3820,7 @@ include/ShellRecordMenu.h
 src/gui/shell/ShellRecordMenu.cpp
 # cluster new-p10-318 (2026-10): fix and verification report for the Peak Controller zero-frame block (fork-NEW).
 docs/qwen-fixes-2026-10/cluster-new-p10-318.md
+
+include/LegacyVst2Conversion.h
+src/core/LegacyVst2Conversion.cpp
+tests/src/core/LegacyVst2ConversionTest.cpp
