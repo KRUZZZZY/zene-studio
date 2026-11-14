@@ -808,6 +808,11 @@ include/AafImportMenu.h
 include/AbletonLinkBridge.h
 include/AbletonLinkSession.h
 include/Accessibility.h
+# Train 40: retain the independently accepted direct-source plug-in export audit and its report.
+tests/src/plugins/PluginExportBranchTest.cpp
+docs/qwen-fixes-2026-10/cluster-ci-64c5b539b5120b17.md
+docs/qwen-fixes-2026-10/sol-train-30-export-integration.md
+
 include/AccessibilityAudit.h
 
 # Train 39: portable hosted compiler and executable-debug regression probes and repair evidence.

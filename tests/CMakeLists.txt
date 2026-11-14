@@ -2078,6 +2078,13 @@ list(APPEND LMMS_TESTS src/core/SurroundDevicePathTest.cpp)
 # reason as the tests above: the negative control reads the high-numbered names out of `ctest -N`.
 list(APPEND LMMS_TESTS src/core/MidiTakeRecordTest.cpp src/gui/MidiTakeMenuTest.cpp)
 
+# cluster ci-64c5b539b5120b17: every test target that compiles a plug-in's own PLUGIN_EXPORT
+# definitions must take that plug-in's export branch, not the consumer branch. On Windows the two
+# branches differ (dllexport vs dllimport), and a definition marked dllimport is an error - the
+# hosted mingw64 job died on exactly that in RnnoiseDenoiserEffectTest. The population is read out
+# of the targets' own sources at configure time by the audit at the bottom of this file.
+list(APPEND LMMS_TESTS src/plugins/PluginExportBranchTest.cpp)
+
 foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# TODO CMake 3.20: Use cmake_path
 	get_filename_component(LMMS_TEST_NAME ${LMMS_TEST_SRC} NAME_WE)
@@ -2470,7 +2477,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			${CMAKE_SOURCE_DIR}/plugins/Patman
 			${CMAKE_BINARY_DIR}/plugins/Patman
 		)
-		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_NAME=patman)
+		# The plug-in's own PLUGIN_EXPORT definitions are compiled in here, so the generated
+		# export header must take its static branch (Windows: dllimport is not definable).
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_STATIC_DEFINE PLUGIN_NAME=patman)
 		add_dependencies(${LMMS_TEST_NAME} patman)
 		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES
 			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -2485,6 +2494,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			${CMAKE_BINARY_DIR}/plugins/Stk/Mallets
 		)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			PLUGIN_STATIC_DEFINE
 			PLUGIN_NAME=malletsstk
 			MALLETS_TEST_STK_DIR="${STK_RAWWAVE_ROOT}"
 			MALLETS_TEST_PLUGIN_DIR="${CMAKE_SOURCE_DIR}/plugins/Stk/Mallets")
@@ -2568,7 +2578,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			${CMAKE_SOURCE_DIR}/plugins/BitInvader/BitInvader.h)
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE
 			${CMAKE_SOURCE_DIR}/plugins/BitInvader ${CMAKE_BINARY_DIR}/plugins/BitInvader)
-		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_NAME=bitinvader)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_STATIC_DEFINE PLUGIN_NAME=bitinvader)
 	endif()
 	# cluster new-p17-203: the Watsyn wavetable-snapshot regression compiles the plug-in's
 	# own sources into the test (the SlicerT/Vibed/BitInvader shape), so the note path under
@@ -2996,7 +3006,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE ${NAM_DIR} "${CMAKE_BINARY_DIR}/plugins/NeuralAmp"
 			${NAM_DIR}/rtneural/modules/Eigen ${NAM_DIR}/rtneural/modules/json)
 		target_compile_options(${LMMS_TEST_NAME} PRIVATE ${ZENE_NAM_EIGEN_OPTIONS})
-		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE ZENE_NAM_TEST_SEAM PLUGIN_NAME=neuralamp)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_STATIC_DEFINE ZENE_NAM_TEST_SEAM PLUGIN_NAME=neuralamp)
 		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	endif()
 
@@ -3245,7 +3255,7 @@ target_include_directories(TapTempoTest PRIVATE
 	${CMAKE_SOURCE_DIR}/plugins/TapTempo
 	${CMAKE_BINARY_DIR}/plugins/TapTempo
 )
-target_compile_definitions(TapTempoTest PRIVATE PLUGIN_NAME=taptempo)
+target_compile_definitions(TapTempoTest PRIVATE PLUGIN_STATIC_DEFINE PLUGIN_NAME=taptempo)
 set_tests_properties(TapTempoTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
@@ -3402,6 +3412,7 @@ target_link_libraries(ReverbSCPluginStateTest PRIVATE
 )
 target_compile_features(ReverbSCPluginStateTest PRIVATE cxx_std_20)
 target_compile_definitions(ReverbSCPluginStateTest PRIVATE
+	PLUGIN_STATIC_DEFINE
 	LMMS_TESTING
 	PLUGIN_NAME=reverbsc
 	$<$<COMPILE_LANGUAGE:C>:malloc=sp_test_malloc>
@@ -4706,6 +4717,7 @@ target_link_libraries(SlicerTZoomTest PRIVATE
 )
 target_compile_features(SlicerTZoomTest PRIVATE cxx_std_20)
 target_compile_definitions(SlicerTZoomTest PRIVATE
+	PLUGIN_STATIC_DEFINE
 	LMMS_TESTING
 	PLUGIN_NAME=slicert
 )
@@ -4818,6 +4830,7 @@ target_link_libraries(TripleOscillatorUserWaveTest PRIVATE
 )
 target_compile_features(TripleOscillatorUserWaveTest PRIVATE cxx_std_20)
 target_compile_definitions(TripleOscillatorUserWaveTest PRIVATE
+	PLUGIN_STATIC_DEFINE
 	LMMS_TESTING
 	PLUGIN_NAME=tripleoscillator
 )
@@ -4853,6 +4866,7 @@ target_link_libraries(DelayControlsTest PRIVATE
 )
 target_compile_features(DelayControlsTest PRIVATE cxx_std_20)
 target_compile_definitions(DelayControlsTest PRIVATE
+	PLUGIN_STATIC_DEFINE
 	LMMS_TESTING
 	PLUGIN_NAME=delay
 )
@@ -4882,6 +4896,7 @@ target_link_libraries(PeakControllerEffectZeroFrameTest PRIVATE
 )
 target_compile_features(PeakControllerEffectZeroFrameTest PRIVATE cxx_std_20)
 target_compile_definitions(PeakControllerEffectZeroFrameTest PRIVATE
+	PLUGIN_STATIC_DEFINE
 	LMMS_TESTING
 	PLUGIN_NAME=peakcontrollereffect
 )
@@ -4951,6 +4966,7 @@ target_link_libraries(ConvolutionFftwPlanScopeTest PRIVATE
 )
 target_compile_features(ConvolutionFftwPlanScopeTest PRIVATE cxx_std_20)
 target_compile_definitions(ConvolutionFftwPlanScopeTest PRIVATE
+	PLUGIN_STATIC_DEFINE
 	LMMS_TESTING
 	PLUGIN_NAME=convolutionreverb
 )
@@ -5156,6 +5172,7 @@ if(WANT_WASM)
 
 	target_compile_features(WasmSandboxTest PRIVATE cxx_std_20)
 	target_compile_definitions(WasmSandboxTest PRIVATE
+		PLUGIN_STATIC_DEFINE
 		LMMS_TESTING
 		PLUGIN_NAME=wasm_effect
 		WASM_MODULES_DIR="${CMAKE_BINARY_DIR}/wasm-modules"
@@ -5966,12 +5983,20 @@ target_link_libraries(AudioPluginTest PRIVATE
 )
 target_compile_features(AudioPluginTest PRIVATE cxx_std_20)
 target_compile_definitions(AudioPluginTest PRIVATE
+	# The TapTempo sources are compiled in, so their PLUGIN_EXPORT definitions are this
+	# target's, not the module's: take the static branch (the module's own build keeps
+	# taptempo_EXPORTS).
+	PLUGIN_STATIC_DEFINE
 	LMMS_TESTING
 	PLUGIN_NAME=taptempo
 	SYNTHETIC_PLUGIN_PATH="$<TARGET_FILE:synthetic_audio_plugin>"
 )
 set_target_properties(AudioPluginTest PROPERTIES ENABLE_EXPORTS ON)
-add_dependencies(AudioPluginTest synthetic_audio_plugin patman)
+# These runtime fixtures are loaded by AudioPluginTest; targeted builds must include them.
+add_dependencies(AudioPluginTest synthetic_audio_plugin patman eq gate)
+if(TARGET nam_harness)
+	add_dependencies(AudioPluginTest nam_harness)
+endif()
 set_tests_properties(AudioPluginTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 )
@@ -9034,4 +9059,136 @@ endif()
 if(TARGET AudioBusTest)
 	file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/train39-test-link-option.h"
 		CONTENT "#define ZENE_TEST_STRIP_DEBUG_REQUESTED $<BOOL:${ZENE_TEST_STRIP_DEBUG}>\n#define ZENE_TEST_LINK_STRIPS_DEBUG $<IN_LIST:-Wl$<COMMA>--strip-debug,$<TARGET_PROPERTY:AudioBusTest,LINK_OPTIONS>>\n")
+endif()
+
+
+# ---------------------------------------------------------------------------
+# cluster ci-64c5b539b5120b17: the export branch of every plug-in translation unit
+# compiled into a TEST target.
+#
+# Hosted mingw64 (run 43537465762, job 132269831285) stopped on
+#   plugins/RnnoiseDenoiser/RnnoiseDenoiserEffect.cpp:52:34: error: variable
+#       'lmms::rnnoisedenoiser_plugin_descriptor' definition is marked dllimport
+#   plugins/RnnoiseDenoiser/RnnoiseDenoiserEffect.cpp:171:23: error: function
+#       'lmms::Plugin* lmms::lmms_plugin_main(Model*, void*)' definition is marked dllimport
+# because RnnoiseDenoiserEffectTest compiles the plug-in's own source into its
+# binary and defined neither PLUGIN_STATIC_DEFINE nor rnnoisedenoiser_EXPORTS, so
+# the generated plugin_export.h took its consumer branch. On ELF both branches
+# expand to visibility("default") - which is why every Linux and macOS job
+# compiled the identical tree - but on Windows the consumer branch is
+# __declspec(dllimport), and defining a dllimport symbol is ill-formed.
+#
+# The audit below is the mechanical form of that rule for the whole directory:
+# for every EXECUTABLE target here that compiles a source under plugins/ which
+# defines PLUGIN_EXPORT and includes a generated export header, the target must
+# define either PLUGIN_STATIC_DEFINE or the export condition named inside that
+# header (<plug-in target>_EXPORTS). The population comes from the targets
+# themselves, so a new plug-in test is audited the moment it is added.
+# PluginExportBranchTest reads the generated table and fails on any offender,
+# naming it and the macro it lacks.
+#
+# The table is generated, not checked here, because the targets' compile
+# definitions are generator-expression content: a configure-time `if()` cannot
+# see them, and this file must not guess. Rows are
+#   <target> TAB <export condition> TAB <compile definitions, space separated> |
+set(ZENE_PLUGIN_EXPORT_AUDIT_TARGETS "")
+set(ZENE_PLUGIN_EXPORT_SITE_COUNT 0)
+set(ZENE_PLUGIN_EXPORT_SITE_TABLE "")
+if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.19)
+	get_property(ZENE_TEST_DIR_TARGETS DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" PROPERTY BUILDSYSTEM_TARGETS)
+else()
+	get_property(ZENE_TEST_DIR_TARGETS DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+endif()
+foreach(ZENE_AUDIT_TARGET IN LISTS ZENE_TEST_DIR_TARGETS)
+	get_target_property(ZENE_AUDIT_TYPE "${ZENE_AUDIT_TARGET}" TYPE)
+	if(NOT ZENE_AUDIT_TYPE STREQUAL "EXECUTABLE")
+		continue()
+	endif()
+	get_target_property(ZENE_AUDIT_SOURCES "${ZENE_AUDIT_TARGET}" SOURCES)
+	if(NOT ZENE_AUDIT_SOURCES)
+		continue()
+	endif()
+	set(ZENE_AUDIT_TARGET_LISTED FALSE)
+	foreach(ZENE_AUDIT_SRC IN LISTS ZENE_AUDIT_SOURCES)
+		if(NOT IS_ABSOLUTE "${ZENE_AUDIT_SRC}")
+			set(ZENE_AUDIT_SRC "${CMAKE_CURRENT_SOURCE_DIR}/${ZENE_AUDIT_SRC}")
+		endif()
+		string(FIND "${ZENE_AUDIT_SRC}" "${CMAKE_SOURCE_DIR}/plugins/" ZENE_AUDIT_PLUGIN_POS)
+		if(NOT ZENE_AUDIT_PLUGIN_POS EQUAL 0)
+			continue()
+		endif()
+		if(NOT ZENE_AUDIT_SRC MATCHES "\\.cpp$")
+			continue()
+		endif()
+		if(NOT EXISTS "${ZENE_AUDIT_SRC}")
+			continue()
+		endif()
+		file(READ "${ZENE_AUDIT_SRC}" ZENE_AUDIT_TEXT)
+		# A descriptor or entry point this translation unit DEFINES with PLUGIN_EXPORT.
+		if(NOT (ZENE_AUDIT_TEXT MATCHES "Descriptor[ \t\r\n]+PLUGIN_EXPORT"
+			OR ZENE_AUDIT_TEXT MATCHES "PLUGIN_EXPORT[ \t\r\n]+Plugin[ \t\r\n]*\\*"))
+			continue()
+		endif()
+		if(NOT ZENE_AUDIT_TEXT MATCHES "#[ \t]*include[ \t]*\"[A-Za-z0-9_]+_export\\.h\"")
+			continue()
+		endif()
+		# The header this TU includes is generated beside the plug-in target:
+		# build/plugins/<plug-in dir>/<base>_export.h. Its `ifdef <name>_EXPORTS`
+		# is the condition the plug-in's own build defines, i.e. the branch the
+		# test must reproduce (or override with PLUGIN_STATIC_DEFINE).
+		get_filename_component(ZENE_AUDIT_SRC_DIR "${ZENE_AUDIT_SRC}" DIRECTORY)
+		file(RELATIVE_PATH ZENE_AUDIT_RELDIR "${CMAKE_SOURCE_DIR}/plugins" "${ZENE_AUDIT_SRC_DIR}")
+		file(GLOB ZENE_AUDIT_HEADERS "${CMAKE_BINARY_DIR}/plugins/${ZENE_AUDIT_RELDIR}/*_export.h")
+		if(NOT ZENE_AUDIT_HEADERS)
+			message(WARNING "PluginExportBranchTest: no generated export header for ${ZENE_AUDIT_SRC}; "
+				"the audit cannot tell which export branch ${ZENE_AUDIT_TARGET} takes")
+			continue()
+		endif()
+		list(GET ZENE_AUDIT_HEADERS 0 ZENE_AUDIT_HEADER)
+		file(READ "${ZENE_AUDIT_HEADER}" ZENE_AUDIT_HEADER_TEXT)
+		if(NOT ZENE_AUDIT_HEADER_TEXT MATCHES "ifdef[ \t]+([A-Za-z0-9_]+)_EXPORTS")
+			message(WARNING "PluginExportBranchTest: ${ZENE_AUDIT_HEADER} names no <target>_EXPORTS condition")
+			continue()
+		endif()
+		set(ZENE_AUDIT_CONDITION "${CMAKE_MATCH_1}_EXPORTS")
+		file(RELATIVE_PATH ZENE_AUDIT_RELSRC "${CMAKE_SOURCE_DIR}" "${ZENE_AUDIT_SRC}")
+		# The per-site verdict is a COMPILE DEFINITION on the test target, because a
+		# target's compile definitions are generator-expression content: a configure-time
+		# `if()` cannot read them, and this file must not guess. The definition is 1 when
+		# the target defines PLUGIN_STATIC_DEFINE or the header's own export condition.
+		if(TARGET PluginExportBranchTest)
+			target_compile_definitions(PluginExportBranchTest PRIVATE
+				"ZENE_PLUGIN_EXPORT_SITE_${ZENE_PLUGIN_EXPORT_SITE_COUNT}_TAKES_EXPORT_BRANCH=$<BOOL:$<OR:$<IN_LIST:PLUGIN_STATIC_DEFINE,$<TARGET_PROPERTY:${ZENE_AUDIT_TARGET},COMPILE_DEFINITIONS>>,$<IN_LIST:${ZENE_AUDIT_CONDITION},$<TARGET_PROPERTY:${ZENE_AUDIT_TARGET},COMPILE_DEFINITIONS>>>>")
+		endif()
+		# Static row content only: the verdict reached the compiler through the macro
+		# above, whose NAME is stable for every configuration, so file(GENERATE) has one
+		# content (it refuses content that evaluates the configuration or object files).
+		string(APPEND ZENE_PLUGIN_EXPORT_SITE_TABLE
+			"X(${ZENE_PLUGIN_EXPORT_SITE_COUNT}, \"${ZENE_AUDIT_TARGET}\", \"${ZENE_AUDIT_CONDITION}\", \"${ZENE_AUDIT_RELSRC}\", ZENE_PLUGIN_EXPORT_SITE_${ZENE_PLUGIN_EXPORT_SITE_COUNT}_TAKES_EXPORT_BRANCH) ")
+		math(EXPR ZENE_PLUGIN_EXPORT_SITE_COUNT "${ZENE_PLUGIN_EXPORT_SITE_COUNT} + 1")
+		set(ZENE_AUDIT_TARGET_LISTED TRUE)
+	endforeach()
+	if(ZENE_AUDIT_TARGET_LISTED)
+		list(APPEND ZENE_PLUGIN_EXPORT_AUDIT_TARGETS "${ZENE_AUDIT_TARGET}")
+	endif()
+endforeach()
+list(LENGTH ZENE_PLUGIN_EXPORT_AUDIT_TARGETS ZENE_PLUGIN_EXPORT_TARGET_COUNT)
+list(JOIN ZENE_PLUGIN_EXPORT_AUDIT_TARGETS ";" ZENE_PLUGIN_EXPORT_TARGET_LIST)
+file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/PluginExportBranchTargets.h" CONTENT
+"#ifndef ZENE_PLUGIN_EXPORT_BRANCH_TARGETS_H
+#define ZENE_PLUGIN_EXPORT_BRANCH_TARGETS_H
+
+#define ZENE_PLUGIN_EXPORT_SITE_COUNT ${ZENE_PLUGIN_EXPORT_SITE_COUNT}
+#define ZENE_PLUGIN_EXPORT_TARGET_COUNT ${ZENE_PLUGIN_EXPORT_TARGET_COUNT}
+#define ZENE_PLUGIN_EXPORT_CANARY_PRESENT $<BOOL:$<IN_LIST:RnnoiseDenoiserEffectTest,${ZENE_PLUGIN_EXPORT_TARGET_LIST}>>
+
+// X(index, target, export condition, plug-in source, verdict macro). The rows sit on
+// one line: each X-macro use expands to a single entry, and C++ sees the whole row
+// list inside a braced initialiser.
+#define ZENE_PLUGIN_EXPORT_SITES(X) ${ZENE_PLUGIN_EXPORT_SITE_TABLE}
+#endif
+")
+if(TARGET PluginExportBranchTest)
+	target_include_directories(PluginExportBranchTest PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+	target_sources(PluginExportBranchTest PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/PluginExportBranchTargets.h")
 endif()
