@@ -41,6 +41,27 @@ read that carries the subscribe reply. So `LiveSession` went on from a later seq
 
 The round-1 tables below still stand. The criterion-2 test now has 47 checks.
 
+## Round 3: startup and resync cleanup, pipe smoke, verification
+
+Merge `00ccb2579a` (2 parents; brings train-31 into this branch). Fix commit `6662d9e339` closes `LiveSession`'s
+connection when the initial read fails, and `5a9e50574f` adds the named-pipe smoke. Logs are in
+`~/.local/share/zene-bunny-fix/qwen/runs/Q050-334.2.r3/logs/`.
+
+| Command | Log file | Exit |
+|---|---|---|
+| `cmake --build build --target zene -- -j4` (CMake re-ran: "Generating done" count 1; the WIN32 block parses) | `017-build-reconfigure.log` | 0 |
+| `ctest -N -R SessionSdk` (lists `ZeneSessionSdkTypecheck` and `ControlSessionSdk` only) | `018-ctest-list-sdk-final.log` | 0 |
+| `ctest -R "^ZeneSessionSdkTypecheck$" --output-on-failure` | `019-ctest-typecheck-final.log` | 0 |
+| `ctest -R "^ControlSessionSdk$" --output-on-failure` (`LastTest.log`: 53 `PASS:` lines) | `020-ctest-sdk-final.log` | 0 |
+| `ctest -R "^ControlSessionSdk$" --repeat until-fail:5` (5 of 5 "Passed") | `021-ctest-sdk-repeat5.log` | 0 |
+| Mutation A: `resync()` catch without `subscription.unsubscribe()` (`client.ts`), restored | `022-ctest-sdk-mutation-resync.log` | 8 |
+| Mutation B, first attempt: a sed line-offset error removed the `start` signature and connect line, not the cleanup. Discarded; the tree was restored | `023-ctest-sdk-mutation-startup.log` | 8 (invalid) |
+| Mutation B, valid: `LiveSession.start()` try/catch removed (`live-session.ts`), restored | `024-ctest-sdk-mutation-startup.log` | 8 |
+| `feature_check.py` (7 of 8 rows PASS; `complexity` FAIL: new `run` in `tests/session-sdk-pipe-smoke.py`, CCN 16) | `025-feature-check-final.log` | 1 |
+
+The mutation failures are "timed out waiting for the failed resync to unsubscribe" (A) and the child-exit check (B).
+The pipe smoke is CI-only on Windows; this Linux host runs only the POSIX socket path.
+
 ## Acceptance
 
 All runs below were from `build/tests` with `QT_QPA_PLATFORM=offscreen`, no `LMMS_PLUGIN_DIR`, and Node v22.23.1.
