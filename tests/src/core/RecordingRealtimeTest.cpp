@@ -1304,6 +1304,9 @@ private slots:
 		{
 			lmms::recordoptions::setOptions({0, 0, mode});
 			ArmedClip armed = armedClip(false);
+			// A previous Overdub loop or an explicit track-wide setting must not make Replace or
+			// Keep History passes audible against the selected record mode.
+			if (mode != lmms::recordoptions::Mode::Overdub) { armed.track->takeLanes().setPlayAllTakes(true); }
 			recordThreeLoopPasses(armed.clip);
 			const int groupId = armed.clip->id();
 			QCOMPARE(armed.track->takeLanes().laneCount(), 3);
