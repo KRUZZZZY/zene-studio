@@ -27,6 +27,8 @@
 #include <algorithm>
 
 #include <QAbstractTableModel>
+#include <QApplication>
+#include <QCloseEvent>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QItemSelectionModel>
@@ -435,6 +437,20 @@ bool ItemListPanel::eventFilter(QObject* watched, QEvent* event)
 		default: return false;
 	}
 	return true;
+}
+
+void ItemListPanel::closeEvent(QCloseEvent* event)
+{
+	// The list is a Qt::Tool: the focus and the active window went with it, so closing hands them back to the canvas the
+	// list belongs to, as leaving any other tool window does (Q050-369).
+	QWidget* canvas = parentWidget();
+	if (canvas != nullptr && (QApplication::focusWidget() == this || isAncestorOf(QApplication::focusWidget())
+		|| isActiveWindow()))
+	{
+		canvas->activateWindow();
+		canvas->setFocus(Qt::OtherFocusReason);
+	}
+	QWidget::closeEvent(event);
 }
 
 ShellButton* itemlists::listButton(const QString& surface, QWidget* canvas, QWidget* parent)

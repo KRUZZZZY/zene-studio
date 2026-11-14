@@ -47,6 +47,7 @@
 #include "Engine.h"
 #include "FontHelper.h"
 #include "GuiApplication.h"
+#include "ItemList.h"
 #include "Knob.h"
 #include "MainWindow.h"
 #include "MidiClip.h"
@@ -55,6 +56,7 @@
 #include "ProjectJournal.h"
 #include "SampleClip.h"
 #include "SampleThumbnail.h"
+#include "ShellChrome.h"
 #include "StringPairDrag.h"
 #include "TextFloat.h"
 #include "TimeLineWidget.h"
@@ -2083,6 +2085,9 @@ AutomationEditorWindow::AutomationEditorWindow() :
 	editActionsToolBar->addAction(m_editTanAction);
 	editActionsToolBar->addAction(m_flipXAction);
 	editActionsToolBar->addAction(m_flipYAction);
+	editActionsToolBar->addSeparator();
+	// 0.5.0 theme 10: the clip's points as an editable list (window.item_list, as Ctrl+Shift+L in the automation editor).
+	editActionsToolBar->addWidget(itemlists::listButton(QStringLiteral("automation"), m_editor, editActionsToolBar));
 
 	// Interpolation actions
 	DropToolBar *interpolationActionsToolBar = addDropToolBarToTop(tr("Interpolation controls"));
