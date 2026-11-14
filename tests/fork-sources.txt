@@ -813,6 +813,15 @@ tests/src/plugins/PluginExportBranchTest.cpp
 docs/qwen-fixes-2026-10/cluster-ci-64c5b539b5120b17.md
 docs/qwen-fixes-2026-10/sol-train-30-export-integration.md
 
+# Train 41: retain the independently accepted QFileInfo date regression and its report.
+tests/Qt5QFileInfoDateCheck.py
+docs/qwen-fixes-2026-10/cluster-ci-84e380615213284e.md
+
+# Train 41: hosted portability regressions and verification report.
+tests/src/core/MountNamespaceHandshakeTest.cpp
+tests/train-41-portability-check.py
+docs/qwen-fixes-2026-10/sol-train-30-hosted-followup.md
+
 include/AccessibilityAudit.h
 
 # Train 39: portable hosted compiler and executable-debug regression probes and repair evidence.
