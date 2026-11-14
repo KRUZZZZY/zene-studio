@@ -198,6 +198,18 @@ async function checkResyncReadFailure(path: string, editor: ZeneClient): Promise
 	await reader.close();
 }
 
+async function checkQueueLimitBoundary(path: string): Promise<void> {
+	const own = await ZeneClient.connect({ path });
+	const sub = await own.subscribe({ queueLimit: 4096 });
+	check(sub.queueLimit === 4096, "queue_limit 4096 (the documented max) is accepted and reported back");
+	await sub.unsubscribe();
+	const tooBig = await refusal(own.subscribe({ queueLimit: 4097 }));
+	check(tooBig.kind === "invalid_args" && tooBig.command === "events.subscribe",
+		"queue_limit 4097 is refused invalid_args (the max is 4096)");
+	check((await own.call("control.ping")).pong === true, "the connection still answers after the boundary refusal");
+	await own.close();
+}
+
 /**
  * An edit made INSIDE a resync's read, after its subscription started: the instance has written the event to every
  * subscriber (nothing queued, each at the current seq), and a ping on the reading connection returns after that
@@ -384,6 +396,7 @@ async function main(argv: string[]): Promise<number> {
 	const { sub, events } = await checkReadEditEvent(client, editor);
 	await checkIteratorAndUnsubscribe(client, editor, sub, events);
 	await checkResyncReadFailure(path, editor);
+	await checkQueueLimitBoundary(path);
 	await checkResyncKeepsEventsDuringRead(path, editor);
 	await checkLiveSession(path, editor);
 	await client.close();

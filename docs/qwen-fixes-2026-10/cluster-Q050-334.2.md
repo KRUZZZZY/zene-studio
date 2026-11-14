@@ -39,7 +39,7 @@ read that carries the subscribe reply. So `LiveSession` went on from a later seq
 | 5 repeats | `ctest -R "^ControlSessionSdk$" --repeat until-fail:5` (`ctest-6-repeat.log`): 5 of 5 passed | 0 |
 | Gates (copy of `feature_check.py`, log path only) | `feature-check-2.log`: all 8 rows PASS | 0 |
 
-The round-1 tables below still stand. The criterion-2 test now has 53 checks.
+The round-1 tables below still stand. The criterion-2 test now has 56 checks.
 
 ## Round 3: startup and resync cleanup, pipe smoke, verification
 
@@ -62,6 +62,7 @@ connection when the initial read fails, and `5a9e50574f` adds the named-pipe smo
 | `feature_check.py` after the refactor (all 8 rows PASS, `complexity` included) | `027-feature-check-refactor.log` | 0 |
 | `bash tests/fork-sources-gate.sh` after the refactor (`PASS: every tracked source in scope is registered`) | `028-gate-fork-sources-refactor.log` | 0 |
 | `ctest -R "^ControlSessionSdk$" --output-on-failure` re-run for the count (`build/tests/Testing/Temporary/LastTest.log`: 53 `PASS:` lines) | `029-ctest-sdk-recheck-029.log` | 0 |
+| `ctest -R "^ControlSessionSdk$" --output-on-failure` after `checkQueueLimitBoundary` was added (`build/tests/Testing/Temporary/LastTest.log`: 56 `PASS:` lines, the three new ones included) | `034-ctest-sdk-boundary.log` | 0 |
 
 The complexity failure was fixed by splitting `run()` into `check_ready`, `run_sdk` and `check_quit` (all CCN 10 or
 below). The baseline was not edited and `--reanchor` was not used.
@@ -78,7 +79,7 @@ re-measured in `Q050-334.2.r3/logs/029-ctest-sdk-recheck-029.log`.
 | Criterion | Test | Command | Exit |
 |---|---|---|---|
 | A versioned package exports public types, includes a usage example that typechecks, and documents connection, read/edit calls, subscriptions, errors, and resync | `ZeneSessionSdkTypecheck`: strict `tsc` over `src/`, `examples/live-view.ts` (imported by package name) and `test/`, then the `dist` build emitting `index.js` + `index.d.ts`. `ControlSessionSdk`: `SDK_VERSION` equals the `package.json` semver, and the example runs against a real instance. The docs are `tools/zene-session-sdk/README.md` (sections Connect, Read and edit, Subscribe to changes, Errors, Resync) and `CHANGELOG.md` | `ctest -R "SessionSdk" --output-on-failure` (`r1/logs/ctest-9-restored-final.log`) | 0 |
-| An integration test uses the SDK against a real Zene instance to connect, read state, edit, receive the corresponding event, unsubscribe, and exercise recovery after disconnect or overflow | `ControlSessionSdk`: `tests/control-session-sdk.py` starts a headless `zene` and runs `tools/zene-session-sdk/test/integration.ts`, 53 PASS lines (round 3, measured in `r3/logs/029-ctest-sdk-recheck-029.log`) through the SDK's own exports, covering connect, read, the SDK's `track.add` arriving as its event, unsubscribe stopping events, overflow (held 4 of 4, notice detected, auto-resync, missed count, state complete) and disconnect (stale, retries, `missed === 2`, nothing replayed, next change arrives) | same run; also `ctest -R "^ControlSessionSdk$" --repeat until-fail:5` (`r1/logs/ctest-2-repeat.log`): 5 of 5 passed | 0 |
+| An integration test uses the SDK against a real Zene instance to connect, read state, edit, receive the corresponding event, unsubscribe, and exercise recovery after disconnect or overflow | `ControlSessionSdk`: `tests/control-session-sdk.py` starts a headless `zene` and runs `tools/zene-session-sdk/test/integration.ts`, 56 PASS lines (round 3, measured in `r3/logs/034-ctest-sdk-boundary.log`; 53 in `029`, before the boundary check) through the SDK's own exports, covering connect, read, the SDK's `track.add` arriving as its event, unsubscribe stopping events, overflow (held 4 of 4, notice detected, auto-resync, missed count, state complete) and disconnect (stale, retries, `missed === 2`, nothing replayed, next change arrives) | same run; also `ctest -R "^ControlSessionSdk$" --repeat until-fail:5` (`r1/logs/ctest-2-repeat.log`): 5 of 5 passed | 0 |
 
 ## Revert proof
 
@@ -153,7 +154,8 @@ Round 1 and round 2 gate logs are not in the round-3 folder; see the round folde
 
 Run in this pass (logs in `Q050-334.2.r3/logs/`): `submit_check.py $W Q050-334.2` exit 0, `RESULT: PASS - submit`, no FAIL
 row, three WARN rows explained below (`031-submit-check-final.log`); `feature_check.py $W` exit 0, 8 of 8 rows PASS
-(`032-feature-check-submit.log`). The round-3 ctest and mutation runs (018 to 029) are listed under "Round 3" above.
+(`032-feature-check-submit.log`). The round-3 ctest and mutation runs (018 to 029) are listed under "Round 3" above. A later pass added the queue_limit
+boundary check: `034` ctest exit 0 (56 PASS), `035` typecheck exit 0, `036` feature_check exit 0 (8 of 8 rows PASS).
 
 - **Each new test fails with the product change reverted, then passes restored.** Round 1 (table above): with `src/`
   moved away, `ctest -R "SessionSdk" --output-on-failure` exit 8 (`ctest-7-reverted-final.log`); restored, exit 0
@@ -164,7 +166,7 @@ row, three WARN rows explained below (`031-submit-check-final.log`); `feature_ch
 - **Every acceptance criterion is proven by a test I ran.** Criterion 1 (typed package, example, docs): `ZeneSessionSdkTypecheck`
   exit 0 (`019`), and `ControlSessionSdk` exit 0 (`020`, `SDK_VERSION` and the example). Criterion 2 (connect, read,
   edit, event, unsubscribe, recovery after disconnect or overflow): `ControlSessionSdk` exit 0 (`020`, 53 PASS),
-  `--repeat until-fail:5` exit 0 (`021`, 5 of 5), recheck exit 0 (`029`, 53 PASS). The user-visible path is the agent
+  `--repeat until-fail:5` exit 0 (`021`, 5 of 5), recheck exit 0 (`029`, 53 PASS), boundary run exit 0 (`034`, 56 PASS). The user-visible path is the agent
   control socket, driven through the SDK's exports in `tools/zene-session-sdk/test/integration.ts`.
 - **Each edit is one undo step; honest reversibility classes.** No command is new or changed: the submit gate's
   agent-command row reports "no command file changed" (PASS, `031`). The SDK's edits go through the existing registered
@@ -183,8 +185,11 @@ row, three WARN rows explained below (`031-submit-check-final.log`); `feature_ch
   (no GUI for events). Edge cases and where each is covered:
   - default `queue_limit` 256: `tests/control-project-events.py:95` (stage 1, `ControlProjectEvents`; not re-run).
   - `queue_limit` 0 gives `invalid_args`: `control-project-events.py:98` (stage 1; not re-run).
-  - documented max 4096: **not covered**. The cap is documented at `src/core/ControlCommandsEvents.cpp:89`; I found no
-    test that asks for 4097. Stated as a gap, not claimed.
+  - documented max 4096: **covered** by `checkQueueLimitBoundary` in `tools/zene-session-sdk/test/integration.ts` (`034`,
+    exit 0). `queue_limit` 4096 is accepted and reported back; 4097 is refused `invalid_args` on `events.subscribe`, from the
+    argsSchema bound `integerProperty(1, 4096)` at `src/core/ControlCommandsEvents.cpp:92`, before the command body runs;
+    the connection still answers afterwards. This is the SDK-layer proof; the earlier finding that no test asked for 4097
+    predates it.
   - second subscribe gives `busy`: `control-project-events.py:97`; SDK `integration.ts:119-120` (`020`, exit 0).
   - unsubscribe after end: stage 1 `control-project-events.py:141-142` (`not_found`); the SDK returns `null` client-side
     (`integration.ts:162`, `020`).
@@ -199,7 +204,8 @@ row, three WARN rows explained below (`031-submit-check-final.log`); `feature_ch
     `control-project-events.py:106`.
   - undo shifting rows: `integration.ts:143` (undo is its own event kind, `020`). Stale generation: the disconnect and
     reconnect path above. Reopen after save: **not exercised**; this unit does not touch save or load.
-  - Zero-test check: `ControlSessionSdk` runs show 53 PASS lines in `LastTest.log` (`020`, `029`), and `018` lists exactly
+  - Zero-test check: `ControlSessionSdk` runs show 56 PASS lines in `LastTest.log` (`034`, the current run); `020` and `029` show 53, from before the boundary
+    check; `018` lists exactly
     the two SDK tests. I did not re-verify that the round-3 ctest runs were from `build/tests`.
 - **Portability: Qt 5.15, MSVC and macOS.** This unit adds no C++ and no Qt API, so no Qt-6-only, `windows.h` or
   `std::filesystem` item is present. POSIX is verified on this Linux host: `ControlSessionSdk` (`020`, `029`) and the
