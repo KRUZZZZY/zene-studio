@@ -30,6 +30,9 @@
  *  The second case arms a master-tap route (recordertaps::Source::Master, the resampling take a
  *  recording of the master output makes) on an empty song with every earcon queued, renders
  *  periods, and requires every recorded sample to be exactly zero - and the earcons still pending.
+ *
+ *  The third case drives AudioEngine::renderNextBuffer itself: an empty song is silent, a queued
+ *  EditApplied earcon appears there equally on both channels, and a disabled one does not.
  */
 
 #include <QtTest>
@@ -39,6 +42,7 @@
 #include <QFile>
 #include <QTemporaryDir>
 
+#include <algorithm>
 #include <cmath>
 #include <memory>
 #include <vector>
@@ -245,6 +249,63 @@ private slots:
 			if (earcons::nextSample() != 0.f) { ++heard; }
 		}
 		QVERIFY2(heard > 0, "the recorder path consumed the queued earcons");
+	}
+
+	//! The device output buffer itself carries a queued earcon, equally on both channels.
+	void theDeviceOutputCarriesTheEarcon()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		song->updateLength();
+
+		for (auto category = 0; category < static_cast<int>(earcons::Category::Count); ++category)
+		{
+			earcons::setEnabled(static_cast<earcons::Category>(category), false);
+		}
+		earcons::beginBuffer();
+		for (int i = 0; i < 20000; ++i) { (void)earcons::nextSample(); }
+
+		const int frames = 4 * Engine::audioEngine()->framesPerPeriod();
+		std::vector<float> buf(2 * static_cast<std::size_t>(frames));
+
+		const auto render = [&buf, frames] {
+			std::fill(buf.begin(), buf.end(), 0.f);
+			Engine::audioEngine()->renderNextBuffer(
+				InterleavedBufferView<float>{buf.data(), 2, static_cast<f_cnt_t>(frames)});
+		};
+		const auto peak = [&buf] {
+			float result = 0.f;
+			for (const float value : buf) { result = std::max(result, std::fabs(value)); }
+			return result;
+		};
+
+		// The empty song and the silent earcon bus render exactly nothing.
+		render();
+		QCOMPARE(peak(), 0.f);
+
+		earcons::setEnabled(earcons::Category::Edit, true);
+		earcons::setLevel(earcons::Category::Edit, 1.f);
+		earcons::play(earcons::Sound::EditApplied);
+		render();
+		QVERIFY2(peak() > 0.01f, "the device output did not carry the earcon");
+		for (int frame = 0; frame < frames; ++frame)
+		{
+			QCOMPARE(buf[2 * frame], buf[2 * frame + 1]);
+		}
+
+		// Drain the rest of that earcon from the monitoring bus before testing the silent one.
+		earcons::beginBuffer();
+		for (int i = 0; i < 20000; ++i) { (void)earcons::nextSample(); }
+
+		earcons::setEnabled(earcons::Category::Edit, false);
+		earcons::play(earcons::Sound::EditApplied);
+		render();
+		QCOMPARE(peak(), 0.f);
+
+		for (auto category = 0; category < static_cast<int>(earcons::Category::Count); ++category)
+		{
+			earcons::setEnabled(static_cast<earcons::Category>(category), false);
+		}
 	}
 
 	//! A real song loop wrap on the render path queues the LoopWrap earcon through Song::enforceLoop.
