@@ -34,11 +34,11 @@ namespace lmms::carlavst2
 {
 struct LegacyCalls
 {
- std::function<uint32_t()> programCount;
- std::function<void(uint32_t)> setProgram;
- std::function<void(const char*)> setChunk;
- std::function<uint32_t()> parameterCount;
- std::function<void(uint32_t, float)> setParameter;
+	std::function<uint32_t()> programCount;
+	std::function<void(uint32_t)> setProgram;
+	std::function<void(const char*)> setChunk;
+	std::function<uint32_t()> parameterCount;
+	std::function<void(uint32_t, float)> setParameter;
 };
 // Must equal legacyvst2::legacyStateTagName() in include/LegacyVst2Conversion.h.
 CARLABASE_EXPORT QString legacyStateTag();

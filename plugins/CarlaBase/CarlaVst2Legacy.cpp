@@ -28,48 +28,74 @@
 
 namespace lmms::carlavst2
 {
-QString legacyStateTag() { return QStringLiteral("zene-legacy-vst2"); }
+QString legacyStateTag()
+{
+	return QStringLiteral("zene-legacy-vst2");
+}
 
 void applyLegacyState(const QDomElement& legacy, const LegacyCalls& calls)
 {
- bool ok = false;
- const int program = legacy.attribute("program").toInt(&ok);
- if (ok && program >= 0 && static_cast<uint32_t>(program) < calls.programCount()) { calls.setProgram(program); }
- const QByteArray chunk = legacy.attribute("chunk").toUtf8();
- if (!chunk.isEmpty() && !QByteArray::fromBase64(chunk).isEmpty()) { calls.setChunk(chunk.constData()); return; }
- const int count = legacy.attribute("numparams").toInt();
- for (int i = 0; i < count; ++i)
- {
-  const QString value = legacy.attribute(QStringLiteral("param") + QString::number(i));
-  const int first = value.indexOf(':');
-  const int last = value.lastIndexOf(':');
-  bool indexOk = false, valueOk = false;
-  const int index = value.left(first).toInt(&indexOk);
-  const float number = LocaleHelper::toFloat(value.mid(last + 1), &valueOk);
-  if (first < 0 || last <= first || !indexOk || index < 0 ||
-      static_cast<uint32_t>(index) >= calls.parameterCount() || !valueOk)
-  { qWarning() << "Invalid legacy VST2 parameter" << value; continue; }
-  calls.setParameter(static_cast<uint32_t>(index), number);
- }
+	bool ok = false;
+	const int program = legacy.attribute("program").toInt(&ok);
+	if (ok && program >= 0 && static_cast<uint32_t>(program) < calls.programCount())
+	{
+		calls.setProgram(program);
+	}
+	const QByteArray chunk = legacy.attribute("chunk").toUtf8();
+	if (!chunk.isEmpty() && !QByteArray::fromBase64(chunk).isEmpty())
+	{
+		calls.setChunk(chunk.constData());
+		return;
+	}
+	const int count = legacy.attribute("numparams").toInt();
+	for (int i = 0; i < count; ++i)
+	{
+		const QString value = legacy.attribute(QStringLiteral("param") + QString::number(i));
+		const int first = value.indexOf(':');
+		const int last = value.lastIndexOf(':');
+		bool indexOk = false, valueOk = false;
+		const int index = value.left(first).toInt(&indexOk);
+		const float number = LocaleHelper::toFloat(value.mid(last + 1), &valueOk);
+		if (first < 0 || last <= first || !indexOk || index < 0 ||
+			static_cast<uint32_t>(index) >= calls.parameterCount() || !valueOk)
+		{
+			qWarning() << "Invalid legacy VST2 parameter" << value;
+			continue;
+		}
+		calls.setParameter(static_cast<uint32_t>(index), number);
+	}
 }
 
 bool hasModelSettings(const QDomElement& state, const QString& name)
 {
- if (!state.firstChildElement(name).isNull() || !state.firstChildElement("connection").firstChildElement(name).isNull()) { return true; }
- for (auto child = state.firstChildElement(); !child.isNull(); child = child.nextSiblingElement())
-  if (child.attribute("nodename") == name) { return true; }
- return false;
+	if (!state.firstChildElement(name).isNull() || !state.firstChildElement("connection").firstChildElement(name).isNull())
+	{
+		return true;
+	}
+	for (auto child = state.firstChildElement(); !child.isNull(); child = child.nextSiblingElement())
+		if (child.attribute("nodename") == name)
+		{
+			return true;
+		}
+	return false;
 }
 
 void warnExtraModelSettings(const QDomElement& state, std::size_t count)
 {
- for (auto child = state.firstChildElement(); !child.isNull(); child = child.nextSiblingElement())
- {
-  const QString name = child.tagName();
-  if (!name.startsWith("PARAM_KNOB_")) { continue; }
-  bool ok = false;
-  const auto index = name.mid(11).toULongLong(&ok);
-  if (ok && index >= count) { qWarning() << "Ignoring out-of-range VST2 model" << name; return; }
- }
+	for (auto child = state.firstChildElement(); !child.isNull(); child = child.nextSiblingElement())
+	{
+		const QString name = child.tagName();
+		if (!name.startsWith("PARAM_KNOB_"))
+		{
+			continue;
+		}
+		bool ok = false;
+		const auto index = name.mid(11).toULongLong(&ok);
+		if (ok && index >= count)
+		{
+			qWarning() << "Ignoring out-of-range VST2 model" << name;
+			return;
+		}
+	}
 }
 }
