@@ -1320,13 +1320,20 @@ private slots:
 			const QJsonObject state = compStateOf(armed.track);
 			QCOMPARE(state.value(QStringLiteral("lane_count")).toInt(), 3);
 			// The top-level take_count also counts the shell clip: a clip with no take
-				// group has the default laneIndex 0, so lane 0 counts it. The three-take proof
-				// is lane_count == 3 plus the take_groups[0].takes size check below.
+			// group has the default laneIndex 0, so lane 0 counts it. The three-take proof
+			// is lane_count == 3 plus the take_groups[0].takes size check below.
 			const QJsonArray groups = state.value(QStringLiteral("take_groups")).toArray();
 			QCOMPARE(static_cast<int>(groups.size()), 1);
 			const QJsonObject group = groups.at(0).toObject();
 			QCOMPARE(static_cast<int>(group.value(QStringLiteral("takes")).toArray().size()), 3);
 			QCOMPARE(group.value(QStringLiteral("active_lane")).toInt(), newest);
+			const bool overdub = mode == lmms::recordoptions::Mode::Overdub;
+			const char* modeName = overdub ? "Overdub" : (mode == lmms::recordoptions::Mode::Replace ? "Replace" : "Keep History");
+			const std::vector<bool> expectedAudible = overdub ? std::vector<bool>{true, true, true} : std::vector<bool>{false, false, true};
+			QVERIFY2(audibleFlags(armed.track) == expectedAudible,
+				qPrintable(QStringLiteral("%1: wrong audible flags for the loop passes").arg(modeName)));
+			QVERIFY2(state.value(QStringLiteral("play_all_takes")).toBool() == overdub,
+				qPrintable(QStringLiteral("%1: play_all_takes is not %2").arg(modeName).arg(overdub ? "on" : "off")));
 			lmms::recordoptions::setOptions({});
 			delete armed.track;
 		}
@@ -1400,6 +1407,13 @@ private slots:
 			const std::vector<bool> audible = audibleFlags(armed.track);
 			QVERIFY(active >= 0);
 			QCOMPARE(audible.size(), std::size_t{3});
+			const bool overdub = mode == lmms::recordoptions::Mode::Overdub;
+			const char* modeName = overdub ? "Overdub" : "Replace";
+			const std::vector<bool> expectedAudible = overdub ? std::vector<bool>{true, true, true} : std::vector<bool>{false, false, true};
+			QVERIFY2(audible == expectedAudible,
+				qPrintable(QStringLiteral("%1: wrong audible flags before the save").arg(modeName)));
+			QVERIFY2(playAll == overdub,
+				qPrintable(QStringLiteral("%1: Play all takes is not %2 before the save").arg(modeName).arg(overdub ? "on" : "off")));
 
 			QTemporaryDir dir;
 			QVERIFY(dir.isValid());
