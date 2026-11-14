@@ -1,0 +1,699 @@
+From a1deda8dc9ad198e5a8af5725896ddb0ba9b356b Mon Sep 17 00:00:00 2001
+From: Zene train Sol <noreply@zene.invalid>
+Date: Sat, 14 Nov 2026 17:04:59 +0000
+Subject: [PATCH] fix(train-sol): Fixed all five hosted portability causes,
+ preserved dependency pins and test assertions, and added compiler and clock
+ regressions. Targeted rebuild, 17 tests and unchanged gates pa
+
+Sol-Repair-Id: sol-repair-1794675899200948648
+---
+ .github/vcpkg/ports/pcre2/portfile.cmake      |   4 +-
+ .../sol-train-31-hosted-portability.md        | 100 +++++++++
+ plugins/NeuralAmp/tests/NamHarnessCpuClock.h  |  35 ++++
+ plugins/NeuralAmp/tests/nam_harness.cpp       |  17 +-
+ tests/CMakeLists.txt                          |   9 +
+ tests/fork-sources.txt                        |   4 +
+ tests/src/core/ImportTrackIoTest.cpp          |   4 +-
+ tests/src/core/RemotePluginShmFifoTest.cpp    |  26 ++-
+ tests/src/gui/Warp/SampleClipWarpEditTest.cpp |   6 +-
+ .../gui/Warp/SampleClipWarpEditTestSupport.h  |  16 ++
+ tests/train-43-portability-check.py           | 198 ++++++++++++++++++
+ tests/upstream-modifications.txt              |  10 +
+ tests/vcpkg-pcre2-gitlink-test.py             |  44 +++-
+ 13 files changed, 453 insertions(+), 20 deletions(-)
+ create mode 100644 docs/qwen-fixes-2026-10/sol-train-31-hosted-portability.md
+ create mode 100644 plugins/NeuralAmp/tests/NamHarnessCpuClock.h
+ create mode 100644 tests/train-43-portability-check.py
+
+diff --git a/.github/vcpkg/ports/pcre2/portfile.cmake b/.github/vcpkg/ports/pcre2/portfile.cmake
+index 6608720244..e0e6de6a4f 100644
+--- a/.github/vcpkg/ports/pcre2/portfile.cmake
++++ b/.github/vcpkg/ports/pcre2/portfile.cmake
+@@ -5,7 +5,9 @@ function(zene_pcre2_patch name expected_sha512)
+     string(JSON patch_content GET "${encoded_patch}" content)
+     set(path "${CURRENT_BUILDTREES_DIR}/zene-patches/${name}")
+     file(MAKE_DIRECTORY "${CURRENT_BUILDTREES_DIR}/zene-patches")
+-    file(WRITE "${path}" "${patch_content}")
++    # CONFIGURE appends one final newline; the pinned patches already end in one.
++    string(REGEX REPLACE "\n$" "" patch_content "${patch_content}")
++    file(CONFIGURE OUTPUT "${path}" CONTENT "@patch_content@" @ONLY NEWLINE_STYLE UNIX)
+     file(SHA512 "${path}" actual_sha512)
+     if(NOT actual_sha512 STREQUAL expected_sha512)
+         message(FATAL_ERROR "Upstream patch ${name} SHA512 mismatch")
+diff --git a/docs/qwen-fixes-2026-10/sol-train-31-hosted-portability.md b/docs/qwen-fixes-2026-10/sol-train-31-hosted-portability.md
+new file mode 100644
+index 0000000000..53fe834dbb
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/sol-train-31-hosted-portability.md
+@@ -0,0 +1,100 @@
++# Train 43 hosted portability repair
++
++Source: c20ef591b571e3c3dc7b108107d166497f1b34be; hosted run 43611324689.
++Seven failed jobs expose five causes: macOS deployment-floor barrier availability,
++Qt5 QStringList assignment, MinGW QThread::create availability, Windows ARM64
++POSIX clock linkage, and Windows PCRE2 patch newline hashes. These are source or
++source-controlled dependency defects; the MSVC missing Ninja/compiler messages
++follow the overlay failure, rather than establishing a separate infrastructure outage.
++
++All three FIFO rendezvous and live-thread comparisons remain. Warp workers retain
++their starts and joins. Windows NAM timings use GetThreadTimes kernel plus user CPU
++in microseconds; POSIX keeps CLOCK_THREAD_CPUTIME_ID. PCRE2 keeps every source and
++patch pin, feature and negative control. No deployment target, gate or assertion changes.
++
++## Changed paths and reasons
++
++The modified paths and reasons are recorded under Train 43 in
++`tests/upstream-modifications.txt`; new helper, compiler regression and this report
++are registered together in `tests/fork-sources.txt`.
++
++## Verification
++
++Configure command (owner options, final WASM=ON):
++
++```sh
++cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo -DCMAKE_EXE_LINKER_FLAGS:STRING=-Wl,--strip-debug -DUSE_WERROR:BOOL=ON -DWANT_ABLETON_LINK:BOOL=ON -DWANT_ALSA:BOOL=ON -DWANT_CALF:BOOL=ON -DWANT_CAPS:BOOL=ON -DWANT_CARLA:BOOL=ON -DWANT_CMT:BOOL=ON -DWANT_COLLAB:BOOL=ON -DWANT_DEBUG_CPACK:BOOL=ON -DWANT_GIG:BOOL=ON -DWANT_JACK:BOOL=ON -DWANT_LV2:BOOL=ON -DWANT_MP3LAME:BOOL=ON -DWANT_OGGVORBIS:BOOL=ON -DWANT_OSS:BOOL=ON -DWANT_PORTAUDIO:BOOL=ON -DWANT_PULSEAUDIO:BOOL=ON -DWANT_QT6:BOOL=ON -DWANT_RUBBERBAND:BOOL=ON -DWANT_SDL:BOOL=ON -DWANT_SF2:BOOL=ON -DWANT_SID:BOOL=ON -DWANT_SNDIO:BOOL=ON -DWANT_SOUNDIO:BOOL=ON -DWANT_STEM_SPLIT:BOOL=ON -DWANT_STK:BOOL=ON -DWANT_SUIL:BOOL=ON -DWANT_SWH:BOOL=ON -DWANT_TAP:BOOL=ON -DWANT_VST:BOOL=ON -DWANT_VST3_TEST_INSTRUMENT:BOOL=ON -DWANT_VST_32:BOOL=ON -DWANT_VST_64:BOOL=ON -DWANT_WASM:BOOL=ON -DWANT_WEAKJACK:BOOL=ON -DZENE_TELEMETRY:BOOL=ON -DZENE_WANT_FFMPEG:BOOL=ON -DZENE_WANT_LIBAAF:BOOL=ON -DWANT_COVERAGE:BOOL=OFF -DWANT_CPACK_TARBALL:BOOL=OFF -DWANT_DEBUG_ASAN:BOOL=OFF -DWANT_DEBUG_FPE:BOOL=OFF -DWANT_DEBUG_GPROF:BOOL=OFF -DWANT_DEBUG_MSAN:BOOL=OFF -DWANT_DEBUG_RTSAN:BOOL=OFF -DWANT_DEBUG_TSAN:BOOL=OFF -DWANT_DEBUG_UBSAN:BOOL=OFF -DWANT_WINMM:BOOL=OFF -DWANT_CLAP:STRING=ON -DWANT_VST3:STRING=ON -DLMMS_CLAP_FETCH=ON -DONNXRUNTIME_ROOT=/home/kruzzzzy/.local/zene-deps/onnxruntime-linux-x64-1.28.0 -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache '-DCMAKE_CXX_FLAGS=-isystem /usr/include/cairo -Wno-error=deprecated-declarations -Wno-error=unused-result -Wno-error=sfinae-incomplete' '-DCMAKE_C_FLAGS=-isystem /usr/include/cairo -Wno-error=deprecated-declarations -Wno-error=unused-result -Wno-error=sfinae-incomplete'
++```
++
++Configure exited 0. Only `build` was used; free disk stayed above 67 GB.
++Targeted build command:
++
++```sh
++cmake --build build --target zene RemotePluginShmFifoTest ImportTrackIoTest SampleClipWarpEditTest NeuralAmpHarnessBlockCount -j12
++```
++
++The delegated Qt worker attempted a build despite its scoped edit task and stopped
++that build after noticing the parent build. The first parent link failed because
++two object files were missing; the next build completed with exit 0. No compiler
++error was suppressed. A final rebuild after negative controls is recorded below.
++
++Compiler checks:
++
++```sh
++python3 tests/train-43-portability-check.py --source-root . --build-dir build --moc /usr/lib/qt6/moc
++python3 tests/vcpkg-pcre2-gitlink-test.py
++python3 /tmp/sol43-negative-controls.py
++```
++
++All exited 0 on the fixed sources. The temporary negative-control driver imported
++this committed probe and temporarily restored each of the three original test
++sources using `git show HEAD:<path>` (always restored in `finally`). Each was
++rejected: missing barrier API, missing QThread::create API, and the same ambiguous
++Qt5 QStringList assignment. It also changed the Windows tick divisor from 10 to
++100 and confirmed the clock fixture failed. All four controls rejected the defect.
++The original PCRE2 `file(WRITE)` call with the new Windows-text-write model failed
++(exit 1); explicit Unix generation passed with all three unchanged upstream hashes.
++The literal token control also preserves `@TOKEN@`, `${TOKEN}` and semicolons with
++the named variable defined. Existing API, missing-file and tamper controls remain.
++
++The first runtime run passed 16/16 tests, including all affected native suites and
++both unchanged metric gates. The final 17-entry command adds Train43Portability:
++
++```sh
++cd build/tests
++PATH=/tmp/sol39-lizard125/bin:$PATH PYTHONPATH=/tmp/sol39-lizard125 ctest -R '^(RemotePluginShmFifoTest|ImportTrackIoTest|SampleClipWarpEditTest|NeuralAmpHarnessBlockCount|NeuralAmpHarnessRateValidation|NamLoaderTest_.*|VcpkgPcre2Gitlink|FileLengthGate|NoteCanvasComplexityGate|Train43Portability)$' -j1 --timeout 900 --no-tests=error --output-on-failure
++```
++
++Gate commands from the source root:
++
++```sh
++bash tests/no-upstream-regression-gate.sh
++bash tests/fork-sources-gate.sh
++bash tests/evidence-gate.sh
++bash tests/unregistered-tests-gate.sh
++git diff --check
++```
++
++Initial execution: all exit 0; no stale registrations, no undeclared tests or source
++changes, and no evidence violations. FileLengthGate and NoteCanvasComplexityGate
++also pass without baseline writes (Lizard 1.25.1). Full whitespace checking has no
++exclusions.
++
++Independent Luna review confirmed FIFO visibility/lifetime, worker joins and CPU
++metric meaning. Its PCRE2 literal-token concern was resolved by the one-level
++placeholder plus executed literal-token fixture. CMake compatibility is unchanged:
++the overlay already needs string(JSON), introduced after file(CONFIGURE). Review
++also requested a faithful 32-bit DWORD in the fake Windows API; this was corrected.
++The final QThread probe shadows only that class's create API, avoiding a global
++create macro. Moc is supplied by the configured Qt target rather than PATH.
++
++Native Windows, macOS and full-train hosted verification remain required. Local
++compiler contracts model the failing API surfaces; they do not claim to be native
++cross-platform certification. No candidate branch was excluded.
++
++
++Final results: the final targeted rebuild exited 0. The exact final CTest command
++passed **17/17**, exit 0, in 37.05 seconds, with zero skips. All four registration,
++evidence and provenance gates exited 0 again on the final sources. `git diff
++--check` exited 0. No commits, pushes, queue writes, baseline changes or gate
++exemptions were made. Hosted native and full-train validation remain outstanding.
+diff --git a/plugins/NeuralAmp/tests/NamHarnessCpuClock.h b/plugins/NeuralAmp/tests/NamHarnessCpuClock.h
+new file mode 100644
+index 0000000000..259efb955a
+--- /dev/null
++++ b/plugins/NeuralAmp/tests/NamHarnessCpuClock.h
+@@ -0,0 +1,35 @@
++// NeuralAmp harness CPU clock. GPL-2.0-or-later.
++#pragma once
++
++#include <stdexcept>
++#ifdef _WIN32
++#ifndef NOMINMAX
++#define NOMINMAX
++#endif
++#include <windows.h>
++#else
++#include <ctime>
++#endif
++
++inline double namThreadCpuMicroseconds()
++{
++#ifdef _WIN32
++	FILETIME created{}, exited{}, kernel{}, user{};
++	if (!GetThreadTimes(GetCurrentThread(), &created, &exited, &kernel, &user))
++	{
++		throw std::runtime_error("GetThreadTimes failed");
++	}
++	const auto ticks = [](const FILETIME& time) {
++		return (static_cast<unsigned long long>(time.dwHighDateTime) << 32)
++			| time.dwLowDateTime;
++	};
++	return static_cast<double>(ticks(kernel) + ticks(user)) / 10.0;
++#else
++	timespec time{};
++	if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &time) != 0)
++	{
++		throw std::runtime_error("clock_gettime failed");
++	}
++	return time.tv_sec * 1e6 + time.tv_nsec / 1e3;
++#endif
++}
+diff --git a/plugins/NeuralAmp/tests/nam_harness.cpp b/plugins/NeuralAmp/tests/nam_harness.cpp
+index 4817425363..bee95782c9 100644
+--- a/plugins/NeuralAmp/tests/nam_harness.cpp
++++ b/plugins/NeuralAmp/tests/nam_harness.cpp
+@@ -21,6 +21,7 @@
+  */
+ 
+ #include "nam/NamModel.h"
++#include "NamHarnessCpuClock.h"
+ 
+ #include <algorithm>
+ #include <array>
+@@ -625,16 +626,15 @@ int main(int argc, char** argv)
+ 		std::vector<float> wavOut(wavIn.size(), 0.0f);
+ 		std::vector<float> inB(opt.blockSize), outB(opt.blockSize);
+ 		size_t pos = 0;
+-		timespec t0{}, t1{};
+ 		double cpuUs = 0.0;
+ 		while (pos < wavIn.size())
+ 		{
+ 			const size_t n = std::min(static_cast<size_t>(opt.blockSize), wavIn.size() - pos);
+ 			std::memcpy(inB.data(), wavIn.data() + pos, n * sizeof(float));
+-			clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t0);
++			const double t0 = namThreadCpuMicroseconds();
+ 			model->process(inB.data(), outB.data(), static_cast<int>(n));
+-			clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t1);
+-			cpuUs += (t1.tv_sec - t0.tv_sec) * 1e6 + (t1.tv_nsec - t0.tv_nsec) / 1e3;
++			const double t1 = namThreadCpuMicroseconds();
++			cpuUs += t1 - t0;
+ 			std::memcpy(wavOut.data() + pos, outB.data(), n * sizeof(float));
+ 			pos += n;
+ 		}
+@@ -749,14 +749,11 @@ int main(int argc, char** argv)
+ 		std::memcpy(inBlock.data(), input.data() + off,
+ 			static_cast<size_t>(opt.blockSize) * sizeof(float));
+ 
+-		timespec t0{};
+-		timespec t1{};
+-		clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t0);
++		const double t0 = namThreadCpuMicroseconds();
+ 		model->process(inBlock.data(), outBlock.data(), opt.blockSize);
+-		clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t1);
++		const double t1 = namThreadCpuMicroseconds();
+ 
+-		const double cpuUs = (t1.tv_sec - t0.tv_sec) * 1e6 +
+-			(t1.tv_nsec - t0.tv_nsec) / 1e3;
++		const double cpuUs = t1 - t0;
+ 		cpuTotalUs += cpuUs;
+ 		blockUs.push_back(cpuUs);
+ 
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 526928a9d5..ede78dfedd 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -9382,3 +9382,12 @@ if(TARGET PluginExportBranchTest)
+ 	target_include_directories(PluginExportBranchTest PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+ 	target_sources(PluginExportBranchTest PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/PluginExportBranchTargets.h")
+ endif()
++
++# Train 43: compile hosted API contracts without changing deployment targets.
++if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
++	add_test(NAME Train43Portability COMMAND ${PYTHON3_EXECUTABLE}
++		${CMAKE_CURRENT_SOURCE_DIR}/train-43-portability-check.py
++		--source-root ${CMAKE_SOURCE_DIR} --build-dir ${CMAKE_BINARY_DIR}
++		--moc $<TARGET_FILE:Qt${QT_VERSION_MAJOR}::moc>)
++	set_tests_properties(Train43Portability PROPERTIES TIMEOUT 300)
++endif()
+diff --git a/tests/fork-sources.txt b/tests/fork-sources.txt
+index 05e640c9f6..c450dba204 100644
+--- a/tests/fork-sources.txt
++++ b/tests/fork-sources.txt
+@@ -874,6 +874,10 @@ docs/qwen-fixes-2026-10/cluster-ci-28572f865f7a738c.md
+ docs/qwen-fixes-2026-10/cluster-ci-b38398fa7833e0a4.md
+ docs/qwen-fixes-2026-10/sol-train-31-ci-replay.md
+ 
++# Train 43 hosted compiler contracts, native CPU timing adapter and verification report.
++plugins/NeuralAmp/tests/NamHarnessCpuClock.h
++tests/train-43-portability-check.py
++docs/qwen-fixes-2026-10/sol-train-31-hosted-portability.md
+ include/AccessibilityAudit.h
+ 
+ # Train 39: portable hosted compiler and executable-debug regression probes and repair evidence.
+diff --git a/tests/src/core/ImportTrackIoTest.cpp b/tests/src/core/ImportTrackIoTest.cpp
+index 9da67eca6a..98cab0260e 100644
+--- a/tests/src/core/ImportTrackIoTest.cpp
++++ b/tests/src/core/ImportTrackIoTest.cpp
+@@ -341,7 +341,9 @@ private slots:
+ 	void anUnparsableDocumentDoesNotShiftTheOthers()
+ 	{
+ 		control::transplant::TrackPlan plan;
+-		plan.documents = {UnparsableTrack, trackDocument(Lead)};
++		plan.documents.clear();
++		plan.documents.append(UnparsableTrack);
++		plan.documents.append(trackDocument(Lead));
+ 		plan.need = {0, 1};
+ 		plan.needs.push_back({Ghost, channelDescription(Ghost)});
+ 		plan.needs.push_back({Keys, channelDescription(Keys)});
+diff --git a/tests/src/core/RemotePluginShmFifoTest.cpp b/tests/src/core/RemotePluginShmFifoTest.cpp
+index adb083023b..68a786d578 100644
+--- a/tests/src/core/RemotePluginShmFifoTest.cpp
++++ b/tests/src/core/RemotePluginShmFifoTest.cpp
+@@ -18,7 +18,8 @@
+ #include <QtTest>
+ 
+ #include <atomic>
+-#include <barrier>
++#include <condition_variable>
++#include <mutex>
+ #include <cstdint>
+ #include <limits>
+ #include <stdexcept>
+@@ -30,6 +31,23 @@ using namespace lmms;
+ // RemotePluginShmFifoNoSysIpcProbe.cpp
+ int remotePluginShmFifoValueWithoutSysIpc();
+ 
++// Each rendezvous is used once. The predicate keeps early arrivals blocked until
++// all three callers arrive, and tolerates spurious wakeups on older macOS too.
++class CallerRendezvous
++{
++public:
++	void arrive_and_wait()
++	{
++		std::unique_lock<std::mutex> lock{m_mutex};
++		if (--m_remaining == 0) { m_ready.notify_all(); }
++		else { m_ready.wait(lock, [this] { return m_remaining == 0; }); }
++	}
++private:
++	std::mutex m_mutex;
++	std::condition_variable m_ready;
++	int m_remaining = 3;
++};
++
+ class ShmRemotePluginHarness : public RemotePluginBase
+ {
+ public:
+@@ -106,9 +124,9 @@ private slots:
+ 	void callerTokensStayDistinctDespiteLegacyHashCollision()
+ 	{
+ 		shmFifo::setCallerIdHashForTest(&collidingThreadHash);
+-		std::barrier start{3};
+-		std::barrier captured{3};
+-		std::barrier release{3};
++		CallerRendezvous start;
++		CallerRendezvous captured;
++		CallerRendezvous release;
+ 		using CallerKey = decltype(shmFifo::callerKey());
+ 		const bool callerKeyUsesAddress = std::is_same_v<CallerKey, const void *>;
+ 		CallerKey keys[2]{};
+diff --git a/tests/src/gui/Warp/SampleClipWarpEditTest.cpp b/tests/src/gui/Warp/SampleClipWarpEditTest.cpp
+index 0a371ea96d..65f120ba1c 100644
+--- a/tests/src/gui/Warp/SampleClipWarpEditTest.cpp
++++ b/tests/src/gui/Warp/SampleClipWarpEditTest.cpp
+@@ -430,7 +430,7 @@ private slots:
+ 		std::atomic<bool> holding{false};
+ 		std::atomic<bool> release{false};
+ 		std::atomic<bool> timedOut{false};
+-		std::unique_ptr<QThread> period(QThread::create([&] {
++		std::unique_ptr<QThread> period(new CallableThread([&] {
+ 			const auto lock = Engine::audioEngine()->requestChangesGuard();
+ 			holding = true;
+ 			QElapsedTimer held;
+@@ -460,7 +460,7 @@ private slots:
+ 		std::atomic<bool> holding{false};
+ 		std::atomic<bool> release{false};
+ 		std::atomic<bool> timedOut{false};
+-		std::unique_ptr<QThread> period(QThread::create([&] {
++		std::unique_ptr<QThread> period(new CallableThread([&] {
+ 			const auto lock = Engine::audioEngine()->requestChangesGuard();
+ 			holding = true;
+ 			QElapsedTimer held;
+@@ -548,7 +548,7 @@ private:
+ 		std::atomic<bool> committed{false};
+ 		std::atomic<bool> commitSeen{false};
+ 		SampleClip* clip = m_clip;
+-		std::unique_ptr<QThread> pass(QThread::create([&, clip] {
++		std::unique_ptr<QThread> pass(new CallableThread([&, clip] {
+ 			const WarpSnapshot generation = clip->snapshotWarp();
+ 			const Clip::WarpPassScope scope(*clip, generation);
+ 			seen.before = readInPass(clip);
+diff --git a/tests/src/gui/Warp/SampleClipWarpEditTestSupport.h b/tests/src/gui/Warp/SampleClipWarpEditTestSupport.h
+index 69b91c46c8..3eb43ea3b3 100644
+--- a/tests/src/gui/Warp/SampleClipWarpEditTestSupport.h
++++ b/tests/src/gui/Warp/SampleClipWarpEditTestSupport.h
+@@ -36,9 +36,11 @@
+ #include <QJsonArray>
+ #include <QMenu>
+ #include <QMouseEvent>
++#include <QThread>
+ 
+ #include <cmath>
+ #include <cstring>
++#include <functional>
+ #include <memory>
+ #include <utility>
+ #include <vector>
+@@ -53,6 +55,20 @@
+ namespace lmms::gui
+ {
+ 
++// QThread::create is unavailable in some Qt 5 MinGW builds.
++class CallableThread final : public QThread
++{
++public:
++	explicit CallableThread(std::function<void()> function) : m_function(std::move(function)) {}
++
++protected:
++	void run() override { m_function(); }
++
++private:
++	std::function<void()> m_function;
++};
++
++
+ namespace
+ {
+ 
+diff --git a/tests/train-43-portability-check.py b/tests/train-43-portability-check.py
+new file mode 100644
+index 0000000000..1be61f7622
+--- /dev/null
++++ b/tests/train-43-portability-check.py
+@@ -0,0 +1,198 @@
++#!/usr/bin/env python3
++"""Focused compiler contract regressions for train 43 portability fixes."""
++
++import argparse
++import importlib.util
++from pathlib import Path
++import re
++import shlex
++import shutil
++import subprocess
++import sys
++import tempfile
++
++
++def fail(message):
++    raise RuntimeError(message)
++
++
++def require_file(path):
++    if not path.is_file():
++        fail(f"required file is missing: {path}")
++
++
++def load_train41(root):
++    path = root / "tests/train-41-portability-check.py"
++    require_file(path)
++    spec = importlib.util.spec_from_file_location("train41_portability", path)
++    if spec is None or spec.loader is None:
++        fail(f"cannot load helpers from {path}")
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)
++    return module
++
++
++def run(command, cwd=None):
++    printable = shlex.join([str(part) for part in command])
++    print(f"COMMAND: {printable}", flush=True)
++    result = subprocess.run(command, cwd=cwd, check=False)
++    print(f"RESULT: exit {result.returncode}", flush=True)
++    if result.returncode:
++        fail(f"command failed with exit code {result.returncode}: {printable}")
++
++
++def compiler():
++    tool = shutil.which("c++")
++    if tool is None:
++        fail("required tool is missing: c++")
++    return tool
++
++
++def probe_compile_db_tu(root, build, helpers, relative, label, moc, extra=()):
++    entries = helpers.compile_database(build)
++    entry, command = helpers.entry_for(entries, root, relative)
++    source = root / relative
++    source_text = source.read_text(encoding="utf-8")
++    moc_include = re.search(r'^\s*#\s*include\s+"([^"]+\.moc)"', source_text, re.M)
++    with tempfile.TemporaryDirectory(prefix=f"train43-{label}-") as tmp:
++        shadow = Path(tmp)
++        if moc_include:
++            generated = shadow / moc_include.group(1)
++            run([moc, str(source), "-o", str(generated)], cwd=root)
++            extra = ("-I" + str(shadow), *extra)
++        if label == "barrier":
++            (shadow / "barrier").write_text(
++                "#error <barrier> is forbidden in RemotePluginShmFifoTest\n", encoding="utf-8")
++            extra = ("-I" + str(shadow), *extra)
++        if label == "warp":
++            # Shadow only QThread's declaration, retaining every other Qt API.
++            headers = [Path(arg) / "qthread.h" for arg in command]
++            header = next((path for path in headers if path.is_file()), None)
++            if header is None:
++                fail("configured QtCore qthread.h is missing from the compiler include paths")
++            (shadow / "QtCore").mkdir()
++            text = re.sub(r"\bcreate\b", "train43_unavailable_create", header.read_text())
++            (shadow / "QtCore/qthread.h").write_text(text)
++            for path in (shadow / "QThread", shadow / "QtCore/QThread"):
++                path.write_text("#include <QtCore/qthread.h>\n")
++            extra = ("-I" + str(shadow), *extra)
++        args = helpers.syntax_command(entry, command, extra)
++        run(args, cwd=entry["directory"])
++
++
++def probe_warp(root, build, helpers, moc):
++    probe_compile_db_tu(root, build, helpers,
++                        "tests/src/gui/Warp/SampleClipWarpEditTest.cpp", "warp", moc)
++
++
++def probe_import_assignments(root):
++    source = root / "tests/src/core/ImportTrackIoTest.cpp"
++    require_file(source)
++    text = source.read_text(encoding="utf-8")
++    start = text.index("void anUnparsableDocumentDoesNotShiftTheOthers()")
++    end = text.index("plan.need", start)
++    statements = re.findall(r"\bplan\.documents[^;]*;", text[start:end])
++    if not statements:
++        fail(f"could not extract the actual document construction from {source}")
++    tool = shutil.which("pkg-config")
++    if tool is None:
++        fail("required tool is missing: pkg-config")
++    pkg_command = [tool, "--cflags", "Qt5Core"]
++    print(f"COMMAND: {shlex.join(pkg_command)}", flush=True)
++    flags = subprocess.run(pkg_command, text=True,
++                           stdout=subprocess.PIPE, stderr=subprocess.PIPE)
++    print(f"RESULT: exit {flags.returncode}", flush=True)
++    if flags.returncode:
++        fail(f"pkg-config Qt5Core failed: {flags.stderr.strip()}")
++    with tempfile.TemporaryDirectory(prefix="train43-import-") as tmp:
++        tmpdir = Path(tmp)
++        probe = tmpdir / "import_assignments.cpp"
++        # Preserve the source expressions while mapping the test's plan to a QStringList fixture.
++        body = ["#include <QStringList>", "struct PlanProxy { QStringList& documents; };",
++                "int main() {", "QStringList plan_documents;", "PlanProxy plan{plan_documents};",
++                'const QString UnparsableTrack = QStringLiteral("<track/>");',
++                'auto trackDocument = [](const QString&) { return QStringLiteral("<track/>"); };',
++                'const QString Lead = QStringLiteral("Lead");']
++        body.extend(statements)
++        body.extend(["return plan.documents.isEmpty();", "}"])
++        probe.write_text("\n".join(body) + "\n", encoding="utf-8")
++        run([compiler(), "-std=c++17", "-fPIC", *shlex.split(flags.stdout), "-fsyntax-only", str(probe)], cwd=root)
++
++
++def probe_clock(root):
++    header = root / "plugins/NeuralAmp/tests/NamHarnessCpuClock.h"
++    require_file(header)
++    with tempfile.TemporaryDirectory(prefix="train43-clock-") as tmp:
++        tmpdir = Path(tmp)
++        fake = tmpdir / "fake"
++        fake.mkdir()
++        (fake / "windows.h").write_text(
++            """#pragma once
++#include <cstdint>
++using DWORD = std::uint32_t;
++using HANDLE = void*;
++struct FILETIME { DWORD dwLowDateTime; DWORD dwHighDateTime; };
++inline FILETIME fakeKernel{5, 1}, fakeUser{7, 2};
++inline bool fakeSuccess = true;
++inline HANDLE GetCurrentThread() { return nullptr; }
++inline int GetThreadTimes(HANDLE, FILETIME* created, FILETIME* exited, FILETIME* kernel, FILETIME* user) {
++    *created = {}; *exited = {}; *kernel = fakeKernel; *user = fakeUser; return fakeSuccess;
++}
++""", encoding="utf-8")
++        win = tmpdir / "windows_clock.cpp"
++        win.write_text(
++            f'''#include "{header}"
++#include <cassert>
++int main() {{
++    const double expected = (4294967301.0 + 8589934599.0) / 10.0;
++    assert(namThreadCpuMicroseconds() == expected);
++    fakeSuccess = false;
++    try {{ (void)namThreadCpuMicroseconds(); }} catch (const std::runtime_error&) {{ return 0; }}
++    return 1;
++}}
++''', encoding="utf-8")
++        exe = tmpdir / "windows_clock"
++        run([compiler(), "-std=c++17", "-D_WIN32", "-I" + str(fake), str(win), "-o", str(exe)], cwd=root)
++        run([str(exe)], cwd=root)
++
++        native = tmpdir / "native_clock.cpp"
++        native.write_text(
++            f'''#include "{header}"
++#include <cassert>
++int main() {{
++    const double first = namThreadCpuMicroseconds();
++    const double second = namThreadCpuMicroseconds();
++    assert(first >= 0.0 && second >= first);
++}}
++''', encoding="utf-8")
++        native_exe = tmpdir / "native_clock"
++        run([compiler(), "-std=c++17", str(native), "-o", str(native_exe)], cwd=root)
++        run([str(native_exe)], cwd=root)
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--source-root", required=True, type=Path)
++    parser.add_argument("--build-dir", required=True, type=Path)
++    parser.add_argument("--moc", required=True)
++    args = parser.parse_args()
++    root, build = args.source_root.resolve(), args.build_dir.resolve()
++    helpers = load_train41(root)
++    print("[remote-shm-fifo-no-barrier]", flush=True)
++    probe_compile_db_tu(root, build, helpers,
++                        "tests/src/core/RemotePluginShmFifoTest.cpp", "barrier", args.moc)
++    print("[warp-callable-thread-without-qthread-create]", flush=True)
++    probe_warp(root, build, helpers, args.moc)
++    print("[import-track-qt5-qstringlist-statements]", flush=True)
++    probe_import_assignments(root)
++    print("[neuralamp-cpu-clock]", flush=True)
++    probe_clock(root)
++    return 0
++
++
++if __name__ == "__main__":
++    try:
++        sys.exit(main())
++    except (OSError, RuntimeError, ValueError) as error:
++        print(f"train-43 portability check: {error}", file=sys.stderr)
++        sys.exit(1)
+diff --git a/tests/upstream-modifications.txt b/tests/upstream-modifications.txt
+index f02a6814f8..2534f555f5 100644
+--- a/tests/upstream-modifications.txt
++++ b/tests/upstream-modifications.txt
+@@ -5931,3 +5931,13 @@ include/LadspaManager.h	cluster new-p10-193: keep scanned LADSPA QLibraries aliv
+ src/core/LadspaManager.cpp	cluster new-p10-193: store each successfully scanned QLibrary in m_loadedLibraries instead of destroying the local after the scan, so descriptor function pointers in m_ladspaManagerMap never dangle into an unloaded library; isLibraryLoaded() reports ownership under LMMS_TESTING.
+ include/AutomationEditor.h	new-p15-275: AutomationEditor::m_clip is a QPointer<AutomationClip> (was a raw pointer) so deleting the open clip clears the editor instead of leaving a dangling pointer for update/paint to dereference. Same pattern as the existing QPointer ghost pointers; held by tests/src/gui/AutomationEditorEditingTest.cpp deletingTheOpenClipClearsTheEditor.
+ tests/src/gui/AutomationEditorEditingTest.cpp	# The automation editor can retain a dangling clip pointer
++
++# Train 43: preserve hosted platform support, tests and unchanged gates.
++plugins/NeuralAmp/tests/nam_harness.cpp	Train 43: use native per-thread CPU timing on Windows, retaining POSIX thread timing elsewhere; remove unresolved clock_gettime64 dependency without substituting wall time.
++tests/CMakeLists.txt	Train 43: register compiler contracts for older macOS, Qt5/MinGW and Windows CPU timing; existing runtime assertions and gates retained.
++tests/src/core/RemotePluginShmFifoTest.cpp	Train 43: replace macOS-11-only barriers with condition-variable rendezvous, keeping all three phases and live-thread address comparisons.
++tests/src/core/ImportTrackIoTest.cpp	Train 43: construct the identical document list through Qt5-compatible append calls.
++tests/src/gui/Warp/SampleClipWarpEditTest.cpp	Train 43: use the support header callable QThread subclass while retaining worker starts, waits and all overlap assertions.
++tests/src/gui/Warp/SampleClipWarpEditTestSupport.h	Train 43: house the portable callable QThread runner alongside existing fixture support, keeping both source units below the file-length limit.
++tests/vcpkg-pcre2-gitlink-test.py	Train 43: emulate Windows text-mode patch generation and preserve all existing pin, tamper and missing-input checks.
++.github/vcpkg/ports/pcre2/portfile.cmake	Train 43: explicitly generate Unix patch newlines; preserve literal template tokens and exact upstream SHA512 pins.
+diff --git a/tests/vcpkg-pcre2-gitlink-test.py b/tests/vcpkg-pcre2-gitlink-test.py
+index ab20d8b69c..9b02f09a6b 100644
+--- a/tests/vcpkg-pcre2-gitlink-test.py
++++ b/tests/vcpkg-pcre2-gitlink-test.py
+@@ -258,7 +258,28 @@ def run_portfile(portfile, work, use_head=False, head_version="0123456789abcdef0
+     work.mkdir(parents=True)
+     transcript = work / "transcript.txt"
+     harness = work / "harness.cmake"
+-    harness.write_text(CMAKELIB)
++    # Model Windows text-mode file(WRITE) even when this regression runs on Unix.
++    # Explicit NEWLINE_STYLE UNIX generation must still produce the pinned bytes.
++    windows_write = r'''
++macro(file operation)
++    if("${operation}" STREQUAL "WRITE")
++        set(windows_content "${ARGV2}")
++        if("${ARGV1}" MATCHES "zene-patches/")
++            string(REPLACE "\n" "\r\n" windows_content "${ARGV2}")
++        endif()
++        _file(WRITE "${ARGV1}" "${windows_content}")
++    elseif("${operation}" STREQUAL "CONFIGURE")
++        if("${ARGV}" MATCHES "NEWLINE_STYLE")
++            _file(${ARGV})
++        else()
++            _file(${ARGV} NEWLINE_STYLE CRLF)
++        endif()
++    else()
++        _file(${ARGV})
++    endif()
++endmacro()
++'''
++    harness.write_text(windows_write + CMAKELIB)
+     # -D before -P: cmake applies options in order, and the script needs them at entry.
+     cmd = ["cmake", f"-DPORTFILE={portfile}", f"-DWORK={work}", f"-DTRANSCRIPT_FILE={transcript}",
+            f"-DVCPKG_USE_HEAD_VERSION={'ON' if use_head else 'OFF'}",
+@@ -400,6 +421,26 @@ def check_missing_control(checker, port_dir, tmp):
+                   "a missing gitlink fails loudly instead of silently fetching", combined[-400:])
+ 
+ 
++def check_literal_patch_control(checker, port_dir, tmp):
++    print("control: literal template tokens survive patch materialization")
++    copy = Path(tmp) / "literal-patch"
++    shutil.copytree(port_dir, copy)
++    name = next(iter(PATCH_SHA512))
++    patch = copy / (name + ".json")
++    payload = json.loads(patch.read_text())
++    payload["content"] += "@ZENE_LITERAL_TOKEN@;${ZENE_LITERAL_TOKEN}\n"
++    expected = hashlib.sha512(payload["content"].encode()).hexdigest()
++    patch.write_text(json.dumps(payload) + "\n")
++    port = copy / "portfile.cmake"
++    text = port.read_text().replace(PATCH_SHA512[name], expected)
++    port.write_text('set(ZENE_LITERAL_TOKEN "must-not-expand")\n' + text)
++    proc, entries = run_portfile(port, Path(tmp) / "literal-patch-work")
++    checker.check(proc.returncode == 0 and
++                  f"{name} {expected}" in entries.get("PATCH-BYTES", []),
++                  "literal @ and dollar tokens keep their exact hashed bytes",
++                  (proc.stdout + proc.stderr)[-500:])
++
++
+ def check_patch_control(checker, port_dir, tmp, missing):
+     label = "missing" if missing else "tampered"
+     print(f"control: {label} encoded upstream patch")
+@@ -441,6 +482,7 @@ def main():
+         if port_dir is not None:
+             check_tampered_control(checker, port_dir, tmp)
+             check_missing_control(checker, port_dir, tmp)
++            check_literal_patch_control(checker, port_dir, tmp)
+             check_patch_control(checker, port_dir, tmp, missing=False)
+             check_patch_control(checker, port_dir, tmp, missing=True)
+ 
+-- 
+2.56.0
+

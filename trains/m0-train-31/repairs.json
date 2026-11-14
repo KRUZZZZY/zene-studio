@@ -124,5 +124,102 @@
     "summary": "Fixed the full whitespace check by encoding PCRE2 patches losslessly and reconstructing their exact, hash-verified bytes. Preserved the seven-repair consolidation; affected tests, unchanged gates and independent review pass.",
     "train": "050/m0-train-31",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-31-1794663732263191636"
+  },
+  {
+    "at": "2026-11-14T17:04:59",
+    "base": "c20ef591b571e3c3dc7b108107d166497f1b34be",
+    "branch": "fix/sol-repair-1794675899200948648",
+    "checks": [
+      {
+        "argv": [
+          "bash",
+          "tests/no-upstream-regression-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-31-1794674665162449605",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794675568332488040.log"
+      },
+      {
+        "argv": [
+          "bash",
+          "tests/evidence-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-31-1794674665162449605",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794675576412286284.log"
+      },
+      {
+        "argv": [
+          "bash",
+          "tests/fork-sources-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-31-1794674665162449605",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794675588398685681.log"
+      },
+      {
+        "argv": [
+          "bash",
+          "tests/unregistered-tests-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-31-1794674665162449605",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794675588664446329.log"
+      },
+      {
+        "argv": [
+          "cmake",
+          "--build",
+          "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-31-1794674665162449605/build",
+          "--target",
+          "zene",
+          "RemotePluginShmFifoTest",
+          "ImportTrackIoTest",
+          "SampleClipWarpEditTest",
+          "NeuralAmpHarnessBlockCount",
+          "-j12"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-31-1794674665162449605",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794675588729757965.log"
+      },
+      {
+        "argv": [
+          "ctest",
+          "-R",
+          "^(RemotePluginShmFifoTest|ImportTrackIoTest|SampleClipWarpEditTest|NeuralAmpHarnessBlockCount|NeuralAmpHarnessRateValidation|NamLoaderTest_.*|VcpkgPcre2Gitlink|FileLengthGate|NoteCanvasComplexityGate|Train43Portability)$",
+          "-j1",
+          "--timeout",
+          "900",
+          "--no-tests=error",
+          "--output-on-failure"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-31-1794674665162449605/build/tests",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794675866276125439.log"
+      }
+    ],
+    "commit": "a1deda8dc9ad198e5a8af5725896ddb0ba9b356b",
+    "id": "sol-repair-1794675899200948648",
+    "paths": [
+      ".github/vcpkg/ports/pcre2/portfile.cmake",
+      "docs/qwen-fixes-2026-10/sol-train-31-hosted-portability.md",
+      "plugins/NeuralAmp/tests/NamHarnessCpuClock.h",
+      "plugins/NeuralAmp/tests/nam_harness.cpp",
+      "tests/CMakeLists.txt",
+      "tests/fork-sources.txt",
+      "tests/src/core/ImportTrackIoTest.cpp",
+      "tests/src/core/RemotePluginShmFifoTest.cpp",
+      "tests/src/gui/Warp/SampleClipWarpEditTest.cpp",
+      "tests/src/gui/Warp/SampleClipWarpEditTestSupport.h",
+      "tests/train-43-portability-check.py",
+      "tests/upstream-modifications.txt",
+      "tests/vcpkg-pcre2-gitlink-test.py"
+    ],
+    "source_head": "c20ef591b571e3c3dc7b108107d166497f1b34be",
+    "status": "pending",
+    "summary": "Fixed all five hosted portability causes, preserved dependency pins and test assertions, and added compiler and clock regressions. Targeted rebuild, 17 tests and unchanged gates pass; verification is recorded in docs/qwen-fixes-2026-10/sol-train-31-hosted-portability.md.",
+    "train": "050/m0-train-31",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-31-1794674665162449605"
   }
 ]
