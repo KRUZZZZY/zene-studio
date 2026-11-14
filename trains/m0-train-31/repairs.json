@@ -1,0 +1,128 @@
+[
+  {
+    "at": "2026-11-14T14:12:40",
+    "base": "40b4322860e9c2133f412a4b921b63b057dd710c",
+    "branch": "fix/sol-repair-1794665560082755495",
+    "checks": [
+      {
+        "argv": [
+          "bash",
+          "tests/no-upstream-regression-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-31-1794663732263191636",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794665332923525278.log"
+      },
+      {
+        "argv": [
+          "bash",
+          "tests/evidence-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-31-1794663732263191636",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794665340453247507.log"
+      },
+      {
+        "argv": [
+          "bash",
+          "tests/fork-sources-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-31-1794663732263191636",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794665351840261429.log"
+      },
+      {
+        "argv": [
+          "bash",
+          "tests/unregistered-tests-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-31-1794663732263191636",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794665352105403990.log"
+      },
+      {
+        "argv": [
+          "cmake",
+          "--build",
+          "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-31-1794663732263191636/build",
+          "--target",
+          "zene",
+          "RecordToolsTest",
+          "CrashReporterTest",
+          "CrashReporterArmTest",
+          "RecordingCrashLossTest",
+          "RenderSourceGuardTest",
+          "NamModelLoaderTest",
+          "eq",
+          "AudioPluginTest",
+          "EqPeakHandoffTest",
+          "AudioAnalysisTest",
+          "MountNamespaceHandshakeTest",
+          "-j12"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-31-1794663732263191636",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794665352171741629.log"
+      },
+      {
+        "argv": [
+          "ctest",
+          "-R",
+          "^(RecordToolsTest|CrashReporterTest|CrashReporterArmTest|RecordingCrashLossTest|RenderSourceGuardTest|NamModelLoaderTest|AudioPluginTest|EqPeakHandoffTest|AudioAnalysisTest|MountNamespaceHandshakeTest|Train41-(linux|eq|darwin-signature|darwin-tu|nam|render)|Qt5QFileInfoDateCheck|FileLengthGate|NoteCanvasComplexityGate|complexity-regression-check|Train39-unused-result|UnusedResultFortifyCheck|Qt5QListApiCheck|CrashReporterAppleSignalCheck|NamModelLoaderPortabilityCheck|NamPortabilityRegistrationCheck|VcpkgPcre2Gitlink)$",
+          "-j1",
+          "--timeout",
+          "900",
+          "--no-tests=error",
+          "--output-on-failure"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-31-1794663732263191636/build/tests",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794665360404386579.log"
+      }
+    ],
+    "commit": "52e688739c551af5203b3d756bc16cd1bca5e8d6",
+    "id": "sol-repair-1794665560082755495",
+    "paths": [
+      ".github/vcpkg/ports/pcre2/README.md",
+      ".github/vcpkg/ports/pcre2/fix-msvc-pdb-install.patch.json",
+      ".github/vcpkg/ports/pcre2/no-static-suffix.patch.json",
+      ".github/vcpkg/ports/pcre2/pcre2-10.35_fix-uwp.patch.json",
+      ".github/vcpkg/ports/pcre2/portfile.cmake",
+      ".github/vcpkg/ports/pcre2/sljit-gitlink-pcre2-10.49.json",
+      ".github/vcpkg/ports/pcre2/usage",
+      ".github/vcpkg/ports/pcre2/vcpkg.json",
+      ".github/workflows/build.yml",
+      "docs/qwen-fixes-2026-10/cluster-ci-0b372147c313d00a.md",
+      "docs/qwen-fixes-2026-10/cluster-ci-151e338efff6843e.md",
+      "docs/qwen-fixes-2026-10/cluster-ci-1e541b5d1279ed2d.md",
+      "docs/qwen-fixes-2026-10/cluster-ci-28572f865f7a738c.md",
+      "docs/qwen-fixes-2026-10/cluster-ci-9d1768ed0beb1636.md",
+      "docs/qwen-fixes-2026-10/cluster-ci-aa184f959f204bcd.md",
+      "docs/qwen-fixes-2026-10/cluster-ci-b38398fa7833e0a4.md",
+      "docs/qwen-fixes-2026-10/sol-train-31-ci-replay.md",
+      "tests/CMakeLists.txt",
+      "tests/Qt5QListApiCheck.py",
+      "tests/crash-reporter-apple-signal-check.py",
+      "tests/data/vcpkg-pcre2/builtin-portfile-177e817512.cmake",
+      "tests/data/vcpkg-pcre2/builtin-vcpkg-json-177e817512.json",
+      "tests/data/vcpkg-pcre2/usage",
+      "tests/fork-sources.txt",
+      "tests/nam-model-loader-portability-check.py",
+      "tests/nam-portability-registration-check.py",
+      "tests/src/core/CrashReporterTest.cpp",
+      "tests/src/core/RecordingCrashLossTest.cpp",
+      "tests/src/core/RenderSourceGuardTest.cpp",
+      "tests/train-39-portability-check.py",
+      "tests/unused-result-fortify-check.py",
+      "tests/upstream-modifications.txt",
+      "tests/vcpkg-pcre2-gitlink-test.py",
+      "vcpkg-configuration.json"
+    ],
+    "promoted_train": "050/m0-train-31",
+    "source_head": "109b6b59fad765a5b93cc7c8e072340418c3a104",
+    "status": "promoted",
+    "summary": "Fixed the full whitespace check by encoding PCRE2 patches losslessly and reconstructing their exact, hash-verified bytes. Preserved the seven-repair consolidation; affected tests, unchanged gates and independent review pass.",
+    "train": "050/m0-train-31",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-31-1794663732263191636"
+  }
+]

@@ -247,8 +247,9 @@
       "tests/train-41-portability-check.py",
       "tests/upstream-modifications.txt"
     ],
+    "promoted_train": "050/m0-train-31",
     "source_head": "40b4322860e9c2133f412a4b921b63b057dd710c",
-    "status": "pending",
+    "status": "promoted",
     "summary": "Fixed five hosted source portability causes, added compiler and handshake regressions, and retained the pending Windows regression. Targeted build, 18 CTest entries, unchanged gates and independent review passed.",
     "train": "050/m0-train-30",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-30-1794643674203258261"
@@ -627,8 +628,9 @@
       "tests/vcpkg-pcre2-gitlink-test.py",
       "vcpkg-configuration.json"
     ],
+    "promoted_train": "050/m0-train-31",
     "source_head": "109b6b59fad765a5b93cc7c8e072340418c3a104",
-    "status": "pending",
+    "status": "promoted",
     "summary": "Fixed the full whitespace check by encoding PCRE2 patches losslessly and reconstructing their exact, hash-verified bytes. Preserved the seven-repair consolidation; affected tests, unchanged gates and independent review pass.",
     "train": "050/m0-train-31",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-31-1794663732263191636"
