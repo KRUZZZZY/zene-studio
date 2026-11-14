@@ -138,6 +138,141 @@ QJsonArray segmentsOf(const QString& id)
 	return run(QStringLiteral("comp.get_state"), {{QStringLiteral("track"), id}})
 		.result.value(QStringLiteral("composite")).toObject().value(QStringLiteral("segments")).toArray();
 }
+void makeMidiTakes(QString& id, InstrumentTrack*& track, MidiClip*& first, MidiClip*& second)
+{
+	const auto added = run(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("instrument")}});
+	QVERIFY(added.ok);
+	id = added.result.value(QStringLiteral("track")).toString();
+	ControlResult error;
+	track = dynamic_cast<InstrumentTrack*>(control::resolveTrack(id, &error));
+	QVERIFY(track != nullptr);
+	QVERIFY(track->loadInstrument("tripleoscillator"));
+	track->setName("MIDI comp");
+	QCOMPARE(track->name(), QStringLiteral("MIDI comp"));
+	first = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+	second = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+	QVERIFY(first != nullptr && second != nullptr);
+	for (auto* clip : {first, second}) { clip->setAutoResize(false); clip->changeLength(TimePos(384)); }
+	first->addNote(Note(TimePos(48), TimePos(0), 60), false);
+	first->addNote(Note(TimePos(96), TimePos(168), 62), false);
+	first->addNote(Note(TimePos(24), TimePos(300), 67), false);
+	second->addNote(Note(TimePos(48), TimePos(0), 64), false);
+	second->addNote(Note(TimePos(48), TimePos(240), 65), false);
+}
+
+void openMidiPanel(const QString& id, MidiClip* first, MidiClip* second, CompSwipeStrip*& strip)
+{
+	QCoreApplication::processEvents();
+	const auto beforePanels = getGUI()->mainWindow()->findChildren<TakeLanesPanel*>().size();
+	QAction* action = lanesAction(id);
+	QVERIFY(action != nullptr && action->isEnabled());
+	QCOMPARE(action->property("controlCommand").toString(), QStringLiteral("comp.get_state"));
+	action->trigger();
+	QCoreApplication::processEvents();
+	auto panels = getGUI()->mainWindow()->findChildren<TakeLanesPanel*>();
+	QCOMPARE(panels.size(), beforePanels + 1);
+	auto* panel = panels.last();
+	QTest::mouseClick(panel->addLaneButton(), Qt::LeftButton);
+	QTest::mouseClick(panel->addLaneButton(), Qt::LeftButton);
+	QVERIFY(run(QStringLiteral("comp.assign"), {{QStringLiteral("clip"), control::clipIdOf(first)}, {QStringLiteral("lane"), 0}}).ok);
+	QVERIFY(run(QStringLiteral("comp.assign"), {{QStringLiteral("clip"), control::clipIdOf(second)}, {QStringLiteral("lane"), 1}}).ok);
+	panel->refresh(); panel->resize(640, 420); panel->show(); QCoreApplication::processEvents();
+	strip = panel->strip();
+	QCOMPARE(strip->takeBands().size(), std::size_t{2});
+}
+
+void swipeMidiSegments(CompSwipeStrip* strip, int& boundary, int& end, int& depth)
+{
+	const int boundaryX = strip->tickToX(192);
+	boundary = strip->tickAt(boundaryX);
+	end = strip->tickAt(strip->width() - 1);
+	QVERIFY(boundary >= 184 && boundary <= 200);
+	depth = undoDepth();
+	QTest::mousePress(strip, Qt::LeftButton, Qt::NoModifier, QPoint(0, 10));
+	QTest::mouseMove(strip, QPoint(boundaryX, 10));
+	QTest::mouseRelease(strip, Qt::LeftButton, Qt::NoModifier, QPoint(boundaryX, 10));
+	QCOMPARE(undoDepth(), depth + 1);
+	QTest::mousePress(strip, Qt::LeftButton, Qt::NoModifier, QPoint(boundaryX, 32));
+	QTest::mouseMove(strip, QPoint(strip->width() - 1, 32));
+	QTest::mouseRelease(strip, Qt::LeftButton, Qt::NoModifier, QPoint(strip->width() - 1, 32));
+	QCOMPARE(undoDepth(), depth + 2);
+}
+
+void checkMidiSegments(const QString& id, int boundary, int end, QJsonArray& segments)
+{
+	segments = segmentsOf(id);
+	QCOMPARE(segments.size(), 2);
+	for (int i = 0; i < 2; ++i)
+	{
+		const auto segment = segments.at(i).toObject();
+		QCOMPARE(segment.value(QStringLiteral("lane")).toInt(), i);
+		QCOMPARE(segment.value(QStringLiteral("begin")).toInt(), i == 0 ? 0 : boundary);
+		QCOMPARE(segment.value(QStringLiteral("end")).toInt(), i == 0 ? boundary : end);
+	}
+}
+
+void checkPlayback(InstrumentTrack* current)
+{
+	QCOMPARE(playFrom(current, 0), QList<int>({60}));
+	QCOMPARE(playFrom(current, 168), QList<int>({62}));
+	const auto at240 = playFrom(current, 240);
+	QVERIFY(at240.contains(65) && !at240.contains(64));
+	QVERIFY(!playFrom(current, 300).contains(67));
+}
+
+void checkUndoAndInvalidSelections(const QString& id, int depth, const QJsonArray& segments)
+{
+	QVERIFY(run(QStringLiteral("control.undo")).ok);
+	QCOMPARE(undoDepth(), depth + 1);
+	QCOMPARE(segmentsOf(id).size(), 1);
+	QCOMPARE(segmentsOf(id).first().toObject().value(QStringLiteral("lane")).toInt(), 0);
+	QVERIFY(run(QStringLiteral("control.redo")).ok);
+	QCOMPARE(segmentsOf(id), segments);
+	const int currentDepth = undoDepth();
+	QVERIFY(!run(QStringLiteral("comp.select"), {{QStringLiteral("track"), id}, {QStringLiteral("begin"), 0}, {QStringLiteral("end"), 100}, {QStringLiteral("lane"), 5}}).ok);
+	QVERIFY(!run(QStringLiteral("comp.select"), {{QStringLiteral("track"), id}, {QStringLiteral("begin"), 200}, {QStringLiteral("end"), 100}, {QStringLiteral("lane"), 0}}).ok);
+	QCOMPARE(segmentsOf(id), segments);
+	QCOMPARE(undoDepth(), currentDepth);
+}
+
+void reloadMidiProject(const QTemporaryDir& home, QString& id, InstrumentTrack*& track, const QJsonArray& segments)
+{
+	const QString path = home.filePath(QStringLiteral("midicomp.mmp"));
+	QVERIFY(run(QStringLiteral("project.save"), {{QStringLiteral("path"), path}}).ok);
+	QVERIFY(run(QStringLiteral("project.open"), {{QStringLiteral("path"), path}}).ok);
+	Engine::audioEngine()->audioDev()->stopProcessing();
+	QCoreApplication::processEvents();
+	track = nullptr;
+	QStringList names;
+	for (Track* candidate : Engine::getSong()->tracks())
+	{
+		names << candidate->name();
+		if (candidate->name() == QStringLiteral("MIDI comp")) { track = dynamic_cast<InstrumentTrack*>(candidate); }
+	}
+	QVERIFY2(track != nullptr, qPrintable(names.join(", ")));
+	id = control::trackIdOf(track);
+	QCOMPARE(segmentsOf(id), segments);
+	QList<int> lanes;
+	for (Clip* clip : track->getClips())
+	{
+		if (auto* midi = dynamic_cast<MidiClip*>(clip)) { lanes << midi->laneIndex(); }
+	}
+	std::sort(lanes.begin(), lanes.end());
+	QCOMPARE(lanes, QList<int>({0, 1}));
+}
+
+void reopenMidiPanel(const QString& id)
+{
+	const auto oldPanelCount = getGUI()->mainWindow()->findChildren<TakeLanesPanel*>().size();
+	QAction* action = lanesAction(id);
+	QVERIFY(action != nullptr && action->isEnabled());
+	action->trigger(); QCoreApplication::processEvents();
+	auto panels = getGUI()->mainWindow()->findChildren<TakeLanesPanel*>();
+	QCOMPARE(panels.size(), oldPanelCount + 1);
+	panels.last()->refresh();
+	QCOMPARE(panels.last()->strip()->takeBands().size(), std::size_t{2});
+}
+
 }
 
 class MidiCompLaneGuiTest : public QObject
@@ -162,115 +297,31 @@ private slots:
 	}
 	void aMidiLaneRegionSelectedInTheStripGatesPlaybackAndSurvivesSaveLoad()
 	{
-		const auto added = run(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("instrument")}});
-		QVERIFY(added.ok);
-		QString id = added.result.value(QStringLiteral("track")).toString();
-		ControlResult error;
-		auto* track = dynamic_cast<InstrumentTrack*>(control::resolveTrack(id, &error));
-		QVERIFY(track != nullptr);
-		QVERIFY(track->loadInstrument("tripleoscillator"));
-		track->setName("MIDI comp");
-		QCOMPARE(track->name(), QStringLiteral("MIDI comp"));
-		auto* first = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
-		auto* second = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
-		QVERIFY(first != nullptr && second != nullptr);
-		for (auto* clip : {first, second}) { clip->setAutoResize(false); clip->changeLength(TimePos(384)); }
-		first->addNote(Note(TimePos(48), TimePos(0), 60), false);
-		first->addNote(Note(TimePos(96), TimePos(168), 62), false);
-		first->addNote(Note(TimePos(24), TimePos(300), 67), false);
-		second->addNote(Note(TimePos(48), TimePos(0), 64), false);
-		second->addNote(Note(TimePos(48), TimePos(240), 65), false);
-		QCoreApplication::processEvents();
-		const auto beforePanels = getGUI()->mainWindow()->findChildren<TakeLanesPanel*>().size();
-		QAction* action = lanesAction(id);
-		QVERIFY(action != nullptr && action->isEnabled());
-		QCOMPARE(action->property("controlCommand").toString(), QStringLiteral("comp.get_state"));
-		action->trigger();
-		QCoreApplication::processEvents();
-		auto panels = getGUI()->mainWindow()->findChildren<TakeLanesPanel*>();
-		QCOMPARE(panels.size(), beforePanels + 1);
-		auto* panel = panels.last();
-		QTest::mouseClick(panel->addLaneButton(), Qt::LeftButton);
-		QTest::mouseClick(panel->addLaneButton(), Qt::LeftButton);
-		QVERIFY(run(QStringLiteral("comp.assign"), {{QStringLiteral("clip"), control::clipIdOf(first)}, {QStringLiteral("lane"), 0}}).ok);
-		QVERIFY(run(QStringLiteral("comp.assign"), {{QStringLiteral("clip"), control::clipIdOf(second)}, {QStringLiteral("lane"), 1}}).ok);
-		panel->refresh(); panel->resize(640, 420); panel->show(); QCoreApplication::processEvents();
-		auto* strip = panel->strip();
-		QCOMPARE(strip->takeBands().size(), std::size_t{2});
-		const int boundaryX = strip->tickToX(192);
-		const int boundary = strip->tickAt(boundaryX);
-		const int end = strip->tickAt(strip->width() - 1);
-		QVERIFY(boundary >= 184 && boundary <= 200);
-		const int depth = undoDepth();
-		QTest::mousePress(strip, Qt::LeftButton, Qt::NoModifier, QPoint(0, 10));
-		QTest::mouseMove(strip, QPoint(boundaryX, 10));
-		QTest::mouseRelease(strip, Qt::LeftButton, Qt::NoModifier, QPoint(boundaryX, 10));
-		QCOMPARE(undoDepth(), depth + 1);
-		QTest::mousePress(strip, Qt::LeftButton, Qt::NoModifier, QPoint(boundaryX, 32));
-		QTest::mouseMove(strip, QPoint(strip->width() - 1, 32));
-		QTest::mouseRelease(strip, Qt::LeftButton, Qt::NoModifier, QPoint(strip->width() - 1, 32));
-		QCOMPARE(undoDepth(), depth + 2);
-		const QJsonArray segments = segmentsOf(id);
-		QCOMPARE(segments.size(), 2);
-		for (int i = 0; i < 2; ++i)
-		{
-			const auto segment = segments.at(i).toObject();
-			QCOMPARE(segment.value(QStringLiteral("lane")).toInt(), i);
-			QCOMPARE(segment.value(QStringLiteral("begin")).toInt(), i == 0 ? 0 : boundary);
-			QCOMPARE(segment.value(QStringLiteral("end")).toInt(), i == 0 ? boundary : end);
-		}
-		auto checkPlayback = [](InstrumentTrack* current) {
-			QCOMPARE(playFrom(current, 0), QList<int>({60}));
-			QCOMPARE(playFrom(current, 168), QList<int>({62}));
-			const auto at240 = playFrom(current, 240);
-			QVERIFY(at240.contains(65) && !at240.contains(64));
-			QVERIFY(!playFrom(current, 300).contains(67));
-		};
+		QString id;
+		InstrumentTrack* track = nullptr;
+		MidiClip* first = nullptr;
+		MidiClip* second = nullptr;
+		CompSwipeStrip* strip = nullptr;
+		int boundary = 0, end = 0, depth = 0;
+		QJsonArray segments;
+		makeMidiTakes(id, track, first, second);
+		if (QTest::currentTestFailed()) { return; }
+		openMidiPanel(id, first, second, strip);
+		if (QTest::currentTestFailed()) { return; }
+		swipeMidiSegments(strip, boundary, end, depth);
+		if (QTest::currentTestFailed()) { return; }
+		checkMidiSegments(id, boundary, end, segments);
+		if (QTest::currentTestFailed()) { return; }
 		checkPlayback(track);
 		if (QTest::currentTestFailed()) { return; }
-		QVERIFY(run(QStringLiteral("control.undo")).ok);
-		QCOMPARE(undoDepth(), depth + 1);
-		QCOMPARE(segmentsOf(id).size(), 1);
-		QCOMPARE(segmentsOf(id).first().toObject().value(QStringLiteral("lane")).toInt(), 0);
-		QVERIFY(run(QStringLiteral("control.redo")).ok);
-		QCOMPARE(segmentsOf(id), segments);
-		const int currentDepth = undoDepth();
-		QVERIFY(!run(QStringLiteral("comp.select"), {{QStringLiteral("track"), id}, {QStringLiteral("begin"), 0}, {QStringLiteral("end"), 100}, {QStringLiteral("lane"), 5}}).ok);
-		QVERIFY(!run(QStringLiteral("comp.select"), {{QStringLiteral("track"), id}, {QStringLiteral("begin"), 200}, {QStringLiteral("end"), 100}, {QStringLiteral("lane"), 0}}).ok);
-		QCOMPARE(segmentsOf(id), segments);
-		QCOMPARE(undoDepth(), currentDepth);
-		const QString path = m_home.filePath(QStringLiteral("midicomp.mmp"));
-		QVERIFY(run(QStringLiteral("project.save"), {{QStringLiteral("path"), path}}).ok);
-		QVERIFY(run(QStringLiteral("project.open"), {{QStringLiteral("path"), path}}).ok);
-		Engine::audioEngine()->audioDev()->stopProcessing();
-		QCoreApplication::processEvents();
-		track = nullptr;
-		QStringList names;
-		for (Track* candidate : Engine::getSong()->tracks())
-		{
-			names << candidate->name();
-			if (candidate->name() == QStringLiteral("MIDI comp")) { track = dynamic_cast<InstrumentTrack*>(candidate); }
-		}
-		QVERIFY2(track != nullptr, qPrintable(names.join(", ")));
-		id = control::trackIdOf(track);
-		QCOMPARE(segmentsOf(id), segments);
-		QList<int> lanes;
-		for (Clip* clip : track->getClips())
-		{
-			if (auto* midi = dynamic_cast<MidiClip*>(clip)) { lanes << midi->laneIndex(); }
-		}
-		std::sort(lanes.begin(), lanes.end());
-		QCOMPARE(lanes, QList<int>({0, 1}));
+		checkUndoAndInvalidSelections(id, depth, segments);
+		if (QTest::currentTestFailed()) { return; }
+		reloadMidiProject(m_home, id, track, segments);
+		if (QTest::currentTestFailed()) { return; }
 		checkPlayback(track);
 		if (QTest::currentTestFailed()) { return; }
-		const auto oldPanelCount = getGUI()->mainWindow()->findChildren<TakeLanesPanel*>().size();
-		action = lanesAction(id);
-		QVERIFY(action != nullptr && action->isEnabled());
-		action->trigger(); QCoreApplication::processEvents();
-		panels = getGUI()->mainWindow()->findChildren<TakeLanesPanel*>();
-		QCOMPARE(panels.size(), oldPanelCount + 1);
-		panels.last()->refresh();
-		QCOMPARE(panels.last()->strip()->takeBands().size(), std::size_t{2});
+		reopenMidiPanel(id);
+		if (QTest::currentTestFailed()) { return; }
 	}
 
 	void theStripDrawsAMidiTakesNotes()
