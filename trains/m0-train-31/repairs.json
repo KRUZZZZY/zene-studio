@@ -255,5 +255,42 @@
     "summary": "CI regression: build / linux-x86_64",
     "train": "050/m0-train-31",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-623e9e3a015cd5b1"
+  },
+  {
+    "at": "2026-11-14T21:58:40",
+    "base": "c20ef591b571e3c3dc7b108107d166497f1b34be",
+    "branch": "fix/ci-repair-ci-539b88713935565b-2fa03a5eeabd",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-539b88713935565b.r1.md",
+        "negative_control": {
+          "artifact_hashes": {},
+          "detail": "no product change, no changed test, or a dirty tree",
+          "ok": null,
+          "proof_base": "c20ef591b571e3c3dc7b108107d166497f1b34be",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-539b88713935565b.r1/negctl",
+          "proof_key": "bf22eb1210e65ad2b3d4d8ac00c984c45642db50f1a177a45a016367fda32158"
+        },
+        "verdict": "ACCEPT-NOTE"
+      }
+    ],
+    "commit": "e0d1d3bad5fef96a3348562ac20725cabeafe2a0",
+    "id": "ci-repair-ci-539b88713935565b-2fa03a5eeabd",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-539b88713935565b.md",
+      "tests/CMakeLists.txt",
+      "tests/all-sources.txt",
+      "tests/fork-sources.txt",
+      "tests/qt5-worker-thread-check.py",
+      "tests/src/core/TestWorkerThread.h",
+      "tests/src/core/WarpMarkersTest.cpp",
+      "tests/src/gui/Warp/SampleClipWarpEditTest.cpp"
+    ],
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "c20ef591b571e3c3dc7b108107d166497f1b34be",
+    "status": "pending",
+    "summary": "CI regression: build / mingw64",
+    "train": "050/m0-train-31",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-539b88713935565b"
   }
 ]

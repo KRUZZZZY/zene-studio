@@ -1,0 +1,945 @@
+From e0d1d3bad5fef96a3348562ac20725cabeafe2a0 Mon Sep 17 00:00:00 2001
+From: Zene CI repair <noreply@zene.invalid>
+Date: Sat, 14 Nov 2026 21:58:40 +0000
+Subject: [PATCH] fix(ci): CI regression: build / mingw64
+
+CI-Repair-Id: ci-repair-ci-539b88713935565b-2fa03a5eeabd
+---
+ .../cluster-ci-539b88713935565b.md            | 177 ++++++
+ tests/CMakeLists.txt                          |  22 +
+ tests/all-sources.txt                         |   1 +
+ tests/fork-sources.txt                        |  10 +
+ tests/qt5-worker-thread-check.py              | 505 ++++++++++++++++++
+ tests/src/core/TestWorkerThread.h             |  65 +++
+ tests/src/core/WarpMarkersTest.cpp            |   5 +-
+ tests/src/gui/Warp/SampleClipWarpEditTest.cpp |  13 +-
+ 8 files changed, 790 insertions(+), 8 deletions(-)
+ create mode 100644 docs/qwen-fixes-2026-10/cluster-ci-539b88713935565b.md
+ create mode 100755 tests/qt5-worker-thread-check.py
+ create mode 100644 tests/src/core/TestWorkerThread.h
+
+diff --git a/docs/qwen-fixes-2026-10/cluster-ci-539b88713935565b.md b/docs/qwen-fixes-2026-10/cluster-ci-539b88713935565b.md
+new file mode 100644
+index 0000000000..31b465b43b
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/cluster-ci-539b88713935565b.md
+@@ -0,0 +1,177 @@
++FIXED
++
++# cluster ci-539b88713935565b — `build / mingw64`: `QThread::create()` does not exist on the hosted Qt 5
++
++## Verdict
++
++**REAL.** On the reported commit `c20ef591b5` the hosted `mingw64` job stops at 49 % with:
++
++```
++tests/src/gui/Warp/SampleClipWarpEditTest.cpp:433:58: error: 'create' is not a member of 'QThread'
++tests/src/gui/Warp/SampleClipWarpEditTest.cpp:463:58: error: 'create' is not a member of 'QThread'
++tests/src/gui/Warp/SampleClipWarpEditTest.cpp:551:56: error: 'create' is not a member of 'QThread'
++gmake[2]: *** [tests/CMakeFiles/SampleClipWarpEditTest.dir/build.make:101: ...] Error 1
++```
++
++Evidence (untrusted log, read as data only):
++`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/train-ci/c20ef591b571e3c3dc7b108107d166497f1b34be/run-43611324689-job-132496796731.log:5134,5138,5142`.
++
++Classification: **product/test portability defect** — a fork-new test used a Qt factory that the
++platform's Qt is configured without. Not infrastructure (the job's configure, dependency install
++and the other ~1,800 compiled objects were clean) and not a flaky/skipped test (this job runs no
++tests; the build is the gate).
++
++## Cause (file:line)
++
++`.github/workflows/deps-ubuntu-24.04-mingw.txt` installs `qt5base-mingw-w64` from the pinned
++tobydox PPA, and the `mingw64` job in `.github/workflows/build.yml:829` configures with
++`cmake/toolchains/x64-mingw-vcpkg.cmake` (no `-DWANT_QT6`, so Qt 5 — `CMakeLists.txt:363-365`).
++The PPA package is **Qt 5.15.6** and its `QtCore/qtcore-config.h:15` carries
++
++```
++#define QT_FEATURE_cxx11_future -1
++```
++
++so Qt's own `qthread.h` compiles its factory out (`QThread` has no `create`):
++
++* `qthread.h:50` `#if QT_CONFIG(cxx11_future)` — the `<future>`/`<functional>` includes
++* `qthread.h:120-128` — the only declarations of `static QThread *create(...)`
++* `qthread.h:161` and `:169-237` — `createThreadImpl` and the definitions
++
++That is the whole of the diagnostic: on that Qt the name does not exist, on the Qt 6 build used
++here it does, so only the cross job sees it. The PPA `Packages.gz` (fetched 2026-11-14) states
++`qt5base-mingw-w64 5.15.6-1`; the package's `qtcore-config.h` was extracted and read. The feature
++value was also reproduced directly: a two-line probe with `QThread::create()` compiles against
++this box's Qt 5.15.19 (`QT_FEATURE_cxx11_future 1`) and fails with the job's exact message against
++the PPA header (exit 1).
++
++Sources at HEAD, all four in test code:
++
++* `tests/src/gui/Warp/SampleClipWarpEditTest.cpp:433,463,551` (the job's three errors). This file
++  is fork-NEW (`tests/fork-sources.txt:2343`).
++* `tests/src/core/WarpMarkersTest.cpp:131` — the same defect one target away. That TU had only
++  reached its autogen step when the job died (`run-...log:4367`, `Built target
++  WarpMarkersTest_autogen`); its source was never compiled, and compiling it here against the
++  PPA-configured Qt 5 fails identically (row 2). It is an inherited file the fork already declared
++  in the divergence ledger (`tests/upstream-modifications.txt:5779`).
++
++`grep -rn 'QThread::create' src include plugins` finds no product use (only the commented-out
++workaround in `plugins/SpectrumAnalyzer/{Analyzer.h,DataprocLauncher.h}`, which exists for exactly
++this reason: "QThread::create() workaround for older Qt version"). The defect is in the two tests.
++
++## Fix (at the cause)
++
++1. **`tests/src/core/TestWorkerThread.h` (new, 65 lines).** A `QThread` subclass whose `run()`
++   calls a `std::function<void()>` — what `QThread::create()` is, minus the `std::async` plumbing.
++   `start()` and `wait()` are unchanged, so call sites keep their shape and their assertions.
++   Registered in `tests/fork-sources.txt` and `tests/all-sources.txt`.
++2. **`tests/src/core/WarpMarkersTest.cpp:55,132`** and
++   **`tests/src/gui/Warp/SampleClipWarpEditTest.cpp:68,434,464,552`** use it:
++   `std::unique_ptr<test::TestWorkerThread> x = std::make_unique<test::TestWorkerThread>([&] { ... });`
++   No behaviour change: the body still runs on its own thread, `start()`/`wait()` still bracket it.
++3. **`tests/qt5-worker-thread-check.py` (new, ctest `Qt5WorkerThreadCheck`,
++   `tests/CMakeLists.txt:9155-9175`).** Two deterministic halves:
++   * it scans every tracked first-party source for `QThread::create`, so it is **red on this Qt 6
++     host too** (comment/literal-stripped, self-tested against a flagged fixture and an unflagged
++     subclass);
++   * when `pkg-config` finds a Qt 5 tree it takes the affected translation units' own command
++     lines from `compile_commands.json`, strips the Qt 6 include paths, prepends a **shadow**
++     `QtCore/qtcore-config.h` with `QT_FEATURE_cxx11_future -1`, and compiles them with Qt 5's
++     `moc` — the hosted job's own configuration, which is what makes the failure reproducible
++     without a Windows cross toolchain.
++   Three controls keep the simulation honest: the shadow must reject a `static_assert`
++   on `QT_CONFIG(cxx11_future)` (so the feature really is off), the old spelling must **not**
++   compile under the shadow (so the fixture can fail), and the old spelling **must** compile on
++   the host Qt where the feature is on (so the shadow, not the fixture, is the cause). Where the
++   host has no Qt 5 tree at all the compile half reports SKIP and never PASS, and the scan still
++   runs.
++
++Callers and siblings checked: `QThread::create` appears nowhere else in `src/`, `include/`,
++`plugins/` or `tests/src/` (7 hits in the tree: the 4 fixed, 2 comments and one comment-only
++reference in `tests/reference/`, which is a frozen upstream copy and outside every scope).
++`Tests/src/core/WarpMarkersTest.cpp`'s only other thread API is `QThread::msleep`, which is not
++feature-gated. The other features the PPA's Qt disables (`gestures`, `statemachine`,
++`qeventtransition`) were audited: `QGesture`/`QPinchGesture` occur only in `src/gui/ArrangerAids.cpp`
++(already guarded, cluster ci-017caf2edd434b66) and no `QStateMachine`/`QEventTransition` occurs in
++first-party code. Both affected TUs also compile under a shadow with all four features off.
++
++## Test matrix
++
++| Path | Case | Covered by |
++| --- | --- | --- |
++| normal | Qt 6 host: both warp binaries still build and both suites pass | `cmake --build build --target WarpMarkersTest SampleClipWarpEditTest` (exit 0); ctest `SampleClipWarpEditTest`, `WarpMarkersTest` (2/2) |
++| failure (the CI configuration) | a Qt without `cxx11_future` must build both TUs | `Qt5WorkerThreadCheck` shadow compiles of `SampleClipWarpEditTest.cpp` and `WarpMarkersTest.cpp` |
++| failure (the defect class) | no first-party source may name `QThread::create` | `Qt5WorkerThreadCheck` source scan |
++| reconfiguration | the portable header itself compiles where the factory does not | `Qt5WorkerThreadCheck` `new.cpp` probe |
++| controls | the shadow hides the feature; the old spelling fails there and passes on the host Qt | `Qt5WorkerThreadCheck` feature/old/host probes |
++| supported platform without Qt 5 | the compile half skips (never passes silently), the scan still gates | `PATH` without `pkg-config`: `check-9-noqt5.log` |
++| existing threads' behaviour | the reader/pass/period threads still start, run and join under the same assertions | `WarpMarkersTest::aPublishedGenerationIsWholeAndFreedOnlyWhenUnheld`, `aPassKeepsOneMapWhileACommitLands`, `aCommitDoesNotTakeTheLockARenderPeriodHolds`, `aRefusedMapChangesNothingAndDoesNotWaitForAPass` |
++
++The regression is not timed: the shadow is a compile-time feature value, and every assertion the
++two warp suites make is unchanged by this fix.
++
++## Evidence table (commands as run, exit codes as observed)
++
++The designated log folder `.../runs/ci-539b88713935565b.r1/logs` **rejects every write in this
++session** (`touch` → `Permission denied`, a Python `open(...,'w')` → `PermissionError`, while
++`id` shows the directory is owned by this user and mode 0755 — a harness sandbox, not the repo).
++Every log below is in `build/qwen-logs/` in this worktree and mirrored byte-for-byte to
++`/home/kruzzzzy/.local/share/zene-bunny-fix/dsh/home/ci-539b88713935565b-logs/`.
++
++| # | Evidence | Command | Result |
++| --- | --- | --- | --- |
++| 1 | The PPA Qt really lacks the factory | `g++ -std=gnu++20 -fsyntax-only -I<ppa>/include/qt5 -I<ppa>/include/qt5/QtCore probe-create.cpp` | EXIT=1, `error: 'create' is not a member of 'QThread'` |
++| 2 | RED — the fix reverted (`git apply -R build/qwen-logs/fix.patch`, `REVERT_EXIT=0`) | `cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R '^Qt5WorkerThreadCheck$' --output-on-failure` → `test-3-red.log` | **EXIT=8**, `1 tests failed out of 1`; the three hosted errors reproduced verbatim (`:433:58`, `:463:58`, `:551:56`) plus `WarpMarkersTest.cpp:131:58` |
++| 3 | Restore the fix (`git apply build/qwen-logs/fix.patch`, `APPLY_EXIT=0`) | — | EXIT=0 |
++| 4 | GREEN — same test, fixed tree | `cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R '^Qt5WorkerThreadCheck$' --output-on-failure` → `test-4-green.log` | **EXIT=0**, `1/1 Test #961 Qt5WorkerThreadCheck ... Passed` |
++| 5 | Build the two affected binaries | `cmake --build build --target WarpMarkersTest` / `--target SampleClipWarpEditTest` → `build-1.log`, `build-2.log` | EXIT=0 / EXIT=0 |
++| 6 | Affected-family run | `cd build/tests && ctest -R '^(WarpMarkersTest\|SampleClipWarpEditTest\|Qt5WorkerThreadCheck\|Qt5QListApiCheck)$' --output-on-failure` → `test-5-family.log` | **EXIT=0**, 4/4 passed |
++| 7 | Neighbouring Qt 5 portability checks | `ctest -R '^(Qt5SignalOverloadCheck\|Qt5QListApiCheck)$'` → `test-6-qt5-family.log` | EXIT=0, 2/2 passed |
++| 8 | Check's own fixtures | `python3 tests/qt5-worker-thread-check.py --self-test` | EXIT=0 |
++| 9 | No Qt 5 tree on the host | `PATH=<shim without pkg-config> python3 tests/qt5-worker-thread-check.py --build-dir build` → `check-9-noqt5.log` | EXIT=0, `probe: skipped (no Qt 5 development tree found)` — a skip, never a silent pass |
++| 10 | Manifests | `bash tests/all-sources-reproduce.sh` → `manifest-2.log`; `bash tests/fork-sources-gate.sh` → `fork-gate-2.log` | EXIT=0, `REPRODUCES`; EXIT=0, `PASS: every tracked source in scope is registered` |
++| 11 | Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` → `gate-2.log` | **EXIT=0**, every row PASS (first run `gate-1.log` was EXIT=1 on `complexity: main@... CCN 23`; `main` was split into `scan`/`shadow_cases`/`host_control`/`compile_affected`/`run_probe`, measured max CCN 10) |
++
++## Files committed
++
++* `tests/src/core/TestWorkerThread.h` (new)
++* `tests/qt5-worker-thread-check.py` (new)
++* `tests/src/core/WarpMarkersTest.cpp`
++* `tests/src/gui/Warp/SampleClipWarpEditTest.cpp`
++* `tests/CMakeLists.txt` (registers `Qt5WorkerThreadCheck`)
++* `tests/fork-sources.txt`, `tests/all-sources.txt` (both new files)
++* `docs/qwen-fixes-2026-10/cluster-ci-539b88713935565b.md`
++
++## Self-check
++
++* **The regression FAILS with the product change reverted and PASSES restored.** Reverted (row 2):
++  ctest `Qt5WorkerThreadCheck` EXIT=8, the hosted diagnostic reproduced at all four sites. Restored
++  (row 4): EXIT=0, 1/1 passed. The revert/apply commands and their exit codes are rows 2-3.
++* **The test is deterministic.** No wall clock, no sleep, no race. The seam is Qt's own
++  configuration file: the shadow `qtcore-config.h` sets `QT_FEATURE_cxx11_future -1`, exactly what
++  the PPA package ships, and the compiled translation units are the checked-in sources with their
++  recorded flags. Nothing in the check depends on timing; `compiled` vs `not compiled` is the whole
++  verdict, and the three controls make a "passes for the wrong reason" visible.
++* **The fix is at the cause and complete.** Every `QThread::create` occurrence in the tree was
++  enumerated (4 real, 3 comments), all four are fixed; the product has none. The portable header is
++  used by both TUs, and its own positive compile is asserted under the shadow. The other features
++  the hosted Qt disables were audited (gestures already guarded; no state-machine use) and both TUs
++  also compile with all four features off.
++* **No collateral damage.** No product source, no command, no serialisation and no audio path is
++  touched — only two test files (their assertions and thread bodies are unchanged), a new test
++  helper, a new ctest and the two manifests. Old projects and saved data are not read or written by
++  anything here. The new check adds no limit that any other caller must satisfy.
++* **Realtime / undo / commands.** Nothing in this diff runs on the audio thread: it is test code
++  (two QTest binaries, a Python source-and-compile check) and registration. No `ControlCommands*`
++  file changed, no new command, no reversibility row, so the command snapshot and canary are
++  unchanged. The warp suites' existing single-undo-step assertions still pass (row 6).
++* **The GUI test still drives the real view.** Unchanged: `SampleClipWarpEditTest` keeps its
++  `QTest::mousePress`/`mouseRelease` path and its `warp.move` assertions; this fix only changed how
++  its helper thread is started.
++* **Portability direction.** The fix removes the only Qt-5-feature-gated API from first-party test
++  code; nothing new was added that needs a guard. MSVC/macOS are not affected by
++  `QT_FEATURE_cxx11_future` (their Qt ships with the feature on) and the portable header is plain
++  `QThread` + `std::function`, which both compile.
++* **Log folder.** The designated folder is not writable in this session (see the evidence table);
++  the logs are in `build/qwen-logs/` and mirrored to the harness-writable
++  `/home/kruzzzzy/.local/share/zene-bunny-fix/dsh/home/ci-539b88713935565b-logs/`.
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 526928a9d5..dd3b796902 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -9152,6 +9152,28 @@ if(PYTHON3_EXECUTABLE)
+ 	set_tests_properties(Qt5QListApiCheck PROPERTIES TIMEOUT 300)
+ endif()
+ 
++# Qt 5 worker-thread portability (cluster ci-539b88713935565b, 2026-11-14). The hosted
++# mingw64 job builds against the tobydox PPA's Qt 5.15.6 package
++# (.github/workflows/deps-ubuntu-24.04-mingw.txt), whose QtCore/qtcore-config.h carries
++# `QT_FEATURE_cxx11_future -1`: qthread.h wraps QThread::create() in
++# `#if QT_CONFIG(cxx11_future)`, so the factory is not declared there at all. Two fork-NEW
++# warp tests used it and the job stopped with
++#   tests/src/gui/Warp/SampleClipWarpEditTest.cpp:433:58: error: 'create' is not a member of 'QThread'
++# (and :463, :551, with tests/src/core/WarpMarkersTest.cpp:131 the next target in the queue).
++# tests/src/core/TestWorkerThread.h is the portable QThread subclass the tests now use. The
++# check scans first-party sources (red on the Qt 6 hosts too) and, where pkg-config finds a
++# Qt 5 tree, compiles the affected translation units from this build's compile_commands.json
++# against a QtCore/qtcore-config.h with the feature off - the hosted job's own configuration.
++if(PYTHON3_EXECUTABLE)
++	add_test(NAME Qt5WorkerThreadCheck
++		COMMAND ${PYTHON3_EXECUTABLE}
++			${CMAKE_CURRENT_SOURCE_DIR}/qt5-worker-thread-check.py
++			--root ${CMAKE_SOURCE_DIR}
++			--build-dir ${CMAKE_BINARY_DIR}
++			--moc $<TARGET_FILE:Qt${QT_VERSION_MAJOR}::moc>)
++	set_tests_properties(Qt5WorkerThreadCheck PROPERTIES TIMEOUT 300)
++endif()
++
+ 
+ 
+ # Linux namespace tests must retry interrupted writes and reject failed/short handshakes.
+diff --git a/tests/all-sources.txt b/tests/all-sources.txt
+index 014bb99f09..543ee69a76 100644
+--- a/tests/all-sources.txt
++++ b/tests/all-sources.txt
+@@ -3289,6 +3289,7 @@ tests/src/core/TelemetryTest.cpp
+ tests/src/core/TelemetryTransportTest.cpp
+ tests/src/core/TempoMapPersistenceTest.cpp
+ tests/src/core/TempoMapTest.cpp
++tests/src/core/TestWorkerThread.h
+ tests/src/core/ThreadPoolTest.cpp
+ tests/src/core/ThrowingImportFilterPlugin.cpp
+ tests/src/core/TimelineTest.cpp
+diff --git a/tests/fork-sources.txt b/tests/fork-sources.txt
+index 05e640c9f6..f9fb8774d2 100644
+--- a/tests/fork-sources.txt
++++ b/tests/fork-sources.txt
+@@ -741,6 +741,16 @@
+ tests/qt5-signal-overload-check.py
+ tests/qt5-signal-overload-arm-check.py
+ tests/arranger-zoom-no-gestures-check.py
++# cluster ci-539b88713935565b (2026-11-14): the hosted mingw64 Qt 5.15.6 package is configured
++# with QT_FEATURE_cxx11_future=-1, so QThread::create() is not declared there and two fork-NEW
++# warp tests that called it stopped the build. The check scans first-party sources for the
++# factory and compiles the two affected translation units - plus a positive fixture using
++# tests/src/core/TestWorkerThread.h - against a Qt 5 whose qtcore-config.h has the feature off.
++# Both new files are under 500 code lines and every function is CCN <= 10, so gates 4 and 7
++# measure them at their existing thresholds rather than moving a baseline.
++tests/qt5-worker-thread-check.py
++tests/src/core/TestWorkerThread.h
++docs/qwen-fixes-2026-10/cluster-ci-539b88713935565b.md
+ docs/qwen-fixes-2026-10/cluster-ci-632a20737fe640fa.md
+ docs/qwen-fixes-2026-10/cluster-ci-c22070dd8cbbc7c0.md
+ docs/qwen-fixes-2026-10/cluster-ci-017caf2edd434b66.md
+diff --git a/tests/qt5-worker-thread-check.py b/tests/qt5-worker-thread-check.py
+new file mode 100755
+index 0000000000..9154759277
+--- /dev/null
++++ b/tests/qt5-worker-thread-check.py
+@@ -0,0 +1,505 @@
++#!/usr/bin/env python3
++"""Regression for cluster ci-539b88713935565b: first-party sources must build on a Qt whose
++QThread::create() factory is compiled out.
++
++The hosted `mingw64` job builds against the tobydox PPA's Qt 5.15.6, whose
++`QtCore/qtcore-config.h` carries `QT_FEATURE_cxx11_future -1` (the PPA package is pinned by
++`.github/workflows/deps-ubuntu-24.04-mingw.txt`). Qt's own `qthread.h` wraps the factory in
++
++    #if QT_CONFIG(cxx11_future)
++    template <typename Function, typename... Args>
++    static QThread *create(Function &&f, Args &&... args);
++    ...
++    #endif // QT_CONFIG(cxx11_future)
++
++so on that Qt the name does not exist. Two fork-new test files used it and the job stopped:
++
++    tests/src/gui/Warp/SampleClipWarpEditTest.cpp:433:58: error: 'create' is not a member of 'QThread'
++    tests/src/gui/Warp/SampleClipWarpEditTest.cpp:463:58: error: 'create' is not a member of 'QThread'
++    tests/src/gui/Warp/SampleClipWarpEditTest.cpp:551:56: error: 'create' is not a member of 'QThread'
++
++with `tests/src/core/WarpMarkersTest.cpp:131` the same defect one target away (the job stopped
++before it got there). `tests/src/core/TestWorkerThread.h` is the portable spelling: a QThread
++subclass whose `run()` calls the callable, with `start()`/`wait()` unchanged - QThread::create()
++is only that, plus std::async machinery.
++
++The check has two deterministic halves:
++
++  * a source scan of the first-party tree for `QThread::create`, which is red on the Qt 6 hosts
++    too (that is the point: a host with the factory never notices);
++  * a compile probe: every recorded translation unit that used the factory is compiled from this
++    build's `compile_commands.json` against real Qt 5 headers plus a SHADOW
++    `QtCore/qtcore-config.h` whose `cxx11_future` feature is off - the failing platform's
++    configuration, under which Qt's headers stay coherent. Two controls keep it honest: the old
++    spelling must NOT compile under the shadow, and the host spelling (`TestWorkerThread.h`) must
++    compile under it. The old spelling must still compile on a host whose Qt has the feature, so
++    the shadow - not the fixture - is what hides it.
++
++The probe reports itself skipped (never passed) when the host has no Qt 5 development tree; the
++source scan still measures there.
++
++Usage:
++  qt5-worker-thread-check.py --build-dir <build> [--root <tree>] [--moc <moc>]
++  qt5-worker-thread-check.py --self-test
++"""
++
++import argparse
++import json
++import os
++import re
++import shlex
++import shutil
++import subprocess
++import sys
++import tempfile
++
++SCAN_DIRS = ("src", "include", "plugins", "tests")
++SOURCE_SUFFIXES = (".h", ".hpp", ".hxx", ".cpp", ".cxx", ".cc")
++EXCLUDED = (
++    "src/3rdparty/",
++    "tests/reference/",
++    "plugins/NeuralAmp/rtneural/",
++    "plugins/NeuralAmp/nam/",
++    "plugins/NeuralAmp/tests/",
++    "plugins/RnnoiseDenoiser/rnnoise/",
++    "plugins/SfzPlayer/sfizz/",
++)
++FACTORY = re.compile(r"\bQThread\s*::\s*create\s*\(")
++NON_CODE = re.compile(r'//[^\n]*|/\*.*?\*/|"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\'', re.S)
++
++# The two translation units the hosted job found (one build, one next in the queue). A rename is
++# a failure, not a skip: the check must keep watching the code that had the defect.
++AFFECTED = (
++    "tests/src/gui/Warp/SampleClipWarpEditTest.cpp",
++    "tests/src/core/WarpMarkersTest.cpp",
++)
++
++OLD_SPELLING = """\
++#include <QThread>
++#include <memory>
++int main()
++{
++	std::unique_ptr<QThread> worker(QThread::create([] {}));
++	return worker ? 0 : 1;
++}
++"""
++
++NEW_SPELLING = """\
++#include "TestWorkerThread.h"
++#include <memory>
++int main()
++{
++	auto worker = std::make_unique<lmms::test::TestWorkerThread>([] {});
++	worker->start();
++	worker->wait();
++	return 0;
++}
++"""
++
++# Compiles only where the feature is ON, so the same fixture is the shadow's negative control
++# and the host's positive one.
++FEATURE_PROBE = """\
++#include <QtCore/qglobal.h>
++static_assert(QT_CONFIG(cxx11_future), "this Qt was configured without cxx11_future");
++int main() { return 0; }
++"""
++
++FIXTURE_BAD = """\
++void start()
++{
++	auto* worker = QThread::create([] {});
++	worker->start();
++}
++"""
++
++FIXTURE_GOOD = """\
++void start(TestWorkerThread* worker)
++{
++	worker->start();
++}
++"""
++
++
++def blank_non_code(text):
++	"""Comments and literals become spaces; every newline and offset is kept."""
++	return NON_CODE.sub(lambda match: re.sub(r"[^\n]", " ", match.group(0)), text)
++
++
++def factory_findings(name, text):
++	code = blank_non_code(text)
++	return [(name, code.count("\n", 0, match.start()) + 1)
++		for match in FACTORY.finditer(code)]
++
++
++def self_test():
++	failures = []
++	if not factory_findings("fixture-bad.cpp", FIXTURE_BAD):
++		failures.append("the scan did not flag the QThread::create fixture")
++	if factory_findings("fixture-good.cpp", FIXTURE_GOOD):
++		failures.append("the scan flagged the QThread subclass fixture")
++	if factory_findings("fixture-comment.cpp", "// QThread::create(...)\n"):
++		failures.append("the scan flagged a comment")
++	return failures
++
++
++def run(command, cwd=None, timeout=300):
++	try:
++		return subprocess.run(command, cwd=cwd, capture_output=True, text=True, timeout=timeout)
++	except (OSError, subprocess.SubprocessError):
++		return None
++
++
++def tracked_sources(root):
++	"""The first-party sources a supported build compiles (git ls-files, same scope as Gate 9)."""
++	result = run(["git", "-C", root, "ls-files", "--", *SCAN_DIRS])
++	if result is None or result.returncode != 0:
++		raise SystemExit("FAIL: cannot list tracked sources under " + root)
++	paths = []
++	for path in result.stdout.splitlines():
++		if not path.endswith(SOURCE_SUFFIXES):
++			continue
++		if any(path.startswith(prefix) for prefix in EXCLUDED):
++			continue
++		paths.append(path)
++	return paths
++
++
++def scan_tree(root):
++	findings = []
++	for path in tracked_sources(root):
++		try:
++			with open(os.path.join(root, path), encoding="utf-8", errors="replace") as handle:
++				text = handle.read()
++		except OSError:
++			continue
++		findings += factory_findings(path, text)
++	return findings
++
++
++def split_command(command):
++	return shlex.split(command)
++
++
++def entry_arguments(entry):
++	if entry.get("command"):
++		return split_command(entry["command"])
++	return list(entry.get("arguments") or [])
++
++
++def strip_qt6_includes(arguments):
++	"""A recorded Qt 6 compile line without its Qt 6 include paths; everything else is kept."""
++	out, index = [], 0
++	while index < len(arguments):
++		arg = arguments[index]
++		paired = arg in ("-isystem", "-I", "/I", "/external:I") and index + 1 < len(arguments)
++		if paired:
++			value = arguments[index + 1]
++			if not is_qt6_path(value):
++				out += [arg, value]
++			index += 2
++			continue
++		if arg.startswith(("-isystem", "-I", "/I", "/external:I")) and arg not in ("-I", "/I"):
++			value = arg.split(":", 1)[1] if arg.lower().startswith("/external:i") else arg[2:]
++			if not is_qt6_path(value):
++				out.append(arg)
++			index += 1
++			continue
++		out.append(arg)
++		index += 1
++	return out
++
++
++def is_qt6_path(path):
++	parts = [part for part in re.split(r"[\\/]+", path.lower()) if part]
++	return "qt6" in parts
++
++
++def compile_flags(arguments):
++	out, index = [], 0
++	while index < len(arguments):
++		arg = arguments[index]
++		if arg in ("-o", "/Fo"):
++			index += 2
++			continue
++		if arg.startswith("/Fo"):
++			index += 1
++			continue
++		if arg in ("-c", "/c"):
++			index += 1
++			continue
++		out.append(arg)
++		index += 1
++	return out
++
++
++def include_dirs(arguments):
++	out, index = [], 0
++	while index < len(arguments):
++		arg = arguments[index]
++		if arg in ("-I", "-isystem", "/I") and index + 1 < len(arguments):
++			out.append(arguments[index + 1])
++			index += 2
++			continue
++		if arg.startswith(("-I", "/I")) and len(arg) > 2:
++			out.append(arg[2:])
++		index += 1
++	return out
++
++
++def source_of(entry):
++	path = entry["file"]
++	if not os.path.isabs(path):
++		path = os.path.join(entry.get("directory", "."), path)
++	return os.path.normpath(path)
++
++
++class Toolchain:
++	"""One recorded compile line, reused for the shadow and the host compiles."""
++
++	def __init__(self, entry):
++		self.directory = entry["directory"]
++		self.source = source_of(entry)
++		self.args = compile_flags(strip_qt6_includes(entry_arguments(entry)))
++		if not self.args:
++			raise SystemExit("FAIL: %s has no compile command" % entry["file"])
++		self.msvc = os.path.basename(self.args[0]).lower() in ("cl", "cl.exe")
++		self.syntax_only = "/Zs" if self.msvc else "-fsyntax-only"
++		self.include_flag = "/I" if self.msvc else "-I"
++		self.includes = include_dirs(self.args)
++
++	def command(self, extra, source):
++		"""@a extra entries are include dirs, except a literal flag (leading '-') which is kept as is."""
++		flags = list(self.args[1:])
++		# The recorded line ends with the TU it compiles; it is replaced by @a source.
++		while flags and os.path.normpath(flags[-1]) in (os.path.normpath(source), os.path.normpath(self.source)):
++			flags.pop()
++		prefix = [self.args[0], self.syntax_only]
++		for entry in extra:
++			prefix.append(entry if entry.startswith("-") else self.include_flag + entry)
++		return prefix + flags + [source]
++	def moc_include(self, source, tempdir, moc):
++		"""Run moc for a TU that includes its own .moc; (include dir or None, detail)."""
++		with open(source, encoding="utf-8", errors="replace") as handle:
++			match = re.search(r'#include\s+"([\w.+-]+\.moc)"', handle.read())
++		if match is None:
++			return None, ""
++		if not moc:
++			return None, "needs %s but no moc was given" % match.group(1)
++		output = os.path.join(tempdir, match.group(1))
++		command = [moc, source, "-o", output]
++		for directory in self.includes:
++			command += ["-I", directory]
++		produced = run(command, self.directory)
++		if produced is None or produced.returncode != 0:
++			detail = "moc could not run" if produced is None else (produced.stderr or produced.stdout).strip()
++			return None, "moc failed: " + (detail.splitlines()[-1] if detail else "no output")
++		return tempdir, ""
++
++	def compile_source(self, source, extra_includes, tempdir, moc):
++		includes = list(extra_includes)
++		moc_dir, detail = self.moc_include(source, tempdir, moc)
++		if moc_dir is None and detail:
++			return False, detail
++		if moc_dir:
++			includes.append(moc_dir)
++		result = run(self.command(includes, source), self.directory)
++		if result is None:
++			return False, "the compiler could not run"
++		if result.returncode == 0:
++			return True, ""
++		lines = [line for line in (result.stderr or result.stdout).splitlines() if "error" in line.lower()]
++		return False, "; ".join(lines[:3]) or "compile failed (exit %d)" % result.returncode
++
++
++def qt5_flags():
++	"""Compile flags of a Qt 5 development tree, or None when pkg-config has none."""
++	if not shutil.which("pkg-config"):
++		return None
++	modules = ["Qt5Core", "Qt5Gui", "Qt5Widgets", "Qt5Xml", "Qt5Network", "Qt5Test", "Qt5DBus"]
++	if run(["pkg-config", "--exists", *modules]) is None or run(["pkg-config", "--exists", *modules]).returncode != 0:
++		return None
++	cflags = run(["pkg-config", "--cflags", *modules])
++	if cflags is None or cflags.returncode != 0:
++		return None
++	flags = shlex.split(cflags.stdout)
++	if run(["pkg-config", "--exists", "Qt5Svg"]).returncode == 0:
++		svg = run(["pkg-config", "--cflags", "Qt5Svg"])
++		if svg is not None and svg.returncode == 0:
++			flags += shlex.split(svg.stdout)
++	return flags
++
++
++def qt5_config(flags):
++	for directory in flags:
++		if directory.startswith("-I"):
++			candidate = os.path.join(directory[2:], "QtCore", "qtcore-config.h")
++			if os.path.isfile(candidate):
++				return candidate
++	return None
++
++
++def qt5_moc(fallback):
++	if shutil.which("pkg-config"):
++		result = run(["pkg-config", "--variable=host_bins", "Qt5Core"])
++		if result is not None and result.returncode == 0 and result.stdout.strip():
++			candidate = os.path.join(result.stdout.strip(), "moc")
++			if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
++				return candidate
++	return fallback or None
++
++
++def write_shadow(config, directory):
++	"""A QtCore/qtcore-config.h with the cxx11_future feature off, as Qt's configure writes one."""
++	with open(config, encoding="utf-8", errors="replace") as handle:
++		text = handle.read()
++	if not re.search(r"^#\s*define\s+QT_FEATURE_cxx11_future\b", text, re.M):
++		raise SystemExit("FAIL: %s declares no QT_FEATURE_cxx11_future" % config)
++	text = re.sub(r"^#\s*define\s+QT_FEATURE_cxx11_future\b.*$", "#define QT_FEATURE_cxx11_future -1",
++		text, flags=re.M)
++	destination = os.path.join(directory, "QtCore", "qtcore-config.h")
++	os.makedirs(os.path.dirname(destination), exist_ok=True)
++	with open(destination, "w", encoding="utf-8") as handle:
++		handle.write(text)
++	return destination
++
++
++def load_build(build_dir):
++	commands = os.path.join(os.path.abspath(build_dir), "compile_commands.json")
++	if not os.path.isfile(commands):
++		return "no compile_commands.json in " + build_dir
++	with open(commands, encoding="utf-8", errors="replace") as handle:
++		entries = json.load(handle)
++	if not entries:
++		return "compile_commands.json is empty"
++	return entries
++
++
++class Report:
++	"""Collects the probe's cases so one failed compile does not hide the next."""
++
++	def __init__(self):
++		self.failures = []
++
++	def __call__(self, ok, label, detail=""):
++		print("%s %s%s" % ("PASS" if ok else "FAIL", label, "" if ok else ": " + detail))
++		if not ok:
++			self.failures.append(label)
++
++
++def write_fixture(tempdir, name, text):
++	path = os.path.join(tempdir, name)
++	with open(path, "w", encoding="utf-8") as handle:
++		handle.write(text)
++	return path
++
++
++def scan(root, report):
++	findings = scan_tree(root)
++	for path, line in findings:
++		print("%s:%d: uses QThread::create(), which a Qt built without cxx11_future does not declare;"
++			" use tests/src/core/TestWorkerThread.h" % (path, line))
++	report(not findings, "no first-party source uses QThread::create()")
++
++
++def shadow_cases(toolchain, shadow, flags, tempdir, report):
++	"""The two negative controls and the portable header's positive case."""
++	include = [shadow] + flags
++	feature = write_fixture(tempdir, "feature.cpp", FEATURE_PROBE)
++	ok, detail = toolchain.compile_source(feature, include, tempdir, None)
++	report(not ok, "the shadow really is future-less (QT_CONFIG(cxx11_future) must be false)",
++		"it compiled, so the probe does not detect the feature: " + detail)
++	old = write_fixture(tempdir, "old.cpp", OLD_SPELLING)
++	ok, detail = toolchain.compile_source(old, include, tempdir, None)
++	report(not ok, "QThread::create() is absent under the shadow (the fixture can fail)",
++		"it compiled, so the shadow does not hide the factory: " + detail)
++	new = write_fixture(tempdir, "new.cpp", NEW_SPELLING)
++	source_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "src", "core")
++	ok, detail = toolchain.compile_source(new, [shadow, source_root] + flags, tempdir, None)
++	report(ok, "tests/src/core/TestWorkerThread.h builds on a Qt without cxx11_future", detail)
++
++
++def host_control(toolchain, flags, tempdir, report):
++	"""A Qt that HAS the feature must still accept the old spelling, so the shadow is the cause."""
++	feature = write_fixture(tempdir, "host-feature.cpp", FEATURE_PROBE)
++	available, _ = toolchain.compile_source(feature, flags, tempdir, None)
++	if not available:
++		print("SKIP this host's Qt has no cxx11_future, so the host control does not exist here")
++		return
++	old = write_fixture(tempdir, "host-old.cpp", OLD_SPELLING)
++	ok, detail = toolchain.compile_source(old, flags, tempdir, None)
++	report(ok, "QThread::create() still compiles on a Qt that has the feature", detail)
++
++
++def compile_affected(root, by_source, control, shadow, flags, tempdir, moc, report):
++	for relative in AFFECTED:
++		entry = by_source.get(os.path.normpath(os.path.join(root, relative)))
++		if entry is None:
++			report(False, relative + " compiles on a Qt without cxx11_future",
++				"not in compile_commands.json (was it renamed?)")
++			continue
++		affected = Toolchain(entry)
++		if affected.args[0] != control.args[0]:
++			print("SKIP %s: its recorded compiler differs from the control's" % relative)
++			continue
++		ok, detail = affected.compile_source(source_of(entry), [shadow] + flags, tempdir, moc)
++		report(ok, relative + " compiles on a Qt without cxx11_future", detail)
++
++
++def run_probe(root, build_dir, moc, report):
++	entries = load_build(build_dir)
++	if isinstance(entries, str):
++		report(False, "the build tree has a compilation database", entries)
++		return
++	by_source = {source_of(entry): entry for entry in entries}
++	control_entry = by_source.get(os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(build_dir)),
++		"tests/src/core/WarpMarkersTest.cpp")))
++	if control_entry is None:
++		report(False, "tests/src/core/WarpMarkersTest.cpp is in compile_commands.json",
++			"the control translation unit is missing (was it renamed?)")
++		return
++	flags = qt5_flags()
++	if flags is None:
++		print("probe: skipped (no Qt 5 development tree found)")
++		return
++	config = qt5_config(flags)
++	if config is None:
++		print("probe: skipped (no Qt 5 qtcore-config.h found)")
++		return
++	control = Toolchain(control_entry)
++	with tempfile.TemporaryDirectory(prefix="zene-qt5-worker-") as tempdir:
++		shadow = os.path.join(tempdir, "shadow")
++		write_shadow(config, shadow)
++		moc_tool = qt5_moc(moc)
++		shadow_cases(control, shadow, flags, tempdir, report)
++		host_control(control, flags, tempdir, report)
++		compile_affected(root, by_source, control, shadow, flags, tempdir, moc_tool, report)
++
++
++def main(argv):
++	if "--self-test" in argv[1:]:
++		failures = self_test()
++		for failure in failures:
++			print("FAIL", failure)
++		if failures:
++			return 1
++		print("PASS: the source scan flags the factory spelling and not the portable one")
++		return 0
++
++	parser = argparse.ArgumentParser()
++	parser.add_argument("--root", default=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
++	parser.add_argument("--build-dir", required=True)
++	parser.add_argument("--moc", default="")
++	options = parser.parse_args(argv[1:])
++	report = Report()
++	scan(os.path.abspath(options.root), report)
++	run_probe(os.path.abspath(options.root), options.build_dir, options.moc, report)
++	if report.failures:
++		print("FAIL: %d worker-thread portability case(s) failed: %s"
++			% (len(report.failures), "; ".join(report.failures)))
++		return 1
++	print("PASS: first-party sources build on a Qt without QThread::create()")
++	return 0
++
++
++if __name__ == "__main__":
++	sys.exit(main(sys.argv))
+diff --git a/tests/src/core/TestWorkerThread.h b/tests/src/core/TestWorkerThread.h
+new file mode 100644
+index 0000000000..e06568040d
+--- /dev/null
++++ b/tests/src/core/TestWorkerThread.h
+@@ -0,0 +1,65 @@
++/*
++ * TestWorkerThread.h - a QThread that runs a callable, without QThread::create()
++ *
++ * Copyright (c) 2026 Zene Studio contributors
++ *
++ * This file is part of LMMS - https://lmms.io
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; either version 2
++ * of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
++ */
++
++#ifndef LMMS_TESTS_TEST_WORKER_THREAD_H
++#define LMMS_TESTS_TEST_WORKER_THREAD_H
++
++#include <QThread>
++
++#include <functional>
++#include <utility>
++
++namespace lmms::test
++{
++
++/*! Runs @a body on a QThread, the way `QThread::create(body)` would.
++ *
++ * `QThread::create()` is the portable way to start a function on a thread - except where Qt
++ * was configured without `cxx11_future`: `qthread.h` wraps the whole factory in
++ * `#if QT_CONFIG(cxx11_future)`, and the hosted mingw64 job's Qt 5.15.6 package carries
++ * `QT_FEATURE_cxx11_future -1`, so the name does not exist there (cluster
++ * ci-539b88713935565b: `error: 'create' is not a member of 'QThread'`). This subclass is the
++ * same thing without std::async: `run()` calls the body once, and the caller keeps using
++ * `start()` and `wait()` exactly as before. Test code only - a product thread has its own
++ * class with its own shutdown rules.
++ */
++class TestWorkerThread : public QThread
++{
++public:
++	explicit TestWorkerThread(std::function<void()> body)
++		: m_body(std::move(body))
++	{
++	}
++
++protected:
++	void run() override
++	{
++		if (m_body) { m_body(); }
++	}
++
++private:
++	std::function<void()> m_body;
++};
++
++} // namespace lmms::test
++
++#endif // LMMS_TESTS_TEST_WORKER_THREAD_H
+diff --git a/tests/src/core/WarpMarkersTest.cpp b/tests/src/core/WarpMarkersTest.cpp
+index 3927424002..2518848a73 100644
+--- a/tests/src/core/WarpMarkersTest.cpp
++++ b/tests/src/core/WarpMarkersTest.cpp
+@@ -52,6 +52,7 @@
+ #include <vector>
+ 
+ #include "../core/AllocationProbe.h"
++#include "TestWorkerThread.h"
+ 
+ #include "LmmsTypes.h"
+ #include "WarpMarkers.h"
+@@ -128,7 +129,7 @@ private slots:
+ 		std::atomic<bool> stop{false};
+ 		std::atomic<int> torn{0};
+ 		std::atomic<int> reads{0};
+-		std::unique_ptr<QThread> reader(QThread::create([&] {
++		std::unique_ptr<test::TestWorkerThread> reader = std::make_unique<test::TestWorkerThread>([&] {
+ 			while (!stop)
+ 			{
+ 				const WarpSnapshot generation(publication);
+@@ -138,7 +139,7 @@ private slots:
+ 				for (int i = 0; i < map.size(); ++i) { if (map[i].offsetTicks != map[0].offsetTicks + i) { ++torn; } }
+ 				++reads;
+ 			}
+-		}));
++		});
+ 		reader->start();
+ 		for (int stamp = 1; stamp <= 20000; ++stamp) { publication.publish(stamped(stamp)); }
+ 		while (reads.load() < 100) { QThread::msleep(1); }
+diff --git a/tests/src/gui/Warp/SampleClipWarpEditTest.cpp b/tests/src/gui/Warp/SampleClipWarpEditTest.cpp
+index 0a371ea96d..475439f393 100644
+--- a/tests/src/gui/Warp/SampleClipWarpEditTest.cpp
++++ b/tests/src/gui/Warp/SampleClipWarpEditTest.cpp
+@@ -65,6 +65,7 @@
+ #include "SongEditor.h"
+ 
+ #include "SampleClipWarpEditTestSupport.h"
++#include "../../core/TestWorkerThread.h"
+ 
+ using namespace lmms;
+ using namespace lmms::gui;
+@@ -430,13 +431,13 @@ private slots:
+ 		std::atomic<bool> holding{false};
+ 		std::atomic<bool> release{false};
+ 		std::atomic<bool> timedOut{false};
+-		std::unique_ptr<QThread> period(QThread::create([&] {
++		std::unique_ptr<test::TestWorkerThread> period = std::make_unique<test::TestWorkerThread>([&] {
+ 			const auto lock = Engine::audioEngine()->requestChangesGuard();
+ 			holding = true;
+ 			QElapsedTimer held;
+ 			held.start();
+ 			while (!release) { if (held.elapsed() > 5000) { timedOut = true; return; } QThread::msleep(1); }
+-		}));
++		});
+ 		period->start();
+ 		QVERIFY(waitFor(holding));
+ 		const WarpMarker next[] = {{kBursts[0], 96}, {kBursts[2], 168}};
+@@ -460,13 +461,13 @@ private slots:
+ 		std::atomic<bool> holding{false};
+ 		std::atomic<bool> release{false};
+ 		std::atomic<bool> timedOut{false};
+-		std::unique_ptr<QThread> period(QThread::create([&] {
++		std::unique_ptr<test::TestWorkerThread> period = std::make_unique<test::TestWorkerThread>([&] {
+ 			const auto lock = Engine::audioEngine()->requestChangesGuard();
+ 			holding = true;
+ 			QElapsedTimer held;
+ 			held.start();
+ 			while (!release) { if (held.elapsed() > 5000) { timedOut = true; return; } QThread::msleep(1); }
+-		}));
++		});
+ 		period->start();
+ 		QVERIFY(waitFor(holding));
+ 
+@@ -548,14 +549,14 @@ private:
+ 		std::atomic<bool> committed{false};
+ 		std::atomic<bool> commitSeen{false};
+ 		SampleClip* clip = m_clip;
+-		std::unique_ptr<QThread> pass(QThread::create([&, clip] {
++		std::unique_ptr<test::TestWorkerThread> pass = std::make_unique<test::TestWorkerThread>([&, clip] {
+ 			const WarpSnapshot generation = clip->snapshotWarp();
+ 			const Clip::WarpPassScope scope(*clip, generation);
+ 			seen.before = readInPass(clip);
+ 			readOnce = true;
+ 			commitSeen = waitFor(committed);
+ 			seen.after = readInPass(clip);
+-		}));
++		});
+ 		pass->start();
+ 		const bool started = waitFor(readOnce);
+ 		commit();
+-- 
+2.56.0
+
