@@ -1026,6 +1026,8 @@ set(LMMS_TESTS
 	src/core/SessionSubSceneTest.cpp
 	# 0.5.0 L03 (W3): comp edges and groups, metronome options, punch here, remaining record time.
 	src/core/RecordToolsTest.cpp
+	# Q050-497: the lock-free earcon set, its levels and its monitoring-only mix path.
+	src/core/EarconsTest.cpp
 	# Coverage lane (M0, 2026-10-08): the Receiver and InsertRecorder devices processed through a real EffectChain.
 	src/core/ReceiverEffectTest.cpp
 	src/core/ProjectSectionTest.cpp

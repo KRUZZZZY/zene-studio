@@ -779,6 +779,7 @@ tests/src/core/DeviceDspTestParts1.h
 tests/src/core/DeviceDspTestParts2.h
 tests/src/core/DeviceToolsTestParts1.h
 tests/src/core/DrumSynthTestParts1.h
+tests/src/core/EarconsTest.cpp
 tests/src/core/HardwareIoTestParts1.h
 tests/src/core/HardwareIoTestParts2.h
 tests/src/core/InstrumentRoutingTestParts1.h
@@ -3759,3 +3760,6 @@ include/ShellRecordMenu.h
 src/gui/shell/ShellRecordMenu.cpp
 # cluster new-p10-318 (2026-10): fix and verification report for the Peak Controller zero-frame block (fork-NEW).
 docs/qwen-fixes-2026-10/cluster-new-p10-318.md
+# Q050-497: the earcon set - a lock-free module mixed only into the device output, and its test.
+include/Earcons.h
+src/core/Earcons.cpp

@@ -38,6 +38,7 @@
 #include <cmath>
 
 #include "ControlRoom.h"
+#include "Earcons.h"
 #include "ProjectSectionRegistry.h"
 #include "AutomationLatency.h"
 #include "AutomationRamp.h"
@@ -703,7 +704,7 @@ bool Song::enforceLoop(const TimePos& begin, const TimePos& end, bool wrapping)
 	if (!playedToEnd && getPlayPos() >= begin) { return false; }
 	// 0.5.0 W2: counted BEFORE setTicks announces the jump, so a listener of that jump already sees the
 	// wrap; an atomic add, nothing else, on the render thread.
-	if (wrapping && playedToEnd) { m_loopWraps.fetch_add(1, std::memory_order_release); }
+	if (wrapping && playedToEnd) { m_loopWraps.fetch_add(1, std::memory_order_release); earcons::play(earcons::Sound::LoopWrap); }
 	getTimeline().setTicks(begin.getTicks());
 	return true;
 }
