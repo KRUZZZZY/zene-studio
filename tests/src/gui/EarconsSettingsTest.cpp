@@ -25,7 +25,9 @@
 /*! Q050-497: every earcon category starts off; View > Earcons (objectName earconsMenu) switches one on
  *  through view.earcons and sets its level; the socket call and one undo step agree with the menu; bad
  *  arguments are typed InvalidArgs; and the refused-transition and automation-boundary hooks put a sound
- *  in the monitoring buffer only while their category is enabled. */
+ *  in the monitoring buffer only while their category is enabled. The edit earcon belongs to the
+ *  registry's dispatch, so it is heard whatever route ran the command: a form (runCommand), a note
+ *  drawn in the editor, an automation point moved by a key, or an in-place automation move. */
 
 #include <QtTest>
 
@@ -46,6 +48,10 @@
 #include "GuiTestApplication.h"
 #include "InstrumentTrack.h"
 #include "MainWindow.h"
+#include "MidiClip.h"
+#include "NoteCanvas.h"
+#include "NoteEditor.h"
+#include "NotePlayHandle.h"
 #include "Song.h"
 #include "Track.h"
 #include "UiConfigStore.h"
@@ -145,6 +151,9 @@ private slots:
 		QVERIFY(m_home.isValid());
 		guitest::startGui(m_home);
 		ControlRegistry::setReady(true);
+		// Drawing a note auditions it through the instrument: the pool main() creates must
+		// exist in a test binary too (NoteEditorTest does the same).
+		NotePlayHandleManager::init();
 		earcons::prepare(48000);
 	}
 
@@ -259,7 +268,8 @@ private slots:
 		QVERIFY2(peak() > 0.f, "the refused earcon was silent while enabled");
 	}
 
-	//! The edit hook: a mutating command that ran is heard while its category is on.
+	//! The edit hook, through the form route: runCommand dispatches the command and the
+	//! registry queues the sound.
 	void anAppliedEditIsHeard()
 	{
 		QVERIFY(invoke(QStringLiteral("view.earcons"),
@@ -279,6 +289,53 @@ private slots:
 		call.fixed = {{QStringLiteral("enabled"), false}};
 		QVERIFY(runCommand(nullptr, call).ok);
 		QCOMPARE(peak(), 0.f);
+	}
+
+	//! The editor route: a note drawn on the canvas runs note.add through NoteEditor::run, so
+	//! the registry's EditApplied is heard while the edit category is on - and not while it is off.
+	void aNoteDrawnInTheEditorIsHeard()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(track != nullptr);
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		auto* editor = new NoteEditor;
+		editor->resize(1200, 640);
+		editor->show();
+		QVERIFY(QTest::qWaitForWindowExposed(editor));
+		editor->setClip(clip);
+		editor->setZoom(1.0);  // 1 px per tick: the point() arithmetic is exact
+		NoteGrid& grid = editor->state().grid;
+		grid.setScrollTicks(0);
+		grid.setScrollY(grid.rowOfKey(62) * grid.rowHeight());
+		emit editor->stateChanged();
+		editor->setTool(NoteTool::Draw);
+
+		for (const char* category : {"selection", "refused", "record", "loop"})
+		{
+			QVERIFY(invoke(QStringLiteral("view.earcons"),
+				{{QStringLiteral("category"), QString::fromLatin1(category)}, {QStringLiteral("enabled"), false}}).ok);
+		}
+		QVERIFY(invoke(QStringLiteral("view.earcons"),
+			{{QStringLiteral("category"), QStringLiteral("edit")}, {QStringLiteral("enabled"), true}}).ok);
+		const int depth = undoDepth();
+		flush();
+		const QPoint first(grid.xOfTick(100) + 2, grid.yOfKey(62) + grid.rowHeight() / 2);
+		QTest::mouseClick(editor->canvas(), Qt::LeftButton, Qt::NoModifier, first);
+		QCOMPARE(clip->notes().size(), std::size_t{1});
+		QVERIFY2(peak() > 0.f, "the edit earcon was silent for a note drawn in the editor");
+		QCOMPARE(undoDepth(), depth + 1);
+
+		QVERIFY(invoke(QStringLiteral("view.earcons"),
+			{{QStringLiteral("category"), QStringLiteral("edit")}, {QStringLiteral("enabled"), false}}).ok);
+		flush();
+		const QPoint second(grid.xOfTick(300) + 2, grid.yOfKey(62) + grid.rowHeight() / 2);
+		QTest::mouseClick(editor->canvas(), Qt::LeftButton, Qt::NoModifier, second);
+		QCOMPARE(clip->notes().size(), std::size_t{2});
+		QCOMPARE(peak(), 0.f);
+
+		delete editor;
+		delete clip;
 	}
 
 	//! The record hook: starting and stopping a recording are heard while the category is on.
@@ -301,6 +358,37 @@ private slots:
 		flush();
 		a11y::announceTransition(nullptr, a11y::Transition::RecordStopped);
 		QCOMPARE(peak(), 0.f);
+	}
+
+	//! The key route: Ctrl+Left chooses the last point, then Up moves it through
+	//! automation.move_point (the volume model is addressable) - the registry queues the sound.
+	void anAutomationPointMovedByKeyIsHeard()
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		auto* automation = dynamic_cast<AutomationTrack*>(Track::create(Track::Type::Automation, Engine::getSong()));
+		QVERIFY(track != nullptr && automation != nullptr);
+		auto* clip = dynamic_cast<AutomationClip*>(automation->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->addObject(track->volumeModel(), false);  // seeds one point at 0
+		clip->putValue(TimePos(48), 40.f, false);
+		getGUI()->automationEditor()->open(clip);
+		AutomationEditor* editor = getGUI()->automationEditor()->m_editor;
+		QVERIFY(editor != nullptr);
+		editor->setFocus();
+		QCoreApplication::processEvents();
+
+		QVERIFY(invoke(QStringLiteral("view.earcons"),
+			{{QStringLiteral("category"), QStringLiteral("selection")}, {QStringLiteral("enabled"), false}}).ok);
+		QVERIFY(invoke(QStringLiteral("view.earcons"),
+			{{QStringLiteral("category"), QStringLiteral("edit")}, {QStringLiteral("enabled"), true}}).ok);
+		flush();
+		QTest::keyClick(editor, Qt::Key_Left, Qt::ControlModifier);  // from none, picks the last point
+		flush();
+		const auto& before = clip->getTimeMap()[TimePos(48)];
+		const float value = before.getInValue();
+		QTest::keyClick(editor, Qt::Key_Up);  // moveByArrow changes the value
+		QVERIFY2(clip->getTimeMap()[TimePos(48)].getInValue() != value, "the point's value did not change");
+		QVERIFY2(peak() > 0.f, "the edit earcon was silent for an automation point moved by key");
 	}
 
 	void theAutomationBoundaryIsHeard()

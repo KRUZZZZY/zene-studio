@@ -221,7 +221,6 @@ QString runNow(const PaletteEntry& entry, const QJsonObject& args, QWidget* pare
 		return QObject::tr("%1: cancelled").arg(entry.label);
 	}
 	const ControlResult result = ControlRegistry::instance()->invoke(entry.command, args);
-	playCommandEarcon(entry.command, result);
 	return outcomeOf(entry.label, result);
 }
 

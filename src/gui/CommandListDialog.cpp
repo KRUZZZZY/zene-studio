@@ -364,7 +364,6 @@ ControlResult CommandListDialog::dispatch(const QString& label, const CommandCal
 		m_status->setText(tr("%1: fill in the form").arg(label));
 		return result;
 	}
-	playCommandEarcon(call.id, result);
 	report(label, result);
 	refresh();
 	return result;
