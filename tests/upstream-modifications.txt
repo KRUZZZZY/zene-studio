@@ -26,6 +26,11 @@
 # (2026-09-09 form of this file: an empty allowlist used only for "compile-only fixes".
 # It never held a line, and Gate 6 was red from the first behavioural change.)
 
+tests/CMakeLists.txt	Gate 7 file splits: compile the new shutdown, persistence, sandbox-module or VST3-parameter translation unit wherever the original host source is compiled; preserve all existing targets and properties. Build the runtime plugin fixtures required by existing assertions, and register the unchanged file-length gate with --check.
+src/core/CMakeLists.txt	Gate 7 file splits: compile the new shutdown, persistence, sandbox-module or VST3-parameter translation unit wherever the original host source is compiled; preserve all existing targets and properties.
+src/wasm/CMakeLists.txt	Gate 7 file splits: compile the new shutdown, persistence, sandbox-module or VST3-parameter translation unit wherever the original host source is compiled; preserve all existing targets and properties.
+plugins/Vst3Effect/CMakeLists.txt	Gate 7 file splits: compile the new shutdown, persistence, sandbox-module or VST3-parameter translation unit wherever the original host source is compiled; preserve all existing targets and properties.
+plugins/Vst3Instrument/CMakeLists.txt	Gate 7 file splits: compile the new shutdown, persistence, sandbox-module or VST3-parameter translation unit wherever the original host source is compiled; preserve all existing targets and properties.
 tests/CMakeLists.txt	Train 29 NoteCanvas complexity: register the unchanged complexity gate with --check as NoteCanvasComplexityGate so repair verification cannot rewrite its baseline.
 tests/CMakeLists.txt	ci-6d61162ce0abfd39: register MmpzGitToolsComplexity and focused MmpzGitMergeTest beside the unchanged full merge-driver suite; the tools gate runs in check mode without writing a baseline.
 tests/CMakeLists.txt	cluster new-p23-97: register SfzFilePoolTest and link it to the built sfizz library and its header dependencies for direct FilePool regression coverage.

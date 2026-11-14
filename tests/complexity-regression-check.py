@@ -27,7 +27,7 @@ CCN_LIMIT = 10
 # (repo-relative file, lizard's name for the function). Also holds the train-29
 # mousePressEvent regression: empty-editor activation must not grow the input dispatcher.
 TARGETS = [
-	("src/wasm/WasmSandbox.cpp", "lmms::wasm::WasmSandbox::loadModuleBytes"),
+	("src/wasm/WasmSandboxModules.cpp", "lmms::wasm::WasmSandbox::loadModuleBytes"),
 	("tests/src/gui/XyPadPairTest.cpp", "dotCentreAlong"),
 	("src/core/DawProjectReadTracks.cpp", "lmms::interchange::readdetail::parseNotes"),
 	("src/core/ControlCommandsMixerStrip.cpp", "lmms::setStrip"),
