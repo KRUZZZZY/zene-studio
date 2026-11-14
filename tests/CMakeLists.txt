@@ -16,6 +16,13 @@ endif()
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_AUTOMOC ON)
 
+# Python is used by several CTests registered throughout this file (the agent control
+# surface, the NAM portability checks, the docs gates). Discover it HERE, before the first
+# `if(... AND PYTHON3_EXECUTABLE)` - a condition that runs before discovery is false on a
+# fresh configure (the cache only hides it in a warm tree) and silently drops the test it
+# guards. `tests/nam-portability-registration-check.py` enforces that order.
+find_program(PYTHON3_EXECUTABLE NAMES python3 python3.exe python)
+
 # --- MSVC + Ninja: ONE link at a time in THIS directory ----------------------
 # Every target built from this file - the ~75 test executables the LMMS_TESTS
 # loop creates, FakeRemotePluginClient, the partc_ref_* reference MODULEs, the
@@ -3142,6 +3149,22 @@ add_test(NAME CMakeThreadsScope COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/cmake-t
 add_test(NAME MingwPpaKeyGate COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/mingw-ppa-key-check.sh)
 set_tests_properties(MingwPpaKeyGate PROPERTIES SKIP_RETURN_CODE 77)
 
+# Cluster ci-b38398fa7833e0a4: the hosted msvc-x64 Configure died installing the vcpkg
+# manifest because vcpkg's pcre2 portfile resolves the deps/sljit gitlink of a tagged
+# release from the UNAUTHENTICATED GitHub REST API, which answered 403 for an undetermined
+# reason (vcpkg retries only 408/429/5xx). The response is committed beside an overlay
+# portfile and hash-checked. The regression resolves the pcre2 port the way vcpkg does and
+# runs its REAL portfile text under a stub network that answers 403 to api.github.com: the
+# tagged path must complete without touching the API and still pin sljit, while the
+# builtin portfile (red control) must die on the CI's own URL and message, --head must
+# still query, and a tampered/missing gitlink must fail. cmake -P and python3 only: no
+# network, no compiler, no build step, so it is cheap on every platform.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME VcpkgPcre2Gitlink
+		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/vcpkg-pcre2-gitlink-test.py)
+	set_tests_properties(VcpkgPcre2Gitlink PROPERTIES TIMEOUT 120 SKIP_RETURN_CODE 77)
+endif()
+
 # BandLimitedWaveTest's two scenarios each run in a fresh process: generateWaves() caches its result in
 # s_wavesGenerated, so the fallback generator and the shipped-file load must not share one cache.
 add_test(NAME BandLimitedWaveFallback COMMAND BandLimitedWaveTest fallbackTablesHoldOnlyInBandHarmonics)
@@ -6141,6 +6164,37 @@ endif()
 target_compile_features(NamModelLoaderTest PRIVATE cxx_std_20)
 target_compile_options(NamModelLoaderTest PRIVATE ${ZENE_NAM_EIGEN_OPTIONS})
 
+# The hosted macos-x86_64 job builds for a deployment target below macOS 10.15, where libc++
+# marks std::filesystem unavailable ("'path' is unavailable: introduced in macOS 10.15").
+# Recompile the real NamModelLoaderTest translation unit against a shadow <filesystem> that
+# errors - the same availability contract - and run red/green probes first, so a use of
+# std::filesystem is red on the Linux host that provides it (this CTest is Linux-only; the
+# macOS job proves the real thing natively).
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
+	add_test(NAME NamModelLoaderPortabilityCheck
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/nam-model-loader-portability-check.py
+			--source-root ${CMAKE_SOURCE_DIR}
+			--build-dir ${CMAKE_BINARY_DIR})
+	set_tests_properties(NamModelLoaderPortabilityCheck PROPERTIES TIMEOUT 300)
+endif()
+
+# The registration above is load-bearing: the macOS availability contract is only checked
+# when the CTest exists. A use of PYTHON3_EXECUTABLE before its discovery made the condition
+# false on a fresh configure and silently dropped it. This one fails on that ordering and,
+# where the guarded CTest is registered at all (Linux), on a configured tree that lacks it.
+if(PYTHON3_EXECUTABLE)
+	set(NAM_PORTABILITY_REGISTRATION_ARGS --source-root ${CMAKE_SOURCE_DIR})
+	if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+		list(APPEND NAM_PORTABILITY_REGISTRATION_ARGS --build-dir ${CMAKE_BINARY_DIR})
+	endif()
+	add_test(NAME NamPortabilityRegistrationCheck
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/nam-portability-registration-check.py
+			${NAM_PORTABILITY_REGISTRATION_ARGS})
+	set_tests_properties(NamPortabilityRegistrationCheck PROPERTIES TIMEOUT 120)
+endif()
+
 # Native VST3 instrument fixture and its probe.
 #
 # Opt-in on purpose: cmake/modules/Vst3Sdk.cmake builds lmms_vst3_sdk whenever
@@ -6391,7 +6445,7 @@ endif()
 # EXTERNAL Python client over the AF_UNIX socket, so the socket, the wire
 # framing and the command groups are exercised end to end.
 # ---------------------------------------------------------------------------
-find_program(PYTHON3_EXECUTABLE NAMES python3 python3.exe python)
+# (PYTHON3_EXECUTABLE is discovered once, near the top of this file.)
 # Cluster ci-0ff72c5279856e5d: the windows-arm64 configure regression. That job failed at
 # the generate step because Threads::Threads was not defined above the tests on Windows -
 # the top-level pthread check is gated to the pthread platforms, and FindSDL2.cmake's own
@@ -6641,6 +6695,39 @@ if(PYTHON3_EXECUTABLE AND NOT WIN32 AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang|A
 			${CMAKE_C_COMPILER}
 			${CMAKE_CURRENT_SOURCE_DIR}/data/vst2-test-instrument/vst2-test-instrument.c)
 	set_tests_properties(Vst2FixtureDarwinHeaders PROPERTIES TIMEOUT 60)
+endif()
+
+# The crash reporter's ARM/DISARM proof redeclares sigaction() to inject a failed
+# installation, and both crash reporter tests call sigemptyset(). glibc declares
+# sigaction() noexcept through __THROW and sigemptyset() a function; Apple's libc
+# does neither, so macos-arm64 failed this test's own compilation at that
+# redeclaration and at "::sigemptyset" (cluster ci-1e541b5d1279ed2d, job
+# 132369662860). The check compiles the two REAL translation units with their
+# recorded flags under a model of those Apple properties, with fixtures proving the
+# old spelling is rejected and the new one accepted. macOS runs it natively; every
+# other host runs the same model, so the regression is not macOS-only. A Clang-family
+# compiler is required because GCC accepts the exception-specification mismatch.
+if(PYTHON3_EXECUTABLE AND NOT WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+	if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+		set(ZENE_APPLE_SIGNAL_CXX ${CMAKE_CXX_COMPILER})
+	else()
+		find_program(ZENE_APPLE_SIGNAL_CLANG NAMES clang++)
+		set(ZENE_APPLE_SIGNAL_CXX ${ZENE_APPLE_SIGNAL_CLANG})
+	endif()
+	if(ZENE_APPLE_SIGNAL_CXX)
+		add_test(NAME CrashReporterAppleSignalCheck
+			COMMAND ${PYTHON3_EXECUTABLE}
+				${CMAKE_CURRENT_SOURCE_DIR}/crash-reporter-apple-signal-check.py
+				--build-dir ${CMAKE_BINARY_DIR}
+				--root ${CMAKE_SOURCE_DIR}
+				--cxx ${ZENE_APPLE_SIGNAL_CXX})
+		set_tests_properties(CrashReporterAppleSignalCheck PROPERTIES TIMEOUT 120)
+	else()
+		# Never silent: the check needs a Clang-family driver for the exception-specification
+		# half (GCC only warns about the mismatch), so say why it is not registered here.
+		message(STATUS "CrashReporterAppleSignalCheck not registered: no clang++ found for "
+			"the Apple sigaction() exception-specification probe")
+	endif()
 endif()
 
 # Multicore Slice 0+1 (SPEC-MULTICORE-SCHEDULING-DRAFT §6): the published
@@ -9008,6 +9095,29 @@ if(PYTHON3_EXECUTABLE)
 endif()
 
 
+# cluster ci-aa184f959f204bcd: the mount-namespace test helper must compile under the hosted
+# job's hardening. tests/src/core/MountNamespaceTestSupport.h discarded two ::write() results
+# with a (void) cast; glibc declares write __wur under _FORTIFY_SOURCE (Ubuntu 24.04's gcc
+# defines level 3 at -O2), and -Werror=unused-result turns the cast into a build error:
+#
+#   MountNamespaceTestSupport.h:110:22: error: ignoring return value of 'ssize_t write(...)'
+#   declared with attribute 'warn_unused_result' [-Werror=unused-result]
+#
+# The local build tree carries -Wno-error=unused-result, so the defect compiles here. The
+# check recompiles the header through the affected translation unit's own recorded flags,
+# with this build's relaxations removed and -D_FORTIFY_SOURCE=3 -Werror=unused-result added,
+# so it is red on this host too. Its two fixtures prove the flags can reject a discarded
+# result and still accept a used one.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME UnusedResultFortifyCheck
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/unused-result-fortify-check.py
+			--build-dir ${CMAKE_BINARY_DIR}
+			--compiler ${CMAKE_CXX_COMPILER})
+	set_tests_properties(UnusedResultFortifyCheck PROPERTIES TIMEOUT 300)
+endif()
+
+
 # cluster ci-017caf2edd434b66: the arranger's gesture code must build on a Qt without gesture
 # support (the hosted mingw64 job's Qt 5 defines QT_NO_GESTURES, so Qt::GestureState and
 # QPinchGesture do not exist there). The hosted job runs no tests, so this check rebuilds the
@@ -9021,6 +9131,28 @@ if(PYTHON3_EXECUTABLE)
 			--moc $<TARGET_FILE:Qt${QT_VERSION_MAJOR}::moc>)
 	set_tests_properties(ArrangerZoomNoGestures PROPERTIES TIMEOUT 300)
 endif()
+
+# Qt 5 QList API portability (cluster ci-151e338efff6843e, 2026-11-14). The hosted
+# windows-arm64 job builds plugins/Eq against MSYS2's clangarm64 Qt 5.15, where QList is
+# still the node-based Qt 4 container: it has no size+value constructor (that one is
+# QVector's there) and no data()/constData(), so the spectrum snapshot's
+# `QList<float> m_spectrumBands( MAX_BANDS, 0.f )` and its `.data()` reads stopped the
+# build - "error: no matching constructor for initialization of 'QList<float>'" and
+# "error: no member named 'data' in 'QList<float>'" (plugins/Eq/EqSpectrumView.cpp:272,
+# 296, 315). Qt 6 made QList contiguous and made QVector an alias of it, so every Qt 6
+# host here compiles the same lines. The check scans sources (red on the Qt 6 hosts too)
+# and, where pkg-config finds a Qt 5 tree, compiles every Eq translation unit from this
+# build's compile_commands.json against those headers - the hosted job's own input.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME Qt5QListApiCheck
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/Qt5QListApiCheck.py
+			--root ${CMAKE_SOURCE_DIR}
+			--build-dir ${CMAKE_BINARY_DIR})
+	set_tests_properties(Qt5QListApiCheck PROPERTIES TIMEOUT 300)
+endif()
+
+
 
 # Linux namespace tests must retry interrupted writes and reject failed/short handshakes.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -9091,6 +9223,19 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
 			add_test(NAME Train39-sfz COMMAND ${PYTHON3_EXECUTABLE}
 				${CMAKE_CURRENT_SOURCE_DIR}/train-39-portability-check.py sfz --cc ${TRAIN39_CLANG})
 		endif()
+	endif()
+	# cluster ci-0b372147c313d00a: GCC with _FORTIFY_SOURCE declares write() with
+	# warn_unused_result, and (void) does not silence -Wunused-result there - hosted
+	# linux-arm64 stopped on MountNamespaceTestSupport.h:78/110. Compile the real helper
+	# header in a used translation unit with the hosted configuration's flags; the probe's
+	# controls prove it rejects a discarded result and accepts a checked one.
+	if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+		add_test(NAME Train39-unused-result COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/train-39-portability-check.py unused-result
+			--source-root ${CMAKE_SOURCE_DIR}
+			--cxx ${CMAKE_CXX_COMPILER}
+			--qt-include ${Qt${QT_VERSION_MAJOR}Core_INCLUDE_DIRS})
+		set_tests_properties(Train39-unused-result PROPERTIES TIMEOUT 120)
 	endif()
 	execute_process(COMMAND pkg-config --exists Qt5Widgets Qt5Xml Qt5Network
 		RESULT_VARIABLE TRAIN39_HAS_QT5 OUTPUT_QUIET ERROR_QUIET)

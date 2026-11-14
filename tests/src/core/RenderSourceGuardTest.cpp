@@ -25,10 +25,16 @@
 
 #include <QCoreApplication>
 #include <QDir>
+#include <QDirIterator>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonObject>
+#include <QRegularExpression>
+#include <QStringList>
 #include <QTemporaryDir>
+#include <QVector>
+
+#include <algorithm>
 
 #ifndef _WIN32
 #include <unistd.h>
@@ -73,6 +79,8 @@ int fakeRender(int argc, char** argv)
 }
 
 #ifndef _WIN32
+// Only the POSIX cases below queue a render; leaving this outside the guard makes it an
+// unused function in the Windows translation unit, which the hosted mingw64 build rejects.
 int queueRender(const QString& source, const QString& destination)
 {
 	RenderJob job;
@@ -84,8 +92,149 @@ int queueRender(const QString& source, const QString& destination)
 	if (id > 0) { queue.start(); }
 	return id;
 }
-
 #endif
+
+// The hosted mingw64 build compiles every test with -Werror=unused-function. A definition
+// whose every use sits inside a guard that excludes Windows is therefore a build failure on
+// that host, while a Linux compiler is happy with it (run 43569206372 died on queueRender).
+// The scan below reads the test sources and names every such definition, so the defect is
+// visible on every platform.
+struct WindowsGuardOffender
+{
+	QString file;
+	int line = 0;
+	QString name;
+};
+
+struct GuardFrame
+{
+	bool isWindowsGuard = false;
+	bool excludesWindows = false;
+};
+
+struct TopLevelDefinition
+{
+	int line = 0;
+	QString name;
+};
+
+bool guardExcludesWindows(const QString& line)
+{
+	static const QRegularExpression guard(QStringLiteral(
+		R"(^\s*#\s*(?:ifndef\s+_WIN32\b|ifndef\s+LMMS_BUILD_WIN32\b|if\s+!\s*defined\s*\(\s*(?:_WIN32|LMMS_BUILD_WIN32|Q_OS_WIN)\s*\)))"));
+	return guard.match(line).hasMatch();
+}
+
+void applyGuardDirective(const QString& kind, const QString& line, QVector<GuardFrame>& stack)
+{
+	if (kind == QLatin1String("endif"))
+	{
+		if (!stack.isEmpty()) { stack.removeLast(); }
+		return;
+	}
+	if (kind == QLatin1String("else") || kind == QLatin1String("elif"))
+	{
+		if (!stack.isEmpty() && stack.last().isWindowsGuard)
+		{
+			// #else of a Windows exclusion is the Windows branch; #elif is not exclusion.
+			stack.last().excludesWindows = kind == QLatin1String("else")
+				&& !stack.last().excludesWindows;
+		}
+		return;
+	}
+	const bool windowsGuard = guardExcludesWindows(line);
+	stack.append(GuardFrame{windowsGuard, windowsGuard});
+}
+
+QVector<bool> windowsExcludedLines(const QStringList& lines)
+{
+	static const QRegularExpression directive(QStringLiteral(
+		R"(^\s*#\s*(if|ifdef|ifndef|elif|else|endif)\b)"));
+	QVector<bool> excluded;
+	excluded.reserve(lines.size());
+	QVector<GuardFrame> stack;
+	for (const QString& line : lines)
+	{
+		excluded.append(std::any_of(stack.cbegin(), stack.cend(),
+			[](const GuardFrame& frame) { return frame.excludesWindows; }));
+		const QRegularExpressionMatch match = directive.match(line);
+		if (match.hasMatch()) { applyGuardDirective(match.captured(1), line, stack); }
+	}
+	return excluded;
+}
+
+QVector<TopLevelDefinition> topLevelFunctionDefinitions(const QStringList& lines)
+{
+	static const QRegularExpression definition(QStringLiteral(
+		R"(^(?:static\s+)?[A-Za-z_][\w:<>,\s*&]*?\s+([A-Za-z_]\w*)\s*\([^;]*$)"));
+	QVector<TopLevelDefinition> definitions;
+	for (int i = 0; i < lines.size(); ++i)
+	{
+		const QRegularExpressionMatch match = definition.match(lines.at(i));
+		if (!match.hasMatch()) { continue; }
+		bool opens = false;
+		for (int j = i + 1; j < lines.size() && j <= i + 4; ++j)
+		{
+			opens = opens || lines.at(j).trimmed() == QLatin1String("{");
+		}
+		if (opens) { definitions.append(TopLevelDefinition{i, match.captured(1)}); }
+	}
+	return definitions;
+}
+
+bool usedOnlyInsideWindowsExcludedCode(const QString& name, int definitionLine,
+	const QStringList& lines, const QVector<bool>& excluded)
+{
+	// A use is a call (or an address-of): plain mentions in comments must not make a
+	// definition look used on Windows.
+	const QRegularExpression use(QStringLiteral(R"((?:\b%1\s*\(|&\s*%1\b))")
+		.arg(QRegularExpression::escape(name)));
+	bool used = false;
+	bool excludedOnly = true;
+	for (int i = 0; i < lines.size(); ++i)
+	{
+		if (i == definitionLine || !use.match(lines.at(i)).hasMatch()) { continue; }
+		used = true;
+		excludedOnly = excludedOnly && excluded.at(i);
+	}
+	return used && excludedOnly;
+}
+
+QList<WindowsGuardOffender> scanTestFileForWindowsUnusedDefinitions(const QString& path)
+{
+	QList<WindowsGuardOffender> offenders;
+	QFile file(path);
+	if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+	{
+		return {WindowsGuardOffender{path, 0, QStringLiteral("<unreadable>")}};
+	}
+	const QString text = QString::fromUtf8(file.readAll());
+	if (!text.contains(QLatin1String("_WIN32")) && !text.contains(QLatin1String("LMMS_BUILD_WIN32"))
+		&& !text.contains(QLatin1String("Q_OS_WIN")))
+	{
+		return offenders;
+	}
+	const QStringList lines = text.split(QLatin1Char('\n'));
+	const QVector<bool> excluded = windowsExcludedLines(lines);
+	for (const TopLevelDefinition& definition : topLevelFunctionDefinitions(lines))
+	{
+		if (definition.line >= excluded.size() || excluded.at(definition.line)) { continue; }
+		if (usedOnlyInsideWindowsExcludedCode(definition.name, definition.line, lines, excluded))
+		{
+			offenders.append(WindowsGuardOffender{path, definition.line + 1, definition.name});
+		}
+	}
+	return offenders;
+}
+
+QList<WindowsGuardOffender> windowsUnusedInternalDefinitions(const QString& directory)
+{
+	QList<WindowsGuardOffender> offenders;
+	QDirIterator files(directory, {QStringLiteral("*.cpp")}, QDir::Files,
+		QDirIterator::Subdirectories);
+	while (files.hasNext()) { offenders.append(scanTestFileForWindowsUnusedDefinitions(files.next())); }
+	return offenders;
+}
 
 } // namespace
 
@@ -213,6 +362,26 @@ private slots:
 		RenderQueue::instance().clearFinished();
 	}
 #endif
+
+	// A helper used only by the POSIX-only cases must be compiled only there: the
+	// hosted mingw64 build turns the unused-function warning into an error. Read the
+	// test sources (a Linux compiler cannot observe the Windows preprocessor view) and
+	// fail on every definition whose uses all sit inside a Windows-excluding guard.
+	void windowsBuildHasNoUnusedTestHelpers()
+	{
+		const QList<WindowsGuardOffender> offenders = windowsUnusedInternalDefinitions(
+			QDir{QStringLiteral(QT_TESTCASE_SOURCEDIR)}.filePath(QStringLiteral("src")));
+		QStringList found;
+		for (const WindowsGuardOffender& offender : offenders)
+		{
+			found << QStringLiteral("%1:%2: %3").arg(offender.file).arg(offender.line)
+				.arg(offender.name);
+		}
+		QVERIFY2(offenders.isEmpty(), qPrintable(QStringLiteral(
+			"these definitions are only used inside a guard that excludes Windows, so the "
+			"mingw64 build reports them unused; move each inside its own guard:\n")
+			+ found.join(QLatin1Char('\n'))));
+	}
 };
 
 int main(int argc, char** argv)

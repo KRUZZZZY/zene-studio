@@ -864,7 +864,10 @@ jobs:
         id: cache-deps
         uses: actions/cache@v3
         with:
-          key: vcpkg-mingw${{ matrix.arch }}-${{ hashFiles('vcpkg.json') }}
+          # vcpkg-configuration.json and the overlay ports it selects are part of the
+          # dependency set: a changed overlay must rebuild, not restore a tree built
+          # from the previous portfile (cluster ci-b38398fa7833e0a4).
+          key: vcpkg-mingw${{ matrix.arch }}-${{ hashFiles('vcpkg*.json', '.github/vcpkg/**') }}
           restore-keys: |
             vcpkg-mingw${{ matrix.arch }}-
           path: build/vcpkg_installed
@@ -1132,7 +1135,10 @@ jobs:
         id: cache-deps
         uses: actions/cache@v3
         with:
-          key: vcpkg-msvc-x86_64-${{ hashFiles('vcpkg.json') }}
+          # vcpkg-configuration.json and the overlay ports it selects are part of the
+          # dependency set: a changed overlay must rebuild, not restore a tree built
+          # from the previous portfile (cluster ci-b38398fa7833e0a4).
+          key: vcpkg-msvc-x86_64-${{ hashFiles('vcpkg*.json', '.github/vcpkg/**') }}
           restore-keys: |
             vcpkg-msvc-x86_64-
           path: build\vcpkg_installed

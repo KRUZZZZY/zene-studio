@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Focused regression checks for train 39 portability fixes.
 
-Usage: python3 tests/train-39-portability-check.py [all|vst2|sfz|qt5|rnnoise|disk]
+Usage: python3 tests/train-39-portability-check.py [all|vst2|sfz|qt5|rnnoise|disk|unused-result]
 Optional paths/tools: --source-root, --build-dir, --cc, --cxx.
 """
 
@@ -155,6 +155,79 @@ def test_rnnoise(root: pathlib.Path, build: pathlib.Path, clang: str | None) -> 
 		return all(checks)
 
 
+def test_unused_result(root: pathlib.Path, cxx: str, qt_include: list[str]) -> bool:
+	header = root / "tests/src/core/MountNamespaceTestSupport.h"
+	if not require_file(header, "mount namespace test support header"):
+		return False
+	flags = ["-std=c++20", "-O2", "-D_FORTIFY_SOURCE=3", "-Werror=unused-result", "-c"]
+	qt_flags: list[str] = []
+	for directory in qt_include:
+		qt_flags.extend(["-I", directory])
+	if not qt_flags:
+		for package in ("Qt6Core", "Qt5Core"):
+			part, error = pkg_flags(package, "--cflags")
+			if not error:
+				qt_flags = part
+				break
+		if not qt_flags:
+			print("FAIL unused-result Qt flags: neither Qt6Core nor Qt5Core is available")
+			return False
+	with tempfile.TemporaryDirectory(prefix="train39-unused-result-") as temp:
+		dirpath = pathlib.Path(temp)
+		checks: list[bool] = []
+
+		# The control makes the probe falsifiable: under these flags, a discarded write
+		# result must be rejected, which is exactly what the hosted job reported.
+		ignored = dirpath / "ignored-write.cpp"
+		ignored.write_text(
+			"#include <unistd.h>\n"
+			"void probe()\n"
+			"{\n"
+			"\tchar byte = 0;\n"
+			"\t(void)::write(1, &byte, 1);\n"
+			"}\n", encoding="utf-8")
+		control = run([cxx, *flags, str(ignored), "-o", str(dirpath / "ignored-write.o")])
+		if control.returncode == 0:
+			print("FAIL unused-result control: a discarded write compiled, so the probe cannot detect the defect")
+			checks.append(False)
+		else:
+			print("PASS unused-result control: a discarded write result is rejected")
+			checks.append(True)
+
+		# ...while a checked write is accepted, so the flags reject the discarded result
+		# and not write() itself.
+		checked = dirpath / "checked-write.cpp"
+		checked.write_text(
+			"#include <unistd.h>\n"
+			"void probe()\n"
+			"{\n"
+			"\tchar byte = 0;\n"
+			"\tconst bool written = ::write(1, &byte, 1) == 1;\n"
+			"\t(void)written;\n"
+			"}\n", encoding="utf-8")
+		checks.append(report("unused-result checked write fixture",
+			run([cxx, *flags, str(checked), "-o", str(dirpath / "checked-write.o")])))
+
+		# The real header, compiled in a translation unit that uses both helpers: the
+		# hosted linux-arm64 build stopped on these two ignored write() results (lines
+		# 78 and 110), and (void) did not silence -Wunused-result under fortify.
+		probe = dirpath / "mount-namespace-probe.cpp"
+		probe.write_text(
+			'#include "MountNamespaceTestSupport.h"\n'
+			"\n"
+			"int main()\n"
+			"{\n"
+			"\tint descriptors[2] = {-1, -1};\n"
+			"\t(void)lmms::testsupport::mapOwnUidIntoNamespace(1, descriptors[0], descriptors[1]);\n"
+			"\t(void)lmms::testsupport::enterOwnMountNamespace();\n"
+			"\treturn 0;\n"
+			"}\n", encoding="utf-8")
+		checks.append(report("mount namespace helper checks every write result",
+			run([cxx, *flags, "-I", str(header.parent), *qt_flags, str(probe),
+			     "-o", str(dirpath / "mount-namespace-probe.o")])))
+		return all(checks)
+
+
 def linux_jobs_have_strip_flag(workflow: str) -> tuple[bool, str]:
 	jobs = re.split(r"(?m)^  ([A-Za-z0-9_-]+):\s*$", workflow)
 	blocks = {jobs[i]: jobs[i + 1] for i in range(1, len(jobs), 2)}
@@ -225,13 +298,15 @@ def test_disk(root: pathlib.Path, cc: str, build: pathlib.Path) -> bool:
 
 def parse_args() -> argparse.Namespace:
 	parser = argparse.ArgumentParser(description=__doc__)
-	parser.add_argument("mode", nargs="?", choices=("all", "vst2", "sfz", "qt5", "rnnoise", "disk"), default="all")
+	parser.add_argument("mode", nargs="?", choices=("all", "vst2", "sfz", "qt5", "rnnoise", "disk",
+	                                                "unused-result"), default="all")
 	parser.add_argument("--source-root", type=pathlib.Path,
 	                    default=pathlib.Path(__file__).resolve().parents[1])
 	parser.add_argument("--build-dir", type=pathlib.Path)
 	parser.add_argument("--cc", default=os.environ.get("CC") or shutil.which("clang") or "cc")
 	parser.add_argument("--cxx", default=os.environ.get("CXX") or "c++")
 	parser.add_argument("--clang", default=shutil.which("clang"))
+	parser.add_argument("--qt-include", nargs="*", default=[])
 	return parser.parse_args()
 
 
@@ -239,13 +314,15 @@ def main() -> int:
 	args = parse_args()
 	root = args.source_root.resolve()
 	build = (args.build_dir or root / "build").resolve()
-	selected = ("vst2", "sfz", "qt5", "rnnoise", "disk") if args.mode == "all" else (args.mode,)
+	selected = ("vst2", "sfz", "qt5", "rnnoise", "disk",
+	            "unused-result") if args.mode == "all" else (args.mode,)
 	runners = {
 		"vst2": lambda: test_vst2(root, args.cc),
 		"sfz": lambda: test_sfz(root, args.cc),
 		"qt5": lambda: test_qt5(root, args.cxx, build),
 		"rnnoise": lambda: test_rnnoise(root, build, args.clang),
 		"disk": lambda: test_disk(root, args.cc, build),
+		"unused-result": lambda: test_unused_result(root, args.cxx, args.qt_include),
 	}
 	results = [runners[name]() for name in selected]
 	print(f"RESULT {sum(results)}/{len(results)} groups passed")

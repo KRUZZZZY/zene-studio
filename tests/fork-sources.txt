@@ -822,6 +822,58 @@ tests/src/core/MountNamespaceHandshakeTest.cpp
 tests/train-41-portability-check.py
 docs/qwen-fixes-2026-10/sol-train-30-hosted-followup.md
 
+# cluster ci-aa184f959f204bcd: the hosted-fortification compiler probe for the mount-namespace
+# test helper (tests/src/core/MountNamespaceTestSupport.h) and its repair report. The probe is a
+# tests/*.py driver, registered here by the same rule as the Qt 5 scanners above; measured before
+# registering, every function is CCN <= 10 and the file is under 500 lines, so gates 4 and 7
+# measure it at their existing thresholds rather than moving a baseline.
+tests/unused-result-fortify-check.py
+docs/qwen-fixes-2026-10/cluster-ci-aa184f959f204bcd.md
+# Cluster ci-151e338efff6843e: the Qt 5 QList API portability regression for the Eq
+# spectrum view. Hosted windows-arm64 builds against Qt 5.15, where QList has neither the
+# size+value constructor nor data() that Qt 6's contiguous QList has; the check scans the
+# plug-in's sources and, where a Qt 5 tree is present, compiles every Eq translation unit
+# against it (-fsyntax-only). The file is named after its ctest so a test selection by
+# name (tests/CMakeLists.txt -> Qt5QListApiCheck) finds it, and it is registered wherever
+# a python3 is, so it is red on the Qt 6 hosts too.
+tests/Qt5QListApiCheck.py
+# Cluster ci-151e338efff6843e: the fix and verification report for the Eq spectrum view's
+# Qt 5 QList portability regression (hosted windows-arm64 build).
+docs/qwen-fixes-2026-10/cluster-ci-151e338efff6843e.md
+# cluster ci-1e541b5d1279ed2d (2026-11): the crash reporter's ARM/DISARM proof must compile against Apple's
+# <signal.h> - compiles the two real translation units with their recorded flags under a model of Apple's
+# sigaction() (no exception specification) and sigemptyset() (a macro) (fork-NEW test, ctest
+# CrashReporterAppleSignalCheck).
+tests/crash-reporter-apple-signal-check.py
+docs/qwen-fixes-2026-10/cluster-ci-1e541b5d1279ed2d.md
+# cluster ci-b38398fa7833e0a4 (2026-11): vcpkg's pcre2 portfile fetched the deps/sljit gitlink of a
+# tagged release from the unauthenticated GitHub REST API, which answered 403 on the hosted runner.
+# The response is committed beside an overlay pcre2 portfile and hash-checked; the regression runs
+# the real portfile text under a stub network (no api.github.com request on the tagged path, --head
+# still queries, tampered/missing gitlink fail, the builtin portfile still dies on the CI's URL).
+tests/vcpkg-pcre2-gitlink-test.py
+tests/data/vcpkg-pcre2/builtin-portfile-177e817512.cmake
+tests/data/vcpkg-pcre2/builtin-vcpkg-json-177e817512.json
+tests/data/vcpkg-pcre2/usage
+# cluster ci-9d1768ed0beb1636 (2026-11-14): keep the NAM loader regression buildable below macOS 10.15.
+tests/nam-model-loader-portability-check.py
+docs/qwen-fixes-2026-10/cluster-ci-9d1768ed0beb1636.md
+tests/nam-portability-registration-check.py
+# Train 31: retained CI repair inputs, pinned dependency overlay and integration evidence.
+.github/vcpkg/ports/pcre2/README.md
+.github/vcpkg/ports/pcre2/fix-msvc-pdb-install.patch.json
+.github/vcpkg/ports/pcre2/no-static-suffix.patch.json
+.github/vcpkg/ports/pcre2/pcre2-10.35_fix-uwp.patch.json
+.github/vcpkg/ports/pcre2/portfile.cmake
+.github/vcpkg/ports/pcre2/sljit-gitlink-pcre2-10.49.json
+.github/vcpkg/ports/pcre2/usage
+.github/vcpkg/ports/pcre2/vcpkg.json
+vcpkg-configuration.json
+docs/qwen-fixes-2026-10/cluster-ci-0b372147c313d00a.md
+docs/qwen-fixes-2026-10/cluster-ci-28572f865f7a738c.md
+docs/qwen-fixes-2026-10/cluster-ci-b38398fa7833e0a4.md
+docs/qwen-fixes-2026-10/sol-train-31-ci-replay.md
+
 include/AccessibilityAudit.h
 
 # Train 39: portable hosted compiler and executable-debug regression probes and repair evidence.
