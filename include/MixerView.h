@@ -149,6 +149,17 @@ public:
 	//! both end here.
 	void relayoutZones();
 
+	//! Q050-227.2: the pinned strips' area, beside the scrolling channels and never scrolled away. Hidden
+	//! while no strip is pinned.
+	QWidget* pinnedArea() const { return m_pinnedArea; }
+	//! Q050-227.2: the scroll area holding the unpinned channels.
+	QScrollArea* channelScrollArea() const { return channelArea; }
+	//! Q050-227.2: puts every non-master strip in the pinned area or the scrolling area, in mixer order,
+	//! from MixerZoneState's pinned ids. GUI thread only.
+	void relayoutPins();
+	//! Q050-227.2: adds the strip's Pin Strip / Unpin Strip action to @a menu; none for the master.
+	void populatePinAction(QMenu* menu, int channelIndex);
+
 public slots:
 	int addNewChannel();
 
@@ -179,6 +190,9 @@ private:
 	QScrollArea* channelArea;
 	QHBoxLayout* chLayout;
 	QWidget* m_channelAreaWidget;
+	//! Q050-227.2: the pinned strips' area (left of the scrolling channels, hidden while empty) and its layout.
+	QWidget* m_pinnedArea = nullptr;
+	QHBoxLayout* m_pinnedLayout = nullptr;
 	//! Q050-227.1: the channels' own dock (the scroll area plus the add buttons) and the splitter
 	//! that carries every region; a region parked here while it is hidden.
 	QWidget* m_middleHost = nullptr;

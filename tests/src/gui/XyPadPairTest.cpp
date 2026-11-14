@@ -81,6 +81,45 @@ QPoint pixelsOf(QPointF point, const QSize& size)
 	return {qRound(point.x() * (size.width() - 1)), qRound((1.0 - point.y()) * (size.height() - 1))};
 }
 
+//! Whether a pixel is still one of the pad's two flat colours: no dot, no weight at all.
+bool isPadBackground(const QColor& pixel, const QColor& base, const QColor& cross)
+{
+	return (std::abs(pixel.red() - base.red()) < 2 && std::abs(pixel.green() - base.green()) < 2
+			   && std::abs(pixel.blue() - base.blue()) < 2)
+		|| (std::abs(pixel.red() - cross.red()) < 2 && std::abs(pixel.green() - cross.green()) < 2
+			&& std::abs(pixel.blue() - cross.blue()) < 2);
+}
+
+//! How much of @a over a pixel carries, averaged over the channels that contrast with @a base.
+double coverageOf(const QColor& pixel, const QColor& base, const QColor& over)
+{
+	const auto ch = [](const QColor& q, int c) { return c == 0 ? q.red() : (c == 1 ? q.green() : q.blue()); };
+	double sum = 0.0;
+	for (int c = 0; c < 3; ++c)
+	{
+		const double span = double(ch(over, c)) - double(ch(base, c));
+		sum += std::abs(span) < 1.0 ? 0.0 : std::clamp((double(ch(pixel, c)) - double(ch(base, c))) / span, 0.0, 1.0);
+	}
+	return sum / 3.0;
+}
+
+//! The coverage-weighted centre of the dot along @a axis, or -1 when no pixel carries it.
+double dotCentreIn(const QImage& image, const QColor& accent, const QColor& base, const QColor& cross,
+	Qt::Orientation axis)
+{
+	double weight = 0.0, moment = 0.0;
+	for (int y = 0; y < image.height(); ++y)
+	{
+		for (int x = 0; x < image.width(); ++x)
+		{
+			const QColor pixel = image.pixelColor(x, y);
+			const double w = isPadBackground(pixel, base, cross) ? 0.0 : coverageOf(pixel, base, accent);
+			if (w > 0.0) { weight += w; moment += w * (axis == Qt::Horizontal ? x + 0.5 : y + 0.5); }
+		}
+	}
+	return weight > 0.0 ? moment / weight : -1.0;
+}
+
 //! The sub-pixel centre of the dot along one axis, from the antialiasing coverage of every pixel
 //! (the dot is the accent painted over the pad's control fill, so each pixel's distance from the
 //! accent IS its coverage). Sub-pixel, because a whole-pixel box cannot see a one-pixel offset.
@@ -90,44 +129,8 @@ double dotCentreAlong(XyPadArea& area, Qt::Orientation axis)
 	shot.fill(Qt::transparent);
 	area.render(&shot);
 	const QImage image = shot.toImage().convertToFormat(QImage::Format_RGB32);
-	const QColor accent = tokens::palette().accent;
-	const QColor base = tokens::palette().control;
-	const QColor cross = tokens::palette().separator;
-	const auto channel = [](const QColor& colour, int c) {
-		return c == 0 ? colour.red() : (c == 1 ? colour.green() : colour.blue());
-	};
-	//! The pad paints a flat control fill, a flat separator cross and the accent dot on top, so a
-	//! pixel that is still one of the two flat colours carries no dot and no weight at all.
-	const auto isBackground = [channel, &base, &cross](const QColor& pixel) {
-		return (std::abs(pixel.red() - base.red()) < 2 && std::abs(pixel.green() - base.green()) < 2
-				   && std::abs(pixel.blue() - base.blue()) < 2)
-			|| (std::abs(pixel.red() - cross.red()) < 2 && std::abs(pixel.green() - cross.green()) < 2
-				&& std::abs(pixel.blue() - cross.blue()) < 2);
-	};
-	const auto coverage = [channel, &base](const QColor& pixel, const QColor& over) {
-		double sum = 0.0;
-		for (int c = 0; c < 3; ++c)
-		{
-			const double span = double(channel(over, c)) - double(channel(base, c));
-			if (std::abs(span) < 1.0) { continue; }  // no contrast on this channel: it says nothing
-			sum += std::clamp((double(channel(pixel, c)) - double(channel(base, c))) / span, 0.0, 1.0);
-		}
-		return sum / 3.0;
-	};
-	double weight = 0.0, moment = 0.0;
-	for (int y = 0; y < image.height(); ++y)
-	{
-		for (int x = 0; x < image.width(); ++x)
-		{
-			const QColor pixel = image.pixelColor(x, y);
-			if (isBackground(pixel)) { continue; }
-			const double w = coverage(pixel, accent);
-			if (w <= 0.0) { continue; }
-			weight += w;
-			moment += w * (axis == Qt::Horizontal ? x + 0.5 : y + 0.5);
-		}
-	}
-	return weight > 0.0 ? moment / weight : -1.0;
+	const tokens::Palette& pal = tokens::palette();
+	return dotCentreIn(image, pal.accent, pal.control, pal.separator, axis);
 }
 
 QLabel* statusOf(XyPadDialog& dialog)

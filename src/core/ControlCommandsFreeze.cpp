@@ -439,12 +439,15 @@ void registerFreezeUnfreeze(ControlRegistry& registry)
 
 } // namespace
 
+void registerFreezeTracksCommand(ControlRegistry& registry);  // ControlCommandsFreezeBatch.cpp (Q050-327)
+
 void registerFreezeCommands(ControlRegistry& registry)
 {
 	registerBounceInPlace(registry);
 	registerFreezeTrack(registry);
 	registerFreezeRegion(registry);
 	registerFreezeUnfreeze(registry);
+	registerFreezeTracksCommand(registry);
 }
 
 } // namespace lmms

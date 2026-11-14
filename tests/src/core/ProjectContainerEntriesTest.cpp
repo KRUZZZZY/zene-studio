@@ -325,6 +325,53 @@ private slots:
 		QCOMPARE( int( entries.size() ), 1 );
 	}
 
+	/*! A CDATA section holding only whitespace is still not whitespace: its '<'
+	 *  opener would be taken for the content element's close tag, so the
+	 *  splice would land before the section and move the bytes. The finding's
+	 *  shape - the CDATA ahead of an indexed child - is refused by name with
+	 *  the destination untouched, rather than derived into a skeleton that
+	 *  does not reassemble. */
+	void derivingRefusesWhitespaceCDATAInTheInterior()
+	{
+		const QByteArray cdata = documentWith(
+			QStringList{ QStringLiteral( "trackcontainer" ) },
+			QStringLiteral(
+				"    <![CDATA[  ]]><trackcontainer/>\n" ) );
+
+		auto entries = sentinelEntries();
+		QString error;
+		QVERIFY( !projectcontainer::deriveContainerEntries( cdata,
+			QString::fromLatin1( kContent ), &entries, &error ) );
+		QVERIFY( error.contains( QStringLiteral( "not whitespace-only" ) ) );
+		QCOMPARE( int( entries.size() ), 1 );
+	}
+
+	/*! Reassembly applies the same interior proof to the skeleton it is handed:
+	 *  a skeleton whose <song> holds whitespace CDATA is refused by name, and
+	 *  the destination keeps its bytes, instead of splicing the section in
+	 *  before the CDATA opener. */
+	void reassemblingRefusesWhitespaceCDATAInTheInterior()
+	{
+		const QByteArray compact =
+			"<?xml version=\"1.0\"?>\n"
+			"<lmms-project version=\"31\" type=\"song\"><head/>"
+			"<z:index xmlns:z=\"urn:zene:core:1\">"
+			"<z:section name=\"a\" entry=\"a.xml\" v=\"31\" digest=\"sha256:x0\"/>"
+			"</z:index><song><a/></song></lmms-project>\n";
+		QString error;
+		std::vector<std::pair<QString, QByteArray>> derived;
+		QVERIFY2( projectcontainer::deriveContainerEntries( compact,
+			QString::fromLatin1( kContent ), &derived, &error ), qPrintable( error ) );
+		QVERIFY( derived.at( 0 ).second.contains( "<song></song>" ) );
+		derived[ 0 ].second.replace( "<song></song>", "<song><![CDATA[  ]]></song>" );
+
+		auto document = QByteArray( "untouched" );
+		QVERIFY( !projectcontainer::reassembleContainerDocument( derived,
+			QString::fromLatin1( kContent ), &document, &error ) );
+		QVERIFY( error.contains( QStringLiteral( "not whitespace-only" ) ) );
+		QCOMPARE( document, QByteArray( "untouched" ) );
+	}
+
 	/*! No skeleton, no document: a pair list without the skeleton entry is not
 	 *  a v2 project, refused by name rather than guessed at - and the caller's
 	 *  destination keeps its bytes. */

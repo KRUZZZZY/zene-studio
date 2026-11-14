@@ -178,7 +178,9 @@ void PatternClipView::paintEvent(QPaintEvent*)
 		}
 
 		// Compare how long the clip view is compared to the underlying pattern. First +1 for ceiling, second +1 for possible previous bar.
-		const int maxPossibleRepetions = getClip()->length() / mClip->length() + 1 + 1;
+		// A clip of zero length has no period to repeat, so it has no full repetitions (not a division by zero).
+		const int fullRepetitions = mClip->length() > 0 ? getClip()->length() / mClip->length() : 0;
+		const int maxPossibleRepetions = fullRepetitions + 1 + 1;
 		for (const Note* note : mClip->notes())
 		{
 			const int notePosition = static_cast<int>(

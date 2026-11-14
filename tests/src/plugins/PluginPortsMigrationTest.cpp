@@ -387,6 +387,8 @@ extern "C" void free(void* pointer)
 #define private public
 #include "../../../plugins/LadspaEffect/LadspaEffect.h"
 #undef private
+#include "../../../plugins/LadspaEffect/LadspaControlDialog.h"
+#include "../../../plugins/LadspaEffect/LadspaControls.h"
 #include "LmmsTypes.h"
 // Check ring bounds directly before the stale-bound path can reach undefined behavior.
 #define private public
@@ -1056,6 +1058,7 @@ private slots:
 	void positiveFractionPreservesOrdinaryValues();
 	void waveshaperLookupHandlesSamplesPastTheTableEnd();
 	void ladspaEffectSurvivesFailedInstantiationsDuringSampleRateChange();
+	void ladspaControlDialogSurvivesFailedInstantiationsDuringSampleRateChange();
 	void ladspaEffectProcessLockTakesNoExclusiveMutex();
 	void ladspaEffectRejectsZeroInputPlugin();
 	void typedDecodeRejectsIncompleteElement();
@@ -1094,6 +1097,7 @@ private slots:
 	void monoDelayUpdatesItsDelayAcrossSampleRateChanges();
 	void zeroLengthDelayPassesInputThrough();
 	void zeroCapacityDelayPassesInputThrough();
+	void monoDelayCannotBeCopied();
 	void nesNoiseFrequencyControlsRetuneHeldNotes();
 	void slice5InstrumentsAreLiveAndDistinct();
 	void organicDistortionLeavesPreOffsetFramesUnchanged();
@@ -1118,6 +1122,7 @@ private slots:
 	void opulenzRendersTheProvidedSpanSize();
 	void opulenzZeroFrameCountStopsLoop();
 	void opulenzReappliesVelocityScalingToHeldVoice();
+	void opulenzHz2fnumChecksRangeBeforeUnsignedCast();
 	void realtimeWatchCoversSingleStreamedPlay();
 	void sf2DialogRejectsAFilteredOutProgram();
 	void gigPatchDialogPreviewsSelectedProgram();
@@ -2024,6 +2029,50 @@ void PluginPortsMigrationTest::ladspaEffectSurvivesFailedInstantiationsDuringSam
 	auto editor = std::unique_ptr<lmms::gui::EffectControlDialog>{
 		(effect->controls()->*createView)()};
 	QVERIFY(editor != nullptr);
+	{
+		lmms::LadspaInstantiationFailure failure{managerKey};
+		QVERIFY(failure.isValid());
+		emit lmms::Engine::audioEngine()->sampleRateChanged();
+		QVERIFY(effect->controls() == nullptr);
+	}
+	QVERIFY(!effect->isOkay());
+}
+
+void PluginPortsMigrationTest::ladspaControlDialogSurvivesFailedInstantiationsDuringSampleRateChange()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	auto* lib = new QLibrary{QString::fromUtf8(PART_C_MIGRATED_ladspaeffect)};
+	lib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(lib->load(), qPrintable(lib->errorString()));
+	m_libraries.push_back(lib);
+
+	auto entry = reinterpret_cast<MainFn>(lib->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+	auto* descriptor = reinterpret_cast<const lmms::Plugin::Descriptor*>(
+		lib->resolve("ladspaeffect_plugin_descriptor"));
+	QVERIFY(descriptor != nullptr);
+
+	const auto& spec = partc::ladspaSpecs().front();
+	auto key = partc::ladspaKeyFor(descriptor, spec);
+	const lmms::ladspa_key_t managerKey{
+		key.attributes.value(QStringLiteral("file")),
+		key.attributes.value(QStringLiteral("plugin"))};
+	auto effect = std::unique_ptr<lmms::LadspaEffect>{
+		static_cast<lmms::LadspaEffect*>(entry(nullptr, &key))};
+	QVERIFY(effect != nullptr);
+	QVERIFY(effect->isOkay());
+	auto* controls = effect->controls();
+	QVERIFY(controls != nullptr);
+
+	// The plain control dialog is not the view createView() hands out, but it
+	// is compiled into the shipping module and stays connected to the controls
+	// model; a failed sample-rate re-instantiation emits
+	// effectModelChanged(nullptr) on that model.
+	lmms::gui::LadspaControlDialog dialog{static_cast<lmms::LadspaControls*>(controls)};
 	{
 		lmms::LadspaInstantiationFailure failure{managerKey};
 		QVERIFY(failure.isValid());
@@ -4949,6 +4998,26 @@ void PluginPortsMigrationTest::zeroCapacityDelayPassesInputThrough()
 	}
 }
 
+void PluginPortsMigrationTest::monoDelayCannotBeCopied()
+{
+	// MonoDelay owns the sample_t ring it allocates in setSampleRate() and
+	// releases in both its destructor and setSampleRate(). The implicit copy
+	// operations would copy the pointer, so two objects would delete the same
+	// array - a double free. Unique ownership must be enforced by the type.
+	QVERIFY2(!std::is_copy_constructible_v<lmms::MonoDelay>,
+		"MonoDelay must not shallow-copy its owned delay buffer");
+	QVERIFY2(!std::is_copy_assignable_v<lmms::MonoDelay>,
+		"MonoDelay must not copy-assign its owned delay buffer");
+
+	// Moving is equally unsafe while the class keeps a raw owning pointer and
+	// no move operations (the implicit move would also copy the pointer), so
+	// the type must stay immovable as well as non-copyable.
+	QVERIFY2(!std::is_move_constructible_v<lmms::MonoDelay>,
+		"MonoDelay has no move constructor, so it must not be move-constructible");
+	QVERIFY2(!std::is_move_assignable_v<lmms::MonoDelay>,
+		"MonoDelay has no move assignment, so it must not be move-assignable");
+}
+
 /*!
  * Slice 5 (task #589) negative control: the four newly migrated instruments
  * must each render audible, pairwise-distinct output, so the sample-exact
@@ -5946,6 +6015,33 @@ void PluginPortsMigrationTest::opulenzZeroFrameCountStopsLoop()
 	QVERIFY2(chunkPosition >= 0 && zeroGuardPosition > chunkPosition
 		&& breakPosition > zeroGuardPosition && emulatorUpdatePosition > breakPosition,
 		"playImpl must break on a zero chunk before updating the emulator, so offset cannot stall");
+}
+
+/*!
+ * Regression for cluster new-p16-157: Hz2fnum() converted the scaled
+ * frequency to unsigned before checking it. A value that is negative, NaN or
+ * at least 2^32 has no unsigned representation, so that conversion is
+ * undefined behaviour. The pitch-bend sensitivity RPN can produce such a value
+ * (its data entry is not limited to 7 bits, so the bend reaches 25500 cents),
+ * and the conversion's result is not defined across compilers, so the test
+ * checks the source: the float range guard must come before the only unsigned
+ * conversion in Hz2fnum().
+ */
+void PluginPortsMigrationTest::opulenzHz2fnumChecksRangeBeforeUnsignedCast()
+{
+	const auto sourcePath = QDir{QCoreApplication::applicationDirPath()}
+		.filePath(QStringLiteral("../../plugins/OpulenZ/OpulenZ.cpp"));
+	QFile source{sourcePath};
+	QVERIFY2(source.open(QIODevice::ReadOnly), qPrintable(sourcePath));
+	const auto contents = source.readAll();
+	const auto hz2fnumBody = functionBody(contents, "int OpulenzInstrument::Hz2fnum(float Hz)");
+	QVERIFY2(!hz2fnumBody.isEmpty(), "OpulenzInstrument::Hz2fnum() source was not found");
+
+	const auto castPosition = hz2fnumBody.indexOf("static_cast<unsigned>");
+	QVERIFY2(castPosition >= 0, "Hz2fnum() must still convert the scaled value to an F-number");
+	const auto beforeCast = hz2fnumBody.left(castPosition);
+	QVERIFY2(beforeCast.contains(">= 0.0f") && beforeCast.contains("< 1023.0f"),
+		"Hz2fnum() must check the scaled float is in [0, 1023) before converting it to unsigned");
 }
 
 /*!

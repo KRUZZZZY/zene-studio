@@ -1,0 +1,121 @@
+IMPLEMENTED
+
+# Q050-283.2 - Configure neutral tracks for instruments (stage 2 of 3)
+
+Branch `feat/050-Q050-283.2-oc`, cut from `050/m0-train-26` (`af010bc3cc`). Full detail: `docs/050-features/Q050-283.2.md`.
+Logs: `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/Q050-283.2.r1/logs`.
+
+New command `track.set_role` (true_inverse): a neutral row is given an instrument (or its kept one back), an instrument track
+is switched back to neutral keeping its whole instrument role (plug-in, settings, clips) as text in `<neutraltrack><keptrole>`.
+The row object is rebuilt from the row's own XML at the same index, so its `trk-<n>` id, position, name, mute/solo, colour
+and folder stay. GUI: the row's Actions menu (Assign instrument / Restore / Make neutral (keep instrument)), all invoking
+`track.set_role` through `ControlRegistry`. `track.get_state`/`track.list` report `role` and `kept_roles`.
+
+## Acceptance
+
+All from `build/tests`, `ctest -R "^(...)$" --output-on-failure`.
+
+| Criterion | Tests | Command / log | Exit |
+|---|---|---|---|
+| Instrument assignment keeps the same track identity, arrangement position, and existing project content | `HybridTrackInstrumentRoleTest::assigningAnInstrumentKeepsIdPositionAndProject`, `::aSwitchIsOneUndoStepThatKeepsTheRow`; `HybridTrackRoleGuiTest::assignInstrumentFromTheRowMenu` (menu item triggered); `ControlHybridTrackRoleTranscript` A/B | `test-7.log` (8 tests incl. stage-1 tests, ReversibilityContractTest, ControlCommandsSnapshot) | 0 |
+| Instrument role state remains available after save/load and when switching back to neutral | `HybridTrackInstrumentRoleTest::switchingBackToNeutralKeepsTheInstrumentRole`, `::theKeptRoleRoundTripsThroughSaveAndLoad`, `::aRowWithoutAKeptRoleSavesNoMark`; `HybridTrackRoleGuiTest::makeNeutralAndRestoreFromTheRowMenu`; transcript C/D | `test-7.log` | 0 |
+| Each new test fails without the product change | 9 modified product files checked out from `af010bc3cc`, 4 new product files removed, rebuilt (`build-neg-1.log` EXIT=0) | `test-neg-1.log`: all 3 new tests FAILED | 8 (expected) |
+| Restored and passing | `git checkout HEAD -- include src`, rebuilt (`build-10.log` EXIT=0) | `test-7.log` | 0 |
+| Neighbours | ReversibilityUndo, StableTrackIds, TrackFolder, AutomationLaneChild{,Gui}, TrackAddRouting, ChainPresetMenu, HybridTrack{RoundTrip,Gui}, ControlHybridTrackTranscript, ControlCommandsSnapshot | `test-5.log` (built `build-9.log` EXIT=0) | 11/12 pass; ReversibilityContractTest failed only on the published histogram, updated -> `test-6.log` exit 0 |
+
+Builds: `cmake --build build --target zene HybridTrackInstrumentRoleTest HybridTrackRoleGuiTest ... -- -j4`: `build-2.log` (zene) EXIT=0,
+`build-4.log`, `build-8.log`, `build-10.log` EXIT=0. `build-1.log` EXIT=2 (ccache temp dir outside the write area; then
+`CCACHE_TEMPDIR=/tmp/ccache-tmp-q2832`), `build-3.log` EXIT=2 (make resolved the new test targets before CMake regenerated; rerun passed).
+Two intermediate test runs failed and were fixed: `test-1.log` (the QtTest executables had no plug-in dir: added to the
+ENABLE_EXPORTS / `LMMS_TEST_PLUGIN_DIR` list like `TrackAddRoutingTest`), `test-2.log`/`test-3.log` (the model index was right but
+the redrawn row was appended last: the view is now moved to the row's index, queued behind the editor's own queued view creation).
+
+## Gates
+
+`feature_check.py` cannot create its `<worktree>-feature-check` directory from this sandbox (`gates-1.log`, PermissionError), so a
+copy with only the log directory changed (to `logs/feature-check`) was run: `gates-2.log` EXIT=0 - fork-sources, all-sources-reproduce,
+no-upstream-regression, check-namespace, no-tautology, doc-figures PASS; complexity and file-length: no new item in my files.
+Snapshot regenerated live (`snapshot-1.log`, EXIT=0, 925 ids / 78 groups: +`track.set_role`); README canary updated;
+`doc-figures-gate.py` `docfig-2.log` exit 0 (`docfig-1.log` exit 1 before the canary update).
+
+## Round 2 - review r1 (REWORK: automation links lost through neutral + save/load)
+
+Logs: `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/Q050-283.2.r2/logs`. Commits `4bf3e6fa23` (fix + regression test),
+`ecf6a4a81f` (complexity refactor of `setRole`).
+
+- **Cause (confirmed):** the switch to neutral destroyed the instrument's controls; each automation clip kept only a queued id
+  (`AutomationClip::objectDestroyed`), which `saveSettings` does not write, so after save/load the link was gone.
+- **Fix:** `src/core/ControlTrackRoleLinks.cpp` takes every clip link to the instrument's own controls off its clip before the
+  destruction (`removeObject`, `destroyed()` connection cut; the clip's points stay) and keeps it with the kept role
+  (`NeutralTrack::keptInstrumentLinks`, saved as `<neutraltrack><keptlinks kind="instrument"><link track clip pos model/>`).
+  The restored instrument's controls get their ids back from the kept document and the links are re-made on the same clips -
+  on `track.set_role`, on undo of a switch to neutral, on redo of a restore, and after save/load. `kept_roles` reports
+  `automation_links`.
+- **Regression:** `HybridTrackInstrumentRoleTest::automationLinksSurviveNeutralSaveLoadAndRestore` - clip on the row's volume and
+  a TripleOscillator control; neutral (0 targets, points kept, 2 kept links); undo (2 targets); neutral, save, clear, load,
+  restore: both targets are the restored controls, same point count, same value at tick 96; undo/redo of the restore.
+
+| Check | Command / log | Exit |
+|---|---|---|
+| Build | `cmake --build build --target zene HybridTrackInstrumentRoleTest HybridTrackRoleGuiTest ... -- -j4` (`build-8.log`, `build-9.log`) | 0 |
+| Focused + neighbours (14): HybridTrackInstrumentRoleTest, HybridTrackRoleGuiTest, ControlHybridTrackRoleTranscript, HybridTrackRoundTripTest, HybridTrackGuiTest, ControlHybridTrackTranscript, ReversibilityContractTest, ReversibilityUndoTest, StableTrackIdsTest, TrackFolderTest, AutomationLaneChildrenTest, AutomationLaneChildGuiTest, TrackAddRoutingTest, ControlCommandsSnapshot | `ctest -R "^(...)$"` (`test-5.log`) | 0 (14/14) |
+| Negative control: this round's product hunks reverted (`NeutralTrack.h/.cpp`, `ControlCommandsTrackRole.cpp`, `src/core/CMakeLists.txt` at `672170214c`; `ControlTrackRoleLinks.*` removed), rebuilt (`build-neg-2.log` EXIT=0) | `ctest -R "^HybridTrackInstrumentRoleTest$"` (`test-neg-1.log`): only the new case fails (0 targets, expected 2) | 8 |
+| Restored (`git checkout HEAD -- include src`), rebuilt | `build-7.log`, `build-8.log` | 0 |
+| Gates (feature_check copy, log dir moved into the run folder) | `gates-1.log`: complexity flagged `setRole` CCN 12 -> refactored; `gates-2.log` all 8 PASS | 1, then 0 |
+| Snapshot regenerated live (description of `track.set_role` changed) | `snapshot-1.log` (925 ids / 78 groups); `doc-figures-gate.py` `docfig-1.log` | 0 / 0 |
+
+Realtime: the link removal and re-adding run on the control/GUI thread; `AutomationClip::addObject`/`removeObject` take the
+engine's target-change guard themselves (the render thread is kept out while the target list changes), as every existing caller does.
+Nothing new runs on the audio thread. TSan does not run here - reasoned.
+
+## Self-check
+
+- **Every criterion proven by a test I ran:** yes - round 1 table (`r1/logs/test-7.log`, 8/8) and round 2 (`r2/logs/test-5.log`,
+  14/14, including the automation-link regression for criterion 2).
+- **Round 2 regression fails without the fix:** `r2/logs/test-neg-1.log` exit 8 (only the new case), restored and passing (`test-5.log` exit 0).
+- **New tests fail with the change reverted, pass restored:** yes - `test-neg-1.log` exit 8 (3/3 failed; `HybridTrackInstrumentRoleTest`
+  5 of 6 cases, the sixth is a format guard that passes on the base), restored + `build-10.log` EXIT=0, `test-7.log` exit 0.
+- **GUI and agent through the same command:** the menu items call `ControlRegistry::invoke("track.set_role", ...)`
+  (`src/gui/TrackRoleMenu.cpp`); `HybridTrackRoleGuiTest` triggers the real menu actions after `aboutToShow`; the transcript drives the
+  same command over the socket.
+- **One undo step, honest class:** `track.set_role` records one structural step (before/after XML) - `true_inverse`, table row in
+  `ControlReversibilityTableStructure.cpp`; depth +1 asserted in core and GUI tests; undo/redo asserted. `track.get_state` stays
+  `not_mutating` (schema gained `role`, `kept_roles`). A16 histogram line updated (`rows=934 true_inverse=460`), `test-6.log` exit 0.
+- **Snapshot / doc figures:** `snapshot_live.py` exit 0; `doc-figures-gate.py` exit 0; `ControlCommandsSnapshot` passes.
+- **Docs:** manual `data/manual/index.html#neutral-track-instrument`; `docs/050-features/Q050-283.2.md` (criteria table, command,
+  format, limits).
+- **Realtime:** no audio-thread code changed. The switch, persistence and menu run on the GUI/control thread; track removal and creation
+  go through the product's own paths that take `requestChangeInModel` themselves (as track.remove and its undo do). TSan does not run
+  on this box - reasoned, not measured.
+- **Projects:** old projects unchanged (no new `Track::Type`; a neutral row without a kept role saves the stage-1 bytes -
+  `aRowWithoutAKeptRoleSavesNoMark`; stage-1 `anOldProjectLoadsAndSavesNoNeutralMark` passes). New data round-trips
+  (`theKeptRoleRoundTripsThroughSaveAndLoad`, GUI save/load case, transcript D).
+- **Portability:** only Qt APIs present in 5.15 (QDomDocument/QDomNamedNodeMap, QMetaObject::invokeMethod with a functor - Qt >= 5.10,
+  QObject::connect functor with context + Qt::QueuedConnection); no `small/near/far/interface/min/max` identifiers, no std::filesystem,
+  no POSIX calls. Built here on Qt 6.12/GCC only; Qt 5.15/MSVC/macOS not built - reasoned.
+- **Known limits (documented):** a kept automation link is not re-made if its clip was deleted or moved while the row was
+  neutral; a channel the instrument used stays in the mixer while neutral;
+  audio input is stage 3.
+- **Completion check:** `submit_check.py` (`submit-1.log`, exit 1): every item PASS except "gates (feature_check.py)", which fails
+  only because `feature_check.py` cannot `mkdir` `<worktree>-feature-check` from this sandbox (PermissionError, as in `gates-1.log`).
+  The same gates, with only the log directory moved inside the run folder, PASS (`gates-2.log`, exit 0). The loop's own run
+  outside the sandbox is the authoritative one.
+- **Completion check, round 2:** `r2/logs/submit-1.log` exit 1 - every item PASS except "gates (feature_check.py)", the same
+  sandbox-only `mkdir` refusal as round 1; the same gates PASS with the log directory moved into the run folder
+  (`r2/logs/gates-2.log`, exit 0).
+
+## Verifier fix - row mute/solo automation
+
+The first review's focused suite passed, but an additional probe found that switching a neutral row to an instrument destroyed
+the row's mute model while its automation clip queued the ID for resolution; `AutomationClip::saveSettings` writes only live
+targets, so that link could be lost on save. `track.set_role` now detaches row mute/solo links separately from kept instrument
+links and reattaches them to the replacement row's same-ID controls. The instrument-role link count and its kept-link data stay
+separate. Regression `HybridTrackInstrumentRoleTest::rowMuteAutomationSurvivesRoleSwitch` verifies the link and points through
+neutral -> instrument -> neutral -> save/load -> instrument.
+
+| Check | Command / evidence | Exit |
+|---|---|---|
+| Build restored fix | `cmake --build build --target zene HybridTrackInstrumentRoleTest HybridTrackRoleGuiTest HybridTrackRoundTripTest HybridTrackGuiTest ReversibilityContractTest ReversibilityUndoTest StableTrackIdsTest TrackFolderTest AutomationLaneChildrenTest AutomationLaneChildGuiTest TrackAddRoutingTest -- -j4` | 0 (`/tmp/q050-2832-review-final-build.log`) |
+| Focused tests + neighbours, including row mute automation | `ctest -R '^(ReversibilityContractTest|ReversibilityUndoTest|AutomationLaneChildrenTest|HybridTrackRoundTripTest|HybridTrackInstrumentRoleTest|StableTrackIdsTest|TrackFolderTest|TrackAddRoutingTest|AutomationLaneChildGuiTest|HybridTrackGuiTest|HybridTrackRoleGuiTest|ControlHybridTrackTranscript|ControlHybridTrackRoleTranscript|ControlCommandsSnapshot)$' --output-on-failure` | 14/14, exit 0 (`/tmp/q050-2832-review-final-ctest.log`) |
+| Negative control for this fix | reverse its product hunks, rebuild `zene HybridTrackInstrumentRoleTest` (exit 0), then `ctest -R '^HybridTrackInstrumentRoleTest$' --output-on-failure` | exit 8; the new row-mute target assertion fails (`/tmp/q050-2832-mute-fix-negative-ctest.log`) |
+| Gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-283.2` | 0; no new complexity or file-length item |

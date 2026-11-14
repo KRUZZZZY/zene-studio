@@ -9,7 +9,8 @@ if(LMMS_HAVE_CARLA OR LMMS_HAVE_WEAKCARLA)
 	LINK_DIRECTORIES("${CMAKE_CURRENT_BINARY_DIR}/../CarlaBase"
                           ${CARLA_LIBRARY_DIRS})
 	LINK_LIBRARIES(carlabase ${CARLA_LIBRARIES})
-	BUILD_PLUGIN(carlavst2 CarlaVst2.cpp CarlaVst2Discovery.cpp CarlaVst2Renderer.cpp CarlaVst2Instrument.h CarlaVst2Discovery.h CarlaVst2Renderer.h
+	# Discovery (CarlaVst2Discovery) is carlabase's since Q050-481.2, shared with plugins/CarlaVst2Effect.
+	BUILD_PLUGIN(carlavst2 CarlaVst2.cpp CarlaVst2Renderer.cpp CarlaVst2Instrument.h CarlaVst2Renderer.h CarlaVst2SubPluginFeatures.h
 		MOCFILES CarlaVst2Instrument.h
 		EMBEDDED_RESOURCES logo.png)
 endif()

@@ -26,7 +26,9 @@
 
 #include <algorithm>
 
+#include <QJsonArray>
 #include <QJsonValue>
+#include <QRegularExpression>
 
 namespace lmms::gui::mixerzones
 {
@@ -129,7 +131,9 @@ QJsonObject toJson(const Layout& layout)
 		const int size = layout.sizes.value(id, 0);
 		if (usableSize(size)) { sizes.insert(id, size); }
 	}
-	return QJsonObject{{QStringLiteral("zones"), zones}, {QStringLiteral("sizes"), sizes}};
+	QJsonArray pins;
+	for (const QString& id : layout.pinned) { pins.append(id); }
+	return QJsonObject{{QStringLiteral("zones"), zones}, {QStringLiteral("sizes"), sizes}, {QStringLiteral("pinned"), pins}};
 }
 
 namespace
@@ -163,6 +167,26 @@ void readSizes(const QJsonObject& sizes, Layout* layout)
 		const int size = it.value().toInt(0);
 		if (usableSize(size)) { layout->sizes.insert(it.key(), size); }
 	}
+}
+
+//! True for a channel id: "ch-" and a positive integer written in digits only.
+bool isChannelId(const QString& id)
+{
+	static const QRegularExpression pattern(QStringLiteral("\\Ach-[1-9][0-9]*\\z"));
+	return pattern.match(id).hasMatch();
+}
+
+//! The stored 'pinned' array as pin ids: string entries that name a channel, each once, in stored order.
+//! Anything else (a non-array, numbers, garbage) is dropped; a missing key reads as no pins.
+QStringList pinsFrom(const QJsonValue& value)
+{
+	QStringList pinned;
+	for (const QJsonValue& entry : value.toArray())
+	{
+		const QString id = entry.toString();
+		if (isChannelId(id) && !pinned.contains(id)) { pinned.append(id); }
+	}
+	return pinned;
 }
 
 //! One region's dock in a caller's 'zones' object: false, with @a error, unless it names a region and a
@@ -249,6 +273,7 @@ Layout fromJson(const QJsonObject& doc)
 	Layout layout = defaultLayout();
 	readDocks(doc.value(QStringLiteral("zones")).toObject(), &layout);
 	readSizes(doc.value(QStringLiteral("sizes")).toObject(), &layout);
+	layout.pinned = pinsFrom(doc.value(QStringLiteral("pinned")));
 	return layout;
 }
 
@@ -276,12 +301,19 @@ void MixerZoneState::set(const Layout& layout)
 {
 	m_layout = layout;
 	emit changed();
+	emit pinsChanged();  // a restored layout carries its pins
 }
 
 void MixerZoneState::setSizes(const QHash<QString, int>& sizes)
 {
 	m_layout.sizes = sizes;
 	emit sizesChanged();
+}
+
+void MixerZoneState::setPinned(const QStringList& ids)
+{
+	m_layout.pinned = ids;
+	emit pinsChanged();
 }
 
 void MixerZoneState::reset()

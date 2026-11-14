@@ -33,13 +33,14 @@
 
 class QButtonGroup;
 class QComboBox;
-class QHBoxLayout;
 class QMenu;
 class QPushButton;
 class QToolButton;
 
 namespace lmms::gui
 {
+
+class MixerModeBarLayout;  // MixerModeBarLayout.h: the bar's rows, which wrap when the panel is narrow (gui-1030)
 
 /*! 0.5.0 theme 16 (the mixer reworked around clear modes). One bar across the top of the mixer, always
  *  shown, that says - in words - how the mixer is set and sets it:
@@ -84,10 +85,10 @@ signals:
 
 private:
 	//! A labelled row of exclusive buttons, one per value of window.mixer_view's @a key.
-	QHash<QString, QPushButton*> addSegment(QHBoxLayout* layout, const QString& label, const char* key,
+	QHash<QString, QPushButton*> addSegment(MixerModeBarLayout* layout, const QString& label, const char* key,
 		const QStringList& values, const QStringList& captions);
 	//! A button naming a mode's state (@a hint says what it is) whose menu @a fill builds each time it opens.
-	QToolButton* addChip(QHBoxLayout* layout, const QString& objectName, const QString& hint, void (MixerModeBar::*fill)(QMenu*));
+	QToolButton* addChip(MixerModeBarLayout* layout, const QString& objectName, const QString& hint, void (MixerModeBar::*fill)(QMenu*));
 	void setOption(const QString& key, const QJsonValue& value);
 	void fillFaders(QMenu* menu);
 	void fillSolo(QMenu* menu);

@@ -31,11 +31,14 @@
  *  QSplitterHandle drag - and reads the same state an agent reads through window.mixer_zones. */
 
 #include <QtTest>
+#include "MixerModeVisibilityTestSupport.h"
 
 #include <QApplication>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QMenu>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QSignalSpy>
 #include <QSplitter>
 #include <QToolButton>
@@ -53,6 +56,7 @@
 #include "MenuTestSupport.h"
 #include "Mixer.h"
 #include "MixerModeBar.h"
+#include "EffectRackView.h"
 #include "MixerView.h"
 #include "MixerZones.h"
 #include "Shell.h"
@@ -369,6 +373,63 @@ private slots:
 		{
 			QCOMPARE(action->property("controlCommand").toString(), QStringLiteral("window.mixer_zones"));
 		}
+	}
+
+	//! gui-1030: on a 1024x768 screen, Mix view with the Inspector and the Browser open, the New mixer
+	//! channel and Return buttons are on screen - the channel strips scroll, the columns beside them do not.
+	void theAddButtonsStayOnScreenInANarrowMixView()
+	{
+		MainWindow* window = getGUI()->mainWindow();
+		window->shell()->setView(ShellView::Mix);
+		window->revealPanel(QStringLiteral("inspector"));
+		window->revealPanel(QStringLiteral("browser"));
+		window->resize(1024, 768);
+		QCoreApplication::processEvents();
+		MixerView* view = getGUI()->mixerView();
+		QVERIFY2(window->width() <= 1024, qPrintable(QStringLiteral("the window is forced %1 px wide").arg(window->width())));
+		for (const char* name : {"newChannelBtn", "newReturnBtn"})
+		{
+			auto* button = view->findChild<QWidget*>(QLatin1String(name));
+			QVERIFY(button != nullptr);
+			// The part of the button its ancestors (the panel, the window) leave on screen.
+			QRect shown(button->mapTo(window, QPoint(0, 0)), button->size());
+			for (QWidget* w = button->parentWidget(); w != nullptr && w != window; w = w->parentWidget())
+			{
+				shown &= QRect(w->mapTo(window, QPoint(0, 0)), w->size());
+			}
+			shown &= window->rect();
+			QVERIFY2(shown.width() == button->width(), qPrintable(QStringLiteral("%1: %2 of %3 px on screen")
+				.arg(QLatin1String(name)).arg(shown.width()).arg(button->width())));
+		}
+		window->shell()->setView(ShellView::Arrange);
+		window->revealPanel(QStringLiteral("mixer"));
+		window->resize(1400, 900);
+	}
+
+	//! gui-1030: the Mix panel's minimum width must not force the main window wider than a 1024 px
+	//! display (Inspector and Browser at their minimum widths included). The effects chain at the
+	//! panel's right edge must then lie inside the window, and the mode bar's controls, which no longer
+	//! set the panel's width floor, remain visible and unobscured.
+	void theMixerFitsAMainWindowOf1024Pixels()
+	{
+		MainWindow* window = getGUI()->mainWindow();
+		window->resize(1024, 768);
+		QCoreApplication::processEvents();
+		QVERIFY2(window->width() <= 1024, qPrintable(QStringLiteral("the window could not shrink below %1 px").arg(window->width())));
+
+		EffectRackView* rack = nullptr;
+		for (EffectRackView* candidate : getGUI()->mixerView()->findChildren<EffectRackView*>())
+		{
+			if (candidate->isVisible()) { rack = candidate; }
+		}
+		QVERIFY(rack != nullptr);
+		const int right = rack->mapTo(window, QPoint(0, 0)).x() + rack->width();
+		QVERIFY2(right <= window->width(), qPrintable(QStringLiteral("the effects chain ends at %1 of %2").arg(right).arg(window->width())));
+
+		const QString problem = lmms::test::mixerModeVisibilityProblem(getGUI()->mixerView()->modeBar(), window);
+		QVERIFY2(problem.isEmpty(), qPrintable(problem));
+		window->resize(1400, 900);
+		QCoreApplication::processEvents();
 	}
 
 private:

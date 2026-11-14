@@ -70,6 +70,7 @@
 #include "TempoSyncBarModelEditor.h"
 #include "TempoSyncKnob.h"
 #include "TempoSyncKnobModel.h"
+#include "SimpleTextFloat.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -763,6 +764,56 @@ private slots:
 			.arg(knob->minimumWidth()).arg(target)));
 		QVERIFY2(knob->minimumHeight() >= target, qPrintable(QStringLiteral("height %1, target is %2")
 			.arg(knob->minimumHeight()).arg(target)));
+	}
+
+	//! Ordinary identity/reset cases: set a live source, replace it, set null, call hide().
+	void simpleTextFloatSourceIdentityResetCases()
+	{
+		SimpleTextFloat textFloat;
+		QVERIFY(textFloat.source() == nullptr);
+
+		QObject first;
+		QObject second;
+		textFloat.setSource(&first);
+		QCOMPARE(textFloat.source(), &first);
+		textFloat.setSource(&second);
+		QCOMPARE(textFloat.source(), &second);
+		textFloat.setSource(nullptr);
+		QVERIFY(textFloat.source() == nullptr);
+
+		textFloat.setSource(&first);
+		QCOMPARE(textFloat.source(), &first);
+		textFloat.hide();
+		QVERIFY(textFloat.source() == nullptr);
+	}
+
+	//! Destroying the active QObject while SimpleTextFloat remains alive must clear source().
+	void simpleTextFloatSourceClearsWhenSourceDestroyed()
+	{
+		SimpleTextFloat textFloat;
+		auto* source = new QObject(&textFloat);
+		textFloat.setSource(source);
+		QCOMPARE(textFloat.source(), source);
+
+		delete source;
+		QVERIFY2(textFloat.source() == nullptr, "source() must be null after the source object is destroyed");
+	}
+
+	//! Destroying a parent-owned source, then setting a replacement, must not clear the replacement.
+	void simpleTextFloatDestroyedSourceDoesNotClearReplacement()
+	{
+		SimpleTextFloat textFloat;
+		QObject parent;
+		auto* stale = new QObject(&parent);
+		QObject replacement;
+		textFloat.setSource(stale);
+		QCOMPARE(textFloat.source(), stale);
+
+		delete stale;  // parent still alive; stale destroyed
+		QVERIFY(textFloat.source() == nullptr);
+
+		textFloat.setSource(&replacement);
+		QCOMPARE(textFloat.source(), &replacement);
 	}
 };
 

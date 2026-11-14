@@ -389,6 +389,7 @@ set(LMMS_SRCS
 	core/ControlCommandsModulatorRoutes.cpp
 	core/ControlCommandsNoteExpression.cpp
 	core/ControlCommandsMidi.cpp
+	core/ControlCommandsMidiTakes.cpp
 	core/ControlCommandsMidiReconnect.cpp
 	core/ControlCommandsMidiReconnectEdit.cpp
 	core/ControlCommandsNotes.cpp
@@ -400,6 +401,8 @@ set(LMMS_SRCS
 	core/ControlCommandsNoteEdit.cpp
 	# note.step_get_state / note.step_set (Q050-294.1): the melodic step grid view of a MIDI clip.
 	core/ControlCommandsNoteStep.cpp
+	# note.step_fill (Q050-294.3): a seeded shape or random fill of a clip's step columns, in the active scale.
+	core/ControlCommandsNoteStepFill.cpp
 	# The 0.3.0 note/scale/device wave (board task #648; feature-list rows 11, 66 and
 	# 81): the note randomisation verbs (note.random_seed_get/_set, note.randomize),
 	# the slide verbs (note.slide_set / note.slide_clear), the three note transforms,
@@ -547,6 +550,8 @@ set(LMMS_SRCS
 	core/ControlCommandsTrackRouting.cpp
 	core/ControlTrackRouting.cpp
 	core/ControlCommandsTrackFolder.cpp
+	core/ControlCommandsTrackRole.cpp
+	core/ControlTrackRoleLinks.cpp
 	core/ControlCommandsTrackFolderSets.cpp
 	# VCA / mix-and-edit groups (OWNER-31 item 11): the group+entity half, the
 	# mix half (fader/mute/solo/membership) and the phase-locked edit half, each
@@ -653,6 +658,7 @@ set(LMMS_SRCS
 	core/ControlModulationSupport.cpp
 	core/ControlRackSupport.cpp
 	core/ControlRegistry.cpp
+	core/ControlRegistryShutdown.cpp
 	# The undo-record bookkeeping of nested and wrapped commands (aggregate records, merged runs).
 	core/ControlRegistryRecords.cpp
 	# The registry's COMPOSITION - which command groups exist and in what order -
@@ -1033,6 +1039,7 @@ set(LMMS_SRCS
 	# abnormal exit (0.3.0, docs/KNOWN-LIMITATIONS.md for the stated bound).
 	core/RecordingJournal.cpp
 	core/ProjectIds.cpp
+	core/OfflineRenderBarrier.cpp
 	core/ProjectRenderer.cpp
 	core/ProjectRevisions.cpp
 	core/ProjectVersion.cpp
@@ -1247,6 +1254,9 @@ set(LMMS_SRCS
 	core/ControlCommandsTrackFlatten.cpp
 	core/RenderQueue.cpp
 	core/RenderQueueBounce.cpp
+	# Q050-327: freeze.tracks - several tracks rendered concurrently, one task, one undo step.
+	core/BatchFreeze.cpp
+	core/ControlCommandsFreezeBatch.cpp
 	core/ControlCommandsSubprojects.cpp
 	core/ControlCommandsAlternatives.cpp
 	core/ControlTrackCreation.cpp
@@ -1292,6 +1302,8 @@ set(LMMS_SRCS
 	core/ArticulationMap.cpp
 	core/ArticulationRemap.cpp
 	core/MidiPlayback.cpp
+	core/MidiTakeCapture.cpp
+	core/MidiTakeRecorder.cpp
 	core/NoteConditions.cpp
 	core/ControlCommandsRange.cpp
 	core/ProjectMarkers.cpp
@@ -1300,6 +1312,7 @@ set(LMMS_SRCS
 	core/TrackMixModels.cpp
 	core/TimePos.cpp
 	core/TakeLane.cpp
+	core/TakeLanePersistence.cpp
 	core/CompSlip.cpp
 	core/ToolPlugin.cpp
 	core/Track.cpp
@@ -1407,6 +1420,7 @@ set(LMMS_SRCS
 # and register into the same registry from there.
 SET(ZENE_API_SRCS
 	core/ControlRegistry.cpp
+	core/ControlRegistryShutdown.cpp
 	# The undo-record bookkeeping of nested and wrapped commands (aggregate records, merged runs).
 	core/ControlRegistryRecords.cpp
 	core/ControlRegistryRegistrations.cpp

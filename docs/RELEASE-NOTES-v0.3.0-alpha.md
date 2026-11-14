@@ -1125,8 +1125,25 @@ config lists back) and one `not_mutating` (`session.command_bindings`, a read) -
 
 **M0 merge train 26** (`050/m0-train-26`, 2026-11-06, automatic): `ReversibilityContractTest` on the merged tree measures `rows=933 true_inverse=459 snapshot=42 irreversible=25 not_mutating=407`.
 
+**Q050-155.2** (64 channels through device pins and mixer routes, 2026-11-10): `port.set_pins` adds one `true_inverse` row (one journal step for a whole pin routing) - `rows=934 true_inverse=460 snapshot=42 irreversible=25 not_mutating=407`.
+
+**Q050-294.2** (melodic step grid, stage 2, 2026-11-10): `window.step_grid` adds one `not_mutating` row (it opens the grid; the grid's edits are `note.step_set`, which already has its row) - `rows=934 true_inverse=459 snapshot=42 irreversible=25 not_mutating=408`.
+
+**Q050-327** (batch freeze, 2026-11-10): `freeze.tracks` adds one `true_inverse` row (the completed batch's single ProjectJournal step) - `rows=934 true_inverse=460 snapshot=42 irreversible=25 not_mutating=407`.
+
+**Q050-283.2** (2026-11-10): `track.set_role` adds one `true_inverse` row: `rows=934 true_inverse=460 snapshot=42 irreversible=25 not_mutating=407`.
+
+**Q050-054.1** (MIDI takes on armed instrument tracks, first measured on `050/m0-train-19`, 2026-10-27; re-measured
+after merging `050/m0-train-26`, 2026-11-12): `record.midi_capture_commit` adds one `true_inverse` row,
+`track.set_midi_arm` and `record.midi_capture_status` two `not_mutating` rows -
+`rows=936 true_inverse=460 snapshot=42 irreversible=25 not_mutating=409`.
+
+**M0 merge train 28** (`050/m0-train-28`, 2026-11-13, automatic): `ReversibilityContractTest` on the merged tree measures `rows=940 true_inverse=463 snapshot=42 irreversible=25 not_mutating=410`.
+
+**Q050-294.3** (melodic step fills, 2026-11-13): `note.step_fill` adds one `true_inverse` row (one MidiClip journal checkpoint per fill, none for a fill that changes nothing) - `rows=941 true_inverse=464 snapshot=42 irreversible=25 not_mutating=410`.
+
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=933 true_inverse=459 snapshot=42 irreversible=25 not_mutating=407
+     measured: rows=941 true_inverse=464 snapshot=42 irreversible=25 not_mutating=410
      configuration: telemetry.status wasm.load session.get_state stem.get_state app.update_check_get
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5

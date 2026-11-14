@@ -736,12 +736,150 @@
 # script; no binary). Measured before registering: every function is CCN <= 10 and the
 # file is under 500 code lines, so gates 4 and 7 measure it at their existing thresholds.
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/warp-docs-agree.py ; \
+
+# Train 29: retain independently accepted Linux Qt5 compile/scanner regressions and MinGW no-gestures regression.
+tests/qt5-signal-overload-check.py
+tests/qt5-signal-overload-arm-check.py
+tests/arranger-zoom-no-gestures-check.py
+docs/qwen-fixes-2026-10/cluster-ci-632a20737fe640fa.md
+docs/qwen-fixes-2026-10/cluster-ci-c22070dd8cbbc7c0.md
+docs/qwen-fixes-2026-10/cluster-ci-017caf2edd434b66.md
+docs/qwen-fixes-2026-10/sol-train-29-ci-integration.md
+
+# Failure 34: record reconciliation against the changed train selection and fresh verification.
+docs/qwen-fixes-2026-10/sol-train-29-ci-rebase.md
+
+# Failure 36: stable registration placement and verification for the updated selection.
+docs/qwen-fixes-2026-10/sol-train-29-ci-registration-rebase.md
+
+
+# Failure 38: measured product units, complete fixture implementation headers and repair report.
+docs/qwen-fixes-2026-10/sol-train-29-file-length.md
+plugins/Vst3Effect/Vst3HostParameters.cpp
+src/core/ControlRegistryShutdown.cpp
+src/core/TakeLanePersistence.cpp
+src/wasm/WasmSandboxInternals.h
+src/wasm/WasmSandboxModules.cpp
+tests/src/core/ArrangeToolsTestParts1.h
+tests/src/core/CollabTransportTestParts1.h
+tests/src/core/CollabTransportTestParts2.h
+tests/src/core/ControlAutomationScriptTestParts1.h
+tests/src/core/ControlAutomationScriptTestParts2.h
+tests/src/core/ControlDeviceCatalogueTestParts1.h
+tests/src/core/ControlDeviceCatalogueTestParts2.h
+tests/src/core/ControlEditCommandsTestParts1.h
+tests/src/core/ControlEditCommandsTestParts2.h
+tests/src/core/ControlShutdownHookTestParts1.h
+tests/src/core/ControlShutdownHookTestParts2.h
+tests/src/core/CustomAccessTestParts1.h
+tests/src/core/CustomAccessTestParts2.h
+tests/src/core/DataFileSaveIntegrityTestParts1.h
+tests/src/core/DataFileSaveIntegrityTestParts2.h
+tests/src/core/DeviceDspTestParts1.h
+tests/src/core/DeviceDspTestParts2.h
+tests/src/core/DeviceToolsTestParts1.h
+tests/src/core/DrumSynthTestParts1.h
+tests/src/core/HardwareIoTestParts1.h
+tests/src/core/HardwareIoTestParts2.h
+tests/src/core/InstrumentRoutingTestParts1.h
+tests/src/core/LinkAudioStreamTestParts1.h
+tests/src/core/LinkAudioStreamTestParts2.h
+tests/src/core/NotePlaybackTestParts1.h
+tests/src/core/NotePlaybackTestParts2.h
+tests/src/core/ProjectContainerSaveTestParts1.h
+tests/src/core/ProjectContainerSaveTestParts2.h
+tests/src/core/RackMacrosTestParts1.h
+tests/src/core/RackMacrosTestParts2.h
+tests/src/core/RecordToolsTestParts1.h
+tests/src/core/RecordToolsTestParts2.h
+tests/src/core/RevisionTimelineTestParts1.h
+tests/src/core/RevisionTimelineTestParts2.h
+tests/src/core/RevisionTimelineTestParts3.h
+tests/src/core/UpnpMapperFakeRouterTestParts1.h
+tests/src/core/VideoTrackTestParts1.h
+tests/src/core/VideoTrackTestParts2.h
+tests/src/gui/ArrangerTimelineTestParts1.h
+tests/src/gui/ArrangerTimelineTestParts2.h
+tests/src/gui/ArrangerTimelineTestParts3.h
+tests/src/gui/ArrangerTimelineTestParts4.h
+
 include/AafImport.h
 include/AafImportMenu.h
 include/AbletonLinkBridge.h
 include/AbletonLinkSession.h
 include/Accessibility.h
+# Train 40: retain the independently accepted direct-source plug-in export audit and its report.
+tests/src/plugins/PluginExportBranchTest.cpp
+docs/qwen-fixes-2026-10/cluster-ci-64c5b539b5120b17.md
+docs/qwen-fixes-2026-10/sol-train-30-export-integration.md
+
+# Train 41: retain the independently accepted QFileInfo date regression and its report.
+tests/Qt5QFileInfoDateCheck.py
+docs/qwen-fixes-2026-10/cluster-ci-84e380615213284e.md
+
+# Train 41: hosted portability regressions and verification report.
+tests/src/core/MountNamespaceHandshakeTest.cpp
+tests/train-41-portability-check.py
+docs/qwen-fixes-2026-10/sol-train-30-hosted-followup.md
+
+# cluster ci-aa184f959f204bcd: the hosted-fortification compiler probe for the mount-namespace
+# test helper (tests/src/core/MountNamespaceTestSupport.h) and its repair report. The probe is a
+# tests/*.py driver, registered here by the same rule as the Qt 5 scanners above; measured before
+# registering, every function is CCN <= 10 and the file is under 500 lines, so gates 4 and 7
+# measure it at their existing thresholds rather than moving a baseline.
+tests/unused-result-fortify-check.py
+docs/qwen-fixes-2026-10/cluster-ci-aa184f959f204bcd.md
+# Cluster ci-151e338efff6843e: the Qt 5 QList API portability regression for the Eq
+# spectrum view. Hosted windows-arm64 builds against Qt 5.15, where QList has neither the
+# size+value constructor nor data() that Qt 6's contiguous QList has; the check scans the
+# plug-in's sources and, where a Qt 5 tree is present, compiles every Eq translation unit
+# against it (-fsyntax-only). The file is named after its ctest so a test selection by
+# name (tests/CMakeLists.txt -> Qt5QListApiCheck) finds it, and it is registered wherever
+# a python3 is, so it is red on the Qt 6 hosts too.
+tests/Qt5QListApiCheck.py
+# Cluster ci-151e338efff6843e: the fix and verification report for the Eq spectrum view's
+# Qt 5 QList portability regression (hosted windows-arm64 build).
+docs/qwen-fixes-2026-10/cluster-ci-151e338efff6843e.md
+# cluster ci-1e541b5d1279ed2d (2026-11): the crash reporter's ARM/DISARM proof must compile against Apple's
+# <signal.h> - compiles the two real translation units with their recorded flags under a model of Apple's
+# sigaction() (no exception specification) and sigemptyset() (a macro) (fork-NEW test, ctest
+# CrashReporterAppleSignalCheck).
+tests/crash-reporter-apple-signal-check.py
+docs/qwen-fixes-2026-10/cluster-ci-1e541b5d1279ed2d.md
+# cluster ci-b38398fa7833e0a4 (2026-11): vcpkg's pcre2 portfile fetched the deps/sljit gitlink of a
+# tagged release from the unauthenticated GitHub REST API, which answered 403 on the hosted runner.
+# The response is committed beside an overlay pcre2 portfile and hash-checked; the regression runs
+# the real portfile text under a stub network (no api.github.com request on the tagged path, --head
+# still queries, tampered/missing gitlink fail, the builtin portfile still dies on the CI's URL).
+tests/vcpkg-pcre2-gitlink-test.py
+tests/data/vcpkg-pcre2/builtin-portfile-177e817512.cmake
+tests/data/vcpkg-pcre2/builtin-vcpkg-json-177e817512.json
+tests/data/vcpkg-pcre2/usage
+# cluster ci-9d1768ed0beb1636 (2026-11-14): keep the NAM loader regression buildable below macOS 10.15.
+tests/nam-model-loader-portability-check.py
+docs/qwen-fixes-2026-10/cluster-ci-9d1768ed0beb1636.md
+tests/nam-portability-registration-check.py
+# Train 31: retained CI repair inputs, pinned dependency overlay and integration evidence.
+.github/vcpkg/ports/pcre2/README.md
+.github/vcpkg/ports/pcre2/fix-msvc-pdb-install.patch.json
+.github/vcpkg/ports/pcre2/no-static-suffix.patch.json
+.github/vcpkg/ports/pcre2/pcre2-10.35_fix-uwp.patch.json
+.github/vcpkg/ports/pcre2/portfile.cmake
+.github/vcpkg/ports/pcre2/sljit-gitlink-pcre2-10.49.json
+.github/vcpkg/ports/pcre2/usage
+.github/vcpkg/ports/pcre2/vcpkg.json
+vcpkg-configuration.json
+docs/qwen-fixes-2026-10/cluster-ci-0b372147c313d00a.md
+docs/qwen-fixes-2026-10/cluster-ci-28572f865f7a738c.md
+docs/qwen-fixes-2026-10/cluster-ci-b38398fa7833e0a4.md
+docs/qwen-fixes-2026-10/sol-train-31-ci-replay.md
+
 include/AccessibilityAudit.h
+
+# Train 39: portable hosted compiler and executable-debug regression probes and repair evidence.
+tests/train-39-portability-check.py
+docs/qwen-fixes-2026-10/sol-train-29-hosted-portability.md
+
 include/AccessibleCanvas.h
 include/AccessibleWidgets.h
 include/AddTrackMenu.h
@@ -990,6 +1128,7 @@ include/MixerHardwareMenu.h
 include/MixerLatencyText.h
 include/MixerListen.h
 include/MixerModeBar.h
+include/MixerModeBarLayout.h
 include/MixerOptions.h
 include/MixerOverlays.h
 include/MixerPostInserts.h
@@ -1558,6 +1697,7 @@ src/core/ControlCommandsNoteClipboard.cpp
 src/core/ControlCommandsNoteCurves.cpp
 src/core/ControlCommandsNoteEdit.cpp
 src/core/ControlCommandsNoteStep.cpp
+src/core/ControlCommandsNoteStepFill.cpp
 src/core/ControlCommandsNoteExpression.cpp
 src/core/ControlCommandsNoteHarmony.cpp
 src/core/ControlCommandsNoteMelody.cpp
@@ -2110,6 +2250,7 @@ src/gui/MidiLearnGui.cpp
 src/gui/MidiReconnectAction.cpp
 src/gui/MixerHardwareMenu.cpp
 src/gui/MixerModeBar.cpp
+src/gui/MixerModeBarLayout.cpp
 src/gui/MixerOverlays.cpp
 src/gui/MixerRoutingMatrix.cpp
 src/gui/MixerSendsBanner.cpp
@@ -2160,6 +2301,8 @@ include/MidiInputGate.h
 tests/src/core/MidiInputGateTest.cpp
 tests/src/core/MidiAlsaSeqShutdownTest.cpp
 tests/src/core/MidiAlsaRawShutdownTest.cpp
+# Train 27 tools-complexity refactor: cause, unchanged enforcement, negative controls and validation.
+docs/qwen-fixes-2026-10/sol-train-27-tools-complexity.md
 docs/050-features/Q050-488.md
 docs/qwen-fixes-2026-10/cluster-Q050-488.md
 # 0.5.0 Q050-141: a finger's touch event as the mouse gesture the widget already handles.
@@ -2203,7 +2346,10 @@ src/gui/noteeditor/NoteBackgroundAudio.cpp
 src/gui/noteeditor/NoteCanvas.cpp
 src/gui/noteeditor/NoteCanvasAccess.cpp
 src/gui/noteeditor/NoteCanvasGestures.cpp
+# Train 29: isolate parent lookup to hold the mouse dispatcher under CCN 10; existing note gestures are unchanged.
 src/gui/noteeditor/NoteCanvasInput.cpp
+# Train 29 NoteCanvas complexity repair and verification report.
+docs/qwen-fixes-2026-10/sol-train-29-note-input-complexity.md
 src/gui/noteeditor/NoteCanvasKeys.cpp
 src/gui/noteeditor/NoteEditor.cpp
 src/gui/noteeditor/NoteEditorMenus.cpp
@@ -2231,6 +2377,7 @@ src/gui/shell/ModulatorCard.cpp
 src/gui/shell/Shell.cpp
 src/gui/shell/ShellChrome.cpp
 src/gui/shell/ShellCommandMenus.cpp
+src/gui/shell/ShellCommandMenusCustomise.cpp
 src/gui/shell/ShellFloating.cpp
 src/gui/shell/ShellIcons.cpp
 src/gui/shell/ShellLayout.cpp
@@ -2291,6 +2438,7 @@ tests/control-mastering-commands.py
 tests/control-mastering-sequence.py
 tests/control-mastering-quit.py
 tests/control-mastering-run-bound.py
+tests/control-mastering-choices.py
 tests/control-mcp-group-coverage.py
 tests/control-midi-reconnect.py
 tests/control-named-pipe-smoke.py
@@ -2330,6 +2478,7 @@ tests/control-undo-structural.py
 tests/control-vca-commands.py
 tests/control-warp-commands-transcript.py
 tests/control-wasm-sandbox.py
+tests/control-wide-pin-routing.py
 tests/control-workflow-bindings.py
 tests/control-workflow-models.py
 tests/control_detect_fixtures.py
@@ -2508,6 +2657,8 @@ tests/src/core/ControlPluginBusesTest.cpp
 # Template save undo/redo coverage for default, named, and new templates.
 tests/src/core/ControlProjectTemplateTest.cpp
 tests/src/core/ControlRecordingRoutesTest.cpp
+tests/src/core/ControlRegistryDisplayTest.cpp
+tests/src/core/ControlRoomTest.cpp
 tests/src/core/ControlRegistryTest.cpp
 tests/src/core/ControlSuccessPathsTest.cpp
 tests/src/core/ControlSessionRecordLandTest.cpp
@@ -2613,6 +2764,7 @@ tests/src/core/ModulationRateTest.cpp
 tests/src/core/ModulatorToolsTest.cpp
 tests/src/core/MountNamespaceTestSupport.h
 tests/src/core/MpscQueueTest.cpp
+tests/src/core/NamModelEigenWarningProbe.cpp
 tests/src/core/NamModelLoaderTest.cpp
 tests/src/core/MultiTrackRecorderTest.cpp
 tests/src/core/NamModelPrewarmTest.cpp
@@ -2627,6 +2779,7 @@ tests/src/core/NotePlaybackTest.cpp
 tests/src/core/NoteSelectionIdentityTest.cpp
 tests/src/core/NoteShapeValidationTest.cpp
 tests/src/core/NoteToolsTest.cpp
+tests/src/core/NoteToolsValidationTest.cpp
 tests/src/core/OutOfProcessHostClientLoopTest.cpp
 tests/src/core/OutOfProcessHostSupport.h
 tests/src/core/OutOfProcessHostTest.cpp
@@ -2728,8 +2881,23 @@ tests/src/core/StableTrackIdsTest.cpp
 tests/src/core/StemExportTest.cpp
 tests/src/core/StemExportTestSupport.h
 tests/src/core/StemJobManagerTest.cpp
+tests/src/core/SurroundDevicePathTest.cpp
 tests/src/core/SurroundExportTest.cpp
 tests/src/core/SurroundExportTestSupport.h
+# Q050-059.1 (2026-10-28): the modular instrument (Modular Synth) - its graph, compiled program, instrument, window - and its test (fork-NEW).
+plugins/ModularSynth/ModularGraph.cpp
+plugins/ModularSynth/ModularGraph.h
+plugins/ModularSynth/ModularProgram.cpp
+plugins/ModularSynth/ModularProgram.h
+plugins/ModularSynth/ModularSynth.cpp
+plugins/ModularSynth/ModularSynth.h
+plugins/ModularSynth/ModularSynthView.cpp
+plugins/ModularSynth/ModularSynthView.h
+tests/src/plugins/ModularSynthTest.cpp
+tests/src/plugins/ModularSynthTestSupport.h
+tests/src/gui/ModularSynthViewTest.cpp
+docs/050-features/Q050-059.1.md
+docs/qwen-fixes-2026-10/cluster-Q050-059.1.md
 tests/src/core/StereoDelay.cpp
 tests/src/core/StripMeterModeTest.cpp
 tests/src/core/SurroundTest.cpp
@@ -2769,6 +2937,7 @@ tests/src/core/VstSubPluginFeaturesTest.cpp
 tests/src/core/W3EngineTest.cpp
 tests/src/core/WarpQuantizeTest.cpp
 tests/src/core/WideDiscreteBusTest.cpp
+tests/src/core/WidePinRoutingTest.cpp
 tests/src/core/WriteRefusalGateTest.cpp
 tests/src/gui/MidiWorkflowBindingsGuiTest.cpp
 tests/src/tracks/HeadlessGuiGuardTest.cpp
@@ -2790,10 +2959,15 @@ tests/src/gui/EqFader.h
 tests/src/gui/TrackAddRoutingTest.cpp
 tests/src/gui/TrackRouteDropTest.cpp
 tests/src/gui/StemSplitBackgroundTest.cpp
+tests/src/gui/WidePinRoutingGuiTest.cpp
 tests/src/gui/XyPadPairTest.cpp
 tests/src/plugins/HydrogenImportLocalFileMngTest.cpp
 tests/src/plugins/ZynNoteOffTest.cpp
 tests/src/plugins/ReverbSCRawProcessingTest.cpp
+# Q050-296.1: a 5.1/7.1 channel's speakers through its devices - the user manual and feature notes.
+docs/050-features/Q050-296.1.md
+# cluster Q050-296.1: the implementation and verification report (fork-NEW).
+docs/qwen-fixes-2026-10/cluster-Q050-296.1.md
 # new-p10-532: Soundpipe lifecycle success statuses.
 tests/src/plugins/ReverbSCBaseTest.cpp
 # BUG 13 (new-p10-533): cover ReverbSC creation refusals and allocation failures.
@@ -2827,9 +3001,11 @@ tests/src/plugins/NeuralAmpProfileArgumentsTest.cpp
 # cluster new-p10-336: regression for RNNoise harness short/failed output writes.
 tests/src/plugins/RnnoiseHarnessOutputTest.cpp
 tests/src/plugins/PatmanLoadTest.cpp
+tests/src/plugins/PeakControllerEffectZeroFrameTest.cpp
 tests/src/plugins/SidInstrument.cpp
 tests/src/core/SerializingObjectHookTest.cpp
 tests/src/gui/ArrangerTimelineTest.cpp
+tests/src/gui/ArrangerZoomBoundTest.cpp
 tests/src/gui/ArticulationMapEditorTest.cpp
 tests/src/plugins/ExprSynthTest.cpp
 # BUG 16 (new-p10-136): file manager discovery falls back when the MIME query returns nothing.
@@ -2924,12 +3100,14 @@ tests/src/gui/ProjectContainerSaveAsGuiTest.cpp
 tests/src/gui/ShortcutsCommandsTest.cpp
 tests/src/gui/MainWindowTest.cpp
 tests/src/gui/MasteringReleaseGuiTest.cpp
+tests/src/gui/MasteringChoicesGuiTest.cpp
 tests/src/gui/LivecodePanelTest.cpp
 tests/src/gui/LmmsStyleTest.cpp
 tests/src/gui/PianoRollRecordTest.cpp
 tests/src/gui/FollowActionEditorTest.cpp
 tests/src/gui/MixerSelectionIdentityTest.cpp
 tests/src/gui/MixerZonesTest.cpp
+tests/src/gui/MixerPinnedStripsTest.cpp
 tests/src/gui/MixerInsertLatencyTest.cpp
 tests/src/gui/RealtimeExportMenuTest.cpp
 tests/src/gui/MixerStripFeaturesTest.cpp
@@ -2950,6 +3128,8 @@ tests/src/gui/AafImportMenuTest.cpp
 tests/src/gui/TrackGripContrastTest.cpp
 tests/src/gui/TrackIconsLevelBarTest.cpp
 tests/src/gui/ArrangerKeysNavigatorTest.cpp
+tests/src/gui/ToolMenuAtPointerTest.cpp
+tests/src/gui/ArrangerClipboardKeysTest.cpp
 tests/src/gui/NoteBackgroundAudioTest.cpp
 tests/src/gui/ArrangerOverlaysVideoLaneTest.cpp
 tests/src/gui/ArrangerTakePunchTest.cpp
@@ -3052,6 +3232,14 @@ src/gui/ChordProgressionPanel.cpp
 tests/src/gui/ChordProgressionPanelTest.cpp
 tests/control-chord-progression.py
 tests/control-note-step.py
+include/StepGridPanel.h
+src/gui/noteeditor/StepGridPanel.cpp
+src/gui/noteeditor/StepGridCanvas.cpp
+src/gui/ControlCommandsStepGrid.cpp
+tests/src/gui/StepGridPanelTest.cpp
+tests/src/gui/StepGridFillTest.cpp
+tests/control-step-grid.py
+tests/control-fill.py
 # cluster review-4ec3067be: ALREADY-FIXED report for the Follow Action jump_to fraction/huge-number coercion (fixed earlier in 5784cb570).
 docs/qwen-fixes-2026-10/cluster-review-4ec3067be.md
 
@@ -3083,6 +3271,7 @@ tests/src/gui/AutomationLaneChildGuiTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p12-181-port.md
 # cluster new-p12-151-port (2026-10): NES audio-thread note-state allocation fix and verification report (fork-NEW).
 docs/qwen-fixes-2026-10/cluster-new-p12-151-port.md
+tests/src/core/AudioEngineNullRenderTest.cpp
 tests/src/core/AudioEngineProfilerTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p10-208-port.md
 # cluster new-p9-603-port (2026-10): BitInvader's per-note wavetable copy lives in the note handle, so the render path makes no heap allocation; the regression test is fork-NEW.
@@ -3118,6 +3307,7 @@ plugins/SfzPlayer/SfzSynth.cpp
 plugins/SfzPlayer/SfzSynth.h
 tests/src/plugins/SfzFilePoolTest.cpp
 tests/src/plugins/SfzFlexEnvelopeZeroStageTest.cpp
+tests/src/plugins/SfzDistoBuffersTest.cpp
 tests/src/plugins/SfzEffectBusViewTest.cpp
 tests/src/plugins/SfzPlayerRealtimeTest.cpp
 tests/src/plugins/SfzPlayerTest.cpp
@@ -3352,6 +3542,8 @@ tests/src/plugins/VibratingStringTest.cpp
 tests/src/gui/WindowSelectStartupTest.cpp
 tests/control-realtime-export.py
 tests/moc-qt5-trailing-return-check.py
+# cluster ci-8fceff87a3151aad (2026-11): Qt 5 overloaded-signal check (fork-NEW).
+tests/qt5-overloaded-signal-check.py
 tests/src/core/RemotePluginShmFifoNoSysIpcProbe.cpp
 docs/qwen-fixes-2026-10/cluster-ci-v041-5.md
 include/HostedTrackChannels.h
@@ -3461,8 +3653,8 @@ docs/qwen-fixes-2026-10/cluster-Q050-263.md
 # script that builds a real Carla runtime from the submodule, and the unit's feature record and report (fork-NEW).
 plugins/CarlaVst2/CMakeLists.txt
 plugins/CarlaVst2/CarlaVst2.cpp
-plugins/CarlaVst2/CarlaVst2Discovery.cpp
-plugins/CarlaVst2/CarlaVst2Discovery.h
+plugins/CarlaBase/CarlaVst2Discovery.cpp
+plugins/CarlaBase/CarlaVst2Discovery.h
 plugins/CarlaVst2/CarlaVst2Instrument.h
 plugins/CarlaVst2/CarlaVst2Renderer.cpp
 plugins/CarlaVst2/CarlaVst2Renderer.h
@@ -3470,6 +3662,8 @@ plugins/CarlaVst2/logo.png
 src/core/ControlDeviceVst2.cpp
 tests/data/vst2-test-instrument/BuildWineFixture.cmake
 tests/data/vst2-test-instrument/CMakeLists.txt
+tests/data/vst2-test-instrument/chunk-contract-check.c
+tests/data/vst2-test-instrument/darwin-feature-level-check.py
 tests/data/vst2-test-instrument/vst2-test-instrument.c
 tests/data/vst2-test-instrument/zene_vst2_abi.h
 tests/src/gui/CarlaVst2HostingTest.cpp
@@ -3477,6 +3671,26 @@ tests/src/gui/CarlaVst2TestSupport.h
 tools/build-carla-runtime.sh
 docs/050-features/Q050-481.1.md
 docs/qwen-fixes-2026-10/cluster-Q050-481.1.md
+# Q050-481.2 (2026-11): VST2 effects hosted through Carla (stage 2 of Q050-481) - the carlavst2effect module (one
+# Carla Rack per VST2 effect, run by the render worker), the sub-plugin keys both VST2 hosts share (the discovery
+# above moved into carlabase for one shared cache), the in-tree VST2 test effect (native and a Wine PE build), its
+# hosting test, and the unit's feature record and report (fork-NEW).
+plugins/CarlaVst2/CarlaVst2SubPluginFeatures.h
+plugins/CarlaVst2Effect/CMakeLists.txt
+plugins/CarlaVst2Effect/CarlaVst2Effect.cpp
+plugins/CarlaVst2Effect/CarlaVst2Effect.h
+plugins/CarlaVst2Effect/CarlaVst2Rack.cpp
+plugins/CarlaVst2Effect/CarlaVst2Rack.h
+plugins/CarlaVst2Effect/logo.png
+tests/data/vst2-test-effect/CMakeLists.txt
+tests/data/vst2-test-effect/vst2-test-effect.c
+tests/src/gui/CarlaVst2EffectHostingTest.cpp
+tests/src/gui/CarlaVst2EffectExportTest.cpp
+tests/src/gui/CarlaVst2EffectTestSupport.h
+include/OfflineRenderBarrier.h
+src/core/OfflineRenderBarrier.cpp
+docs/050-features/Q050-481.2.md
+docs/qwen-fixes-2026-10/cluster-Q050-481.2.md
 include/AudioDeviceDiagnostics.h
 src/core/AudioDeviceDiagnostics.cpp
 tests/src/core/AudioDeviceDiagnosticsTest.cpp
@@ -3518,7 +3732,94 @@ tests/src/core/HybridTrackRoundTripTest.cpp
 tests/src/gui/HybridTrackGuiTest.cpp
 tests/control-hybrid-track-transcript.py
 docs/qwen-fixes-2026-10/cluster-Q050-283.1.md
+# Q050-283.2 (2026-11, R-workflow-286): a neutral row given an instrument and back (stage 2 of 3) - command, menu, tests and report (fork-NEW).
+include/ControlTrackRole.h
+include/TrackRoleMenu.h
+src/core/ControlCommandsTrackRole.cpp
+include/ControlTrackRoleLinks.h
+src/core/ControlTrackRoleLinks.cpp
+src/gui/TrackRoleMenu.cpp
+tests/src/core/HybridTrackInstrumentRoleTest.cpp
+tests/src/gui/HybridTrackRoleGuiTest.cpp
+tests/control-hybrid-track-role-transcript.py
+docs/qwen-fixes-2026-10/cluster-Q050-283.2.md
 tests/src/gui/LadspaDescriptionTest.cpp
+# cluster gui-1030-main-loop-points (2026-11): NStateButton activation regression test and its report (fork-NEW).
+tests/src/gui/NStateButtonActivationTest.cpp
+docs/qwen-fixes-2026-10/cluster-gui-1030-main-loop-points.md
+# cluster gui-1030-main-pop-out-the-note-editor-panel (2026-11): what a click on a panel's Pop out button and the View > Float or Dock Panel action do (fork-NEW).
+tests/src/gui/ShellFloatButtonTest.cpp
+# cluster gui-1030-main-pop-out-the-note-editor-panel (2026-11): report for the five GUI-sweep pop-out reports (fork-NEW).
+docs/qwen-fixes-2026-10/cluster-gui-1030-main-pop-out-the-note-editor-panel.md
+# cluster gui-1030-menu-edit-collaborate (2026-11): a refused menu command is said in the status bar (fork-NEW test).
+tests/src/gui/MenuRefusalNoticeTest.cpp
+docs/qwen-fixes-2026-10/cluster-gui-1105-main-delete.md
+# cluster gui-1105-main-loop-points (2026-11): n-state button activation regression test and its report (fork-NEW).
+tests/src/gui/NStateButtonActivationTest.cpp
+docs/qwen-fixes-2026-10/cluster-gui-1105-main-loop-points.md
+# cluster ci-512849fa221097db (2026-11): checks no exported class declares a thread_local data member (MSVC C2492), by scanning include/ and src/ headers (ctest ExportedClassTlsCheck).
+tests/exported-class-tls-check.py
+docs/qwen-fixes-2026-10/cluster-ci-512849fa221097db.md
+# cluster ci-165e1914b308f189 (2026-11): no `template` keyword before a member-template name with no explicit argument list - the hosted windows-arm64 Clang failed the vendored atomic_queue header in FilePool.cpp/Synth.cpp; source scan plus a compile probe of the real header (ctest ClangTemplateKeywordCheck).
+tests/clang-template-keyword-check.py
+docs/qwen-fixes-2026-10/cluster-ci-165e1914b308f189.md
+# cluster ci-12f4249981b085d6 (2026-11): the VST2 fixture's Darwin feature-macro regression - compiles the real
+# fixture with the host C compiler against a fake Darwin <stdio.h> (fork-NEW test).
+tests/vst2-fixture-darwin-headers-check.py
+tests/threads-target-windows-configure.py
+tests/cmake-threads-scope.sh
+# Train 29: also holds NoteCanvas::mousePressEvent at CCN <= 10 (red before lookup extraction).
+tests/complexity-regression-check.py
+# cluster ci-3eb9bda8aa6785a3 (2026-11): the MinGW64 PPA signing key is committed and pinned with signed-by=
+# instead of fetched from a network keyserver at run time; the regression checks the script, verifies the real
+# Launchpad-signed InRelease fixture with gpgv, and carries two keyring fixtures plus its report (fork-NEW).
+tests/mingw-ppa-key-check.sh
+tests/data/mingw-ppa/InRelease
+tests/data/mingw-ppa/legacy-only.gpg
+tests/data/mingw-ppa/README.md
+docs/qwen-fixes-2026-10/cluster-ci-3eb9bda8aa6785a3.md
+
+# Cumulative Terra integration: shared real-window visibility and hit-testing regression.
+tests/src/gui/MixerModeVisibilityTestSupport.h
+
+# Train 27: verifies seven pending CI deltas are retained by recovery before superseding duplicate replay.
+docs/qwen-fixes-2026-10/sol-train-27-duplicate-ci-repairs.md
+
+# macOS arm64/x86_64 build regression: RemotePluginBase.h's shm-FIFO branch must declare getpid()/usleep() itself.
+docs/qwen-fixes-2026-10/cluster-ci-4e020460347493c3.md
+
+# Train 27 repair replay conflict resolution, combined provenance and verification report.
+docs/qwen-fixes-2026-10/sol-train-27-ci-repair-integration.md
+
+# Retain independently reviewed macOS x86_64 and Linux ARM64 CI repair reports in the combined replay.
+docs/qwen-fixes-2026-10/cluster-ci-f0fa6219c5d4b443.md
+docs/qwen-fixes-2026-10/cluster-ci-7d1b70f4f0a0b12b.md
+# Q050-327 (2026-11-10): freeze.tracks - several tracks rendered concurrently as one task and frozen in one undo step.
+include/BatchFreeze.h
+src/core/BatchFreeze.cpp
+src/core/ControlCommandsFreezeBatch.cpp
+tests/src/core/BatchFreezeTest.cpp
+tests/control-freeze-tracks-transcript.py
+docs/050-features/Q050-327.md
+docs/qwen-fixes-2026-10/cluster-Q050-327.md
+# Q050-054.1 (2026-10-27): MIDI takes recorded on armed instrument tracks by transport.record - the realtime
+# capture queue, the main-thread recorder, the three commands, the core and GUI tests and the transcript.
+include/MidiTakeCapture.h
+include/MidiTakeRecorder.h
+src/core/MidiTakeCapture.cpp
+src/core/MidiTakeRecorder.cpp
+src/core/ControlCommandsMidiTakes.cpp
+tests/src/core/MidiTakeRecordTest.cpp
+tests/src/gui/MidiTakeMenuTest.cpp
+tests/control-midi-take-record.py
+docs/050-features/Q050-054.1.md
+docs/qwen-fixes-2026-10/cluster-Q050-054.1.md
+# Q050-054.1 round 4: the track menu's Record submenu (with the MIDI take entries) in its own file - moved
+# unchanged out of ShellCommandMenus.cpp, which sits at the file-length gate's limit.
+include/ShellRecordMenu.h
+src/gui/shell/ShellRecordMenu.cpp
+# cluster new-p10-318 (2026-10): fix and verification report for the Peak Controller zero-frame block (fork-NEW).
+docs/qwen-fixes-2026-10/cluster-new-p10-318.md
 # Q050-334.2 (2026-11): the public TypeScript session SDK (stage 2 of Q050-334) - the package, its example, its own
 # integration test and proxy, the ctest drivers and the reports (fork-NEW; TypeScript and Python, no C/C++).
 tools/zene-session-sdk/package.json

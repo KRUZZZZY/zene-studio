@@ -243,6 +243,31 @@ private slots:
 		QCOMPARE(readBytes(project), atCap);
 	}
 
+	//! A zero-byte stage an earlier attempt left behind holds nothing to install (cluster 714): the
+	//! restore of that revision is refused typed BEFORE the live file is rotated in, so a valid project
+	//! is not replaced by nothing, and the empty stage is removed so a retry cannot install it either.
+	void anEmptyPendingStageIsRefusedAndTheLiveProjectKept()
+	{
+		const QString project = path(QStringLiteral("empty-stage.mmp"));
+		const QByteArray live = documentWith(3);
+		const QString legacy = projectRevisionPath(project, 0) + QStringLiteral(".restore");
+		const QString unique = projectRevisionPath(project, 0)
+			+ QStringLiteral(".restore.4c0c55e0-809d-4923-a9d0-c708fd0adf7c");
+		for (const QString& pending : {legacy, unique})
+		{
+			QVERIFY(writeBytes(project, live));
+			QVERIFY(writeBytes(projectRevisionPath(project, 0), documentWith(2)));
+			QVERIFY(writeBytes(pending, QByteArray()));
+
+			QString error;
+			QVERIFY(!restoreProjectRevision(project, 0, &error));
+			QVERIFY2(error.contains(QStringLiteral("empty")), qPrintable(error));
+			QCOMPARE(readBytes(project), live);
+			QCOMPARE(readBytes(projectRevisionPath(project, 0)), documentWith(2));
+			QVERIFY2(!QFileInfo::exists(pending), qPrintable(pending + QStringLiteral(" was not removed")));
+		}
+	}
+
 #ifdef Q_OS_WIN
 	//! Windows: the replacing rename used to narrow the staged and destination paths through the ANSI
 	//! code page, so a project under a directory name that code page cannot represent could not be

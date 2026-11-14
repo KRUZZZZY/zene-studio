@@ -33,6 +33,7 @@ SET(LMMS_PLUGIN_LIST
 	CarlaPatchbay
 	CarlaRack
 	CarlaVst2
+	CarlaVst2Effect
 	ClapEffect
 	ClapInstrument
 	Compressor
@@ -59,6 +60,7 @@ SET(LMMS_PLUGIN_LIST
 	Lv2Instrument
 	Lb302
 	MidiImport
+	ModularSynth
 	MidiExport
 	Modulation
 	MultitapEcho

@@ -36,6 +36,7 @@
 #include <QJsonArray>
 #include <QPushButton>
 #include <QSpinBox>
+#include <QToolButton>
 #include <QWheelEvent>
 
 #include "ControlRegistry.h"
@@ -48,6 +49,7 @@
 #include "NoteEditor.h"
 #include "NotePlayHandle.h"
 #include "NoteProperties.h"
+#include "ShellChrome.h"
 #include "Song.h"
 
 using namespace lmms;
@@ -123,6 +125,34 @@ private slots:
 		m_clip = nullptr;
 	}
 
+	//! Cluster gui-1106-main-delete: a click on the toolbar's Delete button selects the tool, checks that button,
+	//! unchecks Draw, and both buttons repaint differently - the selection is visible on the button itself.
+	void aClickOnTheDeleteButtonShowsItSelected()
+	{
+		ShellButton* draw = nullptr;
+		ShellButton* erase = nullptr;
+		for (ShellButton* button : m_editor->findChildren<ShellButton*>())
+		{
+			const QAction* action = button->defaultAction();
+			if (action == nullptr) { continue; }
+			if (action->toolTip().startsWith(QStringLiteral("Delete tool"))) { erase = button; }
+			if (action->toolTip().startsWith(QStringLiteral("Draw tool"))) { draw = button; }
+		}
+		QVERIFY(draw != nullptr && erase != nullptr);
+		QVERIFY(erase->isVisible() && erase->isEnabled());
+		QVERIFY(draw->isChecked());
+		QVERIFY(!erase->isChecked());
+		const QImage drawBefore = draw->grab().toImage();
+		const QImage eraseBefore = erase->grab().toImage();
+		QTest::mouseClick(erase, Qt::LeftButton);
+		QCOMPARE(m_editor->state().tool, NoteTool::Erase);
+		QVERIFY(erase->isChecked());
+		QVERIFY(erase->defaultAction()->isChecked());
+		QVERIFY(!draw->isChecked());
+		QVERIFY2(erase->grab().toImage() != eraseBefore, "the Delete button looks the same once selected");
+		QVERIFY2(draw->grab().toImage() != drawBefore, "the Draw button still looks selected");
+	}
+
 	void drawIsTheDefaultAndTheLettersPickFlsTools()
 	{
 		QCOMPARE(m_editor->state().tool, NoteTool::Draw);
@@ -141,6 +171,32 @@ private slots:
 		QVERIFY(claimed(Qt::Key_C, Qt::ControlModifier));
 		QVERIFY(claimed(Qt::Key_B, Qt::ControlModifier));
 		QVERIFY2(!claimed(Qt::Key_Q, Qt::NoModifier), "a key the editor does not use stays the window's");
+	}
+
+	void clickingAToolButtonSelectsItAndShowsIt()
+	{
+		ShellButton* paint = nullptr;
+		ShellButton* draw = nullptr;
+		for (ShellButton* b : m_editor->findChildren<ShellButton*>())
+		{
+			if (b->text() == QStringLiteral("Paint")) { paint = b; }
+			if (b->text() == QStringLiteral("Draw")) { draw = b; }
+		}
+		QVERIFY(paint != nullptr && draw != nullptr);
+		QVERIFY(draw->isChecked());
+		QVERIFY(!paint->isChecked());
+		QTest::mouseClick(paint, Qt::LeftButton, Qt::NoModifier, paint->rect().center());
+		QCOMPARE(m_editor->state().tool, NoteTool::Paint);
+		QVERIFY2(paint->isChecked(), "the clicked Paint button shows as selected");
+		QVERIFY2(!draw->isChecked(), "and the tool it replaced no longer does");
+		// What the user sees: the checked button paints a different face from the idle one.
+		QImage on(paint->size(), QImage::Format_ARGB32);
+		QImage off(paint->size(), QImage::Format_ARGB32);
+		paint->render(&on);
+		draw->setChecked(false);
+		paint->setChecked(false);
+		paint->render(&off);
+		QVERIFY2(on != off, "a checked tool button looks different from an unchecked one");
 	}
 
 	void zZoomsToTheSelection()
@@ -422,6 +478,27 @@ private slots:
 		QCOMPARE(m_clip->notes().size(), std::size_t{3});
 	}
 
+	//! gui-1106-main-slice: a real left-click on the Slice button of the toolbar selects the tool and the
+	//! button shows it (checked, painted differently), as the sweep expects.
+	void aClickOnTheSliceButtonSelectsItAndShowsIt()
+	{
+		QWidget* bar = m_editor->findChild<QWidget*>(QStringLiteral("noteEditorToolbar"));
+		QVERIFY(bar != nullptr);
+		QToolButton* slice = nullptr;
+		for (QToolButton* b : bar->findChildren<QToolButton*>())
+		{
+			if (b->defaultAction() == toolAction(NoteTool::Slice)) { slice = b; }
+		}
+		QVERIFY2(slice != nullptr, "no Slice button on the toolbar");
+		QVERIFY2(slice->isVisible() && slice->width() > 0, "the Slice button is not shown");
+		const QImage before = slice->grab().toImage();
+		QTest::mouseClick(slice, Qt::LeftButton, Qt::NoModifier, slice->rect().center());
+		QCOMPARE(m_editor->state().tool, NoteTool::Slice);
+		QVERIFY2(slice->isChecked(), "the Slice button is not checked after its click");
+		QVERIFY2(slice->grab().toImage() != before, "the Slice button looks the same after its click");
+		QVERIFY2(bar->isVisible(), "the toolbar vanished after the click");
+	}
+
 	//! L07 Q050-064: each tool shows its own cursor at once (a toolbar action, no pointer move), and the
 	//! gesture leaves that tool's cursor in place.
 	void theToolsCursorsFollowTheToolbarAndSurviveAGesture()
@@ -448,6 +525,36 @@ private slots:
 		QCOMPARE(static_cast<int>(m_editor->canvas()->cursor().shape()), static_cast<int>(Qt::ForbiddenCursor));
 		QTest::keyClick(m_editor, Qt::Key_P);
 		QCOMPARE(static_cast<int>(m_editor->canvas()->cursor().shape()), static_cast<int>(Qt::CrossCursor));
+	}
+
+	void clickingAToolButtonSelectsThatTool()
+	{
+		// The toolbar buttons themselves, clicked with the mouse (GUI sweep gui-1105: Mute "left unchanged").
+		const NoteTool order[] = {NoteTool::Mute, NoteTool::Erase, NoteTool::Slice, NoteTool::Select, NoteTool::Audition,
+			NoteTool::Paint, NoteTool::Draw};
+		for (const NoteTool tool : order)
+		{
+			QAction* action = toolAction(tool);
+			QVERIFY(action != nullptr);
+			QToolButton* button = nullptr;
+			for (auto* candidate : m_editor->findChildren<QToolButton*>())
+			{
+				if (candidate->defaultAction() == action) { button = candidate; }
+			}
+			QVERIFY2(button != nullptr, "every tool action has a toolbar button");
+			QVERIFY(button->isVisible() && button->isEnabled());
+			QTest::mouseClick(button, Qt::LeftButton);
+			QCOMPARE(m_editor->state().tool, tool);
+			QVERIFY2(action->isChecked() && button->isChecked(), "the clicked button shows as selected");
+			for (QAction* other : m_editor->findChildren<QAction*>())
+			{
+				if (other != action && other->isCheckable() && other->property("controlCommand").toString()
+						== QStringLiteral("window.note_editor_set") && other->data().isValid())
+				{
+					QVERIFY2(!other->isChecked() || other->data().toInt() != action->data().toInt(), "one tool at a time");
+				}
+			}
+		}
 	}
 
 	void theClipboardKeysCopyPasteDuplicateAndDelete()

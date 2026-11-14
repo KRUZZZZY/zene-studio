@@ -136,8 +136,8 @@ private slots:
 	{
 		ControllerScript::stopAll();
 		m_client.sent.clear();
-		m_client.readable = {QStringLiteral("Pad:in")};
-		m_client.writable = {QStringLiteral("Pad:out")};
+		m_client.readable = QStringList{QStringLiteral("Pad:in")};
+		m_client.writable = QStringList{QStringLiteral("Pad:out")};
 	}
 
 	//! Criterion 1: the shipped example, MIDI in -> registered command -> feedback out, on the bound port.
@@ -296,7 +296,7 @@ private slots:
 		QCOMPARE(state.value(QStringLiteral("errors")).toInt(), 0);
 		// It comes back: bound again, and its events run.
 		m_client.subscribedIn.clear();
-		m_client.readable = {QStringLiteral("Pad:in")};
+		m_client.readable = QStringList{QStringLiteral("Pad:in")};
 		script->checkPorts();
 		state = script->state();
 		QCOMPARE(state.value(QStringLiteral("port_lost")).toBool(), false);
@@ -315,7 +315,7 @@ private slots:
 		QCOMPARE(state.value(QStringLiteral("output_port_lost")).toBool(), true);
 		QCOMPARE(state.value(QStringLiteral("port_losses")).toInt(), 2);
 		QVERIFY(state.value(QStringLiteral("last_error")).toString().contains(QStringLiteral("Pad:out")));
-		m_client.writable = {QStringLiteral("Pad:out")};
+		m_client.writable = QStringList{QStringLiteral("Pad:out")};
 		script->checkPorts();
 		state = script->state();
 		QCOMPARE(state.value(QStringLiteral("port_lost")).toBool(), false);

@@ -144,7 +144,7 @@ int NoteEditor::playheadX() const
 void NoteEditor::followScale()
 {
 	const control::ScaleContext& context = control::scaleContext();
-	if (context.root != m_scaleRoot || context.scale != m_scaleSeen) { readScale(); }
+	if (m_scaleDeferred || context.root != m_scaleRoot || context.scale != m_scaleSeen) { readScale(); }
 }
 
 NoteEditor::~NoteEditor()

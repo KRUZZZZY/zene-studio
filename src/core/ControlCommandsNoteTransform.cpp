@@ -139,8 +139,11 @@ bool readInteger(const QJsonObject& args, const QString& key, int minimum, int m
 		return false;
 	}
 	const double number = value.toDouble();
-	const int rounded = static_cast<int>(number);
-	if (number != static_cast<double>(rounded) || rounded < minimum || rounded > maximum)
+	// Luna cluster new-p15-16: isfinite FIRST - NaN compares false against BOTH
+	// bounds, so it slipped the range check below (and its cast to int is undefined).
+	const int rounded = std::isfinite(number) ? static_cast<int>(number) : 0;
+	if (!std::isfinite(number) || number != static_cast<double>(rounded) || rounded < minimum
+		|| rounded > maximum)
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("'%1' is %2, outside [%3, %4]").arg(key).arg(number)
@@ -164,7 +167,11 @@ bool readNumber(const QJsonObject& args, const QString& key, double minimum, dou
 		return false;
 	}
 	const double number = value.toDouble();
-	if (number < minimum || number > maximum)
+	// Luna cluster new-p15-16: isfinite FIRST - NaN compares false against BOTH
+	// bounds, so it passed here and note.velocity_scale multiplied every velocity
+	// by NaN, a domain error for the std::lround it reaches (the refusal
+	// note.randomize already gives, ControlCommandsNoteRandom.cpp:212).
+	if (!std::isfinite(number) || number < minimum || number > maximum)
 	{
 		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("'%1' is %2, outside [%3, %4]").arg(key).arg(number)

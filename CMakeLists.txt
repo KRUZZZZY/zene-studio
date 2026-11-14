@@ -769,6 +769,10 @@ IF(LMMS_BUILD_LINUX OR LMMS_BUILD_APPLE OR LMMS_BUILD_OPENBSD OR LMMS_BUILD_FREE
 	FIND_PACKAGE(Threads)
 ENDIF(LMMS_BUILD_LINUX OR LMMS_BUILD_APPLE OR LMMS_BUILD_OPENBSD OR LMMS_BUILD_FREEBSD OR LMMS_BUILD_HAIKU)
 
+# Threads::Threads is linked by consumers on every platform (the sfizz tests, the
+# plugins); the gate above only runs on the pthread platforms, so ensure it everywhere.
+include(${CMAKE_SOURCE_DIR}/cmake/modules/EnsureThreads.cmake)
+
 # check for sndio (roaraudio won't work yet)
 IF(WANT_SNDIO)
 	FIND_PACKAGE(Sndio)

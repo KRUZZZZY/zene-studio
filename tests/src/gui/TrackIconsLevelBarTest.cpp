@@ -25,7 +25,8 @@
 /*! A track's chosen icon (track.set_icon) replaces its type's glyph on the header button, and an unknown name falls back
  *  to the glyph instead of a blank; clearing it puts the glyph back. The LevelBar polls its source only while shown,
  *  falls back gently from a peak, paints in the meter colours, reads its level in dB in the tooltip, and the track
- *  variant follows its track's mixer channel. */
+ *  variant reads its own track's output - never the mixer channel, which tracks share (every new one feeds Master), so
+ *  one playing track no longer lights every track's meter. */
 
 #include <QtTest>
 
@@ -49,7 +50,9 @@
 #include "GuiTestApplication.h"
 #include "LevelBar.h"
 #include "MainWindow.h"
+#include "AudioBusHandle.h"
 #include "Mixer.h"
+#include "SampleTrack.h"
 #include "ShellIcons.h"
 #include "Song.h"
 #include "SongEditor.h"
@@ -245,23 +248,33 @@ private slots:
 		QTRY_VERIFY_WITH_TIMEOUT((QApplication::sendEvent(&bar, &help), bar.toolTip() == QStringLiteral("Send: < -60 dB")), 6000);
 	}
 
-	void aTrackLevelBarFollowsItsTracksMixerChannelAndIsSilentWithNone()
+	void aTrackLevelBarReadsItsOwnTrackNotTheSharedMixerChannel()
 	{
 		while (Engine::mixer()->numChannels() < 3) { Engine::mixer()->createChannel(); }
-		Track* track = Track::create(Track::Type::Sample, Engine::getSong());
+		auto* playing = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		auto* quiet = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+		QVERIFY(playing != nullptr && quiet != nullptr);
 		QCoreApplication::processEvents();
-		LevelBar* bar = trackLevelBar(track, nullptr);
+		LevelBar* bar = trackLevelBar(playing, nullptr);
+		LevelBar* quietBar = trackLevelBar(quiet, nullptr);
 		QCOMPARE(bar->accessibleName(), QStringLiteral("The track's level"));
 		bar->show();
+		quietBar->show();
 		const tokens::Palette& pal = tokens::palette();
-		track->mixerChannelModel()->setValue(2);
-		Engine::mixer()->mixerChannel(2)->m_rmsLeft.set(0.f);
-		Engine::mixer()->mixerChannel(2)->m_rmsRight.set(0.9f);  // the louder side counts
+		// Both tracks feed one channel, and that channel is loud: only the track that made the sound shows it.
+		playing->mixerChannelModel()->setValue(2);
+		quiet->mixerChannelModel()->setValue(2);
+		Engine::mixer()->mixerChannel(2)->m_rmsLeft.set(0.9f);
+		Engine::mixer()->mixerChannel(2)->m_rmsRight.set(0.9f);
+		playing->audioBusHandle()->recordPeak(0.9f);
 		QTRY_COMPARE(pixelOf(*bar, 3, 21), pal.meterHigh);
-		track->mixerChannelModel()->setValue(-1);  // no channel: silent
+		QCOMPARE(pixelOf(*quietBar, 3, 21), pal.control);
+		// Silence once the track stops sending: the held peak falls away under the meter's floor.
+		QTRY_COMPARE_WITH_TIMEOUT(pixelOf(*bar, 3, 21), pal.control, 6000);
+		Engine::mixer()->mixerChannel(2)->m_rmsLeft.set(0.f);
 		Engine::mixer()->mixerChannel(2)->m_rmsRight.set(0.f);
-		QTRY_COMPARE(pixelOf(*bar, 3, 21), pal.control);
 		delete bar;
+		delete quietBar;
 
 		// A bar whose track is gone reads silence rather than a dead pointer.
 		auto* doomed = Track::create(Track::Type::Sample, Engine::getSong());

@@ -426,6 +426,8 @@ void DeviceCard::openPins()
 		if (model == nullptr) { return; }
 		auto* view = model->instantiateView();
 		view->setWindowTitle(tr("%1 - pins").arg(m_spec.title));
+		// Q050-155.2: its edits run port.set_pin / port.set_pins, and a discrete bus's channels are its rows.
+		view->setControlAddress(m_spec.target, m_spec.plugin);
 		m_pins = getGUI()->mainWindow()->addWindowedWidget(view);
 	}
 	m_pins->show();

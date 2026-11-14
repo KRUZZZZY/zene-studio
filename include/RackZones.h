@@ -170,7 +170,12 @@ public:
 	//! Writes one <zone> element per zone, or nothing when there are none.
 	void saveSettings(QDomDocument& doc, QDomElement& rackElement) const;
 	//! Reads the <zone> children of @a rackElement; missing ones leave none.
-	void loadSettings(const QDomElement& rackElement);
+	//! @a chainCount is the owning rack's (or layer rack's, or MIDI-part
+	//! player's) chain count: a zone naming a chain the owner does not have
+	//! is discarded rather than stored, through isValidRackZone(). The
+	//! default keeps zones below 64, the most chains the feed can route;
+	//! owners with fewer chains must pass their own count.
+	void loadSettings(const QDomElement& rackElement, int chainCount = 64);
 
 private:
 	//! Runs @a change on the list under the model-change guard, then the hook.

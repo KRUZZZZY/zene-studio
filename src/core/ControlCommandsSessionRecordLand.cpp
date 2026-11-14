@@ -119,6 +119,22 @@ bool pairHasSlot(const Song& song, const SessionModel& model, const LandPair& pa
 		&& pair.track < model.trackCount() && pair.scene >= 0 && pair.scene < model.sceneCount();
 }
 
+//! Why a pair's song track or session-grid cell cannot take it, or empty when both are there.
+QString pairSlotBlocker(const Song& song, const SessionModel& model, const LandPair& pair)
+{
+	if (pair.track < 0 || pair.track >= static_cast<int>(song.tracks().size()))
+	{
+		return QStringLiteral("column_has_no_song_track");
+	}
+	// The song track is there; only the session-grid cell is gone (session.set_grid
+	// shrank the scene or the grid track away) - a different fact, with its own count.
+	if (pair.track >= model.trackCount() || pair.scene < 0 || pair.scene >= model.sceneCount())
+	{
+		return QStringLiteral("session_grid_cell_removed");
+	}
+	return QString();
+}
+
 bool canLandMidiOn(Track* track, int pattern)
 {
 	if (dynamic_cast<InstrumentTrack*>(track) != nullptr) { return true; }
@@ -342,16 +358,8 @@ QJsonObject sessionrecord::landPairState(Song& song, const SessionModel& model, 
 	const std::shared_ptr<const SampleBuffer>& audioSample)
 {
 	QJsonObject landed = pairState(pair);
-	if (pair.track < 0 || pair.track >= static_cast<int>(song.tracks().size()))
-	{
-		return pairNotLanded(pair, QStringLiteral("column_has_no_song_track"));
-	}
-	// The song track is there; only the session-grid cell is gone (session.set_grid
-	// shrank the scene or the grid track away) - a different fact, with its own count.
-	if (pair.track >= model.trackCount() || pair.scene < 0 || pair.scene >= model.sceneCount())
-	{
-		return pairNotLanded(pair, QStringLiteral("session_grid_cell_removed"));
-	}
+	const QString blocker = pairSlotBlocker(song, model, pair);
+	if (!blocker.isEmpty()) { return pairNotLanded(pair, blocker); }
 	const tick_t length = pair.stopTick - pair.startTick;
 	if (length <= 0)
 	{

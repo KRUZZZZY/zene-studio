@@ -103,8 +103,11 @@ public:
 	//! cannot be opened.
 	bool arm(const std::string& filePath, int sampleRate, int inputChannel);
 	//! Off the audio thread: stop the writer, drain the ring and close the
-	//! file. Idempotent.
-	void disarm();
+	//! file. Idempotent. Returns the journal-removal result (new-p17-27) for
+	//! callers that report it: true when this disarm retired the take journal
+	//! (or there was none), false when removal failed - in which case the
+	//! journal path is retained so the failure stays observable.
+	bool disarm();
 
 	bool isArmed() const noexcept
 	{

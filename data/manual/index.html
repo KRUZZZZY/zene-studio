@@ -270,6 +270,18 @@ row. Agents make the same row with <code>track.add</code> and <code>type</code> 
 back with <code>track.list</code> or <code>track.get_state</code> (<code>type</code> is <code>neutral</code>); <code>clip.add</code> on it is refused.
 A Zene Studio build older than this one does not know the row: it opens the project without it.</p>
 
+<p id="neutral-track-instrument"><b>Giving a neutral track an instrument.</b> Open the neutral row's track actions menu and choose an instrument under
+<b>Assign instrument</b>. The row becomes an instrument track playing that instrument, and it stays the same row: the same <code>trk-&lt;n&gt;</code> id, the
+same place in the arrangement, its name, mute, solo, colour and folder - nothing else in the project changes. On an instrument track the same menu has
+<b>Make neutral (keep instrument)</b>: the row goes back to neutral and keeps the instrument role with it - the instrument and its settings, the track's
+volume and effects, and its clips and notes - saved with the project. A neutral row that keeps an instrument offers <b>Restore</b> under
+<b>Assign instrument</b>, which gives all of it back (to use a different instrument afterwards, change it in the instrument window as usual). Each switch is
+one undo step, and undo and redo keep the row's id and place. Agents use <code>track.set_role</code> with <code>role</code> <code>instrument</code> (and
+<code>instrument</code>, the plug-in name, unless the row keeps one) or <code>neutral</code>; <code>track.get_state</code> reports the row's
+<code>role</code> and, on a neutral row, its <code>kept_roles</code>. Automation clips that drive the instrument's knobs keep their points while the row is
+neutral and drive the same knobs again when the instrument comes back - also after the project is saved and reopened - as long as the clip is still there.
+Audio input for a neutral row comes in a later version.</p>
+
 <h2 id="notes">Editing notes</h2>
 <p>Double-click a MIDI clip to open it in the note editor. Opening a clip fits its length to the view and its used pitches with a little room; a very wide range stays centred at the smallest readable row, and an empty clip opens around C5. With Draw, a translucent note previews the click under the pointer, and dragging up or down while drawing moves the preview, the audition and the note to that pitch. The note area's cursor names the next action (draw, erase, slice or play), and choosing a tool from the toolbar or its letter shows it at once. The tools follow FL Studio's piano roll: P draw, B paint, D delete, T mute, C slice, E select, Y play, Z zooms to the selection (1-7 also pick them). With any tool the right button deletes every note it crosses (one undo step); a double-click on a note opens its properties, including <b>Recurrence (passes)</b> - the length of the note's pass pattern and a tick box for each pass it plays on, so length 2 with pass 1 ticked plays the first of every two passes of the loop (0 passes means every pass, and no pass ticked means none; a pass is a loop wrap, not a seek or a MIDI clip's own repeat); Ctrl selects (Ctrl+Shift adds), Shift and Ctrl lock pitch and timing while dragging, Alt bypasses the grid and Alt+wheel changes velocity; a new note takes the last note's length; Ctrl+C, X, V and B copy, cut, paste and duplicate; the lanes
 below edit velocity, pan, chance, timbre, pressure, micro-pitch, release velocity, velocity spread and repeats, and the
@@ -290,6 +302,18 @@ those cells as one undo step: name a note or a step and key, and give velocity, 
 the nearest in-scale key (<code>scale_mode</code> snap; strict refuses, off leaves it), and a note that is already out of the
 scale stays editable. The cells are ordinary notes of the clip, so the piano roll shows the same notes, an old project opens
 with chance 1 and ratchet 1, and one Undo restores the notes as they were.</p>
+<p><b>The Step Grid.</b> Edit &gt; Step Grid... opens the selected MIDI clip in a melodic step grid (the note editor's
+Notes &gt; Tools &gt; Open in Step Grid opens the clip it shows; an agent sends <code>window.step_grid</code>). Columns are steps
+- choose 1/32, 1/16 triplet, 1/16, 1/8 or 1/4 in the Step box - and rows are keys, two octaves from the lowest note's C and
+widened to every note. Out-of-scale rows are shaded; Scale rows only hides the empty ones but never a row that holds a note.
+The Scale box reads the clip against the project key (the default), no scale, or a scale and key of its own; that choice
+only changes the grid, not the project. Click an empty cell to add a note there, one step long - with a scale, a pitch
+outside it is snapped to the nearest key in the scale. Click a note to select it; right-click a note to remove it. For the
+selected note, Pitch moves it (its arrows step through the keys of the scale), Velocity sets 0 to 200, Chance 0 % (never
+plays) to 100 % (always), and Ratchet 1 to 16 evenly spaced attacks inside the note; Remove takes it out. A note's cell is
+filled by its velocity, its height shows its chance, and a tick marks each extra ratchet attack. Every click and every field
+change is one <code>note.step_set</code> and one Undo step, and the grid follows any other change of the clip at once - a
+piano-roll edit, an agent's command or an Undo - because it shows the clip's own notes and nothing else. The Fill row holds Shape or Random, Contour, Seed, Spread, Density (%) and the Fill button. Shape moves each step column along the selected contour (Walk, Rise, Fall, Arch, Valley) inside the Scale box's scale, between the in-scale keys of its range, with a seeded jitter of up to Spread degrees. Random keeps Density % of the columns and gives each a seeded in-scale key, removing the rest. The same clip, settings and seed give exactly the same notes. Filled notes are ordinary notes, so the piano roll shows them, and ONE Undo restores the pattern before the fill. An agent sends the same <code>note.step_fill</code> (clip, kind, contour, seed, spread, density, step_ticks, low, high, root, scale); the reply names the columns filled, their lowest keys and the note ids. A grid on No Scale has nothing to fill from and the call is refused, as is a clip with no notes.</p>
 <p><b>CC lanes and device automation.</b> A clip's CC lane and one device parameter of the clip's own track can be turned into each other by an agent (the note editor's menu entry follows in the next release): <code>clip.controllers_to_automation</code> copies a <code>cc:&lt;n&gt;</code> lane onto the parameter's automation - CC 0 to 127 spans the parameter's minimum to maximum - and <code>clip.controllers_from_automation</code> copies the parameter's automation that lies inside the clip back into the lane, rounding to the nearest CC step and adding the curve's value where the clip cuts it. Points keep their place on the song's timeline, including the clip's start offset and an automation clip that starts later. The source stays; the target's points between the first and last converted tick are replaced, and the automation clip is made linear (a CC lane is linear between points). <code>parameter</code> may be left out only when it names one candidate; otherwise the call is refused and lists them. Pitch bend, aftertouch and program lanes, switches and lists of choices, trim clips, a point that would fall before its automation clip and a non-linear clip with other points outside the span are refused, and a refusal changes nothing. One undo takes a conversion back.</p>
 <p><b>MPE pressure and timbre on the built-in synths.</b> A note's pressure and timbre (CC74) values - from the Pressure and Timbre lanes, from an MPE controller with Edit &gt; MPE Input on, or from <code>note.expression_set</code> - now change the sound of the built-in instruments (Triple Oscillator, Monstro, Organic, Kicker, the AudioFileProcessor sampler and every other instrument that plays each note itself; LB302, OpulenZ, the SF2/GIG/SFZ players and ZynAddSubFX play one stream for all notes and are not affected). Pressure makes that note louder (up to twice its level at full pressure); timbre makes it brighter (up to +12 dB above about 1 kHz at full CC74). Both are neutral at 0, so a note with no expression, or with both at 0, sounds exactly as before, and older projects play unchanged. Live changes move only the note on that MPE channel and glide over one audio block, so they do not click. Hosted plug-ins and MIDI outputs still receive the values as MIDI and choose their own mapping.</p>
 <p>Notes &gt; Tools &gt; Generate a Melody... writes a melodic line in the scale chosen in the note editor's scale menu
@@ -354,6 +378,15 @@ nothing goes silent; unfreeze it, or put the file back. Freezing needs something
 tempo (turn the tempo map off first). The recording follows the song: while it is stopped, or past the recording's end,
 the bus is live. Agents use <code>freeze.bus</code> and <code>freeze.unfreeze_bus</code> with the bus's channel id, and
 <code>bus.list</code> shows <code>frozen</code>, <code>frozen_audio</code> and <code>frozen_audio_ready</code>.</p>
+<p>To freeze several tracks at once, open any unfrozen instrument or sample track's menu and choose Freeze several
+tracks...: tick two or more tracks (the one whose menu you opened starts ticked) and press Freeze. The tracks render at
+the same time, as one entry in the status bar's Tasks list with one progress bar and one Cancel. Nothing changes until
+every track has rendered; then all of them are frozen together, and one Undo unfreezes them all. If you cancel, if one
+render fails, or if one of the tracks, the tempo or the project changes while they render, no track is frozen and the
+partly written files are removed (a file already at a take's path is kept). A track that is already frozen, or that is not
+an instrument or sample track, cannot be part of a batch. Agents use <code>freeze.tracks</code> with the track ids; it
+answers at once with the batch's <code>task</code> id for <code>task.list</code> and <code>task.cancel</code>, and
+<code>track.get_state</code> reads each track afterwards.</p>
 <p>A channel's Hardware I/O menu sends it to your interface's outputs as well as the mix, builds up to four cue
 (headphone) mixes with their own sends, and adds a hardware insert: send to an output, return from an input, with the
 round trip measured by a ping and compensated. Hover the channel's strip to see the insert's latency in frames and
@@ -376,16 +409,41 @@ room with an LFE send and spread, and a stereo master or a stereo export gets th
 A Discrete layout has no speaker positions at all: channel 1 goes to the first output, channel 2 to the next, and so on, with
 no speaker folding or reordering, and its channels are numbered rather than named. A Discrete channel sending into
 another Discrete channel carries channel i to channel i at the send's level; a receiver with fewer channels drops the
-ones it lacks, and a stereo receiver takes the first pair only. For now the extra channels come from another surround or
-Discrete channel's send (a 7.1 bus fed by the Surround Panner, say); a track or a device still feeds a channel its first
-pair only. Extra channels need a backend with more
+ones it lacks, and a stereo receiver takes the first pair only. The mixer's Routing view and Routing Matrix keep showing
+each send by channel; an agent reads what a route carries in <code>mixer.get_state</code> and <code>routing.matrix</code>:
+a route with a non-stereo side says how many <code>channels</code> reach the receiver and how
+(<code>channel_routing</code>: <code>index</code> for a Discrete side, <code>speakers</code> for two speaker layouts,
+<code>pair</code> otherwise).</p>
+
+<p id="discrete-pins"><b>Devices on a Discrete channel.</b> A device in a Discrete channel's effect chain reaches every one of
+the channel's channels, by number, through its pins. Open the device card's <b>pins</b> button: the Pin Connector lists the
+channel's 1..N channels (64 rows on a Discrete 64 channel), and its <b>Channels</b> menu moves the device onto any pair -
+Channels 41-42 puts a stereo compressor on those two channels and leaves the other 62 untouched. A click on a pin turns that
+one connection on or off. Each is one step that Edit &gt; Undo takes back, and an agent does the same with
+<code>port.set_pins</code> (a list of pins, one undo step) or <code>port.set_pin</code>; <code>port.get_state</code>'s
+<code>bus</code> says how many channels the device can reach. A channel with no pin on it passes the device untouched, so a
+device without pins (or with its default pins) still processes only channels 1-2, as before. Pins past the pair are saved
+with the project. If the channel is set back to a narrower layout, pins on channels it no longer has stay set and reach
+nothing. A Discrete channel's own extra channels come from another surround or Discrete channel's send or from a device
+pinned onto them; a track still feeds a channel its first pair only, and a rack's chains and the
+post-fader inserts still see the pair only. Extra channels need a backend with more
 than two outputs (JACK or ALSA). With a surround master, the WAV export's Channels row can write it as it is - Surround: one
 channel per speaker (6 for 5.1, 8 for 7.1) in the standard WAV order with its speaker mask; Stereo, the default, folds it
 with the downmix.</p>
 
+<p id="surround-devices"><b>Devices on a 5.1 or 7.1 channel.</b> A speaker-layout channel's devices (LCR, quad, 5.1, 7.1...) see all its
+speakers (L R C LFE Ls Rs, and Lrs Rrs on 7.1) as channels. A device with default pins still processes only L/R, and the
+other speakers pass through unchanged. Use the Pin Connector (device card <b>pins</b> button &gt; Channels menu, or click
+pins), or the agent command <code>port.set_pins</code>, to put a device on, e.g., channels 5-6 (Ls/Rs): one undo step.
+Each speaker then leaves on its own output when the channel's direct out or master sits on a device with enough outputs.
+Limits: post-fader inserts, send delay compensation, the mono/polarity/width/EQ stages and the meters still apply to L/R
+only.</p>
+
 <p>The mode bar across the top of the mixer shows and sets how it is laid out and what mode it is in. View: Mix shows levels, pan and processing; Routing shows, on every strip, where its signal comes from and where it goes, by channel name, with each send's amount and the hardware output. Density: Compact keeps only the essentials (no inserts or macro knobs, routing on one line); Expanded shows every section turned on in Mixer View. Strips never shrink below their width; use Show to filter channels, or scroll. The mode buttons name what the faders drive, the solo mode (exclusive or additive), who is listening (AFL or PFL) and where the master plays and in what speaker format; click one to change it. Every strip has a badge saying what it is (Master, Return, Group, Track, Channel or VCA, plus its surround format) and a line for the modes it is in (AFL/PFL, Solo safe, Surround pan, Cue, HW insert). Routing Matrix... opens every channel against every channel; filter the senders by name, and double-click or press Enter on a cell to make or change that send.</p>
 
 <p>The mixer's body is four regions: the master strip, the channels, the VCA strips and the effect rack. Dock one of them on either side of the channels from the mode bar's Zones button - its menu names each region and the side it is on - and drag the separator between two regions to resize them. The arrangement and the widths are interface state: they are kept with the window layout (Window &gt; Layouts, below), so File &gt; Save writes them with the project and reopening the project brings them back, while a project or a layout saved before this feature opens with the arrangement the mixer always had: master left, channels in the middle, VCA strips and rack right. <code>window.mixer_zones</code> reads and sets the same arrangement for an agent or a script: <code>dock</code> ("rack=right", or just "rack" for the other side), <code>sizes</code> in pixels, and <code>reset</code> for the default. Dragging a separator runs that same command with the widths you left (<code>live</code>), so the interface and a script never take two different roads to the layout.</p>
+
+<p>Pinned strips keep a channel in view while the mixer scrolls. Right-click a channel strip and choose Pin Strip: the strip moves to the left of the scrolling channels and stays on screen while they scroll. Choose Unpin Strip to return it to its place in mixer order. The master has its own dock and is not pinned. Pins are saved with the project layout and come back when the project reopens. Agents use <code>window.mixer_view</code> with <code>pin</code>, <code>unpin</code> and <code>pinned_channels</code>.</p>
 
 <h2 id="devices">Devices</h2>
 <p>The instrument window's <b>keyboard</b> is a touch performance surface: on a touch screen, two or
@@ -446,6 +504,27 @@ with the project by its path (a path relative to the project where it can be), s
 project can find them: if the file is missing the player is silent and the project keeps its name. An agent loads a file into a
 track's SFZ Player with <code>plugin.open_file</code> (one undo step) and reads and sets the settings with
 <code>plugin.param_get</code> and <code>plugin.param_set</code>.</p>
+
+<p>The Modular Synth is an instrument built from modules wired into a graph. Add it from the instrument list like any other
+instrument (an agent: <code>plugin.load</code> with the device <code>plugin.list</code> names <code>modularsynth</code>). A new one
+holds the starter graph: an oscillator (Osc 1) through a filter (Filter 1) to the output, an envelope (Env 1) on the output's
+level and an LFO (LFO 1) on the filter's cutoff - play a note and it sounds. Its window has a row of knobs for each module and
+lists the wiring under them. The oscillator's Wave knob picks sine, saw, square or triangle (0 to 3), Coarse and Fine tune it in
+semitones and cents, Level sets its loudness; the envelope's Attack, Decay and Release are in milliseconds and Sustain is the level held
+while the key is down, and its release is the note's release; the filter's Mode picks low-pass, high-pass or band-pass (0 to 2),
+Cutoff is in Hz, Resonance sharpens it and Mod depth is how many octaves the LFO moves the cutoff; the LFO's Wave picks sine,
+triangle, saw or square, Rate is in Hz and Depth scales it; the output's Gain sets the instrument's level. Every knob can be
+automated, and an agent reads and sets each one by its name (for example <code>Filter 1 Cutoff</code>) with
+<code>plugin.param_get</code> and <code>plugin.param_set</code> on the track's <code>inst</code> plug-in. Turning a knob runs that
+same <code>plugin.param_set</code>, so one Undo takes back a whole turn of a knob, whether you or an agent made it, and whether
+or not Zene Studio was started with an agent socket. If the edit is refused (for example by the host of a collaboration
+session) the knob shows why and stays where it was. Automate a
+knob from the automation editor or with the automation commands: the knobs of this window have no right-click automation menu
+and no Ctrl-drag yet. The modules, their
+settings and their wiring are saved with the project; an instrument saved without a graph loads with the
+starter graph, and a graph that cannot be played (an unknown module, a missing output, a loop in the wiring) is replaced by the
+starter graph and reported when the project opens. Adding and wiring modules yourself comes in a later version: this one plays
+the graph it is given.</p>
 
 <p>Rack &gt; Chain Canvas... on a mixer channel opens its chain as a patcher graph: the input, one node per device in order, and the cables
 between them. Drag from a node's output port to another node's input port to connect; click a cable and press Delete to remove it;
@@ -525,8 +604,24 @@ plug-in, in a window of its own from Wine for a Windows one. Zene runs Carla for
 slow plug-in nor the Wine bridge can stall playback; the track compensates for those two periods. The plug-in's settings, including its private state (its chunk), are
 saved with the project, in presets (<code>plugin.preset_save</code> / <code>plugin.preset_load</code>) and with
 <code>plugin.state_save</code>, and come back when they are loaded. Without a Carla runtime no VST2 instrument is listed, and a
-project that used one keeps it as a placeholder until Carla is installed. VST2 effects through Carla, and opening projects saved with
-the older VeSTige and VST effect hosts as Carla devices, come in later releases; until then those older hosts are unchanged.</p>
+project that used one keeps it as a placeholder until Carla is installed. Opening projects saved with the older VeSTige and VST
+effect hosts as Carla devices comes in a later release; until then those older hosts are unchanged.</p>
+
+<p><strong>VST2 effects through Carla.</strong> VST2 effects are found the same way, in the same folders, and are hosted the same
+way: native ones in Carla, Windows ones through Carla's Wine bridge. They appear in the device picker that Add device (Device panel),
+Add effect (a track's or channel's effect rack), Insert and Replace open, with the format <em>VST2</em>, and in
+<code>plugin.list</code> as format <code>vst2</code>, kind <code>effect</code>, listed after the VST2 instruments; <code>plugin.load</code>
+adds one to a track's or a mixer channel's chain, and <code>control.undo</code> removes it again. Each one is a Carla Rack holding
+that plug-in. Its dialog (the effect's Controls button) has a knob for each of the plug-in's parameters and a Show plugin editor button
+that opens the plug-in's own editor through <code>plugin.editor_open</code>, as an agent does - inside a Zene window for a native
+plug-in, in a window of its own from Wine for a Windows one. Its parameters are <code>plugin.param_get</code> /
+<code>plugin.param_set</code> parameters (by name or index, one undo step each) and automation targets. The effect's Wet/Dry knob
+mixes its output with its input. Zene runs Carla for each VST2 effect on a thread of its own, two audio periods behind the audio
+thread, so neither a slow plug-in nor the Wine bridge can stall playback; the effect reports those two periods as its delay, and the
+chain compensates for it. While a project is exported Zene waits for each VST2 plug-in between audio periods (at most two seconds each), so no audio is dropped from the file, and playback itself never waits. The
+plug-in's settings, including its chunk, are saved with the project, in presets (<code>plugin.preset_save</code> /
+<code>plugin.preset_load</code>) and with <code>plugin.state_save</code> / <code>plugin.state_load</code>. Without a Carla runtime
+no VST2 effect is listed, and a project that used one keeps it as a placeholder until Carla is installed.</p>
 
 <p>Each device card has an Actions button (⋯), and the same menu opens on a right-click: Bypass, Open Editor, Presets, A/B, Replace With…, Move Left, Move Right and Remove, then Insert, Copy, Parameters and Hosting. Under the card's header a line says the device's state in words: Bypassed, which A/B setting you hear, the delay it adds, whether its plug-in host crashed or was quarantined, and the preset it last loaded or saved. When the chain changes, the cards that did not change stay where they are. Add device, Insert and Replace open the device picker. With a mixer channel selected, Add device fills the channel's selected parallel chain (Rack &gt; Route to); an empty parallel chain has its own Add device... button under its heading. Start typing to filter it by name, vendor, format or type. The arrow keys move through the list, Enter adds the highlighted device and Escape cancels. Each row shows the device's type, format, vendor and state; favourites come first.</p>
 <p>The Inspector keeps its place as you move through a project: a section that still shows the same track, clip or channel is left as it is, and a changed section keeps your keyboard focus and scroll position. When the selected notes differ, a field says 'Multiple values', and a key, velocity or length you type there is given to every selected note; a typed start moves the first note there and keeps the spacing. Volumes read in dB, velocities and pan in %, and times in the time format. Rename a track or a mixer channel by typing in its name field.</p>
@@ -566,6 +661,17 @@ them and sends the patch even when the settings were already those, and says so 
 tells the gear the patch that returns. Agents use device.external_get_state, device.external_set,
 device.external_preset_save, device.external_preset_recall and device.external_preset_remove for the same things. This
 stage covers the MIDI half: the audio return, monitoring and latency offset are separate.
+<b>MIDI takes.</b> An instrument track records the MIDI played into it - from a controller, the
+on-screen keyboard or any input routed to the track - while Record runs, alongside the audio tracks that record: arm it
+from its Record menu (Record MIDI Takes &gt; On; scripts and agents: track.set_midi_arm) - the record button in its header
+arms its audio input instead. When you press Stop, a plain pass becomes one MIDI clip from the bar of its first note,
+with each note at the time and velocity it was played; with the loop on, every pass that holds notes becomes a take clip over
+the loop region on a take lane of its own, and the newest pass plays - unless you chose another take of that loop
+(Next Take Here, the take-lanes view or comp.take_select), which then stays chosen through later loop recordings over the same
+region. A note held across the loop's end ends there. Replace erases the earlier notes a plain pass overlaps (notes only).
+One undo takes the whole recording back, and the clips, lanes and the chosen take are saved with the project. Record &gt;
+MIDI Take Status shows what is armed and what the last pass left (record.midi_capture_status); if Stop could not keep a
+pass, it waits there for Keep the Captured MIDI. Notes played during a count-in or pre-roll are heard, not recorded.
 AudioFileProcessor and SlicerT also record the input straight into the sampler: Record take in the
 instrument's window captures a bounded take (click again to stop, or let it reach its length), then loads it
 so the waveform and, for SlicerT, the slices are ready to play. The take is a WAV in Recordings; one undo
@@ -808,6 +914,13 @@ saved with one video before opens as one clip. A clip's sound can be extracted t
 across the internet, where your router allows it) join the project: you share an invite code, every edit is sent to the
 others, and a remote invite gives a phone or another machine the transport and faders only. Nothing listens until you host,
 and you are asked first.</p>
+<p><b>Auto-Master run choices.</b> Project Tools &gt; Auto-Master... asks for an optional <i>genre</i>, chosen from a closed
+list of lower-case genre names, and an optional <i>delivery target</i>, one of the four target names the candidates are
+graded against; leave either one blank and the run records none. Both choices are stored with the run, shown beside each
+candidate in the Mastering Report (Project Tools), and readable by an agent through <code>mastering.get_state</code>, which
+reports them on the last run and on each candidate row. Neither choice changes a candidate's measurements, its pass or
+fail verdict, or which candidate is recommended: they are labels that travel with the run, not a ranking. A refused choice
+(an unknown or differently cased value) stops the run before anything is rendered.</p>
 <p><b>Damaged drawn waveforms.</b> Watsyn, BitInvader, FreeBoy, Vibed and Xpressive save the waveforms you draw, and
 Wave Shaper, Dynamics Processor and Multitap Echo save their curves, inside the project or preset. When one of those
 saved graphs is damaged - cut short, too long, not readable, or holding values that are not numbers - Zene does not use

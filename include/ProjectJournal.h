@@ -387,6 +387,14 @@ public:
 
 	void clearJournal();
 	void stopAllJournalling();
+
+	/*! Registers the one observer told whenever either stack moves: a step pushed, undone, redone, merged,
+	 *  evicted, cleared or loaded. The Edit menu's Undo/Redo enablement is read from these stacks, and a
+	 *  disabled QAction does not fire its shortcut, so the menu has to follow the stacks rather than the last
+	 *  time it was opened. GUI thread only; an empty function removes the observer.
+	 */
+	void setStackObserver( std::function<void()> observer );
+
 	JournallingObject * journallingObject( const jo_id_t _id )
 	{
 		if( m_joIDs.contains( _id ) )
@@ -505,10 +513,31 @@ private:
 	//! Drops the snapshots the policy's bounds no longer keep (memory bound).
 	void pruneSnapshots();
 
+	//! Tells the observer that the stacks may have moved when the mutator that declares it returns, on
+	//! every return path. The mutators are the only code that changes the stacks.
+	class StackChangeNotice
+	{
+	public:
+		explicit StackChangeNotice( ProjectJournal* journal ) : m_journal( journal ) {}
+		~StackChangeNotice() { m_journal->notifyStackChanged(); }
+		StackChangeNotice( const StackChangeNotice& ) = delete;
+		StackChangeNotice& operator=( const StackChangeNotice& ) = delete;
+
+	private:
+		ProjectJournal* m_journal;
+	};
+	void notifyStackChanged() const
+	{
+		if( m_stackObserver ) { m_stackObserver(); }
+	}
+
 	JoIdMap m_joIDs;
 
 	CheckPointStack m_undoCheckPoints;
 	CheckPointStack m_redoCheckPoints;
+
+	//! The GUI's view of the stacks (setStackObserver()); empty when no GUI is listening.
+	std::function<void()> m_stackObserver;
 
 	bool m_journalling;
 

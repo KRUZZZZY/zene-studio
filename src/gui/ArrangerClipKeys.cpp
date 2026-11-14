@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 
 #include <QCoreApplication>
@@ -33,10 +34,12 @@
 
 #include "AccessibleWidgets.h"
 #include "Clip.h"
+#include "Clipboard.h"
 #include "ClipGroupEdits.h"
 #include "ClipView.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
+#include "DataFile.h"
 #include "Engine.h"
 #include "FolderSummary.h"
 #include "GuiApplication.h"
@@ -45,7 +48,9 @@
 #include "Song.h"
 #include "SongEditor.h"
 #include "Track.h"
+#include "TrackContentWidget.h"
 #include "TrackFolder.h"
+#include "TrackView.h"
 
 namespace lmms::gui::arrangerkeys
 {
@@ -60,14 +65,21 @@ Qt::KeyboardModifiers modsOf(const QKeyEvent* event) { return event->modifiers()
 bool vertical(int key) { return key == Qt::Key_Up || key == Qt::Key_Down; }
 bool horizontal(int key) { return key == Qt::Key_Left || key == Qt::Key_Right; }
 
+//! Ticks between @a clip's start and @a tick. Widened before the subtraction: two tick_t values can differ by more
+//! than tick_t holds, and std::abs of the narrow minimum is undefined.
+std::int64_t distanceTo(const Clip* clip, tick_t tick)
+{
+	return std::abs(static_cast<std::int64_t>(clip->startPosition().getTicks()) - tick);
+}
+
 //! The clip on @a track starting nearest @a tick, or nullptr when it has none.
 Clip* nearestOn(const Track* track, tick_t tick)
 {
 	Clip* best = nullptr;
 	for (Clip* clip : track->getClips())
 	{
-		const auto distance = std::abs(clip->startPosition().getTicks() - tick);
-		if (best == nullptr || distance < std::abs(best->startPosition().getTicks() - tick)) { best = clip; }
+		const auto distance = distanceTo(clip, tick);
+		if (best == nullptr || distance < distanceTo(best, tick)) { best = clip; }
 	}
 	return best;
 }
@@ -229,6 +241,60 @@ bool handleSpanKeys(SongEditor* editor, const QKeyEvent* event)
 	return !FolderSpanSelection::instance().isEmpty() && editSelectedSpans(editor, event->key(), mods);
 }
 
+//! The arranger's selected clip views, in selection order.
+QVector<ClipView*> selectedViews(SongEditor* editor)
+{
+	QVector<ClipView*> views;
+	for (selectableObject* selected : editor->selectedObjects())
+	{
+		if (auto* view = dynamic_cast<ClipView*>(selected)) { views.push_back(view); }
+	}
+	return views;
+}
+
+//! Where Ctrl+V lands: the selected clip's track, else the track the clipboard's clips were copied from.
+TrackView* pasteTarget(SongEditor* editor, const QVector<ClipView*>& selected, const QMimeData* clips)
+{
+	if (!selected.isEmpty()) { return selected.front()->getTrackView(); }
+	DataFile data(Clipboard::decodeValue(clips).toUtf8());
+	const int index = data.content().firstChildElement(QStringLiteral("copyMetadata"))
+		.attribute(QStringLiteral("initialTrackIndex"), QStringLiteral("-1")).toInt();
+	const Song::TrackList& tracks = Engine::getSong()->tracks();
+	if (index < 0 || static_cast<std::size_t>(index) >= tracks.size()) { return nullptr; }
+	for (TrackView* view : editor->trackViews())
+	{
+		if (view->getTrack() == tracks[index]) { return view; }
+	}
+	return nullptr;
+}
+
+//! Ctrl+V: the copied clips at the play position, the way the track's context menu pastes them at the pointer (one
+//! undo step on the track; a clip pasted onto its own spot moves on a snap step). A clipboard without clips is left.
+void pasteAtPlayPosition(SongEditor* editor, const QVector<ClipView*>& selected)
+{
+	const QMimeData* clips = Clipboard::getMimeData();
+	if (!Clipboard::decodeKey(clips).startsWith(QStringLiteral("clip_"))) { return; }
+	TrackView* target = pasteTarget(editor, selected, clips);
+	if (target == nullptr) { return; }
+	const TimePos at = Engine::getSong()->getPlayPos(Song::PlayMode::Song);
+	TrackContentWidget* lane = target->getTrackContentWidget();
+	if (lane->canPasteSelection(at, clips, true)) { lane->pasteSelection(at, clips, true); }
+}
+
+//! Cluster gui-1106: Ctrl+C / Ctrl+X / Ctrl+V on the arranger's clips, as their context menus' Copy, Cut and Paste.
+//! Only the plain Ctrl chords: Shift+Insert and Shift+Delete stay the arranger's insert / remove bar.
+bool handleClipboard(SongEditor* editor, const QKeyEvent* event)
+{
+	const int key = event->key();
+	if (modsOf(event) != Qt::ControlModifier || (key != Qt::Key_C && key != Qt::Key_X && key != Qt::Key_V)) { return false; }
+	const QVector<ClipView*> selected = selectedViews(editor);
+	if (key == Qt::Key_V) { pasteAtPlayPosition(editor, selected); }
+	else if (selected.isEmpty()) { a11y::announceTransition(editor, a11y::Transition::Refused, tr("no clip is selected")); }
+	else if (key == Qt::Key_C) { selected.front()->copy(selected); }
+	else { selected.front()->cut(selected); }
+	return true;
+}
+
 } // namespace
 
 bool claims(const QKeyEvent* event)
@@ -243,7 +309,7 @@ bool claims(const QKeyEvent* event)
 bool handle(SongEditor* editor, const QKeyEvent* event)
 {
 	if (editor == nullptr || Engine::getSong() == nullptr) { return false; }
-	if (handleSpanKeys(editor, event)) { return true; }
+	if (handleSpanKeys(editor, event) || handleClipboard(editor, event)) { return true; }
 	if (!claims(event)) { return false; }
 	const int key = event->key();
 	if (vertical(key)) { chooseAcross(editor, key == Qt::Key_Down); }

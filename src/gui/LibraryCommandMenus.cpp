@@ -204,7 +204,7 @@ void snapshotMenu(QMenu* menu)
 void syncMenu(QMenu* menu)
 {
 	QMenu* sync = menu->addMenu(tr("Sync"));
-	addCommandChoices(sync, tr("Ableton Link"), QStringLiteral("link.set_enabled"), QStringLiteral("enabled"),
+	addCommandChoices(sync, tr("Sync with Other Apps"), QStringLiteral("link.set_enabled"), QStringLiteral("enabled"),
 		[] { return CommandCall{QStringLiteral("link.set_enabled"), {}, {}, QString(), false}; });
 	addCommandChoices(sync, tr("Share Start and Stop"), QStringLiteral("link.set_start_stop_sync"), QStringLiteral("enabled"),
 		[] { return CommandCall{QStringLiteral("link.set_start_stop_sync"), {}, {}, QString(), false}; });

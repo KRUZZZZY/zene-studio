@@ -31,6 +31,7 @@
 
 #include <array>
 #include <cstdint>
+#include <limits>
 #include <type_traits>
 #include <vector>
 
@@ -422,6 +423,45 @@ private slots:
 		QCOMPARE(quadInOut.bufferPtr(1) - quadInOut.bufferPtr(0), frames);
 		QCOMPARE(quadInOut.bufferPtr(2) - quadInOut.bufferPtr(1), frames);
 		QCOMPARE(quadInOut.bufferPtr(3) - quadInOut.bufferPtr(2), frames);
+	}
+
+	//! The shared helper must preserve combined channel totals wider than ch_cnt_t.
+	void checkedSizeHelperAcceptsWideChannelTotal()
+	{
+		// The helper must accept a combined channel total wider than ch_cnt_t.
+		QCOMPARE(detail::checkedSizeFromCounts(std::size_t{80000}, f_cnt_t{1}), std::size_t{80000});
+	}
+
+	//! Every plugin storage variant rejects overflowing products without mutation.
+	void oversizedBufferRequestIsRejectedWithoutMutation()
+	{
+		// frames = (SIZE_MAX/4)+1 with 4 channels wraps a 64-bit product to a
+		// small value; pre-fix this allocates a tiny vector yet reports huge frames.
+		constexpr f_cnt_t hugeFrames = static_cast<f_cnt_t>(std::numeric_limits<std::size_t>::max() / 2) + 1;
+
+		// Dynamic planar (non-interleaved, non-inplace): channelsIn+channelsOut * frames
+		PluginAudioPorts<DynamicPlanar> planar{false};
+		planar.buffers()->updateBuffers(2, 2, hugeFrames);
+		QCOMPARE(planar.buffers()->initialized(), false);
+		QCOMPARE(planar.buffers()->frames(), f_cnt_t{0});
+
+		// Statically in-place planar: max(channelsIn, channelsOut) * frames
+		PluginAudioPorts<QuadInplace> inplace{false};
+		inplace.init();
+		const auto goodFrames = Engine::audioEngine()->framesPerPeriod();
+		QCOMPARE(inplace.buffers()->frames(), goodFrames);
+		auto* goodPtr = inplace.buffers()->inputOutput().bufferPtr(0);
+		inplace.buffers()->updateBuffers(4, 4, hugeFrames);
+		// Existing buffer remains valid and unchanged
+		QCOMPARE(inplace.buffers()->frames(), goodFrames);
+		QCOMPARE(inplace.buffers()->inputOutput().bufferPtr(0), goodPtr);
+		QCOMPARE(inplace.buffers()->initialized(), true);
+
+		// Interleaved in-place: frames * channels
+		InterleavedStereoPorts inter{false};
+		inter.buffers()->updateBuffers(2, 2, hugeFrames);
+		QCOMPARE(inter.buffers()->initialized(), false);
+		QCOMPARE(inter.buffers()->frames(), f_cnt_t{0});
 	}
 
 	void portsWithoutBuffersAreInactive()

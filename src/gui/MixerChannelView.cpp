@@ -466,6 +466,7 @@ void MixerChannelView::contextMenuEvent(QContextMenuEvent*)
 	}
 
 	contextMenu->addAction(tr("Rename &channel"), this, &MixerChannelView::renameChannel);
+	m_mixerView->populatePinAction(contextMenu, m_channelIndex);
 	contextMenu->addSeparator();
 	contextMenu->addAction(m_mixerView->speakMeterAction());
 	auto* peakWatch = contextMenu->addMenu(tr("Peak Watch"));

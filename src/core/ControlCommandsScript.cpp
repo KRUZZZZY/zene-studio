@@ -27,7 +27,6 @@
  * Boston, MA 02110-1301 USA.
  */
 
-#include <QByteArrayView>
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
@@ -35,6 +34,10 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QStringList>
+#include <QtGlobal>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QByteArrayView>
+#endif
 
 #include "ConfigManager.h"
 #include "ControlAutomationSupport.h"
@@ -103,7 +106,12 @@ QString scriptFileSha256(const QString& path)
 			if (file.atEnd() && file.error() == QFileDevice::NoError) { break; }
 			return {};
 		}
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 		hash.addData(QByteArrayView(chunk));
+#else
+		// Qt 5 (hosted CI) has no QByteArrayView; its QByteArray overload hashes the same bytes.
+		hash.addData(chunk);
+#endif
 	}
 	if (file.error() != QFileDevice::NoError) { return {}; }
 	return QString::fromLatin1(hash.result().toHex());

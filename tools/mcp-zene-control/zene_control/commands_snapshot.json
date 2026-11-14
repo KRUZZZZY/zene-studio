@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-11-06T14:56:55Z",
+  "captured_at": "2026-11-14T14:17:42Z",
   "commands": [
     {
       "args_schema": {
@@ -7162,9 +7162,7 @@
       "group": "collab",
       "id": "collab.show_panel",
       "mutating": false,
-      "requires": [
-        "display"
-      ],
+      "requires": [],
       "result_schema": {
         "type": "object"
       }
@@ -10752,6 +10750,50 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "out_dir": {
+            "type": "string"
+          },
+          "tracks": {
+            "type": "array"
+          }
+        },
+        "required": [
+          "tracks"
+        ],
+        "type": "object"
+      },
+      "description": "Freeze two or more instrument or sample tracks ('tracks': ids) as ONE background task: their renders run at the same time (up to 'parallel' child renders), task.list shows one 'freeze' task with aggregate progress and task.cancel stops it. Returns at once with the batch, its task id and each track's output file. Nothing is applied until every render has succeeded; then every track is re-checked and all are frozen in ONE undo step (control.undo takes the whole batch off). A cancel, a failed render or a track, tempo or project that changed meanwhile ends the batch with no track frozen and no staged file left. Refused up front: fewer than two tracks, a repeated id, a track that is not an instrument or sample track, or one already frozen. 'out_dir' places the takes (default: the project's bounce folder). track.get_state reads each result.",
+      "group": "freeze",
+      "id": "freeze.tracks",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "batch": {
+            "type": "integer"
+          },
+          "parallel": {
+            "type": "integer"
+          },
+          "state": {
+            "type": "string"
+          },
+          "task": {
+            "type": "integer"
+          },
+          "tracks": {
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "track": {
             "type": "string"
           }
@@ -13125,7 +13167,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "The last auto-mastering run this instance performed: its `state` (idle, running, completed, failed - mastering.run is ASYNCHRONOUS, so this is the verb a caller polls after it, and `error` carries the child's own reason when the state is failed), the document the last COMPLETED run produced (one measured row per candidate - LUFS-I, the loudest 3 s window, measured dBTP, crest, the residual against that candidate's target and the two verdicts - plus the source render's own readings and the counted number of project renders), and the live state of the files it wrote, hashed now. `has_run` is false and `last_run` is null before the first run. `session_empty` is the fact mastering.run refuses on. Read-only.",
+      "description": "The last auto-mastering run this instance performed: its `state` (idle, running, completed, failed - mastering.run is ASYNCHRONOUS, so this is the verb a caller polls after it, and `error` carries the child's own reason when the state is failed), the document the last COMPLETED run produced (one measured row per candidate - LUFS-I, the loudest 3 s window, measured dBTP, crest, the residual against that candidate's target and the two verdicts - plus the source render's own readings and the counted number of project renders), and the live state of the files it wrote, hashed now. `has_run` is false and `last_run` is null before the first run. `session_empty` is the fact mastering.run refuses on. `candidates` is `last_run`'s own rows, verbatim: empty before a run, each carrying the run's `genre` and `delivery_target`. Read-only.",
       "group": "mastering",
       "id": "mastering.get_state",
       "mutating": false,
@@ -13133,6 +13175,9 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "candidates": {
+            "type": "array"
+          },
           "error": {
             "type": [
               "string",
@@ -13181,7 +13226,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "The mastering candidate set wave 1 generates: each candidate's name, the delivery target it is graded against (its integrated loudness, tolerance and true-peak ceiling, plus the published document the numbers come from), the dynamics stage's five numbers and the chain settings they imply. The set is the engine's own (MasteringJob::defaultCandidates) - it varies target loudness, ceiling and dynamics so the candidates are objectively distinguishable. This command writes nothing and starts no render: mastering.run is what masters and measures.",
+      "description": "The mastering candidate set wave 1 generates: each candidate's name, the delivery target it is graded against (its integrated loudness, tolerance and true-peak ceiling, plus the published document the numbers come from), the dynamics stage's five numbers and the chain settings they imply. The set is the engine's own (MasteringJob::defaultCandidates) - it varies target loudness, ceiling and dynamics so the candidates are objectively distinguishable. This command writes nothing and starts no render: mastering.run is what masters and measures. It also publishes the accepted values for mastering.run's `genre` and `delivery_target`: `genres` (a CLOSED, lower-case set, matched exactly with no case folding), `genre_max_length` and `delivery_targets` (the engine's own named targets).",
       "group": "mastering",
       "id": "mastering.list_candidates",
       "mutating": false,
@@ -13195,6 +13240,15 @@
           "count": {
             "type": "integer"
           },
+          "delivery_targets": {
+            "type": "array"
+          },
+          "genre_max_length": {
+            "type": "integer"
+          },
+          "genres": {
+            "type": "array"
+          },
           "note": {
             "type": "string"
           }
@@ -13207,6 +13261,29 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "delivery_target": {
+            "enum": [
+              "streaming-14",
+              "streaming-16",
+              "streaming-14-ceiling-2",
+              "ebu-r128"
+            ],
+            "type": "string"
+          },
+          "genre": {
+            "enum": [
+              "ambient",
+              "classical",
+              "contemporary-alt-r-and-b",
+              "electronic",
+              "folk",
+              "hip-hop",
+              "jazz",
+              "pop",
+              "rock"
+            ],
+            "type": "string"
+          },
           "out_dir": {
             "type": "string"
           }
@@ -13216,7 +13293,7 @@
         ],
         "type": "object"
       },
-      "description": "Auto-master the session, wave 1: render the mix ONCE (counted by the render machinery, returned as render_count), branch every candidate of MasteringJob::defaultCandidates() off that one render, write one wav per candidate into out_dir and measure each with the BS.1770-4 meter - integrated loudness, the loudest 3 s window, measured true peak and crest factor, plus the residual against that candidate's target and its loudness and true-peak verdicts. `out_dir` is required and absolute. The session is not modified (the render runs in a child process on a serialised copy). ASYNCHRONOUS, like the stems' own long work: this verb STARTS the render and answers with `state: \"running\"` in milliseconds, whatever the render costs - it never waits for it, so the control surface (control.ping included) stays answerable while a mastering run is in flight. The run's own document - the candidate measurements, the files and the counts - appears in `mastering.get_state`'s `last_run` once its `state` leaves \"running\", so the caller polls that verb; a run that fails reports `state: \"failed\"` and the child's own reason in `error` there. A second run while one is in flight is refused with `busy` rather than queued. REVERSIBLE through a recorded action checkpoint: the files this run created are removed and the revisions the directory already held are written back, byte for byte (bounded at 64 MiB of pre-existing wav files - beyond that the run is refused rather than performed without an inverse). The inverse is recorded when the run COMPLETES, so `control.undo` must not be asked to take a run back until `mastering.get_state` reports it completed. Names no best candidate: there is no validated preference scorer, so the choice is the user's.",
+      "description": "Auto-master the session, wave 1: render the mix ONCE (counted by the render machinery, returned as render_count), branch every candidate of MasteringJob::defaultCandidates() off that one render, write one wav per candidate into out_dir and measure each with the BS.1770-4 meter - integrated loudness, the loudest 3 s window, measured true peak and crest factor, plus the residual against that candidate's target and its loudness and true-peak verdicts. `out_dir` is required and absolute. The session is not modified (the render runs in a child process on a serialised copy). ASYNCHRONOUS, like the stems' own long work: this verb STARTS the render and answers with `state: \"running\"` in milliseconds, whatever the render costs - it never waits for it, so the control surface (control.ping included) stays answerable while a mastering run is in flight. The run's own document - the candidate measurements, the files and the counts - appears in `mastering.get_state`'s `last_run` once its `state` leaves \"running\", so the caller polls that verb; a run that fails reports `state: \"failed\"` and the child's own reason in `error` there. A second run while one is in flight is refused with `busy` rather than queued. REVERSIBLE through a recorded action checkpoint: the files this run created are removed and the revisions the directory already held are written back, byte for byte (bounded at 64 MiB of pre-existing wav files - beyond that the run is refused rather than performed without an inverse). The inverse is recorded when the run COMPLETES, so `control.undo` must not be asked to take a run back until `mastering.get_state` reports it completed. Names no best candidate: there is no validated preference scorer, so the choice is the user's. Two optional labels, `genre` and `delivery_target`, let the caller record a choice: accepted genres are published by mastering.list_candidates (`genres`, `genre_max_length`), and `delivery_target` must be one of its `delivery_targets` (the engine's own named targets). An omitted key means no choice and reads back as null; a present-but-empty key is refused. Both are retained on the run and on every candidate row, and are LABELS ONLY - they change neither the candidate set, nor its measurements, nor which candidate is preferred.",
       "group": "mastering",
       "id": "mastering.run",
       "mutating": true,
@@ -13224,6 +13301,18 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "delivery_target": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "genre": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "note": {
             "type": "string"
           },
@@ -18851,6 +18940,81 @@
           "clip": {
             "type": "string"
           },
+          "contour": {
+            "enum": [
+              "walk",
+              "rise",
+              "fall",
+              "arch",
+              "valley"
+            ],
+            "type": "string"
+          },
+          "density": {
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "high": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "shape",
+              "random"
+            ],
+            "type": "string"
+          },
+          "low": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "root": {
+            "description": "key index 0..11, or a name (\"C\", \"C#\", \"Db\")"
+          },
+          "scale": {
+            "type": "string"
+          },
+          "seed": {
+            "maximum": 2147483647,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "spread": {
+            "maximum": 12,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "step_ticks": {
+            "maximum": 3072,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "Fill a clip's existing step columns (every note in one 'step_ticks' slot, 12 = a sixteenth) with new keys of the active scale, or of the 'root' and 'scale' the call names (scale.set; custom scales too), in 'low'..'high' (48..72 when left out). 'kind' shape moves the columns along a 'contour' (walk, rise, fall, arch or valley, moved up to 'spread' degrees either way). 'kind' random picks a key per column and keeps each column with 'density' percent (100 when left out); the others are removed. A chord keeps its shape in scale degrees. The same 'seed' (the project's seed when left out) and the same clip give the same notes. Refused when no scale is set. The reply lists 'filled' (columns written), 'keys' (each one's lowest key after the fill) and 'notes' (the ids still written). One undo step; none when the fill changes nothing.",
+      "group": "note",
+      "id": "note.step_fill",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
           "root": {
             "description": "key index 0..11, or a name (\"C\", \"C#\", \"Db\")"
           },
@@ -20326,7 +20490,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Every device this build can load: built-in effect and instrument modules plus the devices of the shipped hosting formats (LADSPA, LV2, VST3 and CLAP), each with a dev-<n> id that is deterministic for the binary. dev-<n> is a catalogue index, not a persisted project id, and 'loadable' says whether plugin.load accepts the entry. Each entry carries 'vendor' - who made it, as its own format reports it (\"Zene Studio\" for a built-in, the LADSPA maker, the LV2 author, the VST3 or CLAP factory's vendor; empty when the format reports none, which the device picker reads as \"Not reported\"). Format order is built-in, then LADSPA, then LV2, then VST3, then CLAP, then AU, so adding a host does not renumber the ids of the formats that were already there. macOS builds also list Audio Units (format 'au', from the system component registry; each entry carries its 'component' type:subtype:manufacturer and the 'scan_cache_path' its quarantine entry uses); other builds have no 'au' format. VST2 instruments (format 'vst2', Q050-481.1) come last: hosted through Carla, found by Carla's own out-of-process discovery under ZENE_VST2_PATH or else VST_PATH, the VST directory setting and ~/.vst; each carries its 'file', VST2 'unique_id', 'binary' (native, win64, win32) and 'bridged' (a Windows binary run through Carla's Wine bridge). None are listed when no Carla runtime is installed.",
+      "description": "Every device this build can load: built-in effect and instrument modules plus the devices of the shipped hosting formats (LADSPA, LV2, VST3 and CLAP), each with a dev-<n> id that is deterministic for the binary. dev-<n> is a catalogue index, not a persisted project id, and 'loadable' says whether plugin.load accepts the entry. Each entry carries 'vendor' - who made it, as its own format reports it (\"Zene Studio\" for a built-in, the LADSPA maker, the LV2 author, the VST3 or CLAP factory's vendor; empty when the format reports none, which the device picker reads as \"Not reported\"). Format order is built-in, then LADSPA, then LV2, then VST3, then CLAP, then AU, so adding a host does not renumber the ids of the formats that were already there. macOS builds also list Audio Units (format 'au', from the system component registry; each entry carries its 'component' type:subtype:manufacturer and the 'scan_cache_path' its quarantine entry uses); other builds have no 'au' format. VST2 instruments, then VST2 effects (format 'vst2', Q050-481.1/.2), come last: hosted through Carla, found by Carla's own out-of-process discovery under ZENE_VST2_PATH or else VST_PATH, the VST directory setting and ~/.vst; each carries its 'file', VST2 'unique_id', 'binary' (native, win64, win32) and 'bridged' (a Windows binary run through Carla's Wine bridge). None are listed when no Carla runtime is installed.",
       "group": "plugin",
       "id": "plugin.list",
       "mutating": false,
@@ -22404,7 +22568,7 @@
         ],
         "type": "object"
       },
-      "description": "A device's audio-ports model: the input and output pin matrices, their channel counts and names, and the engine's own used-channel caches. Read-only.",
+      "description": "A device's audio-ports model: the input and output pin matrices, their channel counts and names, the engine's own used-channel caches, and the bus its track channels address (a discrete-N mixer channel: N channels by index; any other host: the stereo pair). Read-only.",
       "group": "port",
       "id": "port.get_state",
       "mutating": false,
@@ -22412,6 +22576,9 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "bus": {
+            "type": "object"
+          },
           "device": {
             "type": "string"
           },
@@ -22501,6 +22668,87 @@
           },
           "track_channel": {
             "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "device": {
+            "type": "string"
+          },
+          "pins": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "direction": {
+                  "enum": [
+                    "in",
+                    "out"
+                  ],
+                  "type": "string"
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "processor_channel": {
+                  "maximum": 255,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "track_channel": {
+                  "maximum": 255,
+                  "minimum": 0,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "direction",
+                "track_channel",
+                "processor_channel",
+                "enabled"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "device",
+          "pins"
+        ],
+        "type": "object"
+      },
+      "description": "Set many pins of a device's audio-ports matrices as one routing edit (the render sees all of them or none). 'pins' lists {direction, track_channel, processor_channel, enabled}, up to 8192. A device in a discrete-N mixer channel reaches channels 0..N-1 by index (port.get_state's 'bus'). One undo step on the engine's own history (control.undo, Edit > Undo) puts back the values the pins held before; redo applies them again.",
+      "group": "port",
+      "id": "port.set_pins",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "bus": {
+            "type": "object"
+          },
+          "device": {
+            "type": "string"
+          },
+          "ports": {
+            "type": "object"
+          },
+          "set": {
+            "type": "integer"
+          },
+          "target": {
+            "type": "string"
           }
         },
         "required": [],
@@ -25928,6 +26176,185 @@
           },
           "updated_utc": {
             "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "Leave the MIDI captured by the last transport.record pass in the arrangement. Stop runs this by itself - the header's Stop, the space bar or transport.stop - so a client calls it only for a capture a refusal left pending (record.midi_capture_status 'pending'). A plain pass becomes one MIDI clip on its instrument track from the bar of its first note; a loop recording (the transport wrapped at least once) makes every pass that holds notes a take clip over the loop region, each on a new take lane of one take group, and the newest pass is the active take unless a take of that group was chosen (comp.take_select): a later loop recording over the same region joins the group and keeps that choice. In Replace record mode a plain pass erases the earlier notes it overlaps (notes only, never controller lanes or automation). Notes keep the velocity they sounded with. One undo step: control.undo removes the takes, control.redo restores them. Refused while recording and when nothing is pending.",
+      "group": "record",
+      "id": "record.midi_capture_commit",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "dropped_events": {
+            "type": "integer"
+          },
+          "loop_recording": {
+            "type": "boolean"
+          },
+          "notes": {
+            "type": "integer"
+          },
+          "takes": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "active": {
+                  "type": "boolean"
+                },
+                "clip": {
+                  "type": "string"
+                },
+                "group": {
+                  "type": "integer"
+                },
+                "lane": {
+                  "type": "integer"
+                },
+                "length": {
+                  "type": "integer"
+                },
+                "notes": {
+                  "type": "integer"
+                },
+                "pass": {
+                  "type": "integer"
+                },
+                "position": {
+                  "type": "integer"
+                },
+                "track": {
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {},
+        "required": [],
+        "type": "object"
+      },
+      "description": "The MIDI take recording state: 'armed_tracks' (each armed instrument track, whether it is capturing now, the events captured this pass and the events dropped because the bounded capture queue was full), 'recording' (a transport.record pass is capturing), 'pending' (a stopped pass whose takes were not committed), 'loop_recording', 'capacity_events' (the queue bound per track) and 'last_commit' (record.midi_capture_commit's last report: each take's track, clip, position, length, pass, notes, lane and take group). Reads only.",
+      "group": "record",
+      "id": "record.midi_capture_status",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "armed_tracks": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "capturing": {
+                  "type": "boolean"
+                },
+                "dropped_events": {
+                  "type": "integer"
+                },
+                "events": {
+                  "type": "integer"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "track": {
+                  "type": "string"
+                }
+              },
+              "required": [],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "capacity_events": {
+            "type": "integer"
+          },
+          "last_commit": {
+            "additionalProperties": false,
+            "properties": {
+              "dropped_events": {
+                "type": "integer"
+              },
+              "loop_recording": {
+                "type": "boolean"
+              },
+              "notes": {
+                "type": "integer"
+              },
+              "takes": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "active": {
+                      "type": "boolean"
+                    },
+                    "clip": {
+                      "type": "string"
+                    },
+                    "group": {
+                      "type": "integer"
+                    },
+                    "lane": {
+                      "type": "integer"
+                    },
+                    "length": {
+                      "type": "integer"
+                    },
+                    "notes": {
+                      "type": "integer"
+                    },
+                    "pass": {
+                      "type": "integer"
+                    },
+                    "position": {
+                      "type": "integer"
+                    },
+                    "track": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [],
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [],
+            "type": "object"
+          },
+          "loop_recording": {
+            "type": "boolean"
+          },
+          "pending": {
+            "type": "boolean"
+          },
+          "recording": {
+            "type": "boolean"
+          },
+          "session_tracks": {
+            "type": "array"
           }
         },
         "required": [],
@@ -33087,6 +33514,9 @@
           "index": {
             "type": "number"
           },
+          "kept_roles": {
+            "type": "array"
+          },
           "monitor": {
             "enum": [
               "off",
@@ -33106,6 +33536,9 @@
           },
           "pinned": {
             "type": "boolean"
+          },
+          "role": {
+            "type": "string"
           },
           "soloed": {
             "type": "boolean"
@@ -33780,6 +34213,48 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "armed": {
+            "type": "boolean"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "armed"
+        ],
+        "type": "object"
+      },
+      "description": "Arm (armed: true) or disarm an instrument track for MIDI take recording: while transport.record runs, the MIDI played into an armed track - from a controller, the on-screen keyboard or any input routed to it - is captured, and Stop leaves it in the arrangement (record.midi_capture_commit): one MIDI clip for a plain pass, a take clip per pass on its own take lane for a loop recording, the newest pass active unless a take was chosen (comp.take_select). This is not track.set_arm, which records the audio input to a WAV file. Mode state, not saved with the project and not an undo step.",
+      "group": "track",
+      "id": "track.set_midi_arm",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "armed": {
+            "type": "boolean"
+          },
+          "capturing": {
+            "type": "boolean"
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "channel": {
             "type": "string"
           },
@@ -33954,6 +34429,79 @@
           },
           "track": {
             "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "instrument": {
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "neutral",
+              "instrument"
+            ],
+            "type": "string"
+          },
+          "track": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "track",
+          "role"
+        ],
+        "type": "object"
+      },
+      "description": "Give a neutral row an instrument (role 'instrument', naming the `instrument` plug-in), or switch an instrument track back to a neutral row (role 'neutral'). The row keeps its trk-<n> id, its position, name, mute/solo, colour and folder, and nothing else in the project changes. Switching to neutral KEEPS the instrument role - plug-in, settings, clips and the automation clips' links to its controls - with the row (track.get_state `kept_roles`, saved with the project); switching that row to 'instrument' again gives it back (omit `instrument`). One undo step.",
+      "group": "track",
+      "id": "track.set_role",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip_count": {
+            "type": "number"
+          },
+          "folder": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "index": {
+            "type": "integer"
+          },
+          "kept_roles": {
+            "type": "array"
+          },
+          "muted": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "soloed": {
+            "type": "boolean"
+          },
+          "track": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "visible": {
+            "type": "boolean"
           }
         },
         "required": [],
@@ -34824,7 +35372,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Start playback in record mode - the header's Record button dispatches this: sample tracks with recording enabled capture, and automation clips armed for recording write, while it plays (Song::playAndRecord). Starting from a stopped transport only: while the song is already playing the record mode cannot be switched on mid-run, so this is refused, typed - stop first. transport.stop ends it. Audio capture on a record route is armed per track (track.set_arm) and runs on its own.",
+      "description": "Start playback in record mode - the header's Record button dispatches this: sample tracks with recording enabled capture, and automation clips armed for recording write, while it plays (Song::playAndRecord). Starting from a stopped transport only: while the song is already playing the record mode cannot be switched on mid-run, so this is refused, typed - stop first. transport.stop ends it. Audio capture on a record route is armed per track (track.set_arm) and runs on its own. Instrument tracks armed with track.set_midi_arm record the MIDI played into them alongside (Q050-054.1): 'midi_tracks' lists them, and Stop leaves their takes in the arrangement through record.midi_capture_commit - one MIDI clip per plain pass, a take lane per loop pass.",
       "group": "transport",
       "id": "transport.record",
       "mutating": false,
@@ -34834,6 +35382,9 @@
       "result_schema": {
         "additionalProperties": false,
         "properties": {
+          "midi_tracks": {
+            "type": "array"
+          },
           "playing": {
             "type": "boolean"
           },
@@ -38195,6 +38746,12 @@
             ],
             "type": "string"
           },
+          "pin": {
+            "type": "string"
+          },
+          "pinned_channels": {
+            "type": "array"
+          },
           "selected_channels": {
             "type": "array"
           },
@@ -38230,6 +38787,9 @@
             ],
             "type": "string"
           },
+          "unpin": {
+            "type": "string"
+          },
           "view": {
             "enum": [
               "mix",
@@ -38241,7 +38801,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "The mixer view's modes, set and answered: 'sends_on_faders' (a ch-<n> return, or empty for the channel faders) makes every channel's fader drive its send to that return - a banner across the mixer names it, every fader is labelled with what it drives, and a channel with no send there keeps a dimmed, still 'No send' fader in place; the answer adds 'sends_on_faders_name' (the return's name) and 'faders' (per channel, what its fader drives: volume, send or no_send - the return's own fader and the master's stay volume); 'folded' answers the channel strips a collapsed folder hides (track.folder_set_collapsed folds). MX-005: 'selected_channels' (ch-<n> ids, never the master) are the channels the 'selected' filter shows - interface state, never saved, forgotten when the mixer is cleared for another project; a Ctrl+click on a strip adds or removes its channel, and the mode bar's 'Pick...' chooses them; the answer lists them in mixer order. MX-021: 'follow_selection' makes the 'selected' filter show the focused arranger track's (or clip owner's) mixer channel instead, keeping the manual set for when it is turned off; it is saved in the config file (ui/followchannel, off when absent), and the answer adds it with 'visible_channels' (the channels the filter shows now, master included). The view options, kept in the config file (ui/mixerview): 'show_sends', 'show_pan', 'show_number', 'show_meter_info', 'show_inserts', 'show_macros' (a strip's sections - the meter line is the gain reduction and the clip light, the inserts are listed by name, the macros are the rack's first four as knobs), 'show_console' (Q050-088: the Console section - knobs and switches for the channel's trim, polarity, EQ and its Console's drive and glue compressor, each running mixer.console_strip; off by default, hidden in the routing view and the compact density), 'strip_width' (narrow / normal / wide), 'filter' (all / instruments / audio / returns / used - the channels a track plays into or a send reaches -, selected), 'meter_mode' (peak - after the fader -, rms, pre_fader) and 'meter_scale' (db42 - the default range -, db60, db24, linear); MX-128, the meters' ballistics: 'meter_falloff' (fast - the default, about 116 dB/s -, medium - about 26 dB/s -, slow - about 12 dB/s, a peak programme meter's fall) and 'peak_hold' (how long the peak line holds: off, 1.5s - the default -, 3s, 6s). Theme 16: 'view' (mix - levels, pan and processing, the default -, routing - each strip lists where its signal comes from and goes by name, the sends row always shown, inserts and macros left to the mix view) and 'density' (expanded - the default, every section the options show -, compact - no inserts, no macros, in the mix view no sends row, routing on one line); a mode bar across the mixer shows and sets both, the filter and the modes. The answer adds 'strips': per channel its 'type' (master, return, group, track, channel), 'format' (stereo, LCR, Quad, 5.1, 7.1), 'inputs' and 'outputs' (by name; each output with amount, pre_fader, enabled), 'hardware' (its hardware output's label, empty for none) and 'states' (afl, pfl, solo_safe, surround_pan, cue, hardware_insert). Interface state: nothing is journalled.",
+      "description": "The mixer view's modes, set and answered: 'sends_on_faders' (a ch-<n> return, or empty for the channel faders) makes every channel's fader drive its send to that return - a banner across the mixer names it, every fader is labelled with what it drives, and a channel with no send there keeps a dimmed, still 'No send' fader in place; the answer adds 'sends_on_faders_name' (the return's name) and 'faders' (per channel, what its fader drives: volume, send or no_send - the return's own fader and the master's stay volume); 'folded' answers the channel strips a collapsed folder hides (track.folder_set_collapsed folds). MX-005: 'selected_channels' (ch-<n> ids, never the master) are the channels the 'selected' filter shows - interface state, never saved, forgotten when the mixer is cleared for another project; a Ctrl+click on a strip adds or removes its channel, and the mode bar's 'Pick...' chooses them; the answer lists them in mixer order. MX-021: 'follow_selection' makes the 'selected' filter show the focused arranger track's (or clip owner's) mixer channel instead, keeping the manual set for when it is turned off; it is saved in the config file (ui/followchannel, off when absent), and the answer adds it with 'visible_channels' (the channels the filter shows now, master included). The view options, kept in the config file (ui/mixerview): 'show_sends', 'show_pan', 'show_number', 'show_meter_info', 'show_inserts', 'show_macros' (a strip's sections - the meter line is the gain reduction and the clip light, the inserts are listed by name, the macros are the rack's first four as knobs), 'show_console' (Q050-088: the Console section - knobs and switches for the channel's trim, polarity, EQ and its Console's drive and glue compressor, each running mixer.console_strip; off by default, hidden in the routing view and the compact density), 'strip_width' (narrow / normal / wide), 'filter' (all / instruments / audio / returns / used - the channels a track plays into or a send reaches -, selected), 'meter_mode' (peak - after the fader -, rms, pre_fader) and 'meter_scale' (db42 - the default range -, db60, db24, linear); MX-128, the meters' ballistics: 'meter_falloff' (fast - the default, about 116 dB/s -, medium - about 26 dB/s -, slow - about 12 dB/s, a peak programme meter's fall) and 'peak_hold' (how long the peak line holds: off, 1.5s - the default -, 3s, 6s). Theme 16: 'view' (mix - levels, pan and processing, the default -, routing - each strip lists where its signal comes from and goes by name, the sends row always shown, inserts and macros left to the mix view) and 'density' (expanded - the default, every section the options show -, compact - no inserts, no macros, in the mix view no sends row, routing on one line); a mode bar across the mixer shows and sets both, the filter and the modes. The answer adds 'strips': per channel its 'type' (master, return, group, track, channel), 'format' (stereo, LCR, Quad, 5.1, 7.1), 'inputs' and 'outputs' (by name; each output with amount, pre_fader, enabled), 'hardware' (its hardware output's label, empty for none) and 'states' (afl, pfl, solo_safe, surround_pan, cue, hardware_insert). Interface state: nothing is journalled. Q050-227.2: 'pin' / 'unpin' (a ch-<n> id) and 'pinned_channels' (the whole list) pin channel strips beside the scrolling channels, so they stay on screen while the channels scroll; the strip's menu Pin Strip / Unpin Strip runs this command; the answer's 'pinned_channels' lists them in mixer order. The pins are interface state kept with the project's window layout (window.layout_project_save, inside 'mixer_zones'), restored when the project reopens; layouts without them open with none pinned.",
       "group": "window",
       "id": "window.mixer_view",
       "mutating": false,
@@ -38309,6 +38869,9 @@
               "6s"
             ],
             "type": "string"
+          },
+          "pinned_channels": {
+            "type": "array"
           },
           "selected_channels": {
             "type": "array"
@@ -38389,7 +38952,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Q050-227.1: where the mixer's regions are docked and how wide their separators leave them, set and answered. The regions are 'master' (the master strip), 'channels' (the scrolling channel area), 'vca' (the VCA strips) and 'rack' (the effect rack). 'channels' is always 'middle'; 'master', 'vca' and 'rack' dock 'left' or 'right' of it. 'dock' takes one side region, either alone (put it on the other side) or as '<region>=<left|right>', and 'zones' takes the whole arrangement as an object ({region: dock}). 'sizes' sets a region's width in pixels (24..4000); dragging a separator in the interface sends the same 'sizes' back through this very command, with 'live': true, so the interface's own resize and an agent's are one path ('live' takes only 'sizes' and never re-lays the splitter, which is what makes it safe mid-gesture). 'reset' puts the default arrangement back: master left, channels middle, VCA and rack right. The answer is what the mixer shows now: 'zones' and 'sizes' (the portable arrangement), and 'mixer_zones', the one object window.layout_project_save keeps inside the project's window layout, so saving that layout and reopening the project brings the arrangement and the widths back. Projects and layouts saved before this feature carry no 'mixer_zones' and open with the default arrangement. Interface state, kept with the layout: this command writes no project data of its own and records no undo step (the layout save is the step).",
+      "description": "Q050-227.1: where the mixer's regions are docked and how wide their separators leave them, set and answered. The regions are 'master' (the master strip), 'channels' (the scrolling channel area), 'vca' (the VCA strips) and 'rack' (the effect rack). 'channels' is always 'middle'; 'master', 'vca' and 'rack' dock 'left' or 'right' of it. 'dock' takes one side region, either alone (put it on the other side) or as '<region>=<left|right>', and 'zones' takes the whole arrangement as an object ({region: dock}). 'sizes' sets a region's width in pixels (24..4000); dragging a separator in the interface sends the same 'sizes' back through this very command, with 'live': true, so the interface's own resize and an agent's are one path ('live' takes only 'sizes' and never re-lays the splitter, which is what makes it safe mid-gesture). 'reset' puts the default arrangement back: master left, channels middle, VCA and rack right. The answer is what the mixer shows now: 'zones' and 'sizes' (the portable arrangement), and 'mixer_zones', the one object window.layout_project_save keeps inside the project's window layout, so saving that layout and reopening the project brings the arrangement and the widths back. Projects and layouts saved before this feature carry no 'mixer_zones' and open with the default arrangement. 'mixer_zones' also carries 'pinned' (the pinned channel strips, ch-<n> ids in pin order; window.mixer_view pins them). Interface state, kept with the layout: this command writes no project data of its own and records no undo step (the layout save is the step).",
       "group": "window",
       "id": "window.mixer_zones",
       "mutating": false,
@@ -39045,6 +39608,76 @@
     {
       "args_schema": {
         "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "root": {
+            "maximum": 11,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "scale": {
+            "type": "string"
+          },
+          "scale_rows_only": {
+            "type": "boolean"
+          },
+          "step_ticks": {
+            "maximum": 3072,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "description": "Open a MIDI clip in the melodic step grid (Edit > Step Grid..., or the note editor's Notes > Tools > Open in Step Grid) and answer what the grid shows. Columns are steps of 'step_ticks' ticks (default 12, a sixteenth), rows are pitches; every lit cell is one ordinary note of the clip, so the piano roll (roll.get_state) and note.step_get_state read the same notes. 'scale' picks the scale the rows are read against: \"\" the project key (scale.set), \"none\" no scale, or a scale.list name on 'root' (0 = C); 'scale_rows_only' hides the out-of-scale rows that hold no note. With no 'clip' it opens the selected MIDI clip, or keeps the grid's own. The grid's clicks and fields each run ONE note.step_set (one undo step); this command only opens the view and edits nothing. The reply: 'clip', 'step_ticks', 'steps', 'rows' (keys, highest first), 'cells' (each note's id, step, key, velocity, chance, ratchet, length, in_scale) and 'selected'.",
+      "group": "window",
+      "id": "window.step_grid",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "cells": {
+            "type": "array"
+          },
+          "clip": {
+            "type": "string"
+          },
+          "rows": {
+            "type": "array"
+          },
+          "scale": {
+            "type": "object"
+          },
+          "scale_choice": {
+            "type": "string"
+          },
+          "scale_rows_only": {
+            "type": "boolean"
+          },
+          "selected": {
+            "type": "string"
+          },
+          "shown": {
+            "type": "boolean"
+          },
+          "step_ticks": {
+            "type": "integer"
+          },
+          "steps": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
         "properties": {},
         "required": [],
         "type": "object"
@@ -39551,7 +40184,7 @@
       }
     }
   ],
-  "count": 924,
+  "count": 932,
   "instance": {
     "binary": null,
     "binary_bytes": null,
@@ -39559,15 +40192,15 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-an6tkf3w/zene.sock",
-    "version": "0.4.0-alpha.6311+c4eb4b6"
+    "source_socket": "/tmp/zctl-run-ftglaias/zene.sock",
+    "version": "0.4.0-alpha.7051+de50c6c"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 78,
-    "id_count": 924,
-    "ids_sha256": "fac3b27d98cbc91933c63f6608d20739a9d2d1000608af46ee5823a0c47077e1"
+    "id_count": 932,
+    "ids_sha256": "3b318b4ce6bc29a26194052e8932b76418d03988314ffcce3785a06ecea5e944"
   }
 }

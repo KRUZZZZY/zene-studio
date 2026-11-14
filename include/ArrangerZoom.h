@@ -77,8 +77,16 @@ constexpr int WheelBurstMs = 400;
 
 //! The zoom history arrangement.zoom_back walks (zoom model values, newest last; UI thread).
 LMMS_EXPORT void remember(int value);
-//! Record the starting zoom when a pinch ends or is canceled, if it changed.
-LMMS_EXPORT void finishPinch(int startValue, int currentValue, Qt::GestureState state);
+//! Record the starting zoom when a pinch has ended (finished or canceled), if it changed.
+LMMS_EXPORT void finishPinch(int startValue, int currentValue, bool ended);
+#ifndef QT_NO_GESTURES
+//! The gesture-state form, where Qt has gestures. A Qt built without them (MinGW Qt 5 in the
+//! hosted mingw64 job) declares no Qt::GestureState, so the exported overload takes a bool.
+inline void finishPinch(int startValue, int currentValue, Qt::GestureState state)
+{
+	finishPinch(startValue, currentValue, state == Qt::GestureFinished || state == Qt::GestureCanceled);
+}
+#endif
 //! Step one back: take the newest remembered extent into @a earlier and queue @a current so
 //! arrangement.zoom_forward can return to it; false when there is nothing earlier (UI thread).
 LMMS_EXPORT bool takeEarlier(int current, int* earlier);

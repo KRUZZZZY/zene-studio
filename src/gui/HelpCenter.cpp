@@ -239,7 +239,10 @@ HelpCenter* HelpCenter::showHelp(const QString& topic, bool reference)
 	if (!topic.isEmpty()) { s_center->m_manual->scrollToAnchor(topic); }
 	s_center->m_tabs->setCurrentIndex(reference ? 1 : 0);
 	s_center->QDialog::show();
+	// Raise AND activate: an already-open centre behind other open windows (About, Keyboard Shortcuts) stays
+	// behind them when only raised, so Help > Manual seemed to do nothing (gui-1106).
 	s_center->raise();
+	s_center->activateWindow();
 	return s_center;
 }
 

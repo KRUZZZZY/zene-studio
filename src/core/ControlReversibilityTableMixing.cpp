@@ -50,8 +50,9 @@ const ReversibilityRow kMixingRows[] = {
 		"action checkpoint: the recorded undo step puts the previous nesting and links back", ""),
 	R("mixer.send_pan", RC::TrueInverse, true, "it pans one send (saved with the project)",
 		"action checkpoint: the recorded undo step puts the send's previous pan back", ""),
-	R("window.mixer_view", RC::NotMutating, false, "the mixer view's modes and options are interface state (the options "
-		"are kept in the ui/mixerview setting), not the project", "no project write (set the previous options to restore)", ""),
+	R("window.mixer_view", RC::NotMutating, false, "the mixer view's modes, options and live pins are interface state; "
+		"only window.layout_project_save stores pins with the project's layout", "no project write of its own (set the previous view state; "
+		"the saved layout is one undo step)", ""),
 	R("window.mixer_zones", RC::NotMutating, false,
 		"the mixer's docked regions and separator widths are interface state and live in the window layout the project keeps "
 		"(window.layout_project_save's `mixer_zones`); this command writes no project data of its own",

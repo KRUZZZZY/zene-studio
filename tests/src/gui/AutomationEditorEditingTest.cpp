@@ -226,6 +226,39 @@ private slots:
 		QCOMPARE(editor->grab().toImage(), plain);  // the fades, and nothing else, made the difference
 	}
 
+	//! new-p15-275: AutomationEditor::setCurrentClip() kept the deleted clip in its raw m_clip,
+	//! so the next update/paint used freed memory. Deleting the open clip must leave the editor
+	//! with no clip. The window's own destroyed() rescue is bypassed here on purpose: the
+	//! editor's setter is the entry point the finding names, and it must be safe on its own.
+	void deletingTheOpenClipClearsTheEditor()
+	{
+		auto* itrack = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		QVERIFY(itrack != nullptr);
+		auto* atrack = dynamic_cast<AutomationTrack*>(Track::create(Track::Type::Automation, Engine::getSong()));
+		QVERIFY(atrack != nullptr);
+		auto* clip = dynamic_cast<AutomationClip*>(atrack->createClip(TimePos(0)));
+		QVERIFY(clip != nullptr);
+		clip->addObject(itrack->volumeModel(), false);
+		AutomationEditorWindow* window = getGUI()->automationEditor();
+		AutomationEditor* editor = window->m_editor;
+		editor->setCurrentClip(clip);
+		QCoreApplication::processEvents();
+		QVERIFY(editor->validClip());
+		QCOMPARE(editor->currentClip(), static_cast<const AutomationClip*>(clip));
+		delete clip;
+		// No processEvents yet: a queued paint on unfixed code would dereference freed memory.
+		QVERIFY2(!editor->validClip(), "editor kept a dangling automation clip after deletion");
+		QCOMPARE(editor->currentClip(), static_cast<const AutomationClip*>(nullptr));
+		editor->update();
+		QCoreApplication::processEvents();
+		editor->repaint();
+		QCoreApplication::processEvents();
+		QVERIFY(!editor->validClip());
+		editor->setCurrentClip(nullptr);
+		QCoreApplication::processEvents();
+		QVERIFY(!editor->validClip());
+	}
+
 private:
 	bool firstParameter(AutomatableModel** model, QString* id) const
 	{

@@ -375,7 +375,7 @@ void InstrumentLayers::loadSettings(const QDomElement& parent)
 			m_mix[static_cast<std::size_t>(index)] = readMix(entry);
 		}
 	}
-	m_zones.loadSettings(element);
+	m_zones.loadSettings(element, layerCount() + 1);
 	publishMix();
 }
 

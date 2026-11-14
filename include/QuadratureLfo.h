@@ -84,6 +84,10 @@ public:
 
 	inline void setOffset( double offsetVal )
 	{
+		if( !std::isfinite(offsetVal) )
+		{
+			return;
+		}
 		m_offset = offsetVal;
 	}
 

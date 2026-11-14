@@ -339,6 +339,18 @@ private slots:
 		channel(2)->m_muteModel.setValue(false);
 	}
 
+	//! The owner's path with two audible channels (exclusive solo): solo the first, the second is silenced and the
+	//! first stays audible; unsolo restores both pre-solo states. Each channel starts clean, so order does not matter.
+	void soloIsolatesTwoAudibleChannels()
+	{
+		QVERIFY(!mixerstrip::additiveSolo());
+		for (int i = 1; i < Engine::mixer()->numChannels(); ++i) { channel(i)->m_soloModel.setValue(false); channel(i)->m_muteModel.setValue(false); }
+		channel(1)->m_soloModel.setValue(true);
+		QVERIFY2(!channel(1)->m_muteModel.value() && channel(2)->m_muteModel.value(), "solo: the soloed channel is heard, the other is silenced");
+		channel(1)->m_soloModel.setValue(false);
+		QVERIFY2(!channel(1)->m_muteModel.value() && !channel(2)->m_muteModel.value(), "unsolo restores both pre-solo states");
+	}
+
 	//! Additive solo: deleting the channel the engine names as its last solo keeps the other soloed channel heard
 	//! and the unsoloed ones muted (applyAdditiveSolo runs again on the new layout).
 	void deletingAnAdditiveSoloKeepsTheOthers()

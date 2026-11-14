@@ -90,6 +90,7 @@
 #include "SampleTrack.h"
 #include "ChannelLevelMeter.h"
 #include "CommandLists.h"
+#include "DeviceCardState.h"
 #include "ShellCommandMenus.h"
 #include "ShellSelection.h"
 #include "TransportReadouts.h"
@@ -1096,6 +1097,48 @@ private slots:
 		QVERIFY(ab->isVisibleTo(card));
 		QCOMPARE(ab->text(), QStringLiteral("B"));  // the letter, not a colour
 		QVERIFY(state->text().contains(QStringLiteral("Hearing B")));
+		ShellSelection::instance()->setTrack(nullptr);
+	}
+
+	//! gui-1030: a device whose family ships no client executable (TripleOscillator: refused-no-client) runs in this
+	//! process by design - its card must not say "Quarantined after repeated crashes". Only a crash-loop refusal does.
+	void aDeviceWithoutAHostIsNotCalledQuarantined()
+	{
+		using devicestate::hostingProblemOf;
+		const auto hosting = [](const QString& state, bool refused) {
+			return QJsonObject{{QStringLiteral("state"), state}, {QStringLiteral("refused"), refused}};
+		};
+		QCOMPARE(hostingProblemOf(hosting(QStringLiteral("refused-no-client"), true)), QString());
+		QCOMPARE(hostingProblemOf(hosting(QStringLiteral("in-process"), false)), QString());
+		QCOMPARE(hostingProblemOf(hosting(QStringLiteral("separate-process"), false)), QString());
+		QCOMPARE(hostingProblemOf(hosting(QStringLiteral("refused-crash-loop"), true)), QStringLiteral("quarantined"));
+		QCOMPARE(hostingProblemOf(hosting(QStringLiteral("refused-crash-loop"), false)), QStringLiteral("quarantined"));
+		QCOMPARE(hostingProblemOf(hosting(QStringLiteral("separate-process"), true)), QStringLiteral("quarantined"));
+		QCOMPARE(hostingProblemOf(hosting(QStringLiteral("client-exited"), false)), QStringLiteral("crashed"));
+
+		// The real path: a TripleOscillator track, oop.get_state, the card.
+		const QString track = run(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("instrument")}})
+			.result.value(QStringLiteral("track")).toString();
+		Track* resolved = nullptr;
+		for (Track* t : Engine::getSong()->tracks()) { if (control::trackIdOf(t) == track) { resolved = t; } }
+		QVERIFY(resolved != nullptr);
+		dynamic_cast<InstrumentTrack*>(resolved)->loadInstrument(QStringLiteral("tripleoscillator"));
+		QJsonObject device;
+		for (const QJsonValue& chain : run(QStringLiteral("oop.get_state")).result.value(QStringLiteral("chains")).toArray())
+		{
+			if (chain.toObject().value(QStringLiteral("id")).toString() == track) { device = chain.toObject().value(QStringLiteral("instrument")).toObject(); }
+		}
+		QCOMPARE(device.value(QStringLiteral("hosting")).toObject().value(QStringLiteral("state")).toString(), QStringLiteral("refused-no-client"));
+		QVERIFY(!devicestate::hostingProblems().contains(devicestate::hostingKey(track, QStringLiteral("inst"))));
+		DevicePanel panel;
+		panel.show();
+		ShellSelection::instance()->setTrack(resolved);
+		panel.rebuild();
+		const QJsonArray drawn = cards(panel);
+		QVERIFY(!drawn.isEmpty());
+		const QJsonObject state = drawn.first().toObject().value(QStringLiteral("state")).toObject();
+		QCOMPARE(state.value(QStringLiteral("hosting")).toString(), QString());
+		QVERIFY2(!state.value(QStringLiteral("text")).toString().contains(QStringLiteral("Quarantined")), "TripleOscillator card says quarantined");
 		ShellSelection::instance()->setTrack(nullptr);
 	}
 

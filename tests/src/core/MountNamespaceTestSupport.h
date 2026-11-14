@@ -35,6 +35,8 @@
 #include <sys/stat.h>
 
 #ifdef __linux__
+#include <cerrno>
+#include <cstdio>
 #include <fcntl.h>
 #include <sched.h>
 #include <sys/mount.h>
@@ -57,6 +59,14 @@ inline quint64 filesystemDevice(const QString& path)
 
 #ifdef __linux__
 
+//! Send exactly one handshake byte, retrying interrupted writes and reporting failure.
+inline bool writeNamespaceHandshakeByte(int fd, char value)
+{
+	ssize_t sent;
+	do { sent = ::write(fd, &value, 1); } while (sent < 0 && errno == EINTR);
+	return sent == 1;
+}
+
 //! The child's half of the namespace handshake: wait until the parent has a namespace of its own,
 //! then map the parent's own uid into it. The kernel only takes the map from a process that still
 //! holds the old identity, so a child of the unsharing process writes it. The child touches no Qt
@@ -75,8 +85,8 @@ inline bool mapOwnUidIntoNamespace(pid_t parentPid, int readEnd, int writeEnd)
 	const bool written = len > 0 && ::write(fd, line, static_cast<size_t>(len)) == len;
 	::close(fd);
 	char done = written ? 1 : 0;
-	(void)::write(writeEnd, &done, 1);
-	return written;
+	const bool notified = writeNamespaceHandshakeByte(writeEnd, done);
+	return written && notified;
 }
 
 //! Puts this process in a mount namespace of its own, with its own uid mapped in it, so a
@@ -107,14 +117,14 @@ inline bool enterOwnMountNamespace()
 	::close(toParent[1]);
 	const bool unshared = ::unshare(CLONE_NEWUSER | CLONE_NEWNS) == 0;
 	char go = 1;
-	(void)::write(toChild[1], &go, 1);
+	const bool notified = writeNamespaceHandshakeByte(toChild[1], go);
+	::close(toChild[1]);
 	char done = 0;
 	const bool answered = ::read(toParent[0], &done, 1) == 1;
-	::close(toChild[1]);
 	::close(toParent[0]);
 	int status = 0;
 	::waitpid(child, &status, 0);
-	return unshared && answered && done == 1;
+	return unshared && notified && answered && done == 1;
 }
 
 //! Binds @a source onto @a target in this process's mount namespace: one filesystem under two

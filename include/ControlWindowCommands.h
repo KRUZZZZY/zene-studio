@@ -88,6 +88,9 @@ LMMS_EXPORT QStringList windowEditorNames();
 //! window.note_editor_set - the note editor's view over the socket
 //! (src/gui/ControlCommandsNoteEditor.cpp); registered by registerWindowCommands.
 LMMS_EXPORT void registerNoteEditorWindowCommands(ControlRegistry& registry);
+//! window.step_grid - open a MIDI clip in the melodic step grid (src/gui/ControlCommandsStepGrid.cpp,
+//! Q050-294.2); registered by registerWindowCommands.
+LMMS_EXPORT void registerStepGridWindowCommand(ControlRegistry& registry);
 //! The note editor's state (NoteEditor::describe), or {} with no interface.
 LMMS_EXPORT QJsonObject noteEditorState();
 

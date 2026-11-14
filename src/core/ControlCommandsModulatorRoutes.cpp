@@ -325,7 +325,8 @@ void registerDepthSet(ControlRegistry& registry)
 
 		QJsonObject result = layerResult(songModulationLayer().layer(), index);
 		result.insert(QStringLiteral("target_index"), route);
-		result.insert(QStringLiteral("target_count"), modulator->routeCount());
+		const Modulator* current = songModulationLayer().layer().modulator(index);
+		result.insert(QStringLiteral("target_count"), current != nullptr ? current->routeCount() : 0);
 		result.insert(QStringLiteral("__transaction"),
 			transactionPayload(QJsonObject{{QStringLiteral("depth"), static_cast<double>(previous)}},
 				QStringLiteral("modulator.depth_set"),
@@ -443,7 +444,8 @@ void registerTargetRemove(ControlRegistry& registry)
 
 		QJsonObject result = layerResult(songModulationLayer().layer(), index);
 		result.insert(QStringLiteral("removed"), modulationRouteJson(captured, route));
-		result.insert(QStringLiteral("target_count"), modulator->routeCount());
+		const Modulator* current = songModulationLayer().layer().modulator(index);
+		result.insert(QStringLiteral("target_count"), current != nullptr ? current->routeCount() : 0);
 		QString inverseCommand = QStringLiteral("modulator.target_set");
 		QJsonObject inverseArgs{{QStringLiteral("modulator"), modulatorId(index)},
 			{QStringLiteral("depth"), static_cast<double>(captured.depth)},

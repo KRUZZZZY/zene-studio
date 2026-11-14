@@ -17,10 +17,13 @@
 // header's second definition as "SYNC_WITH_SHM_FIFO redefined" (cluster
 // ci-v041-5). tests/CMakeLists.txt compiles this file against a lmmsconfig.h
 // without LMMS_HAVE_SYS_IPC_H, so it takes that header branch on any host.
-#ifdef __unix__
-#include <unistd.h> // getpid()/usleep(), which <process.h> and mingw provide on Windows
-#endif
-
+//
+// Deliberately no <unistd.h> here (cluster ci-4e020460347493c3): the header's
+// shm-FIFO branch calls getpid() and usleep(), so it must include what declares
+// them itself. This TU used to add <unistd.h> under #ifdef __unix__, which hid
+// the gap on Linux but not on macOS - Apple clang defines __APPLE__/__MACH__,
+// never __unix__, so the macOS CI job saw the header's own error:
+// "use of undeclared identifier 'getpid'" (macos-arm64, run 43076107122).
 #include "RemotePluginBase.h"
 
 int remotePluginShmFifoValueWithoutSysIpc()

@@ -43,6 +43,7 @@
 
 #include "CarlaVst2Discovery.h"
 #include "CarlaVst2Instrument.h"
+#include "CarlaVst2SubPluginFeatures.h"
 #include "InstrumentTrack.h"
 #include "Song.h"
 #include "Engine.h"
@@ -53,49 +54,6 @@
 
 namespace lmms
 {
-
-namespace
-{
-
-//! The VST2 instruments Carla's discovery found, as sub-plugin keys of the carlavst2 descriptor.
-class CarlaVst2SubPluginFeatures : public Plugin::Descriptor::SubPluginFeatures
-{
-public:
-	explicit CarlaVst2SubPluginFeatures(Plugin::Type type) : SubPluginFeatures(type) {}
-
-	void listSubPluginKeys(const Plugin::Descriptor* descriptor, KeyList& keys) const override
-	{
-		for (const carlavst2::Vst2Record& record : carlavst2::discoverAll())
-		{
-			// Stage 1 hosts instruments; a VST2 effect gets its own host in stage 2.
-			if (!record.isSynth) { continue; }
-			Key::AttributeMap attributes;
-			attributes.insert(carlavst2::fileAttribute(), record.file);
-			attributes.insert(carlavst2::nameAttribute(), record.name);
-			attributes.insert(carlavst2::uniqueIdAttribute(), QString::number(record.uniqueId));
-			attributes.insert(carlavst2::binaryAttribute(), carlavst2::binaryName(record.binary));
-			attributes.insert(carlavst2::makerAttribute(), record.maker);
-			pluginvendors::remember(record.file, record.name, record.maker);
-			keys.append(Key(descriptor, record.name, attributes));
-		}
-	}
-
-protected:
-	QString displayName(const Key& key) const override
-	{
-		return key.attributes.value(carlavst2::nameAttribute(), key.name);
-	}
-
-	QString description(const Key& key) const override
-	{
-		const bool bridged = carlavst2::binaryFromName(key.attributes.value(carlavst2::binaryAttribute()))
-			!= carlavst2::Binary::Native;
-		return bridged ? QStringLiteral("VST2 instrument (Windows, through Carla's Wine bridge)")
-			: QStringLiteral("VST2 instrument (through Carla)");
-	}
-};
-
-} // namespace
 
 extern "C"
 {
@@ -110,7 +68,7 @@ Plugin::Descriptor PLUGIN_EXPORT carlavst2_plugin_descriptor =
 	Plugin::Type::Instrument,
 	new PluginPixmapLoader("logo"),
 	nullptr,
-	new CarlaVst2SubPluginFeatures(Plugin::Type::Instrument),
+	new carlavst2::SubPluginFeatures(Plugin::Type::Instrument),
 };
 
 PLUGIN_EXPORT Plugin* lmms_plugin_main(Model* model, void* data)
@@ -306,9 +264,9 @@ void CarlaVst2Instrument::loadSettings(const QDomElement& elem)
 
 void CarlaVst2Instrument::playImpl(std::span<SampleFrame> out)
 {
-	// While a project is exported there is no realtime deadline: wait for the worker rather than drop a period.
-	const Song* song = Engine::getSong();
-	m_renderer.read(out, song != nullptr && song->isExporting());
+	// Never waits, not even in an export: the exporter waits for the worker between periods instead
+	// (OfflineRenderBarrier.h, Q050-481.2 review r1).
+	m_renderer.read(out);
 }
 
 void CarlaVst2Instrument::renderPeriod(std::span<SampleFrame> out)

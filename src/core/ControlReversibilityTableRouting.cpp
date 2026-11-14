@@ -187,6 +187,13 @@ const ReversibilityRow kRoutingRows[] = {
 		"which control.undo dispatches through the registry). The write itself is the engine's own "
 		"pin path (AudioPortsModel::Matrix::setPin), the call the PinConnector view makes",
 		""),
+	// Q050-155.2: a whole pin routing (a device pinned onto a discrete bus's channels) as one edit.
+	R("port.set_pins", RC::TrueInverse, true,
+		"it sets the named pins of a device's audio-ports matrices as one routing edit",
+		"action checkpoint: the recorded undo step (the engine's own ProjectJournal, the stack Edit > Undo "
+		"unwinds) puts every named pin back to the value it held before, as one routing edit "
+		"(AudioPortsModel::setPins, one change guard); its redo applies the pins again",
+		""),
 
 	// ---- the patcher node graph (feature row 69) ----
 	// patcher.get_state reads the same graph routing.get_state does, addressed

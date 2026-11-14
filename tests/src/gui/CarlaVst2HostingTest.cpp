@@ -62,35 +62,9 @@ private slots:
 	{
 		QVERIFY(m_home.isValid());
 		QVERIFY(m_plugins.isValid());
-#if defined(LMMS_TEST_PLUGIN_DIR) && defined(_WIN32)
-		qputenv("LMMS_PLUGIN_DIR", LMMS_TEST_PLUGIN_DIR);  // no runtime is built there: every case skips
-#elif defined(LMMS_TEST_PLUGIN_DIR)
-		// The build's modules, minus the weak Carla stand-in that sits beside them (plugins/CarlaBase builds it
-		// there when no system Carla is found; an installed product keeps it in optional/, which is not scanned).
-		// The factory would dlopen it as a module candidate first, and the Carla modules would then bind to it
-		// by its soname instead of to the real runtime on the loader path.
-		for (const QFileInfo& module : QDir(QStringLiteral(LMMS_TEST_PLUGIN_DIR)).entryInfoList(QDir::Files))
-		{
-			if (module.fileName().startsWith(QLatin1String("libcarla_native-plugin"))) { continue; }
-			QFile::link(module.absoluteFilePath(), QDir(m_plugins.path()).filePath(module.fileName()));
-		}
-		qputenv("LMMS_PLUGIN_DIR", m_plugins.path().toLocal8Bit());
-#endif
-		for (const char* name : {"HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME"}) { qputenv(name, m_home.path().toLocal8Bit()); }
-		// Exactly the two fixtures, nothing the machine has installed.
-		qputenv("ZENE_VST2_PATH", (QStringLiteral(CARLA_VST2_NATIVE_FIXTURE_DIR) + QDir::listSeparator()
-			+ QStringLiteral(CARLA_VST2_WINE_FIXTURE_DIR)).toLocal8Bit());
-		// Wine: a prefix of the build's own (kept between runs: creating one takes minutes), and no Mono/Gecko
-		// installer prompt on a fresh one.
-		if (!QStringLiteral(ZENE_TEST_WINEPREFIX).isEmpty()) { qputenv("WINEPREFIX", ZENE_TEST_WINEPREFIX); }
-		qputenv("WINEDLLOVERRIDES", "mscoree,mshtml=");
-		qputenv("WINEDEBUG", "-all");
-		bootWinePrefix();
-		keepWineServer();
-		Engine::init(true);
-		Engine::audioEngine()->audioDev()->stopProcessing();  // the cases render periods themselves
-		NotePlayHandleManager::init();
-		ControlRegistry::setReady(true);
+		// Exactly the two fixtures, nothing the machine has installed (CarlaVst2TestSupport.h).
+		initCarlaHostingProcess(m_home, m_plugins, {QStringLiteral(CARLA_VST2_NATIVE_FIXTURE_DIR),
+			QStringLiteral(CARLA_VST2_WINE_FIXTURE_DIR)}, wineFixture());
 	}
 
 	void cleanupTestCase()
@@ -380,64 +354,9 @@ private slots:
 	}
 
 private:
-	//! A fresh prefix is created on Wine's first start, which can take minutes: do it once, here, rather
-	//! than inside Carla's bridge start-up timeout.
-	static void bootWinePrefix()
-	{
-		const QString prefix = QString::fromLocal8Bit(qgetenv("WINEPREFIX"));
-		const QString wineboot = QStandardPaths::findExecutable(QStringLiteral("wineboot"));
-		if (prefix.isEmpty() || wineboot.isEmpty() || !QFileInfo::exists(wineFixture())
-			|| QFileInfo::exists(QDir(prefix).filePath(QStringLiteral("system.reg"))))
-		{
-			return;
-		}
-		QProcess boot;
-		boot.start(wineboot, {QStringLiteral("-u")});
-		if (!boot.waitForFinished(600000)) { boot.kill(); }
-	}
-
-	//! A wineserver that outlives each bridge by a minute, so a bridge's start-up does not include starting
-	//! the server too (measured: on a loaded machine that start can outlast Carla's first exchange).
-	static void keepWineServer()
-	{
-		const QString wineserver = QStandardPaths::findExecutable(QStringLiteral("wineserver"));
-		if (wineserver.isEmpty() || !QFileInfo::exists(wineFixture())) { return; }
-		QProcess::execute(wineserver, {QStringLiteral("-p60")});
-	}
-
-	//! Why the hosted cases cannot run here, or empty when they can: only what the PRODUCT does not provide - a
-	//! Carla runtime and the fixture. A build that has both but no working VST2 host fails the cases instead.
-	static QString missingRuntime()
-	{
-		const QString runtime = QDir(QStringLiteral(ZENE_CARLA_RUNTIME_DIR)).filePath(QStringLiteral("libcarla_native-plugin.so"));
-		if (QStringLiteral(ZENE_CARLA_RUNTIME_DIR).isEmpty() || !QFileInfo::exists(runtime))
-		{
-			return QStringLiteral("no Carla runtime at '%1': build one with tools/build-carla-runtime.sh <build>/carla-runtime")
-				.arg(QStringLiteral(ZENE_CARLA_RUNTIME_DIR));
-		}
-		if (!QFileInfo::exists(nativeFixture())) { return QStringLiteral("the native VST2 fixture was not built"); }
-		return QString();
-	}
-
-	//! Whether a file can be created where Carla's water library puts the chunk it hands a bridge.
-	static bool carlaTempDirWritable()
-	{
-		const QString dir = QFileInfo(QStringLiteral("/var/tmp")).isDir() ? QStringLiteral("/var/tmp") : QStringLiteral("/tmp");
-		QFile probe(QDir(dir).filePath(QStringLiteral(".zene-carla-probe-%1").arg(QCoreApplication::applicationPid())));
-		const bool writable = probe.open(QIODevice::WriteOnly);
-		if (writable) { probe.remove(); }
-		return writable;
-	}
-
-	//! Whether this machine can run the bridged path at all: Wine, the PE fixture and Carla's Wine bridge in the
-	//! runtime. Only the environment - whether the PRODUCT lists and loads it is what the case checks.
-	static bool wineAvailable()
-	{
-		const QDir runtime(QStringLiteral(ZENE_CARLA_RUNTIME_DIR));
-		return QFileInfo::exists(wineFixture()) && !QStandardPaths::findExecutable(QStringLiteral("wine")).isEmpty()
-			&& QFileInfo::exists(runtime.filePath(QStringLiteral("carla-bridge-win64.exe")))
-			&& QFileInfo::exists(runtime.filePath(QStringLiteral("carla-discovery-win64.exe")));
-	}
+	//! The shared environment checks (CarlaVst2TestSupport.h), for this test's fixtures.
+	static QString missingRuntime() { return missingCarlaRuntime(nativeFixture()); }
+	static bool wineAvailable() { return carlaWineAvailable(wineFixture()); }
 
 	InstrumentTrack* loadOnNewTrack(const QString& fileName)
 	{

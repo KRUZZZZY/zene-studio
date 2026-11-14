@@ -159,6 +159,48 @@ QString pendingRestoreStagingPath(const QString& projectPath, int revision)
 	return QString();
 }
 
+bool isEmptyRevisionFile(const QString& path)
+{
+	const QFileInfo info(path);
+	return info.isFile() && info.size() == 0;
+}
+
+//! The typed reason a zero-byte revision is refused. A zero-byte file reads back
+//! as success (it exists and reads), but it is not a project, and installing it
+//! would replace a valid project with nothing.
+QString emptyRevisionRefusal(int revision, const QString& projectPath)
+{
+	return QStringLiteral("revision %1 of %2 is empty: a zero-byte file is not a project "
+		"revision, so it is refused rather than restored over the live file")
+		.arg(revision).arg(projectPath);
+}
+
+bool copyNonEmptyRevision(const QString& source, const QString& staging, int revision,
+	const QString& projectPath, QString* error)
+{
+	if (isEmptyRevisionFile(source))
+	{
+		*error = emptyRevisionRefusal(revision, projectPath);
+		return false;
+	}
+	if (!QFile::copy(source, staging))
+	{
+		*error = QStringLiteral("could not stage %1").arg(source);
+		return false;
+	}
+	// The bytes a restore would install are the STAGED ones. A source that is not a
+	// regular file (a stray FIFO or device where a revision belongs) can copy as
+	// nothing even though it is not 'empty' by isFile(), so check the stage too and
+	// drop it: no retry may find it and install it.
+	if (isEmptyRevisionFile(staging))
+	{
+		QFile::remove(staging);
+		*error = emptyRevisionRefusal(revision, projectPath);
+		return false;
+	}
+	return true;
+}
+
 //! The staging path of a NEW restore attempt: a path of its own, so a second
 //! attempt never overwrites the bytes an earlier one staged.
 QString newRestoreStagingPath(const QString& projectPath, int revision)
@@ -170,8 +212,8 @@ QString newRestoreStagingPath(const QString& projectPath, int revision)
 //! Stages the bytes a restore of \a revision will install, into \a staging: the pending stage an earlier
 //! attempt left, or a fresh copy of the revision. The per-revision cap binds those bytes, so they are
 //! checked BEFORE any copy is made and before the live file is rotated - a refusal after the rotation
-//! would already have moved the retained set. False with \a error set when they are over the cap or
-//! cannot be staged.
+//! would already have moved the retained set. False with \a error set when they are over the cap, are a
+//! zero-byte revision, or cannot be staged.
 bool stageRestoreTarget(const QString& projectPath, int revision, QString* staging, QString* error)
 {
 	const QString source = projectRevisionPath(projectPath, revision);
@@ -187,14 +229,25 @@ bool stageRestoreTarget(const QString& projectPath, int revision, QString* stagi
 			.arg(QStringLiteral("keep-%1").arg(ProjectRevisionPolicy::Keep)).arg(revision);
 		return false;
 	}
-	if (!staging->isEmpty()) { return true; }
+	if (!staging->isEmpty())
+	{
+		// A zero-byte stage an earlier attempt left behind holds nothing to
+		// install: refused before the rotation, and removed so a retry does not
+		// pick it up again. The check is on the STAGED bytes, the ones that would
+		// be installed.
+		if (isEmptyRevisionFile(*staging))
+		{
+			QFile::remove(*staging);
+			*error = emptyRevisionRefusal(revision, projectPath);
+			return false;
+		}
+		return true;
+	}
 
 	*staging = newRestoreStagingPath(projectPath, revision);
-	if (!QFile::copy(source, *staging))
-	{
-		*error = QStringLiteral("could not stage %1").arg(source);
-		return false;
-	}
+	// A fresh zero-byte source is refused BEFORE it is copied, so a restore of an
+	// empty revision never leaves a stage behind that a retry could install.
+	if (!copyNonEmptyRevision(source, *staging, revision, projectPath, error)) { return false; }
 	return true;
 }
 
@@ -379,6 +432,9 @@ bool restoreProjectRevision(const QString& projectPath, int revision, QString* e
 	// are then the only copy of the target left. Staging the revision slot
 	// again would restore the file the rotation put there instead - the bytes
 	// the failed attempt was asked for would be gone for good.
+	// stageRestoreTarget() also refuses a zero-byte revision here, before the
+	// rotation: a zero-byte file is not a project, and installing it would
+	// replace a valid one with nothing.
 	QString staging;
 	if (!stageRestoreTarget(projectPath, revision, &staging, error)) { return false; }
 

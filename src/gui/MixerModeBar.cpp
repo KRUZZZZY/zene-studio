@@ -24,12 +24,13 @@
 #include "MixerModeBar.h"
 
 #include <algorithm>
+#include <limits>
 
 #include <QButtonGroup>
 #include <QComboBox>
-#include <QHBoxLayout>
 #include <QJsonArray>
 #include <QLabel>
+#include <QLayout>
 #include <QMenu>
 #include <QPushButton>
 #include <QSignalBlocker>
@@ -43,6 +44,7 @@
 #include "Mixer.h"
 #include "MixerHardwareMenu.h"
 #include "MixerListen.h"
+#include "MixerModeBarLayout.h"
 #include "MixerOverlays.h"
 #include "MixerRoutingMatrix.h"
 #include "MixerStrip.h"
@@ -93,6 +95,7 @@ QStringList listeningNames(const mixerstripinfo::Context& context)
 	return names;
 }
 
+
 } // namespace
 
 MixerModeBar::MixerModeBar(QWidget* parent) :
@@ -101,21 +104,20 @@ MixerModeBar::MixerModeBar(QWidget* parent) :
 {
 	setObjectName(QStringLiteral("mixerModeBar"));
 	setAccessibleName(tr("Mixer modes"));
-	auto* layout = new QHBoxLayout(this);
+	auto* layout = new MixerModeBarLayout(this);
 	layout->setContentsMargins(tokens::space::sm, tokens::space::xs, tokens::space::sm, tokens::space::xs);
 	layout->setSpacing(tokens::space::sm);
 	m_viewButtons = addSegment(layout, tr("View"), "view", mixerviewoptions::viewNames(), {tr("Mix"), tr("Routing")});
 	m_densityButtons = addSegment(layout, tr("Density"), "density", mixerviewoptions::densityNames(), {tr("Compact"), tr("Expanded")});
 	auto* show = new QLabel(tr("Show:"), this);
 	show->setBuddy(m_filter);
-	layout->addWidget(show);
 	const QStringList captions{tr("All Channels"), tr("Instruments"), tr("Audio"), tr("Returns"), tr("Used"), tr("Selected")};
 	for (int i = 0; i < captions.size(); ++i) { m_filter->addItem(captions.at(i), mixerviewoptions::filterNames().at(i)); }
 	m_filter->setObjectName(QStringLiteral("mixerModeFilter"));
 	m_filter->setAccessibleName(tr("Show channels"));
 	m_filter->setProperty("controlCommand", kViewCommand);
 	connect(m_filter, QOverload<int>::of(&QComboBox::activated), this, [this](int row) { setOption(QStringLiteral("filter"), m_filter->itemData(row).toString()); });
-	layout->addWidget(m_filter);
+	layout->addUnit({show, m_filter});
 	auto* pick = new QPushButton(tr("Pick..."), this);  // MX-005: the channels the Selected filter shows
 	pick->setObjectName(QStringLiteral("mixerModePickSelected"));
 	pick->setMinimumHeight(tokens::targetSize());
@@ -123,7 +125,7 @@ MixerModeBar::MixerModeBar(QWidget* parent) :
 	pick->setToolTip(tr("Pick the channels the Selected filter shows (Ctrl+click a strip to add or remove one)"));
 	pick->setProperty("controlCommand", kViewCommand);
 	connect(pick, &QPushButton::clicked, this, &MixerModeBar::pickSelected);
-	layout->addWidget(pick);
+	layout->addUnit({pick});
 	// MX-021: the Selected filter follows the focused arranger track (or the focused clip's track).
 	m_follow = new QPushButton(tr("Follow Selection"), this);
 	m_follow->setObjectName(QStringLiteral("mixerModeFollow"));
@@ -135,8 +137,8 @@ MixerModeBar::MixerModeBar(QWidget* parent) :
 	connect(m_follow, &QPushButton::toggled, this, [this](bool on) {
 		setOption(QStringLiteral("follow_selection"), on);
 	});
-	layout->addWidget(m_follow);
-	layout->addStretch(1);
+	layout->addUnit({m_follow});
+	layout->pushRight();
 	m_faders = addChip(layout, QStringLiteral("mixerModeFaders"), tr("What every fader drives: its channel's volume, or its send to one return"), &MixerModeBar::fillFaders);
 	m_solo = addChip(layout, QStringLiteral("mixerModeSolo"), tr("The solo mode: whether a solo unsolos the others"), &MixerModeBar::fillSolo);
 	m_listen = addChip(layout, QStringLiteral("mixerModeListen"), tr("The listen bus: the channels heard in place of the mix, after or before their faders"), &MixerModeBar::fillListen);
@@ -147,15 +149,15 @@ MixerModeBar::MixerModeBar(QWidget* parent) :
 	matrix->setMinimumHeight(tokens::targetSize());
 	matrix->setProperty("controlCommand", QStringLiteral("routing.matrix"));
 	connect(matrix, &QPushButton::clicked, this, [] { showRoutingMatrix(); });
-	layout->addWidget(matrix);
+	layout->addUnit({matrix});
 	refresh(mixerstripinfo::buildContext());
 }
 
-QHash<QString, QPushButton*> MixerModeBar::addSegment(QHBoxLayout* layout, const QString& label, const char* key,
+QHash<QString, QPushButton*> MixerModeBar::addSegment(MixerModeBarLayout* layout, const QString& label, const char* key,
 	const QStringList& values, const QStringList& captions)
 {
 	auto* caption = new QLabel(label + QLatin1Char(':'), this);
-	layout->addWidget(caption);
+	QList<QWidget*> unit{caption};  // the caption wraps with its choices
 	auto* group = new QButtonGroup(this);
 	QHash<QString, QPushButton*> buttons;
 	for (int i = 0; i < values.size(); ++i)
@@ -167,17 +169,18 @@ QHash<QString, QPushButton*> MixerModeBar::addSegment(QHBoxLayout* layout, const
 		button->setAccessibleName(QStringLiteral("%1: %2").arg(label, captions.at(i)));
 		button->setProperty("controlCommand", kViewCommand);
 		group->addButton(button);
-		layout->addWidget(button);
+		unit << button;
 		const QString name = QLatin1String(key);
 		const QString value = values.at(i);
 		connect(button, &QPushButton::clicked, this, [this, name, value] { setOption(name, value); });
 		buttons.insert(value, button);
 	}
+	layout->addUnit(unit);
 	caption->setBuddy(buttons.value(values.value(0)));
 	return buttons;
 }
 
-QToolButton* MixerModeBar::addChip(QHBoxLayout* layout, const QString& objectName, const QString& hint,
+QToolButton* MixerModeBar::addChip(MixerModeBarLayout* layout, const QString& objectName, const QString& hint,
 	void (MixerModeBar::*fill)(QMenu*))
 {
 	auto* chip = new QToolButton(this);
@@ -197,7 +200,7 @@ QToolButton* MixerModeBar::addChip(QHBoxLayout* layout, const QString& objectNam
 	});
 	connect(menu, &QMenu::triggered, this, &MixerModeBar::changed);
 	chip->setMenu(menu);
-	layout->addWidget(chip);
+	layout->addUnit({chip});
 	return chip;
 }
 

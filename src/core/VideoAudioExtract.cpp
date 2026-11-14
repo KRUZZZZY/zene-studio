@@ -205,6 +205,14 @@ bool decodeAll(video::MediaStream& media, WavSink& sink, AVFrame* frame, AVPacke
 	return whole;
 }
 
+//! Why a decode stopped early: the sink's own failure flag, or a cancellation.
+QString decodeFailureText(const WavSink& sink, const QString& wav)
+{
+	if (sink.convertFailed) { return QObject::tr("the video's audio could not be converted (%1)").arg(sink.error); }
+	if (sink.writeFailed) { return QObject::tr("cannot write '%1': %2").arg(wav, sink.error); }
+	return QObject::tr("the extraction was cancelled");
+}
+
 //! Write @a video's audio to @a wav; the error text, or empty on success.
 QString extract(const QString& video, const QString& wav, VideoAudio* out, VideoExtractControl* control)
 {
@@ -219,9 +227,7 @@ QString extract(const QString& video, const QString& wav, VideoAudio* out, Video
 	if (!sink.openFile(wav, media.codec->sample_rate)) { return QObject::tr("cannot write '%1': %2").arg(wav, sink.error); }
 	if (!decodeAll(media, sink, buffers.frame, buffers.packet, control))
 	{
-		if (sink.convertFailed) { return QObject::tr("the video's audio could not be converted (%1)").arg(sink.error); }
-		if (sink.writeFailed) { return QObject::tr("cannot write '%1': %2").arg(wav, sink.error); }
-		return QObject::tr("the extraction was cancelled");
+		return decodeFailureText(sink, wav);
 	}
 	if (sink.frames <= 0)
 	{

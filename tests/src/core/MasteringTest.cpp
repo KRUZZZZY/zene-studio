@@ -549,6 +549,22 @@ private slots:
 				QStringLiteral("--report"), QString()}
 			<< QStringLiteral("No report path specified")
 			<< QStringList{m_dir.filePath(QStringLiteral("empty-candidates"))};
+
+		// --genre belongs to master: an ordinary render refuses it before rendering.
+		QTest::newRow("a genre before an ordinary render")
+			<< QStringList{QStringLiteral("--allowroot"), QStringLiteral("--genre"),
+				QStringLiteral("pop"), QStringLiteral("render"), m_projectPath,
+				QStringLiteral("--output"), m_dir.filePath(QStringLiteral("genre-render.wav"))}
+			<< QStringLiteral("--genre is only valid with master")
+			<< QStringList{m_dir.filePath(QStringLiteral("genre-render.wav"))};
+
+		// --delivery-target belongs to master too, and is refused the same way.
+		QTest::newRow("a delivery target before an ordinary render")
+			<< QStringList{QStringLiteral("--allowroot"), QStringLiteral("--delivery-target"),
+				QStringLiteral("streaming"), QStringLiteral("render"), m_projectPath,
+				QStringLiteral("--output"), m_dir.filePath(QStringLiteral("target-render.wav"))}
+			<< QStringLiteral("--delivery-target is only valid with master")
+			<< QStringList{m_dir.filePath(QStringLiteral("target-render.wav"))};
 	}
 
 	void reportOptionIsRefused()

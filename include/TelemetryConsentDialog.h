@@ -28,6 +28,7 @@
 #include "Telemetry.h"
 
 #include <QDialog>
+#include <QVariant>
 
 class QCheckBox;
 class QLabel;

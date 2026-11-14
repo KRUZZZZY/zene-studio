@@ -463,6 +463,14 @@ const ReversibilityRow kRows[] = {
 		"brings the exact take back - re-running freeze.track would render a new "
 		"one)",
 		""),
+	// Q050-327: the batch. Nothing is applied until every render succeeded; then one ProjectJournal edit takes a
+	// Track checkpoint of every target and freezes it, merged into ONE step - the freeze.track inverse, per track.
+	R("freeze.tracks", RC::TrueInverse, true,
+		"when the batch completes, every selected track gains its frozenAudio attributes in one edit; a cancelled, "
+		"failed or stale batch changes no track",
+		"the completed batch's single ProjectJournal step (one Track checkpoint per target, merged): one control.undo "
+		"thaws every track of the batch",
+		"the rendered WAVs stay on disk - undoing a freeze is not a delete"),
 	// Q050-124: the bus half. The take is ONE value on the MixerChannel (MixerBusFreeze.h) - its file - and the
 	// mixer's own checkpoint would destroy and recreate every channel (the bus.create row's reason), so each
 	// verb records the ACTION: install or clear the take on the channel named by its stable id.

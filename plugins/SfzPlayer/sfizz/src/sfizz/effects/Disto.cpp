@@ -48,6 +48,7 @@ struct Disto::Impl {
     sfz::Upsampler _upsampler[EffectChannels];
     sfz::Downsampler _downsampler[EffectChannels];
     std::unique_ptr<float[]> _temp[2];
+    unsigned _tempCapacity = 0;
 
     // use the same formula as reverb
     float toneCutoff() const noexcept
@@ -66,6 +67,14 @@ Disto::Disto()
         for (faustDisto& stage : impl._stages[c])
             stage.init(_oversampling * config::defaultSampleRate);
     }
+
+    auto frames = static_cast<unsigned>(config::defaultSamplesPerBlock);
+    auto need = static_cast<std::size_t>(_oversampling) * frames;
+    std::unique_ptr<float[]> next0(new float[need]);
+    std::unique_ptr<float[]> next1(new float[need]);
+    impl._temp[0] = std::move(next0);
+    impl._temp[1] = std::move(next1);
+    impl._tempCapacity = frames;
 }
 
 Disto::~Disto()
@@ -89,10 +98,18 @@ void Disto::setSampleRate(double sampleRate)
 
 void Disto::setSamplesPerBlock(int samplesPerBlock)
 {
-    Impl& impl = *_impl;
+    if (samplesPerBlock <= 0) {
+        return;
+    }
 
-    for (std::unique_ptr<float[]>& temp : impl._temp)
-        temp.reset(new float[_oversampling * samplesPerBlock]);
+    Impl& impl = *_impl;
+    auto frames = static_cast<unsigned>(samplesPerBlock);
+    auto need = static_cast<std::size_t>(_oversampling) * frames;
+    std::unique_ptr<float[]> next0(new float[need]);
+    std::unique_ptr<float[]> next1(new float[need]);
+    impl._temp[0] = std::move(next0);
+    impl._temp[1] = std::move(next1);
+    impl._tempCapacity = frames;
 }
 
 void Disto::clear()
@@ -112,53 +129,66 @@ void Disto::clear()
 
 void Disto::process(const float* const inputs[], float* const outputs[], unsigned nframes)
 {
-    // Note(jpc): assumes `inputs` and `outputs` to be different buffers
-
     Impl& impl = *_impl;
+
+    if (nframes == 0) {
+        return;
+    }
+
+    if (!impl._temp[0] || !impl._temp[1] || impl._tempCapacity == 0) {
+        for (unsigned c = 0; c < EffectChannels; ++c) {
+            for (unsigned i = 0; i < nframes; ++i) {
+                outputs[c][i] = inputs[c][i];
+            }
+        }
+        return;
+    }
+
     const float dry = impl._dry;
     const float wet = impl._wet;
     const float depth = impl._depth;
     const float toneLpfPole = std::exp(float(-2.0 * M_PI) * impl.toneCutoff() * impl._samplePeriod);
 
-    for (unsigned c = 0; c < EffectChannels; ++c) {
-        // compute LPF
-        absl::Span<const float> channelIn(inputs[c], nframes);
-        absl::Span<float> lpfOut(outputs[c], nframes);
-        float lpfMem = impl._toneLpfMem[c];
-        for (unsigned i = 0; i < nframes; ++i) {
-            // Note(jpc) apply `dry` gain, note there is no output if
-            //           `dry=0 wet=<any>`, it is the same behavior as reference
-            lpfMem = channelIn[i] * dry * (1.0f - toneLpfPole) + lpfMem * toneLpfPole;
-            lpfOut[i] = lpfMem;
+    auto processChunk = [&](unsigned offset, unsigned chunk) {
+        for (unsigned c = 0; c < EffectChannels; ++c) {
+            absl::Span<const float> channelIn(inputs[c] + offset, chunk);
+            absl::Span<float> lpfOut(outputs[c] + offset, chunk);
+            float lpfMem = impl._toneLpfMem[c];
+            for (unsigned i = 0; i < chunk; ++i) {
+                lpfMem = channelIn[i] * dry * (1.0f - toneLpfPole) + lpfMem * toneLpfPole;
+                lpfOut[i] = lpfMem;
+            }
+            impl._toneLpfMem[c] = lpfMem;
+
+            absl::Span<float> temp[2] = {
+                absl::Span<float>(impl._temp[0].get(), _oversampling * chunk),
+                absl::Span<float>(impl._temp[1].get(), _oversampling * chunk),
+            };
+            impl._upsampler[c].process(_oversampling, lpfOut.data(), temp[0].data(), chunk, temp[1].data(), static_cast<int>(temp[1].size()));
+            absl::Span<float> upsamplerOut = temp[0];
+
+            absl::Span<float> stageInOut = upsamplerOut;
+            for (unsigned s = 0, numStages = impl._numStages; s < numStages; ++s) {
+                impl._stages[c][s].setDepth(depth);
+                float *faustIn[] = { stageInOut.data() };
+                float *faustOut[] = { stageInOut.data() };
+                impl._stages[c][s].compute(_oversampling * chunk, faustIn, faustOut);
+            }
+
+            impl._downsampler[c].process(_oversampling, stageInOut.data(), outputs[c] + offset, chunk, temp[1].data(), static_cast<int>(temp[1].size()));
+
+            absl::Span<float> mixOut(outputs[c] + offset, chunk);
+            for (unsigned i = 0; i < chunk; ++i)
+                mixOut[i] = mixOut[i] * wet + channelIn[i] * (1.0f - wet);
         }
-        impl._toneLpfMem[c] = lpfMem;
+    };
 
-        // upsample
-        absl::Span<float> temp[2] = {
-            absl::Span<float>(impl._temp[0].get(), _oversampling * nframes),
-            absl::Span<float>(impl._temp[1].get(), _oversampling * nframes),
-        };
-        impl._upsampler[c].process(_oversampling, lpfOut.data(), temp[0].data(), nframes, temp[1].data(), static_cast<int>(temp[1].size()));
-        absl::Span<float> upsamplerOut = temp[0];
-
-        // run disto stages
-        absl::Span<float> stageInOut = upsamplerOut;
-        for (unsigned s = 0, numStages = impl._numStages; s < numStages; ++s) {
-            // set depth parameter (TODO modulation)
-            impl._stages[c][s].setDepth(depth);
-            //
-            float *faustIn[] = { stageInOut.data() };
-            float *faustOut[] = { stageInOut.data() };
-            impl._stages[c][s].compute(_oversampling * nframes, faustIn, faustOut);
-        }
-
-        // downsample
-        impl._downsampler[c].process(_oversampling, stageInOut.data(), outputs[c], nframes, temp[1].data(), static_cast<int>(temp[1].size()));
-
-        // dry/wet mix
-        absl::Span<float> mixOut(outputs[c], nframes);
-        for (unsigned i = 0; i < nframes; ++i)
-            mixOut[i] = mixOut[i] * wet + channelIn[i] * (1.0f - wet);
+    unsigned offset = 0;
+    while (offset < nframes) {
+        unsigned remaining = nframes - offset;
+        unsigned chunk = (impl._tempCapacity < remaining) ? impl._tempCapacity : remaining;
+        processChunk(offset, chunk);
+        offset += chunk;
     }
 }
 

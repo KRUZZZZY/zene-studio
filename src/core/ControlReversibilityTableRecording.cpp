@@ -72,6 +72,15 @@ const ReversibilityRow kRecordingRows[] = {
 		"ProjectJournal (Track checkpoint): one control.undo restores the active "
 		"lane, the user-choice flag and the lock-free playback mirrors",
 		""),
+	// Q050-054.1: MIDI takes recorded on armed instrument tracks by transport.record.
+	R("record.midi_capture_commit", RC::TrueInverse, true,
+		"the captured passes become MIDI clips (and, for a loop recording, take lanes "
+		"and a take-group selection) on the instrument tracks that recorded them - all "
+		"of it in the Track's serialized state",
+		"ProjectJournal: ONE checkpoint of every track the commit changes, taken before "
+		"the first clip is created; one control.undo removes every take of the pass and "
+		"one control.redo restores them",
+		""),
 	R("comp.play_all_takes", RC::TrueInverse, true,
 		"the track-wide play-all flag is serialized with its take-lane model and "
 		"read by sample renders through an atomic scalar",
@@ -146,6 +155,20 @@ const ReversibilityRow kRecordingRows[] = {
 		"project state (the transport.play precedent). What it RECORDS is written by "
 		"the recording tracks and clips themselves, each through its own journalled path",
 		"nothing to reverse: transport.stop is the operation a client calls",
+		""),
+
+	R("track.set_midi_arm", RC::NotMutating, false,
+		"arms or disarms an instrument track's MIDI take capture: an atomic flag on "
+		"the track's capture object (include/MidiTakeCapture.h), mode state that is "
+		"neither serialized nor checkpointed - the midi.retro_capture_arm precedent. "
+		"What an armed pass records is written by record.midi_capture_commit",
+		"no write happens to anything a checkpoint holds, so no transaction is "
+		"recorded and control.undo is not blocked by it",
+		"the mode itself: call this command with armed: false"),
+	R("record.midi_capture_status", RC::NotMutating, false,
+		"reads the armed tracks, the open capture session and the last commit's "
+		"report; it writes nothing",
+		"no write happens, so no transaction is recorded",
 		""),
 
 	R("record.retro_capture_arm", RC::NotMutating, false,

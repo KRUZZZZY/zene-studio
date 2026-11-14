@@ -28,6 +28,9 @@
  *  writes nothing on any of them.
  */
 
+#include <memory>
+#include <vector>
+
 #include <QtTest>
 
 #include <QJsonArray>
@@ -35,6 +38,7 @@
 
 #include <limits>
 
+#include "AudioEngine.h"
 #include "Clip.h"
 #include "ClipEdits.h"
 #include "ControlEdit.h"
@@ -43,6 +47,8 @@
 #include "ControlVcaTestSupport.h"
 #include "Engine.h"
 #include "Mixer.h"
+#include "SampleBuffer.h"
+#include "SampleClip.h"
 
 using namespace lmms;
 using namespace revtest;
@@ -139,6 +145,37 @@ private slots:
 		REV_UNDO_OR_FAIL();
 		QCOMPARE(clipPosition(pair.other), 1000);
 		QCOMPARE(clipLength(pair.other), 500);
+	}
+
+	//! clip.trim's head-trim rule, held for sample clips: the source offset moves against the start,
+	//! so the frame heard at a song tick that stays inside the clip is the same before and after the
+	//! locked trim. A sign flip in the offset moves the audio off its tick and fails here.
+	void aLockedSampleTrimHoldsEveryMembersAudioAtItsSongTick()
+	{
+		const Pair pair = lockedPair(QStringLiteral("sample"));
+		const int rate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
+		std::vector<SampleFrame> data(static_cast<std::size_t>(rate * 4), SampleFrame(0.25f, 0.25f));
+		for (const QString& id : {pair.anchor, pair.other})
+		{
+			auto* sample = dynamic_cast<SampleClip*>(clipOf(id));
+			QVERIFY(sample != nullptr);
+			sample->setSampleBuffer(std::make_shared<SampleBuffer>(data.data(), data.size(), rate));
+		}
+		const f_cnt_t heardAt1100 = clipOf(pair.anchor)->sourceFrameAt(TimePos(1100));
+		const f_cnt_t heardAt1200 = clipOf(pair.anchor)->sourceFrameAt(TimePos(1200));
+		// Inside the buffer and not clamped to an edge, so the comparison below means something.
+		QVERIFY(heardAt1200 > heardAt1100);
+		QVERIFY(heardAt1200 < static_cast<f_cnt_t>(data.size()));
+
+		const ControlResult trim = run(QStringLiteral("vca.edit_trim"),
+			edit(pair, {{QStringLiteral("start"), 1100}, {QStringLiteral("end"), 1400}}));
+		QVERIFY2(trim.ok, qPrintable(trim.errorMessage));
+		for (const QString& id : {pair.anchor, pair.other})
+		{
+			QCOMPARE(clipOf(id)->sourceFrameAt(TimePos(1100)), heardAt1100);
+			QCOMPARE(clipOf(id)->sourceFrameAt(TimePos(1200)), heardAt1200);
+			QCOMPARE(clipOf(id)->startTimeOffset().getTicks(), -100);
+		}
 	}
 
 	void aLockedTrimThatWouldEmptyOneClipWritesNothing()

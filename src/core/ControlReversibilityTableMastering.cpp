@@ -118,7 +118,8 @@ const ReversibilityRow kMasteringRows[] = {
 		"the run's own candidate files are an OUTPUT artefact: an undo takes them off disk, and "
 		"an agent that wants them back re-issues mastering.run (the settings and the file set "
 		"are reproducible, the audio is not bit-reproducible - see docs/AUTO-MASTERING.md "
-		"section 5)"),
+		"section 5). The genre and delivery_target choices are labels recorded in the run document, not "
+			"project state, and the undo contract is unchanged"),
 	// Q050-317.1: the mastering release sequence. One read and four edits of the project's
 	// <mastering-sequence> section. The edits are recorded ACTION checkpoints - the same
 	// mechanism the section.* group uses for its own list - because the list is a ProjectSection

@@ -27,6 +27,8 @@
 #include "ArrangerClipKeys.h"
 
 #include <QSignalBlocker>
+#include <QStatusBar>
+#include <new>
 #include "Timeline.h"
 #include "AddTrackMenu.h"
 #include "ControlRegistry.h"
@@ -84,6 +86,9 @@ namespace
 constexpr int MIN_PIXELS_PER_BAR = 4;
 constexpr int MAX_PIXELS_PER_BAR = 400;
 constexpr int ZOOM_STEPS = 200;
+//! The bar ruler's least height: a bar number, the loop brace and the punch band fit in it. Its layout gives it
+//! no size of its own, so without this it collapses to nothing and there is no ruler to click.
+constexpr int BAR_RULER_MIN_HEIGHT = 24;
 
 constexpr std::array SNAP_SIZES{8.f, 4.f, 2.f, 1.f, 1/2.f, 1/4.f, 1/8.f, 1/16.f};
 constexpr std::array PROPORTIONAL_SNAP_SIZES{64.f, 32.f, 16.f, 8.f, 4.f, 2.f, 1.f, 1/2.f, 1/4.f, 1/8.f, 1/16.f, 1/32.f, 1/64.f};
@@ -161,6 +166,9 @@ SongEditor::SongEditor( Song * song ) :
 	m_mpsStatus = nullptr;
 
 
+	// The theme fixes timeline heights in em. Keep this arranger ruler at its
+	// accessible scaled height through later stylesheet polishing as well.
+	m_timeLine->setStyleSheet(QStringLiteral("min-height: %1px; max-height: %1px;").arg(scaledPixels(32)));
 	static_cast<QVBoxLayout *>( layout() )->insertWidget( 0, m_timeLine );
 
 	m_leftRightScroll = new QScrollBar( Qt::Horizontal, this );
@@ -964,7 +972,14 @@ SongEditorWindow::SongEditorWindow(Song* song) :
 	connect(m_addSampleTrackAction, &QAction::triggered, this, [] {
 		ControlRegistry::instance()->invoke(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("sample")}});
 	});
-	connect(m_addAutomationTrackAction, SIGNAL(triggered()), m_editor->m_song, SLOT(addAutomationTrack()));
+	// cluster gui-1105: like the Pattern Editor's button, a failed allocation is reported, not thrown out of the slot.
+	connect(m_addAutomationTrackAction, &QAction::triggered, this, [this] {
+		try { (void) Track::create(Track::Type::Automation, m_editor->m_song); }
+		catch (const std::bad_alloc&)
+		{
+			getGUI()->mainWindow()->statusBar()->showMessage(tr("Could not add the track: the application is out of memory."), 8000);
+		}
+	});
 
 	trackActionsToolBar->addAction( m_addPatternTrackAction );
 	trackActionsToolBar->addAction( m_addSampleTrackAction );

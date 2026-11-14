@@ -60,6 +60,7 @@
 #include "TrackFolder.h"
 #include "ShellLayout.h"
 #include "ShellMenuParts.h"
+#include "ShellRecordMenu.h"
 #include "Song.h"
 #include "WorkspaceMenus.h"
 
@@ -130,20 +131,6 @@ void automationClipMenus(QMenu* menu, Clip* clip)
 	add(menu, "Transform...", "automation.transform", self, true, span);
 	add(menu, "Thin Points...", "automation.thin", self, true, {{QStringLiteral("tolerance"), 0.01}});
 	add(menu, "Point Curve...", "automation.set_curve", self, true, {{QStringLiteral("curve"), QStringLiteral("bend")}});
-}
-
-void recordMenu(QMenu* menu, const QJsonObject& self, bool instrument)
-{
-	QMenu* record = menu->addMenu(tr("Record"));
-	add(record, "Arm", "track.set_arm", with(self, "armed", true), false);
-	add(record, "Arm With Input Channel...", "track.set_arm", with(self, "armed", true), true);
-	add(record, "Disarm", "track.set_arm", with(self, "armed", false), false);
-	record->addSeparator();
-	add(record, "Audio Input...", "record.input_set", {}, true);
-	QMenu* retro = menu->addMenu(tr("Retrospective Capture"));
-	choices(retro, "Keep Listening", "record.retro_capture_arm", "armed", {});
-	if (instrument) { add(retro, "Last MIDI to a New Clip", "midi.retro_capture_to_clip", self, false, {}, true); }
-	add(retro, "Save Last Audio as a Take...", "record.retro_capture_to_take", {}, true, {}, true);
 }
 
 //! The MIDI clips selected in the arranger, by id.
@@ -529,6 +516,7 @@ void populateProject(QMenu* menu)
 	list(menu, "Grooves...", [] { return CommandLists::grooves(); });
 	menu->addSeparator();
 	list(menu, "Mastering Release...", [] { return CommandLists::masteringSequence(); });  // Q050-317.1
+	list(menu, "Mastering Report...", [] { return CommandLists::masteringReport(); });
 	add(menu, "Auto-Master...", "mastering.run", {}, true);
 	add(menu, "Mastering Status", "mastering.get_state", {}, false, {}, true);
 	choices(menu, "Loudness Meter", "meter.arm", "enabled", {});
@@ -538,39 +526,6 @@ void populateProject(QMenu* menu)
 	list(menu, "Safe Start...", [] { return CommandLists::safeStart(); });
 	LibraryCommandMenus::populateProject(menu);  // L11 / L12 (W3)
 	populateCustomise(menu->addMenu(tr("Customise")));
-}
-
-void populateCustomise(QMenu* menu)
-{
-	list(menu, "Keyboard Shortcuts...", [] { return CommandLists::shortcuts(); });
-	list(menu, "Workflows...", [] { return CommandLists::macros(); });
-	list(menu, "MIDI Mappings...", [] { return CommandLists::controllerMappings(); });
-	list(menu, "Mapping Templates...", [] { return CommandLists::mappingTemplates(); });
-	LayoutMenu::populate(menu->addMenu(tr("Window Layouts")));
-	QMenu* surface = menu->addMenu(tr("Control Surface (Mackie Control)"));
-	add(surface, "Connect...", "surface.mcu_connect", {}, true);
-	add(surface, "Ports", "surface.mcu_ports", {}, false, {}, true);
-	add(surface, "State", "surface.mcu_state", {}, false, {}, true);
-	add(surface, "Disconnect", "surface.mcu_disconnect", {}, false);
-	// Q050-081: Lua control-surface scripts on MIDI ports (the bindings themselves stay in MIDI Mappings above).
-	QMenu* scripts = menu->addMenu(tr("Controller Scripts"));
-	add(scripts, "Start Script...", "controller.script_start", {}, true, {}, true);
-	add(scripts, "Script State", "controller.script_state", {}, false, {}, true);
-	add(scripts, "Stop Script...", "controller.script_stop", {}, true);
-	// Q050-205: the opt-in OSC server - off until Start runs osc.start; the form shows where it listens.
-	QMenu* osc = menu->addMenu(tr("OSC Control Server"));
-	add(osc, "Start...", "osc.start", {}, true, {{QStringLiteral("address"), QStringLiteral("127.0.0.1")},
-		{QStringLiteral("port"), 9000}, {QStringLiteral("scope"), QStringLiteral("remote")}}, true);
-	add(osc, "State", "osc.get_state", {}, false, {}, true);
-	add(osc, "Stop", "osc.stop", {}, false, {}, true);
-	QMenu* pop = menu->addMenu(tr("Pop Out Panel"));
-	for (const ShellPanelSpec& spec : ShellLayout::panels())
-	{
-		const QJsonObject panel{{QStringLiteral("panel"), spec.id}};
-		addCommandAction(pop, spec.title, QStringLiteral("window.detach"),
-			[panel] { return CommandCall{QStringLiteral("window.detach"), panel, {}, QString(), false}; });
-	}
-	populateCustomiseExtras(menu);  // 0.5.0 W3: theme, density, settings (WorkspaceMenus.cpp)
 }
 
 } // namespace lmms::gui::ShellCommandMenus

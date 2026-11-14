@@ -28,11 +28,18 @@
  *  the way a script or the TrackContainer does, and then let the mixer's own sync pass catch up. */
 
 #include <QtTest>
+#include "MixerModeVisibilityTestSupport.h"
 
 #include <QAbstractButton>
+#include <QLabel>
+#include <QPushButton>
 #include <QTemporaryDir>
+#include <QScrollArea>
+#include <QScrollBar>
 
 #include "AutomatableButton.h"
+#include "ControlRegistry.h"
+#include "EffectRackView.h"
 #include "Engine.h"
 #include "Fader.h"
 #include "GuiApplication.h"
@@ -44,6 +51,7 @@
 #include "Mixer.h"
 #include "MixerChannelView.h"
 #include "MixerView.h"
+#include "Shell.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -90,10 +98,12 @@ private slots:
 		QVERIFY(getGUI() != nullptr);
 		getGUI()->mainWindow()->show();
 		getGUI()->mainWindow()->revealPanel(QStringLiteral("mixer"));
+		ControlRegistry::setReady(true);  // the Return button runs bus.create
 	}
 
 	void cleanupTestCase()
 	{
+		ControlRegistry::setReady(false);
 		Engine::destroy();
 	}
 
@@ -266,6 +276,220 @@ private slots:
 		QVERIFY(selectedWhenMacroActionRan);
 		QCOMPARE(mixer->currentMixerChannel(), targetView);
 		QTest::mouseRelease(macro, Qt::LeftButton, Qt::NoModifier, macro->rect().center());
+	}
+
+	//! gui-1114-tab-mixer-mute-master: the Master mute button is bound to the channel's mute model, and a
+	//! real press on it toggles the model and the button's checked state. The app-wide selection filter
+	//! (ShellSelection::eventFilter) also selects the strip, but returns false, so the press is not
+	//! swallowed. This is the first of two halves of the guard: the control's own contract, in the Mix
+	//! view where the whole strip is on screen.
+	void theMasterMuteButtonTogglesInTheMixerView()
+	{
+		MainWindow* win = getGUI()->mainWindow();
+		MixerView* mixer = getGUI()->mixerView();
+		MixerChannel* master = Engine::mixer()->mixerChannel(0);
+		MixerChannelView* strip = mixer->channelView(0);
+		QVERIFY(strip != nullptr);
+		AutomatableButton* mute = strip->findChild<AutomatableButton*>(QStringLiteral("btn-mute"));
+		QVERIFY(mute != nullptr);
+		QCOMPARE(mute->model(), &master->m_muteModel);
+
+		win->shell()->setView(ShellView::Mix);
+		win->shell()->revealPanel(QStringLiteral("mixer"));
+		QCoreApplication::processEvents();
+		QCoreApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
+		// The default Mix view also shows Devices at the bottom; close it so "the press opened it" is visible.
+		if (win->shell()->model().isVisible(QStringLiteral("devices"))) { win->shell()->togglePanel(QStringLiteral("devices")); }
+		QCoreApplication::processEvents();
+
+		// The whole button, not a clipped sliver: every ancestor up to the window leaves all 20x20 px.
+		const QRect whole(mute->mapTo(win, QPoint(0, 0)), mute->size());
+		QRect shown = whole;
+		for (QWidget* w = mute->parentWidget(); w != nullptr && w != win; w = w->parentWidget())
+		{
+			shown &= QRect(w->mapTo(win, QPoint(0, 0)), w->size());
+		}
+		shown &= win->rect();
+		const QString shownProblem = shown == whole ? QString()
+			: QStringLiteral("only %1x%2 of the %3x%4 mute at %5,%6 is on screen in Mix view")
+				.arg(shown.width()).arg(shown.height()).arg(whole.width()).arg(whole.height())
+				.arg(whole.x()).arg(whole.y());
+		const bool centreReachesMute = win->childAt(mute->mapTo(win, mute->rect().center())) == mute;
+
+		master->m_muteModel.setValue(false);
+		QTest::mouseClick(mute, Qt::LeftButton);
+		const bool on = master->m_muteModel.value();
+		const bool checked = static_cast<QAbstractButton*>(mute)->isChecked();
+		const bool selected = mixer->currentMixerChannel() == strip;
+		const bool devicesOpened = win->shell()->model().isVisible(QStringLiteral("devices"));
+		QTest::mouseClick(mute, Qt::LeftButton);
+		const bool off = !master->m_muteModel.value();
+		const bool unchecked = !static_cast<QAbstractButton*>(mute)->isChecked();
+		const bool devicesOpenedAgain = win->shell()->model().isVisible(QStringLiteral("devices"));
+
+		QVERIFY2(shownProblem.isEmpty(), qPrintable(shownProblem));
+		QVERIFY2(centreReachesMute, "something else covers the mute button's centre in Mix view");
+		QVERIFY2(on, "a real press on Master mute did not turn the mute model on");
+		QVERIFY2(checked, "the Master mute button did not show itself checked");
+		QVERIFY2(selected, "the press did not also select the strip it landed on");
+		QVERIFY2(!devicesOpened, "a mute press must not open Devices");
+		QVERIFY2(off, "a second press did not turn the mute model off");
+		QVERIFY2(unchecked, "the Master mute button did not show itself unchecked");
+		QVERIFY2(!devicesOpenedAgain, "the second mute press opened Devices");
+	}
+
+	//! gui-1114-tab-mixer-mute-master, second half: the finding's frame is Arrange view, where the Mixer
+	//! is the bottom region. That region is shorter than the strip, so only part of the button is on
+	//! screen; the part that IS on screen still receives a real press and toggles the same model, and
+	//! nothing opens. The sweep's press went to the AT-SPI centre of the whole button box, which is
+	//! below that visible part - on the footer's Devices switch - so the panel it saw was that switch.
+	void aPressOnTheVisiblePartOfTheBottomRegionsMasterMuteTogglesIt()
+	{
+		MainWindow* win = getGUI()->mainWindow();
+		MixerChannel* master = Engine::mixer()->mixerChannel(0);
+		MixerChannelView* strip = getGUI()->mixerView()->channelView(0);
+		QVERIFY(strip != nullptr);
+		AutomatableButton* mute = strip->findChild<AutomatableButton*>(QStringLiteral("btn-mute"));
+		QVERIFY(mute != nullptr);
+		QCOMPARE(mute->model(), &master->m_muteModel);
+
+		win->shell()->setView(ShellView::Arrange);
+		win->shell()->revealPanel(QStringLiteral("mixer"));
+		QCoreApplication::processEvents();
+		QCoreApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
+
+		const QRect whole(mute->mapTo(win, QPoint(0, 0)), mute->size());
+		QRect visible = whole;
+		for (QWidget* w = mute->parentWidget(); w != nullptr && w != win; w = w->parentWidget())
+		{
+			visible &= QRect(w->mapTo(win, QPoint(0, 0)), w->size());
+		}
+		visible &= win->rect();
+		const QPoint pressAt = visible.center();
+		const QPoint local = mute->mapFrom(win, pressAt);
+		const bool pressPointReachesMute = visible.height() > 0 && win->childAt(pressAt) == mute;
+		const bool centreIsTheSweepsPointInTheFooter = win->childAt(mute->mapTo(win, mute->rect().center())) != mute;
+
+		master->m_muteModel.setValue(false);
+		if (pressPointReachesMute && mute->rect().contains(local)) { QTest::mouseClick(mute, Qt::LeftButton, Qt::NoModifier, local); }
+		const bool on = master->m_muteModel.value();
+		const bool checked = static_cast<QAbstractButton*>(mute)->isChecked();
+		const bool devicesOpened = win->shell()->model().isVisible(QStringLiteral("devices"));
+
+		win->shell()->setView(ShellView::Arrange);
+		win->shell()->revealPanel(QStringLiteral("detail"));
+
+		QVERIFY2(visible.height() > 0, "no part of the Master mute button is on screen in the bottom region");
+		QVERIFY2(pressPointReachesMute, "the part of the mute button that is on screen is covered");
+		QVERIFY2(mute->rect().contains(local), "the press point is outside the mute button");
+		QVERIFY2(on, "a press on the visible part of the bottom region's mute did not toggle it");
+		QVERIFY2(checked, "the bottom region's mute button did not show itself checked");
+		QVERIFY2(!devicesOpened, "a mute press in the bottom region opened Devices");
+		QVERIFY2(centreIsTheSweepsPointInTheFooter,
+			"the sweep's AT-SPI centre is inside the mute button, so this finding needs re-measuring");
+	}
+
+	// The Return button creates a bus and refreshes the view at once. The strip it adds must already
+	// be labelled Return then: the rebuild of the strips must not skip the type badges, which would
+	// show "Channel N" until the half-second timer's next pass.
+	void aNewReturnStripIsLabelledReturnAtOnce()
+	{
+		MixerView* mixer = getGUI()->mixerView();
+		syncMixer();
+		const int before = static_cast<int>(Engine::mixer()->numChannels());
+		auto* button = mixer->findChild<QAbstractButton*>(QStringLiteral("newReturnBtn"));
+		QVERIFY(button != nullptr);
+
+		QTest::mouseClick(button, Qt::LeftButton);  // no sync of ours after this: only the click's own
+
+		QCOMPARE(static_cast<int>(Engine::mixer()->numChannels()), before + 1);
+		MixerChannelView* strip = mixer->channelView(before);
+		QVERIFY(strip != nullptr);
+		QVERIFY(Engine::mixer()->mixerChannel(before)->isBus());
+		QCOMPARE(strip->typeBadge()->text(), QStringLiteral("Return"));
+	}
+
+private slots:
+	// gui-1030-tab-mixer-return: on a 1024x768 screen with the Inspector and the Browser open, the Mix view's
+	// mixer must still fit - the window's minimum width follows the mixer's, so a mixer that wants more than the
+	// centre column leaves its right-hand controls (New mixer channel, Return) beyond the screen.
+	void theReturnButtonStaysOnAThousandPixelScreen()
+	{
+		MainWindow* win = getGUI()->mainWindow();
+		MixerView* mixer = getGUI()->mixerView();
+		win->shell()->setView(ShellView::Mix);
+		win->revealPanel(QStringLiteral("inspector"));
+		win->revealPanel(QStringLiteral("browser"));
+		win->revealPanel(QStringLiteral("mixer"));
+		QCoreApplication::processEvents();  // let the panel moves settle before the window is sized
+		QCoreApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
+		QVERIFY2(win->minimumSizeHint().width() <= 1024,
+			qPrintable(QStringLiteral("window minimum width %1").arg(win->minimumSizeHint().width())));
+
+		win->resize(1024, 768);
+		QCoreApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
+		QVERIFY(win->width() <= 1024);
+
+		auto* newReturn = mixer->findChild<QWidget*>(QStringLiteral("newReturnBtn"));
+		QVERIFY(newReturn != nullptr);
+		QVERIFY(newReturn->isVisible());
+		const QRect onWindow(newReturn->mapTo(win, QPoint(0, 0)), newReturn->size());
+		QVERIFY2(win->rect().contains(onWindow), qPrintable(QStringLiteral("Return at %1,%2 %3x%4 in a window %5x%6")
+			.arg(onWindow.x()).arg(onWindow.y()).arg(onWindow.width()).arg(onWindow.height())
+			.arg(win->width()).arg(win->height())));
+
+		// Every mode control, including the last one, remains visible and clickable.
+		auto* bar = mixer->findChild<QWidget*>(QStringLiteral("mixerModeBar"));
+		QVERIFY(bar != nullptr);
+		const QString problem = lmms::test::mixerModeVisibilityProblem(bar, win);
+		QVERIFY2(problem.isEmpty(), qPrintable(problem));
+		auto* matrix = bar->findChild<QWidget*>(QStringLiteral("mixerModeMatrix"));
+		QVERIFY(matrix != nullptr);
+		const QRect onBar(matrix->mapTo(bar, QPoint(0, 0)), matrix->size());
+		QVERIFY(bar->rect().contains(onBar));
+	}
+
+	//! gui-1030-tab-mixer-add-effect: on a 1024x768 screen, Mix view with the Inspector and the Browser
+	//! open, the effect rack's Add effect button stays on screen. The window's minimum width follows the
+	//! mixer's: the mode bar's rigid row and the channel area's six-strip minimum made it 2000 px wide,
+	//! and a window wider than the screen leaves the rack - at the right of the body - beyond the edge.
+	void theAddEffectButtonStaysOnAThousandPixelScreen()
+	{
+		MainWindow* win = getGUI()->mainWindow();
+		MixerView* mixer = getGUI()->mixerView();
+		win->shell()->setView(ShellView::Mix);
+		win->revealPanel(QStringLiteral("inspector"));
+		win->revealPanel(QStringLiteral("browser"));
+		win->revealPanel(QStringLiteral("mixer"));
+		QCoreApplication::processEvents();  // let the panel moves settle before the window is sized
+		QCoreApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
+		QVERIFY2(win->minimumSizeHint().width() <= 1024,
+			qPrintable(QStringLiteral("window minimum width %1").arg(win->minimumSizeHint().width())));
+
+		win->resize(1024, 768);
+		QCoreApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
+		QVERIFY(win->width() <= 1024);
+
+		// The selected channel's rack is the page on show; its Add effect sits at the bottom of the rack.
+		QPushButton* addEffect = nullptr;
+		for (QPushButton* button : mixer->zoneWidget(QStringLiteral("rack"))->findChildren<QPushButton*>())
+		{
+			if (button->isVisible() && button->text() == EffectRackView::tr("Add effect")) { addEffect = button; }
+		}
+		QVERIFY2(addEffect != nullptr, "the selected channel's effect rack has no visible Add effect button");
+		const QRect whole(addEffect->mapTo(win, QPoint(0, 0)), addEffect->size());
+		QRect shown = whole;
+		for (QWidget* w = addEffect->parentWidget(); w != nullptr; w = w->parentWidget())
+		{
+			shown &= QRect(w->mapTo(win, QPoint(0, 0)), w->size());
+		}
+		shown &= win->rect();
+		QVERIFY2(shown == whole, qPrintable(QStringLiteral("Add effect: %1x%2 of %3x%4 px on screen")
+			.arg(shown.width()).arg(shown.height()).arg(whole.width()).arg(whole.height())));
+
+		win->shell()->setView(ShellView::Arrange);
+		win->revealPanel(QStringLiteral("mixer"));
+		win->resize(1400, 900);
 	}
 
 private:

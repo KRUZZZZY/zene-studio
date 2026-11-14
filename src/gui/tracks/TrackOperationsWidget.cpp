@@ -63,6 +63,7 @@
 #include "TakeLanesPanel.h"
 #include "Track.h"
 #include "TrackFolderMenu.h"
+#include "TrackRoleMenu.h"
 #include "TrackRenderMenu.h"
 #include "ChainPresetMenu.h"
 #include "TrackContainerView.h"
@@ -484,6 +485,8 @@ void TrackOperationsWidget::updateMenu()
 	// 0.5.0 W1: recording, takes and rendering - the same menu as the Inspector's (registry commands).
 	ShellCommandMenus::populateTrack(toMenu->addMenu(tr("More")), m_trackView->getTrack());
 
+	// Q050-283.2: a neutral row's "Assign instrument", an instrument track's "Make neutral" (track.set_role).
+	addTrackRoleMenu(toMenu, m_trackView->getTrack());
 	// Folder membership, and on a folder its collapse/pin/routing, through the track.* commands.
 	addTrackFolderMenu(toMenu, m_trackView->getTrack());
 	// Freeze / Unfreeze and Bounce in place (freeze.* / bounce.in_place).

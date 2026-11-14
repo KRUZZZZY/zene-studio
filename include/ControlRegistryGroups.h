@@ -287,9 +287,10 @@ LMMS_EXPORT void registerRoutingCommands(ControlRegistry& registry);
  * own, so this group is only the topology.
  */
 LMMS_EXPORT void registerBusCommands(ControlRegistry& registry);
-/*! port.get_state / port.set_pin - the audio-ports pin matrix (feature row 29):
+/*! port.get_state / port.set_pin / port.set_pins - the audio-ports pin matrix (feature row 29):
  * the device's AudioPortsModel, its in/out matrices and the pin write the
- * PinConnector view performs (AudioPortsModel::Matrix::setPin).
+ * PinConnector view performs (AudioPortsModel::Matrix::setPin); port.set_pins
+ * (Q050-155.2) is a whole routing as one edit and one undo step.
  */
 LMMS_EXPORT void registerPortCommands(ControlRegistry& registry);
 /*! The five groups above, registered as ONE call from ControlRegistry.cpp's
@@ -833,6 +834,9 @@ LMMS_EXPORT void registerRemoteCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerDrumRackCommand(ControlRegistry& registry);
 //! 0.5.0 L03 (WF-080 / WF-082 / ED-168): transport.record_options, comp.cycle (ControlCommandsRecordingPass.cpp).
 LMMS_EXPORT void registerRecordingPassCommands(ControlRegistry& registry);
+//! Q050-054.1: track.set_midi_arm, record.midi_capture_status / midi_capture_commit - MIDI takes recorded on armed
+//! instrument tracks by transport.record (ControlCommandsMidiTakes.cpp).
+LMMS_EXPORT void registerMidiTakeCommands(ControlRegistry& registry);
 //! 0.5.0 L02 (WF-069): session.bindings_connect / bind / bind_learn / unbind / bindings (ControlCommandsLaunchBindings.cpp).
 LMMS_EXPORT void registerLaunchBindingCommands(ControlRegistry& registry);
 //! 0.5.0 L02 (WF-055): session.capture_to_slot (ControlCommandsSessionCapture.cpp).
@@ -864,6 +868,8 @@ LMMS_EXPORT void registerClipArrangeCommands(ControlRegistry& registry);
 //! 0.5.0 L06: automation.lane_add / add_trim / draw_shape / transform / thin / set_curve /
 //! last_touched (ControlCommandsAutomationLanes.cpp).
 LMMS_EXPORT void registerAutomationLaneCommands(ControlRegistry& registry);
+//! 0.5.0 L04 (Q050-283.2): track.set_role - a neutral row given an instrument, and back (ControlCommandsTrackRole.cpp).
+LMMS_EXPORT void registerTrackRoleCommands(ControlRegistry& registry);
 //! 0.5.0 L07: note.scale / ratchet / list / transform_where (ControlCommandsNoteShape.cpp) and
 //! key_names.* (ControlCommandsKeyNames.cpp).
 LMMS_EXPORT void registerNoteShapeCommands(ControlRegistry& registry);
@@ -874,6 +880,9 @@ LMMS_EXPORT void registerNoteToolCommands(ControlRegistry& registry);
 //! 0.5.0 Q050-221.1 (L07): note.generate_melody, a seeded melodic contour in the active scale
 //! (ControlCommandsNoteMelody.cpp).
 LMMS_EXPORT void registerNoteMelodyCommands(ControlRegistry& registry);
+//! 0.5.0 Q050-294.3: note.step_fill, a seeded shape or random fill of a clip's step columns in the active scale
+//! (ControlCommandsNoteStepFill.cpp).
+LMMS_EXPORT void registerNoteStepFillCommands(ControlRegistry& registry);
 //! 0.5.0 L07 (W3): note.move_to_track / split_by_pitch, scale.detect, transport.panic
 //! (ControlCommandsNoteMoves.cpp).
 LMMS_EXPORT void registerNoteMoveCommands(ControlRegistry& registry);

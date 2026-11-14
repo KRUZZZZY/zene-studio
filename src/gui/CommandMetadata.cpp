@@ -39,6 +39,7 @@
 #include "ControlReversibility.h"
 #include "GuiApplication.h"
 #include "ScriptCommandBridge.h"
+#include "UnattendedRun.h"
 
 namespace lmms::gui
 {
@@ -443,7 +444,9 @@ QString resultSummary(const QJsonObject& result, int maxLines)
 
 bool confirmAction(QWidget* parent, const QString& label, const QString& target, const QString& caution)
 {
-	if (ControlRegistry::instance()->isHeadless() || getGUI() == nullptr) { return true; }
+	// An agent instance asks no modal question even on a visible display (A13);
+	// the registry's headless flag is only about the display.
+	if (ControlRegistry::instance()->isHeadless() || isAgentInstance() || getGUI() == nullptr) { return true; }
 	const QString what = target.isEmpty() ? label : tr("%1 \"%2\"").arg(label, target);
 	const QString question = caution.isEmpty() ? tr("%1 - are you sure?").arg(what)
 		: tr("%1 - %2 Are you sure?").arg(what, caution);

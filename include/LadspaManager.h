@@ -34,6 +34,11 @@
 #include <QString>
 #include <QStringList>
 
+#include <memory>
+#include <vector>
+
+class QLibrary;
+
 
 #include "lmms_export.h"
 #include "LmmsTypes.h"
@@ -329,6 +334,11 @@ public:
 	bool  cleanup( const ladspa_key_t & _plugin,
 						LADSPA_Handle _instance );
 
+#ifdef LMMS_TESTING
+	// Test seam: true when the manager still owns a loaded QLibrary for `fileName`.
+	bool isLibraryLoaded( const QString & fileName ) const;
+#endif
+
 private:
 	void  addPlugins( LADSPA_Descriptor_Function _descriptor_func,
 						const QString & _file );
@@ -341,6 +351,10 @@ private:
 													uint32_t _port );
 
 	using LadspaManagerMapType = QMap<ladspa_key_t, LadspaManagerDescription*>;
+	// Kept alive for the manager's lifetime: descriptor function pointers in
+	// m_ladspaManagerMap point into these libraries, so they must not unload
+	// while the manager can still hand out descriptors.
+	std::vector<std::shared_ptr<QLibrary>> m_loadedLibraries;
 	LadspaManagerMapType m_ladspaManagerMap;
 	l_sortable_plugin_t m_sortedPlugins;
 

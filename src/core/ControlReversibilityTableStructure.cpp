@@ -107,6 +107,18 @@ const ReversibilityRow kStructureRows[] = {
 		"TrackContainer::moveTrack, the same call the product's drag and the "
 		"arrow-key moves make; the redo sends it forward again",
 		""),
+	R("track.set_role", RC::TrueInverse, true,
+		"a role is the class of the row's Track object, so a switch replaces the "
+		"object (keeping the row's id and index): a deleted object has no live "
+		"checkpoint, the track.remove case, so the inverse is the operation",
+		"action checkpoint (structural step): the row's own XML is captured before "
+		"and after the switch (bounded; a larger track is refused and nothing "
+		"changes), and the one recorded step replaces the row by the other document "
+		"at the same index through control::removeTrack and Track::create(element). "
+		"The instrument role - plug-in, settings, clips - is in the instrument "
+		"document and is the kept role of the neutral one, so undo and redo both "
+		"give it back",
+		""),
 	R("track.remove", RC::TrueInverse, true,
 		"a deleted JournallingObject's journal id resolves to nullptr, so a "
 		"checkpoint cannot bring it back. DISAGREEMENT with "

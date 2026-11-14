@@ -426,6 +426,65 @@ private slots:
 		QCOMPARE(error.errorKind, ControlErrorKind::InvalidArgs);
 	}
 
+	void aPresetRefusesAnUnsupportedVersion_data()
+	{
+		QTest::addColumn<QString>("version");
+		for (const QString& version : {QStringLiteral("0"), QStringLiteral("2"),
+			QStringLiteral("1.0"), QStringLiteral("invalid"), QString()})
+		{
+			QTest::newRow(qPrintable(version.isEmpty() ? QStringLiteral("missing") : version))
+				<< version;
+		}
+	}
+
+	//! A document whose version is not the one this build writes is refused, typed,
+	//! and names the version: another format's layout is not read as the current one.
+	void aPresetRefusesAnUnsupportedVersion()
+	{
+		QFETCH(QString, version);
+		QDomDocument doc;
+		QVERIFY(doc.setContent(controlChainPresetDocument(QStringLiteral("version-test"),
+			{deviceOf(deviceDocument(QStringLiteral("amplifier"), {}, {}, 7))})));
+		if (version.isEmpty()) { doc.documentElement().removeAttribute(QStringLiteral("version")); }
+		else { doc.documentElement().setAttribute(QStringLiteral("version"), version); }
+		const QString path = controlChainPresetDir() + QStringLiteral("version-test.zcp");
+		QVERIFY(QDir().mkpath(controlChainPresetDir()));
+		ControlResult error;
+		QVERIFY(controlWriteFileBytes(path, doc.toByteArray(), true, &error));
+		ControlChainPreset preset;
+		const bool read = controlReadChainPreset(path, &preset, &error);
+		QVERIFY(QFile::remove(path));
+		QVERIFY(!read);
+		QCOMPARE(error.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY2(error.errorMessage.contains(QStringLiteral("version")),
+			qPrintable(error.errorMessage));
+	}
+
+	//! A versionless document that declares no devices is the shape that would
+	//! clear a chain when applied, so it must be refused - and the same document
+	//! with the supported version is still a valid, empty preset.
+	void aVersionlessEmptyPresetCannotClearAChain()
+	{
+		const QString path = controlChainPresetDir() + QStringLiteral("empty-version-test.zcp");
+		QVERIFY(QDir().mkpath(controlChainPresetDir()));
+		ControlResult error;
+		ControlChainPreset preset;
+
+		QVERIFY(controlWriteFileBytes(path,
+			QByteArrayLiteral("<zenechainpreset name=\"empty\" devices=\"0\"/>"), true, &error));
+		const bool versionless = controlReadChainPreset(path, &preset, &error);
+		QVERIFY(!versionless);
+		QCOMPARE(error.errorKind, ControlErrorKind::InvalidArgs);
+
+		QVERIFY(controlWriteFileBytes(path,
+			QByteArrayLiteral("<zenechainpreset version=\"1\" name=\"empty\" devices=\"0\"/>"),
+			true, &error));
+		const bool supported = controlReadChainPreset(path, &preset, &error);
+		QVERIFY(QFile::remove(path));
+		QVERIFY2(supported, qPrintable(error.errorMessage));
+		QCOMPARE(preset.devices.size(), 0);
+	}
+
 	void aFailedApplyKeepsTheOriginalDevicesAndHistory()
 	{
 		const QString target = addInstrumentTrack();

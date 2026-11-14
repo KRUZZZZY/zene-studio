@@ -49,6 +49,7 @@
 #include <QPointer>
 #include <QPushButton>
 #include <QTemporaryDir>
+#include <QToolButton>
 
 #include "AutomationClip.h"
 #include "AutomationEditor.h"
@@ -68,6 +69,9 @@
 #include "PanelShortcuts.h"
 #include "PerformView.h"
 #include "Shell.h"
+#include "ShellChrome.h"
+#include "ShellRegionTabs.h"
+#include "ShellChrome.h"
 #include "Song.h"
 #include "SongEditor.h"
 
@@ -412,6 +416,64 @@ private slots:
 		QTRY_COMPARE(QApplication::focusWidget(), static_cast<QWidget*>(arranger));
 		QTest::keyClick(arranger, Qt::Key_K, Qt::ControlModifier | Qt::AltModifier);
 		QCOMPARE(arranger->editMode(), SongEditor::EditMode::Select);
+	}
+
+	//! Cluster gui-1030-main-hide-the-bottom-panels: the bottom strip's "Hide" button, clicked in the real main
+	//! window (whose shell routes the click through window.toggle), closes the region and leaves its footer switch.
+	void theBottomStripHideButtonClosesTheRegion()
+	{
+		Shell* shell = getGUI()->mainWindow()->shell();
+		shell->setView(ShellView::Arrange);
+		QVERIFY(shell->revealPanel(QStringLiteral("detail")));
+		ShellRegionTabs* tabs = shell->regionTabs(ShellRegion::Bottom);
+		QVERIFY(tabs != nullptr && tabs->isVisible());
+		QCOMPARE(tabs->currentId(), QStringLiteral("detail"));
+		QVERIFY(shell->model().isVisible(QStringLiteral("detail")));
+		ShellButton* hide = nullptr;
+		for (ShellButton* candidate : tabs->findChildren<ShellButton*>())
+		{
+			if (candidate->accessibleName().startsWith(QStringLiteral("Hide"))) { hide = candidate; }
+		}
+		QVERIFY(hide != nullptr && hide->isVisible());
+		QTest::mouseClick(hide, Qt::LeftButton);
+		QVERIFY2(!shell->model().isVisible(QStringLiteral("detail")), "the Note Editor stayed open after Hide was clicked");
+		QCOMPARE(shell->model().openIn(ShellRegion::Bottom), QString());
+		QVERIFY(!shell->findChild<QWidget*>(QStringLiteral("shellBottom"))->isVisible());
+		// The footer's switch for the panel stays, and is how the region opens again.
+		QToolButton* footerSwitch = nullptr;
+		for (QToolButton* candidate : shell->findChildren<QToolButton*>())
+		{
+			if (candidate->text() == QStringLiteral("Note Editor") || candidate->accessibleName() == QStringLiteral("Note Editor"))
+			{
+				footerSwitch = candidate;
+			}
+		}
+		QVERIFY2(footerSwitch != nullptr && footerSwitch->isVisible(), "the footer's Note Editor switch is gone");
+		QTest::mouseClick(footerSwitch, Qt::LeftButton);
+		QVERIFY(shell->model().isVisible(QStringLiteral("detail")));
+	}
+
+	//! gui-1106-main-mix: a real click on each footer view word switches the real shell's view (the Mix word
+	//! dispatches window.set_view; the sweep's "Mix leaves Arrange showing" was a click outside the screen).
+	void aFooterViewWordSwitchesTheView()
+	{
+		Shell* shell = getGUI()->mainWindow()->shell();
+		QVERIFY(run(QStringLiteral("window.set_view"), {{QStringLiteral("view"), QStringLiteral("arrange")}}).ok);
+		const QList<QAction*> views = shell->viewActions();
+		QCOMPARE(views.size(), 3);
+		const std::pair<int, ShellView> order[] = {{1, ShellView::Mix}, {2, ShellView::Edit}, {0, ShellView::Arrange}};
+		for (const auto& [index, view] : order)
+		{
+			ShellButton* word = nullptr;
+			for (ShellButton* b : shell->findChildren<ShellButton*>())
+			{
+				if (b->defaultAction() == views.at(index)) { word = b; }
+			}
+			QVERIFY2(word != nullptr, "the footer has no button for the view word");
+			QTest::mouseClick(word, Qt::LeftButton);
+			QCOMPARE(shell->model().view(), view);
+			QVERIFY(views.at(index)->isChecked());
+		}
 	}
 
 private:

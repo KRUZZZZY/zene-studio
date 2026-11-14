@@ -26,6 +26,8 @@
 
 #include "ControlReversibility.h"
 
+#include <algorithm>
+
 #include <QJsonArray>
 #include <QStringList>
 
@@ -34,6 +36,7 @@
 #include "Engine.h"
 #include "HardwareIo.h"
 #include "Mixer.h"
+#include "MixerSurround.h"
 
 namespace lmms
 {
@@ -374,6 +377,32 @@ QJsonObject mixerRouteResult(const RoutingEnds& ends, MixerRoute* route,
 				"damaging audio equipment (REAPER User Guide, main changes 6.66-6.70)")
 			: QString());
 	return result;
+}
+
+void addRouteChannels(QJsonObject* send, const MixerRoute& route)
+{
+	const surround::Format from = route.sender()->m_surround.format();
+	const surround::Format to = route.receiver()->m_surround.format();
+	if (from == surround::Format::Stereo && to == surround::Format::Stereo) { return; }
+	const int fromCount = surround::channelCount(from);
+	const int toCount = surround::channelCount(to);
+	QString routing = QStringLiteral("pair");
+	int channels = std::min(fromCount, 2);
+	if (surround::isDiscrete(from) || surround::isDiscrete(to))
+	{
+		// MixerSurroundMix.cpp addSideChannels: by index, up to the narrower side; a stereo or mono side
+		// still carries just its pair.
+		routing = QStringLiteral("index");
+		channels = std::min(fromCount, toCount);
+	}
+	else if (route.sender()->m_surround.isSurround() && route.receiver()->m_surround.isSurround()
+		&& from != surround::Format::Mono && to != surround::Format::Mono)
+	{
+		routing = QStringLiteral("speakers");
+		channels = fromCount;
+	}
+	send->insert(QStringLiteral("channels"), channels);
+	send->insert(QStringLiteral("channel_routing"), routing);
 }
 
 } // namespace control

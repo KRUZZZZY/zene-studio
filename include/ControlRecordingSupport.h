@@ -78,6 +78,34 @@ bool readJournal(const QJsonObject& args, TakeJournal* journal, ControlResult* e
 QJsonObject commandTransaction(const QJsonObject& before, const QString& inverseOp,
 	const QJsonObject& inverseArgs);
 
+// ---------------------------------------------------------------------------
+// Default take allocation (new-p17-24): a default take name must never reuse
+// a path that already holds a take or a journal. The allocator tries a
+// bounded sequence of candidates under \a directory and reserves each one
+// with exclusive creation, so two concurrent allocator instances sharing the
+// directory get distinct paths. It runs on the control thread only; nothing
+// it does is on the audio thread.
+// ---------------------------------------------------------------------------
+
+/*! The bounded number of default take names one allocation tries.
+ *  A caller (and a test) names the whole search space, so exhaustion is a
+ *  deterministic refusal, never an unbounded scan. */
+constexpr int TakeNameProbeBound = 1000;
+
+/*! Reserve the next free take name for \a base (e.g. "zene-take-route0").
+ *  Candidates are `<base>.wav`, `<base>-1.wav`, ... up to \a TakeNameProbeBound
+ *  tries. A candidate whose WAV or journal side file already exists is
+ *  skipped. Each candidate is reserved by exclusive creation of an empty
+ *  file, so the check and the reservation are one atomic filesystem step.
+ *  Empty on exhaustion (or when \a directory is missing). The caller owns
+ *  the reservation: if the subsequent arm fails, it must remove the file. */
+QString reserveDefaultTake(const QString& directory, const QString& base);
+
+/*! Remove a reservation created by reserveDefaultTake(), and the journal
+ *  beside it a failed arm may have written. Only the reserved path itself
+ *  is ever removed - never a sibling candidate another take owns. */
+void releaseDefaultTake(const QString& reservedPath);
+
 //! \a left minus \a right, never negative: a report names a surplus only.
 qint64 surplus(std::uint64_t left, std::uint64_t right);
 

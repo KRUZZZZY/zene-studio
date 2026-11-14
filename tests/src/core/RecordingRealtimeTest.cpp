@@ -252,6 +252,29 @@ private slots:
 		QCOMPARE(asNumber(ring.writeBlock(block.data(), block.size())), asNumber(capacity));
 	}
 
+	//! The consumer half of the null contract: read() refuses a null destination
+	//! with 0 and leaves the staged frames in the ring, as writeBlock() refuses a
+	//! null source. Reading zero frames stays a no-op.
+	void ringBufferReadRefusesNullDestination()
+	{
+		SampleFrameRingBuffer ring{16};
+		const SampleFrame frame = frameAt(7);
+		QCOMPARE(asNumber(ring.writeBlock(&frame, 1)), asNumber(1));
+
+		QCOMPARE(asNumber(ring.read(nullptr, 0)), asNumber(0));
+		QCOMPARE(asNumber(ring.read(nullptr, 1)), asNumber(0));
+		QCOMPARE(asNumber(ring.available()), asNumber(1));
+
+		SampleFrame out;
+		QCOMPARE(asNumber(ring.read(&out, 1)), asNumber(1));
+		QCOMPARE(out.left(), frame.left());
+		QCOMPARE(out.right(), frame.right());
+		QCOMPARE(asNumber(ring.available()), asNumber(0));
+
+		// Empty ring: a null destination is still refused, and nothing is read.
+		QCOMPARE(asNumber(ring.read(nullptr, 1)), asNumber(0));
+	}
+
 	//! The producer/consumer contract pushInputFrames()/drainInputStage() rely on.
 	void ringBufferIsSpscUnderConcurrency()
 	{
@@ -1964,6 +1987,36 @@ private slots:
 		QVERIFY(lmms::ControlRegistry::instance()->invoke(QStringLiteral("clip.set_record"),
 			{{QStringLiteral("clip"), id}, {QStringLiteral("record"), false}}).ok);
 		delete track;
+	}
+
+	//! new-p17-24: the route recorder's audio-thread entry allocates nothing.
+	//! The take path is allocated ONCE on the control thread at arm time; the
+	//! callback (processInputInterleaved) only demuxes into the ring.
+	void routeRecorderCallbackAllocatesNothing()
+	{
+		auto* engine = lmms::Engine::audioEngine();
+		QVERIFY(engine != nullptr);
+		auto& recorder = engine->recorder();
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString take = dir.filePath(QStringLiteral("route.wav"));
+		const int sampleRate = static_cast<int>(engine->baseSampleRate());
+		QVERIFY(recorder.armTrack(0, take.toStdString(), sampleRate, 0));
+		const int channels = recorder.inputChannelCapacity();
+		std::vector<sample_t> input(static_cast<std::size_t>(channels) * 128, 0.5f);
+
+		lmms::test::resetAllocationCount();
+		lmms::test::tlCountAllocations = true;
+		{
+			const lmms::RealtimeScope realtime;
+			for (int i = 0; i < 8; ++i)
+			{
+				recorder.processInputInterleaved(input.data(), channels, 128);
+			}
+		}
+		lmms::test::tlCountAllocations = false;
+		QCOMPARE(asNumber(lmms::test::tlAllocationCount), asNumber(0));
+		recorder.disarmAll();
 	}
 
 	//! The control id ("clip-N") of a clip.

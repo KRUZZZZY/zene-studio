@@ -34,6 +34,7 @@
 
 #include "CarlaVst2Discovery.h"
 
+#include <QDateTime>
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>

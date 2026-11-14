@@ -159,6 +159,7 @@ SET(LMMS_SRCS
 	gui/LivecodePanel.cpp
 	gui/ChordProgressionPanel.cpp
 	gui/TrackFolderMenu.cpp
+	gui/TrackRoleMenu.cpp
 	gui/TrackPinStrip.cpp
 	gui/TrackRenderMenu.cpp
 	gui/AafImportMenu.cpp
@@ -208,6 +209,10 @@ SET(LMMS_SRCS
 	gui/noteeditor/NoteEditor.cpp
 	gui/noteeditor/NoteEditorParts.cpp
 	gui/noteeditor/NoteEditorMenus.cpp
+	# Q050-294.2: the melodic step grid (window.step_grid) over note.step_get_state / note.step_set.
+	gui/noteeditor/StepGridPanel.cpp
+	gui/noteeditor/StepGridCanvas.cpp
+	gui/ControlCommandsStepGrid.cpp
 	gui/noteeditor/NoteEditorToolbar.cpp
 	gui/noteeditor/NoteGrid.cpp
 	gui/noteeditor/NoteProperties.cpp
@@ -230,7 +235,9 @@ SET(LMMS_SRCS
 	gui/shell/Shell.cpp
 	gui/shell/ShellChrome.cpp
 	gui/shell/ShellCommandMenus.cpp
+	gui/shell/ShellCommandMenusCustomise.cpp
 	gui/shell/ShellMenuParts.cpp
+	gui/shell/ShellRecordMenu.cpp
 	gui/shell/ShellMenuEntries.cpp
 	gui/shell/ShellFloating.cpp
 	gui/shell/ShellTearOff.cpp
@@ -294,6 +301,7 @@ SET(LMMS_SRCS
 	gui/MixerStripTags.cpp
 	gui/MeterSpeech.cpp
 	gui/MixerModeBar.cpp
+	gui/MixerModeBarLayout.cpp
 	gui/MixerRoutingMatrix.cpp
 	gui/MixerViewOptions.cpp
 	gui/MixerZones.cpp

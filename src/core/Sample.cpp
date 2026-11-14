@@ -105,7 +105,81 @@ bool Sample::play(SampleFrame* dst, PlaybackState* state, size_t numFrames, Loop
 
 	const auto sampleRateRatio = static_cast<double>(Engine::audioEngine()->outputSampleRate()) / m_buffer->sampleRate();
 	const auto freqRatio = frequency() / DefaultBaseFreq;
-	state->m_resampler.setRatio(sampleRateRatio * freqRatio * ratio);
+	const double resampleRatio = sampleRateRatio * freqRatio * ratio;
+	state->m_resampler.setRatio(resampleRatio);
+
+	/*! cluster null-1: a 1:1 read is the source, not the converter's output.
+	 *
+	 *  libsamplerate's converters are not identity filters, and the linear one -
+	 *  the default - delays by ONE SAMPLE at ratio 1.0: it emits the first input
+	 *  frame twice (measured on the linked library, all converter modes; see the
+	 *  fix's log). That made an offline render of a unity clip at the source's
+	 *  own rate exactly one sample late, and made `zene render` of a plain
+	 *  sample track stop being bit-identical to the file it plays.
+	 *
+	 *  At ratio 1.0 the OUTPUT is the source's own frames, so the delay cannot
+	 *  enter the render. The converter is still DRIVEN over every frame this call
+	 *  consumes, exactly once, in order, and only its output is discarded. That
+	 *  matters for a run that passes through unity: a .5 -> 1.0 -> .5 sequence
+	 *  hands the converter the same input history it would have had without the
+	 *  unity segment, so the non-unity output after it is unchanged, and the
+	 *  source cursor advances by exactly the frames consumed. Skipping the
+	 *  converter here instead (as an earlier version of this fix did) left its
+	 *  state behind the cursor and changed that following output.
+	 *
+	 *  Every OTHER ratio keeps the converter path below unchanged, with its exact
+	 *  arithmetic and its own staging; the unity branch stages the same way. */
+	if (resampleRatio == 1.0)
+	{
+		/*! Drive the converter EXACTLY as the non-unity loop below does - same staging, same
+		 *  `numFrames -= generated` accounting, same input view - and overwrite the frames it
+		 *  produced with the source frames it just consumed. The converter therefore sees the
+		 *  same call sequence and ends in the same state as it would have without this branch,
+		 *  which is what keeps a following non-unity call bit-identical to the historical
+		 *  behaviour; only the samples written during unity differ (the source, not its
+		 *  one-sample-delayed interpolation). */
+		while (numFrames > 0)
+		{
+			if (state->m_bufferView.empty())
+			{
+				const auto rendered = render(state->m_buffer.data(), state->m_buffer.size(), state, loop);
+				state->m_bufferView = {state->m_buffer.data(), rendered};
+				if (rendered <= 0)
+				{
+					// The window or the loop ended: the rest of this block is silence.
+					std::fill_n(dst, numFrames, SampleFrame{});
+					break;
+				}
+			}
+
+			SampleFrame* const produced = dst;
+			const auto staged = state->m_bufferView.size();
+			const auto [inputFramesUsed, outputFramesGenerated] = state->m_resampler.process(
+				{&state->m_bufferView.data()[0][0], 2, state->m_bufferView.size()},
+				{&dst[0][0], 2, numFrames});
+
+			if (inputFramesUsed == 0 && outputFramesGenerated == 0)
+			{
+				std::fill_n(dst, numFrames, SampleFrame{});
+				break;
+			}
+
+			// Replace what the converter interpolated with the source frames it consumed, so
+			// the unity output is the source itself (no leading duplicate). `produced` is where
+			// those frames were written, so they stay at the same output positions.
+			const auto replace = std::min<std::size_t>(
+				static_cast<std::size_t>(outputFramesGenerated),
+				static_cast<std::size_t>(inputFramesUsed > 0 ? inputFramesUsed : 0));
+			std::copy_n(state->m_bufferView.data(), replace, produced);
+
+			state->m_bufferView = state->m_bufferView.subspan(inputFramesUsed);
+			dst += outputFramesGenerated;
+			numFrames -= outputFramesGenerated;
+			if (inputFramesUsed < static_cast<f_cnt_t>(staged) && outputFramesGenerated == 0) { break; }
+		}
+
+		return numFrames < Engine::audioEngine()->framesPerPeriod();
+	}
 
 	// TODO: These kind of playback pipelines/graphs are repeated within other parts of the codebase that work with
 	// audio samples. We should find a way to unify this but the right abstraction is not so clear yet.
