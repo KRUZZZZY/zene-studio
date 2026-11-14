@@ -116,6 +116,39 @@ class BackupTests(unittest.TestCase):
                 B.scan(dest, report)
         self.assertTrue(json.loads(report.read_text()))
 
+    def test_real_git_publish_is_append_only_and_unchanged_snapshot_is_idempotent(self):
+        remote = self.root / 'remote.git'
+        subprocess.check_call(['git', 'init', '--bare', '-q', str(remote)])
+        original = B.command
+        pushed = []
+
+        def command(args, cwd=None, timeout=180):
+            if args[0] == 'gitleaks':
+                return b''
+            if args[:2] == ['git', 'push']:
+                pushed.append(args)
+            return original(args, cwd, timeout)
+
+        with mock.patch.object(B, 'CACHE', self.root / 'cache'), \
+                mock.patch.object(B, 'REMOTE', str(remote)), \
+                mock.patch.object(B, 'scan'), mock.patch.object(B, 'command', side_effect=command):
+            first = B.publish()
+            repeated = B.publish()
+            self.assertEqual(first['commit'], repeated['commit'])
+            state = self.qwen / 'TRAIN-CI-STATUS.json'
+            data = json.loads(state.read_text())
+            data['commits'][self.sha]['status'] = 'passed'
+            state.write_text(json.dumps(data))
+            updated = B.publish()
+        self.assertNotEqual(updated['commit'], first['commit'])
+        saved = subprocess.check_output(['git', '--git-dir', str(remote), 'rev-parse',
+                                         'refs/heads/' + B.BRANCH], text=True).strip()
+        self.assertEqual(saved, updated['commit'])
+        parent = subprocess.check_output(['git', '--git-dir', str(remote), 'rev-parse', saved + '^'], text=True).strip()
+        self.assertEqual(parent, first['commit'])
+        self.assertTrue(pushed)
+        self.assertTrue(all('--force' not in args and '--force-with-lease' not in args for args in pushed))
+
 
 if __name__ == '__main__':
     unittest.main()

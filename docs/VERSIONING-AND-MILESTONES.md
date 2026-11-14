@@ -113,6 +113,7 @@ updates use ordinary fast-forward pushes, never force pushes. Old snapshots rema
 available through Git history. Existing unpromoted attempts receive no release
 identity and do not replace the promoted records.
 
+The owner explicitly approved ongoing publication on 2026-11-14.
 `zene-train-backup.timer` refreshes records five minutes after the previous run
 finishes, and each promotion requests an immediate refresh. CI and repair state
 updates are picked up by the timer. Poll timestamps do not create new commits.

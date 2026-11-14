@@ -971,6 +971,14 @@ def train_lines():
         release = next((r for r in ledger.get('history', []) if r['train'] == base), None)
         if release:
             out.append(f"Zene Studio {release['display_version']} · feature train {release['train_label']} · {release['kind']}")
+        backup = jload(Q / 'TRAIN-BACKUP-STATUS.json', {}) or {}
+        if backup:
+            note = f"GitHub train backup: {backup.get('status', 'unknown')}"
+            if backup.get('commit'):
+                note += f" ({backup['commit'][:12]}, {backup.get('trains', '?')} trains)"
+            if backup.get('error'):
+                note += f" — {backup['error'][:180]}"
+            out.append(note)
         out.append(f"{base} is the fix base since {time.strftime('%a %d %b %H:%M', time.localtime((Q / 'FIX-BASE').stat().st_mtime))}")
         last = [l for l in (Q / "logs/merge-train.log").read_text().splitlines() if l.strip()][-1:]
         out += [f"last merge-train line: {l[:160]}" for l in last]
