@@ -212,6 +212,101 @@ private slots:
 		QCOMPARE(Engine::getSong()->isModified(), modified);
 	}
 
+	//! Acceptance: one proposal changes only the target's EQ, in one undo step; one undo puts the old EQ back.
+	void applyingAProposalChangesOnlyTheTargetAndOneUndoRestoresIt()
+	{
+		const QJsonObject clash = clashAt(report({{ch(1), QStringLiteral("front")}, {ch(2), QStringLiteral("back")}}), ch(1), ch(2), 200.0);
+		QVERIFY(!clash.isEmpty());
+		const QJsonObject proposal = clash.value(QStringLiteral("strip_eq")).toObject();
+		QCOMPARE(proposal.value(QStringLiteral("channel")).toString(), ch(2));
+		const std::vector<float> before = allEq();
+		const int depth = undoDepth();
+		const ControlResult result = run(QStringLiteral("mixer.apply_masking_proposal"), {{QStringLiteral("strip_eq"), proposal}});
+		QVERIFY2(result.ok, qPrintable(result.errorMessage));
+		QCOMPARE(result.result.value(QStringLiteral("applied")).toBool(), true);
+		std::vector<float> expected = before;
+		expected[2 * 4 + 1] = static_cast<float>(proposal.value(QStringLiteral("mid")).toDouble());
+		expected[2 * 4 + 2] = static_cast<float>(proposal.value(QStringLiteral("mid_freq")).toDouble());
+		QCOMPARE(allEq(), expected);
+		QCOMPARE(undoDepth(), depth + 1);
+		QVERIFY(Engine::getSong()->isModified());
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(allEq(), before);
+		QCOMPARE(undoDepth(), depth);
+	}
+
+	//! Applying the same proposal twice records one step: the second write changes nothing.
+	void applyingTheSameProposalAgainChangesNothing()
+	{
+		const QJsonObject proposal = clashAt(report({{ch(1), QStringLiteral("front")}, {ch(2), QStringLiteral("back")}}),
+			ch(1), ch(2), 200.0).value(QStringLiteral("strip_eq")).toObject();
+		QVERIFY(!proposal.isEmpty());
+		const std::vector<float> before = allEq();
+		const int depth = undoDepth();
+		const ControlResult first = run(QStringLiteral("mixer.apply_masking_proposal"), {{QStringLiteral("strip_eq"), proposal}});
+		QVERIFY(first.ok);
+		QCOMPARE(first.result.value(QStringLiteral("applied")).toBool(), true);
+		const ControlResult second = run(QStringLiteral("mixer.apply_masking_proposal"), {{QStringLiteral("strip_eq"), proposal}});
+		QVERIFY(second.ok);
+		QCOMPARE(second.result.value(QStringLiteral("applied")).toBool(), false);
+		QCOMPARE(undoDepth(), depth + 1);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(allEq(), before);
+		QCOMPARE(undoDepth(), depth);
+	}
+
+	//! The ranges' boundaries are accepted as given (not clamped further, not refused).
+	void boundaryProposalsAreAccepted()
+	{
+		const QString channel = ch(2);
+		const std::vector<QJsonObject> proposals{
+			{{QStringLiteral("channel"), channel}, {QStringLiteral("low"), -18.0}},
+			{{QStringLiteral("channel"), channel}, {QStringLiteral("high"), 18.0}},
+			{{QStringLiteral("channel"), channel}, {QStringLiteral("mid"), -18.0}, {QStringLiteral("mid_freq"), 100.0}},
+			{{QStringLiteral("channel"), channel}, {QStringLiteral("mid"), 18.0}, {QStringLiteral("mid_freq"), 10000.0}}};
+		for (const QJsonObject& proposal : proposals)
+		{
+			const std::vector<float> before = allEq();
+			const int depth = undoDepth();
+			const ControlResult result = run(QStringLiteral("mixer.apply_masking_proposal"), {{QStringLiteral("strip_eq"), proposal}});
+			QVERIFY2(result.ok, qPrintable(result.errorMessage));
+			QCOMPARE(result.result.value(QStringLiteral("applied")).toBool(), true);
+			const std::vector<float> after = allEq();
+			int changed = 0;
+			for (std::size_t i = 0; i < after.size(); ++i) { if (after[i] != before[i]) { ++changed; } }
+			QCOMPARE(changed, proposal.contains(QStringLiteral("mid_freq")) ? 2 : 1);
+			QCOMPARE(undoDepth(), depth + 1);
+			QVERIFY(run(QStringLiteral("control.undo")).ok);
+			QCOMPARE(allEq(), before);
+			QCOMPARE(undoDepth(), depth);
+		}
+	}
+
+	//! Malformed or out-of-range proposals are refused and write nothing at all.
+	void badProposalsAreRefusedAndWriteNothing()
+	{
+		const QString channel = ch(2);
+		const std::vector<QJsonObject> bad{
+			{},
+			{{QStringLiteral("strip_eq"), QStringLiteral("nope")}},
+			{{QStringLiteral("strip_eq"), QJsonObject{{QStringLiteral("channel"), QStringLiteral("nope")}, {QStringLiteral("low"), 1.0}}}},
+			{{QStringLiteral("strip_eq"), QJsonObject{{QStringLiteral("channel"), channel}, {QStringLiteral("gain"), 1.0}}}},
+			{{QStringLiteral("strip_eq"), QJsonObject{{QStringLiteral("channel"), channel}}}},
+			{{QStringLiteral("strip_eq"), QJsonObject{{QStringLiteral("channel"), channel}, {QStringLiteral("mid_freq"), 200.0}}}},
+			{{QStringLiteral("strip_eq"), QJsonObject{{QStringLiteral("channel"), channel}, {QStringLiteral("low"), 18.1}}}},
+			{{QStringLiteral("strip_eq"), QJsonObject{{QStringLiteral("channel"), channel}, {QStringLiteral("mid"), 1.0}, {QStringLiteral("mid_freq"), 99.0}}}},
+			{{QStringLiteral("strip_eq"), QJsonObject{{QStringLiteral("channel"), channel}, {QStringLiteral("mid"), QStringLiteral("loud")}}}}};
+		const std::vector<float> before = allEq();
+		const int depth = undoDepth();
+		for (const QJsonObject& args : bad)
+		{
+			const ControlResult result = run(QStringLiteral("mixer.apply_masking_proposal"), args);
+			QCOMPARE(result.errorKind, ControlErrorKind::InvalidArgs);
+			QCOMPARE(allEq(), before);
+			QCOMPARE(undoDepth(), depth);
+		}
+	}
+
 	void badArgumentsAreRefused()
 	{
 		const auto kind = [](const QJsonObject& args) { return run(QStringLiteral("mixer.masking_report"), args).errorKind; };

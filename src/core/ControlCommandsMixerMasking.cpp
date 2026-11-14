@@ -1,5 +1,5 @@
 /*
- * ControlCommandsMixerMasking.cpp - which frequency ranges two mixer channels fight over, and a cut for each
+ * ControlCommandsMixerMasking.cpp - which frequency ranges two mixer channels fight over, a cut for each, and applying one
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -22,7 +22,9 @@
  *
  */
 
-/*! Q050-231.1 (R-mixing-7): mixer.masking_report. Read only - it writes no EQ and records no undo step.
+/*! Q050-231.1 (R-mixing-7): mixer.masking_report. Q050-231.2: mixer.apply_masking_proposal applies one of its
+ *  'strip_eq' proposals through mixer.channel_eq's write path, as one undo step. The report itself stays read
+ *  only - it writes no EQ and records no undo step.
  *
  *  What a channel "sounds like" here is the long-term spectrum of the audio clips on the tracks that play into
  *  it (unmuted tracks and clips; each clip's played window), shaped by the channel's own strip EQ response.
@@ -331,6 +333,74 @@ ControlResult maskingReport(const QJsonObject& args)
 		{QStringLiteral("bands"), BandCount}});
 }
 
+//! One proposal from mixer.masking_report, applied through mixer.channel_eq's write path: the values are
+//! absolute, so a stale proposal sets them; anything out of range or malformed is refused, not clamped.
+ControlResult applyMaskingProposal(const QJsonObject& args)
+{
+	const QJsonValue proposal = args.value(QStringLiteral("strip_eq"));
+	if (!proposal.isObject())
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'strip_eq' must be the strip_eq object of one mixer.masking_report clash"));
+	}
+	const QJsonObject strip = proposal.toObject();
+	ControlResult error;
+	MixerChannel* channel = resolveMixerChannel(strip.value(QStringLiteral("channel")).toString(), &error);
+	if (channel == nullptr) { return error; }
+	static const QStringList allowed{QStringLiteral("channel"), QStringLiteral("low"), QStringLiteral("mid"),
+		QStringLiteral("mid_freq"), QStringLiteral("high")};
+	for (auto it = strip.begin(); it != strip.end(); ++it)
+	{
+		if (!allowed.contains(it.key()))
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("'%1' is not a strip EQ key: use channel, low, mid, mid_freq or high").arg(it.key()));
+		}
+	}
+	const bool hasLow = strip.contains(QStringLiteral("low"));
+	const bool hasMid = strip.contains(QStringLiteral("mid"));
+	const bool hasMidFreq = strip.contains(QStringLiteral("mid_freq"));
+	const bool hasHigh = strip.contains(QStringLiteral("high"));
+	if (!hasLow && !hasMid && !hasHigh)
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("the proposal sets none of low, mid or high"));
+	}
+	if (hasMidFreq && !hasMid)
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'mid_freq' needs 'mid'"));
+	}
+	const auto number = [&strip](const char* key, double low, double high) -> bool {
+		const QJsonValue value = strip.value(QLatin1String(key));
+		if (!value.isDouble() || !std::isfinite(value.toDouble())) { return false; }
+		return value.toDouble() >= low && value.toDouble() <= high;
+	};
+	for (const char* key : {"low", "mid", "high"})
+	{
+		if (strip.contains(QLatin1String(key)) && !number(key, -18.0, 18.0))
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("'%1' must be a number from -18 to 18").arg(QLatin1String(key)));
+		}
+	}
+	if (hasMidFreq && !number("mid_freq", 100.0, 10000.0))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'mid_freq' must be a number from 100 to 10000"));
+	}
+	const QJsonObject before{{QStringLiteral("low"), static_cast<double>(channel->m_eqLowModel.value())},
+		{QStringLiteral("mid"), static_cast<double>(channel->m_eqMidModel.value())},
+		{QStringLiteral("mid_freq"), static_cast<double>(channel->m_eqMidFreqModel.value())},
+		{QStringLiteral("high"), static_cast<double>(channel->m_eqHighModel.value())}};
+	ControlResult result = applyChannelEq(*channel, strip);
+	if (!result.ok) { return result; }
+	const auto unchanged = [&result, &before](const char* key) {
+		return before.value(QLatin1String(key)).toDouble() == result.result.value(QLatin1String(key)).toDouble();
+	};
+	const bool applied = !(unchanged("low") && unchanged("mid") && unchanged("mid_freq") && unchanged("high"));
+	result.result.insert(QStringLiteral("applied"), applied);
+	result.result.insert(QStringLiteral("before"), before);
+	return result;
+}
+
 } // namespace
 
 void registerMixerMaskingCommands(ControlRegistry& registry)
@@ -342,10 +412,19 @@ void registerMixerMaskingCommands(ControlRegistry& registry)
 		"run of bands two channels share is a clash: the pair 'a'/'b', the range, and a proposed cut ('cut_db', -1..-6) on "
 		"'target' - the lower of the 'priorities' (channel id to front, middle or back; middle unless set), at equal "
 		"priority the quieter channel there - with the mixer.channel_eq arguments that would make it ('strip_eq'). The same "
-		"audio, EQ and priorities give the same report. Read only: it changes no EQ and records no undo step."),
+		"audio, EQ and priorities give the same report. Read only: it changes no EQ and records no undo step. "
+		"Apply a proposal with mixer.apply_masking_proposal."),
 		{{QStringLiteral("channels"), arrayProperty()}, {QStringLiteral("priorities"), objectProperty()},
 			{QStringLiteral("threshold_db"), numberProperty()}},
 		{QStringLiteral("channels")}, false, maskingReport);
+	defineCommand(registry, QStringLiteral("mixer.apply_masking_proposal"), QStringLiteral("Apply one proposal from "
+		"mixer.masking_report to the target strip EQ, as one undo step: pass a clash's exact 'strip_eq' object as 'strip_eq'. "
+		"The values are absolute, so a stale proposal sets those values. It is refused, writing nothing, when 'strip_eq' is "
+		"missing or not an object, 'channel' is missing or unknown, a key other than channel/low/mid/mid_freq/high is given, "
+		"none of low/mid/high is, 'mid_freq' comes without 'mid', a value is not a number, or low/mid/high is outside -18..18 "
+		"or mid_freq outside 100..10000 (boundaries accepted). Reply: the mixer.channel_eq reply, 'applied' (false when the "
+		"proposal equals the current EQ, and then no step is recorded) and 'before' (the EQ before the write)."),
+		{{QStringLiteral("strip_eq"), objectProperty()}}, {QStringLiteral("strip_eq")}, true, applyMaskingProposal);
 }
 
 } // namespace lmms

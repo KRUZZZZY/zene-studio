@@ -337,11 +337,14 @@ void setEq(int id, const EqValues& eq)
 	channel->m_eqHighModel.setValue(eq.high);
 }
 
-ControlResult channelEq(const QJsonObject& args)
+} // namespace
+
+namespace control
 {
-	ControlResult error;
-	MixerChannel* channel = resolveMixerChannel(args.value(QStringLiteral("channel")).toString(), &error);
-	if (channel == nullptr) { return error; }
+
+ControlResult applyChannelEq(MixerChannel& channelRef, const QJsonObject& args)
+{
+	MixerChannel* channel = &channelRef;
 	const EqValues before = eqOf(channel);
 	const EqValues after{static_cast<float>(std::clamp(args.value(QStringLiteral("low")).toDouble(before.low), -18.0, 18.0)),
 		static_cast<float>(std::clamp(args.value(QStringLiteral("mid")).toDouble(before.mid), -18.0, 18.0)),
@@ -357,6 +360,19 @@ ControlResult channelEq(const QJsonObject& args)
 	return ControlResult::success({{QStringLiteral("channel"), channelIdOf(channel)}, {QStringLiteral("low"), static_cast<double>(after.low)},
 		{QStringLiteral("mid"), static_cast<double>(after.mid)}, {QStringLiteral("mid_freq"), static_cast<double>(after.midFreq)},
 		{QStringLiteral("high"), static_cast<double>(after.high)}});
+}
+
+} // namespace control
+
+namespace
+{
+
+ControlResult channelEq(const QJsonObject& args)
+{
+	ControlResult error;
+	MixerChannel* channel = resolveMixerChannel(args.value(QStringLiteral("channel")).toString(), &error);
+	if (channel == nullptr) { return error; }
+	return applyChannelEq(*channel, args);
 }
 
 //! MX-055: every channel with its sends - the routing matrix's rows.
