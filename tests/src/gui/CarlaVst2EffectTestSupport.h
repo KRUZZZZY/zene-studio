@@ -68,7 +68,7 @@ QJsonObject effectAddress(InstrumentTrack* track)
 	return {got.value(QStringLiteral("index")).toInt(-1), got.value(QStringLiteral("value")).toDouble(-1.0)};
 }
 
-ControlResult setEffectParam(InstrumentTrack* track, const QString& name, double value)
+[[maybe_unused]] ControlResult setEffectParam(InstrumentTrack* track, const QString& name, double value)
 {
 	QJsonObject args = effectAddress(track);
 	args.insert(QStringLiteral("name"), name);
@@ -118,16 +118,16 @@ ControlResult setEffectParam(InstrumentTrack* track, const QString& name, double
 	return QStringLiteral("sounded=%1 left=%2 right=%3").arg(sound.sounded).arg(sound.left).arg(sound.right);
 }
 
-QString missingEffectRuntime()
+[[maybe_unused]] QString missingEffectRuntime()
 {
 	if (QString why = missingCarlaRuntime(nativeFixture()); !why.isEmpty()) { return why; }
 	return missingCarlaRuntime(effectNativeFixture());
 }
-bool effectWineAvailable() { return carlaWineAvailable(effectWineFixture()); }
+[[maybe_unused]] bool effectWineAvailable() { return carlaWineAvailable(effectWineFixture()); }
 
 //! A track playing the native VST2 test instrument into the VST2 effect @a fileName, loaded by plugin.load (with
 //! the fixture stalling @a stallMs per process call when given). nullptr when either load failed.
-InstrumentTrack* sourceWithEffect(const QString& fileName, qint64 stallMs = 0)
+[[maybe_unused]] InstrumentTrack* sourceWithEffect(const QString& fileName, qint64 stallMs = 0)
 {
 	const QJsonObject source = vst2Device(NativeFile);
 	const QJsonObject device = vst2Device(fileName);

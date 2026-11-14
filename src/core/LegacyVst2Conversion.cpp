@@ -86,7 +86,7 @@ QDomElement state(QDomDocument& doc, const QDomElement& old, const QString& name
 	for (auto child = old.firstChildElement(); !child.isNull(); child = child.nextSiblingElement())
 	{
 		// AudioPortsModel saves pins (inputs, outputs, track_channels, in_matrix, out_matrix).
-		if (child.tagName() != QLatin1String("pins")) { result.appendChild(copyRenamed(doc, child)); }
+		if (child.tagName() != QLatin1String("pins") && child.tagName() != QLatin1String("key")) { result.appendChild(copyRenamed(doc, child)); }
 	}
 	return result;
 }

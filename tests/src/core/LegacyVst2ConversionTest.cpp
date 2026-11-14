@@ -51,7 +51,7 @@ class LegacyVst2ConversionTest : public QObject
 private slots:
 	void instrument()
 	{
-		auto doc = xml("<instrument name='vestige'><vestige plugin='/old.so' chunk='abc' program='3' guivisible='1'><param1 id='4242' value='0.3' scale_type='linear'/><connection><param0><controllerconnection nodename='param0'/></param0></connection><pins inputs='2'/></vestige></instrument>");
+		auto doc = xml("<instrument name='vestige'><vestige plugin='/old.so' chunk='abc' program='3' guivisible='1'><param1 id='4242' value='0.3' scale_type='linear'/><connection><param0><controllerconnection nodename='param0'/></param0></connection><pins inputs='2'/><key/></vestige></instrument>");
 		auto result = convertInstrument(doc.documentElement(), resolver);
 		QCOMPARE(result.attribute("name"), QString("carlavst2"));
 		auto state = result.firstChildElement();
@@ -64,6 +64,7 @@ private slots:
 		QVERIFY(!marker.hasAttribute("plugin"));
 		QVERIFY(!marker.hasAttribute("guivisible"));
 		QVERIFY(state.firstChildElement("pins").isNull());
+		QCOMPARE(result.elementsByTagName("key").size(), 1);
 		QCOMPARE(state.firstChildElement("PARAM_KNOB_1").attribute("id"), QString("4242"));
 		auto connection = state.firstChildElement("connection").firstChildElement("PARAM_KNOB_0");
 		QCOMPARE(connection.firstChildElement().attribute("nodename"), QString("PARAM_KNOB_0"));

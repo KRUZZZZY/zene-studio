@@ -367,7 +367,7 @@ void VestigeInstrument::loadFile( const QString & _file )
 		closePlugin();
 		delete tf;
 		collectErrorForUI( VstPlugin::tr( "The VST plugin %1 could not be loaded." ).arg( m_pluginDLL ) );
-		m_pluginDLL = "";
+		m_pluginDLL = _file; // Preserve the failed path so the original project state can be saved.
 		return;
 	}
 
