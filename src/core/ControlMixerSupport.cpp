@@ -37,6 +37,7 @@
 #include "HardwareIo.h"
 #include "Mixer.h"
 #include "MixerSurround.h"
+#include "Song.h"
 
 namespace lmms
 {
@@ -289,7 +290,66 @@ bool liveRouteEnds(const QString& fromId, const QString& toId,
 	return true;
 }
 
+//! The channel whose persistent id is @a id, or nullptr.
+MixerChannel* channelWithId(int id)
+{
+	for (int i = 0; i < Engine::mixer()->numChannels(); ++i)
+	{
+		if (Engine::mixer()->mixerChannel(i)->id() == id) { return Engine::mixer()->mixerChannel(i); }
+	}
+	return nullptr;
+}
+
+//! MX-085: the strip EQ's four values, read from and written to a channel found by its persistent id.
+struct EqValues
+{
+	float low = 0.f;
+	float mid = 0.f;
+	float midFreq = 1000.f;
+	float high = 0.f;
+};
+
+EqValues eqOf(const MixerChannel* channel)
+{
+	return {channel->m_eqLowModel.value(), channel->m_eqMidModel.value(), channel->m_eqMidFreqModel.value(), channel->m_eqHighModel.value()};
+}
+
+bool sameEq(const EqValues& a, const EqValues& b)
+{
+	return a.low == b.low && a.mid == b.mid && a.midFreq == b.midFreq && a.high == b.high;
+}
+
+void setEq(int id, const EqValues& eq)
+{
+	MixerChannel* channel = channelWithId(id);
+	if (channel == nullptr) { return; }
+	channel->m_eqLowModel.setValue(eq.low);
+	channel->m_eqMidModel.setValue(eq.mid);
+	channel->m_eqMidFreqModel.setValue(eq.midFreq);
+	channel->m_eqHighModel.setValue(eq.high);
+}
+
 } // namespace
+
+ControlResult applyChannelEq(MixerChannel& channelRef, const QJsonObject& args)
+{
+	MixerChannel* channel = &channelRef;
+	const EqValues before = eqOf(channel);
+	const EqValues after{static_cast<float>(std::clamp(args.value(QStringLiteral("low")).toDouble(before.low), -18.0, 18.0)),
+		static_cast<float>(std::clamp(args.value(QStringLiteral("mid")).toDouble(before.mid), -18.0, 18.0)),
+		static_cast<float>(std::clamp(args.value(QStringLiteral("mid_freq")).toDouble(before.midFreq), 100.0, 10000.0)),
+		static_cast<float>(std::clamp(args.value(QStringLiteral("high")).toDouble(before.high), -18.0, 18.0))};
+	const int id = channel->id();
+	if (!sameEq(before, after))  // with only 'channel' it is a report: no write, no step, nothing modified
+	{
+		setEq(id, after);
+		addUndoStep([id, before]() { setEq(id, before); }, [id, after]() { setEq(id, after); });
+		Engine::getSong()->setModified();
+	}
+	return ControlResult::success({{QStringLiteral("channel"), channelIdOf(channel)}, {QStringLiteral("low"), static_cast<double>(after.low)},
+		{QStringLiteral("mid"), static_cast<double>(after.mid)}, {QStringLiteral("mid_freq"), static_cast<double>(after.midFreq)},
+		{QStringLiteral("high"), static_cast<double>(after.high)}});
+}
 
 void recordMixerRouteStep(const QString& fromId, const QString& toId, const QJsonObject& before,
 	float wantedAmount, bool wantedPreFader)

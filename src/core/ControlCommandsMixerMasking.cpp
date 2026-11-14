@@ -333,6 +333,80 @@ ControlResult maskingReport(const QJsonObject& args)
 		{QStringLiteral("bands"), BandCount}});
 }
 
+//! The keys a proposal may carry: only strip EQ ones, at least one band, and mid_freq only with mid.
+bool validProposalKeys(const QJsonObject& strip, ControlResult* error)
+{
+	static const QStringList allowed{QStringLiteral("channel"), QStringLiteral("low"), QStringLiteral("mid"),
+		QStringLiteral("mid_freq"), QStringLiteral("high")};
+	for (auto it = strip.begin(); it != strip.end(); ++it)
+	{
+		if (!allowed.contains(it.key()))
+		{
+			*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("'%1' is not a strip EQ key: use channel, low, mid, mid_freq or high").arg(it.key()));
+			return false;
+		}
+	}
+	bool setsBand = false;
+	for (const char* key : {"low", "mid", "high"}) { setsBand = setsBand || strip.contains(QLatin1String(key)); }
+	if (!setsBand)
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("the proposal sets none of low, mid or high"));
+		return false;
+	}
+	if (strip.contains(QStringLiteral("mid_freq")) && !strip.contains(QStringLiteral("mid")))
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'mid_freq' needs 'mid'"));
+		return false;
+	}
+	return true;
+}
+
+//! One value: a finite number inside its range. Out of range is refused, never clamped.
+bool inRange(const QJsonObject& strip, const char* key, double low, double high)
+{
+	const QJsonValue value = strip.value(QLatin1String(key));
+	return value.isDouble() && std::isfinite(value.toDouble()) && value.toDouble() >= low && value.toDouble() <= high;
+}
+
+//! Every present value a finite number in its range, the four bands and then mid_freq.
+bool validProposalValues(const QJsonObject& strip, ControlResult* error)
+{
+	static const std::array<const char*, 3> bands{{"low", "mid", "high"}};
+	for (const char* key : bands)
+	{
+		if (strip.contains(QLatin1String(key)) && !inRange(strip, key, -18.0, 18.0))
+		{
+			*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+				QStringLiteral("'%1' must be a number from -18 to 18").arg(QLatin1String(key)));
+			return false;
+		}
+	}
+	if (strip.contains(QStringLiteral("mid_freq")) && !inRange(strip, "mid_freq", 100.0, 10000.0))
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'mid_freq' must be a number from 100 to 10000"));
+		return false;
+	}
+	return true;
+}
+
+QJsonObject eqValuesOf(MixerChannel& channel)
+{
+	return {{QStringLiteral("low"), static_cast<double>(channel.m_eqLowModel.value())},
+		{QStringLiteral("mid"), static_cast<double>(channel.m_eqMidModel.value())},
+		{QStringLiteral("mid_freq"), static_cast<double>(channel.m_eqMidFreqModel.value())},
+		{QStringLiteral("high"), static_cast<double>(channel.m_eqHighModel.value())}};
+}
+
+//! Whether any of the four values in @a after differs from @a before.
+bool eqChanged(const QJsonObject& before, const QJsonObject& after)
+{
+	return before.value(QStringLiteral("low")).toDouble() != after.value(QStringLiteral("low")).toDouble()
+		|| before.value(QStringLiteral("mid")).toDouble() != after.value(QStringLiteral("mid")).toDouble()
+		|| before.value(QStringLiteral("mid_freq")).toDouble() != after.value(QStringLiteral("mid_freq")).toDouble()
+		|| before.value(QStringLiteral("high")).toDouble() != after.value(QStringLiteral("high")).toDouble();
+}
+
 //! One proposal from mixer.masking_report, applied through mixer.channel_eq's write path: the values are
 //! absolute, so a stale proposal sets them; anything out of range or malformed is refused, not clamped.
 ControlResult applyMaskingProposal(const QJsonObject& args)
@@ -347,56 +421,12 @@ ControlResult applyMaskingProposal(const QJsonObject& args)
 	ControlResult error;
 	MixerChannel* channel = resolveMixerChannel(strip.value(QStringLiteral("channel")).toString(), &error);
 	if (channel == nullptr) { return error; }
-	static const QStringList allowed{QStringLiteral("channel"), QStringLiteral("low"), QStringLiteral("mid"),
-		QStringLiteral("mid_freq"), QStringLiteral("high")};
-	for (auto it = strip.begin(); it != strip.end(); ++it)
-	{
-		if (!allowed.contains(it.key()))
-		{
-			return ControlResult::failure(ControlErrorKind::InvalidArgs,
-				QStringLiteral("'%1' is not a strip EQ key: use channel, low, mid, mid_freq or high").arg(it.key()));
-		}
-	}
-	const bool hasLow = strip.contains(QStringLiteral("low"));
-	const bool hasMid = strip.contains(QStringLiteral("mid"));
-	const bool hasMidFreq = strip.contains(QStringLiteral("mid_freq"));
-	const bool hasHigh = strip.contains(QStringLiteral("high"));
-	if (!hasLow && !hasMid && !hasHigh)
-	{
-		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("the proposal sets none of low, mid or high"));
-	}
-	if (hasMidFreq && !hasMid)
-	{
-		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'mid_freq' needs 'mid'"));
-	}
-	const auto number = [&strip](const char* key, double low, double high) -> bool {
-		const QJsonValue value = strip.value(QLatin1String(key));
-		if (!value.isDouble() || !std::isfinite(value.toDouble())) { return false; }
-		return value.toDouble() >= low && value.toDouble() <= high;
-	};
-	for (const char* key : {"low", "mid", "high"})
-	{
-		if (strip.contains(QLatin1String(key)) && !number(key, -18.0, 18.0))
-		{
-			return ControlResult::failure(ControlErrorKind::InvalidArgs,
-				QStringLiteral("'%1' must be a number from -18 to 18").arg(QLatin1String(key)));
-		}
-	}
-	if (hasMidFreq && !number("mid_freq", 100.0, 10000.0))
-	{
-		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'mid_freq' must be a number from 100 to 10000"));
-	}
-	const QJsonObject before{{QStringLiteral("low"), static_cast<double>(channel->m_eqLowModel.value())},
-		{QStringLiteral("mid"), static_cast<double>(channel->m_eqMidModel.value())},
-		{QStringLiteral("mid_freq"), static_cast<double>(channel->m_eqMidFreqModel.value())},
-		{QStringLiteral("high"), static_cast<double>(channel->m_eqHighModel.value())}};
+	if (!validProposalKeys(strip, &error)) { return error; }
+	if (!validProposalValues(strip, &error)) { return error; }
+	const QJsonObject before = eqValuesOf(*channel);
 	ControlResult result = applyChannelEq(*channel, strip);
 	if (!result.ok) { return result; }
-	const auto unchanged = [&result, &before](const char* key) {
-		return before.value(QLatin1String(key)).toDouble() == result.result.value(QLatin1String(key)).toDouble();
-	};
-	const bool applied = !(unchanged("low") && unchanged("mid") && unchanged("mid_freq") && unchanged("high"));
-	result.result.insert(QStringLiteral("applied"), applied);
+	result.result.insert(QStringLiteral("applied"), eqChanged(before, result.result));
 	result.result.insert(QStringLiteral("before"), before);
 	return result;
 }
