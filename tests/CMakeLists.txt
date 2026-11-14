@@ -1,5 +1,12 @@
 include(CTest)
 
+# Hundreds of test artifacts duplicate the static core's DWARF on hosted Linux.
+# This directory option preserves production binaries and debug-bearing objects.
+option(ZENE_TEST_STRIP_DEBUG "Omit duplicate debug sections from Linux test artifacts" OFF)
+if(ZENE_TEST_STRIP_DEBUG AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+	add_link_options(-Wl,--strip-debug)
+endif()
+
 # The production objects are also linked into these white-box regression tests.
 # Compile conditional test seams into that object target only when tests are enabled.
 if(BUILD_TESTING)
@@ -2096,7 +2103,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE
 			${CMAKE_SOURCE_DIR}/plugins/RnnoiseDenoiser
 			${CMAKE_BINARY_DIR}/plugins/RnnoiseDenoiser)
-		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_NAME=rnnoisedenoiser)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			PLUGIN_NAME=rnnoisedenoiser rnnoisedenoiser_EXPORTS)
 		target_link_libraries(${LMMS_TEST_NAME} PRIVATE rnnoise_vendored)
 		add_dependencies(${LMMS_TEST_NAME} rnnoise_vendored)
 		if(NOT MSVC)
@@ -8987,4 +8995,43 @@ if(PYTHON3_EXECUTABLE)
 			--build-dir ${CMAKE_BINARY_DIR}
 			--moc $<TARGET_FILE:Qt${QT_VERSION_MAJOR}::moc>)
 	set_tests_properties(ArrangerZoomNoGestures PROPERTIES TIMEOUT 300)
+endif()
+
+# Hosted portability checks inspect the real direct-source test export configuration.
+if(TARGET RnnoiseDenoiserEffectTest)
+	file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/rnnoise-test-export-definition.h"
+		CONTENT "#define ZENE_RNNOISE_TEST_IS_EXPORT $<IN_LIST:rnnoisedenoiser_EXPORTS,$<TARGET_PROPERTY:RnnoiseDenoiserEffectTest,COMPILE_DEFINITIONS>>\n")
+endif()
+
+# These host compiler probes exercise portability without a second product build.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
+	find_program(TRAIN39_CLANG clang)
+	if(TRAIN39_CLANG)
+		foreach(mode vst2 disk)
+			add_test(NAME Train39-${mode} COMMAND ${PYTHON3_EXECUTABLE}
+				${CMAKE_CURRENT_SOURCE_DIR}/train-39-portability-check.py ${mode}
+				--build-dir ${CMAKE_BINARY_DIR} --cc ${TRAIN39_CLANG})
+		endforeach()
+		if(TARGET RnnoiseDenoiserEffectTest)
+			add_test(NAME Train39-rnnoise COMMAND ${PYTHON3_EXECUTABLE}
+				${CMAKE_CURRENT_SOURCE_DIR}/train-39-portability-check.py rnnoise
+				--build-dir ${CMAKE_BINARY_DIR} --clang ${TRAIN39_CLANG})
+		endif()
+		if(TARGET SfzPlayerTest)
+			add_test(NAME Train39-sfz COMMAND ${PYTHON3_EXECUTABLE}
+				${CMAKE_CURRENT_SOURCE_DIR}/train-39-portability-check.py sfz --cc ${TRAIN39_CLANG})
+		endif()
+	endif()
+	execute_process(COMMAND pkg-config --exists Qt5Widgets Qt5Xml Qt5Network
+		RESULT_VARIABLE TRAIN39_HAS_QT5 OUTPUT_QUIET ERROR_QUIET)
+	if(TRAIN39_HAS_QT5 EQUAL 0 AND TARGET carlabase)
+		add_test(NAME Train39-qt5 COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/train-39-portability-check.py qt5
+			--build-dir ${CMAKE_BINARY_DIR} --cxx ${CMAKE_CXX_COMPILER})
+	endif()
+endif()
+
+if(TARGET AudioBusTest)
+	file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/train39-test-link-option.h"
+		CONTENT "#define ZENE_TEST_STRIP_DEBUG_REQUESTED $<BOOL:${ZENE_TEST_STRIP_DEBUG}>\n#define ZENE_TEST_LINK_STRIPS_DEBUG $<IN_LIST:-Wl$<COMMA>--strip-debug,$<TARGET_PROPERTY:AudioBusTest,LINK_OPTIONS>>\n")
 endif()

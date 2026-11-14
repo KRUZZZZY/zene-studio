@@ -44,7 +44,7 @@
  */
 
 #ifndef _WIN32
-#define _POSIX_C_SOURCE 199309L  /* nanosleep */
+#define _POSIX_C_SOURCE 200112L  /* nanosleep and snprintf */
 #endif
 
 #include <stdio.h>
