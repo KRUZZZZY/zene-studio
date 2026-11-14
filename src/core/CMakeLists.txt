@@ -658,6 +658,7 @@ set(LMMS_SRCS
 	core/ControlModulationSupport.cpp
 	core/ControlRackSupport.cpp
 	core/ControlRegistry.cpp
+	core/ControlRegistryShutdown.cpp
 	# The undo-record bookkeeping of nested and wrapped commands (aggregate records, merged runs).
 	core/ControlRegistryRecords.cpp
 	# The registry's COMPOSITION - which command groups exist and in what order -
@@ -1311,6 +1312,7 @@ set(LMMS_SRCS
 	core/TrackMixModels.cpp
 	core/TimePos.cpp
 	core/TakeLane.cpp
+	core/TakeLanePersistence.cpp
 	core/CompSlip.cpp
 	core/ToolPlugin.cpp
 	core/Track.cpp
@@ -1418,6 +1420,7 @@ set(LMMS_SRCS
 # and register into the same registry from there.
 SET(ZENE_API_SRCS
 	core/ControlRegistry.cpp
+	core/ControlRegistryShutdown.cpp
 	# The undo-record bookkeeping of nested and wrapped commands (aggregate records, merged runs).
 	core/ControlRegistryRecords.cpp
 	core/ControlRegistryRegistrations.cpp

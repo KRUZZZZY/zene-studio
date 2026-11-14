@@ -2925,11 +2925,16 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		add_dependencies(${LMMS_TEST_NAME} tripleoscillator)
 	endif()
 
+	# The catalogue patch-preservation case loads Patman by name.
+	if(LMMS_TEST_NAME STREQUAL "ControlDeviceCatalogueTest")
+		add_dependencies(${LMMS_TEST_NAME} patman)
+	endif()
+
 	# cluster new-p9-297: the random-LFO regression in NotePlaybackTest renders through the build's
 	# monstro module, which the test loads by name. Building the test must rebuild that module too;
 	# otherwise a fix reverted in the source leaves the fixed module in place and the test passes.
 	if(LMMS_TEST_NAME STREQUAL "NotePlaybackTest")
-		add_dependencies(${LMMS_TEST_NAME} monstro)
+		add_dependencies(${LMMS_TEST_NAME} monstro nes tripleoscillator)
 	endif()
 
 	# The script's removeEffect undo cases load the build's own effect modules, and a
@@ -5149,6 +5154,7 @@ if(WANT_WASM)
 		WASM_WAT_SOURCE_DIR="${CMAKE_SOURCE_DIR}/modules/wasm"
 	)
 	add_dependencies(WasmSandboxTest wasm-modules)
+	add_dependencies(WasmSandboxTest wasm_effect)
 
 	# #614: the conformance suite for docs/WASM-EFFECT-ABI.md. It asserts each documented
 	# ABI property (and its documented limit) against modules assembled at run time from
@@ -5193,6 +5199,7 @@ if(WANT_WASM)
 	add_executable(WasmWorkerPoolTest
 		src/wasm/WasmWorkerPoolTest.cpp
 		${CMAKE_SOURCE_DIR}/src/wasm/WasmSandbox.cpp
+		${CMAKE_SOURCE_DIR}/src/wasm/WasmSandboxModules.cpp
 		${CMAKE_SOURCE_DIR}/src/wasm/WasmWorker.cpp
 		${CMAKE_SOURCE_DIR}/src/wasm/WasmWorkerPool.cpp
 		${CMAKE_SOURCE_DIR}/src/wasm/WasmOfflineRender.cpp
@@ -5230,6 +5237,7 @@ if(WANT_WASM)
 	add_executable(WasmSandboxHostFuelTest
 		src/wasm/WasmSandboxHostFuelTest.cpp
 		${CMAKE_SOURCE_DIR}/src/wasm/WasmSandbox.cpp
+		${CMAKE_SOURCE_DIR}/src/wasm/WasmSandboxModules.cpp
 		${CMAKE_SOURCE_DIR}/src/wasm/WasmSandboxHost.cpp
 	)
 	add_test(NAME WasmSandboxHostFuelTest COMMAND WasmSandboxHostFuelTest)
@@ -5659,6 +5667,7 @@ if(TARGET lmms_vst3_sdk)
 		src/plugins/Vst3HostTest.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3BusMap.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3Host.cpp
+		${LMMS_VST3_EFFECT_DIR}/Vst3HostParameters.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3HostReports.cpp
 		# R4.2: the editor session the host owns, and the R4.1 run loop it answers IRunLoop with
 		${LMMS_VST3_EFFECT_DIR}/Vst3EditorSession.cpp
@@ -5704,6 +5713,7 @@ if(TARGET lmms_vst3_sdk)
 		src/plugins/Vst3ChunkProbeTest.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3BusMap.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3Host.cpp
+		${LMMS_VST3_EFFECT_DIR}/Vst3HostParameters.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3HostReports.cpp
 		# R4.2: the editor session the host owns, and the R4.1 run loop it answers IRunLoop with
 		${LMMS_VST3_EFFECT_DIR}/Vst3EditorSession.cpp
@@ -5747,6 +5757,7 @@ if(TARGET lmms_vst3_sdk)
 		${LMMS_VST3_EFFECT_DIR}/Vst3EffectControlDialog.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3EffectControls.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3Host.cpp
+		${LMMS_VST3_EFFECT_DIR}/Vst3HostParameters.cpp
 		${LMMS_VST3_EFFECT_DIR}/Vst3HostReports.cpp
 		# R4.2: the editor session the host owns (the R4.1 run loop comes with lmmsobjs)
 		${LMMS_VST3_EFFECT_DIR}/Vst3EditorSession.cpp
@@ -6119,6 +6130,7 @@ if(TARGET lmms_vst3_sdk)
 			src/plugins/Vst3EditorTest.cpp
 			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3BusMap.cpp
 			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3Host.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3HostParameters.cpp
 			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3HostReports.cpp
 			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3EditorSession.cpp
 			${CMAKE_SOURCE_DIR}/src/core/PluginEditorHost.cpp
@@ -6188,6 +6200,7 @@ if(TARGET lmms_vst3_sdk)
 			src/plugins/Vst3InstrumentTest.cpp
 			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3BusMap.cpp
 			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3Host.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3HostParameters.cpp
 			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3HostReports.cpp
 			${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3EditorSession.cpp
 			${CMAKE_SOURCE_DIR}/src/core/PluginEditorHost.cpp
@@ -6237,6 +6250,7 @@ if(TARGET lmms_vst3_sdk)
 				src/plugins/Vst3InstrumentIntegrationTest.cpp
 				${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3BusMap.cpp
 				${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3Host.cpp
+				${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3HostParameters.cpp
 				${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3HostReports.cpp
 				${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3EditorSession.cpp
 				${CMAKE_SOURCE_DIR}/plugins/Vst3Effect/Vst3MidiEvent.cpp
@@ -6481,6 +6495,13 @@ endif()
 
 # Train 29: rerun the actual failed Gate 4 in non-writing mode alongside the
 # focused metric assertion and note-editor behavior tests.
+# Train 29 file-length splits: exercise the unchanged ratchet without writing its baseline.
+add_test(NAME FileLengthGate
+	COMMAND bash ${CMAKE_SOURCE_DIR}/tests/file-length-gate.sh --check)
+set_tests_properties(FileLengthGate PROPERTIES
+	WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+	TIMEOUT 300)
+
 add_test(NAME NoteCanvasComplexityGate
 	COMMAND bash ${CMAKE_SOURCE_DIR}/tests/complexity-gate.sh --check)
 set_tests_properties(NoteCanvasComplexityGate PROPERTIES

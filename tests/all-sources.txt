@@ -155,6 +155,8 @@
 # 2026-10-25 (cluster new-p18-18): re-derived from the recipe above after the train snapshot
 # restored 1148 vendored plugins/SfzPlayer/sfizz paths excluded by that recipe. No path the
 # recipe produces was removed; the generated entry list now matches its declared scope.
+# Gate 7 repair: measured product translation units and complete test method implementations.
+# Gate 7 repair: final measured test implementation headers.
 include/AafImport.h
 include/AafImportMenu.h
 include/AbletonLinkBridge.h
@@ -1499,6 +1501,7 @@ plugins/Vst3Effect/Vst3EffectControls.h
 plugins/Vst3Effect/Vst3Host.cpp
 plugins/Vst3Effect/Vst3Host.h
 plugins/Vst3Effect/Vst3HostInternals.h
+plugins/Vst3Effect/Vst3HostParameters.cpp
 plugins/Vst3Effect/Vst3HostReports.cpp
 plugins/Vst3Effect/Vst3MidiEvent.cpp
 plugins/Vst3Effect/Vst3MidiEvent.h
@@ -1942,6 +1945,7 @@ src/core/ControlRecordingSupport.cpp
 src/core/ControlRegistry.cpp
 src/core/ControlRegistryRecords.cpp
 src/core/ControlRegistryRegistrations.cpp
+src/core/ControlRegistryShutdown.cpp
 src/core/ControlReversibility.cpp
 src/core/ControlReversibilityTable.cpp
 src/core/ControlReversibilityTableAction.cpp
@@ -2297,6 +2301,7 @@ src/core/StepRecorder.cpp
 src/core/StripMeters.cpp
 src/core/SurroundExport.cpp
 src/core/TakeLane.cpp
+src/core/TakeLanePersistence.cpp
 src/core/TakeRecorder.cpp
 src/core/TaskCenter.cpp
 src/core/Telemetry.cpp
@@ -2760,6 +2765,8 @@ src/wasm/WasmSandbox.cpp
 src/wasm/WasmSandbox.h
 src/wasm/WasmSandboxHost.cpp
 src/wasm/WasmSandboxHost.h
+src/wasm/WasmSandboxInternals.h
+src/wasm/WasmSandboxModules.cpp
 src/wasm/WasmSpscRingBuffer.h
 src/wasm/WasmWorker.cpp
 src/wasm/WasmWorker.h
@@ -2791,6 +2798,7 @@ tests/src/core/AllocationProbe.h
 tests/src/core/AllocationProbeTest.cpp
 tests/src/core/AppearanceStartupTest.cpp
 tests/src/core/ArrangeToolsTest.cpp
+tests/src/core/ArrangeToolsTestParts1.h
 tests/src/core/ArrangementModesTest.cpp
 tests/src/core/ArrangingCatchUpTest.cpp
 tests/src/core/ArrangingSpacerReferenceTest.cpp
@@ -2870,11 +2878,15 @@ tests/src/core/ClipTransposeTest.cpp
 tests/src/core/ClipWarpPersistenceTest.cpp
 tests/src/core/CollabPolicyTest.cpp
 tests/src/core/CollabTransportTest.cpp
+tests/src/core/CollabTransportTestParts1.h
+tests/src/core/CollabTransportTestParts2.h
 tests/src/core/ConfigMigrationTest.cpp
 tests/src/core/ConsoleStripTest.cpp
 tests/src/core/ControlArmReversibilityTest.cpp
 tests/src/core/ControlAutomationModesTest.cpp
 tests/src/core/ControlAutomationScriptTest.cpp
+tests/src/core/ControlAutomationScriptTestParts1.h
+tests/src/core/ControlAutomationScriptTestParts2.h
 tests/src/core/ControlBounceRenderTest.cpp
 tests/src/core/ControlBounceSupportTest.cpp
 tests/src/core/ControlBrowserCommandsTest.cpp
@@ -2883,8 +2895,12 @@ tests/src/core/ControlChordCommandsTest.cpp
 tests/src/core/ControlChordWriteTest.cpp
 tests/src/core/ControlCrashAcknowledgeTest.cpp
 tests/src/core/ControlDeviceCatalogueTest.cpp
+tests/src/core/ControlDeviceCatalogueTestParts1.h
+tests/src/core/ControlDeviceCatalogueTestParts2.h
 tests/src/core/ControlDeviceVendorTest.cpp
 tests/src/core/ControlEditCommandsTest.cpp
+tests/src/core/ControlEditCommandsTestParts1.h
+tests/src/core/ControlEditCommandsTestParts2.h
 tests/src/core/ControlEventHubTest.cpp
 tests/src/core/ControlGrooveCommandsTest.cpp
 tests/src/core/ControlHostedBusLayoutTest.cpp
@@ -2915,6 +2931,8 @@ tests/src/core/ControlSampleStereoTest.cpp
 tests/src/core/ControlSessionRecordLandTest.cpp
 tests/src/core/ControlSessionRecordLandUndoTest.cpp
 tests/src/core/ControlShutdownHookTest.cpp
+tests/src/core/ControlShutdownHookTestParts1.h
+tests/src/core/ControlShutdownHookTestParts2.h
 tests/src/core/ControlStemExportTest.cpp
 tests/src/core/ControlStemWavTest.cpp
 tests/src/core/ControlSuccessPathsTest.cpp
@@ -2935,23 +2953,31 @@ tests/src/core/ControllerSurfaceTest.cpp
 tests/src/core/CrashReporterArmTest.cpp
 tests/src/core/CrashReporterTest.cpp
 tests/src/core/CustomAccessTest.cpp
+tests/src/core/CustomAccessTestParts1.h
+tests/src/core/CustomAccessTestParts2.h
 tests/src/core/DataFileContainerRecoveryTest.cpp
 tests/src/core/DataFileFormatTest.cpp
 tests/src/core/DataFileSaveIntegrityTest.cpp
+tests/src/core/DataFileSaveIntegrityTestParts1.h
+tests/src/core/DataFileSaveIntegrityTestParts2.h
 tests/src/core/DawProjectDeflateImportTest.cpp
 tests/src/core/DawProjectInterchangeRoundTripTest.cpp
 tests/src/core/DeviceAbUndoTest.cpp
 tests/src/core/DeviceCopyTest.cpp
 tests/src/core/DeviceDspTest.cpp
+tests/src/core/DeviceDspTestParts1.h
+tests/src/core/DeviceDspTestParts2.h
 tests/src/core/DeviceMovesUndoTest.cpp
 tests/src/core/DeviceOrganiserTest.cpp
 tests/src/core/DeviceToolsChainTest.cpp
 tests/src/core/DeviceToolsTest.cpp
+tests/src/core/DeviceToolsTestParts1.h
 tests/src/core/DocumentIndexTest.cpp
 tests/src/core/DocumentSectionsTest.cpp
 tests/src/core/DrumRackPadsTest.cpp
 tests/src/core/DrumSynthLevelTest.cpp
 tests/src/core/DrumSynthTest.cpp
+tests/src/core/DrumSynthTestParts1.h
 tests/src/core/DummyPacingTest.cpp
 tests/src/core/EffectControlsVisibilityTest.cpp
 tests/src/core/EngineRenderBenchmarkTest.cpp
@@ -2968,6 +2994,8 @@ tests/src/core/GranularPitchShifterRealtimeTest.cpp
 tests/src/core/GrooveTemplateTest.cpp
 tests/src/core/GrooveTestSupport.h
 tests/src/core/HardwareIoTest.cpp
+tests/src/core/HardwareIoTestParts1.h
+tests/src/core/HardwareIoTestParts2.h
 tests/src/core/HardwareOutputBusTest.cpp
 tests/src/core/HybridTrackInstrumentRoleTest.cpp
 tests/src/core/HybridTrackRoundTripTest.cpp
@@ -2985,6 +3013,7 @@ tests/src/core/InstrumentLayersCommandsTest.cpp
 tests/src/core/InstrumentLowLatencyMonitorTest.cpp
 tests/src/core/InstrumentNoteOffProbe.h
 tests/src/core/InstrumentRoutingTest.cpp
+tests/src/core/InstrumentRoutingTestParts1.h
 tests/src/core/JournallingObjectRestoreTest.cpp
 tests/src/core/LadspaManagerTest.cpp
 tests/src/core/LadspaPortCountFixture.cpp
@@ -2995,6 +3024,8 @@ tests/src/core/LibraryBrowserTest.cpp
 tests/src/core/LibraryProjectsTest.cpp
 tests/src/core/LinkAudioCodecTest.cpp
 tests/src/core/LinkAudioStreamTest.cpp
+tests/src/core/LinkAudioStreamTestParts1.h
+tests/src/core/LinkAudioStreamTestParts2.h
 tests/src/core/LinkAudioStreamTestSupport.h
 tests/src/core/LinkPhaseLockTest.cpp
 tests/src/core/LinkRealtimeProbe.h
@@ -3080,6 +3111,8 @@ tests/src/core/NoteEditRangeTest.cpp
 tests/src/core/NoteEditingCommandsTest.cpp
 tests/src/core/NoteNoOpEditUndoStepTest.cpp
 tests/src/core/NotePlaybackTest.cpp
+tests/src/core/NotePlaybackTestParts1.h
+tests/src/core/NotePlaybackTestParts2.h
 tests/src/core/NoteRandomTest.cpp
 tests/src/core/NoteSelectionIdentityTest.cpp
 tests/src/core/NoteShapeValidationTest.cpp
@@ -3114,6 +3147,8 @@ tests/src/core/PortMappingOrchestratorTest.cpp
 tests/src/core/PresetBindingsTest.cpp
 tests/src/core/ProjectContainerEntriesTest.cpp
 tests/src/core/ProjectContainerSaveTest.cpp
+tests/src/core/ProjectContainerSaveTestParts1.h
+tests/src/core/ProjectContainerSaveTestParts2.h
 tests/src/core/ProjectContainerTest.cpp
 tests/src/core/ProjectMarkersTest.cpp
 tests/src/core/ProjectOpenIntegrityTest.cpp
@@ -3129,6 +3164,8 @@ tests/src/core/ProvenanceSectionTest.cpp
 tests/src/core/ProvenanceVersionTest.cpp
 tests/src/core/PunchWindowTest.cpp
 tests/src/core/RackMacrosTest.cpp
+tests/src/core/RackMacrosTestParts1.h
+tests/src/core/RackMacrosTestParts2.h
 tests/src/core/RackTest.cpp
 tests/src/core/RackTestSupport.h
 tests/src/core/RackZoneFeedRunTest.cpp
@@ -3141,6 +3178,8 @@ tests/src/core/RecordClipTest.cpp
 tests/src/core/RecordRingBufferTest.cpp
 tests/src/core/RecordToolsNoEngineTest.cpp
 tests/src/core/RecordToolsTest.cpp
+tests/src/core/RecordToolsTestParts1.h
+tests/src/core/RecordToolsTestParts2.h
 tests/src/core/RecordingCrashLossTest.cpp
 tests/src/core/RecordingInputPathTest.cpp
 tests/src/core/RecordingLatencyTest.cpp
@@ -3163,6 +3202,9 @@ tests/src/core/ReversibilityUndoDeviceTest.cpp
 tests/src/core/ReversibilityUndoTest.cpp
 tests/src/core/RevisionRestoreCreatedFileUndoTest.cpp
 tests/src/core/RevisionTimelineTest.cpp
+tests/src/core/RevisionTimelineTestParts1.h
+tests/src/core/RevisionTimelineTestParts2.h
+tests/src/core/RevisionTimelineTestParts3.h
 tests/src/core/RoutingGraphLiveTest.cpp
 tests/src/core/RoutingGraphScheduleTest.cpp
 tests/src/core/RoutingGraphTest.cpp
@@ -3271,6 +3313,7 @@ tests/src/core/UpdateCheckTest.cpp
 tests/src/core/UpdateFeedFixture.h
 tests/src/core/UpgradeExtendedNoteRangeTest.cpp
 tests/src/core/UpnpMapperFakeRouterTest.cpp
+tests/src/core/UpnpMapperFakeRouterTestParts1.h
 tests/src/core/VcaGroupTest.cpp
 tests/src/core/VcaRefreshAtomicityTest.cpp
 tests/src/core/VideoAudioNameTest.cpp
@@ -3279,6 +3322,8 @@ tests/src/core/VideoFfmpegTest.cpp
 tests/src/core/VideoTestClip.h
 tests/src/core/VideoTestClipTest.cpp
 tests/src/core/VideoTrackTest.cpp
+tests/src/core/VideoTrackTestParts1.h
+tests/src/core/VideoTrackTestParts2.h
 tests/src/core/VstChannelCountTest.cpp
 tests/src/core/VstMidiEventBatchTest.cpp
 tests/src/core/VstPeMachineTypeTest.cpp
@@ -3302,6 +3347,10 @@ tests/src/gui/ArrangerKeysNavigatorTest.cpp
 tests/src/gui/ArrangerOverlaysVideoLaneTest.cpp
 tests/src/gui/ArrangerTakePunchTest.cpp
 tests/src/gui/ArrangerTimelineTest.cpp
+tests/src/gui/ArrangerTimelineTestParts1.h
+tests/src/gui/ArrangerTimelineTestParts2.h
+tests/src/gui/ArrangerTimelineTestParts3.h
+tests/src/gui/ArrangerTimelineTestParts4.h
 tests/src/gui/ArrangerZoomBoundTest.cpp
 tests/src/gui/ArticulationMapEditorTest.cpp
 tests/src/gui/AuHostingTest.cpp
