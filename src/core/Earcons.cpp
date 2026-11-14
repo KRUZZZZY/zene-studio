@@ -44,14 +44,14 @@ static_assert(std::atomic<float>::is_always_lock_free,
 static_assert(std::atomic<int>::is_always_lock_free,
 	"the active bank index must be lock-free on the audio thread");
 
-//! Longest sound is 120 ms; 48 kHz is the highest rate prepared here.
-constexpr int kMaxRate = 48000;
+//! Longest sound is 120 ms; 192 kHz is the highest rate the buffers are sized for.
+//! Above kMaxRate the buffer keeps the 192 kHz frame count (the tone plays shorter)
+//! so no length or index can ever exceed kMaxFrames.
+constexpr int kMaxRate = 192000;
 constexpr int kMaxFrames = kMaxRate * 120 / 1000 + 2;
 
 //! Peak of every tone. Level scales it; the default level is 0.5.
 constexpr float kPeak = 0.5f;
-//! 5 ms linear attack and release, at kMaxRate.
-constexpr int kRampFrames = kMaxRate * 5 / 1000;
 
 struct Bank
 {
@@ -96,13 +96,17 @@ void renderTone(Bank& bank, Sound sound, const float* frequencies, int frequency
 	float seconds)
 {
 	const auto index = static_cast<std::size_t>(sound);
-	const auto length = static_cast<int>(static_cast<float>(s_preparedRate) * seconds);
+	// Buffer length is derived from a rate clamped to kMaxRate so it never exceeds
+	// kMaxFrames; synthesis and playback still use the actual prepared rate.
+	const auto bufferRate = std::min<sample_rate_t>(s_preparedRate, static_cast<sample_rate_t>(kMaxRate));
+	const auto length = std::min(kMaxFrames, static_cast<int>(static_cast<float>(bufferRate) * seconds));
 	bank.lengths[index] = length;
 	auto& out = bank.samples[index];
 	if (length <= 0) { return; }
 
 	const int segment = length / frequencyCount;
-	const int ramp = std::min(kRampFrames, std::max(1, segment / 4));
+	const int rampFrames = static_cast<int>(s_preparedRate) * 5 / 1000;
+	const int ramp = std::min(std::max(1, rampFrames), std::max(1, segment / 4));
 	constexpr float twoPi = 6.283185307179586f;
 	for (int frame = 0; frame < length; ++frame)
 	{
@@ -144,7 +148,9 @@ const QStringList& categoryNames()
 
 void prepare(sample_rate_t rate)
 {
-	if (rate == 0 || rate > static_cast<sample_rate_t>(kMaxRate)) { return; }
+	// Zero means "no device rate"; anything higher than kMaxRate keeps only the
+	// kMaxRate buffer length (renderTone clamps it) so storage always fits.
+	if (rate == 0) { return; }
 	if (rate == s_preparedRate) { return; }
 
 	const int active = s_activeBank.load(std::memory_order_relaxed);

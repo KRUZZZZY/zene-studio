@@ -95,6 +95,7 @@ private slots:
 	void levelsScaleAndRejectInvalidValues();
 	void theAudioPathDoesNotAllocate();
 	void theRenderPathNeverConsumesAnEarcon();
+	void everyOutputRateIsPrepared();
 
 private:
 	void disableAll();
@@ -256,6 +257,40 @@ void EarconsTest::theRenderPathNeverConsumesAnEarcon()
 	float sum = 0.f;
 	for (int i = 0; i < 4800; ++i) { sum += nextSample(); }
 	QVERIFY2(sum != 0.f, "the render path consumed the earcons");
+}
+
+void EarconsTest::everyOutputRateIsPrepared()
+{
+	const auto lengthAt = [this](sample_rate_t rate) {
+		disableAll();
+		prepare(rate);
+		setEnabled(Category::Edit, true);
+		play(Sound::EditApplied);
+		beginBuffer();
+		int lastNonZero = -1;
+		for (int i = 0; i < 12000; ++i)
+		{
+			if (nextSample() != 0.f) { lastNonZero = i; }
+		}
+		return lastNonZero + 1;
+	};
+
+	const sample_rate_t rates[] = {44100, 96000, 192000};
+	for (const auto rate : rates)
+	{
+		const int frames = lengthAt(rate);
+		const int expected = static_cast<int>(rate) * 5 / 100;
+		QVERIFY2(frames >= expected - 1 && frames <= expected + 1,
+			qPrintable(QStringLiteral("edit earcon at %1 Hz lasted %2 frames, expected %3")
+				.arg(rate).arg(frames).arg(expected)));
+	}
+
+	// A zero rate is rejected: the previously prepared 192 kHz length still holds.
+	const int afterZero = lengthAt(0);
+	QVERIFY2(afterZero >= 9599 && afterZero <= 9601,
+		qPrintable(QStringLiteral("zero rate changed the length to %1 frames").arg(afterZero)));
+
+	prepare(48000);
 }
 
 int main(int argc, char* argv[])
