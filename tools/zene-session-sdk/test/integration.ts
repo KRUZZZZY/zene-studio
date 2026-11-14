@@ -4,6 +4,7 @@
 // Usage: node --experimental-strip-types test/integration.ts <control-socket-path>
 // (tests/control-session-sdk.py starts the instance and runs this.) Exit 0 only when every check passed.
 
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -87,6 +88,25 @@ async function checkPackage(): Promise<void> {
 	}
 }
 
+async function checkFailedInitialReadCloses(path: string, editor: ZeneClient): Promise<void> {
+	const script = `import { LiveSession } from "./src/index.ts";
+try {
+	await LiveSession.start({ read: async () => { throw new Error("expected read failure"); } });
+	process.exitCode = 2;
+} catch (error) {
+	if (!(error instanceof Error) || error.message !== "expected read failure") throw error;
+	process.stdout.write("caught initial read failure\\n");
+}`;
+	const child = spawnSync(process.execPath, [...process.execArgv, "--input-type=module", "-e", script], {
+		cwd: process.cwd(), env: { ...process.env, ZENE_CONTROL_SOCKET: path }, encoding: "utf8", timeout: 5000,
+	});
+	check(child.error === undefined && child.status === 0 && child.stdout.includes("caught initial read failure"),
+		"LiveSession.start closes its private connection when the initial read fails (the child exits)");
+	await waitUntil(async () => (await editor.call("events.get_state")).subscriptions.length === 0,
+		"the failed start to leave no subscription");
+	check(true, "a failed start leaves no subscription on the instance");
+}
+
 async function checkReadEditEvent(client: ZeneClient, editor: ZeneClient): Promise<{ sub: Subscription; events: ProjectChangedEvent[] }> {
 	check(client.version !== null && PROTOCOL_VERSION === 1, `connect checked the protocol (Zene ${client.version})`);
 	check((await client.call("control.ping")).pong === true, "a read call answers (control.ping)");
@@ -164,6 +184,18 @@ async function checkIteratorAndUnsubscribe(client: ZeneClient, editor: ZeneClien
 		"closing the connection ends its subscription, reason 'disconnected'");
 	const failed = await other.call("control.ping").then(() => null, (error: unknown) => error);
 	check(failed instanceof ZeneConnectionError, "a call on a closed connection is a typed ZeneConnectionError");
+}
+
+async function checkResyncReadFailure(path: string, editor: ZeneClient): Promise<void> {
+	await waitUntil(async () => (await editor.call("events.get_state")).subscriptions.length === 0, "no subscriptions");
+	const reader = await ZeneClient.connect({ path });
+	const sentinel = new Error("resync read failure");
+	const caught = await reader.resync(async () => { throw sentinel; }).then(() => null, (error: unknown) => error);
+	check(caught === sentinel, "resync() rethrows the read's own error, not a wrapped one");
+	await waitUntil(async () => (await editor.call("events.get_state")).subscriptions.length === 0,
+		"the failed resync to unsubscribe");
+	check((await reader.call("control.ping")).pong === true, "after a failed resync the connection still answers");
+	await reader.close();
 }
 
 /**
@@ -348,8 +380,10 @@ async function main(argv: string[]): Promise<number> {
 	await checkPackage();
 	const client = await ZeneClient.connect({ path });
 	const editor = await ZeneClient.connect({ path });
+	await checkFailedInitialReadCloses(path, editor);
 	const { sub, events } = await checkReadEditEvent(client, editor);
 	await checkIteratorAndUnsubscribe(client, editor, sub, events);
+	await checkResyncReadFailure(path, editor);
 	await checkResyncKeepsEventsDuringRead(path, editor);
 	await checkLiveSession(path, editor);
 	await client.close();

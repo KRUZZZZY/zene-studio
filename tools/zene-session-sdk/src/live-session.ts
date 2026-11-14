@@ -62,7 +62,12 @@ export class LiveSession<S> {
 	static async start<S>(options: LiveSessionOptions<S>): Promise<LiveSession<S>> {
 		const session = new LiveSession(options);
 		const client = await ZeneClient.connect(options);
-		await session.sync(client, "initial");
+		try {
+			await session.sync(client, "initial");
+		} catch (error) {
+			await client.close();
+			throw error;
+		}
 		return session;
 	}
 
