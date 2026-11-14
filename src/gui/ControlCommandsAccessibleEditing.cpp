@@ -181,34 +181,43 @@ ControlResult announcements(const QJsonObject& args)
 		{QStringLiteral("view.announcements"), {{QStringLiteral("level"), before}}}, [] {});
 }
 
-ControlResult earconsCommand(const QJsonObject& args)
+QString earconsLevelError(const QJsonObject& args, double& level)
+{
+	if (!args.contains(QStringLiteral("level"))) { level = 0.5; return QString(); }
+	const QJsonValue value = args.value(QStringLiteral("level"));
+	if (!value.isDouble() || !std::isfinite(value.toDouble()) || value.toDouble() < 0.0 || value.toDouble() > 1.0)
+	{
+		return QStringLiteral("'level' is a number in 0..1");
+	}
+	level = value.toDouble();
+	return QString();
+}
+
+QString earconsArgsError(const QJsonObject& args, double& level)
 {
 	const QString category = args.value(QStringLiteral("category")).toString();
 	if (!earcons::categoryNames().contains(category))
 	{
-		return ControlResult::failure(ControlErrorKind::InvalidArgs,
-			QStringLiteral("'category' is one of %1").arg(earcons::categoryNames().join(QStringLiteral(", "))));
+		return QStringLiteral("'category' is one of %1").arg(earcons::categoryNames().join(QStringLiteral(", ")));
 	}
 	const bool hasEnabled = args.contains(QStringLiteral("enabled"));
 	const bool hasLevel = args.contains(QStringLiteral("level"));
-	if (!hasEnabled && !hasLevel)
-	{
-		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("give 'enabled' or 'level'"));
-	}
+	if (!hasEnabled && !hasLevel) { return QStringLiteral("give 'enabled' or 'level'"); }
 	if (hasEnabled && args.value(QStringLiteral("enabled")).type() != QJsonValue::Bool)
 	{
-		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'enabled' is true or false"));
+		return QStringLiteral("'enabled' is true or false");
 	}
+	return earconsLevelError(args, level);
+}
+
+ControlResult earconsCommand(const QJsonObject& args)
+{
+	const QString category = args.value(QStringLiteral("category")).toString();
+	const bool hasEnabled = args.contains(QStringLiteral("enabled"));
+	const bool hasLevel = args.contains(QStringLiteral("level"));
 	double level = 0.5;
-	if (hasLevel)
-	{
-		const QJsonValue value = args.value(QStringLiteral("level"));
-		if (!value.isDouble() || !std::isfinite(value.toDouble()) || value.toDouble() < 0.0 || value.toDouble() > 1.0)
-		{
-			return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'level' is a number in 0..1"));
-		}
-		level = value.toDouble();
-	}
+	const QString error = earconsArgsError(args, level);
+	if (!error.isEmpty()) { return ControlResult::failure(ControlErrorKind::InvalidArgs, error); }
 	QJsonObject doc = gui::uistore::read(QStringLiteral("earcons"));
 	QJsonObject entry = doc.value(category).toObject();
 	const bool beforeEnabled = entry.value(QStringLiteral("enabled")).toBool();
