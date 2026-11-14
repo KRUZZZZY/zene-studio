@@ -50,6 +50,7 @@
 #include "Engine.h"
 #include "ItemList.h"
 #include "MusicalTime.h"
+#include "RecordOptions.h"
 #include "SampleBuffer.h"
 #include "SampleClip.h"
 #include "SampleTrack.h"
@@ -123,6 +124,21 @@ bool commitTouchSequence(QTest::QTouchEventSequence& sequence)
 }
 
 
+
+//! Three loop passes as the recording path delivers them: a loop wrap ends each of the first two
+//! (the clip stays armed), and the third ends the recording.
+void recordLoopPasses(SampleClip* clip)
+{
+	const int rate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
+	clip->setRecord(true);
+	for (int pass = 0; pass < 3; ++pass)
+	{
+		const float level = 0.2f * static_cast<float>(pass + 1);
+		std::vector<SampleFrame> frames(64, SampleFrame(level, level));
+		clip->acceptRecordedTake(std::make_shared<SampleBuffer>(frames.data(), frames.size(), rate), 0,
+			pass < 2, clip->armGeneration());
+	}
+}
 
 } // namespace
 
@@ -401,6 +417,70 @@ private slots:
 		QCOMPARE(segments.first().toObject().value(QStringLiteral("lane")).toInt(), 1);
 		QCOMPARE(segments.first().toObject().value(QStringLiteral("begin")).toInt(), expectedBegin);
 		QCOMPARE(segments.first().toObject().value(QStringLiteral("end")).toInt(), expectedEnd);
+	}
+
+	//! Loop passes recorded in Overdub or Replace: each take's item says whether it is heard, and
+	//! Play all takes follows that state. In Replace the checkbox turns every take on, through
+	//! comp.play_all_takes, and the take list shows it.
+	void loopTakesSayWhichAreHeardAndPlayAllTakesFollowsThem()
+	{
+		for (const recordoptions::Mode mode : {recordoptions::Mode::Overdub, recordoptions::Mode::Replace})
+		{
+			recordoptions::setOptions({0, 0, mode});
+			const QString id = run(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("sample")}})
+				.result.value(QStringLiteral("track")).toString();
+			ControlResult error;
+			Track* track = control::resolveTrack(id, &error);
+			QVERIFY(track != nullptr);
+			auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)));
+			QVERIFY(clip != nullptr);
+			clip->changeLength(TimePos(TimePos::ticksPerBar()));
+			clip->setAutoResize(false);
+			recordLoopPasses(clip);
+			QCOMPARE(track->takeLanes().laneCount(), 3);
+
+			TakeLanesPanel panel(id);
+			panel.refresh();
+			QComboBox* choices = panel.takeChoiceBox();
+			QCOMPARE(choices->count(), 3);
+			int heard = 0;
+			int heardLane = -1;
+			for (int i = 0; i < choices->count(); ++i)
+			{
+				const QString text = choices->itemText(i);
+				QVERIFY2(text.endsWith(QStringLiteral(" - audible")) || text.endsWith(QStringLiteral(" - muted")),
+					qPrintable(text));
+				if (text.endsWith(QStringLiteral(" - audible")))
+				{
+					++heard;
+					heardLane = choices->itemData(i, Qt::UserRole + 1).toInt();
+				}
+			}
+
+			if (mode == recordoptions::Mode::Overdub)
+			{
+				QCOMPARE(heard, 3);
+				QVERIFY(panel.playAllTakesBox()->isChecked());
+				continue;
+			}
+
+			// Replace: only the newest pass is heard, and Play all takes is off.
+			QCOMPARE(heard, 1);
+			QCOMPARE(heardLane, track->takeLanes().activeTakeLane(clip->id()));
+			QVERIFY(!panel.playAllTakesBox()->isChecked());
+
+			QTest::mouseClick(panel.playAllTakesBox(), Qt::LeftButton);
+			QVERIFY(track->takeLanes().playAllTakes());
+			panel.refresh();
+			QVERIFY(panel.playAllTakesBox()->isChecked());
+			QCOMPARE(panel.takeChoiceBox()->count(), 3);
+			for (int i = 0; i < panel.takeChoiceBox()->count(); ++i)
+			{
+				QVERIFY2(panel.takeChoiceBox()->itemText(i).endsWith(QStringLiteral(" - audible")),
+					qPrintable(panel.takeChoiceBox()->itemText(i)));
+			}
+		}
+		recordoptions::setOptions({});
 	}
 };
 
