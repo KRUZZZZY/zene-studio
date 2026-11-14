@@ -305,6 +305,13 @@ private slots:
 			QCOMPARE(allEq(), before);
 			QCOMPARE(undoDepth(), depth);
 		}
+		//! A well-formed channel id that names no live channel is NotFound, not InvalidArgs, and writes nothing.
+		const ControlResult missing = run(QStringLiteral("mixer.apply_masking_proposal"),
+			{{QStringLiteral("strip_eq"), QJsonObject{{QStringLiteral("channel"), QStringLiteral("ch-9999")}, {QStringLiteral("low"), 1.0}}}});
+		QVERIFY(!missing.ok);
+		QCOMPARE(missing.errorKind, ControlErrorKind::NotFound);
+		QCOMPARE(allEq(), before);
+		QCOMPARE(undoDepth(), depth);
 	}
 
 	void badArgumentsAreRefused()
