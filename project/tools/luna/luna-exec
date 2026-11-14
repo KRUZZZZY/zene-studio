@@ -1,0 +1,71 @@
+#!/usr/bin/env python3
+"""luna-exec: run GPT 6.0 Luna (codex exec) as a bug-fix agent inside the Landlock write-jail.
+
+  luna-exec -C <worktree> -o <out.md> [--effort max] "<prompt>" [< extra-input]
+
+Codex's own sandbox (bubblewrap) cannot start on this machine (kernel.apparmor_restrict_unprivileged_userns=1:
+"bwrap: loopback: Failed RTM_NEWADDR"), so codex runs with its sandbox off INSIDE tools/haiku/jail.py, the
+container the owner approved for the light driver on 2026-10-08: it can read everything and reach the network,
+but can write only to its work tree, that tree's git data, ~/.codex (its own session state), the build caches,
+/tmp and the run folder. Pushing is blocked twice: the prompt rules, and a git config (passed in the
+environment) that rewrites every GitHub push URL to an invalid one (AGENTS.md rules 1 and 11).
+The owner asked for Luna on bug fixes on 2026-10-08 ("use luna agents for bug fixes as well, I have the sub").
+"""
+import argparse
+import os
+import subprocess
+import sys
+sys.path.insert(0, os.path.expanduser("~/.local/share/zene-bunny-fix/qwen"))
+import prompt_context
+
+HOME = os.path.expanduser("~")
+HERE = os.path.dirname(os.path.abspath(__file__))
+JAIL = os.path.join(HERE, "..", "haiku", "jail.py")
+MODEL = os.environ.get("LUNA_MODEL", "gpt-6-luna")
+WRITE = [os.path.join(HOME, ".codex"), os.path.join(HOME, ".cache"), "/tmp",
+         os.path.join(HOME, ".local/share/zene-bunny-fix/bunny/locks")]
+RULES = ("RULES OF THIS RUN: you run in a write-jail - you may change files only in your working tree, its git "
+         "data, the build caches and /tmp; read any file you need. Never push, never change git remotes, never "
+         "use sudo, never rewrite history (no amend/rebase/reset). Nobody approves anything: if something is "
+         "refused, find another way within these limits and say so in your final report.\n\n")
+NO_PUSH = {"GIT_CONFIG_COUNT": "2",
+           "GIT_CONFIG_KEY_0": "url.no-push-from-luna-jail:///.pushInsteadOf", "GIT_CONFIG_VALUE_0": "https://github.com/",
+           "GIT_CONFIG_KEY_1": "url.no-push-from-luna-jail:///.pushInsteadOf", "GIT_CONFIG_VALUE_1": "git@github.com:"}
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("-C", "--cd", required=True)
+    p.add_argument("-o", "--out", required=True)
+    p.add_argument("--effort", default=os.environ.get("LUNA_EFFORT", "max"))
+    p.add_argument("--read-only", action="store_true",
+                   help="a reviewer: the work tree and its git data are NOT writable (only the run folder, ~/.codex, /tmp)")
+    p.add_argument("prompt")
+    a = p.parse_args()
+    cwd = os.path.abspath(a.cd)
+    # stdin is read only for an explicit "-" prompt: a background launcher's stdin can be a pipe that never
+    # closes, and reading it unconditionally hung two runs on 2026-10-09 before codex even started.
+    body = sys.stdin.read() if a.prompt == "-" else a.prompt
+    prompt = RULES + prompt_context.stamp(body)
+    paths = WRITE + [os.path.dirname(os.path.abspath(a.out))]
+    if not a.read_only:
+        paths.append(cwd)
+        common = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], cwd=cwd,
+                                capture_output=True, text=True).stdout.strip()
+        if common:
+            paths.append(common)              # a worktree's commits land in the main clone's .git
+    else:
+        prompt = ("READ-ONLY REVIEW: you cannot and must not change the work tree; read files and run read-only "
+                  "commands (git log/show/diff, grep) only.\n\n") + prompt
+    cmd = [sys.executable, JAIL]
+    for path in paths:
+        cmd += ["--rw", path]
+    cmd += ["--", "codex", "exec", "-m", MODEL, "-c", f'model_reasoning_effort="{a.effort}"',
+            "-s", "danger-full-access", "--skip-git-repo-check", "-C", cwd, "-o", os.path.abspath(a.out), "-"]
+    env = dict(os.environ, **NO_PUSH)
+    env.pop("LMMS_PLUGIN_DIR", None)          # never a global plugin dir (CLAUDE.md)
+    return subprocess.run(cmd, cwd=cwd, env=env, input=prompt, text=True).returncode
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,345 @@
+#!/usr/bin/env python3
+"""haiku-exec: run one Claude Haiku 5.5 session with the command line the drivers already give `codex exec`.
+
+The light driver (owner, 2026-10-08) is Claude Haiku 5.5 through headless Claude Code (`claude -p`). This
+wrapper accepts codex's exec arguments so a driver only swaps `codex exec` for this path:
+
+  -C DIR            working directory of the session
+  -o FILE           write the session's final message here
+  -s MODE           read-only: read, search, web and MCP tools; no shell or edits. Anything else (codex's
+                    danger-full-access): edits and a full shell, all inside the write-jail described below.
+  -m, -c, --ephemeral, --skip-git-repo-check   accepted and ignored (codex-only)
+  PROMPT | -        the prompt; `-` (or none) reads it from stdin. With a PROMPT, piped stdin is appended
+                    to it as material (codex's behaviour, used by the patrol for code slices).
+
+The event stream goes to stdout (the driver's session log). When Claude reports a usage limit the wrapper
+prints "haiku-exec: hit your usage limit; try again at HH:MM" - the line the drivers already parse to pause
+and resume - and exits 2. Environment: HAIKU_MODEL (default claude-haiku-5-5), HAIKU_EFFORT (default xhigh, owner 2026-10-08),
+HAIKU_FALLBACK (default claude-opus-5-5, used when Haiku is overloaded; empty disables),
+HAIKU_FALLBACK_EFFORT (default medium for Opus 5.5, otherwise the primary effort).
+Explicit model selections are preserved (owner 2026-11-01: urgent bugs go to Sonnet).
+Claude feature lanes (owner 2026-10-19, run by the fix loop with HAIKU_MODEL = the lane's model): HAIKU_PERSIST=1 keeps
+the session so a rework can continue it, HAIKU_RESUME=<session id> continues one, HAIKU_SESSION_OUT=<file> records
+{"session", "model"} from the result event.
+Context (owner 2026-11-13: Haiku 5.5 costs 5x above 100k prompt tokens; 87 % of Haiku's cost was there):
+HAIKU_AUTOCOMPACT=<tokens> sets Claude Code's auto-compact window (default 100000 for Haiku models, else unset;
+"off" disables). HAIKU_LEAN=1 starts the session without CLAUDE.md, plug-ins, hooks or MCP servers (--safe-mode,
+empty MCP config) and with only HAIKU_TOOLS (default Read,Edit,Write,Bash,Grep,Glob; read-only: Read,Grep,Glob):
+33k -> 8.5k tokens before the first word (measured). HAIKU_APPEND_RULES adds text to the system prompt.
+Duet (owner 2026-11-13): HAIKU_MODEL=duet:<pairing> hands the whole call to ~/.local/share/zene-bunny-fix/duet/duet.py,
+where a lead model guides and a worker model does the work (pairings in duet/duet.json).
+"""
+import datetime
+import fcntl
+import json
+import os
+import re
+import subprocess
+import sys
+sys.path.insert(0, os.path.expanduser("~/.local/share/zene-bunny-fix/qwen"))
+import prompt_context
+
+
+def append_cost(result, model, effort, cwd, out):
+    """Record invocation cost separately from Claude's cumulative session counter."""
+    result = result or {}
+    session = result.get("session_id")
+    account = os.environ.get("HAIKU_ACCOUNT", "personal")
+    total = result.get("total_cost_usd")
+    with open(LEDGER, "a+") as ledger:
+        fcntl.flock(ledger, fcntl.LOCK_EX)
+        ledger.seek(0)
+        prior = []
+        if session:
+            for line in ledger:
+                try:
+                    row = json.loads(line)
+                    if row.get("session_id"):
+                        same = row["session_id"] == session and row.get("account", "personal") == account
+                    else:
+                        # Older entries stored only the report path. Resolve their saved identity.
+                        if not row.get("out"):
+                            continue
+                        path = os.path.join(os.path.dirname(row["out"]), "claude-session.json")
+                        with open(path) as saved:
+                            identity = json.load(saved)
+                        same = identity.get("session") == session and identity.get("account", "personal") == account
+                    value = row.get("session_cost_usd", row.get("cost_usd"))
+                    if same and isinstance(value, (int, float)):
+                        prior.append(value)
+                except (OSError, ValueError, TypeError, KeyError):
+                    continue
+        previous = max(prior) if prior else None
+        usage = result.get("usage") or {}
+        token_keys = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")
+        zero = all(k in usage for k in token_keys) and all(usage[k] == 0 for k in token_keys)
+        cost, scope = None, "unknown"
+        if zero:
+            cost, scope = 0.0, "invocation"
+        elif isinstance(total, (int, float)) and total >= 0:
+            if previous is not None and total >= previous:
+                cost, scope = round(total - previous, 10), "invocation"
+            elif not RESUME and previous is None:
+                cost, scope = total, "invocation"
+        row = {"at": datetime.datetime.now().isoformat(timespec="seconds"), "model": model,
+               "effort": effort, "cwd": cwd, "out": out, "session_id": session, "account": account,
+               "schema_version": 2, "cost_usd": cost, "cost_scope": scope, "session_cost_usd": total,
+               "usage": usage, "rc": result.get("rc"), "turns": result.get("num_turns"),
+               "minutes": round((result.get("duration_ms") or 0) / 60000, 1)}
+        ledger.seek(0, os.SEEK_END)
+        ledger.write(json.dumps(row) + "\n")
+
+def model_choice(model, effort):
+    return model, effort
+
+
+MODEL, EFFORT = model_choice(os.environ.get("HAIKU_MODEL", "claude-haiku-5-5"),
+                             os.environ.get("HAIKU_EFFORT", "xhigh"))
+FALLBACK = os.environ.get("HAIKU_FALLBACK", "claude-opus-5-5")
+FALLBACK, FALLBACK_EFFORT = model_choice(FALLBACK, os.environ.get("HAIKU_FALLBACK_EFFORT",
+                                        "medium" if FALLBACK == "claude-opus-5-5" else EFFORT))
+PERSIST = os.environ.get("HAIKU_PERSIST") == "1"
+RESUME = os.environ.get("HAIKU_RESUME", "")
+SESSION_OUT = os.environ.get("HAIKU_SESSION_OUT", "")
+LEDGER = os.path.expanduser(os.environ.get("HAIKU_LEDGER", "~/.local/share/zene-bunny-fix/haiku-cost.jsonl"))
+HERE = os.path.dirname(os.path.abspath(__file__))
+MCP_CONFIG = os.environ.get("HAIKU_MCP_CONFIG", os.path.join(HERE, "mcp.json"))   # fff, lmms-lab, zene-control
+LEAN = os.environ.get("HAIKU_LEAN") == "1"
+AUTOCOMPACT = os.environ.get("HAIKU_AUTOCOMPACT", "100000" if "haiku" in MODEL else "")
+APPEND_RULES = os.environ.get("HAIKU_APPEND_RULES", "")
+EXTRA_DIRS = [os.path.abspath(d) for d in os.environ.get("HAIKU_EXTRA_DIRS", "").split(":") if d]   # readable; writable unless read-only
+DUET = os.path.expanduser(os.environ.get("HAIKU_DUET", "~/.local/share/zene-bunny-fix/duet/duet.py"))
+JAIL = os.path.join(HERE, "jail.py")
+HOME = os.path.expanduser("~")
+# The container (owner, 2026-10-08): the whole session - Claude Code, its shell, its MCP servers - runs in a
+# Landlock write-jail (jail.py). It can read every file (all docs), reach the internet and use the core MCP
+# connectors, but can write only to its own work tree (plus that tree's git objects), the driver's run folder,
+# the build caches, /tmp and Claude Code's own config. Inside the jail its shell needs no approval.
+JAIL_WRITE = [os.path.join(HOME, ".cache"), os.path.join(HOME, ".local/share/zene-bunny-fix/bunny/locks"), "/tmp",
+              os.path.join(HOME, ".claude"), os.path.join(HOME, ".claude.json")]
+TOOLS = ["Read", "Glob", "Grep", "LS", "WebSearch", "WebFetch", "mcp__fff", "mcp__lmms-lab", "mcp__zene-control"]
+# Never, jail or not (AGENTS.md rule 11 and the program's deny list).
+DENIED_BASH = ["git push:*", "git remote add:*", "git remote set-url:*", "git remote remove:*", "sudo:*"]
+RULES = ("You run in a write-jail: you may change files only in your working tree, its git data, the run folder, "
+         "the build caches and /tmp. Read any file you need (docs, plans, other trees); the internet is open. "
+         "Never push, change git remotes or use sudo. Nobody approves anything interactively: if something is "
+         "refused, find another way within these limits and say so in your final report.")
+
+
+def claude_config_paths():
+    directory = os.path.abspath(os.path.expanduser(os.environ.get("CLAUDE_CONFIG_DIR", os.path.join(HOME, ".claude"))))
+    return [directory] + ([os.path.join(HOME, ".claude.json")] if directory == os.path.join(HOME, ".claude") else [])
+
+
+def jail_paths(cwd, out, read_only):
+    paths = ["/tmp", os.path.join(HOME, ".cache")] + claude_config_paths()
+    if not read_only:
+        paths = [cwd] + [p for p in JAIL_WRITE if p not in [os.path.join(HOME, ".claude"), os.path.join(HOME, ".claude.json")]] + claude_config_paths()
+        common = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], cwd=cwd,
+                                capture_output=True, text=True).stdout.strip()
+        if common:
+            paths.append(common)              # a worktree's commits land in the main clone's .git
+    if not read_only:
+        # The shared build limiter needs only these existing coordination files,
+        # in addition to its already-authorized lock directory.
+        for name in ("build-pool.lock", "make-jobserver.fifo"):
+            path = os.path.join(HOME, ".local/share/zene-bunny-fix/bunny", name)
+            if os.path.exists(path):
+                paths.append(path)
+    if out:
+        paths.append(os.path.dirname(os.path.abspath(out)))
+    if not read_only:
+        paths += EXTRA_DIRS                   # duet: the outer run folder (the brief's log folder)
+    return paths
+
+
+# 2026-10-19: "You've hit your session limit" / "weekly limit" (api_error usage_limit_reached) were missed, so limit hits
+# were reported as failed sessions and the fix loop burned feature rounds on them
+LIMIT_RE = re.compile(r"usage limit|rate limit|hit your (\w+ )?limit|session limit|weekly limit|limit reached|usage_limit_reached|"
+                      r"out of extra usage", re.I)
+OVERLOAD_RE = re.compile(r"overloaded|overload_error|overloaded_error|model_capacity_exceeded|\b529\b", re.I)
+
+
+def run_stream(cmd, cwd, env, prompt):
+    proc = subprocess.Popen(cmd, cwd=cwd, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True)
+    proc.stdin.write(prompt)
+    proc.stdin.close()
+    result, raw = None, []
+    for line in proc.stdout:
+        sys.stdout.write(line)
+        sys.stdout.flush()
+        raw.append(line)
+        try:
+            ev = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(ev, dict) and ev.get("type") == "result":
+            result = ev
+    return proc.wait(), result, raw
+
+
+def failed(rc, result):
+    return rc != 0 or not result or result.get("is_error") or result.get("subtype") != "success"
+
+
+def startup_infrastructure_failure(rc, result, raw):
+    """Only classify evidenced provider failures before any model or tool work."""
+    if not failed(rc, result) or not result:
+        return False
+    usage = result.get("usage") or {}
+    keys = ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")
+    if not all(k in usage and usage[k] == 0 for k in keys):
+        return False
+    for line in raw:
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        message = event.get("message") if isinstance(event, dict) else None
+        content = message.get("content", []) if isinstance(message, dict) else []
+        if isinstance(content, list) and any(isinstance(c, dict) and c.get("type") == "tool_use" for c in content):
+            return False
+    text = str(result.get("result") or "")
+    return bool(re.search(r"failed to authenticate|API Error:\s*(?:401|403|502|503|504|529)\b", text, re.I))
+
+
+def fallback_allowed(rc, result, raw):
+    """Retry startup overloads; never replay a partially executed editing session."""
+    if not failed(rc, result):
+        return False
+    errors = []
+    for line in raw:
+        try:
+            ev = json.loads(line)
+        except ValueError:
+            errors.append(line)
+            continue
+        if not isinstance(ev, dict):
+            continue
+        content = (ev.get("message") or {}).get("content", []) if isinstance(ev.get("message"), dict) else []
+        if isinstance(content, list) and any(isinstance(c, dict) and c.get("type") == "tool_use" for c in content):
+            return False
+        if ev.get("type") in ("error", "result") or ev.get("is_error") or ev.get("error"):
+            errors.append(line)
+    blob = "".join(errors)
+    return bool(OVERLOAD_RE.search(blob)) and not LIMIT_RE.search(blob)
+
+
+def parse_args(argv):
+    a = {"cwd": None, "out": None, "sandbox": "danger-full-access", "prompt": None}
+    i = 0
+    while i < len(argv):
+        x = argv[i]
+        if x in ("-C", "--cd"):
+            a["cwd"] = argv[i + 1]; i += 2
+        elif x in ("-o", "--output-last-message"):
+            a["out"] = argv[i + 1]; i += 2
+        elif x in ("-s", "--sandbox"):
+            a["sandbox"] = argv[i + 1]; i += 2
+        elif x in ("-m", "--model", "-c", "--config"):
+            i += 2
+        elif x in ("--ephemeral", "--skip-git-repo-check"):
+            i += 1
+        else:
+            a["prompt"] = x; i += 1
+    return a
+
+
+def retry_time(text):
+    """The HH:MM a limit message names, if any: an epoch after '|' or 'resets [at] 7pm / 19:30'."""
+    m = re.search(r"\|(\d{10})\b", text)
+    if m:
+        return datetime.datetime.fromtimestamp(int(m.group(1))).strftime("%H:%M")
+    m = re.search(r"resets?\s+(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*([ap]m)?", text, re.I)
+    if m:
+        h, mi = int(m.group(1)), int(m.group(2) or 0)
+        if m.group(3):
+            h = h % 12 + (12 if m.group(3).lower() == "pm" else 0)
+        return f"{h:02d}:{mi:02d}"
+    return None
+
+
+def main():
+    if MODEL.startswith("duet:"):             # the duet orchestrator takes the same arguments and environment
+        os.execv(sys.executable, [sys.executable, DUET, "exec", *sys.argv[1:]])
+    a = parse_args(sys.argv[1:])
+    piped = "" if sys.stdin.isatty() else sys.stdin.read()
+    if a["prompt"] in (None, "-"):
+        prompt = piped
+    else:
+        prompt = a["prompt"] + ("\n\n" + piped if piped.strip() else "")
+    prompt = prompt_context.stamp(prompt)
+    cwd = os.path.abspath(a["cwd"] or ".")
+    read_only = a["sandbox"] == "read-only"
+    jail = [sys.executable, JAIL]
+    for p in jail_paths(cwd, a["out"], read_only):
+        jail += ["--rw", p]
+    cmd = jail + ["--", "claude", "-p", "--model", MODEL, "--effort", EFFORT, "--output-format", "stream-json",
+                  "--verbose", *([] if PERSIST or RESUME else ["--no-session-persistence"]),
+                  *(["--resume", RESUME] if RESUME else []), "--strict-mcp-config",
+                  "--mcp-config", json.dumps({"mcpServers": {}}) if LEAN else MCP_CONFIG,
+                  "--settings", json.dumps({"autoMemoryEnabled": False, "feedbackDrafts": "off",
+                                           # no clangd per session (4-6 GB each; sessions build and test anyway)
+                                           "enabledPlugins": {"clangd-lsp@claude-plugins-official": False}}),
+                  "--append-system-prompt", RULES + ("\n\n" + APPEND_RULES if APPEND_RULES else "")]
+    if AUTOCOMPACT and AUTOCOMPACT != "off":
+        cmd += ["--autocompact", AUTOCOMPACT]
+    if LEAN:
+        tools = os.environ.get("HAIKU_TOOLS") or ("Read,Grep,Glob" if read_only else "Read,Edit,Write,Bash,Grep,Glob")
+        cmd += ["--safe-mode", "--tools", tools]
+    for d in EXTRA_DIRS:
+        cmd += ["--add-dir", d]
+    # Claude's native --fallback-model reuses the primary effort. The wrapper
+    # retries explicitly so Haiku high/xhigh can fall back to Opus medium.
+    if read_only:
+        cmd += ["--permission-mode", "default", "--allowedTools", *TOOLS,
+                "--disallowedTools", "Bash", "Edit", "Write", "NotebookEdit"]
+    else:
+        cmd += ["--permission-mode", "acceptEdits", "--allowedTools", *TOOLS, "Edit", "Write", "Bash",
+                "--disallowedTools", *[f"Bash({b})" for b in DENIED_BASH]]
+        if a["out"]:                       # the driver's run folder (session logs, the final message)
+            cmd += ["--add-dir", os.path.dirname(os.path.abspath(a["out"]))]
+    env = dict(os.environ, DISABLE_AUTOUPDATER="1")
+    actual_model, actual_effort = MODEL, EFFORT
+    rc, result, raw = run_stream(cmd, cwd, env, prompt)
+    if FALLBACK and FALLBACK != MODEL and fallback_allowed(rc, result, raw):
+        print(f"haiku-exec: primary overloaded; retrying {FALLBACK} ({FALLBACK_EFFORT})", flush=True)
+        cmd[cmd.index("--model") + 1] = FALLBACK
+        cmd[cmd.index("--effort") + 1] = FALLBACK_EFFORT
+        if "--autocompact" in cmd and "HAIKU_AUTOCOMPACT" not in os.environ and "haiku" not in FALLBACK:
+            del cmd[cmd.index("--autocompact"):cmd.index("--autocompact") + 2]   # the 100k default is Haiku's only
+        actual_model, actual_effort = FALLBACK, FALLBACK_EFFORT
+        rc, result, raw = run_stream(cmd, cwd, env, prompt)
+    text = (result or {}).get("result") or ""
+    if SESSION_OUT and (result or {}).get("session_id"):
+        try:
+            with open(SESSION_OUT, "w") as f:
+                json.dump({"session": result["session_id"], "model": actual_model, "continued": bool(RESUME),
+                           "account": os.environ.get("HAIKU_ACCOUNT", "personal")}, f)
+        except OSError:
+            pass
+    try:                                   # Haiku is billed, Luna was not: keep a cost ledger per session
+        append_cost({**(result or {}), "rc": rc}, actual_model, actual_effort,
+                    os.path.abspath(a["cwd"] or "."), a["out"])
+    except OSError:
+        pass
+    if failed(rc, result):
+        if startup_infrastructure_failure(rc, result, raw):
+            print("haiku-exec: infrastructure failure before model work; not an implementation attempt", flush=True)
+            return 75
+        blob = text + "".join(raw[-20:])
+        if LIMIT_RE.search(blob):
+            at = retry_time(blob)
+            print(f"haiku-exec: hit your usage limit" + (f"; try again at {at}" if at else ""), flush=True)
+            return 2
+        print(f"haiku-exec: session failed (rc={rc}, subtype={(result or {}).get('subtype')})", flush=True)
+        return rc or 1
+    if a["out"]:
+        with open(a["out"], "w") as f:
+            f.write(text)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

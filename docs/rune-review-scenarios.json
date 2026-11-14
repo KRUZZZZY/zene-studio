@@ -1,0 +1,340 @@
+{
+  "schema": 1,
+  "profile": "rune-ui",
+  "reviewer": "gpt-6.1-terra",
+  "status": "specified-not-executed",
+  "contract": "plans/RUNE-INTERACTION-CONTRACT.md",
+  "coverage_rule": "Required scenarios need valid observations; UNSURE/NOT-TESTED/skipped are incomplete. A task subset does not certify complete parity. Screenshots do not prove real audio.",
+  "uses": [
+    {
+      "id": "rune-q050-505",
+      "title": "Complete Rune Phase 0 feasibility gate",
+      "task_ids": [
+        "Q050-505"
+      ],
+      "core": true,
+      "do": "A musician opens Rune on a real project, starts and stops playback, seeks, changes tempo, mutes and adjusts a track, moves a clip, adds a note, and confirms the rendered result. Terra records visible state and engine/audio evidence; screenshots alone do not establish sound. Terra also conducts the specified plug-in-window and Orca checks in an isolated display/session.",
+      "expect": "All applicable user-visible acceptance criteria hold: Exercise the six prototype surfaces against a real engine and real project; prove engine state and rendered audio with render or engine meter/peak evidence. Report command/ack and subscription latency under load, including p95 and whether optimistic edits reconcile; measure playhead and meters at display rate. Build, open, and run deterministic headless checks on Linux, Windows MSVC, and macOS; separate hosted CI evidence from any local cross-target check. Check native plug-in editor open/focus/close/stacking behavior on Wayland and X11 and obtain platform evidence for Windows and macOS, stating any CI-only limitation. Exercise transport, track list, and mixer with Orca; document evidence and concrete follow-up needs for NVDA and VoiceOver. Deliver explicit GO, NO-GO, or BLOCKED per spike and an overall recommendation; list control-surface gaps for headless-engine operation and audio editing; distinguish removing the Qt window from any later removal of Qt libraries without prescribing speculative bulk/streaming work. Terra reviews the applicable cases from plans/rune-review-scenarios.json on the pinned Rune build. Required cases need observed PASS; missing prerequisites, UNSURE or skipped cases remain incomplete. Preserve independent code review and separately measured platform, latency and audio evidence.",
+      "required_evidence": [
+        "pinned source/build identity",
+        "visible before/after and state observations",
+        "separate engine/audio/platform proof when claimed"
+      ]
+    },
+    {
+      "id": "rune-q050-506",
+      "title": "Rune engine process lifecycle and connection",
+      "task_ids": [
+        "Q050-506"
+      ],
+      "core": true,
+      "do": "Launch Rune into a project, close and reopen the UI, then simulate an unavailable engine and a dropped connection. Terra verifies clear status, successful reconnect, and preserved project state.",
+      "expect": "All applicable user-visible acceptance criteria hold: On supported platforms, Rune opens the engine through the documented control connection and shows a usable project state without creating a Qt window. Connection refusal, engine startup failure, engine exit, UI exit, and reconnect produce actionable status and do not corrupt or silently discard project data. The engine remains independently startable and usable by existing control clients; no new mandatory Qt dependency is introduced into the UI process. Lifecycle and protocol compatibility are covered by deterministic tests and platform CI. Terra reviews the applicable cases from plans/rune-review-scenarios.json on the pinned Rune build. Required cases need observed PASS; missing prerequisites, UNSURE or skipped cases remain incomplete. Preserve independent code review and separately measured platform, latency and audio evidence.",
+      "required_evidence": [
+        "pinned source/build identity",
+        "visible before/after and state observations",
+        "separate engine/audio/platform proof when claimed"
+      ]
+    },
+    {
+      "id": "rune-q050-507",
+      "title": "Synchronize Rune with live engine project state",
+      "task_ids": [
+        "Q050-507"
+      ],
+      "core": true,
+      "do": "Open a project, change a track or clip through Rune and through an independent engine control client, then reconnect. Terra confirms both views converge and selection/context remains understandable.",
+      "expect": "All applicable user-visible acceptance criteria hold: Track, clip, note, mixer, selection, and transport state shown by Rune corresponds to a live engine project rather than demo fixtures. Engine-originated changes and command replies converge to one correct visible state without stale edits overwriting newer state. Any added subscription, high-rate, or bulk data contract is additive, justified by measured Phase 0 evidence, bounded, and covered for reconnect, ordering, and version compatibility. State flow remains responsive on representative projects without unbounded queues or repeated whole-project transfers per frame. Terra reviews the applicable cases from plans/rune-review-scenarios.json on the pinned Rune build. Required cases need observed PASS; missing prerequisites, UNSURE or skipped cases remain incomplete. Preserve independent code review and separately measured platform, latency and audio evidence.",
+      "required_evidence": [
+        "pinned source/build identity",
+        "visible before/after and state observations",
+        "separate engine/audio/platform proof when claimed"
+      ]
+    },
+    {
+      "id": "rune-q050-508",
+      "title": "Rune transport, loop, and real playback",
+      "task_ids": [
+        "Q050-508"
+      ],
+      "core": true,
+      "do": "Open a non-empty project, play, seek during playback, change tempo, set a loop and stop. Terra verifies controls, position and loop state; verifies audio with a safe real device or an independently inspected engine render/peaks.",
+      "expect": "All applicable user-visible acceptance criteria hold: Play, stop, seek, tempo, and loop actions use engine state and display acknowledged/current values, including errors and boundary behavior. Playback produces the expected real engine output and playhead/meter feedback remains responsive under the Phase 0 load profile. Audio evidence distinguishes offline/Dummy render proof from an audible real-device session and never labels silent/dummy playback as sound. Terra reviews the applicable cases from plans/rune-review-scenarios.json on the pinned Rune build. Required cases need observed PASS; missing prerequisites, UNSURE or skipped cases remain incomplete. Preserve independent code review and separately measured platform, latency and audio evidence.",
+      "required_evidence": [
+        "pinned source/build identity",
+        "visible before/after and state observations",
+        "separate engine/audio/platform proof when claimed"
+      ]
+    },
+    {
+      "id": "rune-q050-509",
+      "title": "Rune browser and arrangement first composition flow",
+      "task_ids": [
+        "Q050-509"
+      ],
+      "core": true,
+      "do": "Search for an installed sound, add it, place and move a clip, resize and duplicate it, mute it, undo/redo, then play/render. Terra confirms content identity, clip state, selection, undo feedback, and real audio evidence.",
+      "expect": "All applicable user-visible acceptance criteria hold: Search and browse installed instrument/audio content, add content to the project, and make missing, unsupported, or failed loads visible. Select, move, resize, duplicate, split, mute, and delete supported audio/MIDI clips with consistent grid behavior and immediate state feedback. Edits reach the engine, remain undoable/redoable, and preserve the intended project state after resynchronization. A newly created arrangement can be rendered or played through the engine; the browser's sample art or demo metadata is never substituted for real content/audio evidence. Terra reviews the applicable cases from plans/rune-review-scenarios.json on the pinned Rune build. Required cases need observed PASS; missing prerequisites, UNSURE or skipped cases remain incomplete. Preserve independent code review and separately measured platform, latency and audio evidence.",
+      "required_evidence": [
+        "pinned source/build identity",
+        "visible before/after and state observations",
+        "separate engine/audio/platform proof when claimed"
+      ]
+    },
+    {
+      "id": "rune-q050-510",
+      "title": "Rune piano-roll note editing",
+      "task_ids": [
+        "Q050-510"
+      ],
+      "core": true,
+      "do": "Open an instrument clip, add and move notes, adjust duration and velocity, undo and redo, then play/render. Terra checks visible note positions and velocities against engine state and verifies resulting audio.",
+      "expect": "All applicable user-visible acceptance criteria hold: Open a MIDI clip and add, select, move, resize, delete notes and change velocity with visible pitch/time/value feedback. Edits follow the interaction contract, use engine state, and undo/redo correctly through the engine history. Edited notes survive project save/reopen and produce expected non-silent output when played through a compatible instrument. Terra reviews the applicable cases from plans/rune-review-scenarios.json on the pinned Rune build. Required cases need observed PASS; missing prerequisites, UNSURE or skipped cases remain incomplete. Preserve independent code review and separately measured platform, latency and audio evidence.",
+      "required_evidence": [
+        "pinned source/build identity",
+        "visible before/after and state observations",
+        "separate engine/audio/platform proof when claimed"
+      ]
+    },
+    {
+      "id": "rune-q050-511",
+      "title": "Rune mixer and effect workflow",
+      "task_ids": [
+        "Q050-511"
+      ],
+      "core": true,
+      "do": "Balance two sounding tracks, mute/solo, insert and bypass an effect, and compare audible/rendered output. Terra records actual engine channel state plus a render or safe audio session; screenshots do not prove meters are live.",
+      "expect": "All applicable user-visible acceptance criteria hold: Show engine-backed track/master meters and allow volume, pan, mute, and solo changes with clear current state. Add, configure where supported, bypass, and remove an effect through existing engine behavior; errors and unavailable controls are clear. Mix and effect actions preserve routing, undo/history expectations, and audio output; meters are not fabricated demo values. Terra reviews the applicable cases from plans/rune-review-scenarios.json on the pinned Rune build. Required cases need observed PASS; missing prerequisites, UNSURE or skipped cases remain incomplete. Preserve independent code review and separately measured platform, latency and audio evidence.",
+      "required_evidence": [
+        "pinned source/build identity",
+        "visible before/after and state observations",
+        "separate engine/audio/platform proof when claimed"
+      ]
+    },
+    {
+      "id": "rune-q050-512",
+      "title": "Rune project save, reopen, and engine history",
+      "task_ids": [
+        "Q050-512"
+      ],
+      "core": true,
+      "do": "Create or open a real project, make clip/note/mixer edits, undo and redo, save, close Rune, reopen, and confirm the song and history controls are truthful. Terra checks the reopened project and resulting render/state.",
+      "expect": "All applicable user-visible acceptance criteria hold: Create/open/save/reopen projects using the existing product format and preserve supported project content without silent loss. Dirty state, save errors, overwrite decisions, undo/redo availability, and first-save behavior reflect the engine's established contracts. Clip, note, mixer, and effect edits remain correct after save/reopen; Rune does not use local snapshot undo as a substitute for engine history. Recovery and interrupted-operation outcomes are explicit, tested, and do not weaken current data-safety behavior. Terra reviews the applicable cases from plans/rune-review-scenarios.json on the pinned Rune build. Required cases need observed PASS; missing prerequisites, UNSURE or skipped cases remain incomplete. Preserve independent code review and separately measured platform, latency and audio evidence.",
+      "required_evidence": [
+        "pinned source/build identity",
+        "visible before/after and state observations",
+        "separate engine/audio/platform proof when claimed"
+      ]
+    },
+    {
+      "id": "rune-q050-513",
+      "title": "Rune render and export workflow",
+      "task_ids": [
+        "Q050-513"
+      ],
+      "core": true,
+      "do": "Render the edited project, open or inspect the resulting file, and compare expected duration and audible content; also cancel or trigger a safe invalid destination and verify the status.",
+      "expect": "All applicable user-visible acceptance criteria hold: Choose supported render settings and destination, start a real render, receive completion/progress or asynchronous acknowledgment, and handle cancellation and failure visibly. Exported output has the requested supported format and duration and is not silently empty or stale. Render operation does not block the UI command path or misrepresent the engine's asynchronous completion contract. Terra reviews the applicable cases from plans/rune-review-scenarios.json on the pinned Rune build. Required cases need observed PASS; missing prerequisites, UNSURE or skipped cases remain incomplete. Preserve independent code review and separately measured platform, latency and audio evidence.",
+      "required_evidence": [
+        "pinned source/build identity",
+        "visible before/after and state observations",
+        "separate engine/audio/platform proof when claimed"
+      ]
+    },
+    {
+      "id": "rune-q050-514",
+      "title": "Rune recording and take preservation",
+      "task_ids": [
+        "Q050-514"
+      ],
+      "core": true,
+      "do": "On an available real input, select the device, arm and monitor a track, record a short signal, stop, save/reopen, and verify the take plays back. Terra uses a safe signal source and records capture plus playback evidence.",
+      "expect": "All applicable user-visible acceptance criteria hold: Select a supported input, arm a track, communicate monitoring and capture state, record, stop, and identify the resulting take. Save/reopen preserves the take; interruption, unavailable device, disk/write failure, and disarm/stop behavior do not silently lose or mislabel recorded data. Real input evidence identifies platform, device/backend, capture state, and resulting audio/take data; Dummy input is not counted as recording proof. Existing realtime constraints and recording route limits remain enforced. Terra reviews the applicable cases from plans/rune-review-scenarios.json on the pinned Rune build. Required cases need observed PASS; missing prerequisites, UNSURE or skipped cases remain incomplete. Preserve independent code review and separately measured platform, latency and audio evidence.",
+      "required_evidence": [
+        "pinned source/build identity",
+        "visible before/after and state observations",
+        "separate engine/audio/platform proof when claimed"
+      ]
+    },
+    {
+      "id": "rune-q050-515",
+      "title": "Rune plug-in editor and built-in parameter access",
+      "task_ids": [
+        "Q050-515"
+      ],
+      "core": true,
+      "do": "Load a representative native plug-in and a built-in instrument/effect, open and focus the native editor, change parameters, save/reopen, and verify the plug-in remains usable. Terra captures platform-specific window and engine-state/audio evidence.",
+      "expect": "All applicable user-visible acceptance criteria hold: Open, focus, raise, and close a supported native plug-in editor beside Rune on supported Linux window systems, Windows, and macOS, documenting gaps by host/platform. Expose a usable parameter-editing path for built-in plug-ins without a bespoke Rune view and keep displayed values synchronized with engine state. Plug-in state, automation, project save/reopen, and engine lifecycle remain correct; known unsupported editor cases are explicit. Terra reviews the applicable cases from plans/rune-review-scenarios.json on the pinned Rune build. Required cases need observed PASS; missing prerequisites, UNSURE or skipped cases remain incomplete. Preserve independent code review and separately measured platform, latency and audio evidence.",
+      "required_evidence": [
+        "pinned source/build identity",
+        "visible before/after and state observations",
+        "separate engine/audio/platform proof when claimed"
+      ]
+    },
+    {
+      "id": "rune-q050-516",
+      "title": "Rune accessibility, parity inventory, and adoption gate",
+      "task_ids": [
+        "Q050-516"
+      ],
+      "core": true,
+      "do": "A musician completes the full first-session journey without coaching on each supported platform, then repeats key transport, track, mixer, and editing actions using keyboard/screen-reader support. Terra records blockers, state/audio evidence, and uncertain or skipped actions for retest.",
+      "expect": "All applicable user-visible acceptance criteria hold: Keyboard navigation, command/menu discoverability, focus and selection feedback, screen-reader roles/names/states, scaling, and contrast support the first-session journey across supported platforms. Build a traceable inventory from the current advertised feature set, control surface, Qt workflows, and platform support, classifying each as equivalent, owner-accepted deferred, or blocked with evidence. Run complete musician sessions through Terra's centralized human-use review; all findings follow existing independent review, repair budgets, and Terra priority/promotion rules. Performance, startup, interaction latency, memory, packaging, audio, recording, plug-in, and accessibility evidence identify platform and test conditions and compare against budgets established from Phase 0/baseline. Present a reversible adoption recommendation to the owner. This task does not switch the default, remove Qt, delete widget tests, or weaken existing gates; default adoption and any later Qt retirement remain separate explicit owner decisions. Terra reviews the applicable cases from plans/rune-review-scenarios.json on the pinned Rune build. Required cases need observed PASS; missing prerequisites, UNSURE or skipped cases remain incomplete. Preserve independent code review and separately measured platform, latency and audio evidence.",
+      "required_evidence": [
+        "pinned source/build identity",
+        "visible before/after and state observations",
+        "separate engine/audio/platform proof when claimed"
+      ]
+    },
+    {
+      "id": "rune-focus-keyboard",
+      "title": "Focus keyboard",
+      "task_ids": [
+        "Q050-506",
+        "Q050-507",
+        "Q050-510",
+        "Q050-516"
+      ],
+      "core": true,
+      "do": "Navigate all active regions with keyboard only; move focus into and out of a modal, close it with Escape, then return to the previous editor.",
+      "expect": "Focus is visible, logical and restored; selection and playback do not change accidentally; no trap or hidden focused control."
+    },
+    {
+      "id": "rune-text-shortcuts",
+      "title": "Text shortcuts",
+      "task_ids": [
+        "Q050-510",
+        "Q050-512",
+        "Q050-516"
+      ],
+      "core": true,
+      "do": "Rename an item and edit a numeric field with selection, arrows, Delete, undo, clipboard and non-ASCII/IME input; type keys that are also music shortcuts.",
+      "expect": "Text/IME editing stays in the field; transport and project shortcuts do not fire; Enter commits and Escape cancels as documented without losing prior data."
+    },
+    {
+      "id": "rune-selection-targets",
+      "title": "Selection targets",
+      "task_ids": [
+        "Q050-509",
+        "Q050-510",
+        "Q050-511",
+        "Q050-516"
+      ],
+      "core": true,
+      "do": "Select one item then multiple items; open a context menu on a different item, switch panels and inspect mixed values.",
+      "expect": "The command target and selected set are unambiguous; mixed values are marked mixed; multi-edits preserve offsets and do not silently affect incompatible items."
+    },
+    {
+      "id": "rune-drag-cancel",
+      "title": "Drag cancel",
+      "task_ids": [
+        "Q050-509",
+        "Q050-510",
+        "Q050-516"
+      ],
+      "core": true,
+      "do": "Preview move/resize, cross a snap boundary, cancel with Escape and try an invalid drop. Then make the same edit using a non-drag alternative.",
+      "expect": "Cancel leaves the original unchanged; invalid drops explain refusal and preserve data; a completed gesture is one undo step; alternative paths produce the same result."
+    },
+    {
+      "id": "rune-precision-control",
+      "title": "Precision control",
+      "task_ids": [
+        "Q050-508",
+        "Q050-511",
+        "Q050-516"
+      ],
+      "core": true,
+      "do": "Adjust a fader or numeric value with normal and fine pointer movement, type an exact value, try invalid text, reset it, undo and redo.",
+      "expect": "Units/range/default are clear; pointer, keys and exact entry agree; invalid input is explained without silent coercion; undo restores the original and redo the edited value."
+    },
+    {
+      "id": "rune-undo-roundtrip",
+      "title": "Undo roundtrip",
+      "task_ids": [
+        "Q050-509",
+        "Q050-510",
+        "Q050-512",
+        "Q050-516"
+      ],
+      "core": true,
+      "do": "Make a known edit, undo it, redo it, save, close and reopen; compare object identities, positions and musical content.",
+      "expect": "Undo and redo restore the exact intended state; reopening preserves the committed content and does not duplicate an edit or lose objects."
+    },
+    {
+      "id": "rune-async-recovery",
+      "title": "Async recovery",
+      "task_ids": [
+        "Q050-506",
+        "Q050-507",
+        "Q050-512",
+        "Q050-513",
+        "Q050-514",
+        "Q050-516"
+      ],
+      "core": true,
+      "do": "Exercise a slow operation, cancellation and an unavailable or disconnected engine with appropriate test fixtures; attempt a reasonable recovery.",
+      "expect": "Pending differs from completed; busy state stays responsive; failure/cancel is truthful; retry does not duplicate work; acknowledged data is preserved and recovery is actionable."
+    },
+    {
+      "id": "rune-files-errors",
+      "title": "Files errors",
+      "task_ids": [
+        "Q050-512",
+        "Q050-513",
+        "Q050-516"
+      ],
+      "core": true,
+      "do": "Save/open/export using spaces and Unicode paths; cancel, try read-only/missing paths, then recover through the UI.",
+      "expect": "Dialog keyboard flow and overwrite protection work; errors identify the action and next step; cancellation creates no misleading success or unwanted file."
+    },
+    {
+      "id": "rune-window-focus",
+      "title": "Window focus",
+      "task_ids": [
+        "Q050-515",
+        "Q050-516"
+      ],
+      "core": true,
+      "do": "Open a native plug-in editor, switch focus, edit a plug-in field, close and reopen it, and return to the Rune editor on each claimed window system.",
+      "expect": "Editor focus/z-order/close are correct; typing does not trigger Rune shortcuts; returning restores useful focus; errors do not freeze engine or UI."
+    },
+    {
+      "id": "rune-scaling-accessibility",
+      "title": "Scaling accessibility",
+      "task_ids": [
+        "Q050-505",
+        "Q050-506",
+        "Q050-510",
+        "Q050-511",
+        "Q050-516"
+      ],
+      "core": true,
+      "do": "Use keyboard, a real screen reader, enlarged scaling and high contrast across transport, tracks, editor and mixer; scroll and resize.",
+      "expect": "Roles/names/values and disabled states are announced; labels and hit targets remain usable and unclipped; state does not depend only on color or hover; no undiscoverable required operation."
+    },
+    {
+      "id": "rune-solo-comparator",
+      "title": "Solo comparator",
+      "task_ids": [
+        "Q050-511",
+        "Q050-516"
+      ],
+      "core": true,
+      "do": "Create TWO sounding tracks with distinguishable content, route them correctly, then compare mute/solo/fader/bypass changes.",
+      "expect": "The intended signal changes and other signal is preserved/silenced as expected; do not declare solo verified without a second sounding comparator and independent output evidence."
+    },
+    {
+      "id": "rune-zoom-tooltip",
+      "title": "Zoom tooltip",
+      "task_ids": [
+        "Q050-509",
+        "Q050-510",
+        "Q050-516"
+      ],
+      "core": true,
+      "do": "Zoom and scroll around a selected edit, hover unfamiliar controls, then reach the same help and edit using keyboard.",
+      "expect": "Zoom anchor and selection remain predictable; hit targets match visible geometry; tooltips do not steal focus or hide essential content and are not the only source of required information."
+    }
+  ]
+}

@@ -1,0 +1,412 @@
+{
+  "title": "Rune UI rework: owner-approved top queue category",
+  "category": "rune-ui",
+  "owner_difficulty": 3,
+  "difficulty_score": 3,
+  "difficulty": 3,
+  "sources": [
+    "plans/RUNE-REWORK-SPEC.md",
+    "plans/RUNE-INTERACTION-CONTRACT.md",
+    "plans/LAUNCH-PRIORITIES-2026-11-14.md",
+    "side-projects/zene-rune-prototype/PHASE0-BRIEF.md",
+    "side-projects/zene-rune-prototype/SPEC-UI-REWRITE.md"
+  ],
+  "queue_note": "Owner 2026-11-14 authorized this category at the top of the feature queue with difficulty 3. Canonical executable queue is plans/queue-050.jsonl; dependencies, preparation, Terra review, resource limits and release gates remain mandatory.",
+  "tasks": [
+    {
+      "queue_id": "Q050-505",
+      "title": "Complete Rune Phase 0 feasibility gate",
+      "type": "feature",
+      "size": "M",
+      "priority": "P0",
+      "difficulty": 3,
+      "category": "rune-ui",
+      "depends_on": [],
+      "area": "Rune Phase 0 side project",
+      "goal": "Complete the already-approved Phase 0 spikes and publish a measured go/no-go report for connecting the Rune prototype to the existing Zene engine.",
+      "acceptance": [
+        "Exercise the six prototype surfaces against a real engine and real project; prove engine state and rendered audio with render or engine meter/peak evidence.",
+        "Report command/ack and subscription latency under load, including p95 and whether optimistic edits reconcile; measure playhead and meters at display rate.",
+        "Build, open, and run deterministic headless checks on Linux, Windows MSVC, and macOS; separate hosted CI evidence from any local cross-target check.",
+        "Check native plug-in editor open/focus/close/stacking behavior on Wayland and X11 and obtain platform evidence for Windows and macOS, stating any CI-only limitation.",
+        "Exercise transport, track list, and mixer with Orca; document evidence and concrete follow-up needs for NVDA and VoiceOver.",
+        "Deliver explicit GO, NO-GO, or BLOCKED per spike and an overall recommendation; list control-surface gaps for headless-engine operation and audio editing; distinguish removing the Qt window from any later removal of Qt libraries without prescribing speculative bulk/streaming work.",
+        "Terra reviews the applicable cases from plans/rune-review-scenarios.json on the pinned Rune build. Required cases need observed PASS; missing prerequisites, UNSURE or skipped cases remain incomplete. Preserve independent code review and separately measured platform, latency and audio evidence."
+      ],
+      "affected_surfaces": [
+        "side-project Rune prototype",
+        "Phase 0 CI workflow and report",
+        "real-engine test harness"
+      ],
+      "terra_human_scenario": "A musician opens Rune on a real project, starts and stops playback, seeks, changes tempo, mutes and adjusts a track, moves a clip, adds a note, and confirms the rendered result. Terra records visible state and engine/audio evidence; screenshots alone do not establish sound. Terra also conducts the specified plug-in-window and Orca checks in an isolated display/session.",
+      "deterministic_test_proof": "Run existing prototype tests and add repeatable integration checks for command state, reconnect/error cases, and measured latency collection. Preserve exact commands, logs, platform/build identity, and report values; zero-test runs are failures.",
+      "real_engine_testability": "Must use the real control socket and real project on the real engine. Audio proof must be an offline render comparison, non-silent render/engine peaks, or documented safe real-device session; Dummy playback is not audible proof.",
+      "notes": "This is approved side-project Phase 0 work. Do not modify product, pipeline, or other agents' worktrees. No product integration proceeds without an overall GO and documented limitations.",
+      "owner_difficulty": 3,
+      "difficulty_score": 3,
+      "priority_rank": 0
+    },
+    {
+      "queue_id": "Q050-506",
+      "title": "Rune engine process lifecycle and connection",
+      "type": "feature",
+      "size": "M",
+      "priority": "P0",
+      "difficulty": 3,
+      "category": "rune-ui",
+      "depends_on": [
+        "Q050-505"
+      ],
+      "area": "Rune UI process lifecycle",
+      "goal": "Start, connect to, supervise, and close the existing engine without a Qt main window from the Rune product UI with clear handling for unavailable or failed connections.",
+      "acceptance": [
+        "On supported platforms, Rune opens the engine through the documented control connection and shows a usable project state without creating a Qt window.",
+        "Connection refusal, engine startup failure, engine exit, UI exit, and reconnect produce actionable status and do not corrupt or silently discard project data.",
+        "The engine remains independently startable and usable by existing control clients; no new mandatory Qt dependency is introduced into the UI process.",
+        "Lifecycle and protocol compatibility are covered by deterministic tests and platform CI.",
+        "Terra reviews the applicable cases from plans/rune-review-scenarios.json on the pinned Rune build. Required cases need observed PASS; missing prerequisites, UNSURE or skipped cases remain incomplete. Preserve independent code review and separately measured platform, latency and audio evidence."
+      ],
+      "affected_surfaces": [
+        "product Rune application entry/startup",
+        "engine launch/configuration contract",
+        "platform packaging and integration harness"
+      ],
+      "terra_human_scenario": "Launch Rune into a project, close and reopen the UI, then simulate an unavailable engine and a dropped connection. Terra verifies clear status, successful reconnect, and preserved project state.",
+      "deterministic_test_proof": "Test normal launch/close, connection refusal, unexpected engine exit, reconnect, stale socket cleanup, and project preservation with isolated runtime directories; exercise supported OS process and IPC paths in CI.",
+      "real_engine_testability": "Run against the actual engine binary and control socket on Linux, Windows, and macOS CI paths. Capture engine process state and protocol logs, not a mock-only pass.",
+      "depends_on_gate": "Q050-505 overall GO",
+      "owner_difficulty": 3,
+      "difficulty_score": 3,
+      "priority_rank": 0
+    },
+    {
+      "queue_id": "Q050-507",
+      "title": "Synchronize Rune with live engine project state",
+      "type": "feature",
+      "size": "L",
+      "priority": "P0",
+      "difficulty": 3,
+      "category": "rune-ui",
+      "depends_on": [
+        "Q050-506"
+      ],
+      "area": "Rune engine state synchronization",
+      "goal": "Present current project and transport state in Rune and keep it correct as the engine changes, reconnects, or reports failures.",
+      "acceptance": [
+        "Track, clip, note, mixer, selection, and transport state shown by Rune corresponds to a live engine project rather than demo fixtures.",
+        "Engine-originated changes and command replies converge to one correct visible state without stale edits overwriting newer state.",
+        "Any added subscription, high-rate, or bulk data contract is additive, justified by measured Phase 0 evidence, bounded, and covered for reconnect, ordering, and version compatibility.",
+        "State flow remains responsive on representative projects without unbounded queues or repeated whole-project transfers per frame.",
+        "Terra reviews the applicable cases from plans/rune-review-scenarios.json on the pinned Rune build. Required cases need observed PASS; missing prerequisites, UNSURE or skipped cases remain incomplete. Preserve independent code review and separately measured platform, latency and audio evidence."
+      ],
+      "affected_surfaces": [
+        "Rune app state and engine adapter",
+        "control-surface integration",
+        "additive engine protocol only where measured necessary"
+      ],
+      "terra_human_scenario": "Open a project, change a track or clip through Rune and through an independent engine control client, then reconnect. Terra confirms both views converge and selection/context remains understandable.",
+      "deterministic_test_proof": "Test initial snapshot, incremental changes, command acknowledgment, ordering, duplicate/stale events, reconnect/resync, malformed messages, version mismatch, and bounded backlog with deterministic engine fixtures plus real-protocol integration tests.",
+      "real_engine_testability": "Compare Rune display to engine state queries for representative projects; retain protocol traces and resource/latency measurements. A simulated Engine implementation is supplementary only.",
+      "owner_difficulty": 3,
+      "difficulty_score": 3,
+      "priority_rank": 0
+    },
+    {
+      "queue_id": "Q050-508",
+      "title": "Rune transport, loop, and real playback",
+      "type": "feature",
+      "size": "M",
+      "priority": "P0",
+      "difficulty": 3,
+      "category": "rune-ui",
+      "depends_on": [
+        "Q050-507"
+      ],
+      "area": "Rune transport and audio feedback",
+      "goal": "Make transport controls operate on the existing engine and communicate truthful playback position, tempo, loop, and audio state.",
+      "acceptance": [
+        "Play, stop, seek, tempo, and loop actions use engine state and display acknowledged/current values, including errors and boundary behavior.",
+        "Playback produces the expected real engine output and playhead/meter feedback remains responsive under the Phase 0 load profile.",
+        "Audio evidence distinguishes offline/Dummy render proof from an audible real-device session and never labels silent/dummy playback as sound.",
+        "Terra reviews the applicable cases from plans/rune-review-scenarios.json on the pinned Rune build. Required cases need observed PASS; missing prerequisites, UNSURE or skipped cases remain incomplete. Preserve independent code review and separately measured platform, latency and audio evidence."
+      ],
+      "affected_surfaces": [
+        "Rune transport controls and status",
+        "engine transport commands/subscriptions",
+        "audio evidence harness"
+      ],
+      "terra_human_scenario": "Open a non-empty project, play, seek during playback, change tempo, set a loop and stop. Terra verifies controls, position and loop state; verifies audio with a safe real device or an independently inspected engine render/peaks.",
+      "deterministic_test_proof": "Cover play/stop transitions, seek bounds, tempo validation, loop boundaries, lost acknowledgments, undo expectations where applicable, and render output against a known project.",
+      "real_engine_testability": "Run against the product engine with both offline render/peak evidence and, when safely available, a real device session. Record latency and the actual backend.",
+      "owner_difficulty": 3,
+      "difficulty_score": 3,
+      "priority_rank": 0
+    },
+    {
+      "queue_id": "Q050-509",
+      "title": "Rune browser and arrangement first composition flow",
+      "type": "feature",
+      "size": "L",
+      "priority": "P0",
+      "difficulty": 3,
+      "category": "rune-ui",
+      "depends_on": [
+        "Q050-508"
+      ],
+      "area": "Rune browser and arrangement",
+      "goal": "Let a musician find available content, add it to a real track, and create and edit a basic arrangement in Rune.",
+      "acceptance": [
+        "Search and browse installed instrument/audio content, add content to the project, and make missing, unsupported, or failed loads visible.",
+        "Select, move, resize, duplicate, split, mute, and delete supported audio/MIDI clips with consistent grid behavior and immediate state feedback.",
+        "Edits reach the engine, remain undoable/redoable, and preserve the intended project state after resynchronization.",
+        "A newly created arrangement can be rendered or played through the engine; the browser's sample art or demo metadata is never substituted for real content/audio evidence.",
+        "Terra reviews the applicable cases from plans/rune-review-scenarios.json on the pinned Rune build. Required cases need observed PASS; missing prerequisites, UNSURE or skipped cases remain incomplete. Preserve independent code review and separately measured platform, latency and audio evidence."
+      ],
+      "affected_surfaces": [
+        "Rune browser",
+        "arrangement/timeline",
+        "engine content and clip commands",
+        "undo integration"
+      ],
+      "terra_human_scenario": "Search for an installed sound, add it, place and move a clip, resize and duplicate it, mute it, undo/redo, then play/render. Terra confirms content identity, clip state, selection, undo feedback, and real audio evidence.",
+      "deterministic_test_proof": "Test search/filter, insertion, unsupported content, clip edits and boundaries, snapping, selection, undo/redo, resync, and non-silent expected render through a fixture project.",
+      "real_engine_testability": "Use installed real content and engine clip state; retain the resulting project/render or meter peaks and the exact sample/instrument identity.",
+      "owner_difficulty": 3,
+      "difficulty_score": 3,
+      "priority_rank": 0
+    },
+    {
+      "queue_id": "Q050-510",
+      "title": "Rune piano-roll note editing",
+      "type": "feature",
+      "size": "M",
+      "priority": "P0",
+      "difficulty": 3,
+      "category": "rune-ui",
+      "depends_on": [
+        "Q050-509"
+      ],
+      "area": "Rune piano roll and MIDI command mapping",
+      "goal": "Edit notes and velocities in a real MIDI clip with engine-backed state and history.",
+      "acceptance": [
+        "Open a MIDI clip and add, select, move, resize, delete notes and change velocity with visible pitch/time/value feedback.",
+        "Edits follow the interaction contract, use engine state, and undo/redo correctly through the engine history.",
+        "Edited notes survive project save/reopen and produce expected non-silent output when played through a compatible instrument.",
+        "Terra reviews the applicable cases from plans/rune-review-scenarios.json on the pinned Rune build. Required cases need observed PASS; missing prerequisites, UNSURE or skipped cases remain incomplete. Preserve independent code review and separately measured platform, latency and audio evidence."
+      ],
+      "affected_surfaces": [
+        "Rune piano roll",
+        "MIDI note model/commands",
+        "engine note and history paths"
+      ],
+      "terra_human_scenario": "Open an instrument clip, add and move notes, adjust duration and velocity, undo and redo, then play/render. Terra checks visible note positions and velocities against engine state and verifies resulting audio.",
+      "deterministic_test_proof": "Test note bounds, grid behavior, overlap/selection rules from the interaction contract, add/move/resize/delete, velocity, undo/redo, reopen, and expected MIDI render.",
+      "real_engine_testability": "Use a real MIDI clip and instrument in the product engine; capture note state and rendered output/peaks.",
+      "owner_difficulty": 3,
+      "difficulty_score": 3,
+      "priority_rank": 0
+    },
+    {
+      "queue_id": "Q050-511",
+      "title": "Rune mixer and effect workflow",
+      "type": "feature",
+      "size": "M",
+      "priority": "P0",
+      "difficulty": 3,
+      "category": "rune-ui",
+      "depends_on": [
+        "Q050-509"
+      ],
+      "area": "Rune mixer and effect controls",
+      "goal": "Expose useful live mixer state and the basic track/effect controls needed to shape the first composition.",
+      "acceptance": [
+        "Show engine-backed track/master meters and allow volume, pan, mute, and solo changes with clear current state.",
+        "Add, configure where supported, bypass, and remove an effect through existing engine behavior; errors and unavailable controls are clear.",
+        "Mix and effect actions preserve routing, undo/history expectations, and audio output; meters are not fabricated demo values.",
+        "Terra reviews the applicable cases from plans/rune-review-scenarios.json on the pinned Rune build. Required cases need observed PASS; missing prerequisites, UNSURE or skipped cases remain incomplete. Preserve independent code review and separately measured platform, latency and audio evidence."
+      ],
+      "affected_surfaces": [
+        "Rune mixer and inspector",
+        "engine mixer/effect command paths",
+        "meter fast-state path if justified"
+      ],
+      "terra_human_scenario": "Balance two sounding tracks, mute/solo, insert and bypass an effect, and compare audible/rendered output. Terra records actual engine channel state plus a render or safe audio session; screenshots do not prove meters are live.",
+      "deterministic_test_proof": "Test fader/pan bounds, mute/solo state, effect insertion/bypass/removal, error cases, undo/history, channel state, and render behavior with known audio.",
+      "real_engine_testability": "Use two non-silent engine sources, inspect mixer state and compare rendered output/peaks with effect enabled and bypassed.",
+      "owner_difficulty": 3,
+      "difficulty_score": 3,
+      "priority_rank": 0
+    },
+    {
+      "queue_id": "Q050-512",
+      "title": "Rune project save, reopen, and engine history",
+      "type": "feature",
+      "size": "L",
+      "priority": "P0",
+      "difficulty": 3,
+      "category": "rune-ui",
+      "depends_on": [
+        "Q050-507",
+        "Q050-510",
+        "Q050-511"
+      ],
+      "area": "Rune project lifecycle and undo history",
+      "goal": "Make the Rune editing journey durable by using established project persistence and engine undo/redo behavior.",
+      "acceptance": [
+        "Create/open/save/reopen projects using the existing product format and preserve supported project content without silent loss.",
+        "Dirty state, save errors, overwrite decisions, undo/redo availability, and first-save behavior reflect the engine's established contracts.",
+        "Clip, note, mixer, and effect edits remain correct after save/reopen; Rune does not use local snapshot undo as a substitute for engine history.",
+        "Recovery and interrupted-operation outcomes are explicit, tested, and do not weaken current data-safety behavior.",
+        "Terra reviews the applicable cases from plans/rune-review-scenarios.json on the pinned Rune build. Required cases need observed PASS; missing prerequisites, UNSURE or skipped cases remain incomplete. Preserve independent code review and separately measured platform, latency and audio evidence."
+      ],
+      "affected_surfaces": [
+        "Rune file/project commands and dialogs",
+        "engine save/load and undo journal",
+        "project round-trip tests"
+      ],
+      "terra_human_scenario": "Create or open a real project, make clip/note/mixer edits, undo and redo, save, close Rune, reopen, and confirm the song and history controls are truthful. Terra checks the reopened project and resulting render/state.",
+      "deterministic_test_proof": "Round-trip representative existing project fixtures and edited projects; cover dirty close, invalid path, permission/write failure, overwrite, undo/redo availability, and canonical content compatibility.",
+      "real_engine_testability": "Use the actual engine file commands and product project format; compare reopened engine state and rendered output to the pre-save expectation.",
+      "owner_difficulty": 3,
+      "difficulty_score": 3,
+      "priority_rank": 0
+    },
+    {
+      "queue_id": "Q050-513",
+      "title": "Rune render and export workflow",
+      "type": "feature",
+      "size": "M",
+      "priority": "P0",
+      "difficulty": 3,
+      "category": "rune-ui",
+      "depends_on": [
+        "Q050-512"
+      ],
+      "area": "Rune engine render/export workflow",
+      "goal": "Let users render a saved composition through the existing engine and understand progress and failure outcomes.",
+      "acceptance": [
+        "Choose supported render settings and destination, start a real render, receive completion/progress or asynchronous acknowledgment, and handle cancellation and failure visibly.",
+        "Exported output has the requested supported format and duration and is not silently empty or stale.",
+        "Render operation does not block the UI command path or misrepresent the engine's asynchronous completion contract.",
+        "Terra reviews the applicable cases from plans/rune-review-scenarios.json on the pinned Rune build. Required cases need observed PASS; missing prerequisites, UNSURE or skipped cases remain incomplete. Preserve independent code review and separately measured platform, latency and audio evidence."
+      ],
+      "affected_surfaces": [
+        "Rune render/export controls",
+        "existing engine render commands",
+        "export validation"
+      ],
+      "terra_human_scenario": "Render the edited project, open or inspect the resulting file, and compare expected duration and audible content; also cancel or trigger a safe invalid destination and verify the status.",
+      "deterministic_test_proof": "Test supported settings, asynchronous start/completion, cancellation, invalid destination, file format/duration, and non-silent expected audio using stable engine fixtures.",
+      "real_engine_testability": "Run a product-engine render and preserve the output file metadata and audio/peak inspection evidence; no UI screenshot is accepted as render proof.",
+      "owner_difficulty": 3,
+      "difficulty_score": 3,
+      "priority_rank": 0
+    },
+    {
+      "queue_id": "Q050-514",
+      "title": "Rune recording and take preservation",
+      "type": "feature",
+      "size": "L",
+      "priority": "P0",
+      "difficulty": 3,
+      "category": "rune-ui",
+      "depends_on": [
+        "Q050-512"
+      ],
+      "area": "Rune recording, monitoring, and take workflow",
+      "goal": "Provide a safe basic real-input recording journey that arms, monitors, records, and preserves a take through the engine.",
+      "acceptance": [
+        "Select a supported input, arm a track, communicate monitoring and capture state, record, stop, and identify the resulting take.",
+        "Save/reopen preserves the take; interruption, unavailable device, disk/write failure, and disarm/stop behavior do not silently lose or mislabel recorded data.",
+        "Real input evidence identifies platform, device/backend, capture state, and resulting audio/take data; Dummy input is not counted as recording proof.",
+        "Existing realtime constraints and recording route limits remain enforced.",
+        "Terra reviews the applicable cases from plans/rune-review-scenarios.json on the pinned Rune build. Required cases need observed PASS; missing prerequisites, UNSURE or skipped cases remain incomplete. Preserve independent code review and separately measured platform, latency and audio evidence."
+      ],
+      "affected_surfaces": [
+        "Rune audio device/arm/monitor/record controls",
+        "existing engine capture and take APIs",
+        "take round-trip/recovery tests"
+      ],
+      "terra_human_scenario": "On an available real input, select the device, arm and monitor a track, record a short signal, stop, save/reopen, and verify the take plays back. Terra uses a safe signal source and records capture plus playback evidence.",
+      "deterministic_test_proof": "Exercise device unavailable, arm/record/stop state transitions, bounded routes, interruption and write failure, take save/reopen, and playback using deterministic capture fixtures in addition to manual real-device proof.",
+      "real_engine_testability": "Requires a real supported capture path and preserved take evidence on each claimed platform. Headless simulated capture is useful regression coverage but not proof of working device input.",
+      "owner_difficulty": 3,
+      "difficulty_score": 3,
+      "priority_rank": 0
+    },
+    {
+      "queue_id": "Q050-515",
+      "title": "Rune plug-in editor and built-in parameter access",
+      "type": "feature",
+      "size": "L",
+      "priority": "P1",
+      "difficulty": 3,
+      "category": "rune-ui",
+      "depends_on": [
+        "Q050-511",
+        "Q050-512"
+      ],
+      "area": "Rune plug-in hosting UI",
+      "goal": "Make hosted plug-ins usable from Rune while preserving native third-party editor windows and access to built-in parameters.",
+      "acceptance": [
+        "Open, focus, raise, and close a supported native plug-in editor beside Rune on supported Linux window systems, Windows, and macOS, documenting gaps by host/platform.",
+        "Expose a usable parameter-editing path for built-in plug-ins without a bespoke Rune view and keep displayed values synchronized with engine state.",
+        "Plug-in state, automation, project save/reopen, and engine lifecycle remain correct; known unsupported editor cases are explicit.",
+        "Terra reviews the applicable cases from plans/rune-review-scenarios.json on the pinned Rune build. Required cases need observed PASS; missing prerequisites, UNSURE or skipped cases remain incomplete. Preserve independent code review and separately measured platform, latency and audio evidence."
+      ],
+      "affected_surfaces": [
+        "Rune plug-in browser/inspector",
+        "existing plug-in editor host windows",
+        "built-in parameter access"
+      ],
+      "terra_human_scenario": "Load a representative native plug-in and a built-in instrument/effect, open and focus the native editor, change parameters, save/reopen, and verify the plug-in remains usable. Terra captures platform-specific window and engine-state/audio evidence.",
+      "deterministic_test_proof": "Cover plug-in parameter read/write, unavailable plug-in/editor, editor lifecycle signaling, automation/state persistence, and supported host integration paths; manual window manager behavior is separately recorded.",
+      "real_engine_testability": "Requires actual hosted plug-ins and native windows on the claimed OS/window-system combinations. Mock windows or screenshots alone do not establish plug-in audio or state.",
+      "owner_difficulty": 3,
+      "difficulty_score": 3,
+      "priority_rank": 1
+    },
+    {
+      "queue_id": "Q050-516",
+      "title": "Rune accessibility, parity inventory, and adoption gate",
+      "type": "feature",
+      "size": "L",
+      "priority": "P0",
+      "difficulty": 3,
+      "category": "rune-ui",
+      "depends_on": [
+        "Q050-508",
+        "Q050-509",
+        "Q050-510",
+        "Q050-511",
+        "Q050-512",
+        "Q050-513",
+        "Q050-514",
+        "Q050-515"
+      ],
+      "area": "Rune accessibility and parity evidence",
+      "goal": "Complete the first-session journey's accessibility and platform parity evidence and give the owner a traceable Rune adoption decision packet while Qt remains available.",
+      "acceptance": [
+        "Keyboard navigation, command/menu discoverability, focus and selection feedback, screen-reader roles/names/states, scaling, and contrast support the first-session journey across supported platforms.",
+        "Build a traceable inventory from the current advertised feature set, control surface, Qt workflows, and platform support, classifying each as equivalent, owner-accepted deferred, or blocked with evidence.",
+        "Run complete musician sessions through Terra's centralized human-use review; all findings follow existing independent review, repair budgets, and Terra priority/promotion rules.",
+        "Performance, startup, interaction latency, memory, packaging, audio, recording, plug-in, and accessibility evidence identify platform and test conditions and compare against budgets established from Phase 0/baseline.",
+        "Present a reversible adoption recommendation to the owner. This task does not switch the default, remove Qt, delete widget tests, or weaken existing gates; default adoption and any later Qt retirement remain separate explicit owner decisions.",
+        "Terra reviews the applicable cases from plans/rune-review-scenarios.json on the pinned Rune build. Required cases need observed PASS; missing prerequisites, UNSURE or skipped cases remain incomplete. Preserve independent code review and separately measured platform, latency and audio evidence."
+      ],
+      "affected_surfaces": [
+        "Rune keyboard/focus/accessibility behavior",
+        "cross-platform packaging and CI",
+        "Qt-to-Rune parity inventory",
+        "Terra human-use evidence"
+      ],
+      "terra_human_scenario": "A musician completes the full first-session journey without coaching on each supported platform, then repeats key transport, track, mixer, and editing actions using keyboard/screen-reader support. Terra records blockers, state/audio evidence, and uncertain or skipped actions for retest.",
+      "deterministic_test_proof": "Run accessibility tree/role checks, keyboard command tests, scaling/contrast checks, parity inventory consistency checks, platform builds, and all unchanged product tests/gates; retain reproducible evidence and explicit untested cases.",
+      "real_engine_testability": "The complete session uses the actual engine and real project/audio paths. Accessibility is checked with native assistive technology; platform CI and screenshots are supporting evidence, not substitutes for human AT use.",
+      "cutover_gate": "Owner review after independent Terra finding resolution under the existing policy. Qt remains available unless a later explicit owner decision authorizes default adoption or retirement.",
+      "owner_difficulty": 3,
+      "difficulty_score": 3,
+      "priority_rank": 0
+    }
+  ]
+}

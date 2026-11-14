@@ -26,8 +26,14 @@ AUTOMATION = ('train_backup.py', 'test_train_backup.py', 'train_versions.py',
               'train_sol.py', 'train_watch.py', 'merge_train.py', 'pin_latest.py',
               'test_merge_train_repairs_due.py', 'test_train_sol_repairs.py',
               'test_train_failure_handoff.py', 'test_train_watch_handoff.py',
-              'test_train_watch_postponed.py', 'gitleaks.toml', 'backup-gitleaks.toml')
-DOCS = ('VERSIONING-AND-MILESTONES.md', 'SPEC-050.md')
+              'test_train_watch_postponed.py', 'gitleaks.toml', 'backup-gitleaks.toml',
+              'feature_ladder.py', 'task_pipeline.py', 'queue_categories.py', 'FEATURE-CATEGORIES.json',
+              'prompt_context.py', 'test_prompt_context.py', 'test_queue_categories.py',
+              'register_rune_queue.py', 'test_rune_profiles.py', 'qwenfix.py', 'opencode_free.py',
+              'workflow_runtime.py', 'train_doctor.py', 'daily_review.py')
+DOCS = ('VERSIONING-AND-MILESTONES.md', 'SPEC-050.md', 'LAUNCH-PRIORITIES-2026-11-14.md',
+        'RUNE-REWORK-SPEC.md', 'RUNE-INTERACTION-CONTRACT.md', 'rune-rework-tasks.json',
+        'rune-review-scenarios.json', 'queue-050.jsonl')
 
 
 def command(args, cwd=None, timeout=180):
@@ -79,9 +85,19 @@ def build_snapshot(dest):
             shutil.copyfile(source, target)
     for source in (ROOT.parent / 'systemd/zene-train-backup.service',
                    ROOT.parent / 'systemd/zene-train-backup.timer',
-                   ROOT.parent / 'status/zene_status.py'):
+                   ROOT.parent / 'status/zene_status.py', ROOT.parent / 'duet/adapters.py',
+                   ROOT.parent / 'bunny/driver.py', ROOT.parent / 'patrol/patrol.py',
+                   ROOT.parent / 'terra-pilot/buttons/sweep.py', ROOT.parent / 'terra-pilot/session/session.py'):
         if source.exists():
             target = dest / 'automation' / source.relative_to(ROOT.parent)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, target)
+    for rel in ('tools/luna/luna-exec', 'tools/haiku/haiku-exec', 'tools/luna-patrol/patrol.py',
+                'tools/bunny-fix/driver.py', 'tools/bunny-fix/luna_easy_driver.py', 'AGENTS.md',
+                'research/ui/RUNE-INTERACTION-RESEARCH-2026-11-14.md'):
+        source = PROG / rel
+        if source.exists():
+            target = dest / 'project' / rel
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, target)
     copied_patches = set()

@@ -1,0 +1,15 @@
+{
+  "authorized": "Owner 2026-11-14: spec the Rune UI rework, put its category at the top of the queue, assign difficulty 3, use Terra for human-use review and researched interaction contracts.",
+  "categories": [
+    {
+      "id": "rune-ui",
+      "title": "Rune UI rework",
+      "order": 0,
+      "difficulty": 3,
+      "review_process": "terra-human-use",
+      "spec": "plans/RUNE-REWORK-SPEC.md",
+      "interaction_contract": "plans/RUNE-INTERACTION-CONTRACT.md",
+      "policy": "Top feature category; preserve required Terra fixes, urgent CI reproduction, dependency order, independent code review, resource limits and all release gates. Do not interrupt in-flight work."
+    }
+  ]
+}
