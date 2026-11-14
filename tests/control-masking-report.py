@@ -73,35 +73,44 @@ def check_nothing_changed(session, recorder, eq_before, depth_before):
                    "before=%r" % depth_before)
 
 
-def check_apply(session, recorder, a, b):
+def close(got, want):
+    return isinstance(got, (int, float)) and isinstance(want, (int, float)) \
+        and abs(float(got) - float(want)) <= 0.05
+
+
+def proposal_from_report(session, recorder, a, b):
     report = session.result("mixer.masking_report",
                             {"channels": [b, a], "priorities": {a: "front", b: "back"}})
     clash = clash_at(report, a, b, 200.0)
     strip = (clash or {}).get("strip_eq") or {}
     recorder.check("the 200 Hz clash carries a strip_eq proposal for the back channel",
                    strip.get("channel") == b and bool(strip), "clash=%r" % (clash,))
+    return strip
+
+
+def exact_proposed_keys(eq_before, eq_after, b, proposed):
+    before_b = eq_before.get(b) or {}
+    after_b = eq_after.get(b) or {}
+    return (all(close(after_b.get(k), v) for k, v in proposed.items())
+            and all(after_b.get(k) == v for k, v in before_b.items() if k not in proposed)
+            and all(eq_after.get(ch) == eq_before.get(ch) for ch in eq_before if ch != b))
+
+
+def check_proposal_effect(session, recorder, b, strip, eq_before, depth_before):
     proposed = {k: v for k, v in strip.items() if k != "channel"}
-    eq_before = eq_state(session)
-    depth_before = session.result("control.undo_depth").get("depth")
     reply = session.result("mixer.apply_masking_proposal", {"strip_eq": strip})
     recorder.check("applying the proposal reports applied true", reply.get("applied") is True,
                    "reply=%r" % (reply,))
     eq_after = eq_state(session)
-    before_b = eq_before.get(b) or {}
-    after_b = eq_after.get(b) or {}
-
-    def close(got, want):
-        return isinstance(got, (int, float)) and isinstance(want, (int, float)) \
-            and abs(float(got) - float(want)) <= 0.05
-
     recorder.check("applying the proposal sets exactly the proposed keys to the proposed values",
-                   all(close(after_b.get(k), v) for k, v in proposed.items())
-                   and all(after_b.get(k) == v for k, v in before_b.items() if k not in proposed)
-                   and all(eq_after.get(ch) == eq_before.get(ch) for ch in eq_before if ch != b),
+                   exact_proposed_keys(eq_before, eq_after, b, proposed),
                    "before=%r strip=%r after=%r" % (eq_before, strip, eq_after))
     recorder.check("applying the proposal records one undo step",
                    session.result("control.undo_depth").get("depth") == depth_before + 1,
                    "depth_before=%r" % (depth_before,))
+
+
+def check_undo_and_refusal(session, recorder, b, eq_before, depth_before):
     session.result("control.undo", {})
     recorder.check("one control.undo restores the whole EQ and the depth",
                    eq_state(session) == eq_before
@@ -117,6 +126,14 @@ def check_apply(session, recorder, a, b):
                    eq_state(session) == refused_eq
                    and session.result("control.undo_depth").get("depth") == refused_depth,
                    "before=%r" % (refused_eq,))
+
+
+def check_apply(session, recorder, a, b):
+    strip = proposal_from_report(session, recorder, a, b)
+    eq_before = eq_state(session)
+    depth_before = session.result("control.undo_depth").get("depth")
+    check_proposal_effect(session, recorder, b, strip, eq_before, depth_before)
+    check_undo_and_refusal(session, recorder, b, eq_before, depth_before)
 
 
 def drive(session, recorder):
