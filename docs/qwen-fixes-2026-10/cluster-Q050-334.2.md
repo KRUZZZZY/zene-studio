@@ -39,7 +39,7 @@ read that carries the subscribe reply. So `LiveSession` went on from a later seq
 | 5 repeats | `ctest -R "^ControlSessionSdk$" --repeat until-fail:5` (`ctest-6-repeat.log`): 5 of 5 passed | 0 |
 | Gates (copy of `feature_check.py`, log path only) | `feature-check-2.log`: all 8 rows PASS | 0 |
 
-The round-1 tables below still stand. The criterion-2 test now has 47 checks.
+The round-1 tables below still stand. The criterion-2 test now has 53 checks.
 
 ## Round 3: startup and resync cleanup, pipe smoke, verification
 
@@ -57,36 +57,52 @@ connection when the initial read fails, and `5a9e50574f` adds the named-pipe smo
 | Mutation A: `resync()` catch without `subscription.unsubscribe()` (`client.ts`), restored | `022-ctest-sdk-mutation-resync.log` | 8 |
 | Mutation B, first attempt: a sed line-offset error removed the `start` signature and connect line, not the cleanup. Discarded; the tree was restored | `023-ctest-sdk-mutation-startup.log` | 8 (invalid) |
 | Mutation B, valid: `LiveSession.start()` try/catch removed (`live-session.ts`), restored | `024-ctest-sdk-mutation-startup.log` | 8 |
-| `feature_check.py` (7 of 8 rows PASS; `complexity` FAIL: new `run` in `tests/session-sdk-pipe-smoke.py`, CCN 16) | `025-feature-check-final.log` | 1 |
+| `feature_check.py` before the fix (7 of 8 rows PASS; `complexity` FAIL: new `run` in `tests/session-sdk-pipe-smoke.py`, CCN 16) | `025-feature-check-final.log` | 1 |
+| `python3 tests/session-sdk-pipe-smoke.py build/zene <node> tools/zene-session-sdk` after the refactor (SUMMARY `ControlSessionSdkPipeSmoke: PASS`, same PASS lines) | `026-sdk-pipe-smoke-refactored.log` | 0 |
+| `feature_check.py` after the refactor (all 8 rows PASS, `complexity` included) | `027-feature-check-refactor.log` | 0 |
+| `bash tests/fork-sources-gate.sh` after the refactor (`PASS: every tracked source in scope is registered`) | `028-gate-fork-sources-refactor.log` | 0 |
+| `ctest -R "^ControlSessionSdk$" --output-on-failure` re-run for the count (`build/tests/Testing/Temporary/LastTest.log`: 53 `PASS:` lines) | `029-ctest-sdk-recheck-029.log` | 0 |
+
+The complexity failure was fixed by splitting `run()` into `check_ready`, `run_sdk` and `check_quit` (all CCN 10 or
+below). The baseline was not edited and `--reanchor` was not used.
 
 The mutation failures are "timed out waiting for the failed resync to unsubscribe" (A) and the child-exit check (B).
 The pipe smoke is CI-only on Windows; this Linux host runs only the POSIX socket path.
 
 ## Acceptance
 
-All runs below were from `build/tests` with `QT_QPA_PLATFORM=offscreen`, no `LMMS_PLUGIN_DIR`, and Node v22.23.1.
+Round 1 evidence: the logs in this table are in `~/.local/share/zene-bunny-fix/qwen/runs/Q050-334.2.r1/logs/`. All runs
+were from `build/tests` with `QT_QPA_PLATFORM=offscreen`, no `LMMS_PLUGIN_DIR`, and Node v22.23.1. The round-3 count is
+re-measured in `Q050-334.2.r3/logs/029-ctest-sdk-recheck-029.log`.
 
 | Criterion | Test | Command | Exit |
 |---|---|---|---|
-| A versioned package exports public types, includes a usage example that typechecks, and documents connection, read/edit calls, subscriptions, errors, and resync | `ZeneSessionSdkTypecheck`: strict `tsc` over `src/`, `examples/live-view.ts` (imported by package name) and `test/`, then the `dist` build emitting `index.js` + `index.d.ts`. `ControlSessionSdk`: `SDK_VERSION` equals the `package.json` semver, and the example runs against a real instance. The docs are `tools/zene-session-sdk/README.md` (sections Connect, Read and edit, Subscribe to changes, Errors, Resync) and `CHANGELOG.md` | `ctest -R "SessionSdk" --output-on-failure` (`ctest-9-restored-final.log`) | 0 |
-| An integration test uses the SDK against a real Zene instance to connect, read state, edit, receive the corresponding event, unsubscribe, and exercise recovery after disconnect or overflow | `ControlSessionSdk`: `tests/control-session-sdk.py` starts a headless `zene` and runs `tools/zene-session-sdk/test/integration.ts`, 42 PASS lines through the SDK's own exports, covering connect, read, the SDK's `track.add` arriving as its event, unsubscribe stopping events, overflow (held 4 of 4, notice detected, auto-resync, missed count, state complete) and disconnect (stale, retries, `missed === 2`, nothing replayed, next change arrives) | same run; also `ctest -R "^ControlSessionSdk$" --repeat until-fail:5` (`ctest-2-repeat.log`): 5 of 5 passed | 0 |
+| A versioned package exports public types, includes a usage example that typechecks, and documents connection, read/edit calls, subscriptions, errors, and resync | `ZeneSessionSdkTypecheck`: strict `tsc` over `src/`, `examples/live-view.ts` (imported by package name) and `test/`, then the `dist` build emitting `index.js` + `index.d.ts`. `ControlSessionSdk`: `SDK_VERSION` equals the `package.json` semver, and the example runs against a real instance. The docs are `tools/zene-session-sdk/README.md` (sections Connect, Read and edit, Subscribe to changes, Errors, Resync) and `CHANGELOG.md` | `ctest -R "SessionSdk" --output-on-failure` (`r1/logs/ctest-9-restored-final.log`) | 0 |
+| An integration test uses the SDK against a real Zene instance to connect, read state, edit, receive the corresponding event, unsubscribe, and exercise recovery after disconnect or overflow | `ControlSessionSdk`: `tests/control-session-sdk.py` starts a headless `zene` and runs `tools/zene-session-sdk/test/integration.ts`, 53 PASS lines (round 3, measured in `r3/logs/029-ctest-sdk-recheck-029.log`) through the SDK's own exports, covering connect, read, the SDK's `track.add` arriving as its event, unsubscribe stopping events, overflow (held 4 of 4, notice detected, auto-resync, missed count, state complete) and disconnect (stale, retries, `missed === 2`, nothing replayed, next change arrives) | same run; also `ctest -R "^ControlSessionSdk$" --repeat until-fail:5` (`r1/logs/ctest-2-repeat.log`): 5 of 5 passed | 0 |
 
 ## Revert proof
+
+Round 1 evidence, in `Q050-334.2.r1/logs/`. The round-3 restored runs are in the table under "Round 3" above.
 
 | Change | Command | Exit |
 |---|---|---|
 | Product reverted: `tools/zene-session-sdk/src/` moved away (example and test unchanged) | `ctest -R "SessionSdk" --output-on-failure` (`ctest-7-reverted-final.log`): typecheck fails with TS2307 "Cannot find module '@zene-studio/session-sdk'", and ControlSessionSdk fails with ERR_MODULE_NOT_FOUND | 8 (both failed) |
 | Behavioural mutation: `LiveSession` does not call `recover()` | `ctest -R "^ControlSessionSdk$"` (`ctest-8-mutated-final.log`): "timed out waiting for the resync after the overflow" | 8 |
-| Restored | `ctest -R "SessionSdk" --output-on-failure` (`ctest-9-restored-final.log`) | 0 |
+| Restored | `ctest -R "SessionSdk" --output-on-failure` (`ctest-9-restored-final.log`); round 3 restored runs: `020-ctest-sdk-final.log` (exit 0) and `021-ctest-sdk-repeat5.log` (exit 0) in `r3/logs/` | 0 |
 
 ## Gates
 
-`feature_check.py` could not create its log directory beside the worktree, because this session's write jail refused
-it (PermissionError). I ran a copy of the script, `/tmp/q3342-feature_check.py`, that changes only that log path, to the
-run folder. Every row passed: fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace,
-no-tautology, doc-figures, complexity and file-length. Exit 0 (`feature-check-4.log`). The first run, before the
-refactor commit, failed complexity on `connect` (CCN 14) and on a test function (CCN 11); both were split.
-`submit_check.py` reported its gates row as FAIL for the same PermissionError, not for a gate result.
+Round 3 gates, run unmodified from the shared qwen folder against this worktree:
+
+- `feature_check.py $W` before the fix: exit 1 (`025-feature-check-final.log`), 7 of 8 rows PASS. `complexity` FAILed on
+  the new `run` in `tests/session-sdk-pipe-smoke.py` (CCN 16, over the target of 10).
+- The fix (`27eaa073f5`) split `run()` into `check_ready`, `run_sdk` and `check_quit`, all at CCN 10 or below. The
+  baseline was not edited and `--reanchor` was not used.
+- `feature_check.py $W` after the fix: exit 0 (`027-feature-check-refactor.log`), all 8 rows PASS: fork-sources,
+  all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length.
+- `bash tests/fork-sources-gate.sh`: exit 0 (`028-gate-fork-sources-refactor.log`).
+
+Round 1 and round 2 gate logs are not in the round-3 folder; see the round folders named above.
 
 ## Self-check
 
@@ -120,3 +136,15 @@ refactor commit, failed complexity on `connect` (CCN 14) and on a test function 
   reports Skipped (77) and does not pass. I ran it locally with the pinned TypeScript 5.9.3 and `@types/node`
   22.20.5. `ControlSessionSdk` needs Node >= 22.6; it reports Skipped (77) on older Node and is not registered
   without node.
+- **Round 3 regressions fail with the product hunk removed, and pass restored.** Removing `resync()`'s read-failure
+  unsubscribe fails `ControlSessionSdk` (`022-ctest-sdk-mutation-resync.log`, exit 8). Removing `LiveSession.start()`'s
+  failed-initial-read cleanup fails it on the child-exit check (`024-ctest-sdk-mutation-startup.log`, exit 8). The
+  unmutated tree passes (`020-ctest-sdk-final.log`, exit 0). `023` is an invalid mutation attempt (a sed line-offset
+  error) and is discarded; it is kept only as a record.
+- **Pipe smoke, what ran here.** `ControlSessionSdkPipeSmoke` is CI-only on Windows. On this Linux host it runs only the
+  POSIX socket path: `011-sdk-pipe-smoke-posix.log` (SUMMARY PASS) and the STEP-2 launcher rerun after the refactor,
+  `026-sdk-pipe-smoke-refactored.log` (exit 0, SUMMARY PASS).
+- **No new or changed command, no snapshot change, no A-boilerplate row changed.** The round-3 change is a Python
+  refactor of a test launcher and two docs. No command was added or changed, so no snapshot was regenerated.
+- **GUI surface: none for this unit.** There is no GUI for events (`docs/050-features/Q050-334.1.md:68-69`: no GUI
+  panel or menu), and every SDK edit is an existing registered command. So there is no new GUI check to run here.
