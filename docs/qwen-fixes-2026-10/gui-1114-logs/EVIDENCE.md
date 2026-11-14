@@ -418,25 +418,25 @@ Totals: 12 passed, 0 failed, 0 skipped, 0 blacklisted, 2863ms
 ```text
 Test project /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-gui-1114-tab-mixer-mute-master/build/tests
     Start 437: ShellTest
-1/8 Test #437: ShellTest ........................   Passed    0.35 sec
+1/8 Test #437: ShellTest ........................   Passed    0.31 sec
     Start 438: ShellFloatButtonTest
-2/8 Test #438: ShellFloatButtonTest .............   Passed    0.15 sec
+2/8 Test #438: ShellFloatButtonTest .............   Passed    0.12 sec
     Start 439: ShellHomesTest
-3/8 Test #439: ShellHomesTest ...................   Passed    0.32 sec
+3/8 Test #439: ShellHomesTest ...................   Passed    0.29 sec
     Start 484: MixerModesTest
-4/8 Test #484: MixerModesTest ...................   Passed    2.69 sec
+4/8 Test #484: MixerModesTest ...................   Passed    2.62 sec
     Start 487: MixerZonesTest
-5/8 Test #487: MixerZonesTest ...................   Passed    3.00 sec
+5/8 Test #487: MixerZonesTest ...................   Passed    2.94 sec
     Start 488: MixerPinnedStripsTest
-6/8 Test #488: MixerPinnedStripsTest ............   Passed    3.46 sec
+6/8 Test #488: MixerPinnedStripsTest ............   Passed    3.31 sec
     Start 489: MixerSelectionIdentityTest
-7/8 Test #489: MixerSelectionIdentityTest .......   Passed    2.95 sec
+7/8 Test #489: MixerSelectionIdentityTest .......   Passed    2.75 sec
     Start 604: PanelShortcutsTest
-8/8 Test #604: PanelShortcutsTest ...............   Passed    3.37 sec
+8/8 Test #604: PanelShortcutsTest ...............   Passed    3.20 sec
 
 100% tests passed out of 8
 
-Total Test time (real) =  16.30 sec
+Total Test time (real) =  15.56 sec
 ```
 
 ## 14-feature-check.log
