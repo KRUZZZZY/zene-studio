@@ -278,6 +278,117 @@ private slots:
 		QTest::mouseRelease(macro, Qt::LeftButton, Qt::NoModifier, macro->rect().center());
 	}
 
+	//! gui-1114-tab-mixer-mute-master: the Master mute button is bound to the channel's mute model, and a
+	//! real press on it toggles the model and the button's checked state. The app-wide selection filter
+	//! (ShellSelection::eventFilter) also selects the strip, but returns false, so the press is not
+	//! swallowed. This is the first of two halves of the guard: the control's own contract, in the Mix
+	//! view where the whole strip is on screen.
+	void theMasterMuteButtonTogglesInTheMixerView()
+	{
+		MainWindow* win = getGUI()->mainWindow();
+		MixerView* mixer = getGUI()->mixerView();
+		MixerChannel* master = Engine::mixer()->mixerChannel(0);
+		MixerChannelView* strip = mixer->channelView(0);
+		QVERIFY(strip != nullptr);
+		AutomatableButton* mute = strip->findChild<AutomatableButton*>(QStringLiteral("btn-mute"));
+		QVERIFY(mute != nullptr);
+		QCOMPARE(mute->model(), &master->m_muteModel);
+
+		win->shell()->setView(ShellView::Mix);
+		win->shell()->revealPanel(QStringLiteral("mixer"));
+		QCoreApplication::processEvents();
+		QCoreApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
+		// The default Mix view also shows Devices at the bottom; close it so "the press opened it" is visible.
+		if (win->shell()->model().isVisible(QStringLiteral("devices"))) { win->shell()->togglePanel(QStringLiteral("devices")); }
+		QCoreApplication::processEvents();
+
+		// The whole button, not a clipped sliver: every ancestor up to the window leaves all 20x20 px.
+		const QRect whole(mute->mapTo(win, QPoint(0, 0)), mute->size());
+		QRect shown = whole;
+		for (QWidget* w = mute->parentWidget(); w != nullptr && w != win; w = w->parentWidget())
+		{
+			shown &= QRect(w->mapTo(win, QPoint(0, 0)), w->size());
+		}
+		shown &= win->rect();
+		const QString shownProblem = shown == whole ? QString()
+			: QStringLiteral("only %1x%2 of the %3x%4 mute at %5,%6 is on screen in Mix view")
+				.arg(shown.width()).arg(shown.height()).arg(whole.width()).arg(whole.height())
+				.arg(whole.x()).arg(whole.y());
+		const bool centreReachesMute = win->childAt(mute->mapTo(win, mute->rect().center())) == mute;
+
+		master->m_muteModel.setValue(false);
+		QTest::mouseClick(mute, Qt::LeftButton);
+		const bool on = master->m_muteModel.value();
+		const bool checked = static_cast<QAbstractButton*>(mute)->isChecked();
+		const bool selected = mixer->currentMixerChannel() == strip;
+		const bool devicesOpened = win->shell()->model().isVisible(QStringLiteral("devices"));
+		QTest::mouseClick(mute, Qt::LeftButton);
+		const bool off = !master->m_muteModel.value();
+		const bool unchecked = !static_cast<QAbstractButton*>(mute)->isChecked();
+		const bool devicesOpenedAgain = win->shell()->model().isVisible(QStringLiteral("devices"));
+
+		QVERIFY2(shownProblem.isEmpty(), qPrintable(shownProblem));
+		QVERIFY2(centreReachesMute, "something else covers the mute button's centre in Mix view");
+		QVERIFY2(on, "a real press on Master mute did not turn the mute model on");
+		QVERIFY2(checked, "the Master mute button did not show itself checked");
+		QVERIFY2(selected, "the press did not also select the strip it landed on");
+		QVERIFY2(!devicesOpened, "a mute press must not open Devices");
+		QVERIFY2(off, "a second press did not turn the mute model off");
+		QVERIFY2(unchecked, "the Master mute button did not show itself unchecked");
+		QVERIFY2(!devicesOpenedAgain, "the second mute press opened Devices");
+	}
+
+	//! gui-1114-tab-mixer-mute-master, second half: the finding's frame is Arrange view, where the Mixer
+	//! is the bottom region. That region is shorter than the strip, so only part of the button is on
+	//! screen; the part that IS on screen still receives a real press and toggles the same model, and
+	//! nothing opens. The sweep's press went to the AT-SPI centre of the whole button box, which is
+	//! below that visible part - on the footer's Devices switch - so the panel it saw was that switch.
+	void aPressOnTheVisiblePartOfTheBottomRegionsMasterMuteTogglesIt()
+	{
+		MainWindow* win = getGUI()->mainWindow();
+		MixerChannel* master = Engine::mixer()->mixerChannel(0);
+		MixerChannelView* strip = getGUI()->mixerView()->channelView(0);
+		QVERIFY(strip != nullptr);
+		AutomatableButton* mute = strip->findChild<AutomatableButton*>(QStringLiteral("btn-mute"));
+		QVERIFY(mute != nullptr);
+		QCOMPARE(mute->model(), &master->m_muteModel);
+
+		win->shell()->setView(ShellView::Arrange);
+		win->shell()->revealPanel(QStringLiteral("mixer"));
+		QCoreApplication::processEvents();
+		QCoreApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
+
+		const QRect whole(mute->mapTo(win, QPoint(0, 0)), mute->size());
+		QRect visible = whole;
+		for (QWidget* w = mute->parentWidget(); w != nullptr && w != win; w = w->parentWidget())
+		{
+			visible &= QRect(w->mapTo(win, QPoint(0, 0)), w->size());
+		}
+		visible &= win->rect();
+		const QPoint pressAt = visible.center();
+		const QPoint local = mute->mapFrom(win, pressAt);
+		const bool pressPointReachesMute = visible.height() > 0 && win->childAt(pressAt) == mute;
+		const bool centreIsTheSweepsPointInTheFooter = win->childAt(mute->mapTo(win, mute->rect().center())) != mute;
+
+		master->m_muteModel.setValue(false);
+		if (pressPointReachesMute && mute->rect().contains(local)) { QTest::mouseClick(mute, Qt::LeftButton, Qt::NoModifier, local); }
+		const bool on = master->m_muteModel.value();
+		const bool checked = static_cast<QAbstractButton*>(mute)->isChecked();
+		const bool devicesOpened = win->shell()->model().isVisible(QStringLiteral("devices"));
+
+		win->shell()->setView(ShellView::Arrange);
+		win->shell()->revealPanel(QStringLiteral("detail"));
+
+		QVERIFY2(visible.height() > 0, "no part of the Master mute button is on screen in the bottom region");
+		QVERIFY2(pressPointReachesMute, "the part of the mute button that is on screen is covered");
+		QVERIFY2(mute->rect().contains(local), "the press point is outside the mute button");
+		QVERIFY2(on, "a press on the visible part of the bottom region's mute did not toggle it");
+		QVERIFY2(checked, "the bottom region's mute button did not show itself checked");
+		QVERIFY2(!devicesOpened, "a mute press in the bottom region opened Devices");
+		QVERIFY2(centreIsTheSweepsPointInTheFooter,
+			"the sweep's AT-SPI centre is inside the mute button, so this finding needs re-measuring");
+	}
+
 	// The Return button creates a bus and refreshes the view at once. The strip it adds must already
 	// be labelled Return then: the rebuild of the strips must not skip the type badges, which would
 	// show "Channel N" until the half-second timer's next pass.
