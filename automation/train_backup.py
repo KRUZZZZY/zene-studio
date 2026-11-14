@@ -31,7 +31,7 @@ AUTOMATION = ('train_backup.py', 'test_train_backup.py', 'train_versions.py',
               'prompt_context.py', 'test_prompt_context.py', 'test_queue_categories.py',
               'register_rune_queue.py', 'test_rune_profiles.py', 'qwenfix.py', 'opencode_free.py',
               'workflow_runtime.py', 'train_doctor.py', 'daily_review.py')
-DOCS = ('VERSIONING-AND-MILESTONES.md', 'SPEC-050.md', 'LAUNCH-PRIORITIES-2026-11-14.md',
+DOCS = ('VERSIONING-AND-MILESTONES.md', 'SPEC-050.md', 'QUEUE-050.md', 'LAUNCH-PRIORITIES-2026-11-14.md',
         'RUNE-REWORK-SPEC.md', 'RUNE-INTERACTION-CONTRACT.md', 'rune-rework-tasks.json',
         'rune-review-scenarios.json', 'queue-050.jsonl')
 
