@@ -37,6 +37,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 import merge_train as mt          # noqa: E402
+import prompt_context
 import train_doctor as td         # noqa: E402  (merges, excerpt, named_files, git, luna_ok)
 
 OFF = ROOT / "SOL-QUEUE-OFF"
@@ -512,6 +513,7 @@ def codex_cmd(out, thread):
 
 def session(prompt, out):
     """One turn in the persistent session. Returns (final text, thread id)."""
+    prompt = prompt_context.stamp(prompt)
     SCRATCH.mkdir(parents=True, exist_ok=True)
     sess = load(SESSION, {})
     jail = jail_prefix()[:-1]

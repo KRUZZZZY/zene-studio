@@ -797,6 +797,9 @@ def pipeline_notes(d):
     notes = []
     ladder = d.get("feature_ladder") or {}
     if ladder:
+        for category in ladder.get('categories', []):
+            notes.append(f"Feature category: {category['title']} · difficulty {category.get('difficulty', '?')} · "
+                         f"{category.get('ready', 0)} ready / {category.get('total', 0)} tasks · {category.get('review_process', '')}")
         counts = ladder.get("counts") or {}
         notes.append(f"Feature ladder: {ladder.get('ready', 0)} ready / {ladder.get('inventory', 0)} inventoried; "
                      f"{counts.get('awaiting-preparation', 0)} awaiting preparation; {counts.get('awaiting-pairwise-ranking', 0)} awaiting Clef")
