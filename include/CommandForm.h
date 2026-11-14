@@ -158,6 +158,11 @@ private:
  *  kind Busy saying the form is waiting. */
 LMMS_EXPORT ControlResult runCommand(QWidget* parent, const CommandCall& call, CommandForm** form = nullptr);
 
+/*! Q050-497: the Edit Applied earcon for a command that ran, when @a result is a success and
+ *  @a id is a mutating command (an edit, not a read or a display). Called by the ways into the
+ *  registry: runCommand, the palette's direct dispatch and the List dialog (through runCommand). */
+LMMS_EXPORT void playCommandEarcon(const QString& id, const ControlResult& result);
+
 /*! An action on @a menu that runs the call @a make builds when triggered (so the ids it fixes
  *  are read then, not when the menu was built). Disabled when the command is not registered. */
 LMMS_EXPORT QAction* addCommandAction(QMenu* menu, const QString& label, const QString& id,

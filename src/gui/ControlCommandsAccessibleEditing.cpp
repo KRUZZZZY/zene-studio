@@ -29,6 +29,7 @@
  *  - view.announcements: what a screen reader is told unasked - all transitions, errors only, or nothing
  *    (AccessibleWidgets.h's announcement policy). A preference in the config file; one undo step. */
 
+#include <cmath>
 #include <functional>
 
 #include <QApplication>
@@ -41,6 +42,7 @@
 #include "ControlRegistryGroups.h"
 #include "ControlVocabulary.h"
 #include "ControlWindowCommands.h"
+#include "Earcons.h"
 #include "GuiApplication.h"
 #include "ItemList.h"
 #include "NoteCanvas.h"
@@ -179,6 +181,52 @@ ControlResult announcements(const QJsonObject& args)
 		{QStringLiteral("view.announcements"), {{QStringLiteral("level"), before}}}, [] {});
 }
 
+ControlResult earconsCommand(const QJsonObject& args)
+{
+	const QString category = args.value(QStringLiteral("category")).toString();
+	if (!earcons::categoryNames().contains(category))
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'category' is one of %1").arg(earcons::categoryNames().join(QStringLiteral(", "))));
+	}
+	const bool hasEnabled = args.contains(QStringLiteral("enabled"));
+	const bool hasLevel = args.contains(QStringLiteral("level"));
+	if (!hasEnabled && !hasLevel)
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("give 'enabled' or 'level'"));
+	}
+	if (hasEnabled && args.value(QStringLiteral("enabled")).type() != QJsonValue::Bool)
+	{
+		return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'enabled' is true or false"));
+	}
+	double level = 0.5;
+	if (hasLevel)
+	{
+		const QJsonValue value = args.value(QStringLiteral("level"));
+		if (!value.isDouble() || !std::isfinite(value.toDouble()) || value.toDouble() < 0.0 || value.toDouble() > 1.0)
+		{
+			return ControlResult::failure(ControlErrorKind::InvalidArgs, QStringLiteral("'level' is a number in 0..1"));
+		}
+		level = value.toDouble();
+	}
+	QJsonObject doc = gui::uistore::read(QStringLiteral("earcons"));
+	QJsonObject entry = doc.value(category).toObject();
+	const bool beforeEnabled = entry.value(QStringLiteral("enabled")).toBool();
+	const double beforeLevel = entry.value(QStringLiteral("level")).toDouble(0.5);
+	const bool enabled = hasEnabled ? args.value(QStringLiteral("enabled")).toBool() : beforeEnabled;
+	const double newLevel = hasLevel ? level : beforeLevel;
+	entry.insert(QStringLiteral("enabled"), enabled);
+	entry.insert(QStringLiteral("level"), newLevel);
+	doc.insert(category, entry);
+	const QJsonObject previous{{QStringLiteral("enabled"), beforeEnabled}, {QStringLiteral("level"), beforeLevel}};
+	const QJsonObject result{{QStringLiteral("category"), category}, {QStringLiteral("enabled"), enabled},
+		{QStringLiteral("level"), newLevel}, {QStringLiteral("previous"), previous}};
+	return gui::uistore::write(QStringLiteral("earcons"), doc, result,
+		{QStringLiteral("view.earcons"), {{QStringLiteral("category"), category}, {QStringLiteral("enabled"), beforeEnabled},
+			{QStringLiteral("level"), beforeLevel}}},
+		[] { gui::uistore::applyStoredEarcons(); });
+}
+
 void add(ControlRegistry& registry, const char* group, const char* verb, const QString& description, const QJsonObject& args,
 	ControlResult (*handler)(const QJsonObject&), bool mutating)
 {
@@ -212,6 +260,13 @@ void registerAccessibleEditingCommands(ControlRegistry& registry)
 		"only for the focused control, never for meters or automation. A preference in the config file (ui/announcements); "
 		"one undo step."),
 		objectSchema({{QStringLiteral("level"), enumProperty(a11y::announceLevelNames())}}, {QStringLiteral("level")}), announcements, true);
+	add(registry, "view", "earcons", QStringLiteral("The monitoring tones for editing: one on/off switch and a level "
+		"(0..1, default 0.5) per category - selection (a boundary reached), edit (an edit applied), refused (a refused "
+		"action), record (recording starting and stopping) and loop (the loop wrapping). Categories are off by default. "
+		"Monitoring output only: never in renders or recorded takes. A preference in the config file (ui/earcons); one "
+		"undo step."),
+		objectSchema({{QStringLiteral("category"), enumProperty(earcons::categoryNames())}, {QStringLiteral("enabled"), booleanProperty()},
+			{QStringLiteral("level"), numberProperty()}}, {QStringLiteral("category")}), earconsCommand, true);
 }
 
 } // namespace lmms

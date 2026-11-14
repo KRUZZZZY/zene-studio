@@ -35,7 +35,9 @@
 #include <QMenuBar>
 
 #include "CommandMetadata.h"
+#include "ControlRegistry.h"
 #include "ControlVocabulary.h"
+#include "Earcons.h"
 #include "GuiApplication.h"
 #include "ShellSelection.h"
 #include "TextFloat.h"
@@ -112,6 +114,13 @@ void announce(QWidget* parent, const CommandCall& call, const ControlResult& res
 		result.ok ? 8000 : 4000, beside);
 }
 
+void playCommandEarcon(const QString& id, const ControlResult& result)
+{
+	if (!result.ok) { return; }
+	const ControlCommand* command = ControlRegistry::instance()->command(id);
+	if (command != nullptr && command->mutating) { earcons::play(earcons::Sound::EditApplied); }
+}
+
 ControlResult runCommand(QWidget* parent, const CommandCall& call, CommandForm** form)
 {
 	if (form != nullptr) { *form = nullptr; }
@@ -124,6 +133,7 @@ ControlResult runCommand(QWidget* parent, const CommandCall& call, CommandForm**
 	if (!call.ask || nothingToAsk)
 	{
 		const ControlResult result = ControlRegistry::instance()->invoke(call.id, call.fixed);
+		playCommandEarcon(call.id, result);
 		announce(parent, call, result);
 		return result;
 	}

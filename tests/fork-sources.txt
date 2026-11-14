@@ -3760,6 +3760,8 @@ include/ShellRecordMenu.h
 src/gui/shell/ShellRecordMenu.cpp
 # cluster new-p10-318 (2026-10): fix and verification report for the Peak Controller zero-frame block (fork-NEW).
 docs/qwen-fixes-2026-10/cluster-new-p10-318.md
-# Q050-497: the earcon set - a lock-free module mixed only into the device output, and its test.
+# Q050-497: the earcon set - a lock-free module mixed only into the device output, its test, and the GUI
+# switches (view.earcons, View > Earcons, the event hooks) with their test.
 include/Earcons.h
 src/core/Earcons.cpp
+tests/src/gui/EarconsSettingsTest.cpp

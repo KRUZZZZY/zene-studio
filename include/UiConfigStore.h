@@ -66,6 +66,11 @@ LMMS_EXPORT ControlResult write(const QString& key, const QJsonObject& value, QJ
 LMMS_EXPORT ControlResult writeProject(ProjectWorkspace::Part part, const QJsonObject& value, QJsonObject result,
 	const Inverse& inverse, const std::function<void()>& apply);
 
+/*! 0.5.0 Q050-497: push the stored ui/earcons document into the core earcon atomics - each
+ *  category's enabled flag and level (absent ones are off at 0.5). Called once when the main
+ *  window is built, and by view.earcons' apply lambda after every write and undo. */
+LMMS_EXPORT void applyStoredEarcons();
+
 } // namespace lmms::gui::uistore
 
 #endif // LMMS_GUI_UI_CONFIG_STORE_H

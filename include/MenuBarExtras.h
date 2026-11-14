@@ -47,6 +47,12 @@ LMMS_EXPORT QMenu* installNavigateMenu(QMenuBar* bar);
  *  as a child of @a view and added to it on each call, so a View menu rebuilt as it opens keeps one submenu. */
 LMMS_EXPORT QMenu* addAnnouncementsMenu(QMenu* view);
 
+/*! View > Earcons (Q050-497): the five earcon categories, each a submenu with an Enabled toggle and
+ *  the levels 25/50/75/100%, every entry running view.earcons through the registry and checking what
+ *  is in force whenever the menu opens (set from here, the socket or undo). Made once as a child of
+ *  @a view, like addAnnouncementsMenu. */
+LMMS_EXPORT QMenu* addEarconsMenu(QMenu* view);
+
 } // namespace lmms::gui
 
 #endif // LMMS_GUI_MENU_BAR_EXTRAS_H

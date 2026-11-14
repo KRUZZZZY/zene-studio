@@ -40,6 +40,7 @@
 
 #include "AccessibleWidgets.h"
 #include "DirectChildOfType.h"
+#include "Earcons.h"
 #include "Engine.h"
 #include "Song.h"
 #include "UiConfigStore.h"
@@ -192,6 +193,14 @@ QString lastAnnouncement()
 
 void announceTransition(QObject* source, Transition kind, const QString& detail)
 {
+	// Earcons first: they are monitoring feedback of their own and follow their category, not the speech level.
+	switch (kind)
+	{
+	case Transition::Refused: earcons::play(earcons::Sound::Refused); break;
+	case Transition::RecordStarted: earcons::play(earcons::Sound::RecordStart); break;
+	case Transition::RecordStopped: earcons::play(earcons::Sound::RecordStop); break;
+	default: break;
+	}
 	announceStatus(source != nullptr ? source : applicationSource(), transitionText(kind, detail), politenessOf(kind));
 }
 

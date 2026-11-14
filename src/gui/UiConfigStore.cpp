@@ -26,9 +26,12 @@
 
 #include <QJsonDocument>
 
+#include <cmath>
+
 #include "ConfigManager.h"
 #include "ControlEdit.h"
 #include "ControlReversibility.h"
+#include "Earcons.h"
 #include "Engine.h"
 #include "Song.h"
 
@@ -88,6 +91,20 @@ ControlResult writeProject(ProjectWorkspace::Part part, const QJsonObject& value
 	return recordWrite(put, ProjectWorkspace::instance().part(part), value, std::move(result), inverse, apply,
 		QStringLiteral("action checkpoint: the recorded undo step puts the project's previous %1 back (<workspace>, "
 			"saved with the project) and re-applies it to the interface, exactly as this command does").arg(what));
+}
+
+void applyStoredEarcons()
+{
+	const QJsonObject doc = read(QStringLiteral("earcons"));
+	const QStringList& names = earcons::categoryNames();
+	for (int i = 0; i < names.size(); ++i)
+	{
+		const QJsonObject entry = doc.value(names.at(i)).toObject();
+		const auto category = static_cast<earcons::Category>(i);
+		earcons::setEnabled(category, entry.value(QStringLiteral("enabled")).toBool());
+		const double level = entry.value(QStringLiteral("level")).toDouble(0.5);
+		if (std::isfinite(level) && level >= 0.0 && level <= 1.0) { earcons::setLevel(category, static_cast<float>(level)); }
+	}
 }
 
 } // namespace lmms::gui::uistore

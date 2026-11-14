@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-11-14T05:49:24Z",
+  "captured_at": "2026-11-14T14:12:44Z",
   "commands": [
     {
       "args_schema": {
@@ -37460,6 +37460,41 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "category": {
+            "enum": [
+              "selection",
+              "edit",
+              "refused",
+              "record",
+              "loop"
+            ],
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "level": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "category"
+        ],
+        "type": "object"
+      },
+      "description": "The monitoring tones for editing: one on/off switch and a level (0..1, default 0.5) per category - selection (a boundary reached), edit (an edit applied), refused (a refused action), record (recording starting and stopping) and loop (the loop wrapping). Categories are off by default. Monitoring output only: never in renders or recorded takes. A preference in the config file (ui/earcons); one undo step.",
+      "group": "view",
+      "id": "view.earcons",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "clip": {
             "type": "string"
           },
@@ -40184,23 +40219,23 @@
       }
     }
   ],
-  "count": 932,
+  "count": 933,
   "instance": {
     "binary": null,
     "binary_bytes": null,
     "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-497/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-k7pwec4y/zene.sock",
-    "version": "0.4.0-alpha.7048+95b6b62"
+    "source_socket": "/tmp/zctl-run-jjcmvxx9/zene.sock",
+    "version": "0.4.0-alpha.7053+f206bd4"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 78,
-    "id_count": 932,
-    "ids_sha256": "3b318b4ce6bc29a26194052e8932b76418d03988314ffcce3785a06ecea5e944"
+    "id_count": 933,
+    "ids_sha256": "8d86276224fff84374a0112af0dfdc575b7666a20fe915e6bcdede29dcd8e811"
   }
 }

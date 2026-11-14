@@ -46,6 +46,7 @@
 #include "MenuBarExtras.h"
 #include "MeterSpeech.h"
 #include "SessionAnnouncements.h"
+#include "UiConfigStore.h"
 #include "AboutDialog.h"
 #include "ArrangerFileDrop.h"
 #include "AudioEngine.h"
@@ -1450,6 +1451,9 @@ void MainWindow::updateViewMenu()
 	m_viewMenu->addAction(qa);
 	// 0.5.0 theme 17: what a screen reader is told unasked (view.announcements), the level in force checked.
 	addAnnouncementsMenu(m_viewMenu);
+	addEarconsMenu(m_viewMenu);
+	// 0.5.0 Q050-497: the earcon switches and levels stored in ui/earcons (core atomics, so applied here).
+	gui::uistore::applyStoredEarcons();
 
 }
 

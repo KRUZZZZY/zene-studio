@@ -133,6 +133,8 @@ const ReversibilityRow kW3CustomRows[] = {
 		"action checkpoint: the recorded undo step writes the previous ui/announcements object back", ""),
 	R("view.crosshair", RC::TrueInverse, true, "it writes the cross-hair preference in the config file (ui/crosshair)",
 		"action checkpoint: the recorded undo step writes the previous ui/crosshair object back", ""),
+	R("view.earcons", RC::TrueInverse, true, "it writes the earcon switches and levels in the config file (ui/earcons)",
+		"action checkpoint: the recorded undo step writes the previous ui/earcons object back and re-applies it", ""),
 };
 
 #undef R
