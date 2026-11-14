@@ -47,13 +47,13 @@ are under `/tmp` at the paths above.
 ## Self-check
 
 Completion check: `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> Q050-231.2` -> **exit 1**
-(`/tmp/zene-q050-231.2-logs/008-submit-check.log`), 2 FAIL items (below). All other items PASS, including the report,
-the feature record, the GUI path and its test, the live snapshot, the canary figures, the manual, the audio-path scan,
-the added tests and the portability scan.
+(`/tmp/zene-q050-231.2-logs/008-submit-check.log`), 2 FAIL items. After the doc edits were committed the check was
+rerun: **exit 1** (`/tmp/zene-q050-231.2-logs/009-submit-check-2.log`), now 1 FAIL item. All other items PASS,
+including commits on the branch, report, feature record, GUI path and its test, live snapshot, canary figures, manual,
+audio-path scan, added tests and portability.
 
-- **FAIL: working tree clean.** At check time the two doc edits in this section were uncommitted
-  (`M docs/050-features/Q050-231.2.md`, `M docs/qwen-fixes-2026-10/cluster-Q050-231.2.md`). They are committed
-  afterwards; `git status` is clean at the end of this unit.
+- **Working tree clean.** The first run flagged the two doc edits of this section as uncommitted. They are committed
+  (`776df70909`) and the rerun PASSes this item; `git status` is clean at the end of this unit.
 - **FAIL: gates (feature_check.py):** `FAIL complexity NEW: new function over target:
   lmms::applyMaskingProposal@338-402@src/core/ControlCommandsMixerMasking.cpp (CCN 22); new function over target:
   check_apply@76-119@tests/control-masking-report.py (CCN 17)` and `FAIL file-length NEW: new file over 500 lines:
