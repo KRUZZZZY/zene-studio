@@ -1,0 +1,523 @@
+From afb0f7473089755068e1ea245f8422bdacf9d357 Mon Sep 17 00:00:00 2001
+From: Zene CI repair <noreply@zene.invalid>
+Date: Sat, 14 Nov 2026 21:53:56 +0000
+Subject: [PATCH] fix(ci): CI regression: build / linux-x86_64
+
+CI-Repair-Id: ci-repair-ci-623e9e3a015cd5b1-366b3a7da5e0
+---
+ .../cluster-ci-623e9e3a015cd5b1.md            | 152 ++++++++++
+ tests/CMakeLists.txt                          |  19 ++
+ tests/Qt5QStringListAssignmentCheck.py        | 277 ++++++++++++++++++
+ tests/fork-sources.txt                        |   9 +
+ tests/src/core/ImportTrackIoTest.cpp          |   2 +-
+ 5 files changed, 458 insertions(+), 1 deletion(-)
+ create mode 100644 docs/qwen-fixes-2026-10/cluster-ci-623e9e3a015cd5b1.md
+ create mode 100644 tests/Qt5QStringListAssignmentCheck.py
+
+diff --git a/docs/qwen-fixes-2026-10/cluster-ci-623e9e3a015cd5b1.md b/docs/qwen-fixes-2026-10/cluster-ci-623e9e3a015cd5b1.md
+new file mode 100644
+index 0000000000..ac9e8b98e0
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/cluster-ci-623e9e3a015cd5b1.md
+@@ -0,0 +1,152 @@
++FIXED — cluster ci-623e9e3a015cd5b1: hosted linux-x86_64 Qt 5 build stops on an ambiguous `QStringList` brace assignment in `ImportTrackIoTest`
++
++Verdict: **REAL**, a test-source portability defect (not infrastructure, not a product
++runtime bug). Reproduced on this box's Qt 5.15 toolchain against the exact recorded compile
++line of the failing translation unit at c20ef591b5.
++
++## Evidence
++
++The hosted job (`build / linux-x86_64`, run 43611324689 / job 132496796910) builds against
++Qt 5.15 and stopped at 61 %:
++
++```
++tests/src/core/ImportTrackIoTest.cpp:344:71: error: ambiguous overload for 'operator='
++  (operand types are 'QStringList' and '<brace-enclosed initializer list>')
++  344 |   plan.documents = {UnparsableTrack, trackDocument(Lead)};
++```
++
++Cause, in the source and in Qt 5 itself:
++
++* `include/ControlProjectTransplant.h:76` — `TrackPlan::documents` is a `QStringList`.
++* `tests/src/core/ImportTrackIoTest.cpp:344` — assigns a braced-init-list to it.
++* `/usr/include/qt/QtCore/qstringlist.h:111` — `class QStringList : public QList<QString>`.
++* `/usr/include/qt/QtCore/qstringlist.h:124,126` — `QStringList` declares
++  `operator=(const QList<QString>&)` and `operator=(QList<QString>&&)` **in addition** to its
++  own copy/move assignment (111, implicit). A braced-init-list converts equally to
++  `QList<QString>` and `QStringList`, so all four candidates are viable and overload
++  resolution is ambiguous. Qt 6 declares no assignment operators on `QStringList`, so every
++  Qt 6 host here compiles the same line (probe below: Qt 6 exit 0, Qt 5 exit 1).
++
++The fix is the portable spelling the sibling cluster ci-48dcc062d04c645f used, an explicit
++temporary selecting a single assignment:
++
++```
++tests/src/core/ImportTrackIoTest.cpp:344
++-       plan.documents = {UnparsableTrack, trackDocument(Lead)};
+++       plan.documents = QStringList{UnparsableTrack, trackDocument(Lead)};  // explicit: a braced assignment is ambiguous on Qt 5.15
++```
++
++Same semantics (the plan's document list is unchanged), no product code touched, so save,
++load and render behaviour is untouched.
++
++## Regression instrument
++
++`tests/Qt5QStringListAssignmentCheck.py` (new, ctest `Qt5QStringListAssignmentCheck`,
++registered in `tests/CMakeLists.txt:9157-9174`), with two independent halves:
++
++1. **Fixtures**: a BAD `QStringList s; s = {a, b};` must be rejected by the Qt 5 tree and a
++   GOOD `s = QStringList{a, b};` accepted. A tree that accepts BAD is not a Qt 5 tree with
++   the trap, so it is reported *skipped*, never passed (`--self-test` proves just this half).
++2. **The real translation unit**: `tests/src/core/ImportTrackIoTest.cpp` is recompiled
++   `-fsyntax-only` from this build's `compile_commands.json` against the Qt 5 headers, with
++   the Qt 5 moc output ahead of the recorded Qt 6 autogen directory. That is the hosted job's
++   compiler input.
++
++Without a pkg-config Qt 5 tree the probe prints `probe: skipped (…)` and exits 0 — the hosted
++linux-x86_64 job is Qt 5, so it is red there before this fix, as reproduced below.
++
++## Commands and exit codes (all run in this worktree)
++
++| # | command | exit |
++|---|---|---|
++| 1 | `python3 tests/Qt5QStringListAssignmentCheck.py --root . --build-dir build` — before the fix (log `002-probe-red.log`) | **1** — `ImportTrackIoTest.cpp:344:71: error: ambiguous overload for 'operator=' …` |
++| 2 | `cmake --build build --target ImportTrackIoTest` — with the fix (`006-build-import-red.log`) | **0** |
++| 3 | `cd build/tests && ctest -R '^ImportTrackIoTest$' --output-on-failure` (`007-ctest-import-green.log`) | **0** — 1/1 passed |
++| 4 | `cmake --build build --target ImportTrackIoTest` with the fix reverted (`028-build-reverted.log`) | **0** (Qt 6 compiles it, as hosted Qt 6 lanes do) |
++| 5 | `cd build/tests && ctest -R '^Qt5QStringListAssignmentCheck$' --output-on-failure` — fix reverted (`029-ctest-red-reverted.log`) | **8** — the Qt 5 probe reports the hosted error: `ImportTrackIoTest.cpp:344:71: error: ambiguous overload …` |
++| 6 | `git apply fix.patch` after the revert; `cmake --build build --target ImportTrackIoTest` (`030-build-restored.log`) | **0** |
++| 7 | `cd build/tests && ctest -R '^Qt5QStringListAssignmentCheck$' --output-on-failure` — fix restored (`031-ctest-green-restored.log`) | **0** — 1/1 passed (`PASS: … compiles against Qt 5`) |
++| 8 | `cd build/tests && ctest -R '^ImportTrackIoTest$' --output-on-failure` (`032-ctest-import-green.log`) | **0** — 1/1 passed |
++| 9 | `python3 tests/Qt5QStringListAssignmentCheck.py --self-test` (`027-probe-selftest.log`) | **0** — fixtures distinguishable |
++| 10 | `cd build/tests && ctest -R 'Qt5\|Train41\|MocQt5\|MountNamespace\|ImportTrackIo` — the portability/import family (`023-ctest-family-green.log`) | **0** — 15/15 passed |
++| 11 | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py .` (`025-feature-check.log`) | **0** — all eight rows PASS |
++
++Note on step 5's ordering, executed exactly as the brief asks: the `fix.patch` was produced
++with `git diff -- tests/src/core/ImportTrackIoTest.cpp`, reverse-applied (`git apply -R`,
++exit 0), rebuilt, probed (exit **8** = RED), reapplied (`git apply`, exit 0), rebuilt, probed
++(exit **0** = GREEN). On this Qt 6 host step 4's Qt 6 build of the reverted file still
++compiles — the trap only exists in the Qt 5 headers — which is exactly why the regression is
++the Qt 5 compile probe and not a Qt 6 ctest pass.
++
++Two family tests initially failed for unrelated, pre-existing reasons and were cleared by
++building their targets, not by changing them: `Train41-darwin-tu` needs the generated
++`CrashReporterArmTest.moc` (`018-build-crasharm.log`, then `019-ctest-train41-darwintu.log`
++PASS), and `MountNamespaceHandshakeTest` was simply not built in this tree
++(`022-build-mountnamespace.log`, then the family rerun 15/15). Neither is in this cluster.
++
++## Completeness / sibling audit
++
++`TrackPlan::documents` (`QStringList`) is assigned or consumed at:
++
++* `tests/src/core/ImportTrackIoTest.cpp:309, 326` — `.append(...)`, never ambiguous;
++* `tests/src/core/ImportTrackIoTest.cpp:344` — this bug (fixed);
++* `src/core/ControlProjectTransplantChannels.cpp:191` — `.size()` / `operator[]`;
++* `src/core/ControlCommandsImportTracks.cpp:261, 289` — filled through `ChannelNeeds`.
++
++A repo-wide scan of first-party sources (including `plugins/`, excluding vendored
++`3rdparty`, `carla`, `sfizz`) for `<QStringList-typed name> = {…}` found no other braced
++assignment to a `QStringList`; every other `= {…}` hit is a `QJsonObject`, a struct/aggregate
++or a `QVector`/`QList` whose assignment is not overloaded the same way (`QList`/`QVector` both
++compile the brace assignment under Qt 5 — verified with the same probe). The product change
++is one test line; no header, no product target, no command, no undo path.
++
++Realtime: the diff touches no audio-thread function; `tests/src/core/ImportTrackIoTest.cpp`
++and `tests/Qt5QStringListAssignmentCheck.py` never run on the render thread. No new control
++command. No saved-data format, limit or check changed.
++
++## Files committed
++
++* `tests/src/core/ImportTrackIoTest.cpp` — the portable assignment (the fix).
++* `tests/Qt5QStringListAssignmentCheck.py` — new regression instrument.
++* `tests/CMakeLists.txt` — registers ctest `Qt5QStringListAssignmentCheck`.
++* `tests/fork-sources.txt` — registers the new probe and this report.
++* `docs/qwen-fixes-2026-10/cluster-ci-623e9e3a015cd5b1.md` — this report.
++
++## Self-check
++
++* **The regression test FAILS with your product change reverted and PASSES with it (exit
++  codes).** RED: `ctest -R '^Qt5QStringListAssignmentCheck$'` after `git apply -R fix.patch`
++  + rebuild → exit **8**, log `029-ctest-red-reverted.log` carrying the hosted diagnostic
++  `ImportTrackIoTest.cpp:344:71: error: ambiguous overload …`. GREEN: same ctest after
++  `git apply fix.patch` + rebuild → exit **0**, log `031-ctest-green-restored.log`
++  (`1/1 Passed`). The Qt 6 `ImportTrackIoTest` also passes before and after (exit 0), which
++  is expected: the Qt 6 host never had the ambiguity.
++* **The test is deterministic.** No timing, sleeps or races: the probe compiles a fixed
++  fixture pair and one fixed translation unit through the recorded compile command. The only
++  injected values are the compile database's own paths and the Qt 5 flags from pkg-config;
++  the Qt 5 moc output is written into a fresh temporary directory that precedes the recorded
++  Qt 6 autogen include directory.
++* **The fix is at the cause and complete.** Evidence above: the exact Qt 5 overload set
++  (`/usr/include/qt/QtCore/qstringlist.h:111,124,126`), the one ambiguous line
++  (`tests/src/core/ImportTrackIoTest.cpp:344`), and the sibling/caller audit showing no
++  second braced `QStringList` assignment in first-party sources. The new probe also guards
++  the pattern itself (its BAD fixture), so a reintroduction anywhere in that translation unit
++  is caught.
++* **No collateral damage.** The assignment produces the same `QStringList` contents, so the
++  test's assertion path is unchanged (`anUnparsableDocumentDoesNotShiftTheOthers` still
++  passes, exit 0), no saved data or project format is touched, no limit or check is added, and
++  nothing outside this test line changes behaviour. The new ctest is additive; it registers
++  only where `PYTHON3_EXECUTABLE` exists and skips cleanly on hosts without Qt 5.
++* **The verdict is REAL**, with file:line evidence above rather than an "already fixed" claim:
++  the unfixed line is still present at `tests/src/core/ImportTrackIoTest.cpp:344` on this
++  branch's base commit c20ef591b5 and fails the Qt 5 compile probe (exit 1, log
++  `002-probe-red.log`).
++
++## Self-check (gate table)
++
++`python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py .` → exit **0**
++(`025-feature-check.log`): fork-sources PASS, all-sources-reproduce PASS,
++no-upstream-regression PASS, check-namespace PASS, no-tautology PASS, doc-figures PASS,
++complexity PASS (no new item in the changed files; the probe's `main` was split into
++`run_self_test`/`check_product` to stay under CCN 10 — `024-feature-check.log` shows the
++earlier FAIL), file-length PASS.
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 526928a9d5..5786a1e9f1 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -9154,6 +9154,25 @@ endif()
+ 
+ 
+ 
++# Qt 5 QStringList assignment portability (cluster ci-623e9e3a015cd5b1, 2026-11-14). The hosted
++# linux-x86_64 job builds against Qt 5.15, where QStringList declares four operator= candidates
++# (its own copy/move ones plus the inherited QList<QString> ones), so the braced assignment
++# `plan.documents = {UnparsableTrack, trackDocument(Lead)}` in ImportTrackIoTest.cpp:344 was
++# ambiguous ("error: ambiguous overload for 'operator='") and stopped the whole build at 61 %.
++# Qt 6 declares no such operators on QStringList, so every Qt 6 host here compiles the same
++# line. The check proves its own red/green fixtures against the Qt 5 tree and then recompiles
++# the real test translation unit through this build's compile_commands.json with the Qt 5
++# headers and moc - the hosted job's compiler input. Skipped (never passed) without a Qt 5 tree.
++if(PYTHON3_EXECUTABLE)
++	add_test(NAME Qt5QStringListAssignmentCheck
++		COMMAND ${PYTHON3_EXECUTABLE}
++			${CMAKE_CURRENT_SOURCE_DIR}/Qt5QStringListAssignmentCheck.py
++			--root ${CMAKE_SOURCE_DIR}
++			--build-dir ${CMAKE_BINARY_DIR}
++			--cxx ${CMAKE_CXX_COMPILER})
++	set_tests_properties(Qt5QStringListAssignmentCheck PROPERTIES TIMEOUT 600)
++endif()
++
+ # Linux namespace tests must retry interrupted writes and reject failed/short handshakes.
+ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+ 	add_executable(MountNamespaceHandshakeTest src/core/MountNamespaceHandshakeTest.cpp)
+diff --git a/tests/Qt5QStringListAssignmentCheck.py b/tests/Qt5QStringListAssignmentCheck.py
+new file mode 100644
+index 0000000000..ef5a3b2abf
+--- /dev/null
++++ b/tests/Qt5QStringListAssignmentCheck.py
+@@ -0,0 +1,277 @@
++#!/usr/bin/env python3
++"""Fail when a QStringList is assigned a braced-init-list, which Qt 5.15 rejects.
++
++Cluster ci-623e9e3a015cd5b1 (2026-11-14), hosted `build / linux-x86_64` job at
++c20ef591b571e3c3dc7b108107d166497f1b34be: the job builds against Qt 5.15, where
++`QStringList` declares four `operator=` candidates (its own copy/move ones plus the
++inherited `QList<QString>` copy/move ones). A braced-init-list converts equally well to
++`QList<QString>` and `QStringList`, so
++
++    tests/src/core/ImportTrackIoTest.cpp:344:
++        plan.documents = {UnparsableTrack, trackDocument(Lead)};
++
++stopped the whole build:
++
++    error: ambiguous overload for 'operator=' (operand types are 'QStringList' and
++    '<brace-enclosed initializer list>')
++
++Qt 6 declares no assignment operators of its own on QStringList, so every Qt 6 host here
++compiles the same line; only the hosted Qt 5 build sees the defect. The portable spelling
++is an explicit temporary - `plan.documents = QStringList{UnparsableTrack, trackDocument(Lead)};`
++- which selects the QStringList move-assignment on both.
++
++The check has two deterministic halves:
++
++  * fixtures: a BAD `QStringList s; s = {a, b};` must be rejected by a Qt 5 tree, and a
++    GOOD `s = QStringList{a, b};` accepted. A tree that accepts BAD is not a Qt 5 tree
++    with the trap, so the probe reports itself skipped rather than passed.
++  * the real translation unit: tests/src/core/ImportTrackIoTest.cpp is recompiled
++    `-fsyntax-only` through this build's compile_commands.json against the Qt 5 headers
++    (and the Qt 5 moc), retargeting the recorded Qt 6 include directories. That is the
++    hosted job's compiler input, so a regression here is the hosted failure.
++
++The probe reports itself skipped (never passed) when pkg-config finds no Qt 5 development
++tree; the hosted linux-x86_64 job is Qt 5, so it is red there before the fix.
++
++Usage:
++  Qt5QStringListAssignmentCheck.py [--root DIR] [--build-dir DIR] [--cxx CXX]
++  Qt5QStringListAssignmentCheck.py --self-test
++
++Exit codes: 0 = clean (or skipped on a host without Qt 5), 1 = finding or failed fixture,
++2 = usage error.
++"""
++
++import argparse
++import json
++import os
++import re
++import shlex
++import shutil
++import subprocess
++import sys
++import tempfile
++
++TEST_SOURCE = "tests/src/core/ImportTrackIoTest.cpp"
++
++# Qt 6 modules whose include directories must give way to the Qt 5 tree.
++QT_MODULES = {"qtcore", "qtgui", "qtwidgets", "qtxml", "qtnetwork", "qttest", "qtsvg", "qtdbus", "qtconcurrent"}
++
++BAD_FIXTURE = """\
++#include <QString>
++#include <QStringList>
++
++int main()
++{
++    QStringList documents;
++    documents = {QStringLiteral("a"), QStringLiteral("b")};
++    return documents.size() == 2 ? 0 : 1;
++}
++"""
++
++GOOD_FIXTURE = """\
++#include <QString>
++#include <QStringList>
++
++int main()
++{
++    QStringList documents;
++    documents = QStringList{QStringLiteral("a"), QStringLiteral("b")};
++    return documents.size() == 2 ? 0 : 1;
++}
++"""
++
++
++def run(command, cwd=None, timeout=600):
++    try:
++        return subprocess.run(command, cwd=cwd, capture_output=True, text=True, timeout=timeout)
++    except (OSError, subprocess.SubprocessError):
++        return None
++
++
++def qt5_flags():
++    """Compile flags of a Qt 5 development tree, or None when pkg-config has none."""
++    if not shutil.which("pkg-config"):
++        return None
++    if run(["pkg-config", "--exists", "Qt5Widgets"]).returncode != 0:
++        return None
++    for packages in (["Qt5Widgets", "Qt5Xml", "Qt5Network", "Qt5Test"],
++                     ["Qt5Widgets", "Qt5Xml", "Qt5Network"],
++                     ["Qt5Widgets"]):
++        result = run(["pkg-config", "--cflags", *packages])
++        if result is not None and result.returncode == 0:
++            return shlex.split(result.stdout)
++    return None
++
++
++def qt5_moc():
++    """The Qt 5 moc, or None. A Qt 6 moc cannot pre-process a Qt 5 translation unit."""
++    result = run(["pkg-config", "--variable=host_bins", "Qt5Core"])
++    if result is not None and result.returncode == 0 and result.stdout.strip():
++        candidate = os.path.join(result.stdout.strip(), "moc")
++        if os.path.isfile(candidate):
++            version = run([candidate, "-v"])
++            if version is not None and version.stdout.strip().startswith("moc 5"):
++                return candidate
++    return None
++
++
++def compile_fixture(cxx, flags, workdir, name, text):
++    path = os.path.join(workdir, name)
++    with open(path, "w", encoding="utf-8") as handle:
++        handle.write(text)
++    return run([cxx, "-std=gnu++20", "-fPIC", "-fsyntax-only", *flags, path])
++
++
++def fixture_verdict(cxx, flags, workdir):
++    """(usable, verdict) for the tree: usable only when it rejects BAD and accepts GOOD."""
++    bad = compile_fixture(cxx, flags, workdir, "bad.cpp", BAD_FIXTURE)
++    good = compile_fixture(cxx, flags, workdir, "good.cpp", GOOD_FIXTURE)
++    if bad is None or bad.returncode == 0:
++        return False, "no fixture"
++    if good is None or good.returncode != 0:
++        return False, "the Qt 5 tree rejects the explicit QStringList constructor"
++    return True, "probe: Qt 5 rejects the braced QStringList assignment and accepts the explicit one"
++
++
++def compile_database(build):
++    path = os.path.join(build, "compile_commands.json")
++    if not os.path.isfile(path):
++        return None
++    with open(path, encoding="utf-8", errors="replace") as handle:
++        entries = json.load(handle)
++    return entries if isinstance(entries, list) else None
++
++
++def entry_for(entries, root, relative):
++    wanted = os.path.realpath(os.path.join(root, relative))
++    for entry in entries:
++        if os.path.realpath(entry.get("file", "")) == wanted:
++            return entry
++    return None
++
++
++def is_qt6_include(directory):
++    parts = [part for part in re.split(r"[\\/]+", directory.rstrip("\\/")) if part]
++    return "qt6" in parts or bool(parts and parts[-1].lower() in QT_MODULES and any("qt6" in part for part in parts))
++
++
++def qt5_command(entry, flags, extra):
++    """The recorded compile line retargeted at the Qt 5 headers, without -Werror."""
++    arguments = entry.get("arguments")
++    if arguments is None:
++        arguments = shlex.split(entry.get("command", ""))
++    out = []
++    index = 0
++    while index < len(arguments):
++        argument = arguments[index]
++        if argument in ("-o", "-c", "-MD", "-MMD", "-MP"):
++            index += 2 if argument in ("-o", "-c") else 1
++            continue
++        if argument in ("-isystem", "-I") and index + 1 < len(arguments):
++            if not is_qt6_include(arguments[index + 1]):
++                out += [argument, arguments[index + 1]]
++            index += 2
++            continue
++        if argument == "-Werror":
++            index += 1
++            continue
++        out.append(argument)
++        index += 1
++    # The Qt 5 moc output must win over the recorded Qt 6 autogen directory, so the extra
++    # include directories go first.
++    return out[:1] + list(extra) + out[1:] + list(flags) + ["-fsyntax-only"]
++
++
++def probe_translation_unit(cxx, flags, root, build, moc, workdir):
++    entries = compile_database(build)
++    if entries is None:
++        return f"no compile database at {os.path.join(build, 'compile_commands.json')}"
++    entry = entry_for(entries, root, TEST_SOURCE)
++    if entry is None:
++        return f"{TEST_SOURCE}: no entry in the compile database"
++    source = os.path.realpath(os.path.join(root, TEST_SOURCE))
++    generated = os.path.join(workdir, "ImportTrackIoTest.moc")
++    made = run([moc, source, "-o", generated])
++    if made is None or made.returncode != 0:
++        return f"{TEST_SOURCE}: the Qt 5 moc failed"
++    command = qt5_command(entry, flags, ["-I" + workdir])
++    command.append(source)
++    result = run(command, cwd=entry.get("directory") or root)
++    if result is None:
++        return f"{TEST_SOURCE}: the Qt 5 compile probe could not run"
++    if result.returncode != 0:
++        diagnostic = "\n".join(line for line in (result.stdout + result.stderr).splitlines()
++                               if re.search(r"error:|note:", line))[:3000]
++        return f"{TEST_SOURCE}: Qt 5 rejected it\n{diagnostic}"
++    return None
++
++
++def self_test(cxx, flags):
++    """The fixtures must be distinguishable before the real translation unit is trusted."""
++    with tempfile.TemporaryDirectory(prefix="qt5-qstringlist-fixtures-") as workdir:
++        return fixture_verdict(cxx, flags, workdir)
++
++
++def run_self_test(cxx):
++    """The fixtures still need a Qt 5 tree; they prove the instrument, never the product."""
++    flags = qt5_flags()
++    if flags is None:
++        print("self-test: skipped (no Qt 5 development tree found)")
++        return 0
++    usable, verdict = self_test(cxx, flags)
++    if not usable:
++        print(f"SELF-TEST FAIL: {verdict}")
++        return 1
++    print(verdict)
++    return 0
++
++
++def check_product(cxx, root, build):
++    """The fixture verdict, then the real translation unit when this host has Qt 5."""
++    flags = qt5_flags()
++    if flags is None:
++        print("probe: skipped (no Qt 5 development tree found)")
++        return 0
++    moc = qt5_moc()
++    if moc is None:
++        print("probe: skipped (no Qt 5 moc found)")
++        return 0
++    with tempfile.TemporaryDirectory(prefix="qt5-qstringlist-") as workdir:
++        usable, verdict = fixture_verdict(cxx, flags, workdir)
++        if not usable:
++            print(f"probe: skipped ({verdict})")
++            return 0
++        print(verdict)
++        failure = probe_translation_unit(cxx, flags, root, build, moc, workdir)
++    if not failure:
++        print(f"PASS: {TEST_SOURCE} compiles against Qt 5, and no QStringList takes a braced-init-list")
++        return 0
++    print(failure)
++    print("FAIL: a QStringList takes a braced-init-list, which Qt 5.15 finds ambiguous; "
++          "assign an explicit QStringList temporary")
++    return 1
++
++
++def main(argv):
++    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
++    parser.add_argument("--root", default=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
++    parser.add_argument("--build-dir")
++    parser.add_argument("--cxx", default=os.environ.get("CXX") or shutil.which("c++") or "c++")
++    parser.add_argument("--self-test", action="store_true")
++    args = parser.parse_args(argv[1:])
++
++    if args.self_test:
++        return run_self_test(args.cxx)
++    root = os.path.abspath(args.root)
++    if not os.path.isdir(root):
++        print(f"error: not a directory: {root}", file=sys.stderr)
++        return 2
++    return check_product(args.cxx, root, os.path.abspath(args.build_dir or os.path.join(root, "build")))
++
++
++if __name__ == "__main__":
++    try:
++        sys.exit(main(sys.argv))
++    except (OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
++        print(f"Qt 5 QStringList assignment check: {error}", file=sys.stderr)
++        sys.exit(1)
+diff --git a/tests/fork-sources.txt b/tests/fork-sources.txt
+index 05e640c9f6..733bf9b401 100644
+--- a/tests/fork-sources.txt
++++ b/tests/fork-sources.txt
+@@ -840,6 +840,15 @@ tests/Qt5QListApiCheck.py
+ # Cluster ci-151e338efff6843e: the fix and verification report for the Eq spectrum view's
+ # Qt 5 QList portability regression (hosted windows-arm64 build).
+ docs/qwen-fixes-2026-10/cluster-ci-151e338efff6843e.md
++# cluster ci-623e9e3a015cd5b1 (2026-11-14): the hosted linux-x86_64 Qt 5 build stopped at
++# ImportTrackIoTest.cpp:344 on an ambiguous QStringList brace assignment. The check proves
++# its own red/green fixtures against the Qt 5 tree, then recompiles the real test
++# translation unit through this build's compile_commands.json with the Qt 5 headers and
++# moc; it is registered wherever a python3 is (ctest Qt5QStringListAssignmentCheck) and
++# reports itself skipped, never passed, on a host without Qt 5.
++tests/Qt5QStringListAssignmentCheck.py
++# cluster ci-623e9e3a015cd5b1: repair report and verification evidence.
++docs/qwen-fixes-2026-10/cluster-ci-623e9e3a015cd5b1.md
+ # cluster ci-1e541b5d1279ed2d (2026-11): the crash reporter's ARM/DISARM proof must compile against Apple's
+ # <signal.h> - compiles the two real translation units with their recorded flags under a model of Apple's
+ # sigaction() (no exception specification) and sigemptyset() (a macro) (fork-NEW test, ctest
+diff --git a/tests/src/core/ImportTrackIoTest.cpp b/tests/src/core/ImportTrackIoTest.cpp
+index 9da67eca6a..06b2000da0 100644
+--- a/tests/src/core/ImportTrackIoTest.cpp
++++ b/tests/src/core/ImportTrackIoTest.cpp
+@@ -341,7 +341,7 @@ private slots:
+ 	void anUnparsableDocumentDoesNotShiftTheOthers()
+ 	{
+ 		control::transplant::TrackPlan plan;
+-		plan.documents = {UnparsableTrack, trackDocument(Lead)};
++		plan.documents = QStringList{UnparsableTrack, trackDocument(Lead)};  // explicit: a braced assignment is ambiguous on Qt 5.15
+ 		plan.need = {0, 1};
+ 		plan.needs.push_back({Ghost, channelDescription(Ghost)});
+ 		plan.needs.push_back({Keys, channelDescription(Keys)});
+-- 
+2.56.0
+
