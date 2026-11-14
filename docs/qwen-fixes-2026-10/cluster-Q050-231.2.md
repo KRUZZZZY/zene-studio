@@ -29,10 +29,12 @@ in `docs/050-features/Q050-231.2.md`.
 | One `control.undo` restores the target strip EQ values present before applying. | the same slots (one `control.undo`, all EQ values equal `before`, depth back) and `ControlMaskingReport` ("one control.undo restores the whole EQ and the depth") | same runs | 0 |
 | Contract and snapshot stay consistent. | `ReversibilityContractTest`, `ControlCommandsSnapshot` | `ctest -R '^(ReversibilityContractTest\|ControlCommandsSnapshot)$'` (`/tmp/q050-231.2-logs/005-test-6.log`) | 0 |
 
-An earlier command-test run gave exit 8 (`/tmp/zene-q050-231.2-logs/002-test-1.log`): the first run failed at
-`badProposalsAreRefusedAndWriteNothing`, `errorKind` NotFound (1) where InvalidArgs (3) was expected, because the test
-used the malformed id `nope`; that really is `InvalidArgs`, so the test case was corrected. The NotFound case was fixed
-in `8e8930e963` and verified: exit 0 (`/tmp/zene-q050-231.2-logs/006-test-p1b.log`).
+The first run of the command tests gave exit 8 (`/tmp/zene-q050-231.2-logs/002-test-1.log`): it failed in
+`badProposalsAreRefusedAndWriteNothing` at `MixerMaskingReportTest.cpp:304` with `errorKind` NotFound (1) where
+InvalidArgs (3) was expected, because a case with an unknown channel went through `resolveMixerChannel`. That case was
+then changed to a malformed id (`nope`, InvalidArgs), and commit `8e8930e963` added a dedicated well-formed unknown id
+(`ch-9999`) case that asserts NotFound and no write; `MixerMaskingReportTest` then passed, exit 0
+(`/tmp/zene-q050-231.2-logs/006-test-p1b.log`).
 
 **Fails without the change.** Product hunks (`git diff 40b4322860..a3c41f5455 -- src include`) reverse-applied,
 rebuild exit 0, `ctest -R '^(MixerMaskingReportTest|MixerMaskingReportWindowTest)$'` **exit 8**
@@ -44,4 +46,58 @@ are under `/tmp` at the paths above.
 
 ## Self-check
 
-To be filled after the completion check.
+Completion check: `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> Q050-231.2` -> **exit 1**
+(`/tmp/zene-q050-231.2-logs/008-submit-check.log`), 2 FAIL items (below). All other items PASS, including the report,
+the feature record, the GUI path and its test, the live snapshot, the canary figures, the manual, the audio-path scan,
+the added tests and the portability scan.
+
+- **FAIL: working tree clean.** At check time the two doc edits in this section were uncommitted
+  (`M docs/050-features/Q050-231.2.md`, `M docs/qwen-fixes-2026-10/cluster-Q050-231.2.md`). They are committed
+  afterwards; `git status` is clean at the end of this unit.
+- **FAIL: gates (feature_check.py):** `FAIL complexity NEW: new function over target:
+  lmms::applyMaskingProposal@338-402@src/core/ControlCommandsMixerMasking.cpp (CCN 22); new function over target:
+  check_apply@76-119@tests/control-masking-report.py (CCN 17)` and `FAIL file-length NEW: new file over 500 lines:
+  src/core/ControlCommandsMixerTools.cpp (506)`. Both are reported, not fixed: lowering the CCN means splitting the
+  handler and its test driver (a code change outside this doc packet), and the 506-line file is existing code that
+  this unit only extended by the shared `applyChannelEq`. No gate was edited or weakened.
+
+- **Each new test FAILS with the product change reverted, then PASSES restored.** Product hunks
+  (`git diff 40b4322860..a3c41f5455 -- src include`) reverse-applied, rebuild exit 0; `ctest -R
+  '^(MixerMaskingReportTest|MixerMaskingReportWindowTest)$'` -> **exit 8**, 4 failed in `MixerMaskingReportTest` and
+  1 in `MixerMaskingReportWindowTest` (`/tmp/q050-231.2-r1/logs/002-test-3-reverted.log`). Restored: rebuild exit 0,
+  same ctest -> **exit 0**, 2/2 passed (`/tmp/q050-231.2-r1/logs/004-test-4-restored.log`). Notes:
+  `/tmp/q050-231.2-r1/logs/red-green.md`.
+- **Every acceptance criterion proven by a test I ran.** Criterion 1 (apply changes only the target, one reversible
+  transaction): `ctest -R '^(MixerMaskingReportTest|MixerToolsTest)$'` -> 0
+  (`/tmp/zene-q050-231.2-logs/004-test-2.log`), `ctest -R '^(MixerMaskingReportWindowTest|MixerMaskingReportTest)$'`
+  -> 0 (`/tmp/q050-231.2/test-2.log`), `ctest -R '^ControlMaskingReport$'` -> 0
+  (`/tmp/q050-231-logs/002-test-5.log`). Criterion 2 (one `control.undo` restores the before values and the depth):
+  the same slots in the same runs -> 0, 0, 0. Criterion 3 (contract and snapshot consistent): `ctest -R
+  '^(ReversibilityContractTest|ControlCommandsSnapshot)$'` -> 0 (`/tmp/q050-231.2-logs/005-test-6.log`).
+- **One undo step and an honest reversibility class.** The handler takes one journal checkpoint and the tests assert
+  the undo depth returns to its previous value and all four EQ values equal `before` after one `control.undo`; the
+  same slots also assert a repeated apply is a no-op and records no step. The class is **TrueInverse** in
+  `src/core/ControlReversibilityTableDevices.cpp` and `ReversibilityContractTest` passes (exit 0, log above).
+- **Nothing added runs on the audio thread.** The handler runs on the control (main) thread and only writes EQ
+  `FloatModel` values, as `mixer.channel_eq` already does: no allocation, lock, wait, I/O or signal was added on the
+  render path, and no mixer period buffer is touched. This is by design: local TSan is not available on this box, so
+  it is not a measured result.
+- **Old projects still load and render as before; new data round-trips.** No format change and nothing new is saved:
+  the command writes only live EQ values that the existing project format already stores, so no new field round-trips
+  and old projects load as before. No new save/load test was needed or run.
+- **Completeness: real user path and agent path.** GUI: Mixer View > Masking Report..., select a clash row, click
+  **Apply**; `MixerMaskingReportWindowTest::applyingAProposalFromTheWindowIsOneUndoStep` clicks the real button and
+  checks it ran the registered command (undo depth +1), exit 0 (`/tmp/q050-231.2/test-2.log`). Agent path:
+  `mixer.apply_masking_proposal` over the control socket, exercised by `ControlMaskingReport` against a real `zene`,
+  exit 0 (`/tmp/q050-231-logs/002-test-5.log`). Edge cases tried: a no-op proposal (no step, `applied` false),
+  boundary values (-18/18 dB, 100/10000 Hz), missing/unknown key, `mid_freq` without `mid`, non-numbers,
+  out-of-range values, a malformed channel id (`InvalidArgs`), and a well-formed unknown id `ch-9999`
+  (`NotFound`, nothing written). Undo/redo row shifts, stale generations and reopen-after-save do not apply: the
+  command holds no report row and saves nothing.
+- **GUI test drives the visible control and checks the same registered command.** It clicks the real Apply button
+  (`Apply proposal`), then checks one `control.undo` restores the values and the undo depth moved by exactly one; it
+  does not call the handler or command directly (exit 0, `/tmp/q050-231.2/test-2.log`).
+- **Qt 5.15 / MSVC / macOS < 10.15 portability.** The added code uses only existing helpers and Qt 5-compatible
+  APIs: no Qt-6-only call, no `windows.h` macro name, no `std::filesystem`. The portability item of the submit check
+  passes; no MSVC or macOS build was run on this Linux box.
+
