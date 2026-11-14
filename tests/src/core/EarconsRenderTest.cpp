@@ -246,6 +246,76 @@ private slots:
 		}
 		QVERIFY2(heard > 0, "the recorder path consumed the queued earcons");
 	}
+
+	//! A real song loop wrap on the render path queues the LoopWrap earcon through Song::enforceLoop.
+	void aLoopWrapQueuesItsEarcon()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		const tick_t bar = TimePos::ticksPerBar();
+		// The wrap happens in PlayMode::Song, so the loop points must live on that timeline
+		// (getTimeline() without a mode follows the current one, which a stopped song may not be).
+		auto& timeline = song->getTimeline(Song::PlayMode::Song);
+		timeline.setLoopPoints(TimePos(0), TimePos(bar));
+		timeline.setLoopEnabled(true);
+		song->setPlayPos(0, Song::PlayMode::Song);
+		song->updateLength();
+
+		for (auto category = 0; category < static_cast<int>(earcons::Category::Count); ++category)
+		{
+			earcons::setEnabled(static_cast<earcons::Category>(category), false);
+		}
+		earcons::setEnabled(earcons::Category::Loop, true);
+		earcons::setLevel(earcons::Category::Loop, 1.f);
+
+		const auto flush = [] {
+			earcons::beginBuffer();
+			for (int i = 0; i < 12000; ++i) { (void)earcons::nextSample(); }
+		};
+		flush();
+
+		// Three bars is ample for one wrap; the bound only keeps a failed fixture finite.
+		const auto framesPerBar = static_cast<double>(bar) * Engine::framesPerTick(kSampleRate);
+		const auto framesPerPeriod = static_cast<double>(Engine::audioEngine()->framesPerPeriod());
+		const int maxPeriods = static_cast<int>(std::ceil(3.0 * framesPerBar / framesPerPeriod)) + 16;
+
+		const auto playUntilWrap = [song, maxPeriods](std::uint64_t before) {
+			song->setPlayPos(0, Song::PlayMode::Song);
+			song->playSong();
+			for (int period = 0; period < maxPeriods && song->loopWraps() == before; ++period)
+			{
+				(void)Engine::audioEngine()->renderNextPeriod();
+			}
+			song->stop();
+		};
+
+		const auto before = song->loopWraps();
+		playUntilWrap(before);
+		QVERIFY2(song->loopWraps() > before, "the song never wrapped at its loop end");
+
+		earcons::beginBuffer();
+		int heard = 0;
+		for (int i = 0; i < 12000; ++i)
+		{
+			if (earcons::nextSample() != 0.f) { ++heard; }
+		}
+		QVERIFY2(heard > 0, "the loop wrap queued no earcon");
+
+		// With the Loop category off, a second, real wrap must stay silent.
+		earcons::setEnabled(earcons::Category::Loop, false);
+		flush();
+		const auto beforeSilent = song->loopWraps();
+		playUntilWrap(beforeSilent);
+		QVERIFY2(song->loopWraps() > beforeSilent, "the silent fixture never wrapped");
+
+		earcons::beginBuffer();
+		int silentHeard = 0;
+		for (int i = 0; i < 12000; ++i)
+		{
+			if (earcons::nextSample() != 0.f) { ++silentHeard; }
+		}
+		QVERIFY2(silentHeard == 0, "a loop wrap was heard with the Loop category disabled");
+	}
 };
 
 int main(int argc, char* argv[])
