@@ -8826,6 +8826,18 @@ if(PYTHON3_EXECUTABLE AND NODE_EXECUTABLE)
 			SKIP_RETURN_CODE 77
 		)
 	endif()
+	# Q050-334.2: ControlSessionSdkPipeSmoke drives the SDK over its named-pipe path, which is Windows-only.
+	# The AF_UNIX half cannot run it (the pipe path is not a socket), so it is registered on WIN32 alone.
+	IF(WIN32)
+		add_test(NAME ControlSessionSdkPipeSmoke
+			COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/session-sdk-pipe-smoke.py
+				$<TARGET_FILE:zene> ${NODE_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/zene-session-sdk)
+		set_tests_properties(ControlSessionSdkPipeSmoke PROPERTIES
+			ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+			TIMEOUT 600
+			SKIP_RETURN_CODE 77
+		)
+	ENDIF()
 else()
 	message(STATUS "node or python3 not found: ZeneSessionSdkTypecheck and ControlSessionSdk are not registered")
 endif()

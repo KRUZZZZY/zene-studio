@@ -3840,8 +3840,10 @@ tools/zene-session-sdk/src/live-session.ts
 tools/zene-session-sdk/examples/live-view.ts
 tools/zene-session-sdk/test/integration.ts
 tools/zene-session-sdk/test/proxy.ts
+tools/zene-session-sdk/test/pipe-smoke.ts
 tests/control-session-sdk.py
 tests/session-sdk-typecheck.py
+tests/session-sdk-pipe-smoke.py
 # Q050-334.2: its feature record.
 docs/050-features/Q050-334.2.md
 # Q050-334.2: its report.
