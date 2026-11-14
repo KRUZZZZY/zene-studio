@@ -9022,6 +9022,51 @@ if(PYTHON3_EXECUTABLE)
 	set_tests_properties(ArrangerZoomNoGestures PROPERTIES TIMEOUT 300)
 endif()
 
+# Linux namespace tests must retry interrupted writes and reject failed/short handshakes.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+	add_executable(MountNamespaceHandshakeTest src/core/MountNamespaceHandshakeTest.cpp)
+	target_compile_features(MountNamespaceHandshakeTest PRIVATE cxx_std_20)
+	target_link_libraries(MountNamespaceHandshakeTest PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+	add_test(NAME MountNamespaceHandshakeTest COMMAND MountNamespaceHandshakeTest)
+endif()
+
+# cluster ci-84e380615213284e: a QFileInfo date accessor needs <QDateTime> in scope by
+# name. The hosted windows-arm64 job's Qt 5 (and the macOS job's Qt 6.8) qfileinfo.h only
+# forward-declares QDateTime, so plugins/CarlaBase/CarlaVst2Discovery.cpp:204 failed the
+# build with "calling 'lastModified' with incomplete return type 'QDateTime'" while every
+# Qt 6.12 host here compiled it - QFileInfo leaks the include at 6.12 only. The check
+# rebuilds every first-party translation unit that calls such an accessor through its own
+# compile_commands.json command line against a QtCore/qfileinfo.h and qdirlisting.h in the
+# failing shape, so the regression is red on the Qt 6 hosts too.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME Qt5QFileInfoDateCheck
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/Qt5QFileInfoDateCheck.py
+			--build-dir ${CMAKE_BINARY_DIR}
+			--cxx ${CMAKE_CXX_COMPILER}
+			--moc $<TARGET_FILE:Qt${QT_VERSION_MAJOR}::moc>)
+	set_tests_properties(Qt5QFileInfoDateCheck PROPERTIES TIMEOUT 900)
+endif()
+
+# Reproduce strict hosted compiler contracts against this build's actual sources.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
+	foreach(mode linux nam darwin-signature darwin-tu render)
+		add_test(NAME Train41-${mode} COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/train-41-portability-check.py
+			--source-root ${CMAKE_SOURCE_DIR} --build-dir ${CMAKE_BINARY_DIR}
+			--qt-major ${QT_VERSION_MAJOR} --moc $<TARGET_FILE:Qt${QT_VERSION_MAJOR}::moc> --mode ${mode})
+		set_tests_properties(Train41-${mode} PROPERTIES TIMEOUT 300)
+	endforeach()
+	execute_process(COMMAND pkg-config --exists Qt5Widgets Qt5Xml Qt5Network
+		RESULT_VARIABLE TRAIN41_HAS_QT5 OUTPUT_QUIET ERROR_QUIET)
+	if(TRAIN41_HAS_QT5 EQUAL 0)
+		add_test(NAME Train41-eq COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/train-41-portability-check.py
+			--source-root ${CMAKE_SOURCE_DIR} --build-dir ${CMAKE_BINARY_DIR} --mode eq)
+		set_tests_properties(Train41-eq PROPERTIES TIMEOUT 300)
+	endif()
+endif()
+
 # Hosted portability checks inspect the real direct-source test export configuration.
 if(TARGET RnnoiseDenoiserEffectTest)
 	file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/rnnoise-test-export-definition.h"

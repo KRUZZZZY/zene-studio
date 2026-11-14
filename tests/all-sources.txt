@@ -3091,6 +3091,7 @@ tests/src/core/ModulationRateTest.cpp
 tests/src/core/ModulationTestSupport.h
 tests/src/core/ModulatorToolsTest.cpp
 tests/src/core/MonoDelayTest.cpp
+tests/src/core/MountNamespaceHandshakeTest.cpp
 tests/src/core/MountNamespaceTestSupport.h
 tests/src/core/MpeExpressionTest.cpp
 tests/src/core/MpeInputPathTest.cpp

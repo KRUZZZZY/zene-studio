@@ -33,16 +33,21 @@
 #include "NamModel.h"
 
 #include <algorithm>
+#include <cerrno>
 #include <cstddef>
 #include <cstdint>
-#include <filesystem>
+#include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <limits>
 #include <sstream>
 #include <string>
+#include <sys/stat.h>
 
 #ifdef _WIN32
+#include <direct.h>
+#include <io.h>
 #include <process.h>
 #else
 #include <unistd.h>
@@ -83,6 +88,68 @@ long long testProcessId()
 	return static_cast<long long>(getpid());
 #endif
 }
+
+
+class TemporaryFixtureDirectory
+{
+public:
+	bool create()
+	{
+#ifdef _WIN32
+		const char* temporaryDirectory = std::getenv("TEMP");
+		const std::string base = temporaryDirectory != nullptr ? temporaryDirectory : ".";
+		for (int attempt = 0; attempt < 1000; ++attempt)
+		{
+			m_path = base + "/zene-nam-loader-test-" + std::to_string(testProcessId()) +
+				"-" + std::to_string(attempt);
+			if (_mkdir(m_path.c_str()) == 0)
+			{
+				m_created = true;
+				return true;
+			}
+			if (errno != EEXIST)
+			{
+				return false;
+			}
+		}
+		return false;
+#else
+		const char* temporaryDirectory = std::getenv("TMPDIR");
+		const std::string base = temporaryDirectory != nullptr ? temporaryDirectory : "/tmp";
+		m_path = base + "/zene-nam-loader-test-" + std::to_string(testProcessId()) + "-XXXXXX";
+		if (mkdtemp(&m_path[0]) == nullptr)
+		{
+			return false;
+		}
+		m_created = true;
+		return true;
+#endif
+	}
+
+	~TemporaryFixtureDirectory()
+	{
+		if (m_created)
+		{
+			const std::string fixture = fixturePath();
+#ifdef _WIN32
+			_unlink(fixture.c_str());
+			_rmdir(m_path.c_str());
+#else
+			unlink(fixture.c_str());
+			rmdir(m_path.c_str());
+#endif
+		}
+	}
+
+	std::string fixturePath() const
+	{
+		return m_path + "/invalid.nam";
+	}
+
+private:
+	std::string m_path;
+	bool m_created = false;
+};
 
 
 std::size_t expectedWeights(const ModelShape& shape)
@@ -134,7 +201,7 @@ std::string modelJson(const ModelShape& shape, const std::string& sampleRateJson
 }
 
 
-bool rejectsModelJson(const std::filesystem::path& path, const std::string& content,
+bool rejectsModelJson(const std::string& path, const std::string& content,
 	const char* label, const char* expectedError = nullptr)
 {
 	{
@@ -148,7 +215,7 @@ bool rejectsModelJson(const std::filesystem::path& path, const std::string& cont
 	}
 
 	std::string error;
-	const auto model = lmms::nam::NamModel::loadFromFile(path.string(), &error);
+	const auto model = lmms::nam::NamModel::loadFromFile(path, &error);
 	if (model || error.empty() ||
 	    (expectedError != nullptr && error.find(expectedError) == std::string::npos))
 	{
@@ -160,14 +227,14 @@ bool rejectsModelJson(const std::filesystem::path& path, const std::string& cont
 }
 
 
-bool rejectsModel(const std::filesystem::path& path, const ModelShape& shape,
+bool rejectsModel(const std::string& path, const ModelShape& shape,
 	const char* label)
 {
 	return rejectsModelJson(path, modelJson(shape), label);
 }
 
 
-bool rejectsInvalidSampleRates(const std::filesystem::path& path)
+bool rejectsInvalidSampleRates(const std::string& path)
 {
 	const auto rejectsRate = [&path](const std::string& sampleRate, const char* label,
 		const char* expectedError)
@@ -184,7 +251,7 @@ bool rejectsInvalidSampleRates(const std::filesystem::path& path)
 		}
 
 		std::string error;
-		const auto model = lmms::nam::NamModel::loadFromFile(path.string(), &error);
+		const auto model = lmms::nam::NamModel::loadFromFile(path, &error);
 		if (model || error.empty() || error.find(expectedError) == std::string::npos)
 		{
 			std::cerr << "loader accepted or misreported invalid sample_rate: " << label
@@ -200,7 +267,7 @@ bool rejectsInvalidSampleRates(const std::filesystem::path& path)
 }
 
 
-bool rejectsOverflowingWeights(const std::filesystem::path& path)
+bool rejectsOverflowingWeights(const std::string& path)
 {
 	const ModelShape shape;
 	const std::size_t headScaleIndex = expectedWeights(shape) - 1;
@@ -212,7 +279,7 @@ bool rejectsOverflowingWeights(const std::filesystem::path& path)
 }
 
 
-bool loadsModelWithSampleRate(const std::filesystem::path& path,
+bool loadsModelWithSampleRate(const std::string& path,
 	const std::string& sampleRate, double expectedSampleRate)
 {
 	{
@@ -226,7 +293,7 @@ bool loadsModelWithSampleRate(const std::filesystem::path& path,
 	}
 
 	std::string error;
-	const auto model = lmms::nam::NamModel::loadFromFile(path.string(), &error);
+	const auto model = lmms::nam::NamModel::loadFromFile(path, &error);
 	if (!model || model->spec().sampleRate != expectedSampleRate)
 	{
 		std::cerr << "loader refused a valid sample_rate fixture: " << error << '\n';
@@ -238,16 +305,27 @@ bool loadsModelWithSampleRate(const std::filesystem::path& path,
 
 /// The parse limit: 512 MiB of engine memory divided by the parser's worst
 /// measured expansion of 32 bytes of heap per byte of .nam text.
-constexpr std::uintmax_t kParseLimitBytes = 512ULL * 1024ULL * 1024ULL / 32ULL;
+constexpr std::uint64_t kParseLimitBytes = 512ULL * 1024ULL * 1024ULL / 32ULL;
 
 
-bool writeFixture(const std::filesystem::path& path, const std::string& content)
+bool writeFixture(const std::string& path, const std::string& content)
 {
 	{
 		std::ofstream output(path, std::ios::binary | std::ios::trunc);
 		output << content;
 	}
-	if (std::filesystem::file_size(path) != content.size())
+	bool hasExpectedSize = false;
+#ifdef _WIN32
+	struct _stat64 fileInfo;
+	if (_stat64(path.c_str(), &fileInfo) == 0 && fileInfo.st_size >= 0)
+#else
+	struct stat fileInfo;
+	if (stat(path.c_str(), &fileInfo) == 0 && fileInfo.st_size >= 0)
+#endif
+	{
+		hasExpectedSize = static_cast<std::uint64_t>(fileInfo.st_size) == content.size();
+	}
+	if (!hasExpectedSize)
 	{
 		std::cerr << "could not write model fixture\n";
 		return false;
@@ -267,7 +345,7 @@ std::string paddedModelJson(const ModelShape& shape, std::uintmax_t bytes)
 }
 
 
-bool refusesOversizedFile(const std::filesystem::path& path)
+bool refusesOversizedFile(const std::string& path)
 {
 	if (!writeFixture(path, paddedModelJson(ModelShape{}, kParseLimitBytes + 1)))
 	{
@@ -275,7 +353,7 @@ bool refusesOversizedFile(const std::filesystem::path& path)
 	}
 
 	std::string error;
-	const auto model = lmms::nam::NamModel::loadFromFile(path.string(), &error);
+	const auto model = lmms::nam::NamModel::loadFromFile(path, &error);
 	if (model || error.find("size limit") == std::string::npos)
 	{
 		std::cerr << "loader accepted or misreported a model file one byte over the "
@@ -286,7 +364,7 @@ bool refusesOversizedFile(const std::filesystem::path& path)
 }
 
 
-bool loadsFileAtLimit(const std::filesystem::path& path)
+bool loadsFileAtLimit(const std::string& path)
 {
 	if (!writeFixture(path, paddedModelJson(ModelShape{}, kParseLimitBytes)))
 	{
@@ -294,7 +372,7 @@ bool loadsFileAtLimit(const std::filesystem::path& path)
 	}
 
 	std::string error;
-	const auto model = lmms::nam::NamModel::loadFromFile(path.string(), &error);
+	const auto model = lmms::nam::NamModel::loadFromFile(path, &error);
 	if (!model)
 	{
 		std::cerr << "loader refused a model file exactly at the parse limit: "
@@ -305,7 +383,7 @@ bool loadsFileAtLimit(const std::filesystem::path& path)
 }
 
 
-bool validatesSampleRatesAndFileLimits(const std::filesystem::path& path)
+bool validatesSampleRatesAndFileLimits(const std::string& path)
 {
 	return rejectsInvalidSampleRates(path) &&
 		loadsModelWithSampleRate(path, "48000", 48000.0) &&
@@ -326,21 +404,18 @@ int main()
 		return 1;
 	}
 
-	const auto directory = std::filesystem::temp_directory_path() /
-		("zene-nam-loader-test-" + std::to_string(testProcessId()));
-	std::filesystem::remove_all(directory);
-	if (!std::filesystem::create_directory(directory))
+	TemporaryFixtureDirectory directory;
+	if (!directory.create())
 	{
 		std::cerr << "could not create temporary fixture directory\n";
 		return 1;
 	}
-	const auto fixture = directory / "invalid.nam";
+	const std::string fixture = directory.fixturePath();
 
 	ModelShape overflow;
 	overflow.dilation = std::numeric_limits<int>::max();
 	if (!rejectsModel(fixture, overflow, "receptive-field overflow"))
 	{
-		std::filesystem::remove_all(directory);
 		return 1;
 	}
 
@@ -348,7 +423,6 @@ int main()
 	zeroHead.headSize = 0;
 	if (!rejectsModel(fixture, zeroHead, "zero head size"))
 	{
-		std::filesystem::remove_all(directory);
 		return 1;
 	}
 
@@ -356,7 +430,6 @@ int main()
 	zeroChannels.channels = 0;
 	if (!rejectsModel(fixture, zeroChannels, "zero channel count"))
 	{
-		std::filesystem::remove_all(directory);
 		return 1;
 	}
 
@@ -364,7 +437,6 @@ int main()
 	zeroBottleneck.bottleneck = 0;
 	if (!rejectsModel(fixture, zeroBottleneck, "zero bottleneck"))
 	{
-		std::filesystem::remove_all(directory);
 		return 1;
 	}
 
@@ -372,7 +444,6 @@ int main()
 	zeroDilation.dilation = 0;
 	if (!rejectsModel(fixture, zeroDilation, "zero dilation"))
 	{
-		std::filesystem::remove_all(directory);
 		return 1;
 	}
 
@@ -381,16 +452,13 @@ int main()
 	tooManyLayers.layerCount = 257;
 	if (!rejectsModel(fixture, tooManyLayers, "too many layers"))
 	{
-		std::filesystem::remove_all(directory);
 		return 1;
 	}
 
 	if (!validatesSampleRatesAndFileLimits(fixture))
 	{
-		std::filesystem::remove_all(directory);
 		return 1;
 	}
 
-	std::filesystem::remove_all(directory);
 	return 0;
 }
