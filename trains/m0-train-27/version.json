@@ -1,0 +1,16 @@
+{
+  "base": "050/m0-train-26",
+  "display_version": "0.4.19.1-alpha",
+  "evidence": "first-parent-promoted-ancestry",
+  "feature_items": [],
+  "feature_merge_evidence": [],
+  "feature_train": 19,
+  "kind": "maintenance",
+  "milestone": "0.4",
+  "revision": 1,
+  "sha": "20fa43c90b90702cbcb399feb4bf6fd15094e3f4",
+  "stage": "alpha",
+  "train": "050/m0-train-27",
+  "train_label": "19.1",
+  "version": "0.4.19-alpha.1"
+}

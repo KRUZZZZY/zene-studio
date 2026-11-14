@@ -1,0 +1,608 @@
+From 099cc85e2e87806314ba3225b67573d9840d5614 Mon Sep 17 00:00:00 2001
+From: Zene CI repair <noreply@zene.invalid>
+Date: Thu, 12 Nov 2026 00:19:31 +0000
+Subject: [PATCH] fix(ci): CI regression: build / windows-arm64
+
+CI-Repair-Id: ci-repair-ci-165e1914b308f189-8811f83254fa
+---
+ .../cluster-ci-165e1914b308f189.md            | 162 ++++++++++
+ plugins/SfzPlayer/LICENSE-NOTICE.md           |   7 +-
+ .../include/atomic_queue/atomic_queue.h       |   8 +-
+ tests/CMakeLists.txt                          |  16 +
+ tests/clang-template-keyword-check.py         | 297 ++++++++++++++++++
+ tests/fork-sources.txt                        |   3 +
+ tests/upstream-modifications.txt              |   3 +-
+ 7 files changed, 489 insertions(+), 7 deletions(-)
+ create mode 100644 docs/qwen-fixes-2026-10/cluster-ci-165e1914b308f189.md
+ create mode 100644 tests/clang-template-keyword-check.py
+
+diff --git a/docs/qwen-fixes-2026-10/cluster-ci-165e1914b308f189.md b/docs/qwen-fixes-2026-10/cluster-ci-165e1914b308f189.md
+new file mode 100644
+index 0000000000..e00d0b6923
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/cluster-ci-165e1914b308f189.md
+@@ -0,0 +1,162 @@
++FIXED
++
++# Cluster ci-165e1914b308f189 — windows-arm64: `template` keyword without an argument list in vendored atomic_queue
++
++**Verdict: REAL, fixed.** The hosted `windows-arm64` build failed on
++`plugins/SfzPlayer/sfizz/external/atomic_queue/include/atomic_queue/atomic_queue.h` while compiling
++sfizz's `FilePool.cpp` and `Synth.cpp`:
++
++```
++atomic_queue.h:394:31: error: a template argument list is expected after a name prefixed by the
++template keyword [-Wmissing-template-arg-list-after-template-kw]
++  394 |         return Base::template do_pop_any(states_[index], elements_[index]);
++4 errors generated.
++```
++
++## Decision: REAL (product/build defect in a vendored header the fork ships)
++
++- `plugins/SfzPlayer/sfizz/src/sfizz/FilePool.h:364` declares
++  `using FileQueue = atomic_queue::AtomicQueue2<QueuedFileData, config::maxVoices>;`, and every sfizz
++  translation unit that includes `FilePool.h` instantiates it: the CI log names `FilePool.cpp` and
++  `Synth.cpp`, and `grep -rn "FilePool.h" plugins/SfzPlayer/sfizz/src` covers the rest.
++- `AtomicQueue2` (`atomic_queue.h:391-401`) and `AtomicQueueB2` (`:519-529`) called their base's member
++  templates as `Base::template do_pop_any(...)` / `Base::template do_push_any(...)`: the `template`
++  keyword with no explicit template argument list after the name. The standard only permits (and
++  requires) the keyword when an explicit argument list follows (`x.template f<T>()`); with the
++  arguments deduced the keyword makes the program ill-formed. Clang enforces it as an **error**
++  (`-Wmissing-template-arg-list-after-template-kw`), so the CI line's `-Wno-error` cannot waive it.
++- Reproduced on this box with the real CI compile command. `build/compile_commands.json`'s
++  `FilePool.cpp` command, re-run with `clang++` (23.1.4) instead of the configured GCC, exits 1 with
++  exactly the four CI diagnostics (`build/qwen-logs-ci-165e1914b308f189/1-clang-filepool-before.log`).
++  A bare `#include "atomic_queue/atomic_queue.h"` is enough to trigger it on Clang, so this is not a
++  caller-specific defect. GCC 16.2.1 accepts the construct (exit 0), which is why the Linux CI job
++  stayed green and only the Clang-based windows-arm64 job saw it.
++- Classification: **product** (the fork ships and builds this header; the failure is in the source it
++  compiles, not in CI infrastructure or a test). It is also a real conformance bug, not just a warning:
++  upstream atomic_queue removed the construct when it restructured these functions (v1.9.0 tag has no
++  `do_pop_any`/`do_push_any`; the vendored copy is the sfizz 1.2.3 pin).
++- Siblings checked: `grep -rn --include=*.h --include=*.hpp --include=*.cc --include=*.cpp
++  --include=*.cxx --include=*.c -E '::template\s+[A-Za-z_]\w*\s*\(' src include plugins tests modules
++  tools` returns exactly these four lines and nothing else in the tree; the sibling calls that DO pass
++  an explicit argument list (`Base::template do_pop_atomic<T, NIL>`, `do_push_atomic<T, NIL>`,
++  `std::allocator_traits<A>::template rebind_alloc<...>`, `spec.bounds.template to<int64_t>()`) are
++  well-formed and untouched.
++
++## Fix (smallest, at the cause)
++
++`plugins/SfzPlayer/sfizz/external/atomic_queue/include/atomic_queue/atomic_queue.h:394,400,522,528`:
++drop the keyword before the deduced call, `Base::template do_pop_any(` → `Base::do_pop_any(` and
++`Base::template do_push_any(` → `Base::do_push_any(`. `Base` is the current instantiation's base, so
++the unqualified-through-base lookup resolves to the same function: no semantics, no code generation,
++no realtime or save/load behaviour changes. The well-formed `template` uses with explicit argument
++lists on lines 353, 358, 438, 443, 415, 423, 506 stay as they are.
++
++`plugins/SfzPlayer/LICENSE-NOTICE.md` said the vendored tree was unmodified; it now records the two
++declared local changes (the sfizz render-callback change that was already there, and this keyword fix),
++and `tests/upstream-modifications.txt` records the header's one declared local change and why.
++
++## Regression test
++
++New `tests/clang-template-keyword-check.py`, registered as ctest `ClangTemplateKeywordCheck` in
++`tests/CMakeLists.txt` (one `add_test`, one `TIMEOUT`). Two halves, both deterministic, no network, no
++wall clock:
++
++1. **Source scan** of every `git ls-files` C/C++ source for `::template name`, `.template name` or
++   `->template name` where `name` is not followed by `<` (comments and string/char literals blanked
++   first so prose does not count). This half is red on GCC hosts too, which is the point: the local
++   suite must catch a construct only Clang rejects.
++2. **Compile probe**: if the supplied compiler rejects a known-bad fixture (Clang does, GCC does not),
++   the real `atomic_queue.h` is compiled through a probe that instantiates `AtomicQueue2` and
++   `AtomicQueueB2` with `try_push`/`try_pop`. On GCC the probe reports "skipped" and half 1 is the
++   authoritative check; on Clang the probe compiles the real header.
++
++The file's own `--self-test` fixtures are the red/green control: a bad fixture must be flagged at the
++expected lines (4 findings on lines 6, 12, 17, 17) and a good fixture (deduced call, explicit
++`template f<T>()`, `typename ...::template rebind_alloc`, prose) must be clean. It runs as part of the
++ctest test, so a scanner that cannot fail fails the test.
++
++## Evidence — exact commands and exit codes
++
++All logs are in `build/qwen-logs-ci-165e1914b308f189/` inside the worktree (the brief's LOG FOLDER
++`~/.local/share/zene-bunny-fix/qwen/runs/ci-165e1914b308f189.r1/logs` is not writable by this session:
++even `touch` inside it returns `Permission denied`, and so does every parent under
++`~/.local/share/zene-bunny-fix/bunny`; the same denial blocks the `cmake` shim's lock file, so builds
++were run with `/usr/bin/cmake --build ... --target ...`). The numbers below are copied from those files.
++
++| Step | Command | Exit |
++| --- | --- | --- |
++| reproduce on the CI commit, real `FilePool.cpp` + CI flags, `clang++` | `clang++ -fsyntax-only ...` (compile command from `build/compile_commands.json`) | **1** (`1-clang-filepool-before.log`) |
++| RED: new check on unfixed tree, Clang probe enabled | `python3 tests/clang-template-keyword-check.py --root . --compiler clang++` | **1** (`26-direct-red.log`, 4 findings) |
++| RED: ctest (unfixed tree, rebuilt) | `ctest -R ClangTemplateKeywordCheck --output-on-failure` from `build/tests` | **8** (`27-ctest-red-final.log`) |
++| step 4b: save product patch | `git diff -- <atomic_queue.h> > build/qwen-logs-ci-165e1914b308f189/fix.patch` | 0 (36 lines) |
++| step 4b: revert the fix | `git apply -R .../fix.patch` | **0** |
++| step 4b: rebuild with the fix reverted | `/usr/bin/cmake --build build --target zene SfzFilePoolTest SfzPlayerTest -j2` | **0** |
++| step 4b: RED run again | `ctest -R ClangTemplateKeywordCheck --output-on-failure` | **8** (`25-ctest-red-final.log` before the script's own bug fix; `27-ctest-red-final.log` after) |
++| step 4b: restore the fix | `git apply .../fix.patch` | **0** |
++| step 4b: rebuild restored | `/usr/bin/cmake --build build --target zene SfzFilePoolTest SfzPlayerTest -j2` | **0** |
++| GREEN: new test | `ctest -R ClangTemplateKeywordCheck --output-on-failure` | **0** (`9-ctest-green.log`, `29-ctest-green-final.log`) |
++| GREEN: whole sfizz family + new test | `ctest -R "ClangTemplateKeywordCheck\|Sfz" --output-on-failure` | **0**, 11/11 tests passed (`29-ctest-green-final.log`) |
++| clang compiles the two CI TUs after the fix | `clang++ -fsyntax-only ...` for `FilePool.cpp`, `Synth.cpp` | **0**, **0** (`8-clang-FilePool-after.log`, `8-clang-Synth-after.log`) |
++| sfzplayer plugin target | `/usr/bin/cmake --build build --target sfzplayer -j2` | **0** (`30-build-sfzplugin.log`) |
++| gates: fork-sources / all-sources / no-upstream-regression / check-namespace / no-tautology / doc-figures | each gate run directly | **0** each (`18-gate-*.log`) |
++| gates: complexity ratchet (`--check`) | `bash tests/complexity-gate.sh --check` | **0** after the script was refactored below its CCN budget (`21-complexity-check2.log`; the first draft had `main` CCN 22 and `tracked_sources` CCN 12, both newer than the base, and was split) |
++| gates: file-length (`--check`) | `bash tests/file-length-gate.sh --check` | **1** on the train's pre-existing items only; the new file is 298 lines and is not listed (`22-file-length-check2.log`) |
++| full gate table | `python3 feature_check.py .` (run with its log dir redirected; see the LOG FOLDER note) | **0** — every row PASS (`23-feature-check-table.log`) |
++
++The affected ctest family is the 11 tests matched by `-R "ClangTemplateKeywordCheck|Sfz"`: 10 existing
++sfizz tests plus the new one; 11/11 passed, 0 failed.
++
++`feature_check.py` itself cannot write its `<worktree>-feature-check` log directory on this box (its
++`mkdir` is denied), so it was run from a copy whose only change is an env override for the log path
++(`FC_LOGS`, `FC_ROOT`); the gate commands and thresholds are unchanged, and the same table was produced
++by running each gate directly (`18-`, `21-`, `22-` logs).
++
++## Files committed
++
++- `plugins/SfzPlayer/sfizz/external/atomic_queue/include/atomic_queue/atomic_queue.h` — the four
++  `template`-keyword removals.
++- `tests/clang-template-keyword-check.py` — the regression (new file, registered in
++  `tests/fork-sources.txt`).
++- `tests/CMakeLists.txt` — ctest `ClangTemplateKeywordCheck` registration.
++- `plugins/SfzPlayer/LICENSE-NOTICE.md` — the third-party notice now lists both changes instead of one.
++- `tests/upstream-modifications.txt` — the header's one declared local change + the CMake registration.
++- `tests/fork-sources.txt` — the new test and this report.
++- `docs/qwen-fixes-2026-10/cluster-ci-165e1914b308f189.md` — this report.
++
++## Self-check
++
++- **The regression test FAILS with the product change reverted and PASSES with it (exit codes).**
++  RED: `ctest -R ClangTemplateKeywordCheck` exit **8** with the four findings
++  (`27-ctest-red-final.log`, after `git apply -R fix.patch` and a rebuild, exit 0). GREEN: the same
++  command exit **0** after `git apply fix.patch` and a rebuild (`29-ctest-green-final.log`).
++- **The test is deterministic: no wall-clock timing, sleeps or races.** It is a pure source scan plus a
++  one-shot `-fsyntax-only` compile of fixed fixtures with an explicit `-I`; the only "seam" is the
++  compiler-rule detection (a known-bad fixture), and no timestamps or threads are involved.
++- **The fix is at the cause and complete.** All four sites in both affected templates were changed
++  (`394, 400, 522, 528`); a tree-wide scan for `::template name(` finds no other occurrence, and the
++  sibling calls with explicit argument lists are correct and untouched. The two CI translation units
++  now compile with Clang (0/0).
++- **No collateral damage.** The change is a keyword removal before a deduced call: same function, same
++  lookup, no behaviour, no ABI, no data format. Old projects and saved data are untouched (no song,
++  preset or config code is involved). No new limit or check is added to product code; the new gate is
++  test-side only and scoped to the exact ill-formed pattern.
++- **ALREADY-FIXED / FALSE-POSITIVE evidence:** not applicable — the verdict is FIXED and the pre-fix
++  state was reproduced on this box (exit 1 on the real `FilePool.cpp` compile line) and on the CI log.
++- **Realtime / undo / commands:** no audio-thread path is touched (a compile-time keyword in a header;
++  generated code is identical modulo the same call), no undo or command surface is touched, and no
++  control command was added, so the `ControlCommandsSnapshot` canary is unaffected.
++- **Sibling commands:** no command file changed for this fix. The `ControlCommands*` paths the pre-submit
++  checker lists as "changed" come from the train-wide diff against `FIX-BASE` (`git diff --name-only`
++  includes the 200+ files this branch inherited), not from this change: `git status --porcelain` and the
++  changed-file list in this report name no `src/core/ControlCommands*` file. `app.*` and `arrangement.*`
++  are therefore untouched and consistent by construction; no command was added or altered, so the
++  `ControlCommandsSnapshot` canary is unchanged.
++- **Registration and gates:** `tests/fork-sources.txt` (new test + report), `tests/upstream-modifications.txt`
++  (header row qualified, CMake registration row added), `ctest` registration present, and the gate table
++  is all PASS (`23-feature-check-table.log`).
++- **LOG FOLDER exception (reported, not worked around in the product):** every write into
++  `~/.local/share/zene-bunny-fix/qwen/runs/ci-165e1914b308f189.r1/logs` returns `EACCES` for this
++  session, as does `~/.local/share/zene-bunny-fix/bunny/build-pool.lock` (the `cmake` shim aborts on
++  it). Logs were therefore written to `$TMPDIR` and copied to the gitignored
++  `build/qwen-logs-ci-165e1914b308f189/`; `/usr/bin/cmake` was used for the builds. No `sudo` is
++  available (`no new privileges`), so this is an environment limitation, not a code issue.
+diff --git a/plugins/SfzPlayer/LICENSE-NOTICE.md b/plugins/SfzPlayer/LICENSE-NOTICE.md
+index a03f2aca22..92b9cb3998 100644
+--- a/plugins/SfzPlayer/LICENSE-NOTICE.md
++++ b/plugins/SfzPlayer/LICENSE-NOTICE.md
+@@ -3,11 +3,14 @@
+ The SFZ Player (`SfzPlayer*.cpp/.h`, `SfzSynth*`, `RtPublished.h`) is Zene Studio code, GPL-2.0-or-later like the rest
+ of the program. It plays SFZ instruments with **sfizz 1.2.3** (https://github.com/sfztools/sfizz, BSD-2-Clause),
+ vendored under `sfizz/` and built into the module as static libraries on every platform. The sfizz release tarball
+-(which carries its dependencies) is the source. **One change** was made to the files that were kept: in
++(which carries its dependencies) is the source. **Two changes** were made to the files that were kept: in
+ `sfizz/src/sfizz/Synth.cpp`, `Synth::renderBlock` no longer waits for the background loaders when freewheeling and no
+ longer runs the file pool's garbage collection, when the module is built with `ZENE_SFIZZ_NO_RENDER_THREAD_WAITS` (the
+ module always is). Both took a lock or waited inside the render callback. Without the collection, a sample that was
+-streamed to its end stays in memory until the synth is rebuilt (a reload, an export, a project close).
++streamed to its end stays in memory until the synth is rebuilt (a reload, an export, a project close). And in
++`external/atomic_queue/include/atomic_queue/atomic_queue.h`, the ill-formed `Base::template do_pop_any(...)` /
++`Base::template do_push_any(...)` calls (a `template` keyword with no explicit template argument list, which current
++Clang rejects) lost the keyword; the queue semantics are unchanged.
+ 
+ | Path under `sfizz/` | What | Licence |
+ | --- | --- | --- |
+diff --git a/plugins/SfzPlayer/sfizz/external/atomic_queue/include/atomic_queue/atomic_queue.h b/plugins/SfzPlayer/sfizz/external/atomic_queue/include/atomic_queue/atomic_queue.h
+index 21dc029bff..8b6f2c5380 100644
+--- a/plugins/SfzPlayer/sfizz/external/atomic_queue/include/atomic_queue/atomic_queue.h
++++ b/plugins/SfzPlayer/sfizz/external/atomic_queue/include/atomic_queue/atomic_queue.h
+@@ -391,13 +391,13 @@ class AtomicQueue2 : public AtomicQueueCommon<AtomicQueue2<T, SIZE, MINIMIZE_CON
+ 
+     T do_pop(unsigned tail) noexcept {
+         unsigned index = details::remap_index<SHUFFLE_BITS>(tail % size_);
+-        return Base::template do_pop_any(states_[index], elements_[index]);
++        return Base::do_pop_any(states_[index], elements_[index]);
+     }
+ 
+     template<class U>
+     void do_push(U&& element, unsigned head) noexcept {
+         unsigned index = details::remap_index<SHUFFLE_BITS>(head % size_);
+-        Base::template do_push_any(std::forward<U>(element), states_[index], elements_[index]);
++        Base::do_push_any(std::forward<U>(element), states_[index], elements_[index]);
+     }
+ 
+ public:
+@@ -519,13 +519,13 @@ class AtomicQueueB2 : public AtomicQueueCommon<AtomicQueueB2<T, A, MAXIMIZE_THRO
+ 
+     T do_pop(unsigned tail) noexcept {
+         unsigned index = details::remap_index<SHUFFLE_BITS>(tail & (size_ - 1));
+-        return Base::template do_pop_any(states_[index], elements_[index]);
++        return Base::do_pop_any(states_[index], elements_[index]);
+     }
+ 
+     template<class U>
+     void do_push(U&& element, unsigned head) noexcept {
+         unsigned index = details::remap_index<SHUFFLE_BITS>(head & (size_ - 1));
+-        Base::template do_push_any(std::forward<U>(element), states_[index], elements_[index]);
++        Base::do_push_any(std::forward<U>(element), states_[index], elements_[index]);
+     }
+ 
+ public:
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index ca7ed8c989..c998f98c6a 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -6341,6 +6341,22 @@ if(PYTHON3_EXECUTABLE)
+ 	set_tests_properties(ExportedClassTlsCheck PROPERTIES TIMEOUT 60)
+ endif()
+ 
++# The `template` keyword before a member-template name that takes no explicit
++# template argument list is ill-formed, and the Clang of the hosted windows-arm64
++# job rejects it (cluster ci-165e1914b308f189: atomic_queue.h's
++# `Base::template do_pop_any(...)` failed FilePool.cpp and Synth.cpp). GCC accepts
++# it, so the check scans every tracked C/C++ source and, on a compiler that
++# enforces the rule, also compiles the real atomic_queue header with both affected
++# queue templates instantiated. Its fixtures prove the scanner can fail.
++if(PYTHON3_EXECUTABLE)
++	add_test(NAME ClangTemplateKeywordCheck
++		COMMAND ${PYTHON3_EXECUTABLE}
++			${CMAKE_CURRENT_SOURCE_DIR}/clang-template-keyword-check.py
++			--root ${CMAKE_SOURCE_DIR}
++			--compiler ${CMAKE_CXX_COMPILER})
++	set_tests_properties(ClangTemplateKeywordCheck PROPERTIES TIMEOUT 120)
++endif()
++
+ # The VST2 test instrument must keep Darwin's C99 <stdio.h> declarations visible
+ # (cluster ci-12f4249981b085d6: macos-arm64 saw snprintf undeclared because the
+ # fixture's _POSIX_C_SOURCE hid it). The check compiles the real fixture with the
+diff --git a/tests/clang-template-keyword-check.py b/tests/clang-template-keyword-check.py
+new file mode 100644
+index 0000000000..b46bc6e8d1
+--- /dev/null
++++ b/tests/clang-template-keyword-check.py
+@@ -0,0 +1,297 @@
++#!/usr/bin/env python3
++"""Regression for cluster ci-165e1914b308f189: no `template` keyword without a template argument list.
++
++Cluster ci-165e1914b308f189 (2026-11-11), hosted windows-arm64 build: the
++vendored atomic_queue header failed to compile with
++
++    atomic_queue.h:394:31: error: a template argument list is expected after a
++        name prefixed by the template keyword
++        [-Wmissing-template-arg-list-after-template-kw]
++    return Base::template do_pop_any(states_[index], elements_[index]);
++
++`template` is only needed before a member template name that is followed by an
++explicit template argument list (`x.template f<T>(...)`); when the arguments are
++deduced, the keyword makes the program ill-formed in current Clang (the
++diagnostic is on by default, and the CI compile line carries -Wno-error, so it
++cannot be waived).  The four sites in
++plugins/SfzPlayer/sfizz/external/atomic_queue/include/atomic_queue/atomic_queue.h
++used it before a plain call, which is why every translation unit including
++sfizz's FilePool.h (FilePool.cpp, Synth.cpp, ...) failed to build.
++
++The check has two independent halves:
++
++  * a source scan of every tracked C/C++ file for `::template name`,
++    `.template name` and `->template name` where `name` is not followed by
++    `<`.  This half runs on every platform, including GCC hosts that accept the
++    construct, so the regression is red wherever the suite runs.
++  * a compile probe: if the supplied compiler enforces the rule (it rejects a
++    known-bad fixture), the real atomic_queue header is compiled through a
++    translation unit that instantiates both affected queue templates.  A GCC
++    host accepts the known-bad fixture, so the probe is reported as skipped
++    there and the source scan is the authoritative half.
++
++Both halves are proved able to fail by the self-test fixtures (`--self-test`),
++which this file runs as its own red/green control.
++
++Usage:
++  clang-template-keyword-check.py [--root DIR] [--compiler CXX]
++                                  [--atomic-queue-include DIR]
++  clang-template-keyword-check.py --self-test
++
++Exit codes: 0 = clean, 1 = finding (or a failed fixture), 2 = usage error.
++"""
++
++import argparse
++import os
++import re
++import shutil
++import subprocess
++import sys
++import tempfile
++
++# Comments and string/char literals are blanked before scanning: a mention in
++# prose or in an error string is not a use of the keyword.
++NON_CODE = re.compile(
++	r'//[^\n]*|/\*.*?\*/|"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\'',
++	re.S)
++
++# `Base::template do_pop_any(`, `q.template f(`, `p->template f(` - the name
++# after the keyword.  A following `<` is an explicit template argument list and
++# is accepted; everything else is the defect.
++KEYWORD_USE = re.compile(
++	r'(?:(?:::|\.|->)\s*)template\s+([A-Za-z_][A-Za-z0-9_]*)\s*')
++
++SOURCE_SUFFIXES = (".c", ".cc", ".cpp", ".cxx", ".h", ".hpp")
++
++# A name that can be prefixed with `template` but carries no explicit argument
++# list: the compiler rejects this and so must the scanner.
++FIXTURE_RED = """\
++struct Base { template<class T> static T f(T v) { return v; } };
++struct Other { int member; };
++
++int bad_call()
++{
++	return Base::template f(1);
++}
++
++template<class T>
++struct Wrapper
++{
++	static int g(T v) { return Base::template f(v); }
++};
++
++int bad_member(Other& o)
++{
++	return o.template f(1) + (&o)->template f(2);
++}
++
++// A mention in a comment is not a use: Base::template f(1)
++static const char* text = "Base::template f(1)";
++"""
++
++# The fixed form: no keyword before a deduced call, and the keyword with an
++# explicit argument list where the standard requires it.
++FIXTURE_GREEN = """\
++struct Base { template<class T> static T f(T v) { return v; } };
++
++int good_call()
++{
++	return Base::f(1);
++}
++
++template<class T>
++struct Wrapper
++{
++	static T g(T v) { return Base::template f<T>(v); }
++};
++
++template<class A>
++struct Traits
++{
++	typename std::allocator_traits<A>::template rebind_alloc<int> alloc;
++};
++
++// Base::template f(1) in a comment, and "Base::template f(1)" in a string.
++"""
++
++# Compiled with the host compiler to learn whether it enforces the rule and to
++# compile the real header when it does.
++COMPILER_RED_PROBE = """\
++struct Base { template<class T> static T f(T v) { return v; } };
++int g() { return Base::template f(1); }
++"""
++
++COMPILER_GREEN_PROBE = """\
++#include "atomic_queue/atomic_queue.h"
++
++int main()
++{
++	atomic_queue::AtomicQueue2<int, 4> q2;
++	int v = 0;
++	if (!q2.try_push(1))
++		return 1;
++	if (!q2.try_pop(v) || v != 1)
++		return 2;
++	atomic_queue::AtomicQueueB2<int> qb2(4);
++	if (!qb2.try_push(2))
++		return 3;
++	if (!qb2.try_pop(v) || v != 2)
++		return 4;
++	return 0;
++}
++"""
++
++
++def strip_non_code(text):
++	def blank(match):
++		s = match.group(0)
++		return "\n" * s.count("\n") if s.startswith(("/*", "//")) else " "
++	return NON_CODE.sub(blank, text)
++
++
++def scan_text(path, text):
++	"""Return (path, line, snippet) for every keyword use without an argument list."""
++	findings = []
++	code = strip_non_code(text)
++	lines = text.splitlines()
++	for match in KEYWORD_USE.finditer(code):
++		if code[match.end():].startswith("<"):
++			continue
++		line = code.count("\n", 0, match.start()) + 1
++		snippet = lines[line - 1].strip() if line - 1 < len(lines) else ""
++		findings.append((path, line, snippet[:160]))
++	return findings
++
++
++def git_tracked_sources(root):
++	try:
++		out = subprocess.run(["git", "-C", root, "ls-files", "-z"],
++			capture_output=True, check=True).stdout
++	except (OSError, subprocess.CalledProcessError):
++		return []
++	return [p.decode("utf-8", "replace") for p in out.split(b"\0")
++		if p.decode("utf-8", "replace").endswith(SOURCE_SUFFIXES)]
++
++
++def walked_sources(root):
++	paths = []
++	for directory, subdirs, files in os.walk(root):
++		subdirs[:] = sorted(d for d in subdirs if d not in {".git", "build"})
++		paths += [os.path.relpath(os.path.join(directory, name), root)
++			for name in sorted(files) if name.endswith(SOURCE_SUFFIXES)]
++	return paths
++
++
++def tracked_sources(root):
++	return git_tracked_sources(root) or walked_sources(root)
++
++
++def scan_file(root, relative):
++	path = os.path.join(root, relative)
++	try:
++		with open(path, encoding="utf-8", errors="replace") as handle:
++			text = handle.read()
++	except OSError:
++		return []
++	return scan_text(relative, text) if "template" in text else []
++
++
++def scan_tree(root):
++	findings = []
++	for relative in tracked_sources(root):
++		findings += scan_file(root, relative)
++	return findings
++
++
++def self_test():
++	failures = []
++	red = scan_text("fixture-red.h", FIXTURE_RED)
++	green = scan_text("fixture-green.h", FIXTURE_GREEN)
++	if len(red) != 4:
++		failures.append(f"red fixture flagged {len(red)} use(s), expected 4: {red}")
++	if [line for _, line, _ in red] != [6, 12, 17, 17]:
++		failures.append(f"red fixture line numbers {[line for _, line, _ in red]}, expected [6, 12, 17, 17]")
++	if green:
++		failures.append(f"green fixture flagged: {green}")
++	return failures
++
++
++def run(command):
++	return subprocess.run(command, capture_output=True, text=True)
++
++
++def compiler_rejects_bad_syntax(compiler, workdir):
++	"""True when the compiler enforces the rule; False when it accepts the fixture."""
++	probe = os.path.join(workdir, "bad-keyword.cpp")
++	with open(probe, "w", encoding="utf-8") as handle:
++		handle.write(COMPILER_RED_PROBE)
++	return run([compiler, "-std=gnu++17", "-fsyntax-only", probe]).returncode != 0
++
++
++def compile_real_header(compiler, include_dir, workdir):
++	probe = os.path.join(workdir, "atomic-queue-probe.cpp")
++	with open(probe, "w", encoding="utf-8") as handle:
++		handle.write(COMPILER_GREEN_PROBE)
++	command = [compiler, "-std=gnu++17", "-fsyntax-only", "-I", include_dir, probe]
++	return command, run(command)
++
++
++def compile_probe(compiler, include_dir):
++	workdir = tempfile.mkdtemp(prefix="zene-template-keyword-",
++		dir=os.environ.get("TMPDIR") or None)
++	try:
++		if not compiler_rejects_bad_syntax(compiler, workdir):
++			print(f"compile probe skipped: {compiler} accepts the bad fixture "
++				f"(it does not enforce the rule); the source scan above is the check")
++			return 0
++		command, result = compile_real_header(compiler, include_dir, workdir)
++		if result.returncode == 0:
++			print(f"PASS: {compiler} compiles the real atomic_queue header "
++				f"(AtomicQueue2 and AtomicQueueB2 instantiated)")
++			return 0
++		print(f"FAIL: {compiler} cannot compile the real atomic_queue header "
++			f"(exit {result.returncode})")
++		print("  command:", " ".join(command))
++		print((result.stderr or result.stdout).strip()[:4000])
++		return 1
++	finally:
++		shutil.rmtree(workdir, ignore_errors=True)
++
++
++def main(argv):
++	parser = argparse.ArgumentParser(add_help=True,
++		description="Fail on a `template` keyword with no template argument list.")
++	parser.add_argument("--root", default=os.getcwd())
++	parser.add_argument("--compiler")
++	parser.add_argument("--atomic-queue-include")
++	parser.add_argument("--self-test", action="store_true")
++	args = parser.parse_args(argv[1:])
++	root = os.path.abspath(args.root)
++	include_dir = args.atomic_queue_include or os.path.join(root,
++		"plugins/SfzPlayer/sfizz/external/atomic_queue/include")
++
++	failures = self_test()
++	for failure in failures:
++		print(f"SELF-TEST FAIL: {failure}")
++	if args.self_test:
++		if failures:
++			return 1
++		print("self-test: red fixture flagged at the expected lines, green fixture clean")
++		return 0
++	if failures:
++		return 1
++
++	findings = scan_tree(root)
++	for path, line, snippet in findings:
++		print(f"{path}:{line}: 'template' keyword without a template argument list: {snippet}")
++	if findings:
++		print(f"FAIL: {len(findings)} 'template' keyword use(s) before a name with no "
++			f"template argument list; current Clang rejects these "
++			f"(-Wmissing-template-arg-list-after-template-kw)")
++		return 1
++	print("PASS: no 'template' keyword without a template argument list in tracked C/C++ sources")
++	return compile_probe(args.compiler, include_dir) if args.compiler else 0
++
++
++if __name__ == "__main__":
++	sys.exit(main(sys.argv))
+diff --git a/tests/fork-sources.txt b/tests/fork-sources.txt
+index 7ab6a1a245..e1933225cd 100644
+--- a/tests/fork-sources.txt
++++ b/tests/fork-sources.txt
+@@ -3544,6 +3544,9 @@ docs/qwen-fixes-2026-10/cluster-gui-1105-main-loop-points.md
+ # cluster ci-512849fa221097db (2026-11): checks no exported class declares a thread_local data member (MSVC C2492), by scanning include/ and src/ headers (ctest ExportedClassTlsCheck).
+ tests/exported-class-tls-check.py
+ docs/qwen-fixes-2026-10/cluster-ci-512849fa221097db.md
++# cluster ci-165e1914b308f189 (2026-11): no `template` keyword before a member-template name with no explicit argument list - the hosted windows-arm64 Clang failed the vendored atomic_queue header in FilePool.cpp/Synth.cpp; source scan plus a compile probe of the real header (ctest ClangTemplateKeywordCheck).
++tests/clang-template-keyword-check.py
++docs/qwen-fixes-2026-10/cluster-ci-165e1914b308f189.md
+ # cluster ci-12f4249981b085d6 (2026-11): the VST2 fixture's Darwin feature-macro regression - compiles the real
+ # fixture with the host C compiler against a fake Darwin <stdio.h> (fork-NEW test).
+ tests/vst2-fixture-darwin-headers-check.py
+diff --git a/tests/upstream-modifications.txt b/tests/upstream-modifications.txt
+index 2fbdda454c..7bf161bf89 100644
+--- a/tests/upstream-modifications.txt
++++ b/tests/upstream-modifications.txt
+@@ -4015,7 +4015,7 @@ plugins/SfzPlayer/sfizz/external/abseil-cpp/absl/types/span.h	fork-ADDED vendori
+ plugins/SfzPlayer/sfizz/external/abseil-cpp/absl/types/variant.h	fork-ADDED vendoring by Q050-484, not a change to inherited code (upstream base 4e677cb6c6ab has no plugins/SfzPlayer): sfizz 1.2.3 (BSD-2-Clause) and its dependencies unmodified, from the sfizz release tarball; inventory, licences and what was left out in plugins/SfzPlayer/LICENSE-NOTICE.md. Excluded from every scope manifest like the other vendored trees.
+ plugins/SfzPlayer/sfizz/external/abseil-cpp/absl/utility/utility.h	fork-ADDED vendoring by Q050-484, not a change to inherited code (upstream base 4e677cb6c6ab has no plugins/SfzPlayer): sfizz 1.2.3 (BSD-2-Clause) and its dependencies unmodified, from the sfizz release tarball; inventory, licences and what was left out in plugins/SfzPlayer/LICENSE-NOTICE.md. Excluded from every scope manifest like the other vendored trees.
+ plugins/SfzPlayer/sfizz/external/atomic_queue/LICENSE	fork-ADDED vendoring by Q050-484, not a change to inherited code (upstream base 4e677cb6c6ab has no plugins/SfzPlayer): sfizz 1.2.3 (BSD-2-Clause) and its dependencies unmodified, from the sfizz release tarball; inventory, licences and what was left out in plugins/SfzPlayer/LICENSE-NOTICE.md. Excluded from every scope manifest like the other vendored trees.
+-plugins/SfzPlayer/sfizz/external/atomic_queue/include/atomic_queue/atomic_queue.h	fork-ADDED vendoring by Q050-484, not a change to inherited code (upstream base 4e677cb6c6ab has no plugins/SfzPlayer): sfizz 1.2.3 (BSD-2-Clause) and its dependencies unmodified, from the sfizz release tarball; inventory, licences and what was left out in plugins/SfzPlayer/LICENSE-NOTICE.md. Excluded from every scope manifest like the other vendored trees.
++plugins/SfzPlayer/sfizz/external/atomic_queue/include/atomic_queue/atomic_queue.h	fork-ADDED vendoring by Q050-484, not a change to inherited code (upstream base 4e677cb6c6ab has no plugins/SfzPlayer): sfizz 1.2.3 (BSD-2-Clause) and its dependencies, from the sfizz release tarball; inventory, licences and what was left out in plugins/SfzPlayer/LICENSE-NOTICE.md. Excluded from every scope manifest like the other vendored trees. ONE declared local change (cluster ci-165e1914b308f189): AtomicQueue2::do_pop/do_push and AtomicQueueB2::do_pop/do_push call Base::do_pop_any/Base::do_push_any without the `template` keyword, which is ill-formed when no explicit template argument list follows and is an error (not a warning) in current Clang - the hosted windows-arm64 build failed on this header in FilePool.cpp and Synth.cpp; upstream atomic_queue has since restructured the same functions (v1.9.0 removes the construct), and the queue semantics are unchanged. Held by tests/clang-template-keyword-check.py (ctest ClangTemplateKeywordCheck), whose compile probe instantiates both affected queue templates.
+ plugins/SfzPlayer/sfizz/external/atomic_queue/include/atomic_queue/defs.h	fork-ADDED vendoring by Q050-484, not a change to inherited code (upstream base 4e677cb6c6ab has no plugins/SfzPlayer): sfizz 1.2.3 (BSD-2-Clause) and its dependencies unmodified, from the sfizz release tarball; inventory, licences and what was left out in plugins/SfzPlayer/LICENSE-NOTICE.md. Excluded from every scope manifest like the other vendored trees.
+ plugins/SfzPlayer/sfizz/external/cephes/LICENSE.txt	fork-ADDED vendoring by Q050-484, not a change to inherited code (upstream base 4e677cb6c6ab has no plugins/SfzPlayer): sfizz 1.2.3 (BSD-2-Clause) and its dependencies unmodified, from the sfizz release tarball; inventory, licences and what was left out in plugins/SfzPlayer/LICENSE-NOTICE.md. Excluded from every scope manifest like the other vendored trees.
+ plugins/SfzPlayer/sfizz/external/cephes/src/chbevl.c	fork-ADDED vendoring by Q050-484, not a change to inherited code (upstream base 4e677cb6c6ab has no plugins/SfzPlayer): sfizz 1.2.3 (BSD-2-Clause) and its dependencies unmodified, from the sfizz release tarball; inventory, licences and what was left out in plugins/SfzPlayer/LICENSE-NOTICE.md. Excluded from every scope manifest like the other vendored trees.
+@@ -5821,3 +5821,4 @@ tests/CMakeLists.txt	cluster ci-12f4249981b085d6: registers Vst2FixtureDarwinHea
+ # plugins/SfzPlayer's own call is scoped to its subtree). The block now finds the target in
+ # its own scope, and the CMakeThreadsScope configure regression is registered beside it.
+ tests/CMakeLists.txt	ci-748342d46d7e9dd9: the SfzFilePoolTest block resolves Threads::Threads in its own directory scope (MinGW64 had no ancestor target, so the generate step failed) and registers tests/cmake-threads-scope.sh as the CMakeThreadsScope configure regression.
++tests/CMakeLists.txt	cluster ci-165e1914b308f189: registers ClangTemplateKeywordCheck (tests/clang-template-keyword-check.py), the ill-formed-`template`-keyword regression for the vendored atomic_queue header that failed the hosted windows-arm64 build of FilePool.cpp and Synth.cpp; one add_test and one timeout property, no existing test changes.
+-- 
+2.56.0
+

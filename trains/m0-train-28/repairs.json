@@ -1,0 +1,551 @@
+[
+  {
+    "at": "2026-11-13T18:39:49",
+    "base": "3ab01006f613b223654f56481b789b605c444a84",
+    "branch": "fix/ci-repair-ci-8fceff87a3151aad-91094b4f486b",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-8fceff87a3151aad.r1.md",
+        "negative_control": {
+          "artifact_hashes": {
+            "test-restored.log": "65c25d4dc0f6e8c8a4b02451f1f283c8fa3a7b998ade4ae28c96efca75c786d5",
+            "test-reverted.log": "df72dcfc3656188f46fccbb0c269c56d00063db892df0b59d29ab1c2b27060c5"
+          },
+          "detail": "Qt5OverloadedSignalCheck: they fail without it (rc 8) and pass with it",
+          "ok": true,
+          "product_files": [
+            "src/gui/FollowActionEditor.cpp"
+          ],
+          "proof_base": "3ab01006f613b223654f56481b789b605c444a84",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-8fceff87a3151aad.r1/negctl",
+          "proof_key": "ce6c7afadb583aab5573807668c4179578297ccfb4104a7cb7d636925f8c23f6",
+          "restored_rc": 0,
+          "reverted_build_rc": 0,
+          "reverted_rc": 8,
+          "tests": [
+            "Qt5OverloadedSignalCheck"
+          ],
+          "tree_clean": true
+        },
+        "verdict": "ACCEPT"
+      }
+    ],
+    "commit": "5d64ba4d1e7035188f7bfbd8cbc4399fb4e4f234",
+    "id": "ci-repair-ci-8fceff87a3151aad-91094b4f486b",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-8fceff87a3151aad.md",
+      "src/gui/FollowActionEditor.cpp",
+      "tests/CMakeLists.txt",
+      "tests/fork-sources.txt",
+      "tests/qt5-overloaded-signal-check.py"
+    ],
+    "promoted_train": "050/m0-train-29",
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "3ab01006f613b223654f56481b789b605c444a84",
+    "status": "promoted",
+    "summary": "CI regression: build / windows-arm64",
+    "train": "050/m0-train-28",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-8fceff87a3151aad"
+  },
+  {
+    "at": "2026-11-13T18:43:21",
+    "base": "3ab01006f613b223654f56481b789b605c444a84",
+    "branch": "fix/ci-repair-ci-632a20737fe640fa-0a2de25e09ad",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-632a20737fe640fa.r1.md",
+        "negative_control": {
+          "artifact_hashes": {
+            "test-restored.log": "da25cbbbc6fb123a55f384a41d07386d1647ec3a8817a5e11f28b72bf25e9e40",
+            "test-reverted.log": "8ffb017d6625de0585ea60709d1dca294bb88dfcc5e2dd39b04ecee9465aeb7c"
+          },
+          "detail": "Qt5SignalOverloadCheck: they fail without it (rc 8) and pass with it",
+          "ok": true,
+          "product_files": [
+            "src/gui/FollowActionEditor.cpp"
+          ],
+          "proof_base": "3ab01006f613b223654f56481b789b605c444a84",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-632a20737fe640fa.r1/negctl",
+          "proof_key": "d386afe3e49b44bb87adfee599318adf4243825a6541ecba1d073aa02ea252d2",
+          "restored_rc": 0,
+          "reverted_build_rc": 0,
+          "reverted_rc": 8,
+          "tests": [
+            "Qt5SignalOverloadCheck"
+          ],
+          "tree_clean": true
+        },
+        "verdict": "ACCEPT"
+      }
+    ],
+    "commit": "6cc60cb31fcf594a95a769195b5166742d30d09f",
+    "id": "ci-repair-ci-632a20737fe640fa-0a2de25e09ad",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-632a20737fe640fa.md",
+      "src/gui/FollowActionEditor.cpp",
+      "tests/CMakeLists.txt",
+      "tests/fork-sources.txt",
+      "tests/qt5-signal-overload-check.py"
+    ],
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "3ab01006f613b223654f56481b789b605c444a84",
+    "status": "superseded",
+    "summary": "CI regression: build / linux-x86_64",
+    "superseded_by": "sol-repair-1794605312345629946",
+    "train": "050/m0-train-28",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-632a20737fe640fa"
+  },
+  {
+    "at": "2026-11-13T18:56:38",
+    "base": "3ab01006f613b223654f56481b789b605c444a84",
+    "branch": "fix/ci-repair-ci-c22070dd8cbbc7c0-28429ad506f8",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-c22070dd8cbbc7c0.r1.md",
+        "negative_control": {
+          "artifact_hashes": {
+            "test-restored.log": "c04b3abb47bbe3f5af30ed049156734d3d0944779ef3db78ef14bc7532dde5e6",
+            "test-reverted.log": "d7d6778512f9a6ed1a0723a83d8eaca89dac1167c4a501518f31d43cd7aadaa9"
+          },
+          "detail": "Qt5SignalOverloadCheck: they fail without it (rc 8) and pass with it",
+          "ok": true,
+          "product_files": [
+            "src/gui/FollowActionEditor.cpp"
+          ],
+          "proof_base": "3ab01006f613b223654f56481b789b605c444a84",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-c22070dd8cbbc7c0.r1/negctl",
+          "proof_key": "4956bff54feb2fe29116743f26a7dff19ab8cfb789aa7cb420f10b6bd0435179",
+          "restored_rc": 0,
+          "reverted_build_rc": 0,
+          "reverted_rc": 8,
+          "tests": [
+            "Qt5SignalOverloadCheck"
+          ],
+          "tree_clean": true
+        },
+        "verdict": "ACCEPT-NOTE"
+      }
+    ],
+    "commit": "46153ee046b367f14fe5e87ca2bbcd1b60a93734",
+    "id": "ci-repair-ci-c22070dd8cbbc7c0-28429ad506f8",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-c22070dd8cbbc7c0.md",
+      "src/gui/FollowActionEditor.cpp",
+      "tests/CMakeLists.txt",
+      "tests/fork-sources.txt",
+      "tests/qt5-signal-overload-check.py"
+    ],
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "3ab01006f613b223654f56481b789b605c444a84",
+    "status": "superseded",
+    "summary": "CI regression: build / linux-arm64",
+    "superseded_by": "sol-repair-1794605312345629946",
+    "train": "050/m0-train-28",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-c22070dd8cbbc7c0"
+  },
+  {
+    "at": "2026-11-13T19:45:14",
+    "base": "3ab01006f613b223654f56481b789b605c444a84",
+    "branch": "fix/ci-repair-ci-017caf2edd434b66-4ea66098cdd2",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-017caf2edd434b66.r2.md",
+        "negative_control": {
+          "artifact_hashes": {
+            "test-restored.log": "c3176a744a40d46efe5596b077a6c987b9ed3dbb0effb38501bc1d27486c27b0",
+            "test-reverted.log": "dbf7a89aefe2034cfffa4cf6dbc38536189af8d3021f47b0094a35385e37b0d8"
+          },
+          "detail": "ArrangerTimelineTest, ArrangerZoomNoGestures: they fail without it (rc 8) and pass with it",
+          "ok": true,
+          "product_files": [
+            "include/ArrangerZoom.h",
+            "src/gui/ArrangerAids.cpp",
+            "src/gui/ArrangerZoom.cpp"
+          ],
+          "proof_base": "3ab01006f613b223654f56481b789b605c444a84",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-017caf2edd434b66.r2/negctl",
+          "proof_key": "841f5fbb95c47522411123400a296c27f68f219284c6858f427270186d0aa97c",
+          "restored_rc": 0,
+          "reverted_build_rc": 0,
+          "reverted_rc": 8,
+          "tests": [
+            "ArrangerTimelineTest",
+            "ArrangerZoomNoGestures"
+          ],
+          "tree_clean": true
+        },
+        "verdict": "ACCEPT-NOTE"
+      }
+    ],
+    "commit": "397694798e67890ca6f7c4eaf0571e848f2b334c",
+    "id": "ci-repair-ci-017caf2edd434b66-4ea66098cdd2",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-017caf2edd434b66.md",
+      "include/ArrangerZoom.h",
+      "src/gui/ArrangerAids.cpp",
+      "src/gui/ArrangerZoom.cpp",
+      "tests/CMakeLists.txt",
+      "tests/arranger-zoom-no-gestures-check.py",
+      "tests/fork-sources.txt",
+      "tests/src/gui/ArrangerTimelineTest.cpp",
+      "tests/upstream-modifications.txt"
+    ],
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "3ab01006f613b223654f56481b789b605c444a84",
+    "status": "superseded",
+    "summary": "CI regression: build / mingw64",
+    "superseded_by": "sol-repair-1794605312345629946",
+    "train": "050/m0-train-28",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-017caf2edd434b66"
+  },
+  {
+    "at": "2026-11-13T21:28:32",
+    "base": "3ab01006f613b223654f56481b789b605c444a84",
+    "branch": "fix/sol-repair-1794605312345629946",
+    "checks": [
+      {
+        "argv": [
+          "bash",
+          "tests/no-upstream-regression-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-29-1794604482065290831",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794605261363737497.log"
+      },
+      {
+        "argv": [
+          "bash",
+          "tests/evidence-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-29-1794604482065290831",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794605269143864194.log"
+      },
+      {
+        "argv": [
+          "bash",
+          "tests/fork-sources-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-29-1794604482065290831",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794605281535135782.log"
+      },
+      {
+        "argv": [
+          "cmake",
+          "--build",
+          "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-29-1794604482065290831/build",
+          "--target",
+          "zene",
+          "FollowActionEditorTest",
+          "ArrangerTimelineTest",
+          "-j12"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-29-1794604482065290831",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794605281807396469.log"
+      },
+      {
+        "argv": [
+          "ctest",
+          "-R",
+          "^(Qt5OverloadedSignalCheck|Qt5SignalOverloadCheck|Qt5SignalOverloadArmCheck|ArrangerZoomNoGestures|FollowActionEditorTest|ArrangerTimelineTest)$",
+          "-j1",
+          "--timeout",
+          "900",
+          "--no-tests=error",
+          "--output-on-failure"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-29-1794604482065290831/build/tests",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794605282222652124.log"
+      }
+    ],
+    "commit": "a21e15e372e2780905743a037a20b135ed19cbbe",
+    "id": "sol-repair-1794605312345629946",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-017caf2edd434b66.md",
+      "docs/qwen-fixes-2026-10/cluster-ci-632a20737fe640fa.md",
+      "docs/qwen-fixes-2026-10/cluster-ci-c22070dd8cbbc7c0.md",
+      "docs/qwen-fixes-2026-10/sol-train-29-ci-integration.md",
+      "include/ArrangerZoom.h",
+      "src/gui/ArrangerAids.cpp",
+      "src/gui/ArrangerZoom.cpp",
+      "src/gui/editors/SongEditor.cpp",
+      "tests/CMakeLists.txt",
+      "tests/arranger-zoom-no-gestures-check.py",
+      "tests/fork-sources.txt",
+      "tests/qt5-signal-overload-arm-check.py",
+      "tests/qt5-signal-overload-check.py",
+      "tests/src/gui/ArrangerTimelineTest.cpp",
+      "tests/upstream-modifications.txt"
+    ],
+    "source_head": "aa20403519482cec35723ac029c61ddbb52e7e75",
+    "status": "superseded",
+    "summary": "Consolidated the conflicting Linux signal repairs and MinGW gesture repair, retained every accepted regression check, and fixed the ruler-height regression exposed during verification; the Windows repair remains required.",
+    "superseded_by": "sol-repair-1794608813596401012",
+    "train": "050/m0-train-29",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-29-1794604482065290831"
+  },
+  {
+    "at": "2026-11-13T21:43:17",
+    "base": "3ab01006f613b223654f56481b789b605c444a84",
+    "branch": "fix/sol-repair-1794606197936951902",
+    "checks": [
+      {
+        "argv": [
+          "bash",
+          "tests/no-upstream-regression-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-29-1794605314468534210",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794606138749074283.log"
+      },
+      {
+        "argv": [
+          "bash",
+          "tests/evidence-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-29-1794605314468534210",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794606151845507205.log"
+      },
+      {
+        "argv": [
+          "bash",
+          "tests/fork-sources-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-29-1794605314468534210",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794606168508570798.log"
+      },
+      {
+        "argv": [
+          "cmake",
+          "--build",
+          "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-29-1794605314468534210/build",
+          "--target",
+          "zene",
+          "NoteEditorTest",
+          "NoteEditorFlTest",
+          "-j12"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-29-1794605314468534210",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794606168829353540.log"
+      },
+      {
+        "argv": [
+          "ctest",
+          "-R",
+          "^(NoteEditorTest|NoteEditorFlTest|complexity-regression-check|NoteCanvasComplexityGate)$",
+          "-j1",
+          "--timeout",
+          "900",
+          "--no-tests=error",
+          "--output-on-failure"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-29-1794605314468534210/build/tests",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794606169449121754.log"
+      }
+    ],
+    "commit": "3edb6accd286d828b2920efc48e662eb92cbcd8a",
+    "id": "sol-repair-1794606197936951902",
+    "paths": [
+      "docs/qwen-fixes-2026-10/sol-train-29-note-input-complexity.md",
+      "src/gui/noteeditor/NoteCanvasInput.cpp",
+      "tests/CMakeLists.txt",
+      "tests/complexity-regression-check.py",
+      "tests/fork-sources.txt",
+      "tests/upstream-modifications.txt"
+    ],
+    "promoted_train": "050/m0-train-29",
+    "source_head": "aa20403519482cec35723ac029c61ddbb52e7e75",
+    "status": "promoted",
+    "summary": "Extracted the parent-editor lookup, reducing mousePressEvent from CCN 11 to 9 without changing behavior; extended the metric regression and registered the unchanged complexity gate in non-writing mode.",
+    "train": "050/m0-train-29",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-29-1794605314468534210"
+  },
+  {
+    "at": "2026-11-13T22:26:53",
+    "base": "3ab01006f613b223654f56481b789b605c444a84",
+    "branch": "fix/sol-repair-1794608813596401012",
+    "checks": [
+      {
+        "argv": [
+          "bash",
+          "tests/no-upstream-regression-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-29-1794608110682330394",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794608760831690351.log"
+      },
+      {
+        "argv": [
+          "bash",
+          "tests/evidence-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-29-1794608110682330394",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794608769221587166.log"
+      },
+      {
+        "argv": [
+          "bash",
+          "tests/fork-sources-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-29-1794608110682330394",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794608782521471672.log"
+      },
+      {
+        "argv": [
+          "cmake",
+          "--build",
+          "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-29-1794608110682330394/build",
+          "--target",
+          "zene",
+          "FollowActionEditorTest",
+          "ArrangerTimelineTest",
+          "-j12"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-29-1794608110682330394",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794608782787801675.log"
+      },
+      {
+        "argv": [
+          "ctest",
+          "-R",
+          "^(Qt5OverloadedSignalCheck|Qt5SignalOverloadCheck|Qt5SignalOverloadArmCheck|ArrangerZoomNoGestures|FollowActionEditorTest|ArrangerTimelineTest)$",
+          "-j1",
+          "--timeout",
+          "900",
+          "--no-tests=error",
+          "--output-on-failure"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-29-1794608110682330394/build/tests",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794608783254898841.log"
+      }
+    ],
+    "commit": "22878e9ade16e763b3b14a34b22a5947e6c3175c",
+    "id": "sol-repair-1794608813596401012",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-017caf2edd434b66.md",
+      "docs/qwen-fixes-2026-10/cluster-ci-632a20737fe640fa.md",
+      "docs/qwen-fixes-2026-10/cluster-ci-c22070dd8cbbc7c0.md",
+      "docs/qwen-fixes-2026-10/sol-train-29-ci-integration.md",
+      "docs/qwen-fixes-2026-10/sol-train-29-ci-rebase.md",
+      "include/ArrangerZoom.h",
+      "src/gui/ArrangerAids.cpp",
+      "src/gui/ArrangerZoom.cpp",
+      "src/gui/editors/SongEditor.cpp",
+      "tests/CMakeLists.txt",
+      "tests/arranger-zoom-no-gestures-check.py",
+      "tests/fork-sources.txt",
+      "tests/qt5-signal-overload-arm-check.py",
+      "tests/qt5-signal-overload-check.py",
+      "tests/src/gui/ArrangerTimelineTest.cpp",
+      "tests/upstream-modifications.txt"
+    ],
+    "source_head": "c7e71afe4714067f6f4f63c9f6900b170fada18c",
+    "status": "superseded",
+    "summary": "Reconciled the combined CI repair with the changed selection, preserving all fixes and regressions and relocating provenance entries to stable ledger context; recorded fresh verification.",
+    "superseded_by": "sol-repair-1794612312237616032",
+    "train": "050/m0-train-29",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-29-1794608110682330394"
+  },
+  {
+    "at": "2026-11-13T23:25:12",
+    "base": "3ab01006f613b223654f56481b789b605c444a84",
+    "branch": "fix/sol-repair-1794612312237616032",
+    "checks": [
+      {
+        "argv": [
+          "bash",
+          "tests/no-upstream-regression-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-29-1794611748952385630",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794612245645720707.log"
+      },
+      {
+        "argv": [
+          "bash",
+          "tests/evidence-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-29-1794611748952385630",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794612253329173170.log"
+      },
+      {
+        "argv": [
+          "bash",
+          "tests/fork-sources-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-29-1794611748952385630",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794612264716671248.log"
+      },
+      {
+        "argv": [
+          "cmake",
+          "--build",
+          "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-29-1794611748952385630/build",
+          "--target",
+          "zene",
+          "FollowActionEditorTest",
+          "ArrangerTimelineTest",
+          "-j12"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-29-1794611748952385630",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794612264982696510.log"
+      },
+      {
+        "argv": [
+          "ctest",
+          "-R",
+          "^(Qt5OverloadedSignalCheck|Qt5SignalOverloadCheck|Qt5SignalOverloadArmCheck|ArrangerZoomNoGestures|FollowActionEditorTest|ArrangerTimelineTest|complexity-regression-check|NoteCanvasComplexityGate)$",
+          "-j1",
+          "--timeout",
+          "900",
+          "--no-tests=error",
+          "--output-on-failure"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-29-1794611748952385630/build/tests",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794612265449228889.log"
+      }
+    ],
+    "commit": "3cb156dddd552623d2600ed69ff8c77dc93db7ca",
+    "id": "sol-repair-1794612312237616032",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-017caf2edd434b66.md",
+      "docs/qwen-fixes-2026-10/cluster-ci-632a20737fe640fa.md",
+      "docs/qwen-fixes-2026-10/cluster-ci-c22070dd8cbbc7c0.md",
+      "docs/qwen-fixes-2026-10/sol-train-29-ci-integration.md",
+      "docs/qwen-fixes-2026-10/sol-train-29-ci-rebase.md",
+      "docs/qwen-fixes-2026-10/sol-train-29-ci-registration-rebase.md",
+      "include/ArrangerZoom.h",
+      "src/gui/ArrangerAids.cpp",
+      "src/gui/ArrangerZoom.cpp",
+      "src/gui/editors/SongEditor.cpp",
+      "tests/CMakeLists.txt",
+      "tests/arranger-zoom-no-gestures-check.py",
+      "tests/fork-sources.txt",
+      "tests/qt5-signal-overload-arm-check.py",
+      "tests/qt5-signal-overload-check.py",
+      "tests/src/gui/ArrangerTimelineTest.cpp",
+      "tests/upstream-modifications.txt"
+    ],
+    "promoted_train": "050/m0-train-29",
+    "source_head": "d16023e93bbe9640ceec91322286a915caf75724",
+    "status": "promoted",
+    "summary": "Relocated the CI repair\u2019s fork-source registrations away from omitted Q050-275 context, preserving every fix, regression and current selection entry; recorded fresh verification.",
+    "train": "050/m0-train-29",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-29-1794611748952385630"
+  }
+]

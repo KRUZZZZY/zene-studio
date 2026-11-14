@@ -1,0 +1,62 @@
+190242990c1f9f7490624cef6a3035c02855a688	merge(m0-train-2): design/m0-automation-prepass (independently reviewed)
+851b15113b6ec24efba2e96fd2d055ccb93441cd	merge(m0-train-2): design/m0-voice-pool (independently reviewed)
+2beb584feb61843ecb552f601fac4f22939ad297	merge(m0-train-2): bugs/m0-fix-rtsan-link (independently reviewed)
+90a520713c7a1f83a5aae7371c392a0dd53fd412	merge(m0-train-2): bugs/m0-fix-bar4 (independently reviewed)
+888934e1b289ea029ab44a6468c240953f359b7c	fix(build): four more portability errors hosted CI found on 76e67e8c9
+76e67e8c99372405c9e8d5ece36624c6bc679425	chore(mcp): regenerate the commands snapshot from a live train-2 instance (823 ids / 76 groups)
+a0295ab847ae93a9b44abf9342a6c4bbfadc88c2	merge(m0-train-2): design/m0-render-jobs (independently reviewed)
+4a0494027abbc5ca055f8a5b6ba4901525e7cd91	merge(m0-train-2): bugs/m0-fix-integration-bar3 (independently reviewed)
+8f0a2f01cc7c5e481ca0bd110e7b4e0fbe92f82d	ci: free runner disk before the five build-heavy quality-gates jobs
+1ca0ea840fbcac9f1420cb8e2e0db298c84ded18	fix(build): two compile errors hosted CI found on c405233f8
+c405233f864af8b21eb5f1c65244f45ac7ddfc3f	chore(mcp): regenerate the commands snapshot from a live train-2 instance
+ffe891c7249fe6bca8907fb6dbf8bf352c67581e	fix(style): the nam namespace in NeuralAmpEffect.h closes with its comment
+60797a23e0e0da6cff776705c66e732e9be6430c	merge(m0-train-2): bugs/m0-blk-behaviour (independently reviewed)
+8b3637a367a670b6b3728f72fb58aaa6e3b73ddb	merge(m0-train-2): bugs/m0-blk-subsystems (independently reviewed)
+94f4157e2a6422373da37c7351de7fe396e1b154	merge(m0-train-2): bugs/m0-blk-realtime (independently reviewed)
+b014004e15d3297ab11fa01cad843c15c71f5951	merge(m0-train-2): bugs/m0-blk-recording (independently reviewed)
+707e6a4c77f691c5d1e5f642de5584c55b7ea49f	merge(m0-train-2): bugs/m0-blk-automation (independently reviewed)
+2a2853548817f3790bd714d4b7701784557952bf	merge(m0-train-2): bugs/m0-fix-lv2-null-key (independently reviewed)
+a57c3100da252c7e6377670b199863e615be49ac	merge(m0-train-2): bugs/m0-fix-ci-portability (independently reviewed)
+4b7e97d2f8737c0c3227f32bdc82361a87d98a0d	merge(m0-train-2): bugs/m0-fix-heap-corruption (independently reviewed)
+a00efda6f6fd89c1751cbb9694f62decb248fc17	merge(m0-train-2): bugs/m0-blk-hosting (independently reviewed, six rounds; Windows to be verified on hosted CI)
+c8acff07055fbbfbbbb1061ee589a85b3ad8490d	merge(m0-train-2): bugs/m0-blk-lifetime (independently reviewed)
+5f83a9396fa9a77f41b33771d2745858d5a7e035	merge(m0-train-2): 050/m0-owner-decisions (linked clips, offset fade, script removal refusal; reviewed three rounds)
+6ffe622dd3e8e12720d0fe92f69b05d420f96dfd	merge(m0-train-2): 050/m0-cov-tests-core (coverage tests, reviewed three times)
+88520dbd6ef818cdc98369f0bcfe89f8f91c5889	merge(m0-train-2): 050/m0-cov-tests-gui (coverage tests, reviewed twice)
+ff429998f62757f3d69f2ee6acf4a96a299bbd83	merge(m0-train-2): bugs/m0-fix-w3engine-postfx-undo (reviewed)
+2bed51fcb4f984285ab93f24df862215b6c184c4	merge(m0-train-2): bugs/m0-fix-trackview-uaf (reviewed)
+a4c7d180c0809674c12b1283d8237a14e7020b5d	chore(gates): exempt the commands snapshot and the upstream-modifications register from the evidence size cap
+8eacc41d231501731e6dc0ba69a410bc2d9c1148	merge(m0-train-2): bugs/m0-fix-syncaction-test (reviewed)
+0f55d2c4c9f994e618f50ba0a1459bfea6d72721	merge(m0-train-2): bugs/m0-fix-audiocell (reviewed)
+589465ca89c1bbfcd2833158003aef1c8ce1a897	merge(m0-train-2): bugs/bunny-control-2026-10-05 (reviewed)
+28cc3a0b58b039aff9fb22b4da3a12cc070aacf3	chore(mcp): regenerate the commands snapshot from a live train-2 instance
+a06caca45c99f935eb2e1605273a3acbaa09a310	test(gui): the paint stroke's expectation counts every cell it crosses
+b0ad8dd9a579becf5c7149ac8e660cfa59757414	fix(gui): a trackpad's pixel deltas scroll and zoom the note area
+928481304f924a94631ac70a7a6ad94f74746f5b	fix(gui): a fast velocity-lane stroke takes the stems it passed over
+2f76c4654fd8e088ff8580593db8002bfd550c46	refactor(control): split ControlCommandsNotes.cpp under the file-length ratchet (no behaviour change)
+d6254bbd9a4ad714a67b55fc9299c148d9bb9994	merge(m0-train-2): bugs/bunny-control-2026-10-05 (control lane, reworked over six rounds and reviewed)
+cebb33370dbdfaf79b1f3e673b00bb6ed587a401	merge(m0-train-2): 050/m0-train-1 at d807ed749 (SubWindow destruction fix, benchmark overload shed)
+b052198fa40d5fc94290063a88d251d5e35f54c4	test: split ArrangingCatchUpTest, DeviceCopyTest, DeviceToolsTest, UndoHonestyTest under the file-length ratchet (no test changed)
+601fb9e52b4e860da839dc71692d7d24054b1cf2	merge(m0-train-2): bugs/qwen-5342 (fix 5342)
+49edb91f2678b07bc3616d45d8c52212ad0a9f27	merge(m0-train-2): bugs/qwen-4441 (fix 4441)
+9dba64691c4c5a443aea09c9ef7a0f7b7063c6cc	merge(m0-train-2): bugs/bunny-script-2026-10-05 (script lane, reworked over nine rounds and reviewed)
+e8765aa114bf6ccf2f898bbc87fd30cc26456444	merge(m0-train-2): bugs/qwen-2843 (fix 2843)
+203e31a14423e19f50ab7b275a50165f1962aca8	merge(m0-train-2): bugs/qwen-5653 (fix 5653)
+07510c0b1adfa55e6dc83e354e7dcac6c99fc2ad	merge(m0-train-2): bugs/qwen-2862 (fix 2862)
+2a0ccc52fbb20d909e7eeb5871750d1ddfc4577d	merge(m0-train-2): bugs/bunny-cmds1-2026-10-05 (cmds1 lane, reworked and reviewed)
+2d8d1912188de9e669c5726380d1b2104315f9de	test: split BrowserCatalogTest and ReversibilityUndoTest under the file-length ratchet (no test changed)
+c3dfcb61b75d92ff92b927ac8167683e4cb80409	test: restore the closing brace merge 566587c66 dropped in ReversibilityUndoTest
+9d5df0a239edef3e98fe3c1f1645ef4646c02337	test(all-sources): re-derive the whole-tree manifest on merge train 2
+b3e68de5a109f82101aded188b8a3e086b1a185f	merge(m0-train-2): bugs/qwen-4555 (fix 4555)
+adfc285245d796983f6b0920e9d81ece9ae46513	merge(m0-train-2): bugs/qwen-4398 (fix 4398)
+88ffd4644c103974f5eecda4eadd550295aa1f42	merge(m0-train-2): bugs/qwen-2997 (fix 2997)
+07a798de91f548915ba6bf8588024b6e94b074dc	merge(m0-train-2): bugs/qwen-5429 (fix 5429)
+692b8919551f3c54dd96fa9d6f04ed50c563aa6b	merge(m0-train-2): bugs/qwen-5426 (fix 5426)
+3fec96939d7ded21f2e0991121c925fb845d4bc6	merge(m0-train-2): bugs/qwen-4248 (fix 4248)
+b303fc651d7f9a3b624bbdff9d409f42bf5703e3	merge(m0-train-2): bugs/qwen-3237 (fix 3237)
+f426d29fa382e3471e0bdc26bcdd8a71e63839d2	merge(m0-train-2): bugs/qwen-review-dd604aa40 (fix review-dd604aa40)
+e8671e84629020d8bdb0d6f2bea00f8866cef245	merge(m0-train-2): bugs/bunny-gui-2026-10-05 (gui lane, reworked and reviewed)
+566587c663fde0d5bd7d924e440db083a65e9b4a	merge(m0-train-2): bugs/bunny-cmds2-2026-10-05 (cmds2 lane, reworked and reviewed)
+517d6d3d0a3f6410039e13a1e4944f6b0a939d9c	merge(m0-train-2): bugs/bunny-engine-2026-10-05 (engine lane, reworked and reviewed)
+7ff45d177d28580156ac94cb25a4e00a2f3e1287	merge(m0-train-2): bugs/bunny-core-2026-10-05 (fix core)
+9dad99c58ec0e0ce29d388a7728d307e98040570	merge(m0-train-2): bugs/bunny-plugins-2026-10-05 (fix plugins)

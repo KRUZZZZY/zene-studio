@@ -1,0 +1,748 @@
+From a2422d815bbe7bb08a02ddded87d45ba45b34773 Mon Sep 17 00:00:00 2001
+From: Zene CI repair <noreply@zene.invalid>
+Date: Sat, 14 Nov 2026 09:32:54 +0000
+Subject: [PATCH] fix(ci): CI regression: build / windows-arm64
+
+CI-Repair-Id: ci-repair-ci-151e338efff6843e-d638235406f3
+---
+ .../cluster-ci-151e338efff6843e.md            | 206 +++++++++
+ plugins/Eq/EqSpectrumView.h                   |   6 +-
+ tests/CMakeLists.txt                          |  21 +
+ tests/Qt5QListApiCheck.py                     | 425 ++++++++++++++++++
+ tests/fork-sources.txt                        |  12 +
+ tests/upstream-modifications.txt              |   1 +
+ 6 files changed, 670 insertions(+), 1 deletion(-)
+ create mode 100644 docs/qwen-fixes-2026-10/cluster-ci-151e338efff6843e.md
+ create mode 100644 tests/Qt5QListApiCheck.py
+
+diff --git a/docs/qwen-fixes-2026-10/cluster-ci-151e338efff6843e.md b/docs/qwen-fixes-2026-10/cluster-ci-151e338efff6843e.md
+new file mode 100644
+index 0000000000..15ed9f453d
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/cluster-ci-151e338efff6843e.md
+@@ -0,0 +1,206 @@
++FIXED
++
++# cluster ci-151e338efff6843e - CI regression: build / windows-arm64
++
++## Verdict
++
++FIXED. The finding is REAL on this branch: at the pinned train commit
++`40b4322860e9c2133f412a4b921b63b057dd710c` the hosted `build / windows-arm64` job (run
++43569206372, job 132369662814) stopped in `plugins/Eq/EqSpectrumView.cpp` while building
++the `eq` plug-in:
++
++```
++plugins/Eq/EqSpectrumView.cpp:272:2: error: no matching constructor for initialization of 'QList<float>'
++  272 |         m_spectrumBands( MAX_BANDS, 0.f )
++      |         ^                ~~~~~~~~~~~~~~
++  ... note: candidate template ignored: deduced conflicting types for parameter
++      'InputIterator' ('int' vs. 'float')
++plugins/Eq/EqSpectrumView.cpp:296:44: error: no member named 'data' in 'QList<float>'
++plugins/Eq/EqSpectrumView.cpp:315:39: error: no member named 'data' in 'QList<float>'
++3 errors generated.
++```
++
++The job builds against MSYS2 clangarm64 Qt 5.15
++(`.github/workflows/deps-msys2-clangarm64.txt:17-18` pins `mingw-w64-clang-aarch64-qt5-base`
++and `qt5-svg`). The two API uses the file relies on are Qt 6-only:
++
++* `QList(qsizetype size, parameter_type value)` - Qt 6's contiguous `QList`
++  (`/usr/include/qt6/QtCore/qlist.h:311`). Qt 5's node-based `QList` has no such
++  constructor; the two-argument one belongs to Qt 5 `QVector`
++  (`/usr/include/qt5/QtCore/qvector.h:71`, `QVector(int size, const T &t)`).
++* `T *data()` / `const T *constData()` - Qt 6's `QList` (`/usr/include/qt6/QtCore/qlist.h:497-499`).
++  Qt 5's `QList` has no `data()` at all (the local Qt 5.15.13 header, the same generation
++  the job uses, offers only iterators/`at()`), while Qt 5 `QVector` has `data()`
++  (`qvector.h:134-135`).
++
++Qt 6 made `QVector` an alias of `QList` (`/usr/include/qt6/QtCore/qcontainerfwd.h:40`), so
++the Qt 6 build on this box compiled the identical lines. The failure is therefore the
++product code's, not the test suite's or the runner's: the snapshot container was chosen
++from the Qt 6 API surface and never built on Qt 5. It is not infrastructure.
++
++## Cause and fix
++
++`plugins/Eq/EqSpectrumView.h:136` (before the fix) declared the GUI's snapshot as
++`QList<float> m_spectrumBands;`, introduced by `a7ab89bfe7` ("publish the EQ spectrum as a
++snapshot for the GUI"). The view constructs it with
++`m_spectrumBands(MAX_BANDS, 0.f)` (`EqSpectrumView.cpp:272`) and hands its contiguous
++buffer to `EqAnalyser::copySpectrum(float* bands, float& energy)` twice
++(`EqSpectrumView.cpp:296`, `:315`) - so the container is required to be contiguous,
++sized, and value-initialised on every supported Qt.
++
++`QVector<float>` is exactly that on both: Qt 5 `QVector` declares
++`QVector(int size, const T &t)` and `T *data()`; on Qt 6 `QVector` is `QList`, the same
++type the file already compiled against. The fix is one declaration (plus its include and
++a comment saying why), at the cause:
++
++```diff
++ #include <QPainterPath>
+++#include <QVector>
++ #include <QWidget>
++...
++-	QList<float> m_spectrumBands;
+++	QVector<float> m_spectrumBands;
++```
++
++The sibling `QList<float> m_bandHeight` (`EqSpectrumView.h:134`) is deliberately unchanged:
++it only uses `append()` and `operator[]` (the loop at `EqSpectrumView.cpp:284` and
++`:332-347`), both of which Qt 5's `QList` declares - no `data()` and no size+value
++constructor - so it is not part of this defect and must not be churned.
++
++Behaviour is unchanged: `QList<float>` on Qt 6 and `QVector<float>` on Qt 6 are the same
++type, and on Qt 5 `QVector` is the container that provides the contiguous buffer the
++analyser already assumed. Nothing on the audio thread changed (`copySpectrum()` and the
++`publish()` path are untouched), no undoable action or command is involved, and no saved
++data or project file format is touched - this is a member type of a GUI view, not
++serialised state.
++
++## Regression
++
++`tests/Qt5QListApiCheck.py` (new, registered as ctest `Qt5QListApiCheck` in
++`tests/CMakeLists.txt`). Two deterministic halves:
++
++1. A source scan of `plugins/Eq` that flags a `QList`-typed name used with
++   `data()`/`constData()` or constructed with two top-level arguments, with red/green
++   fixtures (`QList<float>(4, 0.f)` flagged, `QVector<float>(4, 0.f)` not) run first. This
++   half is red on the Qt 6 hosts here, where the defect compiles.
++2. A compile probe: where `pkg-config` finds a Qt 5 tree (this box has Qt 5.15.19), every
++   hand-written `plugins/Eq` translation unit from `build/compile_commands.json` is
++   recompiled with `-fsyntax-only` against those Qt 5 headers, which reproduces the hosted
++   job's compiler input. The probe's own control compiles a known-bad
++   `QList<float>(8, 0.f).data()` fixture (must be rejected) and the known-good
++   `QVector<float>` fixture (must be accepted). Without Qt 5 the probe reports itself
++   skipped, never passed.
++
++No timing, sleeps or threads: the only inputs are the checked-in sources and the recorded
++compile line of each translation unit.
++
++The file is named `Qt5QListApiCheck.py` - its ctest name - because the negative-control
++harness selects the tests a branch changed by comparing each changed test file's stem with
++the ctest names. The first round's proof ran `AudioAnalysisTest` alone (log then), which
++passes with and without the product change and therefore proved nothing; with the rename
++the harness selects both `AudioAnalysisTest` and `Qt5QListApiCheck`, and the second fails
++without the fix. Re-running the harness's own `prove()` on this branch (base
++`40b4322860`, `build/fix-logs/49-negctl-sim.log`) returns
++`{'ok': True, 'tests': ['AudioAnalysisTest', 'Qt5QListApiCheck'], 'reverted_build_rc': 0,
++'reverted_rc': 8, 'restored_rc': 0, 'tree_clean': True}` and writes
++`negctl/test-reverted.log` (Qt5QListApiCheck FAILED, the three source findings plus the
++Qt 5 compile errors) and `negctl/test-restored.log` (2/2 passed).
++
++Evidence. Every command below wrote its output to a numbered file; the assigned log folder
++`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-151e338efff6843e.r1/logs`
++refuses writes in this session (`touch` inside it returns EACCES although the directory is
++`drwxr-xr-x` and owned by this user - only the worktree and its `build/` are writable), so
++the same files are in `build/fix-logs/` inside the worktree, named as listed here:
++
++| step | command | exit | log |
++| --- | --- | --- | --- |
++| RED (fix reverted) | `python3 tests/Qt5QListApiCheck.py` | 1 | `29-red.log`, `44-ctest-red-renamed.log`, `negctl-sim/negctl/test-reverted.log` |
++| GREEN (fix applied) | `python3 tests/Qt5QListApiCheck.py` | 0 | `30-green.log`, `negctl-sim/negctl/test-restored.log` |
++| rebuild both targets | `cmake --build build --target zene AudioAnalysisTest` | 0 | `31-build-final.log` |
++| RED ctest | `cd build/tests && ctest -R '^(AudioAnalysisTest|Qt5QListApiCheck)$' --output-on-failure` | 8 (1 of 2 failed: `Qt5QListApiCheck`) | `13-ctest-red.log`, `46-ctest-reverted.log` |
++| GREEN ctest | same | 0 (2 of 2 passed) | `32-ctest-final.log`, `48-ctest-restored.log` |
++| Family (final) | the six Qt 5 portability checks plus `AudioAnalysisTest` | 0 (7 of 7 passed) | `21-ctest-qt5family.log`, `51-ctest-family-final.log` |
++| gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 (8 of 8 PASS) | `35-feature-check-final.log`, `50-feature-check-after-rename.log` |
++
++The exact RED/GREEN commands with the fix patch (4b proof):
++
++```
++git diff -- plugins/Eq/EqSpectrumView.h > build/fix-logs/fix.patch   # 24 lines
++git apply -R build/fix-logs/fix.patch                                # exit 0
++python3 tests/Qt5QListApiCheck.py                                 # exit 1
++  plugins/Eq/EqSpectrumView.cpp:296: QList has no data() in Qt 5; use QVector
++  plugins/Eq/EqSpectrumView.cpp:315: QList has no data() in Qt 5; use QVector
++  plugins/Eq/EqSpectrumView.cpp:272: QList(count, value) does not exist in Qt 5; use QVector
++  .../EqSpectrumView.cpp:272:9: error: no matching function for call to 'QList<float>::QList(const int&, float)'
++  FAIL: 4 Qt-5-incompatible QList use(s)
++git apply build/fix-logs/fix.patch                                   # exit 0
++python3 tests/Qt5QListApiCheck.py                                 # exit 0
++  PASS: the Eq plugin uses no QList API Qt 5 lacks, and every Eq translation unit compiles against Qt 5
++```
++
++Rebuilding without the fix also leaves `AudioAnalysisTest` green and `Qt5QListApiCheck`
++red (log `13-ctest-red.log`), so the new test is the one that fails, not the analyser
++regression it sits beside. The A/B render of the Eq plug-in is unaffected:
++`build/tests/PluginPortsMigrationTest migratedPluginsPreserveBehaviour` exit 0
++(`34-migration-eq.log`), and `partc_ref_eq` rebuilt from the changed header exit 0
++(`16-build-partc-eq.log`).
++
++## Siblings checked
++
++* `plugins/Eq/EqSpectrumView.h` is included by `EqControls.h` (thus `EqControls.cpp`),
++  `EqControlsDialog.cpp` and its own `EqSpectrumView.cpp`; all were rebuilt:
++  `zene`, `partc_ref_eq` (the reference module that compiles the Eq sources), and
++  `AudioAnalysisTest` (which `#include`s `EqSpectrumView.cpp`). The Qt 5 probe compiles
++  all six hand-written Eq translation units, not only the changed one.
++* Whole-tree scan with the same rule, per file: no other `QList` in the product sources is
++  used with `data()`/`constData()`, and the only two-argument `QList(...)` candidate is
++  `tests/src/tracks/TakeLaneCompPlaybackTest.cpp:516`
++  (`QCOMPARE(playFrom(track, 144), (QList<int>{60}))`), a comparison rather than a
++  construction. `QList<float> m_bandHeight` is the only sibling in this file and stays
++  legal on Qt 5 (only `append()`/`operator[]`, both Qt 5 `QList` members). The
++  `QVector<float>` uses in `src/core/BrowserPeakCache.cpp` and `include/Graph.h` already
++  name the portable container.
++
++## Registration and gates
++
++* `tests/Qt5QListApiCheck.py` registered in `tests/fork-sources.txt` (new file).
++* `plugins/Eq/EqSpectrumView.h` is upstream-inherited (`tests/all-sources.txt:1175`), so its
++  change is declared in `tests/upstream-modifications.txt` with the reason.
++* `tests/CMakeLists.txt` registers `Qt5QListApiCheck` wherever `PYTHON3_EXECUTABLE` exists,
++  next to the other Qt 5 portability checks, so the Qt 6 hosts run it too.
++* `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>`: exit 0, one
++  PASS/FAIL table (fork-sources, all-sources-reproduce, no-upstream-regression,
++  check-namespace, no-tautology, doc-figures, complexity, file-length - all PASS, no new
++  ratchet item in the changed files).
++
++## Self-check
++
++* The regression test FAILS with the product change reverted and PASSES with it: RED
++  `python3 tests/Qt5QListApiCheck.py` exit 1 with the three source findings and the
++  Qt 5 compile errors at `EqSpectrumView.cpp:272/296/315`; GREEN exit 0 after
++  `git apply build/fix-logs/fix.patch` (see the table above). The ctest form, which is what
++  the harness runs, is the same: `ctest -R '^(AudioAnalysisTest|Qt5QListApiCheck)$'` exit
++  **8** with `plugins/Eq/EqSpectrumView.h` reverted (log `46-ctest-reverted.log`: 1 of 2
++  failed, Qt5QListApiCheck) and exit **0** restored (`48-ctest-restored.log`: 2/2). The
++  harness's own `prove()` on this branch returns `ok: True` (`49-negctl-sim.log`).
++* The test is deterministic: no wall-clock timing, sleeps or races. It reads the
++  checked-in Eq sources plus the recorded `compile_commands.json` line for each translation
++  unit, retargets the Qt 6 include directories at the pkg-config Qt 5 tree, and compiles
++  with `-fsyntax-only`; the only "seam" is the Qt 5 development tree itself, and its
++  absence is reported as `probe: skipped`, not as a pass.
++* The fix is at the cause and complete: the container is `QVector<float>` (contiguous,
++  sized, value-initialised on Qt 5 and Qt 6), the include is explicit, every translation
++  unit that includes the header was rebuilt, the whole Eq plug-in compiles against Qt 5,
++  and the only sibling `QList` member is legal on both. No caller of
++  `copySpectrum(float*, float&)` changed - its signature and the published-snapshot
++  protocol are untouched.
++* No collateral damage: the spectrum view paints the same buffer with the same values
++  (Qt 6 `QVector` is `QList`; Qt 5 `QVector<float>` holds the same `float`s), no project
++  or preset data contains this type, and no limit or check was added that could hit other
++  callers. `AudioAnalysisTest` (the analyser's snapshot/FFT regressions) and
++  `PluginPortsMigrationTest migratedPluginsPreserveBehaviour` (the Eq A/B render) both pass.
++* Not an ALREADY-FIXED/FALSE-POSITIVE verdict: the code above is the defect and it was
++  reproduced on this branch's compiler input.
++* Realtime: nothing added runs on the audio thread; `publish()`, `analyze()` and
++  `copySpectrum()` are untouched, and the change is a GUI member's type.
++* Undo/commands: no command, undo step or reversibility class is involved.
+diff --git a/plugins/Eq/EqSpectrumView.h b/plugins/Eq/EqSpectrumView.h
+index 34e55986bb..c85ace1bde 100644
+--- a/plugins/Eq/EqSpectrumView.h
++++ b/plugins/Eq/EqSpectrumView.h
+@@ -24,6 +24,7 @@
+ #define EQSPECTRUMVIEW_H
+ 
+ #include <QPainterPath>
++#include <QVector>
+ #include <QWidget>
+ 
+ #include <atomic>
+@@ -132,7 +133,10 @@ private:
+ 	bool m_periodicalUpdate;
+ 	QList<float> m_bandHeight;
+ 	//! The spectrum of the analyser, copied as a whole snapshot before it is painted.
+-	QList<float> m_spectrumBands;
++	//! QVector, not QList: the snapshot is a contiguous buffer handed to copySpectrum(),
++	//! and Qt 5's QList has neither a size+value constructor nor data() (Qt 6 aliases
++	//! QVector to its contiguous QList, so this is the same container there).
++	QVector<float> m_spectrumBands;
+ 
+ 	float bandToFreq ( int index );
+ };
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 3d570f752c..83c40c4a85 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -9008,6 +9008,27 @@ if(PYTHON3_EXECUTABLE)
+ endif()
+ 
+ 
++# Qt 5 QList API portability (cluster ci-151e338efff6843e, 2026-11-14). The hosted
++# windows-arm64 job builds plugins/Eq against MSYS2's clangarm64 Qt 5.15, where QList is
++# still the node-based Qt 4 container: it has no size+value constructor (that one is
++# QVector's there) and no data()/constData(), so the spectrum snapshot's
++# `QList<float> m_spectrumBands( MAX_BANDS, 0.f )` and its `.data()` reads stopped the
++# build - "error: no matching constructor for initialization of 'QList<float>'" and
++# "error: no member named 'data' in 'QList<float>'" (plugins/Eq/EqSpectrumView.cpp:272,
++# 296, 315). Qt 6 made QList contiguous and made QVector an alias of it, so every Qt 6
++# host here compiles the same lines. The check scans sources (red on the Qt 6 hosts too)
++# and, where pkg-config finds a Qt 5 tree, compiles every Eq translation unit from this
++# build's compile_commands.json against those headers - the hosted job's own input.
++if(PYTHON3_EXECUTABLE)
++	add_test(NAME Qt5QListApiCheck
++		COMMAND ${PYTHON3_EXECUTABLE}
++			${CMAKE_CURRENT_SOURCE_DIR}/Qt5QListApiCheck.py
++			--root ${CMAKE_SOURCE_DIR}
++			--build-dir ${CMAKE_BINARY_DIR})
++	set_tests_properties(Qt5QListApiCheck PROPERTIES TIMEOUT 300)
++endif()
++
++
+ # cluster ci-017caf2edd434b66: the arranger's gesture code must build on a Qt without gesture
+ # support (the hosted mingw64 job's Qt 5 defines QT_NO_GESTURES, so Qt::GestureState and
+ # QPinchGesture do not exist there). The hosted job runs no tests, so this check rebuilds the
+diff --git a/tests/Qt5QListApiCheck.py b/tests/Qt5QListApiCheck.py
+new file mode 100644
+index 0000000000..d359e972ee
+--- /dev/null
++++ b/tests/Qt5QListApiCheck.py
+@@ -0,0 +1,425 @@
++#!/usr/bin/env python3
++"""Fail when the Eq plug-in uses QList APIs that Qt 5 does not declare.
++
++Cluster ci-151e338efff6843e (2026-11-14), hosted `build / windows-arm64` job: that job
++builds against MSYS2's clangarm64 Qt 5.15, where QList is still the node-based Qt 4
++container. It has no `QList(count, value)` constructor (that one is QVector's on Qt 5)
++and no `data()`/`constData()` accessor, so
++
++    plugins/Eq/EqSpectrumView.cpp:272:  m_spectrumBands( MAX_BANDS, 0.f )
++    plugins/Eq/EqSpectrumView.cpp:296:  copySpectrum( m_spectrumBands.data(), energy )
++    plugins/Eq/EqSpectrumView.cpp:315:  const float *bands = m_spectrumBands.data();
++
++stopped the whole build:
++
++    error: no matching constructor for initialization of 'QList<float>'
++    note: candidate template ignored: deduced conflicting types for parameter
++          'InputIterator' ('int' vs. 'float')
++    error: no member named 'data' in 'QList<float>'
++
++Qt 6 made QList the contiguous container, gave it both the size+value constructor and
++data(), and made QVector an alias of QList - so every Qt 6 host here compiles the same
++lines. QVector is the spelling with the size+value constructor and data() on BOTH:
++Qt 5's QVector declares them, Qt 6's QVector is QList. It is the portable container for
++the spectrum snapshot.
++
++The check has two deterministic halves:
++
++  * a source scan of plugins/Eq for a QList-typed name used with `.data()`/`.constData()`
++    or constructed with two top-level arguments. It reads sources only, so it is red on
++    the Qt 6 hosts where the defect compiles.
++  * a compile probe: when pkg-config finds a Qt 5 tree, every hand-written plugins/Eq
++    translation unit of build/compile_commands.json is compiled `-fsyntax-only` against
++    those Qt 5 headers, which is the hosted job's compiler input. Before the fix that is
++    the hosted failure; after it, all are clean.
++
++Both halves are proved able to fail by this file's own red/green fixtures, and the probe
++reports itself skipped (never passed) when the host has no Qt 5.
++
++Usage:
++  Qt5QListApiCheck.py [--root DIR] [--build-dir DIR] [--cxx CXX]
++  Qt5QListApiCheck.py --self-test
++
++Exit codes: 0 = clean, 1 = finding (or a failed fixture), 2 = usage error.
++"""
++
++import argparse
++import json
++import os
++import re
++import shlex
++import shutil
++import subprocess
++import sys
++import tempfile
++
++PLUGIN_DIR = "plugins/Eq"
++SOURCE_SUFFIXES = (".h", ".hpp", ".hxx", ".cpp", ".cxx", ".cc")
++
++# Comments, string and char literals are blanked before the shape scan (line numbers kept).
++NON_CODE = re.compile(r'//[^\n]*|/\*.*?\*/|"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\'', re.S)
++QLIST = re.compile(r"\bQList\s*<")
++DECLARATOR = re.compile(r"\s+([A-Za-z_][A-Za-z0-9_]*)")
++DATA_USE = r"\b%s\s*(?:->|\.)\s*(?:constData|data)\s*\("
++CONSTRUCTION = r"\b%s\s*\("
++
++# A Qt 5 tree must reject the QList take and accept the QVector one.
++BAD_PROBE = """\
++#include <QList>
++int main()
++{
++	QList<float> bands(8, 0.f);
++	return bands.data() == nullptr;
++}
++"""
++GOOD_PROBE = """\
++#include <QVector>
++int main()
++{
++	QVector<float> bands(8, 0.f);
++	return bands.data() == nullptr;
++}
++"""
++
++# The source scan must flag the QList member and not the QVector one.
++FIXTURE_BAD = """\
++#include <QList>
++struct View
++{
++	QList<float> m_spectrumBands;
++	View() : m_spectrumBands(4, 0.f) {}
++	float* bands() { return m_spectrumBands.data(); }
++};
++"""
++FIXTURE_GOOD = """\
++#include <QVector>
++struct View
++{
++	QVector<float> m_spectrumBands;
++	View() : m_spectrumBands(4, 0.f) {}
++	float* bands() { return m_spectrumBands.data(); }
++};
++"""
++
++QT_MODULES = {"QtCore", "QtGui", "QtWidgets", "QtXml", "QtSvg", "QtNetwork", "QtDBus", "QtTest"}
++RANGE_MARKERS = (".begin()", ".end()", ".cbegin()", ".cend()", "nullptr", "NULL")
++
++
++def blank_non_code(text):
++	"""Comments and literals become spaces; every newline and offset is kept."""
++	return NON_CODE.sub(lambda match: re.sub(r"[^\n]", " ", match.group(0)), text)
++
++
++def skip_template(text, start):
++	"""Index of the '>' closing the '<' at @a start, or -1."""
++	depth = 0
++	for index in range(start, len(text)):
++		if text[index] == "<":
++			depth += 1
++		elif text[index] == ">":
++			depth -= 1
++			if depth == 0:
++				return index
++	return -1
++
++
++def matching_paren(text, start):
++	"""Index of the ')' closing the '(' at @a start, or -1."""
++	depth = 0
++	for index in range(start, len(text)):
++		if text[index] == "(":
++			depth += 1
++		elif text[index] == ")":
++			depth -= 1
++			if depth == 0:
++				return index
++	return -1
++
++
++def split_arguments(text):
++	"""Top-level comma-separated arguments of an argument list, whitespace-stripped."""
++	parts, depth, current = [], 0, ""
++	for char in text:
++		if char in "([{<":
++			depth += 1
++		elif char in ")]}>":
++			depth -= 1
++		if char == "," and depth == 0:
++			parts.append(current.strip())
++			current = ""
++		else:
++			current += char
++	parts.append(current.strip())
++	return parts
++
++
++def declared_qlist_names(text):
++	"""Names declared with QList<T> (members, locals and parameters)."""
++	names = set()
++	index = 0
++	while True:
++		match = QLIST.search(text, index)
++		if match is None:
++			return names
++		close = skip_template(text, match.end() - 1)
++		if close < 0:
++			return names
++		declarator = DECLARATOR.match(text, close + 1)
++		if declarator is not None:
++			names.add(declarator.group(1))
++		index = close + 1
++
++
++def line_of(text, offset):
++	return text.count("\n", 0, offset) + 1
++
++
++def data_findings(name, code, qlist_names):
++	findings = []
++	for qlist_name in sorted(qlist_names):
++		for match in re.finditer(DATA_USE % re.escape(qlist_name), code):
++			findings.append((name, line_of(code, match.start()),
++				"QList has no data() in Qt 5; use QVector"))
++	return findings
++
++
++def is_two_argument_construction(code, match):
++	"""Whether the call at @a match is `name(a, b)` with two plain top-level arguments."""
++	before = code[:match.start()].rstrip()
++	if not before or before[-1] not in ",:(":
++		return False
++	close = matching_paren(code, match.end() - 1)
++	after = code[close + 1:].lstrip() if close >= 0 else ""
++	if not after or after[0] not in ";{,":
++		return False
++	arguments = split_arguments(code[match.end():close])
++	if len(arguments) != 2:
++		return False
++	return not any(marker in argument for argument in arguments for marker in RANGE_MARKERS)
++
++
++def construction_findings(name, code, qlist_names):
++	findings = []
++	for qlist_name in sorted(qlist_names):
++		for match in re.finditer(CONSTRUCTION % re.escape(qlist_name), code):
++			if is_two_argument_construction(code, match):
++				findings.append((name, line_of(code, match.start()),
++					"QList(count, value) does not exist in Qt 5; use QVector"))
++	return findings
++
++
++def scan_text(name, text, qlist_names=None):
++	"""(path, line, what) for QList APIs Qt 5 does not declare.
++
++	@a qlist_names carries the declarations of the whole component, so a member declared
++	in a header is still recognised where the implementation uses it.
++	"""
++	code = blank_non_code(text)
++	if qlist_names is None:
++		qlist_names = declared_qlist_names(code)
++	return (data_findings(name, code, qlist_names)
++		+ construction_findings(name, code, qlist_names))
++
++
++def read_text(path):
++	try:
++		with open(path, encoding="utf-8", errors="replace") as handle:
++			return blank_non_code(handle.read())
++	except OSError:
++		return None
++
++
++def scan_plugin(root):
++	"""The whole plug-in scanned as one component, so header declarations reach their uses."""
++	directory = os.path.join(root, PLUGIN_DIR)
++	if not os.path.isdir(directory):
++		return []
++	codes = {PLUGIN_DIR + "/" + entry: read_text(os.path.join(directory, entry))
++		for entry in sorted(os.listdir(directory)) if entry.endswith(SOURCE_SUFFIXES)}
++	codes = {name: code for name, code in codes.items() if code is not None}
++	qlist_names = set()
++	for code in codes.values():
++		qlist_names |= declared_qlist_names(code)
++	findings = []
++	for name, code in codes.items():
++		findings += scan_text(name, code, qlist_names)
++	return findings
++
++
++def self_test():
++	failures = []
++	if not scan_text("fixture-bad.cpp", FIXTURE_BAD):
++		failures.append("the scan did not report the QList<float>(count, value) fixture")
++	if scan_text("fixture-good.cpp", FIXTURE_GOOD):
++		failures.append("the scan reported the QVector<float> fixture")
++	return failures
++
++
++def run(command, cwd=None, timeout=300):
++	try:
++		return subprocess.run(command, cwd=cwd, capture_output=True, text=True, timeout=timeout)
++	except (OSError, subprocess.SubprocessError):
++		return None
++
++
++def qt5_flags():
++	"""Compile flags of a Qt 5 development tree, or None when pkg-config has none."""
++	if not shutil.which("pkg-config"):
++		return None
++	if run(["pkg-config", "--exists", "Qt5Widgets"]).returncode != 0:
++		return None
++	cflags = run(["pkg-config", "--cflags", "Qt5Widgets", "Qt5Xml", "Qt5Network"])
++	if cflags is None or cflags.returncode != 0:
++		return None
++	return shlex.split(cflags.stdout)
++
++
++def compile_probe(cxx, flags, workdir):
++	"""Only a Qt 5 tree must reject BAD_PROBE and accept GOOD_PROBE; None when it accepts both."""
++	probes = []
++	for name, text in (("bad.cpp", BAD_PROBE), ("good.cpp", GOOD_PROBE)):
++		path = os.path.join(workdir, name)
++		with open(path, "w", encoding="utf-8") as handle:
++			handle.write(text)
++		probes.append(run([cxx, "-std=gnu++20", "-fsyntax-only"] + flags + [path]))
++	if probes[0] is None or probes[0].returncode == 0:
++		return None
++	if probes[1] is None or probes[1].returncode != 0:
++		return "probe: the Qt 5 tree rejected QVector(count, value)"
++	return "probe: Qt 5 rejects QList(count, value).data() and accepts QVector"
++
++
++def is_qt6_include(directory):
++	parts = [p for p in re.split(r"[\\/]+", directory.rstrip("\\/")) if p]
++	return "qt6" in parts or (parts and parts[-1] in QT_MODULES and any("qt6" in p for p in parts))
++
++
++def qt5_command(arguments, flags, source):
++	"""A recorded Qt 6 compile line retargeted at the Qt 5 headers."""
++	out = []
++	index = 0
++	while index < len(arguments):
++		argument = arguments[index]
++		consumes_value = index + 1 < len(arguments) and argument in ("-isystem", "-I", "-o", "-c")
++		if argument in ("-o", "-c"):
++			index += 2
++		elif consumes_value and argument in ("-isystem", "-I") and is_qt6_include(arguments[index + 1]):
++			index += 2
++		elif consumes_value and argument in ("-isystem", "-I"):
++			out += [argument, arguments[index + 1]]
++			index += 2
++		else:
++			out.append(argument)
++			index += 1
++	return out + flags + ["-fsyntax-only", source]
++
++
++def source_file(entry, root):
++	"""The entry's source path when it is a hand-written Eq file, else None.
++
++	Only the checked-in plugins/Eq sources are tested. The generated moc_*/qrc_* units live
++	in the build tree and are produced by the Qt 6 moc of this build, so compiling them
++	against Qt 5 headers would test this build's own generator, not the product source.
++	"""
++	source = entry.get("file", "").replace("\\", "/")
++	if not source.endswith(SOURCE_SUFFIXES):
++		return None
++	absolute = source if os.path.isabs(source) else os.path.join(entry.get("directory", root), source)
++	absolute = os.path.abspath(os.path.normpath(absolute))
++	plugin_root = os.path.join(os.path.abspath(root), PLUGIN_DIR) + os.sep
++	if not absolute.startswith(plugin_root):
++		return None
++	return absolute if os.path.isfile(absolute) else None
++
++
++def entries_of(database):
++	with open(database, encoding="utf-8", errors="replace") as handle:
++		return json.load(handle)
++
++
++def probe_diagnostic(result):
++	"""The error/note lines of a failed probe, bounded."""
++	return "\n".join(line for line in (result.stdout + result.stderr).splitlines()
++		if "error:" in line or "note:" in line)[:2000]
++
++
++def probe_entry(entry, root, flags):
++	source = source_file(entry, root)
++	if source is None:
++		return None
++	arguments = entry.get("command") and shlex.split(entry["command"]) or list(entry.get("arguments") or [])
++	result = run(qt5_command(arguments, flags, source), entry.get("directory") or root)
++	if result is None:
++		return f"{source}: the Qt 5 probe could not run"
++	if result.returncode != 0:
++		return f"{source}: Qt 5 rejected it\n{probe_diagnostic(result)}"
++	return None
++
++
++def probe_translation_units(root, build_dir, flags):
++	"""Compile every hand-written Eq translation unit against Qt 5."""
++	database = os.path.join(build_dir, "compile_commands.json")
++	if not os.path.isfile(database):
++		return [f"no compile database at {database}"]
++	results = [probe_entry(entry, root, flags) for entry in entries_of(database)]
++	failures = [result for result in results if result]
++	if not results:
++		failures.append(f"the compile database records no {PLUGIN_DIR} translation unit")
++	return failures
++
++
++def report(findings):
++	for name, line, what in findings:
++		print(f"{name}:{line}: {what}" if isinstance(line, int) else f"{name}: {what}")
++	print(f"FAIL: {len(findings)} Qt-5-incompatible QList use(s)")
++	return 1
++
++
++def check(root, build_dir, cxx, workdir):
++	"""Every finding, with the source scan and the Qt 5 probe as independent halves."""
++	findings = scan_plugin(root)
++	flags = qt5_flags()
++	if flags is None:
++		print("probe: skipped (no Qt 5 development tree found)")
++		return findings
++	print(compile_probe(cxx, flags, workdir) or "probe: skipped (this Qt accepts the QList take)")
++	for failure in probe_translation_units(root, build_dir, flags):
++		headline, _, diagnostic = failure.partition("\n")
++		findings.append((headline, None, diagnostic))
++	return findings
++
++
++def main(argv):
++	parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
++	parser.add_argument("--root", default=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
++	parser.add_argument("--build-dir")
++	parser.add_argument("--cxx", default=os.environ.get("CXX") or shutil.which("c++") or "c++")
++	parser.add_argument("--self-test", action="store_true")
++	args = parser.parse_args(argv[1:])
++
++	failures = self_test()
++	for failure in failures:
++		print(f"SELF-TEST FAIL: {failure}")
++	if failures:
++		return 1
++	print("self-test: the QList fixture is flagged and the QVector fixture is not")
++	if args.self_test:
++		return 0
++	root = os.path.abspath(args.root)
++	if not os.path.isdir(root):
++		print(f"error: not a directory: {root}", file=sys.stderr)
++		return 2
++	build_dir = os.path.abspath(args.build_dir or os.path.join(root, "build"))
++	workdir = tempfile.mkdtemp(prefix="qt5-qlist-")
++	try:
++		findings = check(root, build_dir, args.cxx, workdir)
++	finally:
++		shutil.rmtree(workdir, ignore_errors=True)
++	if findings:
++		return report(findings)
++	print("PASS: the Eq plugin uses no QList API Qt 5 lacks, and every Eq translation unit compiles against Qt 5")
++	return 0
++
++
++if __name__ == "__main__":
++	sys.exit(main(sys.argv))
+diff --git a/tests/fork-sources.txt b/tests/fork-sources.txt
+index f094ce55c7..0d1bf1e588 100644
+--- a/tests/fork-sources.txt
++++ b/tests/fork-sources.txt
+@@ -3759,3 +3759,15 @@ include/ShellRecordMenu.h
+ src/gui/shell/ShellRecordMenu.cpp
+ # cluster new-p10-318 (2026-10): fix and verification report for the Peak Controller zero-frame block (fork-NEW).
+ docs/qwen-fixes-2026-10/cluster-new-p10-318.md
++
++# Cluster ci-151e338efff6843e: the Qt 5 QList API portability regression for the Eq
++# spectrum view. Hosted windows-arm64 builds against Qt 5.15, where QList has neither the
++# size+value constructor nor data() that Qt 6's contiguous QList has; the check scans the
++# plug-in's sources and, where a Qt 5 tree is present, compiles every Eq translation unit
++# against it (-fsyntax-only). The file is named after its ctest so a test selection by
++# name (tests/CMakeLists.txt -> Qt5QListApiCheck) finds it, and it is registered wherever
++# a python3 is, so it is red on the Qt 6 hosts too.
++tests/Qt5QListApiCheck.py
++# Cluster ci-151e338efff6843e: the fix and verification report for the Eq spectrum view's
++# Qt 5 QList portability regression (hosted windows-arm64 build).
++docs/qwen-fixes-2026-10/cluster-ci-151e338efff6843e.md
+diff --git a/tests/upstream-modifications.txt b/tests/upstream-modifications.txt
+index 47d1e4af52..51ab699b65 100644
+--- a/tests/upstream-modifications.txt
++++ b/tests/upstream-modifications.txt
+@@ -5920,3 +5920,4 @@ include/LadspaManager.h	cluster new-p10-193: keep scanned LADSPA QLibraries aliv
+ src/core/LadspaManager.cpp	cluster new-p10-193: store each successfully scanned QLibrary in m_loadedLibraries instead of destroying the local after the scan, so descriptor function pointers in m_ladspaManagerMap never dangle into an unloaded library; isLibraryLoaded() reports ownership under LMMS_TESTING.
+ include/AutomationEditor.h	new-p15-275: AutomationEditor::m_clip is a QPointer<AutomationClip> (was a raw pointer) so deleting the open clip clears the editor instead of leaving a dangling pointer for update/paint to dereference. Same pattern as the existing QPointer ghost pointers; held by tests/src/gui/AutomationEditorEditingTest.cpp deletingTheOpenClipClearsTheEditor.
+ tests/src/gui/AutomationEditorEditingTest.cpp	# The automation editor can retain a dangling clip pointer
++plugins/Eq/EqSpectrumView.h	cluster ci-151e338efff6843e: the GUI's spectrum snapshot is QVector<float>, not QList<float> - Qt 5's QList has neither the size+value constructor nor data() (the hosted windows-arm64 build failed on both), while QVector declares them there and is QList's alias in Qt 6; held by ctest Qt5QListApiCheck.
+-- 
+2.56.0
+

@@ -1,0 +1,6 @@
+40b4322860e9c2133f412a4b921b63b057dd710c	chore(train-30): snapshot regenerated live (932 ids / 78 groups, wasm.* out), canary, A16 histogram, all-sources re-derived (automatic merge train)
+95b6b62d5bfac53cdc1d47fa93219d2f8b95b9e7	fix(train-sol): Reconciled the MinGW repair with both applied Sol repairs, retained its complete export audit, fixed thirteen sibling export branches and AudioPluginTest fixture dependencies. Rebu
+64f9360172f5a7024ce35ef1451951f39309dbc2	fix(train-sol): Fixed four hosted portability defects and Linux test-link disk exhaustion; added compiler and ELF regressions. Targeted build, 12 CTest entries, unchanged gates and independent rev
+76bb7be2b16dab08836905b90ba973ff3320c4ec	fix(train-sol): Preserved the Gate 7 repair and fixed LinkAudioStreamTest teardown to stop and destroy its engine before static destruction, with cleanup assertions and recorded regression evidenc
+7eb8045980f2793387028e0135670e879042a5cd	Merge bugs/qwen-gui-1114-tab-mixer-mute-master (accepted; 050/m0-train-30, automatic train)
+9d16d58e64c8e41ab3ed8ab77e3c6432cedc58b9	Merge bugs/qwen-gui-1114-menu-navigate-fit-selection (accepted; 050/m0-train-30, automatic train)

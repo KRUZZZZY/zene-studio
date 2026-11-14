@@ -1,0 +1,13 @@
+# Train CI secret scan config (2026-11-13). Default rules plus allowlists for public values that only look like secrets.
+title = "zene train scan"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Public PPA signing-key fingerprints quoted in CI-repair notes are identifiers, not credentials"
+targetRules = ["generic-api-key"]
+regexTarget = "match"
+regexes = ['''[0-9A-Fa-f]{40}''']
+paths = ['''docs/qwen-fixes-2026-10/.*\.md''']
+condition = "AND"

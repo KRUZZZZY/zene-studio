@@ -1,0 +1,34 @@
+{
+  "base": "050/m0-train-9",
+  "display_version": "0.4.8.0-alpha",
+  "evidence": "first-parent-promoted-ancestry",
+  "feature_items": [
+    "Q050-064",
+    "Q050-068",
+    "Q050-080",
+    "Q050-147",
+    "Q050-159",
+    "Q050-166",
+    "Q050-171",
+    "Q050-484"
+  ],
+  "feature_merge_evidence": [
+    "ede541f0a2f15cab73555de24123616c27b16f52\tMerge feat/050-Q050-064-oc (accepted; 050/m0-train-10, automatic train)",
+    "5252f8674ef31839b476eb686f8c4ef99b2407c9\tMerge feat/050-Q050-080-oc (accepted; 050/m0-train-10, automatic train)",
+    "b59fff977237603336afc895300da12f26352870\tMerge feat/050-Q050-166-oc (accepted; 050/m0-train-10, automatic train)",
+    "4128f033b8daa3641620da9e945589b349e830ef\tMerge feat/050-Q050-147-oc (accepted; 050/m0-train-10, automatic train)",
+    "a499b670aae3a33709ef773d906c5270c9b57564\tMerge feat/050-Q050-159-oc (accepted; 050/m0-train-10, automatic train)",
+    "4afeedb977d2b590065f867502ddefdc8c15964e\tMerge feat/050-Q050-171-oc (accepted; 050/m0-train-10, automatic train)",
+    "bbc6786c8f521f12a9636ba755e3ca360b0a279c\tMerge feat/050-Q050-484-oc (accepted; 050/m0-train-10, automatic train)",
+    "847b8b1667cdbd63966522a9b09ed65327e30c8a\tMerge feat/050-Q050-068-oc (accepted; 050/m0-train-10, automatic train)"
+  ],
+  "feature_train": 8,
+  "kind": "feature",
+  "milestone": "0.4",
+  "revision": 0,
+  "sha": "0a8842d397b331a98dcfce751c4f4bb2e8476cad",
+  "stage": "alpha",
+  "train": "050/m0-train-10",
+  "train_label": "8.0",
+  "version": "0.4.8-alpha.0"
+}

@@ -1,0 +1,30 @@
+{
+  "base": "050/m0-train-8",
+  "display_version": "0.4.7.0-alpha",
+  "evidence": "first-parent-promoted-ancestry",
+  "feature_items": [
+    "Q050-009",
+    "Q050-016",
+    "Q050-022",
+    "Q050-036",
+    "Q050-075",
+    "Q050-170"
+  ],
+  "feature_merge_evidence": [
+    "f7ef25a2b8309be7c68e6eed032056f92a5e2439\tMerge port8/Q050-016 (accepted; 050/m0-train-9, automatic train)",
+    "82b8152b564bf274e40b358f539fe7cb9ccd4d81\tMerge port8/Q050-022 (accepted; 050/m0-train-9, automatic train)",
+    "3db6567d5f9d66e8f275b73162191b2842025abe\tMerge port8/Q050-009 (accepted; 050/m0-train-9, automatic train)",
+    "1f9c76d8f34e45a0786c766fb8adef6173f4e344\tMerge port8/Q050-036 (accepted; 050/m0-train-9, automatic train)",
+    "797314175506a2fa98b49f7686a65a224ce05f81\tMerge port8/Q050-170 (accepted; 050/m0-train-9, automatic train)",
+    "5287ea4d4504bbbe7315940a2abf7a17e8938f74\tMerge port8/Q050-075 (accepted; 050/m0-train-9, automatic train)"
+  ],
+  "feature_train": 7,
+  "kind": "feature",
+  "milestone": "0.4",
+  "revision": 0,
+  "sha": "b61e5f9658c2f55b74ee8137de37292ebe2cc8a0",
+  "stage": "alpha",
+  "train": "050/m0-train-9",
+  "train_label": "7.0",
+  "version": "0.4.7-alpha.0"
+}

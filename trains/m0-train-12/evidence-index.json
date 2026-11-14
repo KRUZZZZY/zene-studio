@@ -1,0 +1,97 @@
+[
+  {
+    "bytes": 2147719,
+    "file": "evidence/train-12-bar.log.gz",
+    "sha256_uncompressed": "e9f85724bd4390c2d8b222014d1bea1eb4c0e595279be0ea3db89cd16670a9be"
+  },
+  {
+    "bytes": 289,
+    "file": "evidence/train-12-bisect-ScriptDawModelRegistrationTest.log.gz",
+    "sha256_uncompressed": "3679757dcf215dde942e67f11c050041d1d883e3b284bcbba78cac9033433da1"
+  },
+  {
+    "bytes": 68330,
+    "file": "evidence/train-12-bisect-build.log.gz",
+    "sha256_uncompressed": "9a9014756cb831cde110cde0a9851a985cdd429469587fb701572b127933b189"
+  },
+  {
+    "bytes": 385646,
+    "file": "evidence/train-12-bisect-rebuild.log.gz",
+    "sha256_uncompressed": "8b09e97fda07466a4b839df949e93f41cedc865966d4011c4717c5c3cd09e294"
+  },
+  {
+    "bytes": 194284,
+    "file": "evidence/train-12-build-bar.log.gz",
+    "sha256_uncompressed": "ecf945caa29a87abfb45e4552f99e82af6e24bf67e0bbdae9cc8263fa561c27c"
+  },
+  {
+    "bytes": 431581,
+    "file": "evidence/train-12-build.log.gz",
+    "sha256_uncompressed": "b9fa4782a28fa35cf5ab2840a79592c92823fc46651a1da59f3cb44596bd4afa"
+  },
+  {
+    "bytes": 4211435,
+    "file": "evidence/train-12-gates.log.gz",
+    "sha256_uncompressed": "078bc3be66a6f04401c88562f343c95cff960fe0bf55237b430fe045b91a9d51"
+  },
+  {
+    "bytes": 575,
+    "file": "evidence/train-12-gdb-ScriptDawModelRegistrationTest.log.gz",
+    "sha256_uncompressed": "45da7e03fbfadf8d942ae3f0c4b0d1f8f72f673d07b5f64a20bb3e58f1b92d7c"
+  },
+  {
+    "bytes": 547887,
+    "file": "evidence/train-12-repeat-ScriptDawModelRegistrationTest-0.log.gz",
+    "sha256_uncompressed": "c07a8322c568efd649f536b35d6f17aa785d53598dffba6cdf0be656918def09"
+  },
+  {
+    "bytes": 546879,
+    "file": "evidence/train-12-repeat-ScriptDawModelRegistrationTest-1.log.gz",
+    "sha256_uncompressed": "eda0d9ddb0e508619919aae99a66723bdb13db9802fd6d9737f88f4e2f8a4255"
+  },
+  {
+    "bytes": 546711,
+    "file": "evidence/train-12-repeat-ScriptDawModelRegistrationTest-2.log.gz",
+    "sha256_uncompressed": "b1fb8ee9c46a0eb434538220cdf9a62f78b293be93f0a53f3ea11de281604b9a"
+  },
+  {
+    "bytes": 547047,
+    "file": "evidence/train-12-repeat-ScriptDawModelRegistrationTest-3.log.gz",
+    "sha256_uncompressed": "c3460bcad91ff8ac676298b53bf4f2b98fa11980c8b0cb8deeeb53e8f0a4f6a7"
+  },
+  {
+    "bytes": 8853,
+    "file": "evidence/train-12-rev-build.log.gz",
+    "sha256_uncompressed": "fb18369196a262ad53afa11bc509003cbd12a7492c4c8923dc89cd0db3be3055"
+  },
+  {
+    "bytes": 2345,
+    "file": "evidence/train-12-rev.log.gz",
+    "sha256_uncompressed": "d2f4ab0760d42d8490bde363c14527b77ec71f5bad869ac02bc4f82169c3888c"
+  },
+  {
+    "bytes": 1114284,
+    "file": "evidence/train-12-snapshot.json.gz",
+    "sha256_uncompressed": "e6b1a8a3cd991dfb5d465b8a347de93016c92a1b2639099bc1980dbc848296ab"
+  },
+  {
+    "bytes": 283,
+    "file": "evidence/train-12-solo-ControlMasteringRunBound.log.gz",
+    "sha256_uncompressed": "19c2c44d9ea3cedbccebfc6b31c15a05223fb470449b5aa73a7c417f17d570a9"
+  },
+  {
+    "bytes": 274,
+    "file": "evidence/train-12-solo-LaneReadoutTest.log.gz",
+    "sha256_uncompressed": "e726ddf8885a1b0e2f7123cecbab8dc7e7e834cb5275aec393fa794c213fcbb5"
+  },
+  {
+    "bytes": 546375,
+    "file": "evidence/train-12-solo-ScriptDawModelRegistrationTest.log.gz",
+    "sha256_uncompressed": "4907f3773657ea215437446349551156813514efb53a81da449708f303b033dd"
+  },
+  {
+    "bytes": 280,
+    "file": "evidence/train-12-solo-StemSplitPipelineTest.log.gz",
+    "sha256_uncompressed": "31bada7fc30d686bf36c9ac981db93cf6ebb1883153c603aaf33be5f3455a176"
+  }
+]

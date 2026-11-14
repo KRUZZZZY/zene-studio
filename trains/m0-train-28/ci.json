@@ -1,0 +1,31 @@
+{
+  "branch": "ci/m0-train-28-3ab01006f613",
+  "runs": [
+    {
+      "conclusion": "success",
+      "name": "checks",
+      "status": "completed",
+      "url": "https://github.com/KRUZZZZY/zene-studio/actions/runs/43466002476"
+    },
+    {
+      "conclusion": "failure",
+      "name": "quality-gates",
+      "status": "completed",
+      "url": "https://github.com/KRUZZZZY/zene-studio/actions/runs/43466002889"
+    },
+    {
+      "conclusion": "failure",
+      "name": "build",
+      "status": "completed",
+      "url": "https://github.com/KRUZZZZY/zene-studio/actions/runs/43466002708"
+    },
+    {
+      "conclusion": "success",
+      "name": "doxygen",
+      "status": "completed",
+      "url": "https://github.com/KRUZZZZY/zene-studio/actions/runs/43466002452"
+    }
+  ],
+  "status": "failed",
+  "submitted_at": 1794588350.9869237
+}

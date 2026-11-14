@@ -1,0 +1,28 @@
+{
+  "base": "050/m0-train-19",
+  "display_version": "0.4.15.0-alpha",
+  "evidence": "first-parent-promoted-ancestry",
+  "feature_items": [
+    "Q050-062.2",
+    "Q050-066.1",
+    "Q050-089.1",
+    "Q050-489",
+    "Q050-490"
+  ],
+  "feature_merge_evidence": [
+    "ba84d3d6cd5002df8c4c62b47643ccbbbecb8a8d\tMerge feat/050-Q050-066.1-oc (accepted; 050/m0-train-20, automatic train)",
+    "0c0fdfdea9d20260a02b70e3ddcb33c6f61c7f44\tMerge feat/050-Q050-089.1-oc (accepted; 050/m0-train-20, automatic train)",
+    "d93c5ce22e3cdcee7761823d4a4397c7ecb0102e\tMerge feat/050-Q050-062.2-oc (accepted; 050/m0-train-20, automatic train)",
+    "ad3cdc779726fa9305fcadaf371c7c065e3aa488\tMerge feat/050-Q050-490-oc (accepted; 050/m0-train-20, automatic train)",
+    "2ac284183e4b91957e1b886cc987737a38a0a9a7\tMerge feat/050-Q050-489-oc (accepted; 050/m0-train-20, automatic train)"
+  ],
+  "feature_train": 15,
+  "kind": "feature",
+  "milestone": "0.4",
+  "revision": 0,
+  "sha": "c6ee4fc7bc90bedf60af79bb2f63680971f95877",
+  "stage": "alpha",
+  "train": "050/m0-train-20",
+  "train_label": "15.0",
+  "version": "0.4.15-alpha.0"
+}

@@ -1,0 +1,487 @@
+From c99455b15cc710092435d5f6c05dfc421d23468e Mon Sep 17 00:00:00 2001
+From: Zene CI repair <noreply@zene.invalid>
+Date: Tue, 10 Nov 2026 12:30:39 +0000
+Subject: [PATCH] fix(ci): CI regression: build / msvc-x64
+
+CI-Repair-Id: ci-repair-ci-512849fa221097db-c6addd986190
+---
+ .../cluster-ci-512849fa221097db.md            | 129 ++++++++++
+ include/AudioEngine.h                         |   9 +-
+ src/core/AudioEngine.cpp                      |  10 +-
+ tests/CMakeLists.txt                          |  12 +
+ tests/exported-class-tls-check.py             | 232 ++++++++++++++++++
+ tests/fork-sources.txt                        |   3 +
+ tests/upstream-modifications.txt              |   3 +
+ 7 files changed, 391 insertions(+), 7 deletions(-)
+ create mode 100644 docs/qwen-fixes-2026-10/cluster-ci-512849fa221097db.md
+ create mode 100644 tests/exported-class-tls-check.py
+
+diff --git a/docs/qwen-fixes-2026-10/cluster-ci-512849fa221097db.md b/docs/qwen-fixes-2026-10/cluster-ci-512849fa221097db.md
+new file mode 100644
+index 0000000000..ac3dd61fb1
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/cluster-ci-512849fa221097db.md
+@@ -0,0 +1,129 @@
++FIXED
++
++# Cluster ci-512849fa221097db — MSVC C2492 on a `thread_local` member of exported `AudioEngine`
++
++**Verdict: REAL, fixed.** The hosted msvc-x64 build fails at `include/AudioEngine.h(891)`:
++
++```
++error C2492: 'lmms::AudioEngine::s_changeInModelDepth':
++data with thread storage duration may not have dll interface
++```
++
++## Decision: REAL
++
++- `AudioEngine` is `class LMMS_EXPORT AudioEngine` (`include/AudioEngine.h:88`). On MSVC the
++  generated `lmms_export.h` expands `LMMS_EXPORT` to `__declspec(dllexport)` (`src/CMakeLists.txt:204-208`).
++- Before the fix the class declared a static `thread_local` data member at
++  `include/AudioEngine.h:891`: `static thread_local int s_changeInModelDepth;`, defined at
++  `src/core/AudioEngine.cpp:473`. MSVC forbids data with thread storage duration in a class that has
++  a DLL interface; GCC and Clang accept it, so only the msvc-x64 job saw it. The member sits inside
++  `#ifdef LMMS_TESTING`, and `lmmsobjs` is compiled with that define (`tests/CMakeLists.txt:5-7`), which
++  is why the test build hits it.
++- The rule was reproduced on this box with `clang-cl --target=x86_64-pc-windows-msvc`, which implements
++  the same dllexport restriction. The old pattern (`class __declspec(dllexport) X { static thread_local
++  int s_depth; };`) fails with `error: 'X::s_depth' cannot be thread local when declared 'dllexport'`
++  (`logs/16-msvc-rule-old.log`, EXIT=1). The new shape (a file-local `thread_local` plus an out-of-line
++  accessor) compiles (`logs/17-msvc-rule-new.log`, EXIT=0).
++- The seam has exactly four callers, all through `AudioEngine::isChangeInModelHeld()`:
++  `tests/src/core/AudioPortsModelTest.cpp:532,535`, `tests/src/core/RoutingGraphLiveTest.cpp:215`,
++  `tests/src/gui/ArrangerFileDropTest.cpp:507,520` and `tests/src/gui/PinConnectorTest.cpp:149`. No
++  caller reads the data member directly.
++
++## Fix (smallest, test-only seam, no product behaviour change)
++
++### `include/AudioEngine.h`
++
++- `:625`: `bool isChangeInModelHeld() const noexcept;` is now a declaration, not an inline definition.
++  The comment says why it is out of line.
++- `:888-889`: the `static thread_local int s_changeInModelDepth;` member is gone; the exported class
++  carries no thread-local data.
++
++### `src/core/AudioEngine.cpp`
++
++- `:471-482`: the nesting depth is now a file-local `static thread_local int s_changeInModelDepth = 0;`
++  (internal linkage, no DLL interface), and `AudioEngine::isChangeInModelHeld()` is defined out of line
++  next to it.
++- `:1716`, `:1724`, `:1742`: `requestChangeInModel()` / `doneChangeInModel()` /
++  `requestChangeInModelForTest()` increment and decrement the same depth exactly as before. The guard,
++  the render path and the lock are unchanged.
++
++No audio-thread path, command, undo step or saved-data format is touched. `isChangeInModelHeld()` is
++compiled only with `LMMS_TESTING`.
++
++## Regression test: `ExportedClassTlsCheck` (`tests/exported-class-tls-check.py`)
++
++The test scans `include/` and `src/` headers (skipping the vendored `src/3rdparty` tree), tracks class
++bodies and flags a `thread_local` declaration that ends a member statement inside a class carrying
++`LMMS_EXPORT` or `__declspec(dllexport)`. A `thread_local` inside a member function body, a
++`thread_local` member of a non-exported class, and comments/strings are not flagged. It first runs its
++own red/green fixtures, so a scanner that cannot fail fails instead. It reads sources only: no build,
++no clock, no sleeps, no threads.
++
++It is registered as ctest `ExportedClassTlsCheck` (`tests/CMakeLists.txt:6283-6291`) wherever python3
++exists. Before the fix it reports `include/AudioEngine.h:891`; after the fix it passes.
++
++## Commands and exit codes (logs in `~/.local/share/zene-bunny-fix/qwen/runs/ci-512849fa221097db.r1/logs/`)
++
++| Step | Command | EXIT |
++| --- | --- | --- |
++| **RED** (direct, before fix) | `python3 tests/exported-class-tls-check.py . > 02-test-red-direct.log` | **1**: `include/AudioEngine.h:891: exported class declares a thread_local data member (MSVC C2492)` |
++| **RED** (ctest, before fix) | `cd build/tests && ctest -R '^ExportedClassTlsCheck$' --output-on-failure > 04-ctest-red.log` | **8**: 0/1 passed, same finding |
++| Build after fix | `CCACHE_TEMPDIR=$TMPDIR/ccache-ci-512849fa221097db cmake --build build --target zene AudioPortsModelTest RoutingGraphLiveTest ArrangerFileDropTest PinConnectorTest -j4 > 06-build-fix.log` | **0** |
++| **GREEN** family | `ctest -R '^(ExportedClassTlsCheck\|AudioPortsModelTest\|RoutingGraphLiveTest\|ArrangerFileDropTest\|PinConnectorTest)$' --output-on-failure > 07-ctest-green-family.log` | **0**: 5/5 passed |
++| 4b patch / revert | `git diff -- include/AudioEngine.h src/core/AudioEngine.cpp > logs/fix.patch && git apply -R logs/fix.patch` | DIFF **0**, REVERT **0** |
++| 4b rebuild reverted | `cmake --build build --target zene -j4 > 08-build-reverted.log` | **0** |
++| 4b test reverted | `ctest -R '^ExportedClassTlsCheck$' --output-on-failure > 09-ctest-reverted.log` | **8**: same finding |
++| 4b reapply | `git apply logs/fix.patch` | **0** (`git apply -R --check` also 0) |
++| 4b rebuild reapplied | `cmake --build build --target zene AudioPortsModelTest RoutingGraphLiveTest ArrangerFileDropTest PinConnectorTest -j4 > 10-build-reapplied.log` | **0** |
++| 4b test reapplied | `ctest -R '^(ExportedClassTlsCheck\|AudioPortsModelTest\|RoutingGraphLiveTest\|ArrangerFileDropTest\|PinConnectorTest)$' --output-on-failure > 11-ctest-reapplied.log` | **0**: 5/5 passed |
++| Broader AudioEngine family build | `cmake --build build --target AudioBusHandleTest AudioEngineProfilerTest RoutingGraphScheduleTest RoutingGraphTest -j4 > 14-build-family-missing.log` | **0** |
++| Broader AudioEngine family test | `ctest -R 'AudioEngine\|AudioBusHandle\|RoutingGraph' --output-on-failure > 15-ctest-audioengine-family.log` | **0**: 6/6 passed |
++| MSVC rule probe (old shape) | `clang-cl --target=x86_64-pc-windows-msvc /c /std:c++20 old.cpp` (`16-msvc-rule-old.log`) | **1**: `cannot be thread local when declared 'dllexport'` |
++| MSVC rule probe (new shape) | `clang-cl --target=x86_64-pc-windows-msvc /c /std:c++20 new.cpp` (`17-msvc-rule-new.log`) | **0** |
++| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > 12-feature-check.log` | **0**: 8/8 PASS (fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length) |
++| Gates (final, report present) | same command `> 18-feature-check-final.log` | **0**: 8/8 PASS |
++| Pre-submit check | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> ci-512849fa221097db > 20-submit-check.log` | **0**: PASS, with the Self-check questions answered below |
++
++The reverted test ran against a rebuilt `zene` (log 08 rebuilt `lmmsobjs`, including
++`src/core/AudioEngine.cpp`), not a stale binary.
++
++## Registration
++
++- `tests/fork-sources.txt`: `tests/exported-class-tls-check.py` and this report (product-new).
++- `tests/upstream-modifications.txt`: `include/AudioEngine.h`, `src/core/AudioEngine.cpp` and
++  `tests/CMakeLists.txt`, each with a reason. The file ends with a newline.
++
++## Self-check
++
++- **Regression test fails reverted, passes fixed (exit codes).** Reverted product files:
++  `ctest -R '^ExportedClassTlsCheck$'` EXIT=**8** (`09-ctest-reverted.log`), reporting
++  `include/AudioEngine.h:891`. Reapplied: EXIT=**0**, 5/5 family passed (`11-ctest-reapplied.log`).
++  The original RED/GREEN was 8/0 (`04`, `07`). The 4b revert used
++  `git diff -- include/AudioEngine.h src/core/AudioEngine.cpp > logs/fix.patch && git apply -R logs/fix.patch`
++  (DIFF=0, REVERT=0), then rebuilt `zene` (EXIT=0, `08-build-reverted.log`), then re-applied
++  (`git apply logs/fix.patch`, EXIT=0) and rebuilt (EXIT=0, `10-build-reapplied.log`).
++- **Deterministic.** The test is a pure source scan over fixed inputs with inline red/green fixtures;
++  it uses no wall clock, sleeps, threads, build output or environment-dependent values. The MSVC rule
++  probe is a single `clang-cl` invocation on a fixed two-line probe.
++- **At the cause and complete.** The exported class no longer carries thread-local data (the member
++  previously at `include/AudioEngine.h:891` is removed; the accessor is declared at `:625`); the depth
++  is file-local in `src/core/AudioEngine.cpp:471-482` and the three updates (`:1716`, `:1724`, `:1742`)
++  are unchanged. Every reader (`AudioPortsModelTest.cpp:532,535`, `RoutingGraphLiveTest.cpp:215`,
++  `ArrangerFileDropTest.cpp:507,520`, `PinConnectorTest.cpp:149`) goes through the out-of-line
++  accessor. The sibling file-local `s_renderingThread` (`src/core/AudioEngine.cpp:470`) was already
++  outside the class.
++- **No collateral damage.** Old projects and saved data are untouched: the change moves a
++  `LMMS_TESTING`-only seam and changes no serialization, command, undo or audio-thread code. No new
++  limit or check was added to product code. The seam tests and the wider AudioEngine family pass
++  (5/5 and 6/6, logs `07`, `11`, `15`).
++- **ALREADY-FIXED / FALSE-POSITIVE evidence.** Not applicable: the verdict is FIXED. The old
++  declaration is `include/AudioEngine.h:891` in the parent commit and the CI error is C2492 on that
++  line; the reverted test reproduces it (`09-ctest-reverted.log`).
++- **Sibling commands.** None of the command files behind `app.about`, `app.ask`, `app.help`,
++  `app.online_help`, `app.task_cancel`, `app.tasks`, `app.tour`, `app.tours`,
++  `app.update_check_get/run/set`, `app.version`, `app.whats_new`, `arrangement.fit_tracks` or
++  `arrangement.get_state` is changed by this fix. The diff is `include/AudioEngine.h`,
++  `src/core/AudioEngine.cpp`, the test registration and docs only, so every listed command keeps its
++  existing behaviour.
++- **Not verified here:** MSVC itself is not installed on this box. The hosted msvc-x64 job on a
++  `ci/*` branch is the final confirmation; the `clang-cl` probe reproduces the same restriction.
+diff --git a/include/AudioEngine.h b/include/AudioEngine.h
+index 8dae7de48b..6912d4e386 100644
+--- a/include/AudioEngine.h
++++ b/include/AudioEngine.h
+@@ -620,7 +620,9 @@ public:
+ 	//! guard through requestChangeInModel(). A test uses it to prove a topology
+ 	//! rebuild excludes the audio thread for its whole duration; it is not a
+ 	//! product query (the render thread takes m_changeMutex directly).
+-	bool isChangeInModelHeld() const noexcept { return s_changeInModelDepth > 0; }
++	//! Out of line: MSVC rejects a thread_local data member of a dllexport class
++	//! (C2492), so the depth lives in AudioEngine.cpp.
++	bool isChangeInModelHeld() const noexcept;
+ 
+ 	/*! Test-only: takes the change lock like requestChangeInModel(), but
+ 	 *  reports a CONTENDED acquisition through @a contendedProbe - the probe is
+@@ -885,11 +887,6 @@ private:
+ 
+ 	std::recursive_mutex m_changeMutex;
+ 	std::atomic<int> m_modelChangeWaiters{0};
+-#ifdef LMMS_TESTING
+-	//! Nesting depth of requestChangeInModel() on the calling thread (the guard
+-	//! is recursive). Only read by isChangeInModelHeld() in tests.
+-	static thread_local int s_changeInModelDepth;
+-#endif
+ 	std::atomic<AutomatableModelRegistry*> m_automatableModelRegistry{nullptr};
+ 	std::atomic<std::uint64_t> m_registeredAutomatableModelCount{0};
+ 	std::atomic<std::uint64_t> m_automatableModelRegistrationFailures{0};
+diff --git a/src/core/AudioEngine.cpp b/src/core/AudioEngine.cpp
+index 0296391982..2aaa21197d 100644
+--- a/src/core/AudioEngine.cpp
++++ b/src/core/AudioEngine.cpp
+@@ -470,7 +470,15 @@ void AudioEngine::disposePlayHandle(PlayHandle* handle, bool realtime) noexcept
+ static thread_local bool s_renderingThread = false;
+ 
+ #ifdef LMMS_TESTING
+-thread_local int AudioEngine::s_changeInModelDepth = 0;
++//! Nesting depth of requestChangeInModel() on the calling thread (the guard is
++//! recursive). File-local, not a static member: MSVC rejects thread_local data
++//! with a DLL interface (C2492) in the exported AudioEngine class.
++static thread_local int s_changeInModelDepth = 0;
++
++bool AudioEngine::isChangeInModelHeld() const noexcept
++{
++	return s_changeInModelDepth > 0;
++}
+ #endif
+ 
+ AudioEngine::AudioEngine(bool renderOnly)
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 27022b091c..f38a3ee785 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -6279,6 +6279,18 @@ if(PYTHON3_EXECUTABLE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND NOT MSVC
+ 	set_tests_properties(FenvShimMsvcInclude PROPERTIES TIMEOUT 60)
+ endif()
+ 
++# A static thread_local data member of a class with a DLL interface is an MSVC
++# error (C2492) and a warning-free build on GCC/Clang, so the hosted msvc-x64
++# job is the only one that sees it. The check reads include/ and src/ headers
++# and fails on any such member; its fixtures prove the scanner can fail.
++if(PYTHON3_EXECUTABLE)
++	add_test(NAME ExportedClassTlsCheck
++		COMMAND ${PYTHON3_EXECUTABLE}
++			${CMAKE_CURRENT_SOURCE_DIR}/exported-class-tls-check.py
++			${CMAKE_SOURCE_DIR})
++	set_tests_properties(ExportedClassTlsCheck PROPERTIES TIMEOUT 60)
++endif()
++
+ # Multicore Slice 0+1 (SPEC-MULTICORE-SCHEDULING-DRAFT §6): the published
+ # schedule (required/pending/class + ready list) versus the plan-order
+ # execution, both walks against the committed reference render, plus the two
+diff --git a/tests/exported-class-tls-check.py b/tests/exported-class-tls-check.py
+new file mode 100644
+index 0000000000..d02b3ddde0
+--- /dev/null
++++ b/tests/exported-class-tls-check.py
+@@ -0,0 +1,232 @@
++#!/usr/bin/env python3
++"""Fail when an exported class declares a thread_local data member.
++
++Cluster ci-512849fa221097db (2026-11-10). MSVC rejects a static thread_local
++data member of a class that has a DLL interface:
++
++    include/AudioEngine.h(891): error C2492: 'lmms::AudioEngine::s_changeInModelDepth':
++    data with thread storage duration may not have dll interface
++
++The class is `class LMMS_EXPORT AudioEngine`; on MSVC `LMMS_EXPORT` expands to
++`__declspec(dllexport)`. GCC and Clang accept the same declaration, so the
++hosted msvc-x64 build was the only job that saw it.
++
++The check reads product headers only (include/ and src/, without the vendored
++src/3rdparty tree). It tracks class bodies and reports every `thread_local`
++declaration that ends a member statement inside a class carrying `LMMS_EXPORT`
++or `__declspec(dllexport)`. A thread_local inside a member function body, a
++thread_local member of a non-exported class, and text in comments or strings
++are NOT flagged. Before scanning the tree it runs its own red/green fixtures,
++so a scanner that cannot fail fails instead.
++
++Exit 0 = clean, 1 = findings (or a failed fixture).
++"""
++
++import os
++import re
++import sys
++
++SCAN_DIRS = ("include", "src")
++SKIP_DIR_NAMES = {"3rdparty", "external"}
++SOURCE_SUFFIXES = (".h", ".hpp", ".hxx")
++CLASS_HEAD = re.compile(r"(?:^|[\s;{}])(class|struct|union)\s+(?!\w+\s*;)")
++ACCESS_LABEL = re.compile(
++	r"(?:^|\s)(?:(?:public|protected|private)\s+(?:slots|Q_SLOTS)|signals|Q_SIGNALS)\s*$"
++	r"|(?:^|\s)(?:public|protected|private)\s*$")
++EXPORT_MARKER = re.compile(
++	r"(?<![A-Za-z0-9_])LMMS_EXPORT(?![A-Za-z0-9_])|__declspec\s*\(\s*dllexport\s*\)")
++DECLSPEC = re.compile(r"__declspec\s*\([^)]*\)")
++THREAD_LOCAL = re.compile(r"(?<![A-Za-z0-9_])thread_local(?![A-Za-z0-9_])")
++TOKEN = re.compile(
++	r'//[^\n]*|/\*.*?\*/|"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\'|[{};:]|\n|[^{};:/"\'\n]+|/',
++	re.S)
++
++
++def strip_preprocessor(text):
++	"""Blank out preprocessor lines (with continuations), keeping line numbers."""
++	out = []
++	continuing = False
++	for line in text.split("\n"):
++		directive = continuing or line.lstrip().startswith("#")
++		continuing = directive and line.rstrip().endswith("\\")
++		out.append("" if directive else line)
++	return "\n".join(out)
++
++
++class Scope:
++	"""One brace level: a class body (and whether it is exported) or anything else."""
++
++	def __init__(self, is_class, is_exported):
++		self.is_class = is_class
++		self.is_exported = is_exported
++
++
++class Scanner:
++	"""Walks one file's tokens and records thread_local data members of exported classes."""
++
++	def __init__(self, path):
++		self.path = path
++		self.scopes = [Scope(False, False)]
++		self.statement = ""
++		self.statement_line = 1
++		self.line = 1
++		self.findings = []
++
++	def scan(self, text):
++		for match in TOKEN.finditer(strip_preprocessor(text)):
++			self.feed(match.group(0))
++		return self.findings
++
++	def feed(self, token):
++		if token == "\n" or token.startswith("//") or token.startswith("/*"):
++			self.line += token.count("\n")
++			self.append(" ")
++		elif token.startswith('"') or token.startswith("'"):
++			self.append(" ")
++		elif token == "{":
++			self.open_brace()
++		elif token == "}":
++			self.close_brace()
++		elif token == ";":
++			self.end_statement()
++		elif token == ":":
++			self.colon()
++		else:
++			self.append(token)
++
++	def append(self, token):
++		if not self.statement.strip():
++			self.statement_line = self.line
++		self.statement += token
++
++	def colon(self):
++		if self.scopes[-1].is_class and ACCESS_LABEL.search(self.statement):
++			self.statement = ""
++		else:
++			self.append(":")
++
++	def open_brace(self):
++		self.check_declaration()
++		head = DECLSPEC.sub(" ", self.statement)
++		is_class = bool(CLASS_HEAD.search(" " + head)) and "(" not in head
++		is_exported = is_class and bool(EXPORT_MARKER.search(self.statement))
++		self.scopes.append(Scope(is_class, is_exported))
++		self.statement = ""
++
++	def close_brace(self):
++		if len(self.scopes) > 1:
++			self.scopes.pop()
++		self.statement = ""
++
++	def end_statement(self):
++		self.check_declaration()
++		self.statement = ""
++
++	def check_declaration(self):
++		if not self.scopes[-1].is_exported:
++			return
++		if not THREAD_LOCAL.search(self.statement):
++			return
++		declaration = " ".join(self.statement.split())
++		self.findings.append((self.path, self.statement_line, declaration))
++
++
++def scan_text(path, text):
++	if "LMMS_EXPORT" not in text and "__declspec" not in text:
++		return []
++	if "thread_local" not in text:
++		return []
++	return Scanner(path).scan(text)
++
++
++def iter_sources(root):
++	for top in SCAN_DIRS:
++		for directory, subdirs, files in os.walk(os.path.join(root, top)):
++			subdirs[:] = sorted(d for d in subdirs
++				if not d.startswith(".") and d not in SKIP_DIR_NAMES)
++			for name in sorted(files):
++				if name.endswith(SOURCE_SUFFIXES):
++					yield os.path.join(directory, name)
++
++
++def scan_tree(root):
++	findings = []
++	for path in iter_sources(root):
++		with open(path, encoding="utf-8", errors="replace") as handle:
++			findings += scan_text(os.path.relpath(path, root), handle.read())
++	return findings
++
++
++FIXTURE_RED = """
++class LMMS_EXPORT Exported
++{
++public:
++	static thread_local int s_depth;
++	//! A comment mentioning thread_local is not a declaration.
++	struct Nested { static thread_local int s_nested; };
++};
++
++struct __declspec(dllexport) ExportedStruct
++{
++	static thread_local int s_depth;
++};
++"""
++
++FIXTURE_GREEN = """
++class LMMS_EXPORT Exported
++{
++public:
++	static int s_depth;
++	inline static int s_count = 0;
++	bool held() const noexcept;
++	bool body() const noexcept { thread_local int depth = 0; return depth > 0; }
++	const char* text = "thread_local int s_text;";
++};
++
++class Plain
++{
++	static thread_local int s_depth;
++};
++
++class LMMS_EXPORT FunctionLocal
++{
++	bool held() const noexcept { thread_local int depth = 0; return depth > 0; }
++};
++"""
++
++
++def self_test():
++	red = scan_text("fixture-red.h", FIXTURE_RED)
++	green = scan_text("fixture-green.h", FIXTURE_GREEN)
++	failures = []
++	if len(red) != 2:
++		failures.append(f"red fixture flagged {len(red)} declaration(s), expected 2: {red}")
++	if [line for _, line, _ in red] != [5, 12]:
++		failures.append(f"red fixture line numbers {[line for _, line, _ in red]}, expected [5, 12]")
++	if green:
++		failures.append(f"green fixture flagged {green}")
++	return failures
++
++
++def main(argv):
++	root = argv[1] if len(argv) > 1 else os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
++	failures = self_test()
++	for failure in failures:
++		print(f"SELF-TEST FAIL: {failure}")
++	if failures:
++		return 1
++	print("self-test: fixtures flagged and passed as expected")
++	findings = scan_tree(root)
++	for path, line, declaration in findings:
++		print(f"{path}:{line}: exported class declares a thread_local data member "
++			f"(MSVC C2492): {declaration}")
++	if findings:
++		print(f"FAIL: {len(findings)} thread_local data member(s) in an exported class; "
++			f"move the variable out of the class or access it through an out-of-line function")
++		return 1
++	print("PASS: no thread_local data member in an exported class")
++	return 0
++
++
++if __name__ == "__main__":
++	sys.exit(main(sys.argv))
+diff --git a/tests/fork-sources.txt b/tests/fork-sources.txt
+index 3137ee735c..cfbbec5e5c 100644
+--- a/tests/fork-sources.txt
++++ b/tests/fork-sources.txt
+@@ -3531,3 +3531,6 @@ docs/qwen-fixes-2026-10/cluster-gui-1030-main-pop-out-the-note-editor-panel.md
+ # cluster gui-1030-menu-edit-collaborate (2026-11): a refused menu command is said in the status bar (fork-NEW test).
+ tests/src/gui/MenuRefusalNoticeTest.cpp
+ docs/qwen-fixes-2026-10/cluster-gui-1105-main-delete.md
++# cluster ci-512849fa221097db (2026-11): checks no exported class declares a thread_local data member (MSVC C2492), by scanning include/ and src/ headers (ctest ExportedClassTlsCheck).
++tests/exported-class-tls-check.py
++docs/qwen-fixes-2026-10/cluster-ci-512849fa221097db.md
+diff --git a/tests/upstream-modifications.txt b/tests/upstream-modifications.txt
+index 5e95d404bb..0aa0ef84d8 100644
+--- a/tests/upstream-modifications.txt
++++ b/tests/upstream-modifications.txt
+@@ -5778,3 +5778,6 @@ tests/src/gui/ShellHomesTest.cpp	# Pattern Editor tab click does not switch the
+ tests/src/gui/ShellHomesTest.cpp	# Hide button click leaves the lower panel open
+ tests/src/gui/ShellHomesTest.cpp	# Pattern Editor tab click leaves the Note Editor selected
+ src/gui/editors/TimeLineWidget.cpp	gui-1106: the punch band row stays reserved across the ruler, but only the interval between the punch bounds is filled, outlined and labelled, and a handle whose bound is in view is kept wholly inside the content area; hit testing and the drag are unchanged. Held by ArrangerTakePunchTest::theArmedPunchRangeIsPaintedOnlyBetweenItsBounds.
++include/AudioEngine.h	cluster ci-512849fa221097db (2026-11-10): isChangeInModelHeld() is declared out of line instead of inline reading a static thread_local data member, because MSVC rejects thread_local data in the dllexport AudioEngine class (C2492); same seam, same callers, no product behaviour change. Held by ExportedClassTlsCheck.
++src/core/AudioEngine.cpp	cluster ci-512849fa221097db (2026-11-10): the isChangeInModelHeld() nesting depth is a file-local thread_local (internal linkage) and the accessor is defined here, so the exported class carries no thread_local data; request/doneChangeInModel maintain it exactly as before. Held by ExportedClassTlsCheck.
++tests/CMakeLists.txt	cluster ci-512849fa221097db: registers ExportedClassTlsCheck (tests/exported-class-tls-check.py), the MSVC C2492 regression for exported classes with thread_local data members; one add_test and one timeout property, no existing test changes.
+-- 
+2.56.0
+

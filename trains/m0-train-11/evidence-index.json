@@ -1,0 +1,37 @@
+[
+  {
+    "bytes": 2130527,
+    "file": "evidence/train-11-bar.log.gz",
+    "sha256_uncompressed": "696a1657247c6d10e963c10bf4eee4dddffbb8b2cf003ff620335b86aed2045f"
+  },
+  {
+    "bytes": 192869,
+    "file": "evidence/train-11-build-bar.log.gz",
+    "sha256_uncompressed": "770fa3ff6a6414f29068ce7ea3b9b5de38ff27421132453c1f8db027572f9abb"
+  },
+  {
+    "bytes": 376246,
+    "file": "evidence/train-11-build.log.gz",
+    "sha256_uncompressed": "89bfbaa6120482678a8fa6ebd32ac22e1acd63190ba3285dd156ab9fcbee8708"
+  },
+  {
+    "bytes": 4203875,
+    "file": "evidence/train-11-gates.log.gz",
+    "sha256_uncompressed": "168f94b2167663bc519bfff437cf0622eef57b0e371cf623d7e3c42cd9719bc8"
+  },
+  {
+    "bytes": 8853,
+    "file": "evidence/train-11-rev-build.log.gz",
+    "sha256_uncompressed": "9702aa70d6649bc0dd7f03fbdde5fc2a94f861e93a0a4141fc808dcbc96b2f58"
+  },
+  {
+    "bytes": 284,
+    "file": "evidence/train-11-rev.log.gz",
+    "sha256_uncompressed": "6ce16e15ac9c9e84e28287d566e14ef838aab3ec1c6bc4e45213c107736494df"
+  },
+  {
+    "bytes": 1109070,
+    "file": "evidence/train-11-snapshot.json.gz",
+    "sha256_uncompressed": "2da6088db96cc6908f4470a16648f4519adb037fcfc22d9abb1ace884938d9a2"
+  }
+]

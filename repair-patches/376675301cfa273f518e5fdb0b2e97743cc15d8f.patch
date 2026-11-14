@@ -1,0 +1,946 @@
+From 376675301cfa273f518e5fdb0b2e97743cc15d8f Mon Sep 17 00:00:00 2001
+From: Zene CI repair <noreply@zene.invalid>
+Date: Thu, 12 Nov 2026 00:59:18 +0000
+Subject: [PATCH] fix(ci): CI regression: build / mingw64
+
+CI-Repair-Id: ci-repair-ci-3eb9bda8aa6785a3-8f1eebeeaa53
+---
+ .github/workflows/keys/tobydox-mingw-w64.gpg  | Bin 0 -> 1510 bytes
+ .github/workflows/setup-mingw-packages.sh     |  20 +-
+ .../cluster-ci-3eb9bda8aa6785a3.md            | 233 +++++++++++++++
+ tests/CMakeLists.txt                          |  14 +
+ tests/data/mingw-ppa/InRelease                | 207 +++++++++++++
+ tests/data/mingw-ppa/README.md                |  25 ++
+ tests/data/mingw-ppa/legacy-only.gpg          | Bin 0 -> 354 bytes
+ tests/fork-sources.txt                        |   8 +
+ tests/mingw-ppa-key-check.sh                  | 279 ++++++++++++++++++
+ tests/upstream-modifications.txt              |   8 +
+ 10 files changed, 791 insertions(+), 3 deletions(-)
+ create mode 100644 .github/workflows/keys/tobydox-mingw-w64.gpg
+ create mode 100644 docs/qwen-fixes-2026-10/cluster-ci-3eb9bda8aa6785a3.md
+ create mode 100644 tests/data/mingw-ppa/InRelease
+ create mode 100644 tests/data/mingw-ppa/README.md
+ create mode 100644 tests/data/mingw-ppa/legacy-only.gpg
+ create mode 100755 tests/mingw-ppa-key-check.sh
+
+diff --git a/.github/workflows/keys/tobydox-mingw-w64.gpg b/.github/workflows/keys/tobydox-mingw-w64.gpg
+new file mode 100644
+index 0000000000000000000000000000000000000000..4cba8fd4f0fc0964f5a24e6269c1890e15974397
+GIT binary patch
+literal 1510
+zcmX@s%i>v~lg`M(u;=q^pTCz&CYY<|x<zdGvPXm4*8D;NV~<?--W?I|j;@)a!xL|C
+zZOiS=3l_CpF8b5(!>I4Rt5Z~0<~;?+Mh4Zp$#Sn$%~m8Ptzmlp?LuE!QF7puSGN|w
+z4S6#4+B^MVi|q>=o=bBwsDEbKwcFys{93=&S8wIXrsluBZoXr2d3@wa20=y!#<P+>
+ziKThT83l<c3IPF*3TgR83MKhTl_~iZhqkc@GcqwKurh%h%p}ds#?8sW&dkIj%EZCU
+zBF4nb$Rx+eB;LTl#VNq_FJ5TvJ<UyqY|MY9?_1y8Uix4qYwD+?e=R-R+>+PwB^8LM
+zAH5KD`s2!gMWy|Z_uTx>ajGSCQMI3S!~(;OJXO5mA7A@Uux%}waNX(1{@>SQKE7W!
+z>+k;d$g}NJPCZyR%T1>E{qAYuN2S|Lp4;7Jo1XkY-!*`@*XdMo;qG_GA`~*!m`oNM
+zOYFXL@qop#gT5?j8dv8r3NWk|{A)Dv`^SHC9$()reB~hfbcO4F6Dp>k-N+y*_DAV+
+zw^Z>(4zt3mEABj;64>5bx%J)J1DZW0F-(EIyALgIVbk5Urd;WHm_w#Y>7rW#43;{6
+zwv$BN6nO9KI-9s8^__Q4;d{H|%DKnYr%2EC7ZtVrx_5d=*-o4JeP918|L5(=mz3HT
+z%DhHxI>Y)!8`gg;Z+krL^g^p$eG$!<{2#pIYcT8Cy{T@`)I;q1QUgw`iB$61lQsRy
+z{S`0#7G6Kiz^lIR+=hPjAM+U3re(a{GwIgR))~6TcDu;wCM#;>`R#fiwb%8q*sHyf
+zhptXPSgO7Dmla#p3hCf$rxxG$?KsK7wz=o}^@N8vo4#&mxV13u-hcDU-O{_7FSt&U
+zmrD+=>eD_}_DRt+Ug6L~IZKZElNR}Xy>AY<TIm?pvzRnHR_yqEyhy(K!!oajCp>LU
+zT6fKpv-z^(RZQgn-OEf*md|KznR4p&B?Uoqo5U0IYmYsesW{b9zA7f}{goT;Tb@1E
+zeE#)!fuu%v&ez<}vBH|iUT>Ri&20bG+5X8{m%oJqY-iubd|$Xiu2|C1U77uq)`5fR
+zkNu0abp4M-?R;_U>Aok4@iX7gEk3EDKif|Ez-HG=>ARMQoY*~Gf$`pa2Z=o$Igi~Y
+zo_hH8qk7u>m%1)7YdN3aU2~ZALRa?f*|S0?=F8rjZkaSa^qq&BJ|u}NVkYsB{G`mp
+zVg;|#y!4F3yy8O#`&fh-xfm?O6j|0v&8W{hAisQD{+8Esc#00nas8Oc$^=SKOw!D(
+zpe(?|Cd$Rh!Oeu02Vja93kfhR-P7#$y=cahj?L3&h3;|TUGZsh`j>k1_DzmQI!X`O
+zw$FZ6yDjDaH|fdkJ5{SMzLMw>3+NJBacd>_Y%TW9dv~$^esbdJ(-pq`5pT-Md`x~^
+z=kDCL|NV;;p)>O??RU8QBygTyd_cAH%-K!_*Osj4N$>V4ms7s@$Lx5i((Lv(bBfIm
+z-ukTld)vE+vL2u2-_pMsYYnocqUE_mq}+9XILW5HxH9czelD|J_>Zezvz({L{|#WV
+zmwnBkAuI1PXP$sSnTw<R=?nW0TKsqrFpnj8`MKNw+*PdZGrc=Idq(;0GRu>#toN@t
+ztL@$8u4ThhyYtlfR=12BywmFzdlgP{Fy~!jC%^qfMYPlMGb~clr2#^Ds}vVSUgAId
+zQg-G<AJ)lp`MHZvo(Nm;ciV15(Ho~WJy{`ryE9MmUhYPIzA%F&QzqZGTeW9e*Oro<
+z<wv%y+P5y=aJ%Mb<xSbfvI{RR)%g+i^zw_TohCt2)>_M+Ki*W|to6pRcJJYP6WN<A
+zO6O=7`p(~~UpC|A>uXmISe#xrFY@3zljuFa3la_;Oud<^ZB^?enAf%Ra^~@0x@$Rq
+zFfac*W0B%HeY=1A?{XY7U(WxBDMYa-?EU+;FAI#_?F^U1E^Flew`&j6t3{Wu&Yf^-
+u_gQQ6gC{MwiWOwmMm^Ux_qjCjvM;Ceq%EBPB}<n*D~MmXW0pp+<t_ja)6F6P
+
+literal 0
+HcmV?d00001
+
+diff --git a/.github/workflows/setup-mingw-packages.sh b/.github/workflows/setup-mingw-packages.sh
+index 69c6f315b7..35df7f4a9c 100755
+--- a/.github/workflows/setup-mingw-packages.sh
++++ b/.github/workflows/setup-mingw-packages.sh
+@@ -1,4 +1,5 @@
+ #!/bin/sh
++set -eu
+ 
+ # TODO: Stop using this PPA once all MinGW dependencies are available through vcpkg and work with CMake.
+ 
+@@ -10,7 +11,20 @@
+ # The rest of the MinGW dependencies come from vcpkg.
+ # suil, once added, would need to be built with Qt, due to its dependency on it.
+ 
+-sh -c 'echo "deb http://ppa.launchpad.net/tobydox/mingw-w64/ubuntu focal main" > \
+-  /etc/apt/sources.list.d/tobydox-mingw-w64.list'
+-apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 72931B477E22FEFD47F8DECE02FE5F12ADDE29B2
++# The PPA's signing keys are committed beside this script and pinned with signed-by=.
++# They used to be fetched at run time with
++#   apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 72931B47...
++# which needs outbound HKP: on the hosted runner that call died with
++#   gpg: keyserver receive failed: Network is unreachable
++# and the following apt-get update failed with exit 100 ("repository ... is not signed").
++# A build dependency must not depend on a network keyserver. The committed keyring holds
++# both keys Launchpad signs this PPA's metadata with - the current 4096-bit key
++# AD1A987F6AC01FA7B66FB4EB9C0C72C11E0AF891 and the legacy 72931B477E22FEFD47F8DECE02FE5F12ADDE29B2 -
++# because a keyring with only the legacy key verifies the release file incompletely.
++# Refresh instructions and the fixture's provenance are in tests/data/mingw-ppa/README.md.
++KEYRING_SRC="$(dirname "$0")/keys/tobydox-mingw-w64.gpg"
++install -d -m 0755 /etc/apt/keyrings
++install -m 0644 "$KEYRING_SRC" /etc/apt/keyrings/tobydox-mingw-w64.gpg
++echo "deb [signed-by=/etc/apt/keyrings/tobydox-mingw-w64.gpg] http://ppa.launchpad.net/tobydox/mingw-w64/ubuntu focal main" \
++  > /etc/apt/sources.list.d/tobydox-mingw-w64.list
+ apt-get update -y
+diff --git a/docs/qwen-fixes-2026-10/cluster-ci-3eb9bda8aa6785a3.md b/docs/qwen-fixes-2026-10/cluster-ci-3eb9bda8aa6785a3.md
+new file mode 100644
+index 0000000000..5d6d9324ac
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/cluster-ci-3eb9bda8aa6785a3.md
+@@ -0,0 +1,233 @@
++FIXED
++
++# Cluster ci-3eb9bda8aa6785a3 — `build / mingw64` "Install dependencies" fails: the PPA key is fetched from a keyserver the runner cannot reach
++
++## Verdict
++
++**REAL.** The `mingw64` job on pinned train `050/m0-train-27` at
++`0c3b9e3c23434f269526f189c02e88698ce63ec5` fails in "Install dependencies", before any
++compilation, because the step that adds tobydox's MinGW PPA imports the PPA's signing key
++from a network keyserver and the hosted runner has no route to it.
++
++Evidence (untrusted log, read as data only):
++`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/train-ci/0c3b9e3c23434f269526f189c02e88698ce63ec5/run-43076107122-job-130716216032.log`
++
++```
++mingw64  Install dependencies  Executing: /tmp/apt-key-gpghome.j8wULPEi6D/gpg.1.sh --keyserver keyserver.ubuntu.com --recv-keys 72931B477E22FEFD47F8DECE02FE5F12ADDE29B2
++mingw64  Install dependencies  gpg: keyserver receive failed: Network is unreachable
++...
++mingw64  Install dependencies    The following signatures couldn't be verified because the public key is not available: NO_PUBKEY 9C0C72C11E0AF891 NO_PUBKEY 02FE5F12ADDE29B2
++mingw64  Install dependencies  E: The repository 'http://ppa.launchpad.net/tobydox/mingw-w64/ubuntu focal InRelease' is not signed.
++mingw64  Install dependencies  ##[error]Process completed with exit code 100.
++```
++
++Classification: **product/CI-configuration defect**, not a test and not infrastructure-only.
++The runner cannot reach the keyserver (an egress-policy fact this box cannot reproduce, see
++*Reproduction limits*), but the workflow asked a network service for a build dependency at
++run time. That dependency belongs in the repository.
++
++## Cause (file:line)
++
++`.github/workflows/setup-mingw-packages.sh:13-15` on the reported commit:
++
++```sh
++sh -c 'echo "deb http://ppa.launchpad.net/tobydox/mingw-w64/ubuntu focal main" > \
++  /etc/apt/sources.list.d/tobydox-mingw-w64.list'
++apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 72931B477E22FEFD47F8DECE02FE5F12ADDE29B2
++apt-get update -y
++```
++
++The script is called by `.github/workflows/build.yml:894` (`sudo
++.github/workflows/setup-mingw-packages.sh`) in the `mingw64` job, which then installs
++`qt5base-mingw-w64`, `qt5svg-mingw-w64` and `libgig-mingw-w64` from that PPA
++(`.github/workflows/deps-ubuntu-24.04-mingw.txt:13,25,26`). `apt-get update` is the gate: a
++PPA whose `InRelease` cannot be verified is fatal (`exit 100`), so the `apt-get install` the
++workflow runs next never executes.
++
++A second, independent defect hides in the same line, and is why "just retry" would not have
++been a fix. The key the old line names, `72931B477E22FEFD47F8DECE02FE5F12ADDE29B2`
++(1024-bit RSA, created 2009), is no longer the PPA's only signer: Launchpad signs the PPA's
++metadata with `AD1A987F6AC01FA7B66FB4EB9C0C72C11E0AF891` (4096-bit RSA, 2024) as well, which
++is the "current signing key" `https://api.launchpad.net/1.0/~tobydox/+archive/ubuntu/mingw-w64`
++reports. The PPA's real `InRelease` carries **two** signatures, and `gpgv` exits 2 (not 0)
++when one of them has no key — the state the old step installed whenever its fetch *did*
++succeed. That is asserted by the regression's control C (`legacy-only.gpg`, below).
++
++So the cause is: (a) a build input fetched from a network service at run time, and (b) the
++wrong set of keys for that service's current metadata. Both are fixed at the source.
++
++## Fix (at the cause)
++
++1. **Committed keyring.** `.github/workflows/keys/tobydox-mingw-w64.gpg` is a binary keyring
++   with both PPA signing keys (public keys only; verified by the test). It was built from
++   `https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x...` over HTTPS, the one-off
++   fetch a maintainer does when refreshing the pin, not a run-time step.
++2. **Pinned install path.** `.github/workflows/setup-mingw-packages.sh:25-29` installs that
++   keyring to `/etc/apt/keyrings/tobydox-mingw-w64.gpg` and writes the PPA source with
++   `signed-by=/etc/apt/keyrings/tobydox-mingw-w64.gpg`. No `apt-key`, no keyserver, no
++   global trusted keyring. `set -eu` was added so a failed `install` fails the step with its
++   own message instead of falling through to an `apt-get update` that reports a key error.
++   `signed-by=` is supported by every apt in the matrix (verified on apt 2.4.14/Ubuntu 22.04
++   and apt 2.8/Ubuntu 24.04, see the evidence table); the workflow's runner is
++   `ubuntu-latest` (24.04).
++
++This is the pattern the same repository already uses for winehq
++(`.github/workflows/build.yml:105-111`: `mkdir -p /etc/apt/keyrings` + `gpg --dearmor -o
++/etc/apt/keyrings/winehq-archive.key`), so the fix follows an existing in-repo convention.
++
++Sibling/caller check: `setup-mingw-packages.sh` has exactly one caller
++(`build.yml:894`; `grep -rn setup-mingw-packages .github tests docs` shows no other), and
++nothing else in the repo names the PPA (`git grep tobydox` finds only this script, the docs
++that describe the job, and unrelated author credits). The key ids appear nowhere else in the
++tree. The `linux-x86_64`/`linux-arm64`/`macos` jobs do not use this PPA and are unaffected.
++
++## Regression test
++
++`tests/mingw-ppa-key-check.sh` (new), registered as ctest `MingwPpaKeyGate` at
++`tests/CMakeLists.txt:3027-3028` with `SKIP_RETURN_CODE 77` (exit 77 = no `gpgv` on the
++host; `gpgv` ships in the `gpg` package, which the runner image and
++`deps-ubuntu-24.04-gcc.txt:10` already install). It is offline, rootless and deterministic:
++
++* **Part 1 — the live path.** `build.yml` still calls the script, and the dependency list
++  still names all three PPA packages, so the test cannot pass by the call site moving.
++* **Part 2 — the script.** With comments stripped (a comment explains the retired line by
++  name), the executable lines must contain no `apt-key` and no keyserver/HKP reference, must
++  pin the PPA with `signed-by=`, must name a keyring under `.github/workflows/keys/` that is
++  actually committed, and `signed-by` must name the file the script installs. `sh -n`
++  validates POSIX syntax.
++* **Part 3 — the crypto.** The committed keyring must make `gpgv` accept
++  `tests/data/mingw-ppa/InRelease`, the **real** Launchpad-signed release file of that PPA,
++  **completely**: both signer fingerprints must appear as verified. The fixture's sha256 is
++  pinned to `1d56a54d028396cb1fc79d683fe2c8812e3db6c2e1f1d7f1e02df89c90caf837`, its
++  `Origin: LP-PPA-tobydox-mingw-w64` / `Suite: focal` headers and its amd64 `Packages` index
++  are asserted, and the keyring must hold public keys only and the current key
++  `AD1A...AF891`.
++* **Part 4 — red controls.** The exact pre-fix script (the original 6 lines, heredoc) must be
++  rejected for *both* the `apt-key` and the keyserver reason; a script naming an uncommitted
++  keyring must be rejected; a keyring holding only the legacy key must fail `gpgv` (this is
++  defect (b)); a tampered `InRelease` must be a bad signature.
++
++Determinism: no wall-clock timing, sleeps, network or root. The seams are the committed
++fixture, the committed keyring and the script text; the assertion is `gpgv`'s exit status and
++the script-text decision, both of which are pure functions of committed files.
++
++## Reproduction limits (stated, not hidden)
++
++* The hosted runner's *egress* failure (`Network is unreachable`) cannot be reproduced from
++  this box: its egress allows HKP, and a container with the pre-fix script runs
++  `apt-key adv --keyserver keyserver.ubuntu.com` to completion. This is why the regression
++  asserts the *decision* (the key is committed and verified offline), not the network.
++* What *was* reproduced locally, as the CI log's next line shows, is the consequence of the
++  fetch having failed: with no key, `apt-get update` on Ubuntu 22.04 (apt 2.4.14) and 24.04
++  exits 100 with the same `NO_PUBKEY 9C0C72C11E0AF891 NO_PUBKEY 02FE5F12ADDE29B2` /
++  `is not signed` pair (`docker-ppa-nokey-1.log`, `docker-signedby-missing-2204-1.log`).
++* The fixed script was executed end-to-end in `ubuntu:24.04` and `ubuntu:22.04`
++  containers: `apt-get update` exits 0 and `apt-get install libgig-mingw-w64` from the PPA
++  exits 0 (`docker-real-script-1.log`, `docker-real-script-2204-1.log`). The old script,
++  with the key already present, exhibits exactly the warnings that motivated fix (b): apt
++  says the key is in the deprecated global keyring and that the legacy key "uses weak
++  algorithm (rsa1024)".
++
++## Evidence table
++
++Working directory is the worktree unless stated. Logs:
++`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-3eb9bda8aa6785a3.r1/logs`
++(see *Log-folder note* below for how they were written).
++
++| # | What | Exact command (cwd) | Exit | Result |
++|---|------|--------------------|-----:|--------|
++| 1 | CI evidence | `grep -n "keyserver\|NO_PUBKEY\|not signed\|exit code" run-43076107122-job-130716216032.log` (evidence dir) | 0 | lines 14,15,43,45,46,47: `Network is unreachable` → `NO_PUBKEY 9C0C… 02FE…` → `is not signed` → `exit code 100` |
++| 2 | RED before fix | `bash tests/mingw-ppa-key-check.sh > $LOGS/test-red-1.log 2>&1` | **1** | `FAIL the install step still calls apt-key`, `FAIL … still fetches the key from a network keyserver`, `FAIL … no signed-by= keyring`, `FAIL … no committed keyring` |
++| 3 | Product patch | `git diff HEAD -- .github/workflows/setup-mingw-packages.sh > $LOGS/fix.patch` | 0 | 34-line patch, product file only |
++| 4 | Reverse patch | `git apply -R $LOGS/fix.patch` | 0 | old 16-line script restored |
++| 5 | RED via ctest, fix reversed | `ctest -R MingwPpaKeyGate --output-on-failure > $LOGS/test-ctest-red-1.log 2>&1` (`build/tests`) | **8** | `0% tests passed, 1 tests failed out of 1`; the Part-2/Part-3 failures above |
++| 6 | Restore patch | `git apply $LOGS/fix.patch` | 0 | fixed script back |
++| 7 | Reconfigure (header/registration change) | `/usr/bin/cmake --build build --target cmake_check_build_system > $LOGS/build-reconfigure-2.log 2>&1` | 0 | `Configuring done (2.4s)`, `Generating done (49.2s)`; `ctest -N -R MingwPpaKeyGate` lists test #703 |
++| 8 | Build the affected target | `/usr/bin/cmake --build build --target zene > $LOGS/build-zene-1.log 2>&1` | 0 | `[100%] Built target zene` |
++| 9 | GREEN via ctest, fix restored | `ctest -R MingwPpaKeyGate --output-on-failure > $LOGS/test-ctest-green-2.log 2>&1` (`build/tests`) | **0** | `1/1` passed (test #703) |
++| 10 | Affected family | `PATH=/usr/local/bin:/usr/bin:/bin ctest -R "MingwPpaKeyGate\|CMakeThreadsScope" --output-on-failure > $LOGS/test-family-2.log 2>&1` (`build/tests`) | 0 | **2/2 passed** (MingwPpaKeyGate, CMakeThreadsScope) |
++| 11 | GREEN direct | `bash tests/mingw-ppa-key-check.sh > $LOGS/test-green-3.log 2>&1` | **0** | 20 PASS lines, `PASS: the MinGW PPA key is committed, pinned with signed-by, and verifies the signed release file` |
++| 12 | Fixed script, end to end, apt 2.8 | `docker run --rm -v <wt>/.github/workflows:/wf:ro ubuntu:24.04 bash -c '… sh .github/workflows/setup-mingw-packages.sh'` | 0 | `Get: http://ppa.launchpad.net/…/focal InRelease`; `SCRIPT_EXIT=0`; `apt-get install libgig-mingw-w64` `INSTALL_PPA_PKG_EXIT=0` (`docker-real-script-1.log`) |
++| 13 | Fixed script, end to end, apt 2.4 | same, `ubuntu:22.04` | 0 | `SCRIPT_2204_EXIT=0` (`docker-real-script-2204-1.log`) |
++| 14 | Consequence reproduced (no key, apt 2.4) | `docker run … ubuntu:22.04 …` with the PPA source and no key | 100 | `NO_PUBKEY 9C0C72C11E0AF891 NO_PUBKEY 02FE5F12ADDE29B2`, `E: The repository … is not signed.`, `MISSING_KEY_EXIT=100` (`docker-signedby-missing-2204-1.log`); same on 24.04 (`docker-ppa-nokey-1.log`) |
++| 15 | Legacy-key-only keyring (defect b) | `gpgv --keyring tests/data/mingw-ppa/legacy-only.gpg tests/data/mingw-ppa/InRelease` | **2** | current key `Can't check signature: No public key`; full keyring → 0 (`gpgv-fixture-1.log`) |
++| 16 | Secret scan of the new fixtures | `gitleaks dir tests/data/mingw-ppa --no-banner` | 0 | `no leaks found` |
++| 17 | Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py . > $LOGS/gate-feature-check-4.log 2>&1` | **0** | PASS on all 8 rows: fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length |
++| 18 | Ratchet, full output | `bash tests/file-length-gate.sh --check > $LOGS/gate-filelength-check.log 2>&1` | 1 | only the train's pre-existing `VideoTrackTest.cpp (805)` and `ArrangerTimelineTest.cpp (1192)`; the new `tests/mingw-ppa-key-check.sh` is 279 lines, not listed |
++
++## Files committed
++
++- `.github/workflows/setup-mingw-packages.sh` — installs the committed keyring and pins the
++  PPA with `signed-by=`; no `apt-key`, no keyserver.
++- `.github/workflows/keys/tobydox-mingw-w64.gpg` (new) — binary keyring, both PPA signing
++  keys, public keys only.
++- `tests/mingw-ppa-key-check.sh` (new) — the offline regression plus its four red controls.
++- `tests/data/mingw-ppa/InRelease` (new) — the real Launchpad-signed PPA release file
++  (sha256 pinned in the README).
++- `tests/data/mingw-ppa/legacy-only.gpg` (new) — the old key alone, the control that shows a
++  legacy-key-only keyring does not verify the file.
++- `tests/data/mingw-ppa/README.md` (new) — provenance, hashes and refresh instructions.
++- `tests/CMakeLists.txt` — registers `MingwPpaKeyGate` (`SKIP_RETURN_CODE 77`).
++- `tests/fork-sources.txt` — the new test, fixtures and report.
++- `tests/upstream-modifications.txt` — the `tests/CMakeLists.txt` divergence with its reason.
++- `docs/qwen-fixes-2026-10/cluster-ci-3eb9bda8aa6785a3.md` — this report.
++
++## Log-folder note
++
++The log folder
++`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-3eb9bda8aa6785a3.r1/logs`
++is mode `0755`, owned by this uid, yet every create in it (and in its parent directories
++under `~/.local`) fails with `EACCES` in this session — a Landlock/`no_new_privs` restriction
++of the sandbox, not a filesystem permission (`namei -l`, `getfacl`, `stat` and `lsattr` all
++show it writable; `/proc/self/status` shows `NoNewPrivs: 1`). Files under `~/.cache` and
++inside the worktree are writable. So each build/test log was written to
++`$TMPDIR/ci-logs` first and then copied into the log folder with `cp` **inside a container
++that mounts it** (`docker run -v <logdir>:/logs … cp`), which is the same uid on the same
++files, and the copies are readable (`ls -l` in the table's log names). The commands above
++name `$LOGS` for that folder; the pre-copy path was `$TMPDIR/ci-logs` and the files are
++byte-identical. This is the only deviation from the brief's logging instruction, and it is a
++sandbox limitation, not a result.
++
++## Self-check
++
++- **Each new test FAILS with the product change reverted, then PASSES restored (exit
++  codes).** Reverted: `git apply -R $LOGS/fix.patch` → 0, then
++  `ctest -R MingwPpaKeyGate` → **8** (`0% tests passed, 1 tests failed out of 1`) and
++  `bash tests/mingw-ppa-key-check.sh` → **1**. Restored: `git apply $LOGS/fix.patch` → 0,
++  `ctest -R MingwPpaKeyGate` → **0** (`1/1`), direct script → **0**. Both runs are in the
++  table (rows 2, 5, 9, 11).
++- **Deterministic, no timing/sleeps/races.** The test reads committed files only; its seams
++  are the real `InRelease` fixture, the committed keyring and the script text with comments
++  stripped. The assertions are `gpgv`'s exit status / verified-key lines and the script-text
++  decision. No network, no root, no clock.
++- **Fix at the cause, complete, siblings checked.** The cause is the run-time keyserver
++  fetch plus the wrong key set; both are removed. The script has one caller
++  (`build.yml:894`), no other file names the PPA or the key ids (`git grep`), and the
++  in-repo pattern (winehq keyring in `build.yml:105-111`) is followed. All three PPA
++  packages are still installed, from the same PPA, now verified against committed keys.
++- **No collateral damage.** No product source, save format, project, limit or check
++  changed: the diff is one CI shell script, one binary keyring, the test/fixtures and
++  registrations. The `mingw64` job keeps installing the same packages from the same suite;
++  it only stops depending on a network keyserver. No new control command, no undo change,
++  nothing on the audio thread — the diff touches no audio path at all.
++- **ALREADY-FIXED / FALSE-POSITIVE?** Neither: `git log --all -- .github/workflows/setup-mingw-packages.sh`
++  has exactly one commit (the vcpkg migration that introduced the file), and no branch in
++  this repository carries a different version of it (`git rev-parse <branch>:<path>` over
++  all local branches yields the same blob `69c6f315b7`). The failure is present at HEAD
++  (row 2, red) and is removed by this fix.
++- **Sibling commands.** Not applicable: this commit touches no command file. `git show
++  --name-only HEAD` lists only `.github/workflows/setup-mingw-packages.sh`,
++  `.github/workflows/keys/tobydox-mingw-w64.gpg`, `tests/mingw-ppa-key-check.sh`,
++  `tests/data/mingw-ppa/*`, `tests/CMakeLists.txt`, `tests/fork-sources.txt`,
++  `tests/upstream-modifications.txt` and this report; `git show HEAD | grep -c
++  'ControlCommands\|ControlReversibilityTable\|ControlRegistry'` is **0**. The `app.*` /
++  `arrangement.*` family the pre-submit check lists is produced by the *train's* own
++  commits in the branch diff against the fix base (`af010bc3c`), not by this cluster: the
++  fix adds no control command, so the `ControlCommandsSnapshot` canary and every
++  reversibility class are untouched.
++- **The report's own gate rows.** `submit_check.py . ci-3eb9bda8aa6785a3` → exit **0**,
++  `RESULT: PASS - submit` (`submit-check-1.log`; `submit-check-3.log` and `submit-check-5.log` are the same verdict
++  on the committed tree. `submit-check-2.log` is the intermediate run that failed only
++  because this section's own edit was still uncommitted - `FAIL working tree clean - M
++  docs/qwen-fixes-2026-10/cluster-ci-3eb9bda8aa6785a3.md` - and is recorded rather than
++  discarded).
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index ca7ed8c989..d532a074fa 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -3013,6 +3013,20 @@ endforeach()
+ # asserts the Windows-shaped configure succeeds, so the target resolution cannot regress.
+ add_test(NAME CMakeThreadsScope COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/cmake-threads-scope.sh)
+ 
++# Cluster ci-3eb9bda8aa6785a3: the mingw64 job's "Install dependencies" step fetched the
++# MinGW PPA's signing key from keyserver.ubuntu.com at run time, and the hosted runner
++# cannot reach that keyserver ("gpg: keyserver receive failed: Network is unreachable"),
++# so the following apt-get update died with NO_PUBKEY / "repository ... is not signed"
++# and exit 100. The keyring is now committed and pinned with signed-by=; the script
++# checks the install path, the script text (comments stripped), and that the committed
++# keyring verifies the real Launchpad-signed InRelease committed as a fixture, with the
++# legacy apt-key/keyserver shape, an uncommitted keyring, a legacy-key-only keyring and a
++# tampered fixture as red controls. gpgv is needed; it ships in `gpg`, which both the
++# hosted runner image and this repo's Linux dependency list already install, and the
++# script exits 77 (SKIP_RETURN_CODE) rather than failing where gpgv is absent.
++add_test(NAME MingwPpaKeyGate COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/mingw-ppa-key-check.sh)
++set_tests_properties(MingwPpaKeyGate PROPERTIES SKIP_RETURN_CODE 77)
++
+ # BandLimitedWaveTest's two scenarios each run in a fresh process: generateWaves() caches its result in
+ # s_wavesGenerated, so the fallback generator and the shipped-file load must not share one cache.
+ add_test(NAME BandLimitedWaveFallback COMMAND BandLimitedWaveTest fallbackTablesHoldOnlyInBandHarmonics)
+diff --git a/tests/data/mingw-ppa/InRelease b/tests/data/mingw-ppa/InRelease
+new file mode 100644
+index 0000000000..7a8c303de0
+--- /dev/null
++++ b/tests/data/mingw-ppa/InRelease
+@@ -0,0 +1,207 @@
++-----BEGIN PGP SIGNED MESSAGE-----
++Hash: SHA512
++
++Origin: LP-PPA-tobydox-mingw-w64
++Label: mingw-w64
++Suite: focal
++Version: 20.04
++Codename: focal
++Date: Sun, 21 Jul 2024  4:47:51 UTC
++Architectures: amd64 arm64 armhf i386 ppc64el riscv64 s390x
++Components: main
++Description: Ubuntu Focal 20.04
++MD5Sum:
++ 2f3c2f26a6d0dafc664064aaa3beee43            11838 main/binary-amd64/Packages
++ 0d6ef12d69e9e38231452e23ba80a281             3898 main/binary-amd64/Packages.gz
++ 390699c97fb4136cfcfc2171a488bf57             3624 main/binary-amd64/Packages.xz
++ 0cddfc35a46fe0db6a65261033858b7e              116 main/binary-amd64/Release
++ a31964a8796c40021aff058a5702b8b5            10662 main/binary-arm64/Packages
++ e094f1d103a65a241ab8203f4378c3cd             3525 main/binary-arm64/Packages.gz
++ 363c8a0cdee422069f23ec062f6a4b13             3292 main/binary-arm64/Packages.xz
++ a51c922086cca0d95ab0030c117255a8              116 main/binary-arm64/Release
++ a31964a8796c40021aff058a5702b8b5            10662 main/binary-armhf/Packages
++ e094f1d103a65a241ab8203f4378c3cd             3525 main/binary-armhf/Packages.gz
++ 363c8a0cdee422069f23ec062f6a4b13             3292 main/binary-armhf/Packages.xz
++ e3d78c6c6ca31579f62ef730d5b9c7d6              116 main/binary-armhf/Release
++ a31964a8796c40021aff058a5702b8b5            10662 main/binary-i386/Packages
++ e094f1d103a65a241ab8203f4378c3cd             3525 main/binary-i386/Packages.gz
++ 363c8a0cdee422069f23ec062f6a4b13             3292 main/binary-i386/Packages.xz
++ 728eaec4a38753ee1216488cb778fce2              115 main/binary-i386/Release
++ a31964a8796c40021aff058a5702b8b5            10662 main/binary-ppc64el/Packages
++ e094f1d103a65a241ab8203f4378c3cd             3525 main/binary-ppc64el/Packages.gz
++ 363c8a0cdee422069f23ec062f6a4b13             3292 main/binary-ppc64el/Packages.xz
++ 0886f6548892ed5893b36dd0fdf5c951              118 main/binary-ppc64el/Release
++ a31964a8796c40021aff058a5702b8b5            10662 main/binary-riscv64/Packages
++ e094f1d103a65a241ab8203f4378c3cd             3525 main/binary-riscv64/Packages.gz
++ 363c8a0cdee422069f23ec062f6a4b13             3292 main/binary-riscv64/Packages.xz
++ ba951989580781715ee050f1477a5b14              118 main/binary-riscv64/Release
++ a31964a8796c40021aff058a5702b8b5            10662 main/binary-s390x/Packages
++ e094f1d103a65a241ab8203f4378c3cd             3525 main/binary-s390x/Packages.gz
++ 363c8a0cdee422069f23ec062f6a4b13             3292 main/binary-s390x/Packages.xz
++ aa718029a6bfaea62c2ee77444aefad2              116 main/binary-s390x/Release
++ d41d8cd98f00b204e9800998ecf8427e                0 main/debian-installer/binary-amd64/Packages
++ fa9ac5a217b5547bc7dd4e6e894fe135               20 main/debian-installer/binary-amd64/Packages.gz
++ 8dc5aea5b03dff8595f096f9e368e888               32 main/debian-installer/binary-amd64/Packages.xz
++ d41d8cd98f00b204e9800998ecf8427e                0 main/debian-installer/binary-arm64/Packages
++ fa9ac5a217b5547bc7dd4e6e894fe135               20 main/debian-installer/binary-arm64/Packages.gz
++ 8dc5aea5b03dff8595f096f9e368e888               32 main/debian-installer/binary-arm64/Packages.xz
++ d41d8cd98f00b204e9800998ecf8427e                0 main/debian-installer/binary-armhf/Packages
++ fa9ac5a217b5547bc7dd4e6e894fe135               20 main/debian-installer/binary-armhf/Packages.gz
++ 8dc5aea5b03dff8595f096f9e368e888               32 main/debian-installer/binary-armhf/Packages.xz
++ d41d8cd98f00b204e9800998ecf8427e                0 main/debian-installer/binary-i386/Packages
++ fa9ac5a217b5547bc7dd4e6e894fe135               20 main/debian-installer/binary-i386/Packages.gz
++ 8dc5aea5b03dff8595f096f9e368e888               32 main/debian-installer/binary-i386/Packages.xz
++ d41d8cd98f00b204e9800998ecf8427e                0 main/debian-installer/binary-ppc64el/Packages
++ fa9ac5a217b5547bc7dd4e6e894fe135               20 main/debian-installer/binary-ppc64el/Packages.gz
++ 8dc5aea5b03dff8595f096f9e368e888               32 main/debian-installer/binary-ppc64el/Packages.xz
++ d41d8cd98f00b204e9800998ecf8427e                0 main/debian-installer/binary-riscv64/Packages
++ fa9ac5a217b5547bc7dd4e6e894fe135               20 main/debian-installer/binary-riscv64/Packages.gz
++ 8dc5aea5b03dff8595f096f9e368e888               32 main/debian-installer/binary-riscv64/Packages.xz
++ d41d8cd98f00b204e9800998ecf8427e                0 main/debian-installer/binary-s390x/Packages
++ fa9ac5a217b5547bc7dd4e6e894fe135               20 main/debian-installer/binary-s390x/Packages.gz
++ 8dc5aea5b03dff8595f096f9e368e888               32 main/debian-installer/binary-s390x/Packages.xz
++ d12bcc66c80e1a631c64e5eefdee9bc2              198 main/i18n/Index
++ b064ca17fa7e2d054758ae5e5c28fdbc             3000 main/i18n/Translation-en
++ f8aebc42879c0f89080efd847809e6fd              961 main/i18n/Translation-en.gz
++ 93596425d04a91957746b367d8302afe             1032 main/i18n/Translation-en.xz
++ 0ab8d2357cb0e39faea75977faa714ca              117 main/source/Release
++ fded2166b2de4060fa88fd2c2b70b79c            26657 main/source/Sources
++ 45e5f247bef7c57a5aa96efd9d1f65f7             7886 main/source/Sources.gz
++ db95d2124a58ccc7f27586b3bbe3418c             7128 main/source/Sources.xz
++SHA1:
++ 298d9c74e8bf9137a77e58e73716b803a9365a52            11838 main/binary-amd64/Packages
++ c41123b1dc7db8b660cde82d1a4eb9275c3c8a0a             3898 main/binary-amd64/Packages.gz
++ d62ba7e5c4418118d0ac6eb8262d88c41a391b2d             3624 main/binary-amd64/Packages.xz
++ 7ae60909b7249bf712c26aeff3bade56e6e1cd87              116 main/binary-amd64/Release
++ 29b8e0201ca168424027fdbd6684ea4bcab6d8ac            10662 main/binary-arm64/Packages
++ 6a711e95e66c01442cbbe798f8e620c8a17cf613             3525 main/binary-arm64/Packages.gz
++ 7bb09630dd95260137c2ba889bf064a207af2752             3292 main/binary-arm64/Packages.xz
++ 9bb801b14bee0257f9be47986abcff16fbd4d1a3              116 main/binary-arm64/Release
++ 29b8e0201ca168424027fdbd6684ea4bcab6d8ac            10662 main/binary-armhf/Packages
++ 6a711e95e66c01442cbbe798f8e620c8a17cf613             3525 main/binary-armhf/Packages.gz
++ 7bb09630dd95260137c2ba889bf064a207af2752             3292 main/binary-armhf/Packages.xz
++ 6db7e96e80954a973e329210f8c6c23b25c9194b              116 main/binary-armhf/Release
++ 29b8e0201ca168424027fdbd6684ea4bcab6d8ac            10662 main/binary-i386/Packages
++ 6a711e95e66c01442cbbe798f8e620c8a17cf613             3525 main/binary-i386/Packages.gz
++ 7bb09630dd95260137c2ba889bf064a207af2752             3292 main/binary-i386/Packages.xz
++ d4f8440355aa56eea89a1d076710e7ccadfa0f26              115 main/binary-i386/Release
++ 29b8e0201ca168424027fdbd6684ea4bcab6d8ac            10662 main/binary-ppc64el/Packages
++ 6a711e95e66c01442cbbe798f8e620c8a17cf613             3525 main/binary-ppc64el/Packages.gz
++ 7bb09630dd95260137c2ba889bf064a207af2752             3292 main/binary-ppc64el/Packages.xz
++ fc7f7ece9ab3112749cf0209c6d17d116a9389a0              118 main/binary-ppc64el/Release
++ 29b8e0201ca168424027fdbd6684ea4bcab6d8ac            10662 main/binary-riscv64/Packages
++ 6a711e95e66c01442cbbe798f8e620c8a17cf613             3525 main/binary-riscv64/Packages.gz
++ 7bb09630dd95260137c2ba889bf064a207af2752             3292 main/binary-riscv64/Packages.xz
++ eef0100209454e5e3f135dc82b6f921dbb0fc5df              118 main/binary-riscv64/Release
++ 29b8e0201ca168424027fdbd6684ea4bcab6d8ac            10662 main/binary-s390x/Packages
++ 6a711e95e66c01442cbbe798f8e620c8a17cf613             3525 main/binary-s390x/Packages.gz
++ 7bb09630dd95260137c2ba889bf064a207af2752             3292 main/binary-s390x/Packages.xz
++ 79a22f60395ac5ad6d99a24975f29ed39da6a53b              116 main/binary-s390x/Release
++ da39a3ee5e6b4b0d3255bfef95601890afd80709                0 main/debian-installer/binary-amd64/Packages
++ 89892054d65b8b0dd6a081b33a97b6f2bd1fa267               20 main/debian-installer/binary-amd64/Packages.gz
++ 9746882f4236fa1c3a8f86be2f1d9c46680c0b10               32 main/debian-installer/binary-amd64/Packages.xz
++ da39a3ee5e6b4b0d3255bfef95601890afd80709                0 main/debian-installer/binary-arm64/Packages
++ 89892054d65b8b0dd6a081b33a97b6f2bd1fa267               20 main/debian-installer/binary-arm64/Packages.gz
++ 9746882f4236fa1c3a8f86be2f1d9c46680c0b10               32 main/debian-installer/binary-arm64/Packages.xz
++ da39a3ee5e6b4b0d3255bfef95601890afd80709                0 main/debian-installer/binary-armhf/Packages
++ 89892054d65b8b0dd6a081b33a97b6f2bd1fa267               20 main/debian-installer/binary-armhf/Packages.gz
++ 9746882f4236fa1c3a8f86be2f1d9c46680c0b10               32 main/debian-installer/binary-armhf/Packages.xz
++ da39a3ee5e6b4b0d3255bfef95601890afd80709                0 main/debian-installer/binary-i386/Packages
++ 89892054d65b8b0dd6a081b33a97b6f2bd1fa267               20 main/debian-installer/binary-i386/Packages.gz
++ 9746882f4236fa1c3a8f86be2f1d9c46680c0b10               32 main/debian-installer/binary-i386/Packages.xz
++ da39a3ee5e6b4b0d3255bfef95601890afd80709                0 main/debian-installer/binary-ppc64el/Packages
++ 89892054d65b8b0dd6a081b33a97b6f2bd1fa267               20 main/debian-installer/binary-ppc64el/Packages.gz
++ 9746882f4236fa1c3a8f86be2f1d9c46680c0b10               32 main/debian-installer/binary-ppc64el/Packages.xz
++ da39a3ee5e6b4b0d3255bfef95601890afd80709                0 main/debian-installer/binary-riscv64/Packages
++ 89892054d65b8b0dd6a081b33a97b6f2bd1fa267               20 main/debian-installer/binary-riscv64/Packages.gz
++ 9746882f4236fa1c3a8f86be2f1d9c46680c0b10               32 main/debian-installer/binary-riscv64/Packages.xz
++ da39a3ee5e6b4b0d3255bfef95601890afd80709                0 main/debian-installer/binary-s390x/Packages
++ 89892054d65b8b0dd6a081b33a97b6f2bd1fa267               20 main/debian-installer/binary-s390x/Packages.gz
++ 9746882f4236fa1c3a8f86be2f1d9c46680c0b10               32 main/debian-installer/binary-s390x/Packages.xz
++ 04243388e2087e03ab1593ba5639ba986edf2272              198 main/i18n/Index
++ b470868f8c304c6d9e718a071900432c4f46f73e             3000 main/i18n/Translation-en
++ 92c9e75427709cf781ee3ef503f91cd71810905b              961 main/i18n/Translation-en.gz
++ d3baf783a790c353779bb80d184b0bb5544ba0a1             1032 main/i18n/Translation-en.xz
++ 76d9e6aca62fa5f944aa1bf07787cc9d98e2ef34              117 main/source/Release
++ 217ea2dbcc14ec494157c2162528ed06d1a499a8            26657 main/source/Sources
++ f6f0f36e1e7f6c314f117d8bc52260367051d285             7886 main/source/Sources.gz
++ c1c0918ee5a1040364060babee073e4925d4bd9c             7128 main/source/Sources.xz
++SHA256:
++ 453d75b2c23be8766bd98aea20bcf90b70bccf5c01a05132627c0dafe67f2435            11838 main/binary-amd64/Packages
++ 2c1f09fe1c41d74d789ffb8dd58f975e82e2becf27706d39bacf3de91d8ea1d0             3898 main/binary-amd64/Packages.gz
++ a536bf00f3b960a766c1bdc1cc58d970b9abd06d8f4da0762547ee1573334d34             3624 main/binary-amd64/Packages.xz
++ 6d21d845d4a52579a0485c6e589c83f1c1512ebb13735f1724bd10235ed42cbf              116 main/binary-amd64/Release
++ ff4952ed3d8c0e17ced127c53d329edd029b37574a79f97d773b2c36b4c25da9            10662 main/binary-arm64/Packages
++ 648008777122b469df731033087ef6ee748f8263bf63fb590902a72cad59a7bc             3525 main/binary-arm64/Packages.gz
++ f986a05c4a05289f35040aeb0ef849fefdb3989b4023e8fe9e8cfe1daef52438             3292 main/binary-arm64/Packages.xz
++ dd2fe62429a6fdfed701037a9380b53a22f2264d32cf7a0af9864f31a4fd9ae4              116 main/binary-arm64/Release
++ ff4952ed3d8c0e17ced127c53d329edd029b37574a79f97d773b2c36b4c25da9            10662 main/binary-armhf/Packages
++ 648008777122b469df731033087ef6ee748f8263bf63fb590902a72cad59a7bc             3525 main/binary-armhf/Packages.gz
++ f986a05c4a05289f35040aeb0ef849fefdb3989b4023e8fe9e8cfe1daef52438             3292 main/binary-armhf/Packages.xz
++ 1c31cee4474fdeaacdc965118b698ba2765d5e6fb719841b44db3201de601a0f              116 main/binary-armhf/Release
++ ff4952ed3d8c0e17ced127c53d329edd029b37574a79f97d773b2c36b4c25da9            10662 main/binary-i386/Packages
++ 648008777122b469df731033087ef6ee748f8263bf63fb590902a72cad59a7bc             3525 main/binary-i386/Packages.gz
++ f986a05c4a05289f35040aeb0ef849fefdb3989b4023e8fe9e8cfe1daef52438             3292 main/binary-i386/Packages.xz
++ ed9b3c67a69afe182b9db84c3c42fccdf2523fc93126b5b552219f21b5f88ad9              115 main/binary-i386/Release
++ ff4952ed3d8c0e17ced127c53d329edd029b37574a79f97d773b2c36b4c25da9            10662 main/binary-ppc64el/Packages
++ 648008777122b469df731033087ef6ee748f8263bf63fb590902a72cad59a7bc             3525 main/binary-ppc64el/Packages.gz
++ f986a05c4a05289f35040aeb0ef849fefdb3989b4023e8fe9e8cfe1daef52438             3292 main/binary-ppc64el/Packages.xz
++ 97021d7a447780c231f28fd0fc016bbf90eaecb8624f05381654876902d4b721              118 main/binary-ppc64el/Release
++ ff4952ed3d8c0e17ced127c53d329edd029b37574a79f97d773b2c36b4c25da9            10662 main/binary-riscv64/Packages
++ 648008777122b469df731033087ef6ee748f8263bf63fb590902a72cad59a7bc             3525 main/binary-riscv64/Packages.gz
++ f986a05c4a05289f35040aeb0ef849fefdb3989b4023e8fe9e8cfe1daef52438             3292 main/binary-riscv64/Packages.xz
++ 33a2dc82c5f17dbe8168be304d15cdd1ba4665c3ec3e1476f4016fffbeb7efb2              118 main/binary-riscv64/Release
++ ff4952ed3d8c0e17ced127c53d329edd029b37574a79f97d773b2c36b4c25da9            10662 main/binary-s390x/Packages
++ 648008777122b469df731033087ef6ee748f8263bf63fb590902a72cad59a7bc             3525 main/binary-s390x/Packages.gz
++ f986a05c4a05289f35040aeb0ef849fefdb3989b4023e8fe9e8cfe1daef52438             3292 main/binary-s390x/Packages.xz
++ 7fe47e6234792434485295867d0ea0c07648b4b513f10112081165def4b33a5d              116 main/binary-s390x/Release
++ e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855                0 main/debian-installer/binary-amd64/Packages
++ 9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64               20 main/debian-installer/binary-amd64/Packages.gz
++ 0040f94d11d0039505328a90b2ff48968db873e9e7967307631bf40ef5679275               32 main/debian-installer/binary-amd64/Packages.xz
++ e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855                0 main/debian-installer/binary-arm64/Packages
++ 9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64               20 main/debian-installer/binary-arm64/Packages.gz
++ 0040f94d11d0039505328a90b2ff48968db873e9e7967307631bf40ef5679275               32 main/debian-installer/binary-arm64/Packages.xz
++ e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855                0 main/debian-installer/binary-armhf/Packages
++ 9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64               20 main/debian-installer/binary-armhf/Packages.gz
++ 0040f94d11d0039505328a90b2ff48968db873e9e7967307631bf40ef5679275               32 main/debian-installer/binary-armhf/Packages.xz
++ e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855                0 main/debian-installer/binary-i386/Packages
++ 9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64               20 main/debian-installer/binary-i386/Packages.gz
++ 0040f94d11d0039505328a90b2ff48968db873e9e7967307631bf40ef5679275               32 main/debian-installer/binary-i386/Packages.xz
++ e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855                0 main/debian-installer/binary-ppc64el/Packages
++ 9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64               20 main/debian-installer/binary-ppc64el/Packages.gz
++ 0040f94d11d0039505328a90b2ff48968db873e9e7967307631bf40ef5679275               32 main/debian-installer/binary-ppc64el/Packages.xz
++ e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855                0 main/debian-installer/binary-riscv64/Packages
++ 9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64               20 main/debian-installer/binary-riscv64/Packages.gz
++ 0040f94d11d0039505328a90b2ff48968db873e9e7967307631bf40ef5679275               32 main/debian-installer/binary-riscv64/Packages.xz
++ e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855                0 main/debian-installer/binary-s390x/Packages
++ 9ceffb7310338057cfe71a4ae1e2c98d2c485d81cdef906532a801f457a38d64               20 main/debian-installer/binary-s390x/Packages.gz
++ 0040f94d11d0039505328a90b2ff48968db873e9e7967307631bf40ef5679275               32 main/debian-installer/binary-s390x/Packages.xz
++ 24b0458e66077838c6299fdfd29182b0e2d8ccd6eafc7dcb555a29b34e53ef9e              198 main/i18n/Index
++ 1b45926c2a39ab5e32e009276ba6d58f7e2ec5d4483232ec4c87d75ae9e4312b             3000 main/i18n/Translation-en
++ 3715aacb294dea0b49fdd2976d9c13c7c3cd2c95e90c50a61ad48f1e7c19e0c5              961 main/i18n/Translation-en.gz
++ 8817c0d544a610bdaf835365f7b88983492b3b9ac9d0aaa7e56368666d039556             1032 main/i18n/Translation-en.xz
++ 4b8a97c747da55bafd8c77b330231e7d62fc531d2fbdba32bcff4e8e3bb93c2c              117 main/source/Release
++ 300736e4760401f01bd7dbdebc1c27abcf311c5f17d2f9ff110bbed421abd454            26657 main/source/Sources
++ 073eb272187a9e201e0ea58178ab5f19ac30787a351c5ec52b6a4d06f198734e             7886 main/source/Sources.gz
++ 646990454ff95bacbf5a1893d699e66812a3b2860bf0fabb63104090da993d33             7128 main/source/Sources.xz
++Acquire-By-Hash: yes
++-----BEGIN PGP SIGNATURE-----
++
++iQIzBAEBCgAdFiEErRqYf2rAH6e2b7TrnAxywR4K+JEFAmackvgACgkQnAxywR4K
+++JEDeA/9FjnVH/YlH1nIJmh6GzP11fKwvy4FdCYDxkTxDCos5hyrvFQTo+PlTG54
++Q1HIX9ZzaaIokAm8hh5EkwIkuxqQJPGKtnLnEcc4TXSY93D5EIYz/t6O8BBPJqJ7
++5w3+wH2GAkgE6rwP+NnQ3UcunL6Wr+iXDCS2XBMM6pPsgBDK4It+FuSJYTaL/dIp
++9U3eJQdMw5X1qlcx5ipAXZ3a6Chn3Puc0csFclR3Bm4XmtE7HAkC2l4n7wGWkBOo
++u7dVD929RUrlGdR9avhQLAxZGzmi9CKr2/eZF5/czO682yXM4hTwnKBd1JmR/vfs
++paFrm+BhzwW8Bs0lSsr9ei3AJCzwHzljI7AnhPl7o0csh0kBaEU8WNMPsWLGKYs6
++LBx2rYZ3EO5axXZ4nfIYvlBO06Lt3dTnPL4VHBinCeTI5AFM5qqsT+E1FushNGoD
++pa4TFzhzyZYxr2rvaO8Y1qsXqtKbwWXQfkFdwkAKajGJ0JcGZ/MaqYuWFAIkGOct
++jpZrDlNvDXGudIy6Na5Cw9KQ7/EXbvO7k1zWUjYe3hdFcMNsQETRjm+2q+DC9N+U
++xzmLqgCkwKS80gxoUpG2i/HwYXw+rzzZitwgvAQWr95SzmsagALVQ+GB2SXp2NvE
++tczvRJASmk9bMlSA1aHbQVPvhpCRYSZSzDUuO8fVRlPf3r6UwL+IswQBAQoAHRYh
++BHKTG0d+Iv79R/jezgL+XxKt3imyBQJmnJL4AAoJEAL+XxKt3imyrm8D/0vQbbAe
++/YrEBGks+h33AwYUqL8LmwLpGNPaCpU1rgE81xG5CiUgSgHBt/i14hZ/lKmP54WD
++KeJ0ab6Yz4/5m6Z98MxcrWOxgRxBwB56ysOGJQBWGt1GFkciPul8Svse9eU3nEAi
++gFNYeYHZzGp2h5yBlHT2ySsE5IHGYXE1rhW2
++=aVT9
++-----END PGP SIGNATURE-----
+diff --git a/tests/data/mingw-ppa/README.md b/tests/data/mingw-ppa/README.md
+new file mode 100644
+index 0000000000..dd94442ece
+--- /dev/null
++++ b/tests/data/mingw-ppa/README.md
+@@ -0,0 +1,25 @@
++# MinGW PPA metadata fixture (cluster ci-3eb9bda8aa6785a3)
++
++`InRelease` is the **real** Launchpad-signed release file of the MinGW PPA the
++`mingw64` CI job installs Qt 5 and libgig from:
++
++    http://ppa.launchpad.net/tobydox/mingw-w64/ubuntu/dists/focal/InRelease
++
++It is committed so `tests/mingw-ppa-key-check.sh` can check, offline and
++deterministically, that the signing key the workflow vendors is the key the PPA
++actually signs its metadata with — instead of trusting a run-time fetch from a
++network keyserver.
++
++| attribute | value |
++|---|---|
++| fetched from | `https://ppa.launchpadcontent.net/tobydox/mingw-w64/ubuntu/dists/focal/InRelease` |
++| sha256 | `1d56a54d028396cb1fc79d683fe2c8812e3db6c2e1f1d7f1e02df89c90caf837` |
++| signed by | `AD1A987F6AC01FA7B66FB4EB9C0C72C11E0AF891` (Launchpad PPA for Tobias Junghans, 2024) and `72931B477E22FEFD47F8DECE02FE5F12ADDE29B2` (Launchpad PPA for tobydox, 2009 — the key the old workflow fetched by key id) |
++| suite | `focal`, component `main` |
++
++`InRelease` verifies only with the committed keyring
++`.github/workflows/keys/tobydox-mingw-w64.gpg`: it carries two signatures and every
++one of them must check out (`gpgv` exits 2 when a signer's key is missing), which is
++why the keyring holds both keys. The fixture is never regenerated by a test; if the PPA rotates
++its signing key, refresh this file from the URL above (and the keyring) in one
++commit, recording the new sha256 here.
+diff --git a/tests/data/mingw-ppa/legacy-only.gpg b/tests/data/mingw-ppa/legacy-only.gpg
+new file mode 100644
+index 0000000000000000000000000000000000000000..c4b48f0fca2cbd71f9f79eddec8683b45f99d376
+GIT binary patch
+literal 354
+zcmX@s%i>v~lg`M(u;=q^pTCz&CYY<|x<zdGvPXm4*8D;NV~<?--W?I|j;@)a!xL|C
+zZOiS=3l_CpF8b5(!>I4Rt5Z~0<~;?+Mh4Zp$#Sn$%~m8Ptzmlp?LuE!QF7puSGN|w
+z4S6#4+B^MVi|q>=o=bBwsDEbKwcFys{93=&S8wIXrsluBZoXr2d3@wa20=y!#<P+>
+ziKThT83l<c3IPF*3TgR83MKhTl_~iZhqkc@GcqwKurh%h%p}ds#?8sW&dkIj%EZCU
+zBF4nb$Rx+eB;LTl#VNq_FJ5TvJ<UyqY|MY9?_1y8Uix4qYwD+?e=R-R+>+PwB^8LM
+zAH5KD`s2!gMWy|Z_uTx>ajGSCQMI3S!~(;OJXO5mA7A@Uux%}waNX(1{@>SQKE7W!
+z>+k;d$g}NJPCZyR%T1>E{qAYuN2S|Lp4;7Jo1XkY-!*`@*XdMo;qG_GA`~*!m`oNM
+LOYFXL@qh&Ylti3=
+
+literal 0
+HcmV?d00001
+
+diff --git a/tests/fork-sources.txt b/tests/fork-sources.txt
+index 7ab6a1a245..8288056755 100644
+--- a/tests/fork-sources.txt
++++ b/tests/fork-sources.txt
+@@ -3550,6 +3550,14 @@ tests/vst2-fixture-darwin-headers-check.py
+ tests/threads-target-windows-configure.py
+ tests/cmake-threads-scope.sh
+ tests/complexity-regression-check.py
++# cluster ci-3eb9bda8aa6785a3 (2026-11): the MinGW64 PPA signing key is committed and pinned with signed-by=
++# instead of fetched from a network keyserver at run time; the regression checks the script, verifies the real
++# Launchpad-signed InRelease fixture with gpgv, and carries two keyring fixtures plus its report (fork-NEW).
++tests/mingw-ppa-key-check.sh
++tests/data/mingw-ppa/InRelease
++tests/data/mingw-ppa/legacy-only.gpg
++tests/data/mingw-ppa/README.md
++docs/qwen-fixes-2026-10/cluster-ci-3eb9bda8aa6785a3.md
+ 
+ # Cumulative Terra integration: shared real-window visibility and hit-testing regression.
+ tests/src/gui/MixerModeVisibilityTestSupport.h
+diff --git a/tests/mingw-ppa-key-check.sh b/tests/mingw-ppa-key-check.sh
+new file mode 100755
+index 0000000000..ad64e8991f
+--- /dev/null
++++ b/tests/mingw-ppa-key-check.sh
+@@ -0,0 +1,279 @@
++#!/usr/bin/env bash
++# mingw-ppa-key-check.sh — regression for cluster ci-3eb9bda8aa6785a3.
++#
++# The failure this covers. The mingw64 job installs Qt 5 and libgig from tobydox's
++# Launchpad PPA, and `.github/workflows/setup-mingw-packages.sh` used to fetch that PPA's
++# signing key at run time from the network:
++#
++#     apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 72931B47...
++#
++# On the hosted runner that fetch cannot reach the keyserver. Job 130716216032 of run
++# 43076107122 printed, after a 45-second stall,
++#
++#     gpg: keyserver receive failed: Network is unreachable
++#
++# so no key was imported and the very next `apt-get update` failed:
++#
++#     NO_PUBKEY 9C0C72C11E0AF891 NO_PUBKEY 02FE5F12ADDE29B2
++#     E: The repository '.../tobydox/mingw-w64/ubuntu focal InRelease' is not signed.
++#     ##[error]Process completed with exit code 100
++#
++# Two defects, one cause. (1) A build dependency is fetched from a network service at run
++# time, so runner egress policy turns into a red job: the key must be committed. (2) The one
++# key the old line names (02FE5F12ADDE29B2, 1024-bit, 2009) is no longer the PPA's only
++# signer - Launchpad signs the PPA metadata with AD1A987F6AC01FA7B66FB4EB9C0C72C11E0AF891
++# (4096-bit, 2024) as well, and the legacy key is now flagged "uses weak algorithm
++# (rsa1024)" by apt. A keyring that holds only the legacy key therefore does not verify the
++# release file completely (gpgv exit 2), which is the state the old step installed whenever
++# its fetch did work.
++#
++# What this script checks, without network access and without root:
++#   1. the live install path is still the one this test covers (build.yml runs the script,
++#      the dependency list still names the PPA packages);
++#   2. the product script installs the PPA keyring committed beside it and pins the source
++#      with `signed-by=`, and no longer calls apt-key or any keyserver (comments ignored);
++#   3. that committed keyring verifies the real, Launchpad-signed `InRelease` fixture
++#      completely - both signers - the same gpgv decision apt's own gpgv method makes when
++#      it prints "The repository ... is not signed", and the fixture's documented sha256
++#      and origin still match the file;
++#   4. red controls prove the checks can fail: a script with the legacy apt-key/keyserver
++#      lines restored is rejected, one pinning a keyring that is not committed is
++#      rejected, a keyring holding only the legacy key does not verify the fixture, and a
++#      tampered fixture is a bad signature.
++#
++# Deterministic: no wall-clock timing, no sleeps, no network. Inputs are committed files;
++# the only seams are the script text (comments stripped) and gpgv, whose verdict is the
++# assertion.
++#
++# Exit codes: 0 = pass, 1 = regression, 2 = setup/harness error, 77 = gpgv unavailable.
++
++set -uo pipefail
++
++HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++ROOT="$(cd "$HERE/.." && pwd)"
++SETUP="$ROOT/.github/workflows/setup-mingw-packages.sh"
++BUILD_YML="$ROOT/.github/workflows/build.yml"
++MINGW_DEPS="$ROOT/.github/workflows/deps-ubuntu-24.04-mingw.txt"
++FIXTURE_DIR="$ROOT/tests/data/mingw-ppa"
++FIXTURE="$FIXTURE_DIR/InRelease"
++LEGACY_KEYRING="$FIXTURE_DIR/legacy-only.gpg"
++NEW_FPR="AD1A987F6AC01FA7B66FB4EB9C0C72C11E0AF891"
++LEGACY_FPR="72931B477E22FEFD47F8DECE02FE5F12ADDE29B2"
++FIXTURE_SHA256="1d56a54d028396cb1fc79d683fe2c8812e3db6c2e1f1d7f1e02df89c90caf837"
++
++FAILED=0
++ok() { printf '  PASS %s\n' "$*"; }
++bad() { printf '  FAIL %s\n' "$*"; FAILED=1; }
++
++command -v gpgv >/dev/null 2>&1 || { echo "mingw-ppa-key-check: gpgv not found - SKIP" >&2; exit 77; }
++HAVE_GPG=0
++command -v gpg >/dev/null 2>&1 && HAVE_GPG=1
++for f in "$SETUP" "$BUILD_YML" "$MINGW_DEPS" "$FIXTURE" "$LEGACY_KEYRING"; do
++	[[ -f "$f" ]] || { echo "mingw-ppa-key-check: missing $f" >&2; exit 2; }
++done
++
++TMP="$(mktemp -d)"
++trap 'rm -rf "$TMP"' EXIT
++export GNUPGHOME="$TMP/gnupg"
++mkdir -m 700 "$GNUPGHOME"
++
++# The script's executable lines only: a comment may (and does) explain the retired
++# apt-key/keyserver line by name, which must not count as using it.
++code_of() { sed -E '/^[[:space:]]*#/d' "$1" | sed -E 's/[[:space:]]+#.*$//'; }
++
++# The key file the script installs, as a repo-relative path under .github/workflows/.
++key_of() { code_of "$1" | grep -oE 'keys/[A-Za-z0-9._-]+\.gpg' | head -1; }
++
++# ---------------------------------------------------------------------------
++# The checker. Applied to the product script (must pass) and to weakened copies
++# (must fail), so a green run is a decision, not a no-op.
++# ---------------------------------------------------------------------------
++check_script() { # <script> <repo root> -> 0 = the script pins the PPA to a committed key
++	local script="$1" root="$2" code src_line keyring key_base signed_by rc=0
++	code="$(code_of "$script")"
++
++	if grep -qE 'apt-key' <<<"$code"; then
++		bad "the install step still calls apt-key (deprecated; it reads a run-time keyring)"
++		rc=1
++	else
++		ok "no apt-key call in the install step"
++	fi
++	if grep -qE -- '--keyserver|keyserver\.|hkps?://|sks-keyservers' <<<"$code"; then
++		bad "the install step still fetches the key from a network keyserver"
++		rc=1
++	else
++		ok "no network keyserver fetch in the install step"
++	fi
++
++	src_line="$(grep 'tobydox/mingw-w64/ubuntu' <<<"$code" | head -1)"
++	if [[ -z "$src_line" ]]; then
++		bad "no apt source line for the MinGW PPA in $script"
++		return 1
++	fi
++	signed_by="$(sed -n 's/.*signed-by=\([^] ]*\).*/\1/p' <<<"$src_line")"
++	if [[ -z "$signed_by" ]]; then
++		bad "the PPA source line has no signed-by= keyring: $src_line"
++		rc=1
++	else
++		ok "the PPA source line is pinned with signed-by=$signed_by"
++	fi
++
++	# The keyring the script installs must be a committed file named as keys/<file>.
++	keyring="$(key_of "$script")"
++	if [[ -z "$keyring" ]]; then
++		bad "the install step names no committed keyring under .github/workflows/keys/"
++		return 1
++	fi
++	if [[ ! -s "$root/.github/workflows/$keyring" ]]; then
++		bad "the keyring the script installs ($keyring) is not committed"
++		return 1
++	fi
++	ok "the install step uses the committed keyring $keyring"
++	if [[ -n "$signed_by" ]]; then
++		key_base="$(basename "$keyring")"
++		if [[ "$(basename "$signed_by")" != "$key_base" ]]; then
++			bad "signed-by=$signed_by does not name the installed keyring $key_base"
++			rc=1
++		else
++			ok "signed-by names the installed keyring ($key_base)"
++		fi
++	fi
++	if sh -n "$script" 2>"$TMP/sh.err"; then
++		ok "the install step is valid POSIX sh"
++	else
++		bad "the install step is not valid POSIX sh: $(cat "$TMP/sh.err")"
++		rc=1
++	fi
++	return $rc
++}
++
++echo "=== Part 1: the live install path this test covers ==="
++if grep -qE '^[[:space:]]+sudo \.github/workflows/setup-mingw-packages\.sh' "$BUILD_YML"; then
++	ok "build.yml still installs the MinGW dependencies through the script"
++else
++	bad "build.yml no longer runs .github/workflows/setup-mingw-packages.sh"
++fi
++for pkg in qt5base-mingw-w64 qt5svg-mingw-w64 libgig-mingw-w64; do
++	if grep -qx "$pkg" "$MINGW_DEPS"; then
++		ok "the dependency list still installs $pkg from the PPA"
++	else
++		bad "the dependency list no longer names $pkg"
++	fi
++done
++
++echo
++echo "=== Part 2: the product script installs a committed key, no keyserver ==="
++check_script "$SETUP" "$ROOT"
++
++echo
++echo "=== Part 3: the committed keyring verifies the real PPA release file ==="
++actual_sha="$(sha256sum "$FIXTURE" | cut -d' ' -f1)"
++if [[ "$actual_sha" == "$FIXTURE_SHA256" ]]; then
++	ok "the InRelease fixture is the file whose sha256 tests/data/mingw-ppa/README.md records"
++else
++	bad "the InRelease fixture's sha256 is $actual_sha, not the documented $FIXTURE_SHA256"
++fi
++if grep -qx 'Origin: LP-PPA-tobydox-mingw-w64' "$FIXTURE" && grep -qx 'Suite: focal' "$FIXTURE"; then
++	ok "the fixture is the PPA's focal InRelease for LP-PPA-tobydox-mingw-w64"
++else
++	bad "the fixture does not look like the PPA's focal InRelease (Origin/Suite headers)"
++fi
++if grep -qE '^ [0-9a-f]{32} +[0-9]+ main/binary-amd64/Packages$' "$FIXTURE"; then
++	ok "the fixture carries the amd64 Packages index the mingw64 job installs from"
++else
++	bad "the fixture has no amd64 Packages index"
++fi
++
++KEY_REL="$(key_of "$SETUP")"
++if [[ -z "$KEY_REL" ]]; then
++	bad "no committed keyring named by the script, so the PPA file cannot be verified"
++	KEYRING=""
++else
++	KEYRING="$ROOT/.github/workflows/$KEY_REL"
++	if gpgv --keyring "$KEYRING" "$FIXTURE" >"$TMP/gpgv.out" 2>&1; then
++		ok "gpgv accepts the Launchpad-signed InRelease with the committed keyring"
++	else
++		bad "gpgv rejects the InRelease fixture with the committed keyring:"
++		sed 's/^/        /' "$TMP/gpgv.out"
++	fi
++	for fp in "$NEW_FPR" "$LEGACY_FPR"; do
++		if grep -q "using RSA key $fp" "$TMP/gpgv.out"; then
++			ok "the fixture signature by $fp verifies (key is in the committed keyring)"
++		else
++			bad "the fixture signature by $fp is not verifiable with the committed keyring"
++		fi
++	done
++	if [[ $HAVE_GPG -eq 1 ]]; then
++		if gpg --batch --no-default-keyring --keyring "$KEYRING" --list-packets 2>/dev/null \
++			| grep -qE '^:(secret key|secret sub key) packet:'; then
++			bad "the committed keyring contains secret key material"
++		else
++			ok "the committed keyring holds public keys only"
++		fi
++		if gpg --batch --no-default-keyring --keyring "$KEYRING" --with-colons \
++			--import-options show-only --import "$KEYRING" 2>/dev/null \
++			| grep -q "^fpr:::::::::$NEW_FPR:"; then
++			ok "the committed keyring holds the current signing key $NEW_FPR"
++		else
++			bad "the committed keyring does not hold the current signing key $NEW_FPR"
++		fi
++	else
++		echo "  NOTE gpg not installed; the keyring-content checks above are covered by gpgv"
++	fi
++fi
++
++echo
++echo "=== Part 4: red controls (the checks can fail) ==="
++# Control A: the original run-time apt-key/keyserver install, byte for byte, must be
++# rejected - and the rejection must name both things it does.
++cat >"$TMP/legacy.sh" <<'EOF'
++#!/bin/sh
++sh -c 'echo "deb http://ppa.launchpad.net/tobydox/mingw-w64/ubuntu focal main" > \
++  /etc/apt/sources.list.d/tobydox-mingw-w64.list'
++apt-key adv --keyserver keyserver.ubuntu.com --recv-keys 72931B477E22FEFD47F8DECE02FE5F12ADDE29B2
++apt-get update -y
++EOF
++# In a subshell: its deliberate bad() lines set FAILED, which must not leak into this run.
++if ( check_script "$TMP/legacy.sh" "$ROOT" ) >"$TMP/legacy.out" 2>&1; then
++	bad "control A: the legacy apt-key/keyserver script was accepted"
++elif grep -q 'still calls apt-key' "$TMP/legacy.out" && grep -q 'network keyserver' "$TMP/legacy.out"; then
++	ok "control A: the legacy apt-key/keyserver script is rejected for both reasons"
++else
++	bad "control A: legacy script rejected, but not for the apt-key/keyserver reason"
++	sed 's/^/        /' "$TMP/legacy.out"
++fi
++
++# Control B: a keyring named by the script but not committed must be rejected.
++sed 's#keys/tobydox-mingw-w64\.gpg#keys/not-committed.gpg#g' "$SETUP" >"$TMP/nokey.sh"
++if ( check_script "$TMP/nokey.sh" "$ROOT" ) >"$TMP/nokey.out" 2>&1; then
++	bad "control B: a script naming an uncommitted keyring was accepted"
++else
++	ok "control B: a script naming an uncommitted keyring is rejected"
++fi
++
++# Control C: a keyring holding only the legacy key does not verify the release file.
++if gpgv --keyring "$LEGACY_KEYRING" "$FIXTURE" >"$TMP/legacy-key.out" 2>&1; then
++	bad "control C: a legacy-key-only keyring was accepted - the completeness check is void"
++else
++	ok "control C: a legacy-key-only keyring is rejected (both signers are required)"
++fi
++
++# Control D: a tampered release file is a bad signature, not a pass.
++if [[ -n "$KEYRING" ]]; then
++	sed '0,/^Origin: /s//Origin: not-the-ppa/' "$FIXTURE" >"$TMP/tampered"
++	if gpgv --keyring "$KEYRING" "$TMP/tampered" >"$TMP/tampered.out" 2>&1; then
++		bad "control D: a tampered InRelease verified - signature checking is void"
++	else
++		ok "control D: a tampered InRelease is rejected"
++	fi
++else
++	bad "control D: no keyring to test tamper rejection against"
++fi
++
++echo
++if [[ $FAILED -eq 0 ]]; then
++	echo "PASS: the MinGW PPA key is committed, pinned with signed-by, and verifies the signed release file"
++	exit 0
++fi
++echo "FAIL: see the failing lines above"
++exit 1
+diff --git a/tests/upstream-modifications.txt b/tests/upstream-modifications.txt
+index 2fbdda454c..f8737514f6 100644
+--- a/tests/upstream-modifications.txt
++++ b/tests/upstream-modifications.txt
+@@ -5821,3 +5821,11 @@ tests/CMakeLists.txt	cluster ci-12f4249981b085d6: registers Vst2FixtureDarwinHea
+ # plugins/SfzPlayer's own call is scoped to its subtree). The block now finds the target in
+ # its own scope, and the CMakeThreadsScope configure regression is registered beside it.
+ tests/CMakeLists.txt	ci-748342d46d7e9dd9: the SfzFilePoolTest block resolves Threads::Threads in its own directory scope (MinGW64 had no ancestor target, so the generate step failed) and registers tests/cmake-threads-scope.sh as the CMakeThreadsScope configure regression.
++
++# cluster ci-3eb9bda8aa6785a3: registers MingwPpaKeyGate, the regression for the mingw64
++# "Install dependencies" failure (the step fetched the MinGW PPA key from a network
++# keyserver; the hosted runner cannot reach it, so apt-get update exited 100). One
++# add_test and one SKIP_RETURN_CODE property; no existing test changes. The .github/
++# script and the committed keyring need no ledger entry here (CI config is allowed).
++tests/CMakeLists.txt	ci-3eb9bda8aa6785a3: registers tests/mingw-ppa-key-check.sh as MingwPpaKeyGate (SKIP_RETURN_CODE 77 when gpgv is absent), the regression for the mingw64 install step's run-time keyserver fetch that left the PPA unverified; registration only, no existing test changes.
++.github/workflows/setup-mingw-packages.sh	# CI regression: build / mingw64
+-- 
+2.56.0
+

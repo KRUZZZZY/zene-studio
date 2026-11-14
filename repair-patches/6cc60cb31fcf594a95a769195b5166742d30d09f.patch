@@ -1,0 +1,567 @@
+From 6cc60cb31fcf594a95a769195b5166742d30d09f Mon Sep 17 00:00:00 2001
+From: Zene CI repair <noreply@zene.invalid>
+Date: Fri, 13 Nov 2026 18:43:21 +0000
+Subject: [PATCH] fix(ci): CI regression: build / linux-x86_64
+
+CI-Repair-Id: ci-repair-ci-632a20737fe640fa-0a2de25e09ad
+---
+ .../cluster-ci-632a20737fe640fa.md            | 178 ++++++++++
+ src/gui/FollowActionEditor.cpp                |   4 +-
+ tests/CMakeLists.txt                          |  16 +
+ tests/fork-sources.txt                        |   4 +
+ tests/qt5-signal-overload-check.py            | 304 ++++++++++++++++++
+ 5 files changed, 505 insertions(+), 1 deletion(-)
+ create mode 100644 docs/qwen-fixes-2026-10/cluster-ci-632a20737fe640fa.md
+ create mode 100644 tests/qt5-signal-overload-check.py
+
+diff --git a/docs/qwen-fixes-2026-10/cluster-ci-632a20737fe640fa.md b/docs/qwen-fixes-2026-10/cluster-ci-632a20737fe640fa.md
+new file mode 100644
+index 0000000000..df28732487
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/cluster-ci-632a20737fe640fa.md
+@@ -0,0 +1,178 @@
++FIXED
++
++Cluster ci-632a20737fe640fa (CI regression: `build / linux-x86_64`, train 050/m0-train-28 at
++3ab01006f613b223654f56481b789b605c444a84).
++
++## Verdict and evidence
++
++REAL. The hosted `linux-x86_64` job builds with the distribution's Qt 5.15
++(`/usr/include/x86_64-linux-gnu/qt5/...` in the job's own error trace), and Qt 5 declares
++`QSpinBox::valueChanged` twice - `valueChanged(int)` and `valueChanged(const QString&)` -
++while Qt 6 (the only Qt this worktree builds against, `WANT_QT6:BOOL=ON`) keeps a single
++`valueChanged(int)`. The bare function-pointer take at
++
++    src/gui/FollowActionEditor.cpp:207
++    QObject::connect(jump, &QSpinBox::valueChanged, jump, [jump] { jump->setProperty("edited", true); });
++
++is therefore an *unresolved overloaded function type* for Qt 5's `QObject::connect` and the
++translation unit fails:
++
++    FollowActionEditor.cpp:207:25: error: no matching function for call to
++      'lmms::gui::FollowActionEditor::connect(QSpinBox*&, <unresolved overloaded function type>,
++       QSpinBox*&, lmms::gui::FollowActionEditor::addRow(const QJsonObject&)::<lambda()>)'
++
++Evidence, in order of collection:
++
++| # | Evidence | Command | Exit |
++|---|---|---|---:|
++| 1 | Hosted CI log, verbatim error at `src/gui/FollowActionEditor.cpp:207` (log line 2891) | `grep -n "error:" /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/train-ci/3ab01006f613b223654f56481b789b605c444a84/run-43466002708-job-132025174461.log` | 0 (1 matching `error:`) |
++| 2 | Minimal Qt 5 probe against the host's Qt 5.15.19 headers reproduces the same diagnostic | `/usr/bin/c++ -std=gnu++20 -fsyntax-only -I/usr/include/qt qt5-probe.cpp` (`01-qt5-probe-before.log`) | 1 |
++| 3 | The real file, compiled against Qt 5 headers with the worktree's own include set, fails at line 207 | `/usr/bin/c++ -std=gnu++20 -fsyntax-only -I. -Iinclude -Isrc -Ibuild/src -Ibuild/include -Ibuild $(pkg-config --cflags Qt5Widgets) src/gui/FollowActionEditor.cpp` (`05-qt5-real-file-min.log`) | 1 |
++| 4 | Same file with the fix compiled against Qt 5 | same command (`10-qt5-real-file-after.log`, `06-qt5-fixed-probe.log`) | 0 |
++| 5 | The tree's only bare take of a signal Qt 5 overloads | `python3 tests/qt5-signal-overload-check.py` (`08-scan-before.log`) | 1 |
++
++Why this is not ALREADY-FIXED: at HEAD (`3ab01006f6`) the bare take is still present at
++`src/gui/FollowActionEditor.cpp:207`, and the Qt 6 build here compiles it - the defect is a
++Qt-5-only compile error with no source-level marker. A full-tree sweep of every tracked
++first-party C/C++ file (step 5 above, and the scan in the regression test) finds exactly
++one site: `FollowActionEditor.cpp:207`. Siblings such as `UndoHistoryPanel.cpp:90,108`,
++`SampleEditorDialog.cpp:180-182`, `BrowserSearchView.cpp:204-205`, `StepGridPanel.cpp:181-185`
++and `ExternalDeviceCard.cpp:128-131` already spell `QOverload<int>::of(...)` /
++`qOverload<int>(...)`, which is why they were never affected; the fix brings line 207 into
++that same convention. Qt 6-only API was not used; `QOverload<int>::of(&QSpinBox::valueChanged)`
++names the identical `int` overload on both major versions, so behaviour is unchanged.
++
++## The fix
++
++`src/gui/FollowActionEditor.cpp:207-209` (one product change):
++
++    // Qt 5 declares valueChanged twice (int and QString) and Qt 6 once, so name the overload the box steps:
++    // the bare &QSpinBox::valueChanged is ill-formed on the Qt 5 hosted build.
++    QObject::connect(jump, QOverload<int>::of(&QSpinBox::valueChanged), jump, [jump] { jump->setProperty("edited", true); });  // a step
++
++No signature, no handler and no other caller changes: `jumpOf()` still reads the same
++`edited`/`loaded` properties, so the editor writes exactly the chain it wrote before (the
++existing `FollowActionEditorTest` cases pass unchanged). This is GUI-only code; nothing on
++an audio path is touched, no command is added, no undo step changes.
++
++## Regression (deterministic, no clock, no sleeps)
++
++New `tests/qt5-signal-overload-check.py`, registered as ctest `Qt5SignalOverloadCheck`
++(`tests/CMakeLists.txt`, guarded by `PYTHON3_EXECUTABLE`, run on every platform):
++
++* **Source scan** of every tracked first-party C/C++ file (git-tracked list, vendored trees
++  excluded exactly as in `tests/all-sources.txt`) for `&QSpinBox::valueChanged`,
++  `&QDoubleSpinBox::valueChanged`, `&QComboBox::{currentIndexChanged,activated,highlighted}`,
++  `&QProcess::{finished,error}`, `&QButtonGroup::{buttonClicked,buttonPressed,buttonReleased}`
++  and `&QNetworkReply|QAbstractSocket::error` not preceded by a `QOverload<...>::of(`,
++  `qOverload<...>(` or `static_cast<...>(` cast. It is red on the Qt 6 hosts too, so the
++  regression does not depend on which Qt the runner has.
++* **Self-test fixtures** inside the script: four known-bad lines must be reported with their
++  exact lines and four known-good spellings (including a global `QOverload<int, QProcess::ExitStatus>`
++  and a comment/string that mention the signal) must not - a scanner that cannot fail fails.
++* **Compile probe** when `pkg-config Qt5Widgets` yields a Qt 5 tree: the known-bad take must be
++  rejected and the portable one accepted. On a host without Qt 5 it reports `skipped`
++  (the source scan is authoritative), so the test is deterministic on every platform.
++
++This is the regression that fails on the exact hosted shape: the scan names
++`src/gui/FollowActionEditor.cpp:207`, and on this host the Qt 5 probe independently confirms
++the overload set that the scanner models.
++
++## RED / GREEN (step 4b)
++
++Product patch saved to `fix.patch` with `git diff -- src/gui/FollowActionEditor.cpp` (exit 0),
++reverse-applied with `git apply -R` (exit 0), rebuilt, then re-applied (exit 0) and rebuilt.
++
++| Step | Command | Exit |
++|---|---|---:|
++| Save product-only patch | `git diff -- src/gui/FollowActionEditor.cpp > fix.patch` | 0 |
++| Reverse the fix | `git apply -R fix.patch` | 0 |
++| Rebuild reverted tree | `cmake --build build --target zene` (`24-build-red-final.log`) | 0 |
++| **RED** - test on reverted product code | `cd build/tests && ctest -R Qt5SignalOverloadCheck --output-on-failure` (`25-ctest-red-final.log`) | **8** |
++| Restore the fix | `git apply fix.patch` | 0 |
++| Rebuild restored tree | `cmake --build build --target zene` (`26-build-green-final.log`) | 0 |
++| **GREEN** - test restored, with its family | `cd build/tests && ctest -R "Qt5SignalOverloadCheck\|MocQt5TrailingReturnCheck\|FollowActionEditorTest" --output-on-failure` (`27-ctest-green-final.log`) | **0** |
++
++Tally: `1/3` then `3/3` tests passed - `FollowActionEditorTest` 0.08 s,
++`MocQt5TrailingReturnCheck` 2.29 s, `Qt5SignalOverloadCheck` 2.01 s; zero tests run would
++have been an error.
++
++RED assertion, verbatim (`25-ctest-red-final.log`):
++
++    src/gui/FollowActionEditor.cpp:207: bare &QSpinBox::valueChanged - that signal is overloaded in Qt 5 (the hosted linux-x86_64 build fails here); write QOverload<...>::of(&QSpinBox::valueChanged)
++    probe: Qt 5 rejects the bare take and accepts QOverload<int>::of
++    FAIL: 1 unguarded overloaded-signal take(s)
++
++An earlier RED/GREEN pair was taken before the test's `iter_sources` was split to satisfy the
++CCN ratchet (`17-ctest-red.log`, exit 8; `19-ctest-green-restored.log`, exit 0); the table
++above is the final test's own pair.
++
++## Gates and registration
++
++| Gate | Command | Exit |
++|---|---|---:|
++| feature_check (first run, before the CCN split) | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (`20-feature-check.log`) | 1 - `FAIL complexity NEW: new function over target: iter_sources@220-237 (CCN 14)` |
++| feature_check (final) | same (`23-feature-check-2.log`) | **0** - all 8 rows PASS |
++
++Final table: fork-sources PASS, all-sources-reproduce PASS, no-upstream-regression PASS,
++check-namespace PASS, no-tautology PASS, doc-figures PASS, complexity PASS (no new item in
++your files), file-length PASS. The complexity failure was fixed in the code, not the gate:
++`iter_sources` was split into `tracked_names` / `walked_names` / `is_scanned_source`.
++
++Registration: the new test is a `tests/*.py` source, so it is listed in
++`tests/fork-sources.txt` (with this report), the test is registered in `tests/CMakeLists.txt`,
++and the change touches no inherited product file - Gate 6 (`no-upstream-regression`) passed
++without a `tests/upstream-modifications.txt` entry because `src/gui/FollowActionEditor.cpp`
++is fork-NEW (already in `tests/fork-sources.txt`).
++
++## Files committed
++
++* `src/gui/FollowActionEditor.cpp` - the fix (one connect).
++* `tests/qt5-signal-overload-check.py` - the regression (new).
++* `tests/CMakeLists.txt` - registers `Qt5SignalOverloadCheck`.
++* `tests/fork-sources.txt` - registers the new test and this report.
++* `docs/qwen-fixes-2026-10/cluster-ci-632a20737fe640fa.md` - this report.
++
++## Self-check
++
++* **The regression test FAILS with the product change reverted and PASSES with it (exit
++  codes).** RED `ctest -R Qt5SignalOverloadCheck` exit **8** after `git apply -R fix.patch`
++  and a rebuild; GREEN exit **0** after `git apply fix.patch` and a rebuild. See the RED/GREEN
++  table; logs `24`/`25` (red) and `26`/`27` (green).
++* **The test is deterministic: no wall-clock timing, sleeps or races.** The scanner is pure
++  text over a sorted git-tracked file list with fixed fixture line expectations; the optional
++  Qt 5 probe compiles two fixed strings with the compiler named by `CMAKE_CXX_COMPILER`. No
++  timestamps, threads or ordering assumptions; the probe's presence is decided by
++  `pkg-config Qt5Widgets`, and its absence is a reported skip, never a pass-by-luck.
++* **The fix is at the cause and complete.** The sweep over all tracked first-party sources
++  (`08-scan-before.log`) found exactly one unguarded take, at the failing line; every sibling
++  in the same class of call already used `QOverload`/`qOverload`, and every other
++  `QSpinBox::valueChanged`/`QDoubleSpinBox::valueChanged`/`QComboBox::currentIndexChanged`
++  connect in the tree is guarded (list in the Verdict section). The `QLineEdit::textEdited`
++  connect below it is not overloaded and needs no change.
++* **No collateral damage.** The change is a cast: the same `int` overload is connected on
++  Qt 5 and Qt 6, so the lambda fires exactly when it fired before and `FollowActionEditorTest`
++  (chance precision, jump clamping, typed-edit and step-edit cases) passes unchanged. No
++  project format, saved data or limit is touched - the editor's `chain()` output is identical.
++* **Realtime, undo, commands.** `src/gui/FollowActionEditor.cpp` is GUI-only dialog code; it
++  is not reached from `process`/`play`/render. No command, no command id and no undo step was
++  added; OK still writes the chain through the pre-existing `session.set_slot` /
++  `session.set_scene` call and one undo takes it back.
++* **Log folder note.** The task's LOG FOLDER
++  (`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-632a20737fe640fa.r1/logs`) is not
++  writable by this session: `touch`, `python3 open(..., "w")` and the `write` tool all return
++  `EACCES`, and the restriction applies to its parents and to `~/Documents` and `~/.local/share`
++  as well (Landlock-style write jail; `chmod 777` on the directory did not help). Every log
++  listed above was therefore written to
++  `/home/kruzzzzy/.local/share/zene-bunny-fix/dsh/home/ci-632a20737fe640fa.r1-logs/` with the
++  numbered names quoted in this report; the commands are exactly the ones run. `feature_check`
++  and the worktree's `build/` are inside the jail and were used normally.
++* **Verdict is neither ALREADY-FIXED nor FALSE-POSITIVE.** The defect is live at the branch
++  tip: `src/gui/FollowActionEditor.cpp:207` at base `3ab01006f6` holds the bare
++  `&QSpinBox::valueChanged`, and the Qt 5 compile probe reproduces the hosted error with that
++  exact line (`05-qt5-real-file-min.log`, exit 1). Qt 5.15's declaration pair
++  (`valueChanged(int)` / `valueChanged(const QString&)`) is the contract that makes the bare
++  take ill-formed; Qt 6's single overload is why the Qt 6 host here never saw it.
++* **Pre-submit check.** `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree>
++  ci-632a20737fe640fa` - EXIT **0**, RESULT: PASS - submit (`29-submit-check.log`): commits on
++  the branch, clean tree, report, tests added or changed and gates all PASS.
+diff --git a/src/gui/FollowActionEditor.cpp b/src/gui/FollowActionEditor.cpp
+index 370eef738b..151eb04c39 100644
+--- a/src/gui/FollowActionEditor.cpp
++++ b/src/gui/FollowActionEditor.cpp
+@@ -204,7 +204,9 @@ void FollowActionEditor::addRow(const QJsonObject& action)
+ 	const double scene = std::max(0.0, action.value(QStringLiteral("jump_to")).toDouble(0.0));
+ 	jump->setValue(static_cast<int>(std::clamp(scene, 0.0, kMaxScenes - 1.0)) + 1);
+ 	jump->setProperty("loaded", scene);
+-	QObject::connect(jump, &QSpinBox::valueChanged, jump, [jump] { jump->setProperty("edited", true); });  // a step
++	// Qt 5 declares valueChanged twice (int and QString) and Qt 6 once, so name the overload the box steps:
++	// the bare &QSpinBox::valueChanged is ill-formed on the Qt 5 hosted build.
++	QObject::connect(jump, QOverload<int>::of(&QSpinBox::valueChanged), jump, [jump] { jump->setProperty("edited", true); });  // a step
+ 	if (auto* text = jump->findChild<QLineEdit*>()) // typing, even the number the box already shows
+ 	{
+ 		QObject::connect(text, &QLineEdit::textEdited, jump, [jump] { jump->setProperty("edited", true); });
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 1f9706ab25..2762e51acd 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -6423,6 +6423,22 @@ if(PYTHON3_EXECUTABLE)
+ 	set_tests_properties(MocQt5TrailingReturnCheck PROPERTIES TIMEOUT 300)
+ endif()
+ 
++# Qt 5 signal-overload portability (cluster ci-632a20737fe640fa, 2026-11-13). Qt 5 declares
++# QSpinBox::valueChanged twice (int and QString) and Qt 6 only once, so a bare
++# `&QSpinBox::valueChanged` was an unresolved overload on the hosted linux-x86_64 job
++# (src/gui/FollowActionEditor.cpp:207) while every Qt 6 host here compiled it. The check
++# scans every tracked first-party source, runs its own red/green fixtures, and - where a
++# Qt 5 development tree is present - compiles the known-bad and known-good takes. It is
++# registered wherever a python3 is, so the regression is red on the Qt 6 hosts too.
++if(PYTHON3_EXECUTABLE)
++	add_test(NAME Qt5SignalOverloadCheck
++		COMMAND ${PYTHON3_EXECUTABLE}
++			${CMAKE_CURRENT_SOURCE_DIR}/qt5-signal-overload-check.py
++			--root ${CMAKE_SOURCE_DIR}
++			--cxx ${CMAKE_CXX_COMPILER})
++	set_tests_properties(Qt5SignalOverloadCheck PROPERTIES TIMEOUT 300)
++endif()
++
+ # Per-method complexity regression (cluster ci-6d61162ce0abfd39, 2026-11-10). Hosted CI failed
+ # Gate 4 - the CCN <= 10 ratchet - at a1a98b67b2 with eight regressions, each a function that had
+ # grown past the target. The repair is a behaviour-preserving extraction, so the complexity IS the
+diff --git a/tests/fork-sources.txt b/tests/fork-sources.txt
+index 1ad2f30e2b..04f3eddb28 100644
+--- a/tests/fork-sources.txt
++++ b/tests/fork-sources.txt
+@@ -3661,3 +3661,7 @@ include/ShellRecordMenu.h
+ src/gui/shell/ShellRecordMenu.cpp
+ # cluster new-p10-318 (2026-10): fix and verification report for the Peak Controller zero-frame block (fork-NEW).
+ docs/qwen-fixes-2026-10/cluster-new-p10-318.md
++# cluster ci-632a20737fe640fa (2026-11): Qt 5 signal-overload regression; the hosted linux-x86_64 build
++# rejected the bare &QSpinBox::valueChanged that Qt 6 accepts (fork-NEW).
++tests/qt5-signal-overload-check.py
++docs/qwen-fixes-2026-10/cluster-ci-632a20737fe640fa.md
+diff --git a/tests/qt5-signal-overload-check.py b/tests/qt5-signal-overload-check.py
+new file mode 100644
+index 0000000000..95538eac36
+--- /dev/null
++++ b/tests/qt5-signal-overload-check.py
+@@ -0,0 +1,304 @@
++#!/usr/bin/env python3
++"""Fail on a Qt signal that is overloaded in Qt 5 but not in Qt 6, taken with a bare `&Class::signal`.
++
++Cluster ci-632a20737fe640fa (2026-11-13), hosted linux-x86_64 build: the job's Qt 5.15.3
++rejected
++
++    src/gui/FollowActionEditor.cpp:207:25: error: no matching function for call to
++        'lmms::gui::FollowActionEditor::connect(QSpinBox*&, <unresolved overloaded function type>, ...)'
++        QObject::connect(jump, &QSpinBox::valueChanged, jump, [jump] { ... });
++
++because Qt 5 gives QSpinBox two `valueChanged` signals, `valueChanged(int)` and
++`valueChanged(const QString&)`. Qt 6 removed the string overload, so the same line
++compiles on every Qt 6 host here and only the Qt 5 job sees it. The same shape exists
++for QDoubleSpinBox (`double`/`QString`), QComboBox (`int`/`QString` on
++currentIndexChanged, activated and highlighted), QProcess (finished, error),
++QButtonGroup (buttonClicked) and QNetworkReply/QAbstractSocket (error, which Qt 5 also
++has as a getter). The portable spelling is
++
++    QObject::connect(jump, QOverload<int>::of(&QSpinBox::valueChanged), ...)
++
++or `qOverload<int>(...)` / a `static_cast<...>(...)`, which pick the same overload on
++Qt 5 and Qt 6 - no behaviour change.
++
++The check has two halves:
++
++  * a source scan of every tracked first-party C/C++ file for such a bare
++    `&Class::signal`. This half runs on every platform, including the Qt 6 hosts where
++    the defect cannot fail the build, so the regression is red wherever the suite runs.
++  * a compile probe: if a Qt 5 development tree is discoverable, the known-bad fixture
++    must be rejected and the known-good fixture accepted. A host without Qt 5 (or with
++    only Qt 6, where the fixture compiles) reports the probe as skipped; the source scan
++    is the authoritative half there, exactly as for the other Qt 5 portability checks.
++
++Both halves are proved able to fail by the self-test fixtures, which this file runs as
++its own red/green control.
++
++Usage:
++  qt5-signal-overload-check.py [--root DIR] [--cxx CXX]
++  qt5-signal-overload-check.py --self-test
++
++Exit codes: 0 = clean, 1 = finding (or a failed fixture), 2 = usage error.
++"""
++
++import argparse
++import os
++import re
++import shutil
++import subprocess
++import sys
++import tempfile
++
++# Signals Qt 5 declares more than once on these classes. Taking one with `&C::s` is
++# therefore ill-formed there; Qt 6 keeps a single overload (or none of the string one).
++OVERLOADED = {
++	"QSpinBox": {"valueChanged"},
++	"QDoubleSpinBox": {"valueChanged"},
++	"QComboBox": {"currentIndexChanged", "activated", "highlighted"},
++	"QProcess": {"finished", "error"},
++	"QButtonGroup": {"buttonClicked", "buttonPressed", "buttonReleased"},
++	"QNetworkReply": {"error"},
++	"QAbstractSocket": {"error"},
++}
++
++SOURCE_SUFFIXES = (".c", ".cc", ".cpp", ".cxx", ".h", ".hpp")
++
++# Vendored third-party trees are not this repo's code (same list as tests/all-sources.txt).
++EXCLUDED_PREFIXES = (
++	"src/3rdparty/",
++	"tests/reference/",
++	"plugins/NeuralAmp/rtneural/",
++	"plugins/NeuralAmp/nam/",
++	"plugins/NeuralAmp/tests/",
++	"plugins/RnnoiseDenoiser/rnnoise/",
++	"plugins/SfzPlayer/sfizz/",
++)
++
++# Comments and string/char literals are blanked before scanning (line numbers kept).
++NON_CODE = re.compile(
++	r'//[^\n]*|/\*.*?\*/|"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\'',
++	re.S)
++
++# The unguarded use. A guard is one of the casts below immediately before the `&`.
++BARE_SIGNAL = re.compile(
++	r'&\s*(?P<cls>' + "|".join(sorted(OVERLOADED)) + r')\s*::\s*(?P<sig>[A-Za-z_][A-Za-z0-9_]*)')
++
++GUARDS = (
++	re.compile(r"QOverload\s*<[^;{}]*?>\s*::\s*of\s*\(\s*$", re.S),
++	re.compile(r"qOverload\s*<[^;{}]*?>\s*\(\s*$", re.S),
++	re.compile(r"static_cast\s*<[^;{}]*?>\s*\(\s*$", re.S),
++)
++
++FIXTURE_RED = """\
++#include <QObject>
++#include <QSpinBox>
++#include <QComboBox>
++
++void bad(QSpinBox* spin, QDoubleSpinBox* dspin, QComboBox* combo, QProcess* proc)
++{
++	QObject::connect(spin, &QSpinBox::valueChanged, spin, [] {});
++	QObject::connect(dspin, &QDoubleSpinBox::valueChanged, dspin, [](double) {});
++	QObject::connect(combo, &QComboBox::currentIndexChanged, combo, [](int) {});
++	QObject::connect(proc, &QProcess::finished, proc, [](int) {});
++}
++"""
++
++FIXTURE_GREEN = """\
++#include <QObject>
++#include <QSpinBox>
++#include <QComboBox>
++
++void good(QSpinBox* spin, QDoubleSpinBox* dspin, QComboBox* combo, QProcess* proc)
++{
++	QObject::connect(spin, QOverload<int>::of(&QSpinBox::valueChanged), spin, [] {});
++	QObject::connect(dspin, qOverload<double>(&QDoubleSpinBox::valueChanged), dspin, [](double) {});
++	QObject::connect(combo, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged),
++		combo, [](int) {});
++	QObject::connect(proc,
++		QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), proc, [](int) {});
++	// A comment about &QSpinBox::valueChanged must not be reported.
++	const char* text = "&QComboBox::activated";
++	(void) text;
++}
++"""
++
++FIXTURE_EXPECTED = ["QSpinBox", "QDoubleSpinBox", "QComboBox", "QProcess"]
++
++
++def strip_non_code(text):
++	"""Blank comments and literals, keeping every newline so line numbers stay right."""
++	def blank(match):
++		return re.sub(r"[^\n]", " ", match.group(0))
++	return NON_CODE.sub(blank, text)
++
++
++def scan_text(path, text):
++	"""Return [(path, line, class, signal)] for unguarded overloaded-signal takes."""
++	code = strip_non_code(text)
++	findings = []
++	for match in BARE_SIGNAL.finditer(code):
++		if match.group("sig") not in OVERLOADED[match.group("cls")]:
++			continue
++		before = code[max(0, match.start() - 200):match.start()]
++		if any(guard.search(before) for guard in GUARDS):
++			continue
++		line = code.count("\n", 0, match.start()) + 1
++		findings.append((path, line, match.group("cls"), match.group("sig")))
++	return findings
++
++
++def self_test():
++	failures = []
++	red = scan_text("fixture-red.cpp", FIXTURE_RED)
++	if [cls for _, _, cls, _ in red] != FIXTURE_EXPECTED:
++		failures.append(f"red fixture flagged {[c for _, _, c, _ in red]}, expected {FIXTURE_EXPECTED}")
++	if [line for _, line, _, _ in red] != [7, 8, 9, 10]:
++		failures.append(f"red fixture lines {[line for _, line, _, _ in red]}, expected [7, 8, 9, 10]")
++	green = scan_text("fixture-green.cpp", FIXTURE_GREEN)
++	if green:
++		failures.append(f"green fixture flagged {green}")
++	if scan_text("plain.cpp", "int valueChanged(int);\n"):
++		failures.append("a file without a Qt signal take was flagged")
++	return failures
++
++
++BAD_PROBE = """\
++#include <QtCore/QObject>
++#include <QtWidgets/QSpinBox>
++void wire(QSpinBox* box)
++{
++	QObject::connect(box, &QSpinBox::valueChanged, box, [box] { box->setProperty("edited", true); });
++}
++"""
++
++GOOD_PROBE = """\
++#include <QtCore/QObject>
++#include <QtWidgets/QSpinBox>
++void wire(QSpinBox* box)
++{
++	QObject::connect(box, QOverload<int>::of(&QSpinBox::valueChanged), box, [box] { box->setProperty("edited", true); });
++}
++"""
++
++
++def qt5_flags():
++	"""`pkg-config --cflags Qt5Widgets` on a host that has a Qt 5 development tree, else None."""
++	if shutil.which("pkg-config") is None:
++		return None
++	try:
++		out = subprocess.run(["pkg-config", "--cflags", "Qt5Widgets"],
++			capture_output=True, text=True, timeout=60)
++	except (OSError, subprocess.SubprocessError):
++		return None
++	return out.stdout.split() if out.returncode == 0 and out.stdout.strip() else None
++
++
++def compile_probe(cxx, flags):
++	"""Compile the known-bad and known-good probes against Qt 5. Returns a verdict string or None."""
++	directory = tempfile.mkdtemp(prefix="qt5-signal-probe-")
++	try:
++		bad = os.path.join(directory, "bad.cpp")
++		good = os.path.join(directory, "good.cpp")
++		with open(bad, "w", encoding="utf-8") as handle:
++			handle.write(BAD_PROBE)
++		with open(good, "w", encoding="utf-8") as handle:
++			handle.write(GOOD_PROBE)
++		command = [cxx, "-std=gnu++20", "-fsyntax-only"] + flags
++		bad_run = subprocess.run(command + [bad], capture_output=True, text=True, timeout=300)
++		if bad_run.returncode == 0:
++			# Qt 6 (or no Qt 5 headers): the probe compiles, so this host cannot enforce the rule.
++			return None
++		good_run = subprocess.run(command + [good], capture_output=True, text=True, timeout=300)
++		if good_run.returncode != 0:
++			return ("probe: the Qt 5 tree rejected the portable spelling: "
++				+ " ".join(good_run.stderr.split())[:300])
++		return "probe: Qt 5 rejects the bare take and accepts QOverload<int>::of"
++	finally:
++		shutil.rmtree(directory, ignore_errors=True)
++
++
++def tracked_names(root):
++	"""Every path git tracks under @a root, or None when git cannot answer."""
++	try:
++		out = subprocess.run(["git", "-C", root, "ls-files", "-z"], capture_output=True, timeout=300)
++	except (OSError, subprocess.SubprocessError):
++		return None
++	if out.returncode != 0:
++		return None
++	return out.stdout.decode("utf-8", "replace").split("\0")
++
++
++def walked_names(root):
++	"""Every file under the source roots, for a tree git cannot list."""
++	names = []
++	for top in ("include", "src", "plugins", "tests"):
++		for directory, subdirs, files in os.walk(os.path.join(root, top)):
++			subdirs[:] = sorted(d for d in subdirs if not d.startswith("."))
++			names += [os.path.relpath(os.path.join(directory, name), root) for name in sorted(files)]
++	return names
++
++
++def is_scanned_source(name):
++	return name.endswith(SOURCE_SUFFIXES) and not name.startswith(EXCLUDED_PREFIXES)
++
++
++def iter_sources(root):
++	"""Tracked first-party C/C++ files, as git reports them (submodules are not tracked files)."""
++	for name in tracked_names(root) or walked_names(root):
++		if name and is_scanned_source(name):
++			yield name
++
++
++def scan_tree(root):
++	findings = []
++	for name in iter_sources(root):
++		try:
++			with open(os.path.join(root, name), encoding="utf-8", errors="replace") as handle:
++				findings += scan_text(name, handle.read())
++		except OSError:
++			continue
++	return findings
++
++
++def main(argv):
++	parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
++	parser.add_argument("--root", default=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
++	parser.add_argument("--cxx", default=os.environ.get("CXX") or "c++")
++	parser.add_argument("--self-test", action="store_true")
++	args = parser.parse_args(argv[1:])
++
++	failures = self_test()
++	for failure in failures:
++		print(f"SELF-TEST FAIL: {failure}")
++	if failures:
++		return 1
++	print("self-test: fixtures flagged and passed as expected")
++	if args.self_test:
++		return 0
++
++	root = os.path.abspath(args.root)
++	if not os.path.isdir(root):
++		print(f"error: not a directory: {root}", file=sys.stderr)
++		return 2
++
++	findings = scan_tree(root)
++	for path, line, cls, sig in findings:
++		print(f"{path}:{line}: bare &{cls}::{sig} - that signal is overloaded in Qt 5 "
++			f"(the hosted linux-x86_64 build fails here); write QOverload<...>::of(&{cls}::{sig})")
++
++	flags = qt5_flags()
++	if flags is None:
++		print("probe: skipped (no Qt 5 development tree found)")
++	else:
++		verdict = compile_probe(args.cxx, flags)
++		print(verdict or "probe: skipped (this compiler's Qt does not reject the bare take)")
++
++	if findings:
++		print(f"FAIL: {len(findings)} unguarded overloaded-signal take(s)")
++		return 1
++	print("PASS: no unguarded take of a signal that Qt 5 overloads")
++	return 0
++
++
++if __name__ == "__main__":
++	sys.exit(main(sys.argv))
+-- 
+2.56.0
+

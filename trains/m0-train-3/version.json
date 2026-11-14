@@ -1,0 +1,40 @@
+{
+  "base": "050/m0-train-2",
+  "display_version": "0.4.1.0-alpha",
+  "evidence": "first-parent-promoted-ancestry",
+  "feature_items": [
+    "Q050-001",
+    "Q050-007",
+    "Q050-018",
+    "Q050-020",
+    "Q050-027",
+    "Q050-031",
+    "Q050-044",
+    "Q050-045",
+    "Q050-046",
+    "Q050-048"
+  ],
+  "feature_merge_evidence": [
+    "52667bad1f50d6b4534313fc02d546dafa895212\tmerge(m0-train-3): feat/050-Q050-007-v2-container (independently reviewed)",
+    "ac3f37389650e55ec3f4df4788eaa8faad4fb3ab\tmerge(m0-train-3): feat/050-Q050-044-open-script-undo (independently reviewed)",
+    "471f0062995984838dc83811ee65372d7accef8f\tmerge(m0-train-3): feat/050-L02-session-land (independently reviewed)",
+    "3c5657fa2caac3c734e06d8b56f422825898f427\tmerge(m0-train-3): feat/050-Q050-046-undoable-recovery (independently reviewed)",
+    "ef90b9bdf00a313c1616ebcdbecd200ff5557d9b\tmerge(m0-train-3): feat/050-Q050-045-record-loss (independently reviewed)",
+    "7952e94ffc0be2bc6a354cf8a5c26d98cda49680\tmerge(m0-train-3): feat/050-Q050-018-missing-instruments (independently reviewed)",
+    "c22b23663fc30b938340b76edc380d68c207c10d\tmerge(m0-train-3): feat/050-Q050-031-plugin-drops (independently reviewed)",
+    "7012117dd2fa5a5089267bad59d32126d9ac8fe2\tmerge(m0-train-3): feat/050-Q050-020-midi-export (independently reviewed)",
+    "3aabd72e8a0c961361c7fe11b43a0db43727e2d2\tmerge(m0-train-3): feat/050-Q050-048-browser-window (independently reviewed)",
+    "6d4f4a6f40ac41904ff9395f5b6a11c87e9707ce\tmerge(m0-train-3): feat/050-Q050-001-dawproject-deflate (independently reviewed)",
+    "baf9f22c75be46c947cd85634141deb1b087f095\tmerge(m0-train-3): feat/050-Q050-027-import-io (independently reviewed)",
+    "2e6fda6cd48a3ed6977625c212c362c95e8463c4\tmerge(m0-train-3): feat/050-L15-alsa-tuning (independently reviewed)"
+  ],
+  "feature_train": 1,
+  "kind": "feature",
+  "milestone": "0.4",
+  "revision": 0,
+  "sha": "ed1fd4c3accaeb0c0aac283666c1c8de0dd33202",
+  "stage": "alpha",
+  "train": "050/m0-train-3",
+  "train_label": "1.0",
+  "version": "0.4.1-alpha.0"
+}

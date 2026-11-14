@@ -1,0 +1,22 @@
+{
+  "base": "050/m0-train-15",
+  "display_version": "0.4.11.0-alpha",
+  "evidence": "first-parent-promoted-ancestry",
+  "feature_items": [
+    "Q050-062.1",
+    "Q050-090"
+  ],
+  "feature_merge_evidence": [
+    "32ae934750190ecb4585416b753760516765c33f\tMerge feat/050-Q050-062.1-oc (accepted; 050/m0-train-16, automatic train)",
+    "405edd40378b5d5ce11072268e66048a2ed89838\tMerge port10/Q050-090 (accepted; 050/m0-train-16, automatic train)"
+  ],
+  "feature_train": 11,
+  "kind": "feature",
+  "milestone": "0.4",
+  "revision": 0,
+  "sha": "cf3618e61a61a44554f4fbac3be29a1027e3a776",
+  "stage": "alpha",
+  "train": "050/m0-train-16",
+  "train_label": "11.0",
+  "version": "0.4.11-alpha.0"
+}

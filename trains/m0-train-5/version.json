@@ -1,0 +1,26 @@
+{
+  "base": "050/m0-train-4",
+  "display_version": "0.4.3.0-alpha",
+  "evidence": "first-parent-promoted-ancestry",
+  "feature_items": [
+    "Q050-030",
+    "Q050-041",
+    "Q050-049",
+    "Q050-051"
+  ],
+  "feature_merge_evidence": [
+    "b02a0ff2bb87327132d35fdd48533e2b508cec0f\tMerge feat/050-Q050-041-carla-mutex-r4 into 050/m0-train-5 (Q050-041 Carla MIDI hand-off, rounds 1-6)",
+    "070d01f3fba1797ed1f6851e07a8e8d668f70b5e\tMerge feat/050-Q050-049-crash-quarantine into 050/m0-train-5 (Q050-049 crash quarantine offer)",
+    "52ea8f050a22df46c34e8abbee59fc9fe2b6f605\tMerge feat/050-Q050-051-lua-imports into 050/m0-train-5 (Q050-051 Lua imports)",
+    "c375c374ec61b977c9ac83a33bb5676a076f388c\tMerge feat/050-Q050-030-nam-load into 050/m0-train-5 (Q050-030 NAM model loading)"
+  ],
+  "feature_train": 3,
+  "kind": "feature",
+  "milestone": "0.4",
+  "revision": 0,
+  "sha": "de5a85a960ae309d9c6709d902d0a0c8db968bc5",
+  "stage": "alpha",
+  "train": "050/m0-train-5",
+  "train_label": "3.0",
+  "version": "0.4.3-alpha.0"
+}

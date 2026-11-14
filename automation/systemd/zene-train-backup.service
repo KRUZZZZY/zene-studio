@@ -1,0 +1,11 @@
+[Unit]
+Description=Secret-scanned GitHub backup of Zene promoted train records and evidence
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/kruzzzzy/.local/share/zene-bunny-fix/qwen
+Environment=PATH=/home/kruzzzzy/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/train_backup.py
+TimeoutStartSec=15min
+MemoryMax=2G

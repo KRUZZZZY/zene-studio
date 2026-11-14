@@ -1,0 +1,437 @@
+[
+  {
+    "bytes": 1772183,
+    "file": "evidence/train-10-bar.log.gz",
+    "sha256_uncompressed": "550a997c50d293135b02783b009da2e4d93bbe2ad8c6c1b088894bceaac11b9c"
+  },
+  {
+    "bytes": 110917,
+    "file": "evidence/train-10-build-bar.log.gz",
+    "sha256_uncompressed": "c2eaa9fd889b65a07b7c5968cb3af0e03737851d1e219659adb7ec385af92157"
+  },
+  {
+    "bytes": 216095,
+    "file": "evidence/train-10-build-revert.log.gz",
+    "sha256_uncompressed": "c2201a28404789e9370de7b195899db9866c4b8b1ee7da894a99a57d2568ee36"
+  },
+  {
+    "bytes": 468695,
+    "file": "evidence/train-10-build.log.gz",
+    "sha256_uncompressed": "cd67f63cdf0e8944f410d4bf7e2619dc2ecccc35b4e6715397c0fc2baca5b956"
+  },
+  {
+    "bytes": 4199167,
+    "file": "evidence/train-10-gates.log.gz",
+    "sha256_uncompressed": "d0d14be0452add7e13b8213eff79333f9406fbc789da426ab75ff8cb67ae4c5d"
+  },
+  {
+    "bytes": 8852,
+    "file": "evidence/train-10-rev-build.log.gz",
+    "sha256_uncompressed": "85b6a1b09622de56a04c195bcdf5a7030318e172a9ea55a4871defe7a9cd6c1a"
+  },
+  {
+    "bytes": 284,
+    "file": "evidence/train-10-rev.log.gz",
+    "sha256_uncompressed": "53defb3bbc2dfee81fe1153cbba7adb7bf028a18e0dce82acf799a0e7ecb0758"
+  },
+  {
+    "bytes": 1109244,
+    "file": "evidence/train-10-snapshot.json.gz",
+    "sha256_uncompressed": "c913a63ed949f287ae78db8df10695c167750b663c23974aaf43f8ce502b5a49"
+  },
+  {
+    "bytes": 2460,
+    "file": "evidence/train-10-solo-AudioPluginTest.log.gz",
+    "sha256_uncompressed": "95b52c380701bc4e817cdb9c129283070f89f2b0885203a8769ade0a8d62c6e7"
+  },
+  {
+    "bytes": 1225,
+    "file": "evidence/train-10-solo-ControlAudioEditing.log.gz",
+    "sha256_uncompressed": "44b080d3dbc6205ec3afff1f1febb3c7e0bfa3b271af5f0dad999144d0a5ce31"
+  },
+  {
+    "bytes": 1221,
+    "file": "evidence/train-10-solo-ControlBusCommands.log.gz",
+    "sha256_uncompressed": "b19d8cb0638dd5e7e0545bfc85f2a1fa0471d9dc23fb4e239f05b3f51e4d6979"
+  },
+  {
+    "bytes": 1225,
+    "file": "evidence/train-10-solo-ControlChainPresets.log.gz",
+    "sha256_uncompressed": "cc7dd9f881f61f21f0166476c6f9bc2a00883867bd382c1e3751b1bd0815ce8b"
+  },
+  {
+    "bytes": 1241,
+    "file": "evidence/train-10-solo-ControlChordProgression.log.gz",
+    "sha256_uncompressed": "2495e9fc9cc63ecf4b633055a23bec975d46c9ac76f77c8687a873f2a47d3695"
+  },
+  {
+    "bytes": 1229,
+    "file": "evidence/train-10-solo-ControlClockCommands.log.gz",
+    "sha256_uncompressed": "6da6581858797408c143272c5f2afa97798c92cb0ebd9cf4810b6b9be5a52386"
+  },
+  {
+    "bytes": 489,
+    "file": "evidence/train-10-solo-ControlCollab.log.gz",
+    "sha256_uncompressed": "acefc6137a31c1cd4521ce9bf61576dc25564826c10fd0c07f84259c017baec4"
+  },
+  {
+    "bytes": 1487,
+    "file": "evidence/train-10-solo-ControlCommandsSnapshot.log.gz",
+    "sha256_uncompressed": "8ec1d169c30fa5b00375e2def6e67a71556d41eececc4ecada6830e3e7acb76a"
+  },
+  {
+    "bytes": 1459,
+    "file": "evidence/train-10-solo-ControlContainerV2.log.gz",
+    "sha256_uncompressed": "0f8321551d3ad2c253dc36e4cf764f3ced2bb4b6d1a825900a982f796d3d414b"
+  },
+  {
+    "bytes": 1332,
+    "file": "evidence/train-10-solo-ControlCrashReporter.log.gz",
+    "sha256_uncompressed": "9ee577608e5db896519a8297c7d818e8b965df65a0efe6874a2caf71ab4959d3"
+  },
+  {
+    "bytes": 1227,
+    "file": "evidence/train-10-solo-ControlCustomisation.log.gz",
+    "sha256_uncompressed": "763afdc88d435860afa082bb943b9780cbe3c685142f303b46ef44d0cc789523"
+  },
+  {
+    "bytes": 1233,
+    "file": "evidence/train-10-solo-ControlDetectCommands.log.gz",
+    "sha256_uncompressed": "a682a2d05056857b7bb2faaf810aa735dbbdf5c5444e71e3d3f9f8715bb6e75a"
+  },
+  {
+    "bytes": 1203,
+    "file": "evidence/train-10-solo-ControlDevices.log.gz",
+    "sha256_uncompressed": "eab6197c4e2ed397a2cc16a3832ef3d70b7f1906b3f091b79c6b01b8fb98618c"
+  },
+  {
+    "bytes": 1472,
+    "file": "evidence/train-10-solo-ControlDryRunJournal.log.gz",
+    "sha256_uncompressed": "694037c58041a3d9c4e5d289139fc607d91e6bcfc46bc67c6e81a4e815c90b80"
+  },
+  {
+    "bytes": 1225,
+    "file": "evidence/train-10-solo-ControlEngineWiring.log.gz",
+    "sha256_uncompressed": "69f95c4331efde8b7f409ad8a265da6175ee917a9be9cddf2045859b74b4b6e1"
+  },
+  {
+    "bytes": 921,
+    "file": "evidence/train-10-solo-ControlExportSettings.log.gz",
+    "sha256_uncompressed": "72c2c50507a012658a94d6ef256ef313e9db6e9150a114055c506b056d9ba09b"
+  },
+  {
+    "bytes": 1241,
+    "file": "evidence/train-10-solo-ControlFeedbackCommands.log.gz",
+    "sha256_uncompressed": "ca8d8fc06a16e57212c86fbaaac6413d8efbe1c611bc89949fe51e7edec1f3eb"
+  },
+  {
+    "bytes": 1276,
+    "file": "evidence/train-10-solo-ControlFreezeCommandsTranscript.log.gz",
+    "sha256_uncompressed": "cef7c237f61a136dfad64bb76acefe5f5e14073f28905c527f10df53c73f9930"
+  },
+  {
+    "bytes": 1221,
+    "file": "evidence/train-10-solo-ControlGoldenAudio.log.gz",
+    "sha256_uncompressed": "3ca64d6aea1fd21676d0a8e9d3b7bfe1a2f2a525a8e3013e76fd0c30ccdac710"
+  },
+  {
+    "bytes": 1233,
+    "file": "evidence/train-10-solo-ControlGrooveCommands.log.gz",
+    "sha256_uncompressed": "51ddb3d2a6a9c14ef98006d87f65f81c0fe47f249f6fbf7fcefb96810f529f20"
+  },
+  {
+    "bytes": 1217,
+    "file": "evidence/train-10-solo-ControlHardwareIo.log.gz",
+    "sha256_uncompressed": "c64e1187933bb350285a05b8c5a430e80dcd7f4b91ad2e0d0607760ee8b73e7c"
+  },
+  {
+    "bytes": 13914,
+    "file": "evidence/train-10-solo-ControlHeadlessNoAudioDevice.log.gz",
+    "sha256_uncompressed": "6cbbb22130725f0cbd7e3a83c3710cc2024b1d2ae679283ac7deef40e84d9382"
+  },
+  {
+    "bytes": 11087,
+    "file": "evidence/train-10-solo-ControlHeadlessProjectOpen.log.gz",
+    "sha256_uncompressed": "81acbd10e39266e9b205880b38c3b8ac3077de9d356f85a2dac7e48ae2be8372"
+  },
+  {
+    "bytes": 12426,
+    "file": "evidence/train-10-solo-ControlHeadlessWorkingDirectory.log.gz",
+    "sha256_uncompressed": "22732738e055706d534f4710f84e5e7a3d876b1849e5ffaabdadf30b7b416653"
+  },
+  {
+    "bytes": 1233,
+    "file": "evidence/train-10-solo-ControlImportLifetime.log.gz",
+    "sha256_uncompressed": "a665520dd2bd96f4d3b46718b994df4abff0c1275b9b61e35a5db9050641a2f6"
+  },
+  {
+    "bytes": 1192,
+    "file": "evidence/train-10-solo-ControlJackCapture.log.gz",
+    "sha256_uncompressed": "d7e543a08a2af21539b13e9fd555b982161a59583f6875f6a1d9381b986bc134"
+  },
+  {
+    "bytes": 2553,
+    "file": "evidence/train-10-solo-ControlLinkSync.log.gz",
+    "sha256_uncompressed": "2003c770199bbde664cb5a8077398ae3498de0d4c0564bbd9190ea458e7f527f"
+  },
+  {
+    "bytes": 1241,
+    "file": "evidence/train-10-solo-ControlLivecodeCommands.log.gz",
+    "sha256_uncompressed": "e4b1fd2346f7e85b8448dacd216d4abbc5e4085714e13104ee692d33c3296b1c"
+  },
+  {
+    "bytes": 1321,
+    "file": "evidence/train-10-solo-ControlMasteringCommands.log.gz",
+    "sha256_uncompressed": "cff1354597a41b213a8e041f82712036ca9baccd47aee8b12dd38247364727b5"
+  },
+  {
+    "bytes": 1227,
+    "file": "evidence/train-10-solo-ControlMasteringQuit.log.gz",
+    "sha256_uncompressed": "2cefb3e9812f969a31bbdc69a05ba2c4ed21af3e33c20e030d7c963ac0e35669"
+  },
+  {
+    "bytes": 1323,
+    "file": "evidence/train-10-solo-ControlMasteringRunBound.log.gz",
+    "sha256_uncompressed": "0c00ae0d2d8b1ee67d27d810c351e035f50578aac089d195ad6aafae1bdb0bee"
+  },
+  {
+    "bytes": 1229,
+    "file": "evidence/train-10-solo-ControlMeterCommands.log.gz",
+    "sha256_uncompressed": "53922eac5c97ba97fe40992b47863bcf168a736b53b4db6372e3acadf1920c7a"
+  },
+  {
+    "bytes": 279,
+    "file": "evidence/train-10-solo-ControlMidiReconnect.log.gz",
+    "sha256_uncompressed": "328d86e456ddb694789b8356611f19bb8c86442bcec77b573c0125056d0758e3"
+  },
+  {
+    "bytes": 1229,
+    "file": "evidence/train-10-solo-ControlMixingRouting.log.gz",
+    "sha256_uncompressed": "01dd364b3bd078b2662408c2c2df532993cbb0ebeb366610908e39204fb5e563"
+  },
+  {
+    "bytes": 4781,
+    "file": "evidence/train-10-solo-ControlNoAudioDevice.log.gz",
+    "sha256_uncompressed": "a4295ed331962e2ef5b4d8091238368ea1d6b47046c6670105a1707a3718e319"
+  },
+  {
+    "bytes": 1217,
+    "file": "evidence/train-10-solo-ControlNoteEditor.log.gz",
+    "sha256_uncompressed": "3374a6322ea3ca75457d38c72d86f5d26e65b1c08831e4a00ea6a5387cd50a03"
+  },
+  {
+    "bytes": 788,
+    "file": "evidence/train-10-solo-ControlOversizedRequestLine.log.gz",
+    "sha256_uncompressed": "a02a6fb794b7f6cf22e6b9768bfe6e08fdfb323c74a759f81d9672f72f53463e"
+  },
+  {
+    "bytes": 1221,
+    "file": "evidence/train-10-solo-ControlPdcCommands.log.gz",
+    "sha256_uncompressed": "42478dbd3e856e6be514552df336d06cf825645b25456b6b4477526ccdf682ce"
+  },
+  {
+    "bytes": 1463,
+    "file": "evidence/train-10-solo-ControlPluginScanCommands.log.gz",
+    "sha256_uncompressed": "87619ca9ef98f41c5617474dbd29b7dd881634a53121f6fce5249dfa6fbe532c"
+  },
+  {
+    "bytes": 1229,
+    "file": "evidence/train-10-solo-ControlPortsCommands.log.gz",
+    "sha256_uncompressed": "78abde39759689758bb9e349a19cd60654cfba0da9a1bd3d2fecf25d387e95e4"
+  },
+  {
+    "bytes": 1237,
+    "file": "evidence/train-10-solo-ControlPunchTranscript.log.gz",
+    "sha256_uncompressed": "3b3be4dfd9196c331c3df8577524ce60ea90fb34242ad434e41416150335f207"
+  },
+  {
+    "bytes": 1726,
+    "file": "evidence/train-10-solo-ControlReadiness.log.gz",
+    "sha256_uncompressed": "9a218f7886ceddb3f7e41d744288cd8c4cae49ea150686c8e7e788ba7f065cf6"
+  },
+  {
+    "bytes": 1451,
+    "file": "evidence/train-10-solo-ControlRecordInputs.log.gz",
+    "sha256_uncompressed": "706f657e4f3936226e4df3a8e0c47b66abce39c64942334692cbc542336b2eaf"
+  },
+  {
+    "bytes": 1564,
+    "file": "evidence/train-10-solo-ControlRecordingRecovery.log.gz",
+    "sha256_uncompressed": "3c72f5e25a09b6b2a4d79fa76aac3e0d3cb018e557a17b9db3421b2b58aaf9b9"
+  },
+  {
+    "bytes": 1517,
+    "file": "evidence/train-10-solo-ControlRenderFormatCapability.log.gz",
+    "sha256_uncompressed": "472ac9a6069391301e7695b2f3dcb2a0871b4871f30e356ea58d1d618ef8a505"
+  },
+  {
+    "bytes": 1229,
+    "file": "evidence/train-10-solo-ControlRenderPresets.log.gz",
+    "sha256_uncompressed": "763f8971d64f69b7ecff3a9f2e4dc3a4453df4e75486eb76b5b482788eb36865"
+  },
+  {
+    "bytes": 1233,
+    "file": "evidence/train-10-solo-ControlRenderSections.log.gz",
+    "sha256_uncompressed": "a85b0cebff69cd5dc281675c0c19f123fa72513ba00b474bb8f3d7af5ad159f2"
+  },
+  {
+    "bytes": 1205,
+    "file": "evidence/train-10-solo-ControlRetroCapture.log.gz",
+    "sha256_uncompressed": "ebc7b47f44f2815b9596b8077693245521443d9d07daa8b88750834ab267e400"
+  },
+  {
+    "bytes": 1256,
+    "file": "evidence/train-10-solo-ControlReversibilityTranscript.log.gz",
+    "sha256_uncompressed": "af71e1a5f620a1f3381add14a0dd3e517a45f1c9a65c6b7524faacb8545d63d8"
+  },
+  {
+    "bytes": 1237,
+    "file": "evidence/train-10-solo-ControlRoutingCommands.log.gz",
+    "sha256_uncompressed": "ebcbabef9e436553fe593ee9818127577bbda3a8129fab505c2809dab42df329"
+  },
+  {
+    "bytes": 1449,
+    "file": "evidence/train-10-solo-ControlSaveState.log.gz",
+    "sha256_uncompressed": "64a126625746e1124222028f868f01c4bb71f96f61f63c56f6431ed9a903145c"
+  },
+  {
+    "bytes": 1431,
+    "file": "evidence/train-10-solo-ControlSessionApiProof.log.gz",
+    "sha256_uncompressed": "c3727a76b128732651126dfcdb22aec76ffcc4748eabdea4b7d7341d5b178bc0"
+  },
+  {
+    "bytes": 1793,
+    "file": "evidence/train-10-solo-ControlSessionLaunch.log.gz",
+    "sha256_uncompressed": "a660b32b6d4ae10f10e8ae15b4fe56368c5caaddf907d8e956bdbf1584ce7bd9"
+  },
+  {
+    "bytes": 1286,
+    "file": "evidence/train-10-solo-ControlSessionLifecycleTranscript.log.gz",
+    "sha256_uncompressed": "f0282d1fe64c5935c2db14e5149ce5a67ee9324066db4a8ffd37abe6739c309f"
+  },
+  {
+    "bytes": 1195,
+    "file": "evidence/train-10-solo-ControlShell.log.gz",
+    "sha256_uncompressed": "25991fd7dccb9d5bcf1b733558c30ed94c95e1a7ff1e2c7cbced5d4f30c303b3"
+  },
+  {
+    "bytes": 3816,
+    "file": "evidence/train-10-solo-ControlShutdown.log.gz",
+    "sha256_uncompressed": "21597f85797908db48fa0b70eac40ced5076eab6cd90a5895431884bfb8a1bcb"
+  },
+  {
+    "bytes": 9200,
+    "file": "evidence/train-10-solo-ControlSocketIntegration.log.gz",
+    "sha256_uncompressed": "785d0b9013e782d52c1fbc5a3da5fde7a5148d22854eb51c88998541ce63c75b"
+  },
+  {
+    "bytes": 1832,
+    "file": "evidence/train-10-solo-ControlStableIds.log.gz",
+    "sha256_uncompressed": "aee7a2d059a453e47d398c6745e2f61377211c3baab1bfea8e2ce4ce8eda04a8"
+  },
+  {
+    "bytes": 1616,
+    "file": "evidence/train-10-solo-ControlStableIdsSlice2.log.gz",
+    "sha256_uncompressed": "ca464edc7178ca772e37563d5e664be04e37e3accd808dca6df6547b3477513b"
+  },
+  {
+    "bytes": 1225,
+    "file": "evidence/train-10-solo-ControlStemCommands.log.gz",
+    "sha256_uncompressed": "9cb9afbe4557be86d6dd1782cdf4259de90fb8d7a3c3d159ad6b11d2cf1ac88d"
+  },
+  {
+    "bytes": 1223,
+    "file": "evidence/train-10-solo-ControlStoppedSeek.log.gz",
+    "sha256_uncompressed": "de9d7c11937da746b7fcea080b88ace58230eddba32fe7a650c1d47582d9f0d0"
+  },
+  {
+    "bytes": 1225,
+    "file": "evidence/train-10-solo-ControlSuccessPaths.log.gz",
+    "sha256_uncompressed": "189800de869042a967befc1097f4799cd62a5392d56c2051d76f9e964d2071bc"
+  },
+  {
+    "bytes": 1225,
+    "file": "evidence/train-10-solo-ControlSurfaceHardening.log.gz",
+    "sha256_uncompressed": "c7c94ea66306a902cbf5919425b17edfb9d345d73c65febdf61324687259f417"
+  },
+  {
+    "bytes": 1255,
+    "file": "evidence/train-10-solo-ControlTempoMapPersistence.log.gz",
+    "sha256_uncompressed": "86f58047214b929bfe2e558b86a8fe9affd8791c9a793b8b8f865e1ab15fd751"
+  },
+  {
+    "bytes": 1241,
+    "file": "evidence/train-10-solo-ControlTrackFolderTranscript.log.gz",
+    "sha256_uncompressed": "ccdc1ccb5e0832e354aa16f0684890d41466673704aec3957d65808245781d53"
+  },
+  {
+    "bytes": 1254,
+    "file": "evidence/train-10-solo-ControlUndoStructuralTranscript.log.gz",
+    "sha256_uncompressed": "a0ea180fcb612a3bf070d9889684638368d5e66a5b9f709eda40e1c73cbe5293"
+  },
+  {
+    "bytes": 1221,
+    "file": "evidence/train-10-solo-ControlVcaCommands.log.gz",
+    "sha256_uncompressed": "a0f6df42e6dbdc3543154d3fcb670536052134a5b748e90c354423c9bcce6ee5"
+  },
+  {
+    "bytes": 1217,
+    "file": "evidence/train-10-solo-ControlWasmDevice.log.gz",
+    "sha256_uncompressed": "b93264fba1a2087b459137afbb3cb800fcc7342586ade0bbdd5d412f05ae14d8"
+  },
+  {
+    "bytes": 1221,
+    "file": "evidence/train-10-solo-ControlWasmSandbox.log.gz",
+    "sha256_uncompressed": "484f3658043324ecc24df20879ba2778045ce733bb1c9c04701e0d5d41f21466"
+  },
+  {
+    "bytes": 275,
+    "file": "evidence/train-10-solo-ImportFilterTest.log.gz",
+    "sha256_uncompressed": "34127b9cb74d37ea08978bbae5399b2d583f0a851c73485c1e669575e6ac5ede"
+  },
+  {
+    "bytes": 274,
+    "file": "evidence/train-10-solo-LaneReadoutTest.log.gz",
+    "sha256_uncompressed": "0c430955d25ef1d93dbb18883142e3b2ec028d2eb0ad1ab06129f87c367d360d"
+  },
+  {
+    "bytes": 274544,
+    "file": "evidence/train-10-solo-LinkAudioStreamTest.log.gz",
+    "sha256_uncompressed": "e25c67477ad307a0a5b2a3626163ba59d606c8005a32f5c49ea8f08cd04c4330"
+  },
+  {
+    "bytes": 2794,
+    "file": "evidence/train-10-solo-MmpzV2CliRefusal.log.gz",
+    "sha256_uncompressed": "fd46be83db6acd03b44487b59b4583baee7149feb964cac4e980fefa23c7d5db"
+  },
+  {
+    "bytes": 285,
+    "file": "evidence/train-10-solo-RemotePluginAudioPortsTest.log.gz",
+    "sha256_uncompressed": "79c7ee7476aec917fd14d561abcdd3cd6aefe24eecb83b69afaf264db39867c4"
+  },
+  {
+    "bytes": 1852,
+    "file": "evidence/train-10-solo-RenderSoftwareTag.log.gz",
+    "sha256_uncompressed": "c51b07be20a666c274ee3d2457f0aca912c50addb2b4cf5bfb0d249b8ba048c6"
+  },
+  {
+    "bytes": 4115,
+    "file": "evidence/train-10-solo-SessionTuningTest.log.gz",
+    "sha256_uncompressed": "60771762f273612466b1ee5570a5dad775d6e5a29f27d8b949b8a82512a40410"
+  },
+  {
+    "bytes": 4059,
+    "file": "evidence/train-10-solo-TimelineSpeechTest.log.gz",
+    "sha256_uncompressed": "036363d996fbf7b99ccdcfa527aae71d560ac1836d426bdb1cae4542783c2b95"
+  },
+  {
+    "bytes": 175884,
+    "file": "evidence/train-10-solo-VcaStripViewTest.log.gz",
+    "sha256_uncompressed": "418febdbcae0a3a6a436a829b303eec7440a659439cb8ed6769dade676f5e50c"
+  },
+  {
+    "bytes": 1972,
+    "file": "evidence/train-10-solo-agent_surface.log.gz",
+    "sha256_uncompressed": "026f4306209603ac4f9d1731a59f8704a3b7b4b7f24b0b8c3bff03107561587f"
+  }
+]

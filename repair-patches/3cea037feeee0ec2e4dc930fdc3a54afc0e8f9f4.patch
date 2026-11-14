@@ -1,0 +1,1967 @@
+From 3cea037feeee0ec2e4dc930fdc3a54afc0e8f9f4 Mon Sep 17 00:00:00 2001
+From: Zene train Sol <noreply@zene.invalid>
+Date: Sat, 14 Nov 2026 08:30:19 +0000
+Subject: [PATCH] fix(train-sol): Fixed five hosted source portability causes,
+ added compiler and handshake regressions, and retained the pending Windows
+ regression. Targeted build, 18 CTest entries, unchanged gate
+
+Sol-Repair-Id: sol-repair-1794645019522388638
+---
+ .../cluster-ci-84e380615213284e.md            | 332 ++++++++++
+ .../sol-train-30-hosted-followup.md           | 122 ++++
+ plugins/Eq/EqSpectrumView.h                   |   3 +-
+ tests/CMakeLists.txt                          |  45 ++
+ tests/Qt5QFileInfoDateCheck.py                | 611 ++++++++++++++++++
+ tests/all-sources.txt                         |   1 +
+ tests/fork-sources.txt                        |   9 +
+ tests/src/core/CrashReporterArmTest.cpp       |   5 +-
+ .../src/core/MountNamespaceHandshakeTest.cpp  |  52 ++
+ tests/src/core/MountNamespaceTestSupport.h    |  20 +-
+ tests/src/core/NamModelLoaderTest.cpp         | 128 +++-
+ tests/src/core/RenderSourceGuardTest.cpp      |   3 +
+ tests/train-41-portability-check.py           | 243 +++++++
+ tests/upstream-modifications.txt              |   2 +
+ 14 files changed, 1538 insertions(+), 38 deletions(-)
+ create mode 100644 docs/qwen-fixes-2026-10/cluster-ci-84e380615213284e.md
+ create mode 100644 docs/qwen-fixes-2026-10/sol-train-30-hosted-followup.md
+ create mode 100644 tests/Qt5QFileInfoDateCheck.py
+ create mode 100644 tests/src/core/MountNamespaceHandshakeTest.cpp
+ create mode 100755 tests/train-41-portability-check.py
+
+diff --git a/docs/qwen-fixes-2026-10/cluster-ci-84e380615213284e.md b/docs/qwen-fixes-2026-10/cluster-ci-84e380615213284e.md
+new file mode 100644
+index 0000000000..37317f866a
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/cluster-ci-84e380615213284e.md
+@@ -0,0 +1,332 @@
++FIXED - cluster ci-84e380615213284e: `CarlaVst2Discovery.cpp` read a `QFileInfo` date without `<QDateTime>` in scope
++
++Verdict: **FIXED (REAL)**. The hosted `build / windows-arm64` failure is exactly
++reproduced on this box against the real Qt 5.15.19 headers, and fixed by one include.
++It is a first-party (fork-NEW) translation unit, not CI infrastructure.
++
++## The failure
++
++Job `run-43537465762-job-132269830963`, train 050/m0-train-29 at
++`7798296550396e87861e7e98c43397dcf854f506` (this checkout's HEAD):
++
++```
++plugins/CarlaBase/CarlaVst2Discovery.cpp:204:31: error: calling 'lastModified' with
++    incomplete return type 'QDateTime'
++plugins/CarlaBase/CarlaVst2Discovery.cpp:204:45: error: member access into incomplete
++    type 'QDateTime'
++2 errors generated.
++```
++
++`CarlaVst2Discovery.cpp:204` (`:205` after the fix) is
++
++```cpp
++const qint64 modified = info.lastModified().toMSecsSinceEpoch();
++```
++
++The file included `<QDir>`, `<QFileInfo>`, `<QHash>`, `<QMutex>`, `<QProcess>` … but not
++`<QDateTime>`. That compiles on this box only because Qt 6.12's `qfileinfo.h` includes
++`QtCore/qdatetime.h` (and `qdirlisting.h`, reached from `<QDir>`); Qt 5.15's
++`qfileinfo.h` only forward-declares `class QDateTime;` and declares the accessors out
++of line (`/usr/include/qt/QtCore/qfileinfo.h:53,139-145`), which is exactly the clang
++diagnostic in the job.
++
++## Reproduction (real Qt 5.15.19 headers, no shadow)
++
++```
++/usr/bin/c++ -std=gnu++20 -fsyntax-only $(pkg-config --cflags Qt5Widgets Qt5Xml Qt5Network) \
++  -Iinclude -Ibuild -Ibuild/src -Ibuild/plugins/CarlaBase \
++  -Iplugins/CarlaBase/carla/source -Iplugins/CarlaBase/carla/source/includes \
++  -Iplugins/CarlaBase/carla/source/backend -Iplugins/CarlaBase/carla/source/utils \
++  -Iplugins/CarlaBase/CarlaConfig -Isrc/3rdparty/weakjack/weakjack \
++  -Isrc/3rdparty/jack2/common -Isrc/3rdparty/ringbuffer/include -Ibuild/src/3rdparty \
++  -Isrc/3rdparty/lua -Isrc/3rdparty/luabridge plugins/CarlaBase/CarlaVst2Discovery.cpp
++```
++
++| Stage | Exit | Log |
++|---|---:|---|
++| original code | **1** — `CarlaVst2Discovery.cpp:204:50: error: invalid use of incomplete type 'class QDateTime'` | `41-qt5-real-compile-red.log` |
++| with the fix | **0** | `40-qt5-real-compile-green.log` |
++
++The same command compiled **every** other first-party translation unit that calls a
++`QFileInfo` date accessor (`lastModified`, `birthTime`, `metadataChangeTime`,
++`lastRead`, `fileTime`) — 27 of them, 20 product and 7 test translation units — and
++only this one failed. That is the completeness check for the "every caller and sibling"
++rule: `src/core/PluginFactoryScanDetail.h:104,133` also calls `lastModified()` without
++including `<QDateTime>`, but both of its including translation units
++(`PluginFactory.cpp:28`, `PluginFactoryBackgroundScan.cpp`) include `<QDateTime>` by
++name and build on Qt 5 (verified: both exit 0).
++
++## The fix
++
++`plugins/CarlaBase/CarlaVst2Discovery.cpp` — one line, `<QDateTime>` beside `<QDir>` in
++the file's own include block. No behaviour, ABI, command, undo or realtime change: the
++file is the GUI/control-thread VST2 discovery scanner (its header comment states that
++nothing there touches audio), and the include only names a type already used. It is a
++fork-NEW file (`tests/fork-sources.txt:3534`), so no divergence-ledger entry is needed.
++
++## The regression test
++
++`tests/Qt5QFileInfoDateCheck.py`, registered as CTest `Qt5QFileInfoDateCheck`
++(`tests/CMakeLists.txt`, beside the other Qt 5 portability checks), registered in
++`tests/fork-sources.txt`.
++
++The defect is invisible on a Qt 6.12 host, so the test does not trust this box's
++headers. It compiles each candidate translation unit through its **own**
++`build/compile_commands.json` command line against a QtCore/qfileinfo.h (and
++qdirlisting.h, which `<QDir>` reaches on Qt 6) in the failing shape: the two
++QDateTime/QTimeZone includes removed, `QDateTime` forward-declared and the accessors
++declared out of line — the exact Qt 5 header shape, derived from the real header so it
++cannot drift. On a Qt whose real header already has that shape (the hosted Qt 5 jobs)
++it uses the real header and builds no shadow. Test translation units get their own
++`.moc` from the build's moc, as automoc does.
++
++Three properties keep it from being a tautology:
++
++* a known-bad fixture (date accessor, no `<QDateTime>`) must be **rejected with the
++  CI's own QDateTime diagnostic** before any product file is judged — the run prints
++  whether it was;
++* a known-good fixture (same code with the include) must compile;
++* a translation unit that does not build on this host for an unrelated reason is
++  reported SKIP; a baseline compile whose diagnostic is the CI's own - an **incomplete
++  QDateTime** - is FAIL, never SKIP. On the failing Qt 5 / macOS Qt 6 header shape
++  nothing supplies QDateTime, so that error is raised by the *baseline* compile: the
++  sweep would have passed while the hosted job was red, which is the hole the first
++  review found (`tests/Qt5QFileInfoDateCheck.py:288-290` at `035e3bcae9`). The
++  classifier is proved by a self-test on synthetic compiler output both ways: the two
++  spellings of the incomplete-type error (clang's "calling 'lastModified' with
++  incomplete return type" and gcc's "invalid use of incomplete type") are FAIL, while an
++  unrelated compiler error, a missing-header error and a different QDateTime error
++  (e.g. no matching `QDateTime::fromString`) remain skippable.
++
++The registered test sweeps **twice** where a Qt 5 development tree exists: once through
++this build's Qt 6 headers with the shadow shape, and once against the real Qt 5 root
++(`pkg-config --variable=includedir Qt5Core`, overridable with `--qt5-root`), with every
++recorded Qt 6 include root rewritten to its Qt 5 counterpart. The second sweep is the
++hosted configuration itself: there the failing translation unit's BASELINE compile says
++`invalid use of incomplete type 'class QDateTime'`, and the test now fails on it.
++
++It needs no second toolchain, no network, no clock: the only inputs are the recorded
++compile commands, the real Qt headers and the fixtures.
++
++## Evidence
++
++All commands run from the worktree root with the exit code measured unpiped
++(`cmd > log 2>&1; echo EXIT=$?`), except ctest, which was run from `build/tests`.
++Logs: `build/qwen-ci-84e380615213284e-logs/` in the worktree (see the note at the end —
++the assigned LOG FOLDER is not writable from this session).
++
++| Stage | Exact command | Exit | Result |
++|---|---|---:|---|
++| Build with fix | `cmake --build build --target carlabase -j20` | **0** | `Built target carlabase` |
++| **RED** — fix reverted, fresh test | `git apply -R fix.patch && cmake --build build --target zene carlabase -j12 && ctest -R Qt5QFileInfoDateCheck --output-on-failure` | **8** | two FAIL lines for `CarlaVst2Discovery.cpp`: `…204:50: error: invalid use of incomplete type 'class QDateTime'` (Qt 6 + shadow) and `baseline compile reports the CI's error: …204:50: error: invalid use of incomplete type 'class QDateTime'` (real Qt 5); `checked 47 … skipped 7`; `0% tests passed, 1 tests failed out of 1` |
++| **GREEN** — fix restored | `git apply fix.patch && cmake --build build --target zene carlabase -j12 && ctest -R Qt5QFileInfoDateCheck --output-on-failure` | **0** | `1/1 Test #953: Qt5QFileInfoDateCheck … Passed 126.14 sec`; `100% tests passed` |
++| Qt5 family | `ctest -R "Qt5\|ArrangerZoomNoGestures\|MocQt5" --output-on-failure` | **0** | 6/6 passed (`MocQt5TrailingReturnCheck`, `Qt5OverloadedSignalCheck`, `Qt5SignalOverloadCheck`, `Qt5SignalOverloadArmCheck`, `ArrangerZoomNoGestures`, `Qt5QFileInfoDateCheck`) |
++| Real Qt 5 sweep, fix reverted | `python3 tests/Qt5QFileInfoDateCheck.py --build-dir build --moc /usr/lib/qt6/moc --qt5-root /usr/include/qt` | **1** | `FAIL … baseline compile reports the CI's error: …204:50: error: invalid use of incomplete type 'class QDateTime'` |
++| Real Qt 5 sweep, fix restored | the same command | **0** | `checked 47 translation unit(s), skipped 7`; `PASS` |
++| Real Qt 5 RED (fix reverted) | the `c++ -fsyntax-only` command above | **1** | `CarlaVst2Discovery.cpp:204:50: error: invalid use of incomplete type 'class QDateTime'` |
++| Real Qt 5 GREEN (fix applied) | the same command | **0** | no diagnostic |
++
++`fix.patch` is `git diff -- plugins/CarlaBase/CarlaVst2Discovery.cpp`; the test files
++were not reverted, so the RED run above is the product change alone.
++
++## Gates
++
++Run in this worktree. The gate runner's own baseline cache
++(`~/.local/share/zene-bunny-fix/qwen/gate-baselines/`) and the assigned LOG FOLDER are
++both outside this session's write jail (see the note at the end), so the installed
++`feature_check.py` cannot write its base listing there and exits while running
++`git checkout --detach` in that cache. The same script was therefore run from a copy
++with a writable cache in `$TMPDIR`, with the baselines computed by the gate scripts
++themselves on a pristine tree of the base commit (`git archive HEAD` of
++`7798296550` into `$TMPDIR/base-tree-7798296550`, then the same two `--check` commands):
++
++| Gate | Exit | Note |
++|---|---:|---|
++| fork-sources | **0** | every tracked source registered, 0 stale |
++| all-sources-reproduce | **0** | `REPRODUCES` |
++| no-upstream-regression | **0** | all divergences declared |
++| check-namespace | **0** | 0 errors |
++| no-tautology | **0** | PASS |
++| doc-figures | **0** | PASS |
++| complexity (`--check`) | **0** | no new item in the changed files (highest new function CCN 10, at the target) |
++| file-length (`--check`) | **1** | 27 pre-existing items, identical count on the pristine base tree; none in the files added or changed here |
++| `feature_check.py` (relocated copy, base `779829655`) | **0** | 8/8 rows PASS |
++
++The installed `feature_check.py` was run first and **exited 1** with
++`CalledProcessError: … git -C …/qwen/gate-baselines/tree checkout -q --detach
++7798296550396e87861e7e98c43397dcf854f506 … returned non-zero exit status 97` (the
++bunny guard refusing a write inside the read-only installed tree), before any gate ran;
++that run's `submit_check.py` gate row was therefore FAIL for an environmental reason.
++Later in the session the base listing for `7798296550` existed in that cache and the
++installed runner completed, reporting the same 8/8 PASS table (`submit_check.py`:
++**exit 0**). Both logs are in the log folder.
++
++The file-length row is red on the train by design (the brief says so); its failures are
++unchanged compared with the base tree.
++
++## Self-check
++
++1. **The regression test FAILS with the product change reverted and PASSES with it
++   (exit codes).** RED: reverse `fix.patch`, `cmake --build build --target zene carlabase
++   -j12` (exit 0), run `ctest -R Qt5QFileInfoDateCheck` → **exit 8**, with the failure
++   reported on BOTH sweeps (`…:204:50: error: invalid use of incomplete type 'class
++   QDateTime'` on the shadow shape, and `baseline compile reports the CI's error: …` on
++   the real Qt 5 root). GREEN: `git apply fix.patch`, rebuild (exit 0), same ctest →
++   **exit 0**, 1/1 passed in 130.36 s. The fix-reversed real-Qt-5 sweep on its own is
++   exit 1 → exit 0 restored.
++2. **The test is deterministic: no wall-clock timing, sleeps or races.** It reads
++   `build/compile_commands.json`, the installed Qt headers and two fixture files, and
++   runs the configured C++ compiler (`--cxx ${CMAKE_CXX_COMPILER}`) in its own
++   syntax-only mode (`-fsyntax-only`, or `/Zs` for cl.exe/clang-cl) and `moc` on them. Nothing is timed; there is no thread, no
++   sleep, no network, no dependency on the mtime of anything. The only mutation is a
++   temporary directory destroyed on exit. Which toolchains it sweeps is decided by what
++   is installed (a Qt 5 tree adds the real-Qt-5 sweep), and each verdict is a pure
++   function of the compiler's output.
++3. **The fix is at the cause and complete: every caller and sibling checked and
++   consistent.** All 27 first-party translation units that call a `QFileInfo` date
++   accessor were compiled against the real Qt 5 headers (27 candidates: 20 product and
++   7 test units, printed by the check). The registered test sweeps twice and reports
++   `checked 47 translation unit(s), skipped 7`: the 7 skips are the test units on the
++   real-Qt-5 sweep, which cannot build there because this box has no Qt 5 `moc` — they
++   are reported, not silently passed. Twenty-six of the 27 already had `<QDateTime>` in scope
++   by name or through a header both supported Qt versions supply; only
++   `CarlaVst2Discovery.cpp` did not. `PluginFactoryScanDetail.h`'s two calls are covered
++   by its two including translation units, both compiled clean on Qt 5. No header was
++   changed, so no dependent target needed a rebuild beyond `carlabase`.
++4. **No collateral damage.** The change is an include: no project/data format, no
++   command, no signal, no default, no limit. Old projects and saved data are untouched
++   (nothing in the save/load path is reached by this file beyond the discovery cache,
++   whose key is still `QFileInfo::size()` + `lastModified().toMSecsSinceEpoch()`). The
++   new check only ever runs as a test; a translation unit it cannot build is SKIPped,
++   never failed, so it cannot block another caller.
++5. **ALREADY-FIXED / FALSE-POSITIVE evidence.** Not applicable: the verdict is FIXED,
++   with the real-Qt-5 compile of the original code at exit 1 recorded above. (Sibling
++   review: `tests/upstream-modifications.txt:872` records that the same class was fixed
++   once before in `src/core/PluginFactory.cpp`; this is a second, independent site in a
++   file the earlier sweep never reached because that sweep only covered translation
++   units the Qt 5 build had compiled, and `carlabase` is behind
++   `LMMS_HAVE_CARLA OR LMMS_HAVE_WEAKCARLA`.)
++
++## Files committed
++
++```
++plugins/CarlaBase/CarlaVst2Discovery.cpp        +1   (the include)
++tests/Qt5QFileInfoDateCheck.py               new  (the regression; named after its CTest test)
++tests/CMakeLists.txt                            +18  (register Qt5QFileInfoDateCheck)
++tests/fork-sources.txt                          +4   (register the test and this report)
++docs/qwen-fixes-2026-10/cluster-ci-84e380615213284e.md  new  (this report)
++```
++
++Commits `035e3bcae9` (fix, regression, report), `3794b6b066` (baseline-error
++classification), `6cf44c5d69` and the round-2 rework commit on top, all naming cluster
++ci-84e380615213284e; `git status` clean.
++
++Note on logs: the assigned LOG FOLDER
++(`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-84e380615213284e.r1/logs`) is
++not writable from this session even though its mode is `drwxrwxr-x` and its owner is
++this user — `touch`, `install`, `cp`, a directory `O_CREAT` and the editor's temp-file
++create all return `EACCES`, while the worktree and `$TMPDIR` are writable. The logs were
++therefore written to `build/qwen-ci-84e380615213284e-logs/` in the worktree (untracked,
++under the git-ignored `build/`), copied from `$TMPDIR/logs-ci-84e380615213284e/`.
++
++## Completion check
++
++`python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> ci-84e380615213284e`
++→ **exit 0**:
++
++```
++PASS  commits on the branch
++PASS  working tree clean
++PASS  report docs/qwen-fixes-2026-10/cluster-ci-84e380615213284e.md
++PASS  tests added or changed - tests/Qt5QFileInfoDateCheck.py
++PASS  gates (feature_check.py)
++RESULT: PASS - submit
++```
++
++(Earlier in the session the installed `feature_check.py` could not write its baseline
++cache and that row was FAIL for an environmental reason; the base listing for
++`7798296550` now exists in `~/.local/share/zene-bunny-fix/qwen/gate-baselines/`, so the
++installed runner completes. Both runs are in the log folder.) All five ASK items are
++answered in the Self-check section.
++
++## Rework after the round-1 review
++
++The review's one blocking item was `test-proves-nothing`: at `035e3bcae9` the harness
++returned SKIP on **any** failed baseline compile
++(`tests/Qt5QFileInfoDateCheck.py:288-290`), so on the hosted Qt 5 header shape —
++where the incomplete-QDateTime error is raised by the baseline compile itself — the
++affected translation unit would have been skipped and the test would have passed while
++the CI job failed. Fixed here:
++
++* `baseline_verdict()` (`tests/Qt5QFileInfoDateCheck.py:315`) classifies a baseline
++  diagnostic that is the CI's own (an **incomplete QDateTime**, either compiler
++  spelling) as FAIL and keeps every other baseline failure non-fatal. `date_diagnostic()`
++  (`:189`) is the single classifier used for both the baseline and the strict compile.
++* `self_test()` (`:329`) proves both directions on synthetic compiler output before the
++  sweep: clang's and gcc's incomplete-QDateTime spellings FAIL, while a missing-header
++  error and an unrelated QDateTime error stay skippable. A failure there exits 2 without
++  touching a single product file.
++* The registered test now also sweeps through a **real Qt 5** tree when one is installed
++  (`toolchains()` at `:450`; `--qt5-root`, `QT5_INCLUDE_DIR`, or `pkg-config
++  --variable=includedir Qt5Core`), rewriting every recorded Qt 6 include root to its
++  Qt 5 counterpart. On this box that second sweep goes through `/usr/include/qt`; with
++  the product include reversed its BASELINE compile says `invalid use of incomplete type
++  'class QDateTime'` and the test fails on it (proof below). On a host with no Qt 5 tree
++  the second sweep is simply absent and the shadow sweep remains the check — the same
++  conditional form the Qt 5 signal-overload checks use.
++
++## Rework after the round-2 review
++
++Two blocking items, both in the test harness rather than the product:
++
++1. **`ci-compile` — the check could not run under MSVC.** `.github/workflows/build.yml`
++   runs CTest on `msvc-x64`, and the harness hardcoded `-fsyntax-only` for both the
++   translation-unit and the fixture compiles. Every compile now uses the configured
++   compiler's own switch through `switch(compiler, msvc, other)`:
++   `-fsyntax-only` for gcc/clang, **`/Zs`** for `cl.exe` and `clang-cl`, with `/I` and
++   `/std:c++20` alongside. `tests/CMakeLists.txt` passes `--cxx ${CMAKE_CXX_COMPILER}`,
++   so the registered test builds with the job's own compiler rather than a `c++` from
++   PATH. Windows support is no longer incidental: `split_command()` parses a recorded
++   MSVC line with quoted `C:/Program Files/...` paths and escaped quotes,
++   `substitute_paths()` rebases `\`-separated include roots case-insensitively (and
++   `include_dirs()` reads `/I path`, `/Ipath` and `/external:I`), and `errors_of()` reads
++   MSVC's **stdout** diagnostics, not only stderr. The classifier accepts all three
++   spellings of the CI's error (clang "incomplete return type", gcc "invalid use of
++   incomplete type", MSVC `C2027 use of undefined type`).
++2. **Red proof lost — the QA negative control could not find the test.** `negctl.prove()`
++   pairs a changed `tests/` file with the CTest test of the **same stem**
++   (`tests/<stem>.py` → `<stem>`). The script was `qt5-qfileinfo-date-check.py` while the
++   test was `Qt5QFileInfoDateCheck`, so the control reported "no ctest test matched the
++   changed tests (qt5-qfileinfo-date-check)" and the whole verification was discarded.
++   The script is now **`tests/Qt5QFileInfoDateCheck.py`**, the same stem as the
++   registration (which is unchanged: `add_test(NAME Qt5QFileInfoDateCheck ...)`), and the
++   report names the test in its `ctest -R` evidence. Running `negctl.prove()` on the
++   committed branch with **no report text** now resolves the test by stem
++   (`"tests": ["Qt5QFileInfoDateCheck"]`), which is what the control asks it to do.
++
++`self_test()` proves the new paths before any product file is judged, on every host:
++the Windows parse (quoted paths, escaped quotes), the include rebase, the `/Zs`,
++`/I`, `/std:c++20` switches for `cl.exe` and `clang-cl` versus `-fsyntax-only` for
++gcc/clang, an MSVC compile line losing `/Fo` and `/c` and gaining `/Zs` and a Qt 5
++include root, the MSVC fixture command line, and all three diagnostic spellings plus the
++three that must stay skippable.
++
++Verified with the registered test after the rebuild (reconfigured first, so the CTest
++entry carries `--cxx`):
++
++| Command | Exit |
++|---|---:|
++| `cmake -S . -B build` (real cmake; registers the renamed script) | **0** |
++| `cmake --build build --target zene carlabase -j12` (fix present) | **0** |
++| `ctest -R Qt5QFileInfoDateCheck --output-on-failure` (fix present) | **0** — 1/1 passed, 130.40 s (121.11 s on the committed tip) |
++| `git apply -R fix.patch` + the same build | **0** |
++| `ctest -R Qt5QFileInfoDateCheck --output-on-failure` (include reversed) | **8** — both sweeps report `CarlaVst2Discovery.cpp:204:50: error: invalid use of incomplete type 'class QDateTime'` |
++| `git apply fix.patch` + the same build | **0** |
++| `ctest -R Qt5QFileInfoDateCheck --output-on-failure` (restored) | **0** — 1/1 passed, 130.36 s |
++| `python3 tests/Qt5QFileInfoDateCheck.py --build-dir build --moc /usr/lib/qt6/moc --qt5-root /usr/include/qt` | **0** — 47 checked, 7 skipped |
++| the same with `QT5_INCLUDE_DIR=/nonexistent` (no Qt 5 host) | **0** — 27 checked, 0 skipped |
++| `ctest -R "Qt5\|ArrangerZoomNoGestures\|MocQt5"` | **0** — 6/6 |
++| `feature_check.py` (relocated writable cache) | **0** — 8/8 rows PASS |
++| `negctl.prove()` with no report text (stem matcher) | **ok: true** — fails rc 8 reversed, passes rc 0 restored, tree clean |
++
++**Verdict: FIXED** — the product include is the cause-level fix, and the regression now fails on the hosted Qt 5 header shape (baseline compile) as well as on the shadow shape.
+diff --git a/docs/qwen-fixes-2026-10/sol-train-30-hosted-followup.md b/docs/qwen-fixes-2026-10/sol-train-30-hosted-followup.md
+new file mode 100644
+index 0000000000..bd12842619
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/sol-train-30-hosted-followup.md
+@@ -0,0 +1,122 @@
++# Train 30 hosted build follow-up (failure 41)
++
++Base: `40b4322860e9c2133f412a4b921b63b057dd710c`, hosted build run
++`43569206372` (2026-11-14). Seven failures represent five source portability
++causes plus one dependency-service failure; this was not a resource kill.
++
++## Changes and file registration
++
++| Path | Reason |
++| --- | --- |
++| `tests/src/core/MountNamespaceTestSupport.h` | Check both pipe notifications, retry EINTR, reject failed/short writes, close the parent write end before awaiting the reply. |
++| `tests/src/core/MountNamespaceHandshakeTest.cpp` | Deterministic EINTR, EBADF, short-write and exact-byte regression. |
++| `plugins/Eq/EqSpectrumView.h` | Use QVector for the contiguous copied spectrum on both Qt5 and Qt6. |
++| `tests/src/core/CrashReporterArmTest.cpp` | Derive the interposer exception specification from the platform declaration; allow Darwin's function-like sigemptyset macro. |
++| `tests/src/core/RenderSourceGuardTest.cpp` | Compile the POSIX-only queue helper under its callers' existing platform guard. |
++| `tests/src/core/NamModelLoaderTest.cpp` | Replace filesystem fixture plumbing with unique native temporary directories, stat and RAII cleanup; preserve all loader refusal and file-size assertions and the macOS deployment floor. |
++| `tests/train-41-portability-check.py` | Strict compiler probes against the actual changed translation units and both sigaction declaration contracts. |
++| `tests/Qt5QFileInfoDateCheck.py` | Retain the independently accepted pending QFileInfo/QDateTime compiler regression unchanged. |
++| `docs/qwen-fixes-2026-10/cluster-ci-84e380615213284e.md` | Retain that repair's original report unchanged. |
++| `tests/CMakeLists.txt` | Register the handshake executable, six compiler probes and retained date-accessor check. |
++| `tests/all-sources.txt`, `tests/fork-sources.txt`, `tests/upstream-modifications.txt` | Declare new paths and inherited changes with reasons. |
++| This report | Record reproduction, verification, review and remaining hosted blocker. |
++
++The pending repair `ci-repair-ci-84e380615213284e-dc4ee443d591`
++(commit `05bed25c6f60d3929a9624d91e80a1375b732c40`) cannot replay: its
++Carla include is already present and its CMake/manifest context has moved.
++This replacement retains its script and report byte for byte, and registers its
++check in stable context. Supersede that pending ID; do not discard its regression.
++
++## Reproduction and verification
++
++Configured the one private build (exit 0):
++
++```sh
++cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo -DCMAKE_EXE_LINKER_FLAGS:STRING=-Wl,--strip-debug -DUSE_WERROR:BOOL=ON -DWANT_ABLETON_LINK:BOOL=ON -DWANT_ALSA:BOOL=ON -DWANT_CALF:BOOL=ON -DWANT_CAPS:BOOL=ON -DWANT_CARLA:BOOL=ON -DWANT_CMT:BOOL=ON -DWANT_COLLAB:BOOL=ON -DWANT_DEBUG_CPACK:BOOL=ON -DWANT_GIG:BOOL=ON -DWANT_JACK:BOOL=ON -DWANT_LV2:BOOL=ON -DWANT_MP3LAME:BOOL=ON -DWANT_OGGVORBIS:BOOL=ON -DWANT_OSS:BOOL=ON -DWANT_PORTAUDIO:BOOL=ON -DWANT_PULSEAUDIO:BOOL=ON -DWANT_QT6:BOOL=ON -DWANT_RUBBERBAND:BOOL=ON -DWANT_SDL:BOOL=ON -DWANT_SF2:BOOL=ON -DWANT_SID:BOOL=ON -DWANT_SNDIO:BOOL=ON -DWANT_SOUNDIO:BOOL=ON -DWANT_STEM_SPLIT:BOOL=ON -DWANT_STK:BOOL=ON -DWANT_SUIL:BOOL=ON -DWANT_SWH:BOOL=ON -DWANT_TAP:BOOL=ON -DWANT_VST:BOOL=ON -DWANT_VST3_TEST_INSTRUMENT:BOOL=ON -DWANT_VST_32:BOOL=ON -DWANT_VST_64:BOOL=ON -DWANT_WASM:BOOL=ON -DWANT_WEAKJACK:BOOL=ON -DZENE_TELEMETRY:BOOL=ON -DZENE_WANT_FFMPEG:BOOL=ON -DZENE_WANT_LIBAAF:BOOL=ON -DWANT_COVERAGE:BOOL=OFF -DWANT_CPACK_TARBALL:BOOL=OFF -DWANT_DEBUG_ASAN:BOOL=OFF -DWANT_DEBUG_FPE:BOOL=OFF -DWANT_DEBUG_GPROF:BOOL=OFF -DWANT_DEBUG_MSAN:BOOL=OFF -DWANT_DEBUG_RTSAN:BOOL=OFF -DWANT_DEBUG_TSAN:BOOL=OFF -DWANT_DEBUG_UBSAN:BOOL=OFF -DWANT_WINMM:BOOL=OFF -DWANT_CLAP:STRING=ON -DWANT_VST3:STRING=ON -DLMMS_CLAP_FETCH=ON -DONNXRUNTIME_ROOT=/home/kruzzzzy/.local/zene-deps/onnxruntime-linux-x64-1.28.0 -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache '-DCMAKE_CXX_FLAGS=-isystem /usr/include/cairo -Wno-error=deprecated-declarations -Wno-error=unused-result -Wno-error=sfinae-incomplete' '-DCMAKE_C_FLAGS=-isystem /usr/include/cairo -Wno-error=deprecated-declarations -Wno-error=unused-result -Wno-error=sfinae-incomplete'
++```
++
++Targeted build (exit 0):
++
++```sh
++cmake --build build --target zene RecordToolsTest CrashReporterArmTest RenderSourceGuardTest NamModelLoaderTest eq AudioPluginTest EqPeakHandoffTest AudioAnalysisTest MountNamespaceHandshakeTest -j12
++```
++
++Negative controls use HEAD sources copied into temporary directories; no other
++worktree is edited. Strict namespace compilation uses code generation, since
++`-fsyntax-only` does not reliably expose fortified unused-result diagnostics:
++
++```sh
++c++ -std=c++20 -O2 -D_FORTIFY_SOURCE=2 -Werror=unused-result -fPIC $(pkg-config --cflags Qt6Core) -I. -c /tmp/sol41-namespace-probe.cpp -o /tmp/sol41-namespace-probe.o
++```
++
++The probe includes the namespace helper and calls enterOwnMountNamespace.
++Original helper: exit 1 at both ignored write calls. Repaired helper: exit 0.
++Actual Qt5 compilation of EqSpectrumView.cpp with the HEAD header fails at the
++QList sized constructor and data access; the QVector header passes:
++
++```sh
++c++ -std=c++20 -fPIC -fsyntax-only $(pkg-config --cflags Qt5Widgets Qt5Xml Qt5Network) -Iinclude -Ibuild -Ibuild/src -Iplugins/Eq -Ibuild/plugins/Eq -I/usr/include/cairo -DPLUGIN_NAME=eq plugins/Eq/EqSpectrumView.cpp
++```
++
++The four remaining negative controls invoke the registered probe functions with
++original HEAD translation units substituted into the build compilation database.
++Each fails for the intended cause: throwing sigaction declaration versus
++unconditional noexcept, scope-qualified function macro, forbidden filesystem
++include, and the unused queueRender helper with Windows slots excluded.
++The render check generates its own Windows-mode moc and emits an object with
++`-Werror=unused-function`; it does not reuse the incompatible Linux-mode moc.
++
++```sh
++python3 /tmp/sol41-negative-controls.py
++```
++
++Exit 0 means all four original-source compilations failed as required. Evidence:
++`/tmp/sol41-negative-controls.log`; namespace and Qt5 red/green evidence:
++`/tmp/sol41-namespace-{red,green}.log`, `/tmp/sol41-eq-{red,green}.log`.
++These are local compiler-contract checks, not native Windows/macOS certification.
++
++Final targeted CTest command (from build/tests; result recorded below):
++
++```sh
++PATH=/tmp/sol39-lizard125/bin:$PATH PYTHONPATH=/tmp/sol39-lizard125 ctest -R '^(RecordToolsTest|CrashReporterArmTest|RenderSourceGuardTest|NamModelLoaderTest|AudioPluginTest|EqPeakHandoffTest|AudioAnalysisTest|MountNamespaceHandshakeTest|Train41-(linux|eq|darwin-signature|darwin-tu|nam|render)|Qt5QFileInfoDateCheck|FileLengthGate|NoteCanvasComplexityGate|complexity-regression-check)$' -j1 --timeout 900 --no-tests=error --output-on-failure
++```
++
++Lizard is 1.25.1, matching hosted CI. Gates and baselines are unchanged.
++
++## Independent review and external blocker
++
++Read-only Luna review checked assertion retention, namespace error paths, NAM
++fixture ownership, pending-repair equivalence and the hosted logs. Its sole
++initial blocker was this missing report, now supplied. Final validation and
++review results follow below.
++
++MSVC issue `ci-b38398fa7833e0a4`: job `132369662829` fails during vcpkg
++configuration, before source compilation. Its log lines 1036-1038 show HTTP 403
++from GitHub's PCRE2 contents API for `deps/sljit?ref=pcre2-10.49`, classified
++non-transient by vcpkg. The evidence does not identify quota or authentication
++as the cause. CI infrastructure must inspect response/auth/proxy diagnostics and
++restore dependency access, then rerun the native job. No speculative workflow,
++secret, deployment-floor or warning-policy changes are included. The full train
++and native hosted builds remain required.
++
++## Final results
++
++- Targeted build: exit 0 (`/tmp/sol41-build-verified.log`).
++- Exact CTest command above: exit 0, **18/18 entries passed**, 162.96 seconds
++  (`/tmp/sol41-ctest.log`). All eight runtime executables passed. RecordToolsTest
++  contains one existing permission-based skip for an unprivileged mount namespace;
++  the deterministic handshake executable ran successfully.
++- Retained Qt5QFileInfoDateCheck: 47 translation units checked, seven skipped by
++  its unchanged baseline policy because the Qt6-generated moc includes
++  qtmochelpers.h unavailable in the local Qt5 headers. Carla passed on both
++  inspected toolchain shapes. These skips do not certify the skipped Qt5 test TUs.
++- `bash tests/no-upstream-regression-gate.sh`: exit 0.
++- `bash tests/fork-sources-gate.sh`: exit 0, zero stale entries.
++- `bash tests/evidence-gate.sh`: exit 0, zero refused files.
++- `bash tests/unregistered-tests-gate.sh`: exit 0.
++- `git diff --check`: exit 0.
++- `PATH=/tmp/sol39-lizard125/bin:$PATH PYTHONPATH=/tmp/sol39-lizard125 lizard -C 10 -w tests/train-41-portability-check.py tests/src/core/MountNamespaceHandshakeTest.cpp tests/src/core/MountNamespaceTestSupport.h tests/src/core/NamModelLoaderTest.cpp`: exit 0, no functions above CCN 10.
++- Final independent read-only Luna review: approved, no blockers; confirmed all
++  assertions retained and both pending files byte-identical to the accepted commit
++  (`/tmp/sol41-final-review.log`). Native hosted and full-train verification remain
++  outstanding. Free disk space remained above 60 GiB.
+diff --git a/plugins/Eq/EqSpectrumView.h b/plugins/Eq/EqSpectrumView.h
+index 34e55986bb..a3cfb45a3f 100644
+--- a/plugins/Eq/EqSpectrumView.h
++++ b/plugins/Eq/EqSpectrumView.h
+@@ -25,6 +25,7 @@
+ 
+ #include <QPainterPath>
+ #include <QWidget>
++#include <QVector>
+ 
+ #include <atomic>
+ 
+@@ -132,7 +133,7 @@ private:
+ 	bool m_periodicalUpdate;
+ 	QList<float> m_bandHeight;
+ 	//! The spectrum of the analyser, copied as a whole snapshot before it is painted.
+-	QList<float> m_spectrumBands;
++	QVector<float> m_spectrumBands;
+ 
+ 	float bandToFreq ( int index );
+ };
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 3d570f752c..910c2235d6 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -9022,6 +9022,51 @@ if(PYTHON3_EXECUTABLE)
+ 	set_tests_properties(ArrangerZoomNoGestures PROPERTIES TIMEOUT 300)
+ endif()
+ 
++# Linux namespace tests must retry interrupted writes and reject failed/short handshakes.
++if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
++	add_executable(MountNamespaceHandshakeTest src/core/MountNamespaceHandshakeTest.cpp)
++	target_compile_features(MountNamespaceHandshakeTest PRIVATE cxx_std_20)
++	target_link_libraries(MountNamespaceHandshakeTest PRIVATE Qt${QT_VERSION_MAJOR}::Core)
++	add_test(NAME MountNamespaceHandshakeTest COMMAND MountNamespaceHandshakeTest)
++endif()
++
++# cluster ci-84e380615213284e: a QFileInfo date accessor needs <QDateTime> in scope by
++# name. The hosted windows-arm64 job's Qt 5 (and the macOS job's Qt 6.8) qfileinfo.h only
++# forward-declares QDateTime, so plugins/CarlaBase/CarlaVst2Discovery.cpp:204 failed the
++# build with "calling 'lastModified' with incomplete return type 'QDateTime'" while every
++# Qt 6.12 host here compiled it - QFileInfo leaks the include at 6.12 only. The check
++# rebuilds every first-party translation unit that calls such an accessor through its own
++# compile_commands.json command line against a QtCore/qfileinfo.h and qdirlisting.h in the
++# failing shape, so the regression is red on the Qt 6 hosts too.
++if(PYTHON3_EXECUTABLE)
++	add_test(NAME Qt5QFileInfoDateCheck
++		COMMAND ${PYTHON3_EXECUTABLE}
++			${CMAKE_CURRENT_SOURCE_DIR}/Qt5QFileInfoDateCheck.py
++			--build-dir ${CMAKE_BINARY_DIR}
++			--cxx ${CMAKE_CXX_COMPILER}
++			--moc $<TARGET_FILE:Qt${QT_VERSION_MAJOR}::moc>)
++	set_tests_properties(Qt5QFileInfoDateCheck PROPERTIES TIMEOUT 900)
++endif()
++
++# Reproduce strict hosted compiler contracts against this build's actual sources.
++if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
++	foreach(mode linux nam darwin-signature darwin-tu render)
++		add_test(NAME Train41-${mode} COMMAND ${PYTHON3_EXECUTABLE}
++			${CMAKE_CURRENT_SOURCE_DIR}/train-41-portability-check.py
++			--source-root ${CMAKE_SOURCE_DIR} --build-dir ${CMAKE_BINARY_DIR}
++			--qt-major ${QT_VERSION_MAJOR} --moc $<TARGET_FILE:Qt${QT_VERSION_MAJOR}::moc> --mode ${mode})
++		set_tests_properties(Train41-${mode} PROPERTIES TIMEOUT 300)
++	endforeach()
++	execute_process(COMMAND pkg-config --exists Qt5Widgets Qt5Xml Qt5Network
++		RESULT_VARIABLE TRAIN41_HAS_QT5 OUTPUT_QUIET ERROR_QUIET)
++	if(TRAIN41_HAS_QT5 EQUAL 0)
++		add_test(NAME Train41-eq COMMAND ${PYTHON3_EXECUTABLE}
++			${CMAKE_CURRENT_SOURCE_DIR}/train-41-portability-check.py
++			--source-root ${CMAKE_SOURCE_DIR} --build-dir ${CMAKE_BINARY_DIR} --mode eq)
++		set_tests_properties(Train41-eq PROPERTIES TIMEOUT 300)
++	endif()
++endif()
++
+ # Hosted portability checks inspect the real direct-source test export configuration.
+ if(TARGET RnnoiseDenoiserEffectTest)
+ 	file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/rnnoise-test-export-definition.h"
+diff --git a/tests/Qt5QFileInfoDateCheck.py b/tests/Qt5QFileInfoDateCheck.py
+new file mode 100644
+index 0000000000..f9f9b91992
+--- /dev/null
++++ b/tests/Qt5QFileInfoDateCheck.py
+@@ -0,0 +1,611 @@
++#!/usr/bin/env python3
++"""QFileInfo date accessors must have <QDateTime> in scope by name.
++
++Cluster ci-84e380615213284e (2026-11-14), hosted `build / windows-arm64`:
++plugins/CarlaBase/CarlaVst2Discovery.cpp:204 calls
++`info.lastModified().toMSecsSinceEpoch()` but includes <QFileInfo> without
++<QDateTime>. That builds only where QFileInfo pulls QDateTime in - Qt 6.12 does,
++Qt 5.15 (the hosted Qt 5 jobs) and Qt 6.8 (macOS) only forward-declare it:
++
++    CarlaVst2Discovery.cpp:204:31: error: calling 'lastModified' with incomplete
++        return type 'QDateTime'
++    CarlaVst2Discovery.cpp:204:45: error: member access into incomplete type 'QDateTime'
++
++Every first-party translation unit that calls a QFileInfo date accessor
++(lastModified, birthTime, metadataChangeTime, lastRead, fileTime) is compiled
++through its OWN line in build/compile_commands.json, against the failing header
++shape: the real header where it already is that shape, a shadow of
++qfileinfo.h/qdirlisting.h where Qt 6.12 leaks the include, and a real Qt 5 tree
++when one is installed (--qt5-root, QT5_INCLUDE_DIR or pkg-config Qt5Core).
++Compiles use the configured compiler's syntax-only switch: -fsyntax-only, or
++/Zs for cl.exe and clang-cl (the msvc-x64 job runs this test).
++
++A unit that does not build here for an unrelated reason is SKIP; a baseline
++compile whose diagnostic is the CI's own (an INCOMPLETE QDateTime, in clang's,
++gcc's or MSVC's spelling) is FAIL, never SKIP - on the failing shape that error
++IS the baseline compile, and skipping it would pass while the CI job is red.
++Fixtures prove both directions, and the file is named after the CTest test it
++registers so the negative-control harness pairs them.
++
++Usage: Qt5QFileInfoDateCheck.py --build-dir <build> [--root <src>] [--cxx <cxx>]
++       [--moc <moc>] [--qt5-root <root>]
++Exit codes: 0 = clean, 1 = a date accessor lacks <QDateTime>, 2 = cannot run.
++"""
++
++import argparse
++import json
++import os
++import re
++import shlex
++import shutil
++import subprocess
++import sys
++import tempfile
++
++# QFileInfo's date accessors. `created()` is Qt 5 only and is left out on purpose: the
++# check is about the API both supported Qt versions have.
++ACCESSOR = re.compile(r"\.(?:lastModified|birthTime|metadataChangeTime|lastRead|fileTime)\s*\(")
++
++SOURCE_SUFFIXES = (".cpp", ".cc", ".cxx")
++
++# Vendored third-party trees are not this repo's code (tests/all-sources.txt's list).
++EXCLUDED_PREFIXES = (
++    "src/3rdparty/",
++    "tests/reference/",
++    "plugins/NeuralAmp/rtneural/",
++    "plugins/NeuralAmp/nam/",
++    "plugins/NeuralAmp/tests/",
++    "plugins/RnnoiseDenoiser/rnnoise/",
++    "plugins/SfzPlayer/sfizz/",
++)
++
++# The Qt Core headers that supply QDateTime transitively in some Qt builds and not in
++# others. qfileinfo.h is the one the CI failure names; qdirlisting.h is what QDir pulls
++# in on Qt 6, and Qt 5 has no QDirListing at all.
++LEAKING_HEADERS = ("qfileinfo.h", "qdirlisting.h")
++
++BAD_FIXTURE = """\
++#include <QFileInfo>
++qint64 modified(const QFileInfo& info) { return info.lastModified().toMSecsSinceEpoch(); }
++"""
++
++GOOD_FIXTURE = """\
++#include <QDateTime>
++#include <QFileInfo>
++qint64 modified(const QFileInfo& info) { return info.lastModified().toMSecsSinceEpoch(); }
++"""
++
++
++WINDOWS_COMMAND_RE = re.compile(r"(?:^|[\s=\"'])[A-Za-z]:[\\/]|\\\\[^\"']")
++
++
++def split_command(entry):
++    if entry.get("command"):
++        command = entry["command"]
++        if WINDOWS_COMMAND_RE.search(command):
++            escaped_quote = "\uE000"
++            command = command.replace('\\"', escaped_quote)
++            lexer = shlex.shlex(command, posix=True)
++            lexer.whitespace_split = True
++            lexer.commenters = ""
++            lexer.escape = ""
++            return [arg.replace(escaped_quote, '"') for arg in lexer]
++        return shlex.split(command)
++    return list(entry.get("arguments") or [])
++
++
++def compile_flags(entry):
++    """The recorded command without its output/depfile arguments or compile action."""
++    args = split_command(entry)
++    out, index = [], 0
++    while index < len(args):
++        arg = args[index]
++        if arg in ("-o", "-MF", "-MT", "/Fo"):
++            index += 2
++            continue
++        if arg.startswith("/Fo") or arg in ("-MD", "-MMD", "-MP", "-c", "/c"):
++            index += 1
++            continue
++        out.append(arg)
++        index += 1
++    return out
++
++
++def is_msvc(compiler):
++    """True for the MSVC driver family: cl.exe and clang-cl (both take /Zs, /I, /std:)."""
++    return os.path.basename(compiler.replace("\\", "/")).lower() in (
++        "cl", "cl.exe", "clang-cl", "clang-cl.exe")
++
++
++def switch(compiler, msvc, other):
++    """MSVC's spelling of a switch on cl/clang-cl, the gcc/clang one elsewhere."""
++    return msvc if is_msvc(compiler) else other
++
++
++def include_dirs(args):
++    out, index = [], 0
++    while index < len(args):
++        arg = args[index]
++        if arg in ("-I", "-isystem", "/I", "/external:I") and index + 1 < len(args):
++            out.append(args[index + 1])
++            index += 2
++            continue
++        if arg.startswith(("-I", "/I", "/external:I")):
++            value = arg[len("/external:I"):] if arg.lower().startswith("/external:i") else arg[2:]
++            if value:
++                out.append(value)
++        elif arg.startswith("-isystem") and len(arg) > len("-isystem"):
++            out.append(arg[len("-isystem"):])
++        index += 1
++    return out
++
++
++def source_of(entry):
++    path = entry["file"]
++    return os.path.normpath(path if os.path.isabs(path) else os.path.join(entry["directory"], path))
++
++
++def find_qtcore(args, directory):
++    """The first Qt root on the recorded include path that carries QtCore/qfileinfo.h."""
++    for include in include_dirs(args):
++        root = include if os.path.isabs(include) else os.path.join(directory, include)
++        if os.path.isfile(os.path.join(root, "QtCore", "qfileinfo.h")):
++            return os.path.normpath(root)
++        if os.path.isfile(os.path.join(root, "qfileinfo.h")):
++            return os.path.normpath(os.path.dirname(root))
++    return None
++
++
++def shadow_shape(real):
++    """A qfileinfo/qdirlisting header without its QDateTime include, or None if already so."""
++    text = open(real, encoding="utf-8", errors="replace").read()
++    if not re.search(r"^#\s*include\s*[<\"]QtCore/qdatetime\.h[>\"]", text, re.M):
++        return None
++    text = re.sub(r"^#\s*include\s*[<\"]QtCore/qdatetime\.h[>\"].*$",
++                  "// shadow: this Qt header must not supply QDateTime", text, flags=re.M)
++    text = re.sub(r"^#\s*include\s*[<\"]QtCore/qtimezone\.h[>\"].*$",
++                  "// shadow: QTimeZone stays forward-declared", text, flags=re.M)
++    if not re.search(r"\bclass QDateTime;", text):
++        text = text.replace("QT_BEGIN_NAMESPACE\n",
++                            "QT_BEGIN_NAMESPACE\n\nclass QDateTime;\nclass QTimeZone;\n", 1)
++    # Qt 6 defines the accessors inline; Qt 5 only declares them.
++    text = re.sub(
++        r"(QDateTime (?:birthTime|metadataChangeTime|lastModified|lastRead)\([^)]*\))"
++        r"\s*(?:const\s*)?\{ return fileTime\([^)]*\); \}",
++        r"\1 const;", text)
++    return text
++
++
++def build_shadow(qtcore, shadow):
++    """Write the shadow headers; return their module-relative names."""
++    written = []
++    for name in LEAKING_HEADERS:
++        real = os.path.join(qtcore, "QtCore", name)
++        if not os.path.isfile(real):
++            continue
++        text = shadow_shape(real)
++        if text is None:
++            continue
++        destination = os.path.join(shadow, "QtCore", name)
++        os.makedirs(os.path.dirname(destination), exist_ok=True)
++        with open(destination, "w", encoding="utf-8") as handle:
++            handle.write(text)
++        written.append(name)
++    return written
++
++
++def run(command, directory, timeout=600):
++    return subprocess.run(command, cwd=directory, capture_output=True, text=True, timeout=timeout)
++
++
++def errors_of(result):
++    output = (result.stderr or "") + "\n" + (result.stdout or "")
++    return [line.strip() for line in output.splitlines() if "error" in line.lower()]
++
++
++def date_diagnostic(result):
++    """The first compiler error of the CI's class - an INCOMPLETE QDateTime - or None.
++
++    clang spells it "incomplete return type 'QDateTime'", gcc "invalid use of incomplete
++    type", MSVC "use of undefined type"; a baseline error that merely mentions
++    QDateTime otherwise is a different host problem and stays skippable.
++    """
++    for line in errors_of(result):
++        lowered = line.lower()
++        if "qdatetime" in lowered and ("incomplete" in lowered or "undefined type" in lowered):
++            return line
++    return None
++
++
++def substitute_paths(args, substitutions):
++    """Rewrite the recorded toolchain roots, so the same TU can be built against Qt 5."""
++    def rebase(path, old, new):
++        normalized = path.replace("\\", "/")
++        root = old.replace("\\", "/").rstrip("/")
++        if normalized.casefold() == root.casefold():
++            suffix = ""
++        elif normalized.casefold().startswith((root + "/").casefold()):
++            suffix = normalized[len(root) + 1:]
++        else:
++            return None
++        rebased = new.replace("\\", "/").rstrip("/")
++        if suffix:
++            rebased += "/" + suffix
++        return rebased.replace("/", os.sep) if os.name == "nt" else rebased
++
++    out = []
++    for arg in args:
++        for old, new in substitutions:
++            prefix = next((item for item in ("-I", "/I", "/external:I")
++                           if arg.lower().startswith(item.lower())), "")
++            path = arg[len(prefix):] if prefix else arg
++            rebased = rebase(path, old, new)
++            if rebased is not None:
++                arg = prefix + rebased
++        out.append(arg)
++    return out
++
++
++def tu_command(entry, includes, substitutions=()):
++    """The recorded compile line, made syntax-only and preceded by @includes."""
++    args = substitute_paths(compile_flags(entry), substitutions)
++    return ([args[0], switch(args[0], "/Zs", "-fsyntax-only")]
++            + [switch(args[0], "/I", "-I") + path for path in includes] + args[1:])
++
++
++def compile_tu(entry, includes, substitutions=()):
++    command = tu_command(entry, includes, substitutions)
++    return run(command, entry["directory"])
++
++
++def moc_include(entry, source, tempdir, moc):
++    """Generate the .moc a test TU includes itself; (directory or None, detail)."""
++    match = re.search(r'#include\s+"([\w.+-]+\.moc)"', open(source, encoding="utf-8", errors="replace").read())
++    if match is None:
++        return None, ""
++    if not moc:
++        return None, "includes %s but no moc was given" % match.group(1)
++    output = os.path.join(tempdir, match.group(1))
++    command = [moc, source, "-o", output]
++    for directory in include_dirs(compile_flags(entry)):
++        command += ["-I", directory]
++    produced = run(command, entry["directory"])
++    if produced.returncode != 0:
++        detail = (produced.stderr or produced.stdout).strip().splitlines()
++        return None, "moc failed: " + (detail[-1] if detail else "no output")
++    return tempdir, ""
++
++
++def fixture_command(cxx, includes, source):
++    return ([cxx, switch(cxx, "/std:c++20", "-std=gnu++20"), switch(cxx, "/Zs", "-fsyntax-only")]
++            + [switch(cxx, "/I", "-I") + path for path in includes] + [source])
++
++
++def compile_fixture(cxx, includes, source, directory):
++    return run(fixture_command(cxx, includes, source), directory, timeout=300)
++
++
++def fixtures(cxx, includes, tempdir):
++    """(bad rejected with the QDateTime diagnostic, good accepted)."""
++    bad = os.path.join(tempdir, "bad.cpp")
++    good = os.path.join(tempdir, "good.cpp")
++    for path, text in ((bad, BAD_FIXTURE), (good, GOOD_FIXTURE)):
++        with open(path, "w", encoding="utf-8") as handle:
++            handle.write(text)
++    bad_run = compile_fixture(cxx, includes, bad, tempdir)
++    good_run = compile_fixture(cxx, includes, good, tempdir)
++    hidden = bad_run.returncode != 0 and date_diagnostic(bad_run) is not None
++    print("fixture without <QDateTime>: " + ("rejected with the CI's QDateTime error" if hidden
++                                               else "compiled (the shape does not reproduce)"))
++    print("fixture with <QDateTime>: " + ("compiled" if good_run.returncode == 0 else "FAILED"))
++    return hidden, good_run.returncode == 0
++
++
++def candidate_tus(root):
++    """Tracked first-party translation units that name a QFileInfo date accessor."""
++    for directory, subdirs, files in os.walk(root):
++        subdirs[:] = sorted(d for d in subdirs if d != ".git" and not d.startswith("build"))
++        for name in sorted(files):
++            path = os.path.join(directory, name)
++            relative = os.path.relpath(path, root)
++            if not relative.endswith(SOURCE_SUFFIXES) or relative.startswith(EXCLUDED_PREFIXES):
++                continue
++            try:
++                text = open(path, encoding="utf-8", errors="replace").read()
++            except OSError:
++                continue
++            if ACCESSOR.search(text):
++                yield relative
++
++
++def load_build(build):
++    """(entries, entries by source path (first line wins), Qt root) or (None, error)."""
++    commands = os.path.join(build, "compile_commands.json")
++    if not os.path.isfile(commands):
++        return None, "no compile_commands.json in " + build
++    entries = json.load(open(commands))
++    if not entries:
++        return None, "compile_commands.json is empty"
++    by_source = {source_of(entry): entry for entry in reversed(entries)}
++    for entry in entries:
++        qtcore = find_qtcore(split_command(entry), entry["directory"])
++        if qtcore:
++            return (entries, by_source, qtcore), ""
++    return None, "no QtCore/qfileinfo.h on any recorded include path"
++
++
++def prepare_shape(qtcore, cxx, tempdir):
++    """Build the failing header shape and prove it reproduces the CI error: (extra, ok, detail)."""
++    shadow = os.path.join(tempdir, "shadow")
++    written = build_shadow(qtcore, shadow)
++    extra = [shadow] if written else []
++    print("shape:", ("shadow of " + ", ".join(written)) if written else "this host's real headers")
++    include_roots = extra + [qtcore, os.path.join(qtcore, "QtCore")]
++    hidden, good_ok = fixtures(cxx, include_roots, tempdir)
++    if not hidden or not good_ok:
++        return extra, False, ("the fixture does not reproduce the CI diagnostic, so the check "
++                              "cannot distinguish the defect")
++    if written:
++        host_run = compile_fixture(cxx, [qtcore, os.path.join(qtcore, "QtCore")],
++                                   os.path.join(tempdir, "bad.cpp"), tempdir)
++        print("host headers supply QDateTime transitively:", "yes" if host_run.returncode == 0 else "no")
++    return extra, True, ""
++
++
++def baseline_verdict(result, detail_limit):
++    """('fail', diagnostic) when the baseline compile is already the CI's error, else None.
++
++    On the failing header shape nothing supplies QDateTime, so the incomplete-type error
++    comes from the BASELINE compile: that is the regression failing, not a host limit.
++    """
++    diagnostic = date_diagnostic(result)
++    if diagnostic is None:
++        return None
++    return "fail", "baseline compile reports the CI's error: " + diagnostic[:detail_limit]
++
++
++def windows_command_self_test():
++    """Windows command parsing and include rebasing, covered on every host."""
++    failures = []
++    windows_command = split_command({"command":
++        '"C:\\Program Files\\Microsoft Visual Studio\\cl.exe" '
++        '/I"C:\\Program Files\\Qt\\include" /DVALUE=\\"test\\" /c source.cpp'})
++    expected = [r"C:\Program Files\Microsoft Visual Studio\cl.exe",
++                r"/IC:\Program Files\Qt\include", '/DVALUE="test"', "/c", "source.cpp"]
++    if windows_command != expected:
++        failures.append("Windows compile command did not preserve quoted paths")
++    rebased = substitute_paths([r"/IC:\Qt6\include\QtCore"],
++                               ((r"C:\Qt6\include", r"C:\Qt5\include"),))[0]
++    if rebased.replace("\\", "/") != "/IC:/Qt5/include/QtCore":
++        failures.append("Windows include root was not substituted")
++    return failures
++
++
++MSVC_ENTRY = {"directory": r"C:\build", "file": r"C:\src\CarlaVst2Discovery.cpp",
++              "command": r'"C:\VC\bin\cl.exe" /nologo /c /FoCMakeFiles\x.obj '
++                         r'/IC:\Qt6\include /IC:\Qt6\include\QtCore '
++                         r'/external:IC:\deps\include /std:c++20 /EHsc C:\src\CarlaVst2Discovery.cpp'}
++MSVC_REBASE = ((r"C:\Qt6\include", r"C:\Qt5\include"),)
++
++
++def switch_self_test():
++    """The switches cl.exe, clang-cl and gcc/clang must each receive."""
++    expected = ((r"C:\Qt\bin\cl.exe", "/Zs", "/I", "/std:c++20"),
++                ("clang-cl", "/Zs", "/I", "/std:c++20"),
++                ("/usr/bin/c++", "-fsyntax-only", "-I", "-std=gnu++20"))
++    failures = [] if is_msvc(r"C:\Program Files\Microsoft Visual Studio\cl.exe") \
++        else ["MSVC compiler was not identified"]
++    for compiler, syntax, include, standard in expected:
++        if (switch(compiler, "/Zs", "-fsyntax-only") != syntax
++                or switch(compiler, "/I", "-I") != include
++                or switch(compiler, "/std:c++20", "-std=gnu++20") != standard):
++            failures.append("wrong switches for " + compiler)
++    return failures
++
++
++def msvc_command_self_test():
++    """A recorded MSVC compile line must become a /Zs check rebased for Qt 5."""
++    failures = []
++    args = tu_command(MSVC_ENTRY, [r"C:\shadow"], MSVC_REBASE)
++    joined = " ".join(args).replace("\\", "/")
++    if "/Zs" not in args:
++        failures.append("an MSVC compile line is not turned into a /Zs syntax check")
++    if "/c" in args or any(a.startswith("/Fo") for a in args):
++        failures.append("an MSVC syntax check still carries /c or /Fo")
++    if "/IC:/Qt5/include" not in joined or "/IC:/Qt6/include" in joined:
++        failures.append("an MSVC include root is not rebased for the Qt 5 sweep")
++    if include_dirs(["/I", r"C:\Qt\include"]) != [r"C:\Qt\include"]:
++        failures.append("a separate /I argument is not read")
++    fixture = fixture_command("cl.exe", [r"C:\Qt5\include"], r"C:\tmp\bad.cpp")
++    if fixture[1:] != ["/std:c++20", "/Zs", r"/IC:\Qt5\include", r"C:\tmp\bad.cpp"]:
++        failures.append("the MSVC fixture command is not /std:c++20 /Zs /I")
++    return failures
++
++
++def classifier_self_test():
++    """Prove baseline classification for clang, gcc, MSVC, and unrelated errors."""
++    def result(rc, text, stderr=True):
++        return subprocess.CompletedProcess(["c++"], rc, "" if stderr else text, text if stderr else "")
++    must_fail = {  # every supported spelling of the CI's own error
++        "clang": result(1, "x.cpp:204:31: error: calling 'lastModified' with incomplete return type 'QDateTime'\n"),
++        "gcc": result(1, "x.cpp:204:50: error: invalid use of incomplete type 'class QDateTime'\n"),
++        "msvc": result(1, "x.cpp(204): error C2027: use of undefined type 'QDateTime'\n", stderr=False)}
++    may_skip = {  # a different host problem, not this defect
++        "missing header": result(1, "x.cpp:12:10: fatal error: QWidget: No such file or directory\n"),
++        "other QDateTime use": result(1, "x.cpp:9:5: error: no matching function for call to 'QDateTime::fromString'\n"),
++        "success": result(0, "")}
++    failures = ["%s spelling of the incomplete-QDateTime error is not classified FAIL" % name
++                for name, run in must_fail.items() if (baseline_verdict(run, 200) or ("",))[0] != "fail"]
++    failures += ["%s is not skippable" % name
++                 for name, run in may_skip.items() if baseline_verdict(run, 200) is not None]
++    return failures
++
++
++def self_test():
++    """Prove the Windows/MSVC command path and the classifier before the sweep."""
++    failures = windows_command_self_test() + switch_self_test() + msvc_command_self_test() + classifier_self_test()
++    for failure in failures:
++        print("SELF-TEST FAIL: " + failure)
++    if not failures:
++        print("self-test: baseline QDateTime error fails; unrelated baseline error is skippable")
++    return not failures
++
++
++def check_tu(relative, entry, extra, moc, tempdir, root, substitutions=()):
++    """('pass' | 'fail' | 'skip', detail) for one translation unit."""
++    source = os.path.normpath(os.path.join(root, relative))
++    # Test translation units include their own .moc, so generate it exactly as automoc
++    # would; without one the unit is skipped, never failed.
++    moc_dir, moc_detail = moc_include(entry, source, tempdir, moc)
++    if moc_dir is None and moc_detail:
++        return "skip", moc_detail
++    includes = [moc_dir] if moc_dir else []
++    base = compile_tu(entry, includes, substitutions)
++    if base.returncode != 0:
++        verdict = baseline_verdict(base, 220)
++        if verdict is not None:
++            return verdict
++        detail = errors_of(base)
++        return "skip", "does not build on this host: " + (detail[0][:160] if detail else "exit %d" % base.returncode)
++    strict = compile_tu(entry, extra + includes, substitutions)
++    if strict.returncode == 0:
++        return "pass", ""
++    diagnostic = date_diagnostic(strict)
++    if diagnostic is None:
++        return "skip", "fails under the shadow for an unrelated reason"
++    return "fail", diagnostic[:220]
++
++
++def sweep(root, by_source, extra, moc, tempdir, substitutions=()):
++    """Check every candidate TU; (failures, checked, skipped), printing each verdict."""
++    failures, checked, skipped = [], 0, 0
++    for relative in candidate_tus(root):
++        entry = by_source.get(os.path.normpath(os.path.join(root, relative)))
++        if entry is None:
++            print("SKIP %s (not in compile_commands.json)" % relative)
++            skipped += 1
++            continue
++        state, detail = check_tu(relative, entry, extra, moc, tempdir, root, substitutions)
++        if state == "skip":
++            print("SKIP %s (%s)" % (relative, detail))
++            skipped += 1
++            continue
++        checked += 1
++        if state == "pass":
++            print("PASS %s" % relative)
++            continue
++        failures.append(relative)
++        print("FAIL %s: date accessor without <QDateTime>: %s" % (relative, detail))
++    return failures, checked, skipped
++
++
++def report(failures, checked, skipped):
++    print("checked %d translation unit(s), skipped %d" % (checked, skipped))
++    if failures:
++        print("FAIL: %d translation unit(s) use a QFileInfo date accessor without <QDateTime>"
++              % len(failures))
++        return 1
++    if checked == 0:
++        print("FAIL: no translation unit could be checked on this host")
++        return 2
++    print("PASS: every checked QFileInfo date accessor has <QDateTime> in scope")
++    return 0
++
++
++def qt5_include_root(requested):
++    """The Qt 5 include root to sweep through: --qt5-root, QT5_INCLUDE_DIR, or pkg-config."""
++    if requested:
++        return os.path.normpath(os.path.abspath(requested))
++    if os.environ.get("QT5_INCLUDE_DIR"):
++        return os.path.normpath(os.path.abspath(os.environ["QT5_INCLUDE_DIR"]))
++    if not shutil.which("pkg-config"):
++        return None
++    produced = run(["pkg-config", "--variable=includedir", "Qt5Core"], os.getcwd(), timeout=60)
++    if produced.returncode != 0 or not produced.stdout.strip():
++        return None
++    return os.path.normpath(os.path.abspath(produced.stdout.strip()))
++
++
++def substitutions_for(qtcore, qt5, entries):
++    """Rewrite every recorded Qt 6 include root to its Qt 5 counterpart.
++
++    A Qt 5 development tree is where the defect actually bites: nothing supplies
++    QDateTime, so the BASELINE compile of a translation unit raises the CI's error and
++    the classification above must fail it. Where one is installed, running the sweep
++    through its real headers is the hosted configuration, not a shadow of it.
++    """
++    substitutions = [(qtcore, qt5)]
++    for entry in entries:
++        for arg in include_dirs(compile_flags(entry)):
++            counterpart = substitute_paths([arg], ((qtcore, qt5),))[0]
++            if counterpart != arg and os.path.isdir(counterpart) and (arg, counterpart) not in substitutions:
++                substitutions.append((arg, counterpart))
++    return tuple(substitutions)
++
++
++def toolchains(qtcore, entries, requested):
++    """[(root, substitutions)] to sweep; the host's own root first, a real Qt 5 second."""
++    found = [(qtcore, ())]
++    qt5 = qt5_include_root(requested)
++    if qt5 is None:
++        print("real Qt 5 tree: none on this host (the shadow is the only shape)")
++        return found
++    if qt5 == qtcore or not os.path.isfile(os.path.join(qt5, "QtCore", "qfileinfo.h")):
++        if requested:
++            print("FAIL: no QtCore/qfileinfo.h under " + qt5)
++            return None
++        print("real Qt 5 tree: none on this host (the shadow is the only shape)")
++        return found
++    print("real Qt 5 tree:", qt5)
++    return found + [(qt5, substitutions_for(qtcore, qt5, entries))]
++
++
++def sweep_toolchain(entries, by_source, qtcore, root, options, tempdir, substitutions=()):
++    """(failures, checked, skipped) for one toolchain root, printing its verdicts."""
++    extra, ok, detail = prepare_shape(qtcore, options.cxx, tempdir)
++    if not ok:
++        print("FAIL: " + detail)
++        return ["<the failing header shape does not reproduce>"], 0, 0
++    return sweep(root, by_source, extra, options.moc, tempdir, substitutions)
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
++    parser.add_argument("--build-dir", required=True)
++    parser.add_argument("--root", default=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
++    parser.add_argument("--cxx", default=os.environ.get("CXX") or "c++")
++    parser.add_argument("--moc", default=os.environ.get("MOC") or "")
++    parser.add_argument("--qt5-root", default="",
++                        help="a real Qt 5 include root to build the recorded commands against")
++    options = parser.parse_args()
++
++    if not self_test():
++        return 2
++
++    load, error = load_build(os.path.abspath(options.build_dir))
++    if error:
++        print("FAIL: " + error)
++        return 2
++    entries, by_source, qtcore = load
++    root = os.path.abspath(options.root)
++    print("Qt root:", qtcore)
++
++    sweeps = toolchains(qtcore, entries, options.qt5_root)
++    if sweeps is None:
++        return 2
++
++    failures, checked, skipped = [], 0, 0
++    with tempfile.TemporaryDirectory(prefix="zene-qfiledate-") as tempdir:
++        for toolchain, substitutions in sweeps:
++            print("sweep against:", toolchain,
++                  "(real Qt 5, substituted)" if substitutions else "")
++            found, seen, missed = sweep_toolchain(entries, by_source, toolchain, root,
++                                                  options, tempdir, substitutions)
++            failures += found
++            checked += seen
++            skipped += missed
++    return report(failures, checked, skipped)
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/tests/all-sources.txt b/tests/all-sources.txt
+index 789ba54230..014bb99f09 100644
+--- a/tests/all-sources.txt
++++ b/tests/all-sources.txt
+@@ -3091,6 +3091,7 @@ tests/src/core/ModulationRateTest.cpp
+ tests/src/core/ModulationTestSupport.h
+ tests/src/core/ModulatorToolsTest.cpp
+ tests/src/core/MonoDelayTest.cpp
++tests/src/core/MountNamespaceHandshakeTest.cpp
+ tests/src/core/MountNamespaceTestSupport.h
+ tests/src/core/MpeExpressionTest.cpp
+ tests/src/core/MpeInputPathTest.cpp
+diff --git a/tests/fork-sources.txt b/tests/fork-sources.txt
+index f094ce55c7..e5e69fc870 100644
+--- a/tests/fork-sources.txt
++++ b/tests/fork-sources.txt
+@@ -813,6 +813,15 @@ tests/src/plugins/PluginExportBranchTest.cpp
+ docs/qwen-fixes-2026-10/cluster-ci-64c5b539b5120b17.md
+ docs/qwen-fixes-2026-10/sol-train-30-export-integration.md
+ 
++# Train 41: retain the independently accepted QFileInfo date regression and its report.
++tests/Qt5QFileInfoDateCheck.py
++docs/qwen-fixes-2026-10/cluster-ci-84e380615213284e.md
++
++# Train 41: hosted portability regressions and verification report.
++tests/src/core/MountNamespaceHandshakeTest.cpp
++tests/train-41-portability-check.py
++docs/qwen-fixes-2026-10/sol-train-30-hosted-followup.md
++
+ include/AccessibilityAudit.h
+ 
+ # Train 39: portable hosted compiler and executable-debug regression probes and repair evidence.
+diff --git a/tests/src/core/CrashReporterArmTest.cpp b/tests/src/core/CrashReporterArmTest.cpp
+index 9605ff8afa..c2aa9b0bc5 100644
+--- a/tests/src/core/CrashReporterArmTest.cpp
++++ b/tests/src/core/CrashReporterArmTest.cpp
+@@ -75,11 +75,12 @@ namespace
+ 
+ int s_failSigactionForTest = 0;
+ int s_injectedSigactionFailures = 0;
++constexpr bool sigactionIsNoexcept = noexcept(::sigaction(0, nullptr, nullptr));
+ 
+ } // namespace
+ 
+ extern "C" int sigaction(int signum, const struct sigaction* action,
+-	struct sigaction* oldAction) noexcept
++	struct sigaction* oldAction) noexcept(sigactionIsNoexcept)
+ {
+ 	if (action != nullptr && signum == s_failSigactionForTest)
+ 	{
+@@ -195,7 +196,7 @@ private slots:
+ 		struct sigaction ignored;
+ 		std::memset(&ignored, 0, sizeof(ignored));
+ 		ignored.sa_handler = SIG_IGN;
+-		QVERIFY(::sigemptyset(&ignored.sa_mask) == 0);
++		QVERIFY(sigemptyset(&ignored.sa_mask) == 0);
+ 		QVERIFY(::sigaction(SIGSEGV, &ignored, nullptr) == 0);
+ 
+ 		s_injectedSigactionFailures = 0;
+diff --git a/tests/src/core/MountNamespaceHandshakeTest.cpp b/tests/src/core/MountNamespaceHandshakeTest.cpp
+new file mode 100644
+index 0000000000..529b863df1
+--- /dev/null
++++ b/tests/src/core/MountNamespaceHandshakeTest.cpp
+@@ -0,0 +1,52 @@
++/* Test the namespace handshake's interrupted, failed and short writes. */
++#include <QString>
++#include <cerrno>
++#include <cstdio>
++#include <fcntl.h>
++#include <sched.h>
++#include <sys/mount.h>
++#include <sys/stat.h>
++#include <sys/wait.h>
++#include <unistd.h>
++
++namespace
++{
++int interruptions = 0;
++int attempts = 0;
++bool shortWrite = false;
++
++ssize_t handshakeWrite(int fd, const void* bytes, size_t size)
++{
++	++attempts;
++	if (interruptions > 0)
++	{
++		--interruptions;
++		errno = EINTR;
++		return -1;
++	}
++	if (shortWrite) { return 0; }
++	return ::write(fd, bytes, size);
++}
++}
++
++#define write handshakeWrite
++#include "MountNamespaceTestSupport.h"
++#undef write
++
++int main()
++{
++	int descriptors[2];
++	if (::pipe(descriptors) != 0) { return 1; }
++	interruptions = 1;
++	const bool sent = lmms::testsupport::writeNamespaceHandshakeByte(descriptors[1], 'x');
++	char received = 0;
++	const bool correct = sent && attempts == 2 && ::read(descriptors[0], &received, 1) == 1 && received == 'x';
++	::close(descriptors[0]);
++	::close(descriptors[1]);
++	if (!correct) { return 2; }
++	attempts = 0;
++	if (lmms::testsupport::writeNamespaceHandshakeByte(-1, 'x') || errno != EBADF || attempts != 1) { return 3; }
++	shortWrite = true;
++	if (lmms::testsupport::writeNamespaceHandshakeByte(-1, 'x')) { return 4; }
++	return 0;
++}
+diff --git a/tests/src/core/MountNamespaceTestSupport.h b/tests/src/core/MountNamespaceTestSupport.h
+index 1d102de568..7556e45c13 100644
+--- a/tests/src/core/MountNamespaceTestSupport.h
++++ b/tests/src/core/MountNamespaceTestSupport.h
+@@ -35,6 +35,8 @@
+ #include <sys/stat.h>
+ 
+ #ifdef __linux__
++#include <cerrno>
++#include <cstdio>
+ #include <fcntl.h>
+ #include <sched.h>
+ #include <sys/mount.h>
+@@ -57,6 +59,14 @@ inline quint64 filesystemDevice(const QString& path)
+ 
+ #ifdef __linux__
+ 
++//! Send exactly one handshake byte, retrying interrupted writes and reporting failure.
++inline bool writeNamespaceHandshakeByte(int fd, char value)
++{
++	ssize_t sent;
++	do { sent = ::write(fd, &value, 1); } while (sent < 0 && errno == EINTR);
++	return sent == 1;
++}
++
+ //! The child's half of the namespace handshake: wait until the parent has a namespace of its own,
+ //! then map the parent's own uid into it. The kernel only takes the map from a process that still
+ //! holds the old identity, so a child of the unsharing process writes it. The child touches no Qt
+@@ -75,8 +85,8 @@ inline bool mapOwnUidIntoNamespace(pid_t parentPid, int readEnd, int writeEnd)
+ 	const bool written = len > 0 && ::write(fd, line, static_cast<size_t>(len)) == len;
+ 	::close(fd);
+ 	char done = written ? 1 : 0;
+-	(void)::write(writeEnd, &done, 1);
+-	return written;
++	const bool notified = writeNamespaceHandshakeByte(writeEnd, done);
++	return written && notified;
+ }
+ 
+ //! Puts this process in a mount namespace of its own, with its own uid mapped in it, so a
+@@ -107,14 +117,14 @@ inline bool enterOwnMountNamespace()
+ 	::close(toParent[1]);
+ 	const bool unshared = ::unshare(CLONE_NEWUSER | CLONE_NEWNS) == 0;
+ 	char go = 1;
+-	(void)::write(toChild[1], &go, 1);
++	const bool notified = writeNamespaceHandshakeByte(toChild[1], go);
++	::close(toChild[1]);
+ 	char done = 0;
+ 	const bool answered = ::read(toParent[0], &done, 1) == 1;
+-	::close(toChild[1]);
+ 	::close(toParent[0]);
+ 	int status = 0;
+ 	::waitpid(child, &status, 0);
+-	return unshared && answered && done == 1;
++	return unshared && notified && answered && done == 1;
+ }
+ 
+ //! Binds @a source onto @a target in this process's mount namespace: one filesystem under two
+diff --git a/tests/src/core/NamModelLoaderTest.cpp b/tests/src/core/NamModelLoaderTest.cpp
+index 9a0bfda1ea..12aa6ad6ea 100644
+--- a/tests/src/core/NamModelLoaderTest.cpp
++++ b/tests/src/core/NamModelLoaderTest.cpp
+@@ -33,16 +33,21 @@
+ #include "NamModel.h"
+ 
+ #include <algorithm>
++#include <cerrno>
+ #include <cstddef>
+ #include <cstdint>
+-#include <filesystem>
++#include <cstdio>
++#include <cstdlib>
+ #include <fstream>
+ #include <iostream>
+ #include <limits>
+ #include <sstream>
+ #include <string>
++#include <sys/stat.h>
+ 
+ #ifdef _WIN32
++#include <direct.h>
++#include <io.h>
+ #include <process.h>
+ #else
+ #include <unistd.h>
+@@ -85,6 +90,68 @@ long long testProcessId()
+ }
+ 
+ 
++class TemporaryFixtureDirectory
++{
++public:
++	bool create()
++	{
++#ifdef _WIN32
++		const char* temporaryDirectory = std::getenv("TEMP");
++		const std::string base = temporaryDirectory != nullptr ? temporaryDirectory : ".";
++		for (int attempt = 0; attempt < 1000; ++attempt)
++		{
++			m_path = base + "/zene-nam-loader-test-" + std::to_string(testProcessId()) +
++				"-" + std::to_string(attempt);
++			if (_mkdir(m_path.c_str()) == 0)
++			{
++				m_created = true;
++				return true;
++			}
++			if (errno != EEXIST)
++			{
++				return false;
++			}
++		}
++		return false;
++#else
++		const char* temporaryDirectory = std::getenv("TMPDIR");
++		const std::string base = temporaryDirectory != nullptr ? temporaryDirectory : "/tmp";
++		m_path = base + "/zene-nam-loader-test-" + std::to_string(testProcessId()) + "-XXXXXX";
++		if (mkdtemp(&m_path[0]) == nullptr)
++		{
++			return false;
++		}
++		m_created = true;
++		return true;
++#endif
++	}
++
++	~TemporaryFixtureDirectory()
++	{
++		if (m_created)
++		{
++			const std::string fixture = fixturePath();
++#ifdef _WIN32
++			_unlink(fixture.c_str());
++			_rmdir(m_path.c_str());
++#else
++			unlink(fixture.c_str());
++			rmdir(m_path.c_str());
++#endif
++		}
++	}
++
++	std::string fixturePath() const
++	{
++		return m_path + "/invalid.nam";
++	}
++
++private:
++	std::string m_path;
++	bool m_created = false;
++};
++
++
+ std::size_t expectedWeights(const ModelShape& shape)
+ {
+ 	const std::size_t channels = nonnegative(shape.channels);
+@@ -134,7 +201,7 @@ std::string modelJson(const ModelShape& shape, const std::string& sampleRateJson
+ }
+ 
+ 
+-bool rejectsModelJson(const std::filesystem::path& path, const std::string& content,
++bool rejectsModelJson(const std::string& path, const std::string& content,
+ 	const char* label, const char* expectedError = nullptr)
+ {
+ 	{
+@@ -148,7 +215,7 @@ bool rejectsModelJson(const std::filesystem::path& path, const std::string& cont
+ 	}
+ 
+ 	std::string error;
+-	const auto model = lmms::nam::NamModel::loadFromFile(path.string(), &error);
++	const auto model = lmms::nam::NamModel::loadFromFile(path, &error);
+ 	if (model || error.empty() ||
+ 	    (expectedError != nullptr && error.find(expectedError) == std::string::npos))
+ 	{
+@@ -160,14 +227,14 @@ bool rejectsModelJson(const std::filesystem::path& path, const std::string& cont
+ }
+ 
+ 
+-bool rejectsModel(const std::filesystem::path& path, const ModelShape& shape,
++bool rejectsModel(const std::string& path, const ModelShape& shape,
+ 	const char* label)
+ {
+ 	return rejectsModelJson(path, modelJson(shape), label);
+ }
+ 
+ 
+-bool rejectsInvalidSampleRates(const std::filesystem::path& path)
++bool rejectsInvalidSampleRates(const std::string& path)
+ {
+ 	const auto rejectsRate = [&path](const std::string& sampleRate, const char* label,
+ 		const char* expectedError)
+@@ -184,7 +251,7 @@ bool rejectsInvalidSampleRates(const std::filesystem::path& path)
+ 		}
+ 
+ 		std::string error;
+-		const auto model = lmms::nam::NamModel::loadFromFile(path.string(), &error);
++		const auto model = lmms::nam::NamModel::loadFromFile(path, &error);
+ 		if (model || error.empty() || error.find(expectedError) == std::string::npos)
+ 		{
+ 			std::cerr << "loader accepted or misreported invalid sample_rate: " << label
+@@ -200,7 +267,7 @@ bool rejectsInvalidSampleRates(const std::filesystem::path& path)
+ }
+ 
+ 
+-bool rejectsOverflowingWeights(const std::filesystem::path& path)
++bool rejectsOverflowingWeights(const std::string& path)
+ {
+ 	const ModelShape shape;
+ 	const std::size_t headScaleIndex = expectedWeights(shape) - 1;
+@@ -212,7 +279,7 @@ bool rejectsOverflowingWeights(const std::filesystem::path& path)
+ }
+ 
+ 
+-bool loadsModelWithSampleRate(const std::filesystem::path& path,
++bool loadsModelWithSampleRate(const std::string& path,
+ 	const std::string& sampleRate, double expectedSampleRate)
+ {
+ 	{
+@@ -226,7 +293,7 @@ bool loadsModelWithSampleRate(const std::filesystem::path& path,
+ 	}
+ 
+ 	std::string error;
+-	const auto model = lmms::nam::NamModel::loadFromFile(path.string(), &error);
++	const auto model = lmms::nam::NamModel::loadFromFile(path, &error);
+ 	if (!model || model->spec().sampleRate != expectedSampleRate)
+ 	{
+ 		std::cerr << "loader refused a valid sample_rate fixture: " << error << '\n';
+@@ -238,16 +305,27 @@ bool loadsModelWithSampleRate(const std::filesystem::path& path,
+ 
+ /// The parse limit: 512 MiB of engine memory divided by the parser's worst
+ /// measured expansion of 32 bytes of heap per byte of .nam text.
+-constexpr std::uintmax_t kParseLimitBytes = 512ULL * 1024ULL * 1024ULL / 32ULL;
++constexpr std::uint64_t kParseLimitBytes = 512ULL * 1024ULL * 1024ULL / 32ULL;
+ 
+ 
+-bool writeFixture(const std::filesystem::path& path, const std::string& content)
++bool writeFixture(const std::string& path, const std::string& content)
+ {
+ 	{
+ 		std::ofstream output(path, std::ios::binary | std::ios::trunc);
+ 		output << content;
+ 	}
+-	if (std::filesystem::file_size(path) != content.size())
++	bool hasExpectedSize = false;
++#ifdef _WIN32
++	struct _stat64 fileInfo;
++	if (_stat64(path.c_str(), &fileInfo) == 0 && fileInfo.st_size >= 0)
++#else
++	struct stat fileInfo;
++	if (stat(path.c_str(), &fileInfo) == 0 && fileInfo.st_size >= 0)
++#endif
++	{
++		hasExpectedSize = static_cast<std::uint64_t>(fileInfo.st_size) == content.size();
++	}
++	if (!hasExpectedSize)
+ 	{
+ 		std::cerr << "could not write model fixture\n";
+ 		return false;
+@@ -267,7 +345,7 @@ std::string paddedModelJson(const ModelShape& shape, std::uintmax_t bytes)
+ }
+ 
+ 
+-bool refusesOversizedFile(const std::filesystem::path& path)
++bool refusesOversizedFile(const std::string& path)
+ {
+ 	if (!writeFixture(path, paddedModelJson(ModelShape{}, kParseLimitBytes + 1)))
+ 	{
+@@ -275,7 +353,7 @@ bool refusesOversizedFile(const std::filesystem::path& path)
+ 	}
+ 
+ 	std::string error;
+-	const auto model = lmms::nam::NamModel::loadFromFile(path.string(), &error);
++	const auto model = lmms::nam::NamModel::loadFromFile(path, &error);
+ 	if (model || error.find("size limit") == std::string::npos)
+ 	{
+ 		std::cerr << "loader accepted or misreported a model file one byte over the "
+@@ -286,7 +364,7 @@ bool refusesOversizedFile(const std::filesystem::path& path)
+ }
+ 
+ 
+-bool loadsFileAtLimit(const std::filesystem::path& path)
++bool loadsFileAtLimit(const std::string& path)
+ {
+ 	if (!writeFixture(path, paddedModelJson(ModelShape{}, kParseLimitBytes)))
+ 	{
+@@ -294,7 +372,7 @@ bool loadsFileAtLimit(const std::filesystem::path& path)
+ 	}
+ 
+ 	std::string error;
+-	const auto model = lmms::nam::NamModel::loadFromFile(path.string(), &error);
++	const auto model = lmms::nam::NamModel::loadFromFile(path, &error);
+ 	if (!model)
+ 	{
+ 		std::cerr << "loader refused a model file exactly at the parse limit: "
+@@ -305,7 +383,7 @@ bool loadsFileAtLimit(const std::filesystem::path& path)
+ }
+ 
+ 
+-bool validatesSampleRatesAndFileLimits(const std::filesystem::path& path)
++bool validatesSampleRatesAndFileLimits(const std::string& path)
+ {
+ 	return rejectsInvalidSampleRates(path) &&
+ 		loadsModelWithSampleRate(path, "48000", 48000.0) &&
+@@ -326,21 +404,18 @@ int main()
+ 		return 1;
+ 	}
+ 
+-	const auto directory = std::filesystem::temp_directory_path() /
+-		("zene-nam-loader-test-" + std::to_string(testProcessId()));
+-	std::filesystem::remove_all(directory);
+-	if (!std::filesystem::create_directory(directory))
++	TemporaryFixtureDirectory directory;
++	if (!directory.create())
+ 	{
+ 		std::cerr << "could not create temporary fixture directory\n";
+ 		return 1;
+ 	}
+-	const auto fixture = directory / "invalid.nam";
++	const std::string fixture = directory.fixturePath();
+ 
+ 	ModelShape overflow;
+ 	overflow.dilation = std::numeric_limits<int>::max();
+ 	if (!rejectsModel(fixture, overflow, "receptive-field overflow"))
+ 	{
+-		std::filesystem::remove_all(directory);
+ 		return 1;
+ 	}
+ 
+@@ -348,7 +423,6 @@ int main()
+ 	zeroHead.headSize = 0;
+ 	if (!rejectsModel(fixture, zeroHead, "zero head size"))
+ 	{
+-		std::filesystem::remove_all(directory);
+ 		return 1;
+ 	}
+ 
+@@ -356,7 +430,6 @@ int main()
+ 	zeroChannels.channels = 0;
+ 	if (!rejectsModel(fixture, zeroChannels, "zero channel count"))
+ 	{
+-		std::filesystem::remove_all(directory);
+ 		return 1;
+ 	}
+ 
+@@ -364,7 +437,6 @@ int main()
+ 	zeroBottleneck.bottleneck = 0;
+ 	if (!rejectsModel(fixture, zeroBottleneck, "zero bottleneck"))
+ 	{
+-		std::filesystem::remove_all(directory);
+ 		return 1;
+ 	}
+ 
+@@ -372,7 +444,6 @@ int main()
+ 	zeroDilation.dilation = 0;
+ 	if (!rejectsModel(fixture, zeroDilation, "zero dilation"))
+ 	{
+-		std::filesystem::remove_all(directory);
+ 		return 1;
+ 	}
+ 
+@@ -381,16 +452,13 @@ int main()
+ 	tooManyLayers.layerCount = 257;
+ 	if (!rejectsModel(fixture, tooManyLayers, "too many layers"))
+ 	{
+-		std::filesystem::remove_all(directory);
+ 		return 1;
+ 	}
+ 
+ 	if (!validatesSampleRatesAndFileLimits(fixture))
+ 	{
+-		std::filesystem::remove_all(directory);
+ 		return 1;
+ 	}
+ 
+-	std::filesystem::remove_all(directory);
+ 	return 0;
+ }
+diff --git a/tests/src/core/RenderSourceGuardTest.cpp b/tests/src/core/RenderSourceGuardTest.cpp
+index 240e5c1f57..a89eb58cc5 100644
+--- a/tests/src/core/RenderSourceGuardTest.cpp
++++ b/tests/src/core/RenderSourceGuardTest.cpp
+@@ -72,6 +72,7 @@ int fakeRender(int argc, char** argv)
+ 	return output.write("rendered output") == 15 ? 0 : 5;
+ }
+ 
++#ifndef _WIN32
+ int queueRender(const QString& source, const QString& destination)
+ {
+ 	RenderJob job;
+@@ -84,6 +85,8 @@ int queueRender(const QString& source, const QString& destination)
+ 	return id;
+ }
+ 
++#endif
++
+ } // namespace
+ 
+ class RenderSourceGuardTest : public QObject
+diff --git a/tests/train-41-portability-check.py b/tests/train-41-portability-check.py
+new file mode 100755
+index 0000000000..30a3b386f1
+--- /dev/null
++++ b/tests/train-41-portability-check.py
+@@ -0,0 +1,243 @@
++#!/usr/bin/env python3
++"""Compile focused portability regression probes from the configured build."""
++
++import argparse
++import json
++from pathlib import Path
++import re
++import shlex
++import shutil
++import subprocess
++import sys
++import tempfile
++
++
++def fail(message):
++    raise RuntimeError(message)
++
++
++def require_file(path):
++    if not path.is_file():
++        fail(f"required source or build file is missing: {path}")
++
++
++def run(command, cwd=None):
++    print("+", shlex.join([str(part) for part in command]), flush=True)
++    result = subprocess.run(command, cwd=cwd, check=False)
++    if result.returncode:
++        fail(f"compiler command failed with exit code {result.returncode}")
++
++
++def compile_database(build):
++    path = build / "compile_commands.json"
++    require_file(path)
++    with path.open(encoding="utf-8") as stream:
++        entries = json.load(stream)
++    if not isinstance(entries, list):
++        fail(f"invalid compilation database: {path}")
++    return entries
++
++
++def entry_for(entries, root, filename):
++    wanted = (root / filename).resolve()
++    matches = [item for item in entries if Path(item.get("file", "")).resolve() == wanted]
++    if not matches:
++        fail(f"no compile_commands.json entry for {wanted}")
++    entry = matches[0]
++    command = entry.get("arguments")
++    if command is None:
++        command = shlex.split(entry.get("command", ""))
++    if not command:
++        fail(f"compile database entry has no command for {wanted}")
++    return entry, command
++
++
++def syntax_command(entry, command, extra=()):
++    cleaned = []
++    skip = False
++    paired = {"-o", "-MF", "-MT", "-MQ"}
++    for token in command:
++        if skip:
++            skip = False
++            continue
++        if token in paired:
++            skip = True
++        elif token in {"-c", "-MD", "-MMD", "-MP"}:
++            continue
++        elif token.startswith(("-o", "-MF", "-MT", "-MQ")) and token not in {"-o"}:
++            continue
++        else:
++            cleaned.append(token)
++    if not cleaned:
++        fail("compile command has no compiler")
++    cleaned.extend(["-fsyntax-only", *extra])
++    return cleaned
++
++
++def pkg_config(packages):
++    tool = shutil.which("pkg-config")
++    if tool is None:
++        fail("required tool is missing: pkg-config")
++    result = subprocess.run([tool, "--cflags", *packages], text=True,
++                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
++    if result.returncode:
++        fail(f"pkg-config {' '.join(packages)} failed: {result.stderr.strip()}")
++    return shlex.split(result.stdout)
++
++
++def mode_linux(root, qt_major="6"):
++    header = root / "tests/src/core/MountNamespaceTestSupport.h"
++    require_file(header)
++    compiler = shutil.which("c++")
++    if compiler is None:
++        fail("required tool is missing: c++")
++    source = '#include "MountNamespaceTestSupport.h"\nint main() { return lmms::testsupport::enterOwnMountNamespace(); }\n'
++    with tempfile.TemporaryDirectory(prefix="train41-linux-") as temporary:
++        probe = Path(temporary) / "mount_probe.cpp"
++        probe.write_text(source, encoding="utf-8")
++        command = [compiler, "-std=c++20", "-O2", "-D_FORTIFY_SOURCE=2",
++                   "-Werror=unused-result", "-fPIC", *pkg_config(["Qt" + qt_major + "Core"]),
++                   "-I" + str(root / "tests/src/core"), "-c", str(probe), "-o", str(Path(temporary) / "probe.o")]
++        run(command, cwd=root)
++
++
++def mode_eq(root, build):
++    source = root / "plugins/Eq/EqSpectrumView.cpp"
++    require_file(source)
++    compiler = shutil.which("c++")
++    if compiler is None:
++        fail("required tool is missing: c++")
++    flags = pkg_config(["Qt5Widgets", "Qt5Xml", "Qt5Network"])
++    command = [compiler, "-std=c++20", "-fPIC", *flags, "-I" + str(root / "include"),
++               "-I" + str(build), "-I" + str(build / "src"),
++               "-I" + str(root / "plugins/Eq"), "-I" + str(build / "plugins/Eq"),
++               "-I/usr/include/cairo", "-DPLUGIN_NAME=eq", "-fsyntax-only", str(source)]
++    run(command, cwd=root)
++
++
++def signature_parts(source):
++    text = source.read_text(encoding="utf-8")
++    constant = re.search(r"constexpr\s+bool\s+sigactionIsNoexcept\s*=\s*[^;]+;", text)
++    declaration = re.search(r'extern\s+"C"\s+int\s+sigaction[^;{]+\{', text)
++    if declaration is None:
++        fail(f"could not extract actual sigaction declaration/constant from {source}")
++    return constant.group(0) if constant else "", declaration.group(0)[:-1].rstrip()
++
++
++def mode_darwin_signature(root):
++    source = root / "tests/src/core/CrashReporterArmTest.cpp"
++    require_file(source)
++    constant, definition = signature_parts(source)
++    compiler = shutil.which("c++")
++    if compiler is None:
++        fail("required tool is missing: c++")
++    with tempfile.TemporaryDirectory(prefix="train41-sigaction-") as temporary:
++        probe = Path(temporary) / "sigaction_contract.cpp"
++        for is_noexcept in (True, False):
++            prior = " noexcept" if is_noexcept else ""
++            code = ("struct sigaction;\nextern \"C\" int sigaction(int, const struct sigaction*, "
++                    f"struct sigaction*){prior};\n{constant}\n{definition} {{ return 0; }}\n")
++            probe.write_text(code, encoding="utf-8")
++            run([compiler, "-std=c++20", "-fsyntax-only", str(probe)], cwd=root)
++
++
++def mode_darwin_tu(root, build):
++    entries = compile_database(build)
++    entry, command = entry_for(entries, root, "tests/src/core/CrashReporterArmTest.cpp")
++    with tempfile.TemporaryDirectory(prefix="train41-signal-shadow-") as temporary:
++        shadow = Path(temporary)
++        (shadow / "signal.h").write_text(
++            "#include_next <signal.h>\n#define sigemptyset(set) (0)\n", encoding="utf-8")
++        args = syntax_command(entry, command, ["-I" + str(shadow)])
++        run(args, cwd=entry["directory"])
++
++
++def mode_nam(root, build):
++    entries = compile_database(build)
++    entry, command = entry_for(entries, root, "tests/src/core/NamModelLoaderTest.cpp")
++    with tempfile.TemporaryDirectory(prefix="train41-filesystem-shadow-") as temporary:
++        shadow = Path(temporary) / "filesystem"
++        shadow.mkdir()
++        (shadow / "filesystem").write_text("#error <filesystem> is forbidden in this test\n",
++                                           encoding="utf-8")
++        args = syntax_command(entry, command, ["-I" + str(shadow)])
++        run(args, cwd=entry["directory"])
++
++
++def source_headers(source):
++    headers = []
++    for match in re.finditer(r"^\s*#\s*include\s*([<\"])([^>\"]+)[>\"]", source.read_text(encoding="utf-8"), re.M):
++        delimiter, name = match.groups()
++        if name.endswith(".moc"):
++            continue
++        if delimiter == '"':
++            candidate = source.parent / name
++            if candidate.is_file():
++                headers.append(candidate.resolve())
++                continue
++        headers.append(("<" + name + ">") if delimiter == "<" else '"' + name + '"')
++    return list(dict.fromkeys(headers))
++
++
++def mode_render(root, build, moc):
++    entries = compile_database(build)
++    entry, command = entry_for(entries, root, "tests/src/core/RenderSourceGuardTest.cpp")
++    source = root / "tests/src/core/RenderSourceGuardTest.cpp"
++    with tempfile.TemporaryDirectory(prefix="train41-win-guard-") as temporary:
++        preinclude = Path(temporary) / "headers_then_win32.h"
++        lines = []
++        for header in source_headers(source):
++            lines.append(f'#include "{header}"' if isinstance(header, Path) else f"#include {header}")
++        lines.append("#define _WIN32 1")
++        preinclude.write_text("\n".join(lines) + "\n", encoding="utf-8")
++        run([moc, "-D_WIN32=1", str(source), "-o",
++             str(Path(temporary) / "RenderSourceGuardTest.moc")], cwd=root)
++        args = syntax_command(entry, command,
++                              ["-include", str(preinclude), "-Werror=unused-function"])
++        args.insert(1, "-I" + temporary)
++        args.remove("-fsyntax-only")
++        args.extend(["-c", "-o", str(Path(temporary) / "render.o")])
++        run(args, cwd=entry["directory"])
++
++
++MODES = {
++    "linux": mode_linux,
++    "eq": mode_eq,
++    "darwin-signature": mode_darwin_signature,
++    "darwin-tu": mode_darwin_tu,
++    "nam": mode_nam,
++    "render": mode_render,
++}
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--source-root", required=True, type=Path)
++    parser.add_argument("--build-dir", required=True, type=Path)
++    parser.add_argument("--moc", default="/usr/lib/qt6/moc")
++    parser.add_argument("--qt-major", choices=["5", "6"], default="6")
++    parser.add_argument("--mode", choices=["all", *MODES], default="all")
++    args = parser.parse_args()
++    root = args.source_root.resolve()
++    build = args.build_dir.resolve()
++    require_file(root / "tests/src/core/MountNamespaceTestSupport.h")
++    selected = MODES if args.mode == "all" else {args.mode: MODES[args.mode]}
++    for name, check in selected.items():
++        print(f"[{name}]", flush=True)
++        if name == "linux":
++            check(root, args.qt_major)
++        elif name == "render":
++            check(root, build, args.moc)
++        elif name in {"eq", "darwin-tu", "nam"}:
++            check(root, build)
++        else:
++            check(root)
++    return 0
++
++
++if __name__ == "__main__":
++    try:
++        sys.exit(main())
++    except (OSError, RuntimeError, json.JSONDecodeError) as error:
++        print(f"portability check: {error}", file=sys.stderr)
++        sys.exit(1)
+diff --git a/tests/upstream-modifications.txt b/tests/upstream-modifications.txt
+index 47d1e4af52..5f2a1524b6 100644
+--- a/tests/upstream-modifications.txt
++++ b/tests/upstream-modifications.txt
+@@ -826,6 +826,8 @@ src/core/Clip.cpp	#611 Slice 0 relocated the clip->source mapping here, so this
+ .github/workflows/build.yml	Train 39 Linux disk exhaustion: retain debug-bearing objects and ordinary symbols, remove duplicate test-artifact DWARF via ZENE_TEST_STRIP_DEBUG on both Linux jobs, retaining production binary debug data; preserve tests, gates and resource limits.
+ tests/CMakeLists.txt	Train 39 Windows RNNoise test export: direct-source fixture defines rnnoisedenoiser_EXPORTS and exposes the configured definition to a compiler regression; register hosted portability probes and opt-in Linux test-only DWARF removal, preserving production debug information.
+ tests/CMakeLists.txt	Train 40: reconcile the MinGW direct-source test export repair with the existing RNNoise export and host probes, preserve all audit assertions and fix twelve accepted sibling export branches plus the additional WasmSandboxTest branch exposed with WASM enabled; declare AudioPluginTest runtime fixture dependencies for reproducible targeted builds.
++plugins/Eq/EqSpectrumView.h	Train 41: use explicitly included QVector for the contiguous GUI spectrum cache, whose sized constructor and data() API are supported on Qt5 and Qt6; retain analysis and paint behavior.
++tests/CMakeLists.txt	Train 41: register strict hosted portability compiler probes and a deterministic Linux namespace handshake regression without weakening platform assertions or warnings.
+ src/core/ConfigManager.cpp	wave R rename (018d2041f): the bundled data search path moved from share/lmms/ to share/zene/, and the build-tree discovery moved from the lmms_SOURCE_DIR/lmms_BINARY_DIR CMake cache entries to the zene_ spelling the renamed CMake project writes (the old lmms_ entry is still accepted, so an existing build tree keeps working).; wave R rename: runtime data/working paths derive from the renamed install layout; #625 headless load: the config parse-error and config-write-failure boxes are not opened in an unattended run (saveConfigFile is reachable from project.open via the recent-projects list); tag v0.2.0-alpha CI fix: saveConfigFile's unattended qWarning() branch needs <QDebug> included by name -- <QtGlobal> only forward-declares QDebug, so the linux-x86_64 and linux-arm64 jobs failed with 'invalid use of incomplete type class QDebug' (Qt5; Qt6 pulls QDebug in transitively through <QApplication>, which is why the same tree builds on a Qt6-only box); cluster 2405: clears the ConfigManager singleton pointer before destruction so later callers recreate a live manager
+ src/core/AutomatableModel.cpp	post-alpha/automation-modes: the mode state machine, the transport run token, the monotone clock and the trim offset; appended in its own banner-marked block at the end of the file; automation-touch-race: the destructor reports itself to the song (Song::forgetAutomatedModel) so the song's last-frame automated-value cache drops a control that is destroyed while the transport runs, instead of dereferencing it in the next processAutomations()/stop() (held by AutomationModesTest::testDestroyedControlIsNotDereferenced); 0.3.0 row 9 sample-accurate automation (030/sample-accurate-automation, board task #646, docs/SAMPLE-ACCURATE-AUTOMATION.md): valueBuffer() gains ONE branch - a published ramp fills the per-sample buffer from the curve - and the two accessors are defined below it; the controller path, the linked-model path and the old-new interpolation path are unchanged and remain the fallback for every block that publishes nothing; diagnostics 2026-09-23: the controllerValue scale-type qFatal now names the offending enum value and model pointer (it fired on freed memory during the UAF; the message is what identified the bug class).; 050 L06 ED-191: setValue records the last touched model id (not for automated writes)
+ src/core/AutomationClip.cpp	0.3.0 row 9 sample-accurate automation (030/sample-accurate-automation, board task #646, docs/SAMPLE-ACCURATE-AUTOMATION.md): defines setSampleAccurate()/rampValueAt()/addRampKnot()/writeBlockRamp(), and saveSettings() writes <automationclip sample_accurate> ONLY when the flag is on while loadSettings() RESETS it on absence (which is what lets a checkpoint taken before the first edit take the flag back). The node parsing, the other attributes and valueAt() are untouched; 040/m2-ramp-default (2026-09-30, R1.2): saveSettings writes sample_accurate only for an explicit setting ("1" unchanged, "0" for off) and loadSettings reads absence as Default; a static_assert pins the ramp cap against the densest block; 050 L06 (file-length ratchet): flipY/flipX moved verbatim to AutomationClipTransforms.cpp (with the new drawShape/transformRange/thin/bendValueAt); valueAt honours a point's own curve (ED-185); the relative flag and each point's curve are saved/loaded (ED-199, ED-185); 0.5.0 bug hunt: the copy constructor carries the relative flag and the ramp setting; 0.5.0 bug hunt cluster new-p9-566: valuesAfter() returns before std::next() when lowerBound is end(), avoiding increment of a past-the-end iterator
+-- 
+2.56.0
+

@@ -1,0 +1,372 @@
+From 302c88a87b43476b1119ff7389710846bf962e15 Mon Sep 17 00:00:00 2001
+From: Zene CI repair <noreply@zene.invalid>
+Date: Sat, 14 Nov 2026 09:07:02 +0000
+Subject: [PATCH] fix(ci): CI regression: build / mingw64
+
+CI-Repair-Id: ci-repair-ci-28572f865f7a738c-3c8e46b752d6
+---
+ .../cluster-ci-28572f865f7a738c.md            | 110 +++++++++++
+ tests/src/core/RecordingCrashLossTest.cpp     |   4 +-
+ tests/src/core/RenderSourceGuardTest.cpp      | 172 ++++++++++++++++++
+ tests/upstream-modifications.txt              |   1 +
+ 4 files changed, 286 insertions(+), 1 deletion(-)
+ create mode 100644 docs/qwen-fixes-2026-10/cluster-ci-28572f865f7a738c.md
+
+diff --git a/docs/qwen-fixes-2026-10/cluster-ci-28572f865f7a738c.md b/docs/qwen-fixes-2026-10/cluster-ci-28572f865f7a738c.md
+new file mode 100644
+index 0000000000..3f18a4e2a8
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/cluster-ci-28572f865f7a738c.md
+@@ -0,0 +1,110 @@
++FIXED
++
++# cluster ci-28572f865f7a738c — mingw64 build: POSIX-only test helpers left unguarded
++
++## Verdict
++
++REAL. The hosted `mingw64` job failed at 40b4322860e9c2133f412a4b921b63b057dd710c while compiling
++`tests/src/core/RenderSourceGuardTest.cpp`: the anonymous-namespace helper `queueRender` was defined
++outside the `#ifndef _WIN32` block while every one of its uses sat inside that block, so the Windows
++translation unit contained an unused function and `-Werror=unused-function` rejected it. This is a
++test-target build-portability defect, not product code; the product sources are unchanged.
++
++The same pattern existed one file over and would have failed the next CI run: `pushBlock` in
++`tests/src/core/RecordingCrashLossTest.cpp` is used only by `runCrashChild`, which is POSIX-only, but
++the helper itself was outside the guard. A scan of every `tests/src/**/*.cpp` with the new regression
++found exactly these two definitions and no others.
++
++## Evidence
++
++- CI evidence: `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/train-ci/40b4322860e9c2133f412a4b921b63b057dd710c/run-43569206372-job-132369662791.log:5057`
++  `tests/src/core/RenderSourceGuardTest.cpp:75:5: error: 'int {anonymous}::queueRender(const QString&, const QString&)' defined but not used [-Werror=unused-function]`.
++- `tests/src/core/RenderSourceGuardTest.cpp:81-95` (was `:75-85`): `queueRender` is now inside the
++  same `#ifndef _WIN32` as its three callers (the POSIX-only render-destination cases).
++- `tests/src/core/RecordingCrashLossTest.cpp:62-100` (was `:62-71`): the `#ifndef _WIN32` now starts
++  before `pushBlock` (definition at `:65`) instead of after it, so both `pushBlock` and its only
++  caller `runCrashChild` compile out together on Windows.
++- Regression carrier: `tests/src/core/RenderSourceGuardTest.cpp:370` `windowsBuildHasNoUnusedTestHelpers()`
++  reads `tests/src/**/*.cpp` through `QT_TESTCASE_SOURCEDIR` and fails on any top-level definition
++  whose every call sits inside a guard that excludes Windows while the definition itself does not.
++  A Linux compiler cannot observe the Windows preprocessor view, so the test reads the same fact the
++  hosted compiler acts on — the shape already used by `AudioEngineTeardownTest`'s Windows semaphore
++  check and `PluginExportBranchTest`.
++
++## Red/green proof (fix patch contains only the two guard edits, not the regression code)
++
++`fix.patch` was generated from pre-fix/fixed snapshots of the two files and contains exactly four
++hunks: the `queueRender` guard pair and the moved `pushBlock` guard. The regression scanner is not in
++the patch, so reversing it leaves the test in place and removes only the fix.
++
++| Step | Command | Exit |
++| --- | --- | --- |
++| reverse fix | `git apply -R /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-28572f865f7a738c.r1/logs/fix.patch` | 0 |
++| build | `cmake --build build --target RenderSourceGuardTest RecordingCrashLossTest -j12` | 0 |
++| RED test | `cd build/tests && ctest -R '^RenderSourceGuardTest$' --output-on-failure` | 8 |
++| apply fix | `git apply /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-28572f865f7a738c.r1/logs/fix.patch` | 0 |
++| build | `cmake --build build --target RenderSourceGuardTest RecordingCrashLossTest -j12` | 0 |
++| GREEN test | `cd build/tests && ctest -R '^(RenderSourceGuardTest|RecordingCrashLossTest)$' --output-on-failure` | 0 (2/2 passed) |
++
++The RED failure names both offenders (`queueRender` at `RenderSourceGuardTest.cpp:81`, `pushBlock` at
++`RecordingCrashLossTest.cpp:62`); the GREEN run reports `100% tests passed, 0 tests failed out of 2`.
++Logs: `build-8-final-red.log`, `test-8-final-red.log`, `build-9-final-green.log`,
++`test-9-final-green.log` in the run's `logs/` folder.
++
++Affected family (render queue, render tasks, crash-loss recovery):
++
++| Command | Exit |
++| --- | --- |
++| `cd build/tests && ctest -R '^(RenderSourceGuardTest\|RecordingCrashLossTest\|ControlRenderJobTest\|RenderTaskLifecycleTest\|BatchFreezeTest\|ControlBounceRenderTest)$' --output-on-failure` | 0 (6/6 passed) |
++
++Baseline before the regression was added: `build-1-baseline.log` / `test-1-baseline.log`, both exit 0.
++
++## Gates
++
++`python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` -> exit 0
++(`feature-check-2.log`):
++
++```text
++  PASS  fork-sources            exit 0
++  PASS  all-sources-reproduce   exit 0
++  PASS  no-upstream-regression  exit 0
++  PASS  check-namespace         exit 0
++  PASS  no-tautology            exit 0
++  PASS  doc-figures             exit 0
++  PASS  complexity              no new item in your files
++  PASS  file-length             no new item in your files
++RESULT: PASS
++```
++
++The first invocation (`feature-check-1.log`) could not reach the ratchets because the lane guard
++refuses the tool's own `git checkout --detach` in `gate-baselines/tree`. The missing base listing was
++produced by replaying the tool's own ratchet step (`feature_check.RATCHET`) on a `git archive`
++extraction of the base commit and writing `gate-baselines/40b4322860e9c2133f412a4b921b63b057dd710c.json`
++(`gate-baseline-build.log`, exit 0). No gate limit, baseline entry or script was changed; on the
++pristine base both ratchets report zero regressions, and the rerun above reads that cache normally.
++
++## Files committed
++
++- `tests/src/core/RenderSourceGuardTest.cpp` — guard for `queueRender` plus the source-scan regression.
++- `tests/src/core/RecordingCrashLossTest.cpp` — guard moved before `pushBlock`.
++- `docs/qwen-fixes-2026-10/cluster-ci-28572f865f7a738c.md` — this report.
++
++## Self-check
++
++- **Regression fails with the fix reverted, passes with it:** reversing `fix.patch` (only the two
++  guard edits) gives `ctest ... RenderSourceGuardTest` exit 8 with both offenders listed; applying it
++  gives exit 0 (2/2). Commands and exit codes are in the table above.
++- **Deterministic:** the regression is a pure text scan over `tests/src` with no clock, sleep, thread
++  or render; it reads source files from the compile-time `QT_TESTCASE_SOURCEDIR`, and its input is the
++  tree itself. `RecordingCrashLossTest` is unchanged in behaviour (only preprocessor placement).
++- **Cause and completeness:** the scan of every `tests/src/**/*.cpp` found exactly `queueRender`
++  (`RenderSourceGuardTest.cpp`) and `pushBlock` (`RecordingCrashLossTest.cpp`); both are fixed. Every
++  caller was checked: `queueRender` is called only in the three `#ifndef _WIN32` cases, and
++  `pushBlock` only from `runCrashChild` in the same guard. No other function has all its uses inside
++  a Windows-excluding guard while being defined outside one.
++- **No collateral damage:** no product source, save format, control command, undo path or realtime
++  path changed; no limits or checks were added. Old projects and saved data are untouched, and Linux
++  behaviour of both test binaries is unchanged (baseline run was green before the regression, both
++  binaries green after).
++- **ALREADY-FIXED/FALSE-POSITIVE evidence:** not applicable — the verdict is REAL, with the CI error
++  line and the pre-fix file layout cited above.
+diff --git a/tests/src/core/RecordingCrashLossTest.cpp b/tests/src/core/RecordingCrashLossTest.cpp
+index 46e28fd80a..b93e60643d 100644
+--- a/tests/src/core/RecordingCrashLossTest.cpp
++++ b/tests/src/core/RecordingCrashLossTest.cpp
+@@ -59,6 +59,9 @@ namespace
+ constexpr int Rate = 48000;
+ constexpr int BlockFrames = 512;
+ 
++#ifndef _WIN32
++// Only the crash child below pushes blocks; leaving this outside the guard makes it an
++// unused function in the Windows translation unit, which the hosted mingw64 build rejects.
+ void pushBlock(lmms::TrackRecorder& recorder, std::vector<float>& block, std::size_t index)
+ {
+ 	for (std::size_t i = 0; i < block.size(); ++i)
+@@ -68,7 +71,6 @@ void pushBlock(lmms::TrackRecorder& recorder, std::vector<float>& block, std::si
+ 	recorder.processInputInterleaved(block.data(), 1, static_cast<lmms::f_cnt_t>(block.size()));
+ }
+ 
+-#ifndef _WIN32
+ //! The crashing process: never returns.
+ int runCrashChild(const char* take, const char* report, int blocks, int extraMs)
+ {
+diff --git a/tests/src/core/RenderSourceGuardTest.cpp b/tests/src/core/RenderSourceGuardTest.cpp
+index 240e5c1f57..edb1e4c815 100644
+--- a/tests/src/core/RenderSourceGuardTest.cpp
++++ b/tests/src/core/RenderSourceGuardTest.cpp
+@@ -25,10 +25,16 @@
+ 
+ #include <QCoreApplication>
+ #include <QDir>
++#include <QDirIterator>
+ #include <QFile>
+ #include <QFileInfo>
+ #include <QJsonObject>
++#include <QRegularExpression>
++#include <QStringList>
+ #include <QTemporaryDir>
++#include <QVector>
++
++#include <algorithm>
+ 
+ #ifndef _WIN32
+ #include <unistd.h>
+@@ -72,6 +78,9 @@ int fakeRender(int argc, char** argv)
+ 	return output.write("rendered output") == 15 ? 0 : 5;
+ }
+ 
++#ifndef _WIN32
++// Only the POSIX cases below queue a render; leaving this outside the guard makes it an
++// unused function in the Windows translation unit, which the hosted mingw64 build rejects.
+ int queueRender(const QString& source, const QString& destination)
+ {
+ 	RenderJob job;
+@@ -83,6 +92,149 @@ int queueRender(const QString& source, const QString& destination)
+ 	if (id > 0) { queue.start(); }
+ 	return id;
+ }
++#endif
++
++// The hosted mingw64 build compiles every test with -Werror=unused-function. A definition
++// whose every use sits inside a guard that excludes Windows is therefore a build failure on
++// that host, while a Linux compiler is happy with it (run 43569206372 died on queueRender).
++// The scan below reads the test sources and names every such definition, so the defect is
++// visible on every platform.
++struct WindowsGuardOffender
++{
++	QString file;
++	int line = 0;
++	QString name;
++};
++
++struct GuardFrame
++{
++	bool isWindowsGuard = false;
++	bool excludesWindows = false;
++};
++
++struct TopLevelDefinition
++{
++	int line = 0;
++	QString name;
++};
++
++bool guardExcludesWindows(const QString& line)
++{
++	static const QRegularExpression guard(QStringLiteral(
++		R"(^\s*#\s*(?:ifndef\s+_WIN32\b|ifndef\s+LMMS_BUILD_WIN32\b|if\s+!\s*defined\s*\(\s*(?:_WIN32|LMMS_BUILD_WIN32|Q_OS_WIN)\s*\)))"));
++	return guard.match(line).hasMatch();
++}
++
++void applyGuardDirective(const QString& kind, const QString& line, QVector<GuardFrame>& stack)
++{
++	if (kind == QLatin1String("endif"))
++	{
++		if (!stack.isEmpty()) { stack.removeLast(); }
++		return;
++	}
++	if (kind == QLatin1String("else") || kind == QLatin1String("elif"))
++	{
++		if (!stack.isEmpty() && stack.last().isWindowsGuard)
++		{
++			// #else of a Windows exclusion is the Windows branch; #elif is not exclusion.
++			stack.last().excludesWindows = kind == QLatin1String("else")
++				&& !stack.last().excludesWindows;
++		}
++		return;
++	}
++	const bool windowsGuard = guardExcludesWindows(line);
++	stack.append(GuardFrame{windowsGuard, windowsGuard});
++}
++
++QVector<bool> windowsExcludedLines(const QStringList& lines)
++{
++	static const QRegularExpression directive(QStringLiteral(
++		R"(^\s*#\s*(if|ifdef|ifndef|elif|else|endif)\b)"));
++	QVector<bool> excluded;
++	excluded.reserve(lines.size());
++	QVector<GuardFrame> stack;
++	for (const QString& line : lines)
++	{
++		excluded.append(std::any_of(stack.cbegin(), stack.cend(),
++			[](const GuardFrame& frame) { return frame.excludesWindows; }));
++		const QRegularExpressionMatch match = directive.match(line);
++		if (match.hasMatch()) { applyGuardDirective(match.captured(1), line, stack); }
++	}
++	return excluded;
++}
++
++QVector<TopLevelDefinition> topLevelFunctionDefinitions(const QStringList& lines)
++{
++	static const QRegularExpression definition(QStringLiteral(
++		R"(^(?:static\s+)?[A-Za-z_][\w:<>,\s*&]*?\s+([A-Za-z_]\w*)\s*\([^;]*$)"));
++	QVector<TopLevelDefinition> definitions;
++	for (int i = 0; i < lines.size(); ++i)
++	{
++		const QRegularExpressionMatch match = definition.match(lines.at(i));
++		if (!match.hasMatch()) { continue; }
++		bool opens = false;
++		for (int j = i + 1; j < lines.size() && j <= i + 4; ++j)
++		{
++			opens = opens || lines.at(j).trimmed() == QLatin1String("{");
++		}
++		if (opens) { definitions.append(TopLevelDefinition{i, match.captured(1)}); }
++	}
++	return definitions;
++}
++
++bool usedOnlyInsideWindowsExcludedCode(const QString& name, int definitionLine,
++	const QStringList& lines, const QVector<bool>& excluded)
++{
++	// A use is a call (or an address-of): plain mentions in comments must not make a
++	// definition look used on Windows.
++	const QRegularExpression use(QStringLiteral(R"((?:\b%1\s*\(|&\s*%1\b))")
++		.arg(QRegularExpression::escape(name)));
++	bool used = false;
++	bool excludedOnly = true;
++	for (int i = 0; i < lines.size(); ++i)
++	{
++		if (i == definitionLine || !use.match(lines.at(i)).hasMatch()) { continue; }
++		used = true;
++		excludedOnly = excludedOnly && excluded.at(i);
++	}
++	return used && excludedOnly;
++}
++
++QList<WindowsGuardOffender> scanTestFileForWindowsUnusedDefinitions(const QString& path)
++{
++	QList<WindowsGuardOffender> offenders;
++	QFile file(path);
++	if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
++	{
++		return {WindowsGuardOffender{path, 0, QStringLiteral("<unreadable>")}};
++	}
++	const QString text = QString::fromUtf8(file.readAll());
++	if (!text.contains(QLatin1String("_WIN32")) && !text.contains(QLatin1String("LMMS_BUILD_WIN32"))
++		&& !text.contains(QLatin1String("Q_OS_WIN")))
++	{
++		return offenders;
++	}
++	const QStringList lines = text.split(QLatin1Char('\n'));
++	const QVector<bool> excluded = windowsExcludedLines(lines);
++	for (const TopLevelDefinition& definition : topLevelFunctionDefinitions(lines))
++	{
++		if (definition.line >= excluded.size() || excluded.at(definition.line)) { continue; }
++		if (usedOnlyInsideWindowsExcludedCode(definition.name, definition.line, lines, excluded))
++		{
++			offenders.append(WindowsGuardOffender{path, definition.line + 1, definition.name});
++		}
++	}
++	return offenders;
++}
++
++QList<WindowsGuardOffender> windowsUnusedInternalDefinitions(const QString& directory)
++{
++	QList<WindowsGuardOffender> offenders;
++	QDirIterator files(directory, {QStringLiteral("*.cpp")}, QDir::Files,
++		QDirIterator::Subdirectories);
++	while (files.hasNext()) { offenders.append(scanTestFileForWindowsUnusedDefinitions(files.next())); }
++	return offenders;
++}
+ 
+ } // namespace
+ 
+@@ -210,6 +362,26 @@ private slots:
+ 		RenderQueue::instance().clearFinished();
+ 	}
+ #endif
++
++	// A helper used only by the POSIX-only cases must be compiled only there: the
++	// hosted mingw64 build turns the unused-function warning into an error. Read the
++	// test sources (a Linux compiler cannot observe the Windows preprocessor view) and
++	// fail on every definition whose uses all sit inside a Windows-excluding guard.
++	void windowsBuildHasNoUnusedTestHelpers()
++	{
++		const QList<WindowsGuardOffender> offenders = windowsUnusedInternalDefinitions(
++			QDir{QStringLiteral(QT_TESTCASE_SOURCEDIR)}.filePath(QStringLiteral("src")));
++		QStringList found;
++		for (const WindowsGuardOffender& offender : offenders)
++		{
++			found << QStringLiteral("%1:%2: %3").arg(offender.file).arg(offender.line)
++				.arg(offender.name);
++		}
++		QVERIFY2(offenders.isEmpty(), qPrintable(QStringLiteral(
++			"these definitions are only used inside a guard that excludes Windows, so the "
++			"mingw64 build reports them unused; move each inside its own guard:\n")
++			+ found.join(QLatin1Char('\n'))));
++	}
+ };
+ 
+ int main(int argc, char** argv)
+diff --git a/tests/upstream-modifications.txt b/tests/upstream-modifications.txt
+index 47d1e4af52..f5e475c665 100644
+--- a/tests/upstream-modifications.txt
++++ b/tests/upstream-modifications.txt
+@@ -5920,3 +5920,4 @@ include/LadspaManager.h	cluster new-p10-193: keep scanned LADSPA QLibraries aliv
+ src/core/LadspaManager.cpp	cluster new-p10-193: store each successfully scanned QLibrary in m_loadedLibraries instead of destroying the local after the scan, so descriptor function pointers in m_ladspaManagerMap never dangle into an unloaded library; isLibraryLoaded() reports ownership under LMMS_TESTING.
+ include/AutomationEditor.h	new-p15-275: AutomationEditor::m_clip is a QPointer<AutomationClip> (was a raw pointer) so deleting the open clip clears the editor instead of leaving a dangling pointer for update/paint to dereference. Same pattern as the existing QPointer ghost pointers; held by tests/src/gui/AutomationEditorEditingTest.cpp deletingTheOpenClipClearsTheEditor.
+ tests/src/gui/AutomationEditorEditingTest.cpp	# The automation editor can retain a dangling clip pointer
++tests/src/core/RecordingCrashLossTest.cpp	# CI regression: build / mingw64
+-- 
+2.56.0
+

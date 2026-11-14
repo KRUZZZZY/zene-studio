@@ -1,0 +1,72 @@
+[
+  {
+    "bytes": 2228811,
+    "file": "evidence/train-25-bar.log.gz",
+    "sha256_uncompressed": "44815269235092137914bc0fba04eed27714941de91e6e28dc57ccc3e361eaac"
+  },
+  {
+    "bytes": 234783,
+    "file": "evidence/train-25-build-bar.log.gz",
+    "sha256_uncompressed": "9c62f1c57d2aff74b855827575a566b8c074ef5f05358514629c502e97df32ed"
+  },
+  {
+    "bytes": 510153,
+    "file": "evidence/train-25-build.log.gz",
+    "sha256_uncompressed": "f12d75a9452cffa011b60c6f6e384fa4ece574fbde54ea4fccc62eef57310ea1"
+  },
+  {
+    "bytes": 4356413,
+    "file": "evidence/train-25-gates.log.gz",
+    "sha256_uncompressed": "76af0de10725303220169bcc4c28b66553b2fd3f8de95bfb7de510266631d9c7"
+  },
+  {
+    "bytes": 8888,
+    "file": "evidence/train-25-rev-build.log.gz",
+    "sha256_uncompressed": "717175ed991e647ca1f248345ecc420b4c85eefaf36d5ae48b589768a96f2964"
+  },
+  {
+    "bytes": 2343,
+    "file": "evidence/train-25-rev.log.gz",
+    "sha256_uncompressed": "cfc608736fd31f490cd0867e27c7a482d2f8781d04ffdadbd2fc3a34e2f8404f"
+  },
+  {
+    "bytes": 1227775,
+    "file": "evidence/train-25-snapshot.json.gz",
+    "sha256_uncompressed": "a9e8bee60695498fdcfca11d4dc091f185edf30f82f870c810648b06353cf192"
+  },
+  {
+    "bytes": 4955,
+    "file": "evidence/train-25-solo-AccessibilityWalkTest.log.gz",
+    "sha256_uncompressed": "8b870752a69e9471d61c90df67f166c1ca2174080d47fb998e501902b4116307"
+  },
+  {
+    "bytes": 2769,
+    "file": "evidence/train-25-solo-ControlEditCommandsTest.log.gz",
+    "sha256_uncompressed": "1c332b283088e62fa02715e0bd5227ae0b145f1086b09aa4f54cfa51076ed380"
+  },
+  {
+    "bytes": 279,
+    "file": "evidence/train-25-solo-ControlMidiReconnect.log.gz",
+    "sha256_uncompressed": "d58b5ccbd1271dc5eb6d51b32a7a795317d9bff1aa75919f7b3506a93d85ade9"
+  },
+  {
+    "bytes": 1248,
+    "file": "evidence/train-25-solo-FeedbackModeActionTest.log.gz",
+    "sha256_uncompressed": "dfbd0e14a52f48f357f4df3a77e0b080fc76113f8536b08e924b8a12d757d867"
+  },
+  {
+    "bytes": 281,
+    "file": "evidence/train-25-solo-MixerStripFeaturesTest.log.gz",
+    "sha256_uncompressed": "a5ac4f571a23e34a3c86d310ed81f90e7c6d5c8b8713156fd1d64562203187c8"
+  },
+  {
+    "bytes": 3850,
+    "file": "evidence/train-25-solo-TrackFolderTest.log.gz",
+    "sha256_uncompressed": "e0c1785c1573b9b87f166dcc3a61c98adf1be1ee5502ee50c708c22e4363ac65"
+  },
+  {
+    "bytes": 281,
+    "file": "evidence/train-25-solo-TrackSynthesisLoadTest.log.gz",
+    "sha256_uncompressed": "df43ad5de6a0c34348878acac08cbb6d22d4780f5cda6e022a6598e36d332c3d"
+  }
+]

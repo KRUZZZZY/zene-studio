@@ -1,0 +1,57 @@
+[
+  {
+    "bytes": 2177715,
+    "file": "evidence/train-22-bar.log.gz",
+    "sha256_uncompressed": "117a2f17144c4ff37278dd6c8a41644f57ed8bae5785275cc857fcc910dc0f2d"
+  },
+  {
+    "bytes": 129060,
+    "file": "evidence/train-22-build-bar.log.gz",
+    "sha256_uncompressed": "4993f9f340842f70bfe572b32c22a29b697258d4259b8bce77999b383e9f631d"
+  },
+  {
+    "bytes": 163540,
+    "file": "evidence/train-22-build-revert.log.gz",
+    "sha256_uncompressed": "04ae8c7f0602ec69defd3caa6279b2a653ba885ba22ff35000b4294e51695893"
+  },
+  {
+    "bytes": 478160,
+    "file": "evidence/train-22-build.log.gz",
+    "sha256_uncompressed": "ccf5898f579cc25bd26c106254117c65f68daa3c2be2e6ee078ff8669a4cdd67"
+  },
+  {
+    "bytes": 4275880,
+    "file": "evidence/train-22-gates.log.gz",
+    "sha256_uncompressed": "4d0e2ebad4af7f255b4d12f11b09f831196b72dc2ef148de9976ba550e60944b"
+  },
+  {
+    "bytes": 8852,
+    "file": "evidence/train-22-rev-build.log.gz",
+    "sha256_uncompressed": "1b6843adad559581e4cfebe7f06420235b0d24824a9126c3be47a62620011895"
+  },
+  {
+    "bytes": 2343,
+    "file": "evidence/train-22-rev.log.gz",
+    "sha256_uncompressed": "4fb44404e2440bfe15bd80340bf62d74727d17356e435ec78ef1506c41a4ae3f"
+  },
+  {
+    "bytes": 1166684,
+    "file": "evidence/train-22-snapshot.json.gz",
+    "sha256_uncompressed": "156b1183f08af04f419bd6f28a1aa29363d2d4ede0970264b36d67fe776f14ca"
+  },
+  {
+    "bytes": 279,
+    "file": "evidence/train-22-solo-ControlMidiReconnect.log.gz",
+    "sha256_uncompressed": "d3eef906744fabb5349f19b178e17e78202d31aaeb17fa3bf4131056cd76b4d1"
+  },
+  {
+    "bytes": 3312,
+    "file": "evidence/train-22-solo-ControlVideoClipsMcp.log.gz",
+    "sha256_uncompressed": "be2b5d1bfd0de0f7bf6b30a95579004b439267899a3a1175c3c655e1240146d8"
+  },
+  {
+    "bytes": 279984,
+    "file": "evidence/train-22-solo-DeviceDspTest.log.gz",
+    "sha256_uncompressed": "ac733379ff035cfa287ed2f4991f2749f73f53a30fcbb48f41bedc133710701c"
+  }
+]

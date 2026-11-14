@@ -1,0 +1,27 @@
+ed1fd4c3accaeb0c0aac283666c1c8de0dd33202	docs(m0-train-3): merge record for train 3
+3799c16621f24108a079bed871228c11daa16133	chore(m0-train-3): commands snapshot and canary
+eb1431a79faa0a2e331e5cd5d85b698e4ca482ef	merge(m0-train-3): bugs/m0-fix-bar5-regressions (independently reviewed)
+dd628cb1278f6bc4f928cd6084981cf3107f2ad9	Revert "merge(m0-train-3): design/m0-automation-lockfree (independently reviewed)"
+a4497a5d339daa170404f798040aae03c95985e4	merge(m0-train-3): design/m0-automation-lockfree (independently reviewed)
+ce89884e2c429133b4b6d86ff3ed90e06ebbcf8b	Revert "merge(m0-train-3): bugs/m0-decisions-r3-takes (independently reviewed)"
+ce28ba399c60ed2492d3400aef9fdcd7c93f564e	merge(m0-train-3): bugs/m0-decisions-r3-takes (independently reviewed)
+4c23f62feb5cb40f0bcb493589d8a07c7139fc3a	Revert "merge(m0-train-3): bugs/m0-decisions-r3-clips (independently reviewed)"
+dac75c65ecd96f40a729cd53fb9c70dc0e2caa05	merge(m0-train-3): bugs/m0-decisions-r3-clips (independently reviewed)
+52667bad1f50d6b4534313fc02d546dafa895212	merge(m0-train-3): feat/050-Q050-007-v2-container (independently reviewed)
+ac3f37389650e55ec3f4df4788eaa8faad4fb3ab	merge(m0-train-3): feat/050-Q050-044-open-script-undo (independently reviewed)
+d6362ed6b9efad0f10bf56dcf337ac94a040af60	Revert "merge(m0-train-3): feat/050-L02-session-land (independently reviewed)"
+471f0062995984838dc83811ee65372d7accef8f	merge(m0-train-3): feat/050-L02-session-land (independently reviewed)
+3c5657fa2caac3c734e06d8b56f422825898f427	merge(m0-train-3): feat/050-Q050-046-undoable-recovery (independently reviewed)
+ef90b9bdf00a313c1616ebcdbecd200ff5557d9b	merge(m0-train-3): feat/050-Q050-045-record-loss (independently reviewed)
+7952e94ffc0be2bc6a354cf8a5c26d98cda49680	merge(m0-train-3): feat/050-Q050-018-missing-instruments (independently reviewed)
+c22b23663fc30b938340b76edc380d68c207c10d	merge(m0-train-3): feat/050-Q050-031-plugin-drops (independently reviewed)
+7012117dd2fa5a5089267bad59d32126d9ac8fe2	merge(m0-train-3): feat/050-Q050-020-midi-export (independently reviewed)
+3aabd72e8a0c961361c7fe11b43a0db43727e2d2	merge(m0-train-3): feat/050-Q050-048-browser-window (independently reviewed)
+6d4f4a6f40ac41904ff9395f5b6a11c87e9707ce	merge(m0-train-3): feat/050-Q050-001-dawproject-deflate (independently reviewed)
+baf9f22c75be46c947cd85634141deb1b087f095	merge(m0-train-3): feat/050-Q050-027-import-io (independently reviewed)
+2e6fda6cd48a3ed6977625c212c362c95e8463c4	merge(m0-train-3): feat/050-L15-alsa-tuning (independently reviewed)
+e250727ade379d7d4c4e49ef7f3c59c6f68d7a6e	Revert "merge(m0-train-3): p0fix/gui-q032-q011 (independently reviewed)"
+43344f93ad83e09cf9ce23c79bd05b56d05eab00	merge(m0-train-3): p0fix/gui-q032-q011 (independently reviewed)
+fb71e12d45b51cdf0ae84c06b8b0c4ad5ae237e8	merge(m0-train-3): bugs/m0-fix-heap-audioports (independently reviewed)
+85301ad2eea646ef3fe52c81173c8ffa29b54064	merge(m0-train-3): p0fix/q021-q042 (independently reviewed)
+3b4f1b08deba5401e776d73e46ef50901b5835b3	merge(m0-train-3): p0fix/rt-q005-q050 (independently reviewed)

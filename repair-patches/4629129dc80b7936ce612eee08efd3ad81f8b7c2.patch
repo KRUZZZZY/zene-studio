@@ -1,0 +1,535 @@
+From 4629129dc80b7936ce612eee08efd3ad81f8b7c2 Mon Sep 17 00:00:00 2001
+From: Zene train Sol <noreply@zene.invalid>
+Date: Sat, 14 Nov 2026 02:27:34 +0000
+Subject: [PATCH] fix(train-sol): Fixed four hosted portability defects and
+ Linux test-link disk exhaustion; added compiler and ELF regressions. Targeted
+ build, 12 CTest entries, unchanged gates and independent rev
+
+Sol-Repair-Id: sol-repair-1794623254087098975
+---
+ .github/workflows/build.yml                   |   4 +
+ .../sol-train-29-hosted-portability.md        |  42 +++
+ plugins/CarlaBase/CarlaVst2Discovery.cpp      |   1 +
+ plugins/SfzPlayer/LICENSE-NOTICE.md           |   7 +-
+ .../st_audiofile/src/st_audiofile_sndfile.c   |   2 +-
+ tests/CMakeLists.txt                          |  49 +++-
+ .../data/vst2-test-effect/vst2-test-effect.c  |   2 +-
+ tests/fork-sources.txt                        |   5 +
+ tests/train-39-portability-check.py           | 256 ++++++++++++++++++
+ tests/upstream-modifications.txt              |   4 +-
+ 10 files changed, 366 insertions(+), 6 deletions(-)
+ create mode 100644 docs/qwen-fixes-2026-10/sol-train-29-hosted-portability.md
+ create mode 100644 tests/train-39-portability-check.py
+
+diff --git a/.github/workflows/build.yml b/.github/workflows/build.yml
+index d110890552..c32b517fb0 100644
+--- a/.github/workflows/build.yml
++++ b/.github/workflows/build.yml
+@@ -37,6 +37,8 @@ name: build
+ concurrency:
+   group: ${{ github.workflow }}-${{ github.ref }}
+   cancel-in-progress: true
++# Linux test artifacts duplicate the core DWARF. Omit that duplication while
++# retaining production debug information, ordinary symbols and all test gates.
+ jobs:
+   linux-x86_64:
+     name: linux-x86_64
+@@ -76,6 +78,7 @@ jobs:
+       CMAKE_OPTS: >-
+         -DUSE_WERROR=ON
+         -DCMAKE_BUILD_TYPE=RelWithDebInfo
++        -DZENE_TEST_STRIP_DEBUG=ON
+         -DTARGET_UARCH=official
+         -DUSE_COMPILE_CACHE=ON
+         -DWANT_DEBUG_CPACK=ON
+@@ -314,6 +317,7 @@ jobs:
+         -DWANT_RUBBERBAND=OFF
+         -DUSE_WERROR=ON
+         -DCMAKE_BUILD_TYPE=RelWithDebInfo
++        -DZENE_TEST_STRIP_DEBUG=ON
+         -DTARGET_UARCH=official
+         -DUSE_COMPILE_CACHE=ON
+         -DWANT_DEBUG_CPACK=ON
+diff --git a/docs/qwen-fixes-2026-10/sol-train-29-hosted-portability.md b/docs/qwen-fixes-2026-10/sol-train-29-hosted-portability.md
+new file mode 100644
+index 0000000000..7ae61f890c
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/sol-train-29-hosted-portability.md
+@@ -0,0 +1,42 @@
++# Train 39: hosted portability and Linux link disk usage
++
++Pinned source: `7798296550396e87861e7e98c43397dcf854f506`.
++Hosted build run: `43537465762`. Windows ARM, both macOS jobs, MinGW and MSVC expose four source/build portability defects; Linux x86 and ARM fail linking tests with `No space left on device`. These are distinct causes, not a memory-limit failure.
++
++## Changes and registration
++
++- `plugins/CarlaBase/CarlaVst2Discovery.cpp`: explicitly include QDateTime for QFileInfo::lastModified on Qt5.
++- `tests/data/vst2-test-effect/vst2-test-effect.c`: request POSIX 2001 declarations, including snprintf and nanosleep, on Darwin.
++- `plugins/SfzPlayer/sfizz/external/st_audiofile/src/st_audiofile_sndfile.c`: cast the memory reader's void pointer to a const byte pointer before adding its byte offset. `plugins/SfzPlayer/LICENSE-NOTICE.md` records this local vendor patch; the existing vendor exclusion remains unchanged.
++- `tests/CMakeLists.txt`: give the direct-source RNNoise effect test its library export definition and register host compiler probes. Probe registration requires the corresponding host tools/features; all five execute in this repair build.
++- `.github/workflows/build.yml`: Linux x86/ARM opts into `ZENE_TEST_STRIP_DEBUG`; only links in the tests directory use `--strip-debug`. Production application debug information remains intact. Each test otherwise duplicates the static core's DWARF. Objects retain debug data and test artifacts retain ordinary symbols; test selection, jobs, assertions and resource limits stay intact.
++- `tests/train-39-portability-check.py`: compiler probes against actual affected source, an offset/chunk/EOF memory callback harness, a generated actual-target export-definition check with a failing import control, and a linked ELF debug/symbol/execution check.
++- This report and the probe are declared in `tests/fork-sources.txt`; inherited modifications and the vendor patch reason are recorded in `tests/upstream-modifications.txt`.
++
++## Failing then passing evidence
++
++Run from this private source root. Logs are external temporary artifacts, not committed evidence dumps.
++
++1. Carla, `/tmp/sol39-carla-{red,green}.log`:
++   `c++ -std=c++20 -fPIC -fsyntax-only $(pkg-config --cflags Qt5Widgets Qt5Xml Qt5Network) -Iinclude -Ibuild -Ibuild/src -Ibuild/plugins/CarlaBase -Iplugins/CarlaBase/carla/source/includes -Iplugins/CarlaBase/carla/source/utils -Iplugins/CarlaBase/carla/source/backend -Iplugins/CarlaBase/carla/source -DPLUGIN_NAME=carlabase plugins/CarlaBase/CarlaVst2Discovery.cpp`
++   Original exits 1 with incomplete QDateTime, explicit include exits 0.
++2. VST2, `/tmp/sol39-vst2-{red,green}.log`:
++   `clang -std=gnu89 -Werror=implicit-function-declaration -fsyntax-only -Itests/data/vst2-test-instrument tests/data/vst2-test-effect/vst2-test-effect.c`
++   Original exits 1 with undeclared snprintf; POSIX 2001 exits 0 (existing Clang C99-loop extension warning remains).
++3. SFZ, `/tmp/sol39-sfz-{red,green}.log`:
++   `cc -std=c11 -Werror=pointer-arith -DST_AUDIO_FILE_USE_SNDFILE -fsyntax-only $(pkg-config --cflags sndfile) plugins/SfzPlayer/sfizz/external/st_audiofile/src/st_audiofile_sndfile.c`
++   Original exits 1 on void pointer arithmetic; byte-pointer cast exits 0. The new harness additionally checks offset reads, clipped EOF reads and seeks.
++4. `python3 tests/train-39-portability-check.py all`: 5/5 groups pass. The RNNoise Windows-target compiler control rejects dllimport definitions, while the configured test target exports them. Linux control executables contain DWARF; repaired executables have no debug sections, retain the global symbol, and execute successfully.
++5. `python3 -m lizard tests/train-39-portability-check.py -C 10`: no threshold violations. Rechecked with Lizard 1.25.1 from an isolated temporary install: maximum CCN 8.
++6. `git show --format= --binary 99f8fcabb9ba > /tmp/sol39-pending.patch` and `git apply --check /tmp/sol39-pending.patch`: exit 0. The pending Gate 7/Link teardown repair applies over this delta; it is neither superseded nor duplicated.
++
++## Verification
++
++- Configured with the owner-supplied all-features command using `bash /tmp/sol26-configure-command.txt` (exit 0), retaining Qt6, WASM, WERROR and the supplied private linker flags. Then `cmake -S . -B build -DZENE_TEST_STRIP_DEBUG=ON` exits 0; generated test configuration confirms requested=1 and actual test link option=1.
++- `cmake --build build --target zene carlabase rnnoisedenoiser sfzplayer RnnoiseDenoiserEffectTest SfzPlayerTest SfzPlayerRealtimeTest SfzFilePoolTest CarlaVst2HostingTest CarlaVst2EffectHostingTest CarlaVst2EffectExportTest vst2-test-effect -j12`: exit 0, repeated after final CMake configuration with 17 affected build steps, exit 0. Disk remained above 68 GB free.
++- From `build/tests`: `ctest -R '^(Train39-(vst2|sfz|qt5|rnnoise|disk)|RnnoiseDenoiserEffectTest|SfzPlayerTest|SfzPlayerRealtimeTest|SfzFilePoolTest|CarlaVst2HostingTest|CarlaVst2EffectHostingTest|CarlaVst2EffectExportTest)$' -j1 --timeout 900 --no-tests=error --output-on-failure`: exit 0, 12/12 entries, 4.88 s. All five compiler/ELF probe groups execute and pass. Existing Carla runtime-dependent cases skip because this private build has no Carla runtime; these entries provide build coverage, not runtime-hosting verification.
++- `bash tests/no-upstream-regression-gate.sh`, `bash tests/fork-sources-gate.sh`, `bash tests/evidence-gate.sh`, `bash tests/unregistered-tests-gate.sh`: each exits 0. `bash tests/complexity-gate.sh --check`: exit 0 with local Lizard 1.24.0. Repeated as `PATH=/tmp/sol39-lizard125/bin:$PATH PYTHONPATH=/tmp/sol39-lizard125 bash tests/complexity-gate.sh --check` with hosted-version Lizard 1.25.1: exit 0, no regression, baseline not written. No gate, baseline, exemption, assertion or resource limit was changed.
++- Independent read-only Luna review of the final delta reports no blocker. Its earlier Clang-discovery concern was resolved by explicitly passing CMake's detected compiler to the RNNoise probe. The refined test-only disk option also received independent review.
++- The pending `sol-repair-1794619548741537751` / `99f8fcabb9ba` remains required, unchanged and replay-compatible. No repair is superseded.
++
++Native hosted Windows/macOS verification, sufficient disk space on a complete hosted Linux build, Carla runtime hosting and the full train remain required. Local strict compiler probes reproduce the reported language/header causes but do not claim native platform coverage.
+diff --git a/plugins/CarlaBase/CarlaVst2Discovery.cpp b/plugins/CarlaBase/CarlaVst2Discovery.cpp
+index 5928188c4f..7f528a5cfd 100644
+--- a/plugins/CarlaBase/CarlaVst2Discovery.cpp
++++ b/plugins/CarlaBase/CarlaVst2Discovery.cpp
+@@ -34,6 +34,7 @@
+ 
+ #include "CarlaVst2Discovery.h"
+ 
++#include <QDateTime>
+ #include <QDir>
+ #include <QDirIterator>
+ #include <QFile>
+diff --git a/plugins/SfzPlayer/LICENSE-NOTICE.md b/plugins/SfzPlayer/LICENSE-NOTICE.md
+index 92b9cb3998..fe536cefc9 100644
+--- a/plugins/SfzPlayer/LICENSE-NOTICE.md
++++ b/plugins/SfzPlayer/LICENSE-NOTICE.md
+@@ -3,14 +3,17 @@
+ The SFZ Player (`SfzPlayer*.cpp/.h`, `SfzSynth*`, `RtPublished.h`) is Zene Studio code, GPL-2.0-or-later like the rest
+ of the program. It plays SFZ instruments with **sfizz 1.2.3** (https://github.com/sfztools/sfizz, BSD-2-Clause),
+ vendored under `sfizz/` and built into the module as static libraries on every platform. The sfizz release tarball
+-(which carries its dependencies) is the source. **Two changes** were made to the files that were kept: in
++(which carries its dependencies) is the source. **Three changes** were made to the files that were kept: in
+ `sfizz/src/sfizz/Synth.cpp`, `Synth::renderBlock` no longer waits for the background loaders when freewheeling and no
+ longer runs the file pool's garbage collection, when the module is built with `ZENE_SFIZZ_NO_RENDER_THREAD_WAITS` (the
+ module always is). Both took a lock or waited inside the render callback. Without the collection, a sample that was
+ streamed to its end stays in memory until the synth is rebuilt (a reload, an export, a project close). And in
+ `external/atomic_queue/include/atomic_queue/atomic_queue.h`, the ill-formed `Base::template do_pop_any(...)` /
+ `Base::template do_push_any(...)` calls (a `template` keyword with no explicit template argument list, which current
+-Clang rejects) lost the keyword; the queue semantics are unchanged.
++Clang rejects) lost the keyword; the queue semantics are unchanged. Finally,
++`external/st_audiofile/src/st_audiofile_sndfile.c` casts its memory source to
++`const unsigned char*` before adding the byte offset, replacing GNU-only `void*`
++arithmetic that MSVC rejects; read offsets and byte-copy behavior are unchanged.
+ 
+ | Path under `sfizz/` | What | Licence |
+ | --- | --- | --- |
+diff --git a/plugins/SfzPlayer/sfizz/external/st_audiofile/src/st_audiofile_sndfile.c b/plugins/SfzPlayer/sfizz/external/st_audiofile/src/st_audiofile_sndfile.c
+index 3a9a15feb7..0850b70c9d 100644
+--- a/plugins/SfzPlayer/sfizz/external/st_audiofile/src/st_audiofile_sndfile.c
++++ b/plugins/SfzPlayer/sfizz/external/st_audiofile/src/st_audiofile_sndfile.c
+@@ -60,7 +60,7 @@ static sf_count_t sndfile_vio_read(void *ptr, sf_count_t count, void *user_data)
+ 	struct st_audio_file* af = user_data;
+     sf_count_t remaining = af->size - af->offset;
+     sf_count_t to_read = remaining > count ? count : remaining;
+-    memcpy(ptr, af->data + af->offset, to_read);
++    memcpy(ptr, (const unsigned char*)af->data + af->offset, to_read);
+     af->offset += to_read;
+ 	return to_read;
+ }
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 904e3f48ee..4353b988d1 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -1,5 +1,12 @@
+ include(CTest)
+ 
++# Hundreds of test artifacts duplicate the static core's DWARF on hosted Linux.
++# This directory option preserves production binaries and debug-bearing objects.
++option(ZENE_TEST_STRIP_DEBUG "Omit duplicate debug sections from Linux test artifacts" OFF)
++if(ZENE_TEST_STRIP_DEBUG AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
++	add_link_options(-Wl,--strip-debug)
++endif()
++
+ # The production objects are also linked into these white-box regression tests.
+ # Compile conditional test seams into that object target only when tests are enabled.
+ if(BUILD_TESTING)
+@@ -2096,7 +2103,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
+ 		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+ 			${CMAKE_SOURCE_DIR}/plugins/RnnoiseDenoiser
+ 			${CMAKE_BINARY_DIR}/plugins/RnnoiseDenoiser)
+-		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_NAME=rnnoisedenoiser)
++		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
++			PLUGIN_NAME=rnnoisedenoiser rnnoisedenoiser_EXPORTS)
+ 		target_link_libraries(${LMMS_TEST_NAME} PRIVATE rnnoise_vendored)
+ 		add_dependencies(${LMMS_TEST_NAME} rnnoise_vendored)
+ 		if(NOT MSVC)
+@@ -8967,3 +8975,42 @@ if(PYTHON3_EXECUTABLE)
+ 			--moc $<TARGET_FILE:Qt${QT_VERSION_MAJOR}::moc>)
+ 	set_tests_properties(ArrangerZoomNoGestures PROPERTIES TIMEOUT 300)
+ endif()
++
++# Hosted portability checks inspect the real direct-source test export configuration.
++if(TARGET RnnoiseDenoiserEffectTest)
++	file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/rnnoise-test-export-definition.h"
++		CONTENT "#define ZENE_RNNOISE_TEST_IS_EXPORT $<IN_LIST:rnnoisedenoiser_EXPORTS,$<TARGET_PROPERTY:RnnoiseDenoiserEffectTest,COMPILE_DEFINITIONS>>\n")
++endif()
++
++# These host compiler probes exercise portability without a second product build.
++if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
++	find_program(TRAIN39_CLANG clang)
++	if(TRAIN39_CLANG)
++		foreach(mode vst2 disk)
++			add_test(NAME Train39-${mode} COMMAND ${PYTHON3_EXECUTABLE}
++				${CMAKE_CURRENT_SOURCE_DIR}/train-39-portability-check.py ${mode}
++				--build-dir ${CMAKE_BINARY_DIR} --cc ${TRAIN39_CLANG})
++		endforeach()
++		if(TARGET RnnoiseDenoiserEffectTest)
++			add_test(NAME Train39-rnnoise COMMAND ${PYTHON3_EXECUTABLE}
++				${CMAKE_CURRENT_SOURCE_DIR}/train-39-portability-check.py rnnoise
++				--build-dir ${CMAKE_BINARY_DIR} --clang ${TRAIN39_CLANG})
++		endif()
++		if(TARGET SfzPlayerTest)
++			add_test(NAME Train39-sfz COMMAND ${PYTHON3_EXECUTABLE}
++				${CMAKE_CURRENT_SOURCE_DIR}/train-39-portability-check.py sfz --cc ${TRAIN39_CLANG})
++		endif()
++	endif()
++	execute_process(COMMAND pkg-config --exists Qt5Widgets Qt5Xml Qt5Network
++		RESULT_VARIABLE TRAIN39_HAS_QT5 OUTPUT_QUIET ERROR_QUIET)
++	if(TRAIN39_HAS_QT5 EQUAL 0 AND TARGET carlabase)
++		add_test(NAME Train39-qt5 COMMAND ${PYTHON3_EXECUTABLE}
++			${CMAKE_CURRENT_SOURCE_DIR}/train-39-portability-check.py qt5
++			--build-dir ${CMAKE_BINARY_DIR} --cxx ${CMAKE_CXX_COMPILER})
++	endif()
++endif()
++
++if(TARGET AudioBusTest)
++	file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/train39-test-link-option.h"
++		CONTENT "#define ZENE_TEST_STRIP_DEBUG_REQUESTED $<BOOL:${ZENE_TEST_STRIP_DEBUG}>\n#define ZENE_TEST_LINK_STRIPS_DEBUG $<IN_LIST:-Wl$<COMMA>--strip-debug,$<TARGET_PROPERTY:AudioBusTest,LINK_OPTIONS>>\n")
++endif()
+diff --git a/tests/data/vst2-test-effect/vst2-test-effect.c b/tests/data/vst2-test-effect/vst2-test-effect.c
+index 0c38f8a828..9779b6696d 100644
+--- a/tests/data/vst2-test-effect/vst2-test-effect.c
++++ b/tests/data/vst2-test-effect/vst2-test-effect.c
+@@ -44,7 +44,7 @@
+  */
+ 
+ #ifndef _WIN32
+-#define _POSIX_C_SOURCE 199309L  /* nanosleep */
++#define _POSIX_C_SOURCE 200112L  /* nanosleep and snprintf */
+ #endif
+ 
+ #include <stdio.h>
+diff --git a/tests/fork-sources.txt b/tests/fork-sources.txt
+index e153c6a7a0..8484419b6a 100644
+--- a/tests/fork-sources.txt
++++ b/tests/fork-sources.txt
+@@ -758,6 +758,11 @@ include/AbletonLinkBridge.h
+ include/AbletonLinkSession.h
+ include/Accessibility.h
+ include/AccessibilityAudit.h
++
++# Train 39: portable hosted compiler and executable-debug regression probes and repair evidence.
++tests/train-39-portability-check.py
++docs/qwen-fixes-2026-10/sol-train-29-hosted-portability.md
++
+ include/AccessibleCanvas.h
+ include/AccessibleWidgets.h
+ include/AddTrackMenu.h
+diff --git a/tests/train-39-portability-check.py b/tests/train-39-portability-check.py
+new file mode 100644
+index 0000000000..ee8d9aaac3
+--- /dev/null
++++ b/tests/train-39-portability-check.py
+@@ -0,0 +1,256 @@
++#!/usr/bin/env python3
++"""Focused regression checks for train 39 portability fixes.
++
++Usage: python3 tests/train-39-portability-check.py [all|vst2|sfz|qt5|rnnoise|disk]
++Optional paths/tools: --source-root, --build-dir, --cc, --cxx.
++"""
++
++from __future__ import annotations
++
++import argparse
++import os
++import pathlib
++import re
++import shlex
++import shutil
++import subprocess
++import sys
++import tempfile
++
++
++def run(command: list[str], *, cwd: pathlib.Path | None = None) -> subprocess.CompletedProcess[str]:
++	return subprocess.run(command, cwd=cwd, text=True, stdout=subprocess.PIPE,
++	                      stderr=subprocess.PIPE, check=False)
++
++
++def report(label: str, result: subprocess.CompletedProcess[str]) -> bool:
++	if result.returncode == 0:
++		print(f"PASS {label}")
++		return True
++	print(f"FAIL {label} (exit {result.returncode})")
++	output = (result.stdout + result.stderr).strip()
++	print(output if output else "command produced no diagnostic")
++	return False
++
++
++def require_file(path: pathlib.Path, label: str) -> bool:
++	if path.is_file():
++		return True
++	print(f"FAIL {label}: required file missing: {path}")
++	return False
++
++
++def test_vst2(root: pathlib.Path, cc: str) -> bool:
++	source = root / "tests/data/vst2-test-effect/vst2-test-effect.c"
++	return require_file(source, "VST2 source") and report(
++		"VST2 gnu89 snprintf declaration", run([
++			cc, "-std=gnu89", "-Werror=implicit-function-declaration", "-fsyntax-only",
++			"-I" + str(root / "tests/data/vst2-test-instrument"), str(source),
++		]))
++
++
++def pkg_flags(package: str, option: str) -> tuple[list[str], str | None]:
++	result = run(["pkg-config", option, package])
++	if result.returncode:
++		return [], (result.stderr.strip() or f"pkg-config {option} {package} failed")
++	return shlex.split(result.stdout), None
++
++
++def test_sfz(root: pathlib.Path, cc: str) -> bool:
++	source = root / "plugins/SfzPlayer/sfizz/external/st_audiofile/src/st_audiofile_sndfile.c"
++	if not require_file(source, "SFZ source"):
++		return False
++	cflags, error = pkg_flags("sndfile", "--cflags")
++	if error:
++		print(f"FAIL SFZ sndfile flags: {error}")
++		return False
++	base = [cc, "-std=c11", "-Werror=pointer-arith", "-DST_AUDIO_FILE_USE_SNDFILE",
++	        *cflags, "-fsyntax-only", str(source)]
++	checks = [report("SFZ sndfile const pointer compile", run(base))]
++	with tempfile.TemporaryDirectory(prefix="train39-sfz-") as temp:
++		dirpath = pathlib.Path(temp)
++		harness = dirpath / "memory-vio.c"
++		binary = dirpath / "memory-vio"
++		quoted_source = str(source).replace("\\", "\\\\").replace('"', '\\"')
++		harness.write_text(
++			f'#include "{quoted_source}"\n'
++			"int main(void) {\n"
++			"  const char storage[] = \"prefixabcdefsuffix\";\n"
++			"  struct st_audio_file af = {0}; char out[8] = {0};\n"
++			"  af.data = storage + 6; af.size = 6; af.offset = 2;\n"
++			"  if (sndfile_vio_get_filelen(&af) != 6 || sndfile_vio_tell(&af) != 2) return 1;\n"
++			"  if (sndfile_vio_read(out, 3, &af) != 3 || memcmp(out, \"cde\", 3) || af.offset != 5) return 2;\n"
++			"  if (sndfile_vio_read(out + 3, 8, &af) != 1 || out[3] != 'f' || af.offset != 6) return 3;\n"
++			"  if (sndfile_vio_read(out, 1, &af) != 0 || af.offset != 6) return 4;\n"
++			"  af.offset = 0; if (sndfile_vio_seek(4, SEEK_SET, &af) || af.offset != 4) return 5;\n"
++			"  if (sndfile_vio_seek(1, SEEK_CUR, &af) || af.offset != 5) return 6;\n"
++			"  if (sndfile_vio_seek(0, SEEK_SET, &af) || af.offset != 0) return 7;\n"
++			"  return 0;\n}\n", encoding="utf-8")
++		ldflags, ld_error = pkg_flags("sndfile", "--libs")
++		if ld_error:
++			print(f"FAIL SFZ behavior harness flags: {ld_error}")
++			return False
++		built = run([cc, "-std=c11", "-Werror=pointer-arith", "-DST_AUDIO_FILE_USE_SNDFILE",
++		            *cflags, str(harness), *ldflags, "-o", str(binary)])
++		checks.append(report("SFZ memory callback harness build", built))
++		if built.returncode == 0:
++			checks.append(report("SFZ offset/chunk/EOF memory callbacks", run([str(binary)])))
++	return all(checks)
++
++
++def test_qt5(root: pathlib.Path, cxx: str, build: pathlib.Path) -> bool:
++	source = root / "plugins/CarlaBase/CarlaVst2Discovery.cpp"
++	if not require_file(source, "Carla discovery source"):
++		return False
++	flags: list[str] = []
++	for package in ("Qt5Widgets", "Qt5Xml", "Qt5Network"):
++		part, error = pkg_flags(package, "--cflags")
++		if error:
++			print(f"FAIL Qt5 flags: {error}")
++			return False
++		flags.extend(part)
++	for relative in ("include", "build", "build/src", "build/plugins/CarlaBase",
++	                 "plugins/CarlaBase/carla/source/includes",
++	                 "plugins/CarlaBase/carla/source/backend",
++	                 "plugins/CarlaBase/carla/source/utils"):
++		path = build / relative.removeprefix("build/") if relative.startswith("build/") else root / relative
++		if relative == "build":
++			path = build
++		flags.extend(["-I", str(path)])
++	return report("Qt5 Carla discovery syntax", run([
++		cxx, "-std=gnu++17", "-fsyntax-only", *flags, str(source),
++	]))
++
++
++def test_rnnoise(root: pathlib.Path, build: pathlib.Path, clang: str | None) -> bool:
++	header = build / "tests/rnnoise-test-export-definition.h"
++	if not require_file(header, "generated RNNoise export definition"):
++		return False
++	if not clang:
++		print("FAIL RNNoise Windows import/export probe: clang is required")
++		return False
++	with tempfile.TemporaryDirectory(prefix="train39-rnnoise-") as temp:
++		fixture = pathlib.Path(temp) / "cdecl.c"
++		fixture.write_text(
++			f'#include "{header}"\n'
++			"#if ZENE_RNNOISE_TEST_IS_EXPORT\n"
++			"# define API __declspec(dllexport)\n"
++			"#else\n"
++			"# define API __declspec(dllimport)\n"
++			"#endif\n"
++			"API int rnnoise_exported_data = 7;\n"
++			"API int rnnoise_exported_function(void) { return rnnoise_exported_data; }\n",
++			encoding="utf-8")
++		cmd = [clang, "--target=x86_64-pc-windows-msvc", "-fsyntax-only", str(fixture)]
++		actual = run(cmd)
++		checks = [report("RNNoise generated Windows export definition", actual)]
++		fixture.write_text(fixture.read_text().replace(f'#include "{header}"',
++		                   "#define ZENE_RNNOISE_TEST_IS_EXPORT 0"), encoding="utf-8")
++		negative = run(cmd)
++		if negative.returncode == 0:
++			print("FAIL RNNoise negative import control unexpectedly compiled")
++			checks.append(False)
++		else:
++			print("PASS RNNoise negative import control rejected exported definitions")
++		return all(checks)
++
++
++def linux_jobs_have_strip_flag(workflow: str) -> tuple[bool, str]:
++	jobs = re.split(r"(?m)^  ([A-Za-z0-9_-]+):\s*$", workflow)
++	blocks = {jobs[i]: jobs[i + 1] for i in range(1, len(jobs), 2)}
++	for name in ("linux-x86_64", "linux-arm64"):
++		block = blocks.get(name)
++		if block is None:
++			return False, f"workflow has no {name} job"
++		match = re.search(r"(?ms)^\s+CMAKE_OPTS:\s*>-\s*\n((?:^\s{8,}.*\n?)*)", block)
++		if not match or "-DZENE_TEST_STRIP_DEBUG=ON" not in match.group(1):
++			return False, f"{name} CMAKE_OPTS lacks -DZENE_TEST_STRIP_DEBUG=ON"
++	return True, "both native Linux jobs carry the strip-debug linker option"
++
++
++def inspect_executable(readelf: str, output: pathlib.Path, label: str) -> bool:
++	symbols = run([readelf, "-sW", str(output)])
++	sections = run([readelf, "-SW", str(output)])
++	if symbols.returncode or sections.returncode:
++		return report(f"Linux disk {label} ELF inspection", symbols if symbols.returncode else sections)
++	has_symbol = bool(re.search(r"\bGLOBAL\b.*\bretained_global\b", symbols.stdout))
++	has_debug = bool(re.search(r"\s\.debug_[A-Za-z0-9_.]+\s", sections.stdout))
++	expected_debug = label == "unstripped"
++	valid = has_symbol and has_debug == expected_debug
++	if valid:
++		print(f"PASS Linux disk {label} retains global symbol; debug sections {('present' if has_debug else 'absent')}")
++	else:
++		print(f"FAIL Linux disk {label}: symbol={has_symbol}, debug_sections={has_debug}")
++	return report(f"Linux disk {label} probe execution", run([str(output)])) and valid
++
++
++def test_disk(root: pathlib.Path, cc: str, build: pathlib.Path) -> bool:
++	workflow_path = root / ".github/workflows/build.yml"
++	if not require_file(workflow_path, "build workflow"):
++		return False
++	ok, message = linux_jobs_have_strip_flag(workflow_path.read_text(encoding="utf-8"))
++	if not ok:
++		print(f"FAIL Linux disk workflow option: {message}")
++		return False
++	print(f"PASS Linux disk workflow option: {message}")
++	header = build / "tests/train39-test-link-option.h"
++	if not require_file(header, "generated test link option"):
++		return False
++	requested = "#define ZENE_TEST_STRIP_DEBUG_REQUESTED 1" in header.read_text()
++	actual = "#define ZENE_TEST_LINK_STRIPS_DEBUG 1" in header.read_text()
++	if actual != requested:
++		print("FAIL Linux disk test link option does not match the requested configuration")
++		return False
++	readelf = shutil.which("readelf")
++	if not readelf:
++		print("FAIL Linux disk ELF check: readelf is required")
++		return False
++	with tempfile.TemporaryDirectory(prefix="train39-disk-") as temp:
++		dirpath = pathlib.Path(temp)
++		source = dirpath / "probe.c"
++		source.write_text("int retained_global = 17; int main(void) { return retained_global != 17; }\n",
++		                  encoding="utf-8")
++		plain, stripped = dirpath / "plain", dirpath / "stripped"
++		checks: list[bool] = []
++		for label, output, extra in (("unstripped", plain, []),
++		                             ("strip-debug", stripped, ["-Wl,--strip-debug"])):
++			built = run([cc, "-g", str(source), *extra, "-o", str(output)])
++			checks.append(report(f"Linux disk {label} probe link", built))
++			if built.returncode:
++				continue
++			checks.append(inspect_executable(readelf, output, label))
++
++		return all(checks)
++
++
++def parse_args() -> argparse.Namespace:
++	parser = argparse.ArgumentParser(description=__doc__)
++	parser.add_argument("mode", nargs="?", choices=("all", "vst2", "sfz", "qt5", "rnnoise", "disk"), default="all")
++	parser.add_argument("--source-root", type=pathlib.Path,
++	                    default=pathlib.Path(__file__).resolve().parents[1])
++	parser.add_argument("--build-dir", type=pathlib.Path)
++	parser.add_argument("--cc", default=os.environ.get("CC") or shutil.which("clang") or "cc")
++	parser.add_argument("--cxx", default=os.environ.get("CXX") or "c++")
++	parser.add_argument("--clang", default=shutil.which("clang"))
++	return parser.parse_args()
++
++
++def main() -> int:
++	args = parse_args()
++	root = args.source_root.resolve()
++	build = (args.build_dir or root / "build").resolve()
++	selected = ("vst2", "sfz", "qt5", "rnnoise", "disk") if args.mode == "all" else (args.mode,)
++	runners = {
++		"vst2": lambda: test_vst2(root, args.cc),
++		"sfz": lambda: test_sfz(root, args.cc),
++		"qt5": lambda: test_qt5(root, args.cxx, build),
++		"rnnoise": lambda: test_rnnoise(root, build, args.clang),
++		"disk": lambda: test_disk(root, args.cc, build),
++	}
++	results = [runners[name]() for name in selected]
++	print(f"RESULT {sum(results)}/{len(results)} groups passed")
++	return 0 if all(results) else 1
++
++
++if __name__ == "__main__":
++	sys.exit(main())
+diff --git a/tests/upstream-modifications.txt b/tests/upstream-modifications.txt
+index 508ebd9870..ee0472fe58 100644
+--- a/tests/upstream-modifications.txt
++++ b/tests/upstream-modifications.txt
+@@ -818,6 +818,8 @@ src/core/CMakeLists.txt	0.3.0 row 30 pitch-preserving time-stretch: lists the ne
+ src/core/Clip.cpp	#611 Slice 0 relocated the clip->source mapping here, so this file is already an inherited one this fork owns. fade/crossfade/clip-gain wave: saveClipEdits/loadClipEdits (attributes gain/fadein/fadeout/fadeinshape/fadeoutshape, each written ONLY when it differs from the neutral default) and the ClipEdits copy in the copy constructor, so a clone or a split carries its fades; comping (task #600): the same saveClipEdits/loadClipEdits pair is where a clip's take-lane tag is written (`lane`, only when above 0) and read back (reset to 0 when the attribute is absent - the reset is what makes the pre-assignment state reachable from a journal checkpoint), plus the m_laneIndex copy in the copy constructor; stable ids slice 2 (feature row 51): the Clip constructor allocates the id, saveState writes it as an `id` attribute on the clip's own element and restoreState takes the file's value (or keeps the constructor's, counted); the override calls JournallingObject::saveState/restoreState BY NAME - SerializingObject's drops the journallingObject child and takes the undo mechanism with it - and a clip built from a copy payload keeps its own id (rule R4/R5); 040/arch4-s4 (2026-09-22, ARCH-4 slice S4, SPEC-ARCH-4 1.7 Requirement 6): the lane/link reset-on-absence defaults are declared once in a file-local CLIP_RESTORE_SCHEMA and read through clipRestoreDefault() - same defaults as before ("0", "0"), same std::max clamp, comment consolidated onto the schema; the link comment keeps its SPEC-stable-ids R3 observe-rationale at the site. Proven by ControlLinkCommandsTest, TakeLaneCompTest and the registered write-refusal gate. 040/arch4-s9 (2026-09-22, ARCH-4 slice S9, SPEC-ARCH-4 census row 5): saveWarp/loadWarp - the `<warp>` child formerly written by SampleClip::saveSettings (498-527) and read by SampleClip::loadSettings (589-635) - called from saveState/restoreState; the reader runs right after loadSettings and UNCONDITIONALLY before the copy-payload guard, because every payload carried the child (a pasted/cloned clip keeps its warp), and reset-on-absence is kept in its else branch (SPEC-ARCH-4 1.7 R6 form for a child element); the copy constructor copies the four warp members. Output stays byte-identical: the child is insertBefore'd into the position saveSettings used to give it ([warp][journallingObject]), and the revision fingerprint still stamps last, after it. Negative control: neutering the else branch fails ClipWarpPersistenceTest::restoringAnElementWithoutAWarpUnwarpsTheClip and ControlWarpCommandsTest::markerEditsAreReversibleThroughTheJournal (measured, docs/s9-logs/negative-control.md). 040/arch4-s7 (2026-09-22, ARCH-4 slice S7, SPEC-ARCH-4 migration upconversion row): comment-only - saveClipEdits' lane-attribute comment now says the index resolves against the `<z:lane id>` entities of the `<z:lanes>` section instead of an anonymous slot. The write (`lane` above 0 only), the CLIP_RESTORE_SCHEMA "lane"->"0" default and the load line are byte-for-byte unchanged, so s4's reset-on-absence rule still carries the lane tag (lane absent => lane 0) exactly as before. Held by TakeLaneTest (unchanged) and the new registered LanesUpconvertTest.; 040/survey-fixes G4 (2026-09-28): copyStateTo refreshes the automation editor only when a GUI exists (it dereferenced getGUI() unguarded, so a headless state copy crashed); 040/rubberband (2026-09-29, owner decision 12 - Rubber Band optional, WSOLA the default): saveWarp writes stretch="rubberband" for the new mode and loadWarp reads it; "wsola" and absence read exactly as before, and an unknown value is the default Resample; 0.5.0 L05 (ED-172): the logarithmic and S-curve fade shapes read back from the project; 0.5.0 L05 (ED-153): saveClipEdits/loadClipEdits carry the formant handling (formantkeep, formant), written only when set and read back as off when absent; 0.5.0 L07 (ED-029): the clip edits' content loop written as attribute 'loop' only when set and read back as 0 when absent; 0.5.0 L04/L05 (ED-022, ED-152/ED-179): 'snappoint' and the speed attributes written only when set, read back as defaults when absent; 0.5.0 W3 (ED-179): saveSpeed/loadSpeed carry prefadein/prefadeout, written only when set and read back as 0 when absent; 0.5.0 review round 3: an unreadable speed attribute loads as 100%; 0.5.0 audio-clips (ED-029/ED-028): saveClipEdits/loadClipEdits carry an audio clip's loop - loopfrom/loopframes (source frames) and loopoffset - written only when the clip loops and read back as no loop when absent
+ src/core/CMakeLists.txt	0.3.0 row 30 pitch-preserving time-stretch: lists the new core/AudioStretcher.cpp (WSOLA). One added source path, no target, flag or option moved; feature row 38 (030/project-archive, 2026-09-15): names the four fork-NEW sources of the project-asset reference group in LMMS_SRCS (core/ControlCommandsProjectArchive.cpp, core/ControlProjectAssets.cpp, core/ControlProjectAssetsRelink.cpp, core/ControlReversibilityTableArchive.cpp - the group's commands, its read/relink split and its A16 row file). LMMS_SRCS is an explicit list rather than a glob, so a new source is invisible to the build until it is named here. Configure-time source list only: no flag, option, target or existing entry changes, and no C++ in this file. Feature row 37 (030/dawproject, 2026-09-15): names the seven fork-NEW sources of the DAWproject interchange group in LMMS_SRCS (core/DawProjectModel.cpp, core/DawProjectRead.cpp, core/DawProjectReadTracks.cpp, core/DawProjectSession.cpp, core/DawProjectWrite.cpp, core/DawProjectZip.cpp, core/ControlCommandsDawProject.cpp) and the A16 row file (core/ControlReversibilityTableDawProject.cpp). Same pattern: one added source path each, no target, flag or option moved.; 0.3.0 row 30 pitch-preserving time-stretch: lists the new core/AudioStretcher.cpp (WSOLA). One added source path, no target, flag or option moved; feature row 38 (030/project-archive, 2026-09-15): names the four fork-NEW sources of the project-asset reference group in LMMS_SRCS (core/ControlCommandsProjectArchive.cpp, core/ControlProjectAssets.cpp, core/ControlProjectAssetsRelink.cpp, core/ControlReversibilityTableArchive.cpp - the group's commands, its read/relink split and its A16 row file). LMMS_SRCS is an explicit list rather than a glob, so a new source is invisible to the build until it is named here. Configure-time source list only: no flag, option, target or existing entry changes, and no C++ in this file. stable ids slice 2 (feature row 51): names core/ControlCommandsIdContract.cpp, the control.id_contract command split out of core/ControlCommandsControl.cpp because that file's six-family table took it past the 500-line ratchet.; 0.3.0 row 30 pitch-preserving time-stretch: lists the new core/AudioStretcher.cpp (WSOLA). One added source path, no target, flag or option moved; feature row 38 (030/project-archive, 2026-09-15): names the four fork-NEW sources of the project-asset reference group in LMMS_SRCS (core/ControlCommandsProjectArchive.cpp, core/ControlProjectAssets.cpp, core/ControlProjectAssetsRelink.cpp, core/ControlReversibilityTableArchive.cpp - the group's commands, its read/relink split and its A16 row file). LMMS_SRCS is an explicit list rather than a glob, so a new source is invisible to the build until it is named here. Configure-time source list only: no flag, option, target or existing entry changes, and no C++ in this file.; CODE-9 (030/code9-named-pipe, 2026-09-15, feature row 83): names the new fork source core/ControlServerWin32.cpp (the Windows named-pipe transport behind the same control contract) in LMMS_SRCS. LMMS_SRCS is an explicit list rather than a glob, so a new source is invisible to the build until it is named here. Configure-time source list only: no flag, option, target or existing entry changes, and no C++ in this file.; Lua API DAW-control binding (feature row 50, task #674): lists the three new sources core/ScriptDawBindings.cpp, core/ScriptDawEdit.cpp and core/ScriptDawEffects.cpp. Three added source paths, no target, flag or link change.; 0.3.0 row 76 in-app revision timeline (030/revision-timeline, 2026-09-15): lists five new core sources - ControlCommandsRevisions.cpp (the `revisions.*` group), RevisionTimeline.cpp (the timeline), RevisionTimelineGit.cpp (its one child process), RevisionTimelineCompare.cpp (the structural comparison) and ControlReversibilityTableRevisions.cpp (the group's three A16 rows). One added block of source paths; no target, flag or option moved.; 0.3.0 row 9 sample-accurate automation (030/sample-accurate-automation, board task #646, docs/SAMPLE-ACCURATE-AUTOMATION.md): lists the three new core sources (AutomationRamp.cpp, ControlCommandsAutomationRamp.cpp, ControlReversibilityTableAutomationRamp.cpp). Source list only; CODE-9 (030/code9-named-pipe, 2026-09-15, feature row 83): names the new fork source core/ControlServerWin32.cpp (the Windows named-pipe transport behind the same control contract) in LMMS_SRCS. LMMS_SRCS is an explicit list rather than a glob, so a new source is invisible to the build until it is named here. Configure-time source list only: no flag, option, target or existing entry changes, and no C++ in this file. Session View completion (030/session-completion, 2026-09-15, board task #641): names the fork-NEW sources of the #596 engine halves - core/SessionFollow.cpp, core/ControlCommandsSessionFollow.cpp, core/ControlCommandsSessionRecord.cpp and core/ControlCommandsSessionRecordLand.cpp in the existing IF(LMMS_HAVE_SESSION_VIEW) block, plus core/ControlReversibilityTableSessionView.cpp in LMMS_SRCS. LMMS_SRCS is an explicit list rather than a glob, so a new source is invisible to the build until it is named here. Configure-time source list only: no flag, option, target or existing entry changes, and no C++ in this file.; crash arm/disarm (board task #643, feature row 54, 2026-09-15): names the two fork-NEW sources the arm/disarm path was split into - core/CrashReporterFormat.cpp (the async-signal-safe formatting and signal-context helpers moved out of core/CrashReporter.cpp, which is grandfathered at a zero-line tolerance in tests/file-length-baseline.tsv: the room for install()/uninstall()/handlersArmed()/reportDirectory() was made by splitting that file along the seam that was already there, not by re-anchoring the ratchet) and core/CrashReporterWindows.cpp (the module's Windows no-op half, moved out of the same file's #else). LMMS_SRCS is an explicit list rather than a glob, so a new source is invisible to the build until it is named here. Configure-time source list only: no flag, option, target or existing entry changes, and no C++ in this file.; crash arm/disarm commands (board task #643, feature row 54, 2026-09-15): names one more fork-NEW source, core/ControlCommandsCrashControl.cpp (crash.enable / crash.disable, the reporter's arm pair, in its own TU because ControlCommandsCrash.cpp is at 496 of the 500-line ratchet). Same pattern: one added source path, no target, flag or option moved, and no C++ in this file.; feature row 78 (030/vst3-instrument, board task #668, 2026-09-16): names one more fork-NEW source, core/ControlDeviceVst3.cpp - the VST3 half of the device catalogue behind plugin.list / plugin.load (the class enumeration and the (file, class) key), split out of core/ControlDeviceHosted.cpp so that neither that file nor core/ControlDeviceCatalogue.cpp grows for a format it does not own. LMMS_SRCS is an explicit list rather than a glob, so a new source is invisible to the build until it is named here. One added source path, no target, flag or option moved.; feature row 79 (030/clap-instrument, board task #669, 2026-09-16): names four fork-NEW sources in LMMS_SRCS - core/PluginHostNotes.cpp and core/ControlCommandsHostNotes.cpp (the CLAP note path's counters and the plugin.host_notes command), core/ControlDeviceClap.cpp (the CLAP half of the device catalogue behind plugin.list / plugin.load) and core/ControlReversibilityTableClapInstrument.cpp (the plugin.host_notes A16 row). LMMS_SRCS is an explicit list rather than a glob, so a new source is invisible to the build until it is named here. Configure-time source list only: no flag, option, target or existing entry changes, and no C++ in this file.; feature row 80 (030/out-of-process, board card #670): names the four fork-NEW sources of the oop.* group in LMMS_SRCS (core/ControlCommandsOutOfProcess.cpp, core/ControlCommandsOutOfProcessEdit.cpp, core/OutOfProcessHosting.cpp and core/ControlReversibilityTableOutOfProcess.cpp, plus core/ControlCommandsOutOfProcessSupport.cpp which the group's shared helpers moved into when the reads file crossed the 500-line file ratchet). LMMS_SRCS is an explicit list rather than a glob, so a new source is invisible to the build until it is named here. Configure-time source list only: no flag, option, target or existing entry changes, and no C++ in this file ARCH-4 S2a (SPEC-ARCH-4 1.4, board card #734): names one more fork-NEW source, core/DocumentIndex.cpp - the <z:index> a project document carries, so a reader can be asked for a subset of its sections. Same pattern: one added source path, no target, flag or option moved, and no C++ in this file. Where the index is WRITTEN is Song::saveProjectFile, because only the model knows whether the document carries content the model did not claim.; board card #706 (lane 040/feat-706): names the four fork-NEW sources of the sample.* group's first slice in LMMS_SRCS (core/ControlCommandsSample.cpp, core/ControlCommandsSampleEdit.cpp, core/SampleOperators.cpp and the A16 row file core/ControlReversibilityTableSample.cpp), and the row file a second time in ZENE_API_SRCS like every other contract-table file (that list drives both the API object library's membership and the LIST(REMOVE_ITEM) from LMMS_SRCS, so the two cannot drift). Source-list entries only: no flag, option, target or existing entry moves, and there is no C++ in this file.; board card #708 (scheduled Lua evaluation, 2026-09-22): names the three fork-NEW sources of the schedule clock in LMMS_SRCS - core/ScriptClock.cpp (the boundary grid, the control-thread poll and the budget-bounded fire), core/ControlCommandsLivecode.cpp (the livecode.* command group) and core/ControlReversibilityTableLivecode.cpp (its three A16 rows). Three added source paths, no target, flag or option moved, and no C++ in this file.; board card #709 (040/feat-709, 2026-09-22): names one fork-NEW source, core/ControlCommandsFeedback.cpp (the feedback.* command group - get_state / enable / disable), in LMMS_SRCS. LMMS_SRCS is an explicit list rather than a glob, so a new source is invisible to the build until it is named here. Configure-time source list only: no flag, option, target or existing entry changes, and no C++ in this file; 040/rubberband (2026-09-29, owner decision 12 - Rubber Band optional, WSOLA the default): lists core/RubberBandStretch.cpp (always compiled; its library calls are under LMMS_HAVE_RUBBERBAND); 040/m3-registry-actions (2026-09-29, M3.2 registry-first actions): lists core/ControlCommandsProjectLifecycle.cpp and core/ControlReversibilityTableShell.cpp (the latter also in ZENE_API_SRCS, as every table file is); 050 L13 customisation (plans/BACKLOG-050-FEATURES.md): ControlReversibilityTableCustomisation, ControlCommandsSessionPatterns; 050 L13 WF-126: McuProtocol, McuSurface, ControlCommandsSurface, TrackMixModels; 0.5.0 L07 (050/l07-note-editor, 2026-10-03): the note editor's Notes menu, paint tool, velocity drag, keep-in-scale, colour modes, drum view and key names; 0.5.0 L07 ED-130 (2026-10-03): a MIDI clip's controller lanes - stored and saved by MidiClip (a metadata child, skipped by the note loop), played once per clip per tick from InstrumentTrack::play (playClipControllers); 0.5.0 L07 ED-145/113 (2026-10-03): the track's MIDI input transform - a member, one hook at the top of processInEvent, an attribute saved outside presets; 0.5.0 L07 ED-137 (2026-10-03); 0.5.0 L05/L07/L08/L09 sources; 0.5.0 L09: lists core/InputMeter.cpp; 0.5.0 L04/L05/L09: lists the new core sources of the batch (RecorderTaps, ControlCommandDef, MixerMeters, PreviewOutput, ControlRoom, TrackMidiOut, TrackVersions); 0.5.0: lists core/ProjectSectionRegistry.cpp; 0.5.0 L11/L12 (W3): the library and project sources and their reversibility table; 0.5.0 W3 engine: AutomationLatency, MixerPostInserts, ControlCommandsW3Engine and its reversibility table; 0.5.0 W3 engine: ClipPreFades; 0.5.0: lists core/ScoreExport.cpp and core/ControlCommandsScoreExport.cpp; 0.5.0 UX build: MusicalTime, ControlCommandsNoteClipboard, ProjectWorkspace; catch-up wave 1: ParameterAliases, RackZoneInputs, RackZoneFeed, CompSlip, ControlCommandsRackMacroPair; 0.5.0 F7 (MX-060): lists core/SurroundExport.cpp; 0.5.0 plugin-hosting lane (2026-10-07): lists core/PluginVendors.cpp; 0.5.0 L02 (WF-055, launcher-rec): lists core/SessionAudioRecorder.cpp and core/ControlCommandsSessionAudioRecord.cpp; 0.5.0 L02 (WF-055, launcher-rec, step 2): lists core/SessionAudioCells.cpp
+ src/core/Clip.cpp	#611 Slice 0 relocated the clip->source mapping here, so this file is already an inherited one this fork owns. fade/crossfade/clip-gain wave: saveClipEdits/loadClipEdits (attributes gain/fadein/fadeout/fadeinshape/fadeoutshape, each written ONLY when it differs from the neutral default) and the ClipEdits copy in the copy constructor, so a clone or a split carries its fades; comping (task #600): the same saveClipEdits/loadClipEdits pair is where a clip's take-lane tag is written (`lane`, only when above 0) and read back (reset to 0 when the attribute is absent - the reset is what makes the pre-assignment state reachable from a journal checkpoint), plus the m_laneIndex copy in the copy constructor; stable ids slice 2 (feature row 51): the Clip constructor allocates the id, saveState writes it as an `id` attribute on the clip's own element and restoreState takes the file's value (or keeps the constructor's, counted); the override calls JournallingObject::saveState/restoreState BY NAME - SerializingObject's drops the journallingObject child and takes the undo mechanism with it - and a clip built from a copy payload keeps its own id (rule R4/R5); 040/arch4-s4 (2026-09-22, ARCH-4 slice S4, SPEC-ARCH-4 1.7 Requirement 6): the lane/link reset-on-absence defaults are declared once in a file-local CLIP_RESTORE_SCHEMA and read through clipRestoreDefault() - same defaults as before ("0", "0"), same std::max clamp, comment consolidated onto the schema; the link comment keeps its SPEC-stable-ids R3 observe-rationale at the site. Proven by ControlLinkCommandsTest, TakeLaneCompTest and the registered write-refusal gate. 040/arch4-s9 (2026-09-22, ARCH-4 slice S9, SPEC-ARCH-4 census row 5): saveWarp/loadWarp - the `<warp>` child formerly written by SampleClip::saveSettings (498-527) and read by SampleClip::loadSettings (589-635) - called from saveState/restoreState; the reader runs right after loadSettings and UNCONDITIONALLY before the copy-payload guard, because every payload carried the child (a pasted/cloned clip keeps its warp), and reset-on-absence is kept in its else branch (SPEC-ARCH-4 1.7 R6 form for a child element); the copy constructor copies the four warp members. Output stays byte-identical: the child is insertBefore'd into the position saveSettings used to give it ([warp][journallingObject]), and the revision fingerprint still stamps last, after it. Negative control: neutering the else branch fails ClipWarpPersistenceTest::restoringAnElementWithoutAWarpUnwarpsTheClip and ControlWarpCommandsTest::markerEditsAreReversibleThroughTheJournal (measured, docs/s9-logs/negative-control.md). 040/arch4-s7 (2026-09-22, ARCH-4 slice S7, SPEC-ARCH-4 migration upconversion row): comment-only - saveClipEdits' lane-attribute comment now says the index resolves against the `<z:lane id>` entities of the `<z:lanes>` section instead of an anonymous slot. The write (`lane` above 0 only), the CLIP_RESTORE_SCHEMA "lane"->"0" default and the load line are byte-for-byte unchanged, so s4's reset-on-absence rule still carries the lane tag (lane absent => lane 0) exactly as before. Held by TakeLaneTest (unchanged) and the new registered LanesUpconvertTest.; 040/survey-fixes G4 (2026-09-28): copyStateTo refreshes the automation editor only when a GUI exists (it dereferenced getGUI() unguarded, so a headless state copy crashed); 040/rubberband (2026-09-29, owner decision 12 - Rubber Band optional, WSOLA the default): saveWarp writes stretch="rubberband" for the new mode and loadWarp reads it; "wsola" and absence read exactly as before, and an unknown value is the default Resample; 0.5.0 L05 (ED-172): the logarithmic and S-curve fade shapes read back from the project; 0.5.0 L05 (ED-153): saveClipEdits/loadClipEdits carry the formant handling (formantkeep, formant), written only when set and read back as off when absent; 0.5.0 L07 (ED-029): the clip edits' content loop written as attribute 'loop' only when set and read back as 0 when absent; 0.5.0 L04/L05 (ED-022, ED-152/ED-179): 'snappoint' and the speed attributes written only when set, read back as defaults when absent; 0.5.0 W3 (ED-179): saveSpeed/loadSpeed carry prefadein/prefadeout, written only when set and read back as 0 when absent; 0.5.0 review round 3: an unreadable speed attribute loads as 100%; 0.5.0 audio-clips (ED-029/ED-028): saveClipEdits/loadClipEdits carry an audio clip's loop - loopfrom/loopframes (source frames) and loopoffset - written only when the clip loops and read back as no loop when absent; decisions-r3-takes (2026-10-09 owner ruling): persists the take-group identity and resets transient active-lane mirror on load.
++.github/workflows/build.yml	Train 39 Linux disk exhaustion: retain debug-bearing objects and ordinary symbols, remove duplicate test-artifact DWARF via ZENE_TEST_STRIP_DEBUG on both Linux jobs, retaining production binary debug data; preserve tests, gates and resource limits.
++tests/CMakeLists.txt	Train 39 Windows RNNoise test export: direct-source fixture defines rnnoisedenoiser_EXPORTS and exposes the configured definition to a compiler regression; register hosted portability probes and opt-in Linux test-only DWARF removal, preserving production debug information.
+ src/core/ConfigManager.cpp	wave R rename (018d2041f): the bundled data search path moved from share/lmms/ to share/zene/, and the build-tree discovery moved from the lmms_SOURCE_DIR/lmms_BINARY_DIR CMake cache entries to the zene_ spelling the renamed CMake project writes (the old lmms_ entry is still accepted, so an existing build tree keeps working).; wave R rename: runtime data/working paths derive from the renamed install layout; #625 headless load: the config parse-error and config-write-failure boxes are not opened in an unattended run (saveConfigFile is reachable from project.open via the recent-projects list); tag v0.2.0-alpha CI fix: saveConfigFile's unattended qWarning() branch needs <QDebug> included by name -- <QtGlobal> only forward-declares QDebug, so the linux-x86_64 and linux-arm64 jobs failed with 'invalid use of incomplete type class QDebug' (Qt5; Qt6 pulls QDebug in transitively through <QApplication>, which is why the same tree builds on a Qt6-only box); cluster 2405: clears the ConfigManager singleton pointer before destruction so later callers recreate a live manager
+ src/core/AutomatableModel.cpp	post-alpha/automation-modes: the mode state machine, the transport run token, the monotone clock and the trim offset; appended in its own banner-marked block at the end of the file; automation-touch-race: the destructor reports itself to the song (Song::forgetAutomatedModel) so the song's last-frame automated-value cache drops a control that is destroyed while the transport runs, instead of dereferencing it in the next processAutomations()/stop() (held by AutomationModesTest::testDestroyedControlIsNotDereferenced); 0.3.0 row 9 sample-accurate automation (030/sample-accurate-automation, board task #646, docs/SAMPLE-ACCURATE-AUTOMATION.md): valueBuffer() gains ONE branch - a published ramp fills the per-sample buffer from the curve - and the two accessors are defined below it; the controller path, the linked-model path and the old-new interpolation path are unchanged and remain the fallback for every block that publishes nothing; diagnostics 2026-09-23: the controllerValue scale-type qFatal now names the offending enum value and model pointer (it fired on freed memory during the UAF; the message is what identified the bug class).; 050 L06 ED-191: setValue records the last touched model id (not for automated writes)
+ src/core/AutomationClip.cpp	0.3.0 row 9 sample-accurate automation (030/sample-accurate-automation, board task #646, docs/SAMPLE-ACCURATE-AUTOMATION.md): defines setSampleAccurate()/rampValueAt()/addRampKnot()/writeBlockRamp(), and saveSettings() writes <automationclip sample_accurate> ONLY when the flag is on while loadSettings() RESETS it on absence (which is what lets a checkpoint taken before the first edit take the flag back). The node parsing, the other attributes and valueAt() are untouched; 040/m2-ramp-default (2026-09-30, R1.2): saveSettings writes sample_accurate only for an explicit setting ("1" unchanged, "0" for off) and loadSettings reads absence as Default; a static_assert pins the ramp cap against the densest block; 050 L06 (file-length ratchet): flipY/flipX moved verbatim to AutomationClipTransforms.cpp (with the new drawShape/transformRange/thin/bendValueAt); valueAt honours a point's own curve (ED-185); the relative flag and each point's curve are saved/loaded (ED-199, ED-185); 0.5.0 bug hunt: the copy constructor carries the relative flag and the ramp setting; 0.5.0 bug hunt cluster new-p9-566: valuesAfter() returns before std::next() when lowerBound is end(), avoiding increment of a past-the-end iterator
+@@ -4410,7 +4412,7 @@ plugins/SfzPlayer/sfizz/external/st_audiofile/src/st_audiofile.hpp	fork-ADDED ve
+ plugins/SfzPlayer/sfizz/external/st_audiofile/src/st_audiofile_common.c	fork-ADDED vendoring by Q050-484, not a change to inherited code (upstream base 4e677cb6c6ab has no plugins/SfzPlayer): sfizz 1.2.3 (BSD-2-Clause) and its dependencies unmodified, from the sfizz release tarball; inventory, licences and what was left out in plugins/SfzPlayer/LICENSE-NOTICE.md. Excluded from every scope manifest like the other vendored trees.
+ plugins/SfzPlayer/sfizz/external/st_audiofile/src/st_audiofile_libs.c	fork-ADDED vendoring by Q050-484, not a change to inherited code (upstream base 4e677cb6c6ab has no plugins/SfzPlayer): sfizz 1.2.3 (BSD-2-Clause) and its dependencies unmodified, from the sfizz release tarball; inventory, licences and what was left out in plugins/SfzPlayer/LICENSE-NOTICE.md. Excluded from every scope manifest like the other vendored trees.
+ plugins/SfzPlayer/sfizz/external/st_audiofile/src/st_audiofile_libs.h	fork-ADDED vendoring by Q050-484, not a change to inherited code (upstream base 4e677cb6c6ab has no plugins/SfzPlayer): sfizz 1.2.3 (BSD-2-Clause) and its dependencies unmodified, from the sfizz release tarball; inventory, licences and what was left out in plugins/SfzPlayer/LICENSE-NOTICE.md. Excluded from every scope manifest like the other vendored trees.
+-plugins/SfzPlayer/sfizz/external/st_audiofile/src/st_audiofile_sndfile.c	fork-ADDED vendoring by Q050-484, not a change to inherited code (upstream base 4e677cb6c6ab has no plugins/SfzPlayer): sfizz 1.2.3 (BSD-2-Clause) and its dependencies unmodified, from the sfizz release tarball; inventory, licences and what was left out in plugins/SfzPlayer/LICENSE-NOTICE.md. Excluded from every scope manifest like the other vendored trees.
++plugins/SfzPlayer/sfizz/external/st_audiofile/src/st_audiofile_sndfile.c	fork-ADDED sfizz 1.2.3 vendoring (BSD-2-Clause): train 39 casts the memory source to const unsigned char* for standard byte arithmetic, fixing MSVC C2036; source licence and vendor exclusion retained, patch recorded in plugins/SfzPlayer/LICENSE-NOTICE.md.
+ plugins/SfzPlayer/sfizz/external/st_audiofile/src/st_info.c	fork-ADDED vendoring by Q050-484, not a change to inherited code (upstream base 4e677cb6c6ab has no plugins/SfzPlayer): sfizz 1.2.3 (BSD-2-Clause) and its dependencies unmodified, from the sfizz release tarball; inventory, licences and what was left out in plugins/SfzPlayer/LICENSE-NOTICE.md. Excluded from every scope manifest like the other vendored trees.
+ plugins/SfzPlayer/sfizz/external/threadpool/ThreadPool.h	fork-ADDED vendoring by Q050-484, not a change to inherited code (upstream base 4e677cb6c6ab has no plugins/SfzPlayer): sfizz 1.2.3 (BSD-2-Clause) and its dependencies unmodified, from the sfizz release tarball; inventory, licences and what was left out in plugins/SfzPlayer/LICENSE-NOTICE.md. Excluded from every scope manifest like the other vendored trees.
+ plugins/SfzPlayer/sfizz/src/external/cpuid/LICENSE.rst	fork-ADDED vendoring by Q050-484, not a change to inherited code (upstream base 4e677cb6c6ab has no plugins/SfzPlayer): sfizz 1.2.3 (BSD-2-Clause) and its dependencies unmodified, from the sfizz release tarball; inventory, licences and what was left out in plugins/SfzPlayer/LICENSE-NOTICE.md. Excluded from every scope manifest like the other vendored trees.
+-- 
+2.56.0
+

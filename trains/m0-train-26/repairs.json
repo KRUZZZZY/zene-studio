@@ -1,0 +1,718 @@
+[
+  {
+    "at": "2026-11-10T12:30:39",
+    "base": "af010bc3cc055d477045a54e2d866f59a95017d7",
+    "branch": "fix/ci-repair-ci-512849fa221097db-c6addd986190",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-512849fa221097db.r1.md",
+        "negative_control": {
+          "artifact_hashes": {
+            "test-restored.log": "758f32f567b016e991fae195609d04caa200701a9a3474ed350368a0effbd542",
+            "test-reverted.log": "391ded76e25fbf88f0fce0e69408388731b658b32b458f6cd8da32ea5326710b"
+          },
+          "detail": "ExportedClassTlsCheck: they fail without it (rc 8) and pass with it",
+          "ok": true,
+          "product_files": [
+            "include/AudioEngine.h",
+            "src/core/AudioEngine.cpp"
+          ],
+          "proof_base": "a1a98b67b2f9c961fd6e79c078815b4aedaa8695",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-512849fa221097db.r1/negctl",
+          "proof_key": "3176ffa4715da3b2755665953c6bf49f93babd4c1db8bb9a788182f5e69dc1ea",
+          "restored_rc": 0,
+          "reverted_build_rc": 0,
+          "reverted_rc": 8,
+          "tests": [
+            "ExportedClassTlsCheck"
+          ],
+          "tree_clean": true
+        },
+        "verdict": "ACCEPT"
+      }
+    ],
+    "commit": "c99455b15cc710092435d5f6c05dfc421d23468e",
+    "id": "ci-repair-ci-512849fa221097db-c6addd986190",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-512849fa221097db.md",
+      "include/AudioEngine.h",
+      "src/core/AudioEngine.cpp",
+      "tests/CMakeLists.txt",
+      "tests/exported-class-tls-check.py",
+      "tests/fork-sources.txt",
+      "tests/upstream-modifications.txt"
+    ],
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "a1a98b67b2f9c961fd6e79c078815b4aedaa8695",
+    "status": "superseded",
+    "summary": "CI regression: build / msvc-x64",
+    "superseded_by": "sol-repair-1794418699237145726",
+    "train": "050/m0-train-27",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-512849fa221097db"
+  },
+  {
+    "at": "2026-11-10T12:36:40",
+    "base": "af010bc3cc055d477045a54e2d866f59a95017d7",
+    "branch": "fix/ci-repair-ci-12f4249981b085d6-d96907bf0ca9",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-12f4249981b085d6.r1.md",
+        "negative_control": {
+          "artifact_hashes": {},
+          "detail": "no product change, no changed test, or a dirty tree",
+          "ok": null,
+          "proof_base": "a1a98b67b2f9c961fd6e79c078815b4aedaa8695",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-12f4249981b085d6.r1/negctl",
+          "proof_key": "a80a41a63011d37f02f9a3c96dbf2d4662ec34bee5fb30cf55d03ef524b0ebdf"
+        },
+        "verdict": "ACCEPT"
+      }
+    ],
+    "commit": "7b80302db8d2a807f061b48d7bbb7733bd18a134",
+    "id": "ci-repair-ci-12f4249981b085d6-d96907bf0ca9",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-12f4249981b085d6.md",
+      "tests/CMakeLists.txt",
+      "tests/data/vst2-test-instrument/vst2-test-instrument.c",
+      "tests/fork-sources.txt",
+      "tests/upstream-modifications.txt",
+      "tests/vst2-fixture-darwin-headers-check.py"
+    ],
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "a1a98b67b2f9c961fd6e79c078815b4aedaa8695",
+    "status": "superseded",
+    "summary": "CI regression: build / macos-arm64",
+    "superseded_by": "sol-repair-1794418699237145726",
+    "train": "050/m0-train-27",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-12f4249981b085d6"
+  },
+  {
+    "at": "2026-11-10T12:56:53",
+    "base": "af010bc3cc055d477045a54e2d866f59a95017d7",
+    "branch": "fix/ci-repair-ci-c487f7d0c9f0a1ac-7bbdafe11505",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-c487f7d0c9f0a1ac.r1.md",
+        "negative_control": {
+          "artifact_hashes": {},
+          "detail": "no product change, no changed test, or a dirty tree",
+          "ok": null,
+          "proof_base": "a1a98b67b2f9c961fd6e79c078815b4aedaa8695",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-c487f7d0c9f0a1ac.r1/negctl",
+          "proof_key": "132c56b850b2e497d5f63715e54807f48a6d3f5136c626fc2128abc045241e87"
+        },
+        "verdict": "ACCEPT-NOTE"
+      }
+    ],
+    "commit": "ac17b5dddd3281f9cd01f12a4ec1cfcdf07b744a",
+    "id": "ci-repair-ci-c487f7d0c9f0a1ac-7bbdafe11505",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-c487f7d0c9f0a1ac.md",
+      "tests/CMakeLists.txt",
+      "tests/all-sources.txt",
+      "tests/fork-sources.txt",
+      "tests/src/core/NamModelEigenWarningProbe.cpp",
+      "tests/src/core/NamModelLoaderTest.cpp"
+    ],
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "a1a98b67b2f9c961fd6e79c078815b4aedaa8695",
+    "status": "superseded",
+    "summary": "CI regression: build / linux-arm64",
+    "superseded_by": "sol-repair-1794418699237145726",
+    "train": "050/m0-train-27",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-c487f7d0c9f0a1ac"
+  },
+  {
+    "at": "2026-11-10T13:29:35",
+    "base": "af010bc3cc055d477045a54e2d866f59a95017d7",
+    "branch": "fix/ci-repair-ci-0ff72c5279856e5d-e60aa807e1d8",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-0ff72c5279856e5d.r2.md",
+        "negative_control": {
+          "artifact_hashes": {},
+          "detail": "no product change, no changed test, or a dirty tree",
+          "ok": null,
+          "proof_base": "a1a98b67b2f9c961fd6e79c078815b4aedaa8695",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-0ff72c5279856e5d.r2/negctl",
+          "proof_key": "0db059a9bce183422a0a6c9928fa4f6c9db3a2ef63a5c193c166c38a7b706d80"
+        },
+        "verdict": "ACCEPT-NOTE"
+      }
+    ],
+    "commit": "492177a2f014fcbb02b66e7248163dc5543f1afb",
+    "id": "ci-repair-ci-0ff72c5279856e5d-e60aa807e1d8",
+    "paths": [
+      "CMakeLists.txt",
+      "cmake/modules/EnsureThreads.cmake",
+      "docs/qwen-fixes-2026-10/cluster-ci-0ff72c5279856e5d.md",
+      "tests/CMakeLists.txt",
+      "tests/fork-sources.txt",
+      "tests/threads-target-windows-configure.py"
+    ],
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "a1a98b67b2f9c961fd6e79c078815b4aedaa8695",
+    "status": "superseded",
+    "summary": "CI regression: build / windows-arm64",
+    "superseded_by": "sol-repair-1794418699237145726",
+    "train": "050/m0-train-27",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-0ff72c5279856e5d"
+  },
+  {
+    "at": "2026-11-10T14:00:39",
+    "base": "af010bc3cc055d477045a54e2d866f59a95017d7",
+    "branch": "fix/ci-repair-ci-748342d46d7e9dd9-e37492cefca5",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-748342d46d7e9dd9.r1.md",
+        "negative_control": {
+          "artifact_hashes": {},
+          "detail": "no product change, no changed test, or a dirty tree",
+          "ok": null,
+          "proof_base": "a1a98b67b2f9c961fd6e79c078815b4aedaa8695",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-748342d46d7e9dd9.r1/negctl",
+          "proof_key": "bc57194ceec4fd60526d46d515709583cd254d294b0f8ecdba4cffec6e160821"
+        },
+        "verdict": "ACCEPT"
+      }
+    ],
+    "commit": "9b0dcb1b240353876b6dff5a88a9299247d6ec32",
+    "id": "ci-repair-ci-748342d46d7e9dd9-e37492cefca5",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-748342d46d7e9dd9.md",
+      "tests/CMakeLists.txt",
+      "tests/cmake-threads-scope.sh",
+      "tests/fork-sources.txt",
+      "tests/upstream-modifications.txt"
+    ],
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "a1a98b67b2f9c961fd6e79c078815b4aedaa8695",
+    "status": "superseded",
+    "summary": "CI regression: build / mingw64",
+    "superseded_by": "sol-repair-1794418699237145726",
+    "train": "050/m0-train-27",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-748342d46d7e9dd9"
+  },
+  {
+    "at": "2026-11-10T14:53:15",
+    "base": "af010bc3cc055d477045a54e2d866f59a95017d7",
+    "branch": "fix/ci-repair-ci-d14f7617bae6160d-326e36c3d405",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-d14f7617bae6160d.r2.md",
+        "negative_control": {
+          "artifact_hashes": {},
+          "detail": "no product change, no changed test, or a dirty tree",
+          "ok": null,
+          "proof_base": "a1a98b67b2f9c961fd6e79c078815b4aedaa8695",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-d14f7617bae6160d.r2/negctl",
+          "proof_key": "a242d45c8d0d240b2802567448ec12117ae9136e4da3ad2f68c552b41527f560"
+        },
+        "verdict": "ACCEPT-NOTE"
+      }
+    ],
+    "commit": "8a0311b2ee167222db8e3ea09e79ba33003e6b81",
+    "id": "ci-repair-ci-d14f7617bae6160d-326e36c3d405",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-d14f7617bae6160d.md",
+      "tests/all-sources.txt",
+      "tests/data/vst2-test-instrument/CMakeLists.txt",
+      "tests/data/vst2-test-instrument/chunk-contract-check.c",
+      "tests/data/vst2-test-instrument/darwin-feature-level-check.py",
+      "tests/data/vst2-test-instrument/vst2-test-instrument.c",
+      "tests/fork-sources.txt"
+    ],
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "a1a98b67b2f9c961fd6e79c078815b4aedaa8695",
+    "status": "superseded",
+    "summary": "CI regression: build / macos-x86_64",
+    "superseded_by": "sol-repair-1794418699237145726",
+    "train": "050/m0-train-27",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-d14f7617bae6160d"
+  },
+  {
+    "at": "2026-11-10T15:09:07",
+    "base": "af010bc3cc055d477045a54e2d866f59a95017d7",
+    "branch": "fix/ci-repair-ci-642b4d09f4421388-e0ba3346027b",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-642b4d09f4421388.r1.md",
+        "negative_control": {
+          "artifact_hashes": {},
+          "detail": "no ctest test matched the changed tests (ControlAutomationScriptTest)",
+          "ok": null,
+          "proof_base": "a1a98b67b2f9c961fd6e79c078815b4aedaa8695",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-642b4d09f4421388.r1/negctl",
+          "proof_key": "0e846f9e602466be76f456aec67e05514c4882a34e2f40222796c59c7adc536b"
+        },
+        "verdict": "ACCEPT"
+      }
+    ],
+    "commit": "b540436f429d99d3ef1c7ae22dd49d519175e4a1",
+    "id": "ci-repair-ci-642b4d09f4421388-e0ba3346027b",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-642b4d09f4421388.md",
+      "include/TelemetryConsentDialog.h",
+      "src/core/ControlCommandsScript.cpp",
+      "src/core/OscBridge.cpp",
+      "tests/src/core/ControlAutomationScriptTest.cpp"
+    ],
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "a1a98b67b2f9c961fd6e79c078815b4aedaa8695",
+    "status": "superseded",
+    "summary": "CI regression: build / linux-x86_64",
+    "superseded_by": "sol-repair-1794418699237145726",
+    "train": "050/m0-train-27",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-642b4d09f4421388"
+  },
+  {
+    "at": "2026-11-11T17:38:19",
+    "base": "af010bc3cc055d477045a54e2d866f59a95017d7",
+    "branch": "fix/sol-repair-1794418699237145726",
+    "checks": [
+      {
+        "argv": [
+          "bash",
+          "tests/no-upstream-regression-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-27-1794418503628374735",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794418682370761534.log"
+      },
+      {
+        "argv": [
+          "bash",
+          "tests/evidence-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-27-1794418503628374735",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794418689502313378.log"
+      }
+    ],
+    "commit": "4b1da802228150c0e65abea4d2ae45afce968e86",
+    "id": "sol-repair-1794418699237145726",
+    "paths": [
+      "docs/qwen-fixes-2026-10/sol-train-27-duplicate-ci-repairs.md",
+      "tests/fork-sources.txt"
+    ],
+    "promoted_train": "050/m0-train-27",
+    "source_head": "4d10173b58daef1204669f76a2b58e465adc965c",
+    "status": "promoted",
+    "summary": "Verified recovery/terra-20261111 already retains all seven pending CI repairs; added a registered supersession report so duplicate cherry-picks can be retired without altering product fixes or tests.",
+    "train": "050/m0-train-27",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-27-1794418503628374735"
+  },
+  {
+    "at": "2026-11-11T19:48:53",
+    "base": "af010bc3cc055d477045a54e2d866f59a95017d7",
+    "branch": "fix/ci-repair-ci-48dcc062d04c645f-bc60f56447b0",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-48dcc062d04c645f.r1.md",
+        "negative_control": {
+          "artifact_hashes": {},
+          "detail": "no product change, no changed test, or a dirty tree",
+          "ok": null,
+          "proof_base": "0c3b9e3c23434f269526f189c02e88698ce63ec5",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-48dcc062d04c645f.r1/negctl",
+          "proof_key": "e79a7796b7a0797a318315e13e8dbec5dc795e18a36827a5a7cc3f1f23481e91"
+        },
+        "verdict": "ACCEPT"
+      }
+    ],
+    "commit": "45a1f7fe7822fbcbf23ab31235c64cd3d1994350",
+    "id": "ci-repair-ci-48dcc062d04c645f-bc60f56447b0",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-48dcc062d04c645f.md",
+      "tests/src/core/ControllerScriptTest.cpp",
+      "tests/src/core/ExternalMidiDeviceTest.cpp",
+      "tests/src/gui/ExternalDeviceCardTest.cpp"
+    ],
+    "promoted_train": "050/m0-train-27",
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "0c3b9e3c23434f269526f189c02e88698ce63ec5",
+    "status": "promoted",
+    "summary": "CI regression: build / linux-x86_64",
+    "train": "050/m0-train-27",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-48dcc062d04c645f"
+  },
+  {
+    "at": "2026-11-12T00:19:31",
+    "base": "af010bc3cc055d477045a54e2d866f59a95017d7",
+    "branch": "fix/ci-repair-ci-165e1914b308f189-8811f83254fa",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-165e1914b308f189.r1.md",
+        "negative_control": {
+          "artifact_hashes": {
+            "test-restored.log": "c53b72bd61af86c07ee78b64734497fd32842de2d0bf3a9b13e05e8e0abc230e",
+            "test-reverted.log": "e4b46931b9eb9ad9b0aba7547dc6e9ba9a2b9d096a90efb75ee0bb0db41f0722"
+          },
+          "detail": "ClangTemplateKeywordCheck: they fail without it (rc 8) and pass with it",
+          "ok": true,
+          "product_files": [
+            "plugins/SfzPlayer/sfizz/external/atomic_queue/include/atomic_queue/atomic_queue.h"
+          ],
+          "proof_base": "0c3b9e3c23434f269526f189c02e88698ce63ec5",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-165e1914b308f189.r1/negctl",
+          "proof_key": "ccf93ed788310083f80f0ea4dc595e3864d9d3f3613c7451420e74b777453a43",
+          "restored_rc": 0,
+          "reverted_build_rc": 0,
+          "reverted_rc": 8,
+          "tests": [
+            "ClangTemplateKeywordCheck"
+          ],
+          "tree_clean": true
+        },
+        "verdict": "ACCEPT-NOTE"
+      }
+    ],
+    "commit": "099cc85e2e87806314ba3225b67573d9840d5614",
+    "id": "ci-repair-ci-165e1914b308f189-8811f83254fa",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-165e1914b308f189.md",
+      "plugins/SfzPlayer/LICENSE-NOTICE.md",
+      "plugins/SfzPlayer/sfizz/external/atomic_queue/include/atomic_queue/atomic_queue.h",
+      "tests/CMakeLists.txt",
+      "tests/clang-template-keyword-check.py",
+      "tests/fork-sources.txt",
+      "tests/upstream-modifications.txt"
+    ],
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "0c3b9e3c23434f269526f189c02e88698ce63ec5",
+    "status": "superseded",
+    "summary": "CI regression: build / windows-arm64",
+    "superseded_by": "sol-repair-1794489915023124173",
+    "train": "050/m0-train-27",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-165e1914b308f189"
+  },
+  {
+    "at": "2026-11-12T00:30:28",
+    "base": "af010bc3cc055d477045a54e2d866f59a95017d7",
+    "branch": "fix/ci-repair-ci-4e020460347493c3-96d16dea4c4d",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-4e020460347493c3.r1.md",
+        "negative_control": {
+          "artifact_hashes": {},
+          "detail": "RemotePluginShmFifoTest: the build fails without the change and pass with it",
+          "ok": true,
+          "product_files": [
+            "include/RemotePluginBase.h"
+          ],
+          "proof_base": "0c3b9e3c23434f269526f189c02e88698ce63ec5",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-4e020460347493c3.r1/negctl",
+          "proof_key": "4dd8d8381ca1f7abbbe78a4c6c78e4ee4cf7a16a54ff1c7b3202c700d2e7b6d6",
+          "restored_rc": 0,
+          "reverted_build_rc": 2,
+          "reverted_rc": 1,
+          "tests": [
+            "RemotePluginShmFifoTest"
+          ],
+          "tree_clean": true
+        },
+        "verdict": "ACCEPT"
+      }
+    ],
+    "commit": "241a40e63a06085fb42e69f9628951ad23d74bd9",
+    "id": "ci-repair-ci-4e020460347493c3-96d16dea4c4d",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-4e020460347493c3.md",
+      "include/RemotePluginBase.h",
+      "tests/fork-sources.txt",
+      "tests/src/core/RemotePluginShmFifoNoSysIpcProbe.cpp",
+      "tests/upstream-modifications.txt"
+    ],
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "0c3b9e3c23434f269526f189c02e88698ce63ec5",
+    "status": "superseded",
+    "summary": "CI regression: build / macos-arm64",
+    "superseded_by": "sol-repair-1794489915023124173",
+    "train": "050/m0-train-27",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-4e020460347493c3"
+  },
+  {
+    "at": "2026-11-12T00:55:49",
+    "base": "af010bc3cc055d477045a54e2d866f59a95017d7",
+    "branch": "fix/ci-repair-ci-f0fa6219c5d4b443-ed52a98c744f",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-f0fa6219c5d4b443.r2.md",
+        "negative_control": {
+          "artifact_hashes": {},
+          "detail": "no ctest test matched the changed tests (RemotePluginShmFifoNoSysIpcProbe)",
+          "ok": null,
+          "proof_base": "0c3b9e3c23434f269526f189c02e88698ce63ec5",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-f0fa6219c5d4b443.r2/negctl",
+          "proof_key": "3ca673d3e7c99a19ba4dff83e5bc8a83f35b69d02aa772d7002488cdc21d36ee"
+        },
+        "verdict": "ACCEPT-NOTE"
+      }
+    ],
+    "commit": "279efda22860b13eb0cae1a5cf6640be954246cf",
+    "id": "ci-repair-ci-f0fa6219c5d4b443-ed52a98c744f",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-f0fa6219c5d4b443.md",
+      "include/RemotePluginBase.h",
+      "tests/CMakeLists.txt",
+      "tests/src/core/RemotePluginShmFifoNoSysIpcProbe.cpp",
+      "tests/upstream-modifications.txt"
+    ],
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "0c3b9e3c23434f269526f189c02e88698ce63ec5",
+    "status": "superseded",
+    "summary": "CI regression: build / macos-x86_64",
+    "superseded_by": "sol-repair-1794489915023124173",
+    "train": "050/m0-train-27",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-f0fa6219c5d4b443"
+  },
+  {
+    "at": "2026-11-12T00:59:18",
+    "base": "af010bc3cc055d477045a54e2d866f59a95017d7",
+    "branch": "fix/ci-repair-ci-3eb9bda8aa6785a3-8f1eebeeaa53",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-3eb9bda8aa6785a3.r1.md",
+        "negative_control": {
+          "artifact_hashes": {},
+          "detail": "no product change, no changed test, or a dirty tree",
+          "ok": null,
+          "proof_base": "0c3b9e3c23434f269526f189c02e88698ce63ec5",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-3eb9bda8aa6785a3.r1/negctl",
+          "proof_key": "8ea2dbd18297fd1999983ef6cefdf92f35c10f937ac0a3e552cb4c3eecdac3fb"
+        },
+        "verdict": "ACCEPT"
+      }
+    ],
+    "commit": "376675301cfa273f518e5fdb0b2e97743cc15d8f",
+    "id": "ci-repair-ci-3eb9bda8aa6785a3-8f1eebeeaa53",
+    "paths": [
+      ".github/workflows/keys/tobydox-mingw-w64.gpg",
+      ".github/workflows/setup-mingw-packages.sh",
+      "docs/qwen-fixes-2026-10/cluster-ci-3eb9bda8aa6785a3.md",
+      "tests/CMakeLists.txt",
+      "tests/data/mingw-ppa/InRelease",
+      "tests/data/mingw-ppa/README.md",
+      "tests/data/mingw-ppa/legacy-only.gpg",
+      "tests/fork-sources.txt",
+      "tests/mingw-ppa-key-check.sh",
+      "tests/upstream-modifications.txt"
+    ],
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "0c3b9e3c23434f269526f189c02e88698ce63ec5",
+    "status": "superseded",
+    "summary": "CI regression: build / mingw64",
+    "superseded_by": "sol-repair-1794489915023124173",
+    "train": "050/m0-train-27",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-3eb9bda8aa6785a3"
+  },
+  {
+    "at": "2026-11-12T01:07:28",
+    "base": "af010bc3cc055d477045a54e2d866f59a95017d7",
+    "branch": "fix/ci-repair-ci-7d1b70f4f0a0b12b-d8337eaf3271",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-7d1b70f4f0a0b12b.r3.md",
+        "negative_control": {
+          "artifact_hashes": {},
+          "detail": "no product change, no changed test, or a dirty tree",
+          "ok": null,
+          "proof_base": "0c3b9e3c23434f269526f189c02e88698ce63ec5",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-7d1b70f4f0a0b12b.r3/negctl",
+          "proof_key": "4d5d4878ab55c72a7bfedc4787c247143bfaf8f65914e0eca0be795e8006bbf9"
+        },
+        "verdict": "ACCEPT"
+      }
+    ],
+    "commit": "cdd767c8b8b6d2d053650b446fa8a635f3f3a01a",
+    "id": "ci-repair-ci-7d1b70f4f0a0b12b-d8337eaf3271",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-7d1b70f4f0a0b12b.md",
+      "tests/src/core/ControllerScriptTest.cpp",
+      "tests/src/core/ExternalMidiDeviceTest.cpp",
+      "tests/src/gui/ExternalDeviceCardTest.cpp"
+    ],
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "0c3b9e3c23434f269526f189c02e88698ce63ec5",
+    "status": "superseded",
+    "summary": "CI regression: build / linux-arm64",
+    "superseded_by": "sol-repair-1794489915023124173",
+    "train": "050/m0-train-27",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-7d1b70f4f0a0b12b"
+  },
+  {
+    "at": "2026-11-12T13:25:15",
+    "base": "af010bc3cc055d477045a54e2d866f59a95017d7",
+    "branch": "fix/sol-repair-1794489915023124173",
+    "checks": [
+      {
+        "argv": [
+          "bash",
+          "tests/no-upstream-regression-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-27-1794489341207978508",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794489883922674514.log"
+      },
+      {
+        "argv": [
+          "bash",
+          "tests/evidence-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-27-1794489341207978508",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794489891954254633.log"
+      },
+      {
+        "argv": [
+          "bash",
+          "tests/fork-sources-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-27-1794489341207978508",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794489905098340891.log"
+      },
+      {
+        "argv": [
+          "cmake",
+          "--build",
+          "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-27-1794489341207978508/build",
+          "--target",
+          "zene",
+          "RemotePluginShmFifoTest",
+          "SfzFilePoolTest",
+          "ControllerScriptTest",
+          "ExternalMidiDeviceTest",
+          "ExternalDeviceCardTest",
+          "-j12"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-27-1794489341207978508",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794489905369301713.log"
+      },
+      {
+        "argv": [
+          "ctest",
+          "-R",
+          "^(RemotePluginShmFifoTest|SfzFilePoolTest|ControllerScriptTest|ExternalMidiDeviceTest|ExternalDeviceCardTest|ClangTemplateKeywordCheck|MingwPpaKeyGate)$",
+          "-j1",
+          "--timeout",
+          "900",
+          "--no-tests=error",
+          "--output-on-failure"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-27-1794489341207978508/build/tests",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794489911496747567.log"
+      }
+    ],
+    "commit": "ee9b376701b8624f8a3018c092522bd6c7f82381",
+    "id": "sol-repair-1794489915023124173",
+    "paths": [
+      ".github/workflows/keys/tobydox-mingw-w64.gpg",
+      ".github/workflows/setup-mingw-packages.sh",
+      "docs/qwen-fixes-2026-10/cluster-ci-165e1914b308f189.md",
+      "docs/qwen-fixes-2026-10/cluster-ci-3eb9bda8aa6785a3.md",
+      "docs/qwen-fixes-2026-10/cluster-ci-4e020460347493c3.md",
+      "docs/qwen-fixes-2026-10/cluster-ci-7d1b70f4f0a0b12b.md",
+      "docs/qwen-fixes-2026-10/cluster-ci-f0fa6219c5d4b443.md",
+      "docs/qwen-fixes-2026-10/sol-train-27-ci-repair-integration.md",
+      "include/RemotePluginBase.h",
+      "plugins/SfzPlayer/LICENSE-NOTICE.md",
+      "plugins/SfzPlayer/sfizz/external/atomic_queue/include/atomic_queue/atomic_queue.h",
+      "tests/CMakeLists.txt",
+      "tests/clang-template-keyword-check.py",
+      "tests/data/mingw-ppa/InRelease",
+      "tests/data/mingw-ppa/README.md",
+      "tests/data/mingw-ppa/legacy-only.gpg",
+      "tests/fork-sources.txt",
+      "tests/mingw-ppa-key-check.sh",
+      "tests/src/core/RemotePluginShmFifoNoSysIpcProbe.cpp",
+      "tests/upstream-modifications.txt"
+    ],
+    "promoted_train": "050/m0-train-27",
+    "source_head": "d96c1125f4562ceb76a054976531622082d349f5",
+    "status": "promoted",
+    "summary": "Combined five pending CI repairs, resolved shared manifest conflicts, retained both macOS probes and MinGW signature enforcement, and verified failing-then-passing compiler regressions plus 7/7 targeted tests.",
+    "train": "050/m0-train-27",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-27-1794489341207978508"
+  },
+  {
+    "at": "2026-11-12T13:39:56",
+    "base": "af010bc3cc055d477045a54e2d866f59a95017d7",
+    "branch": "fix/sol-repair-1794490796549102044",
+    "checks": [
+      {
+        "argv": [
+          "bash",
+          "tests/no-upstream-regression-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-27-1794489917429971167",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794490769861198247.log"
+      },
+      {
+        "argv": [
+          "bash",
+          "tests/evidence-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-27-1794489917429971167",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794490778294033485.log"
+      },
+      {
+        "argv": [
+          "bash",
+          "tests/fork-sources-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-27-1794489917429971167",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794490791288879497.log"
+      },
+      {
+        "argv": [
+          "cmake",
+          "--build",
+          "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-27-1794489917429971167/build",
+          "--target",
+          "zene",
+          "-j12"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-27-1794489917429971167",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794490791559221790.log"
+      },
+      {
+        "argv": [
+          "ctest",
+          "-R",
+          "^(MmpzGitToolsComplexity|MmpzGitMergeTest)$",
+          "-j1",
+          "--timeout",
+          "900",
+          "--no-tests=error",
+          "--output-on-failure"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-27-1794489917429971167/build/tests",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794490792074988606.log"
+      }
+    ],
+    "commit": "fc55d35a7ad1f84a46592b909a8d6d77497f98bd",
+    "id": "sol-repair-1794490796549102044",
+    "paths": [
+      "docs/qwen-fixes-2026-10/sol-train-27-tools-complexity.md",
+      "tests/CMakeLists.txt",
+      "tests/fork-sources.txt",
+      "tests/tools-sources.txt",
+      "tests/upstream-modifications.txt",
+      "tools/mmpz-git/mmpz_git.py"
+    ],
+    "promoted_train": "050/m0-train-27",
+    "source_head": "d96c1125f4562ceb76a054976531622082d349f5",
+    "status": "promoted",
+    "summary": "Refactored merge_elem into helpers measuring CCN 7 or below, preserving merge output and conflict ordering; added focused merge tests and the unchanged tools-gate check.",
+    "train": "050/m0-train-27",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-27-1794489917429971167"
+  }
+]

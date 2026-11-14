@@ -1,0 +1,42 @@
+{
+  "base": "050/m0-train-5",
+  "display_version": "0.4.4.0-alpha",
+  "evidence": "first-parent-promoted-ancestry",
+  "feature_items": [
+    "Q050-002",
+    "Q050-003",
+    "Q050-008",
+    "Q050-014",
+    "Q050-019",
+    "Q050-024",
+    "Q050-035",
+    "Q050-039",
+    "Q050-047",
+    "Q050-082",
+    "Q050-145",
+    "Q050-179"
+  ],
+  "feature_merge_evidence": [
+    "16efe013b2e8356d1cd2559a1777ed796d326e76\tMerge feat/050-Q050-019-oc (accepted; 050/m0-train-6) - shared docs resolved by hand; snapshot/canary re-measured after the train",
+    "f2c8f864ee2e38ce36b7d600bd40cae93dc4a638\tMerge feat/050-Q050-035-oc (accepted; 050/m0-train-6) - shared docs resolved by hand; snapshot/canary re-measured after the train",
+    "22deeef5427036fe913b7bdd74d0b59d0e1918e1\tMerge feat/050-Q050-179-oc (accepted; 050/m0-train-6 batch 1-1000)",
+    "2853ceb9ce84ea540c060094f5ffb1ea73168176\tMerge feat/050-Q050-145-oc (accepted; 050/m0-train-6 batch 1-1000)",
+    "27bada470920e363fe79143495a7c77c84e876f2\tMerge feat/050-Q050-082-oc (accepted; 050/m0-train-6 batch 1-1000)",
+    "1e936db68b3f283cba28196ad66324c96619ffe5\tMerge feat/050-Q050-002-oc (accepted; 050/m0-train-6 batch 1-1000)",
+    "fa7af4486010eb00c0fa7304235812874c12a0fc\tMerge feat/050-Q050-039-oc (accepted; 050/m0-train-6 batch 1-1000)",
+    "57c7daf9fc56a19d9d8e4f940c9f53041dffe714\tMerge feat/050-Q050-047-oc (accepted; 050/m0-train-6 batch 1-1000)",
+    "f3bb71e38a4df611706e4df5a517b1b2d68619f2\tMerge feat/050-Q050-014-oc (accepted; 050/m0-train-6 batch 1-1000)",
+    "afcfa9584f3077d86d0d1ad11209127e48940651\tMerge feat/050-Q050-003-oc (accepted; 050/m0-train-6 batch 1-1000)",
+    "024616b946d00a03690b1145b42b26906027b7fe\tMerge feat/050-Q050-024-link-audio (accepted; 050/m0-train-6 batch 1-1000)",
+    "2def661acd0ebd5c24a737ac2e4ce1dc1e7dfaf5\tMerge feat/050-Q050-008-freeze-region (accepted; 050/m0-train-6 batch 1-1000)"
+  ],
+  "feature_train": 4,
+  "kind": "feature",
+  "milestone": "0.4",
+  "revision": 0,
+  "sha": "06c5dcf48260d3e8fe518759ee4104e8305fae6c",
+  "stage": "alpha",
+  "train": "050/m0-train-6",
+  "train_label": "4.0",
+  "version": "0.4.4-alpha.0"
+}

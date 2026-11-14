@@ -1,0 +1,207 @@
+From 3edb6accd286d828b2920efc48e662eb92cbcd8a Mon Sep 17 00:00:00 2001
+From: Zene train Sol <noreply@zene.invalid>
+Date: Fri, 13 Nov 2026 21:43:17 +0000
+Subject: [PATCH] fix(train-sol): Extracted the parent-editor lookup, reducing
+ mousePressEvent from CCN 11 to 9 without changing behavior; extended the
+ metric regression and registered the unchanged complexity gate
+
+Sol-Repair-Id: sol-repair-1794606197936951902
+---
+ .../sol-train-29-note-input-complexity.md     | 61 +++++++++++++++++++
+ src/gui/noteeditor/NoteCanvasInput.cpp        | 17 ++++--
+ tests/CMakeLists.txt                          |  7 +++
+ tests/complexity-regression-check.py          |  6 +-
+ tests/fork-sources.txt                        |  4 ++
+ tests/upstream-modifications.txt              |  1 +
+ 6 files changed, 89 insertions(+), 7 deletions(-)
+ create mode 100644 docs/qwen-fixes-2026-10/sol-train-29-note-input-complexity.md
+
+diff --git a/docs/qwen-fixes-2026-10/sol-train-29-note-input-complexity.md b/docs/qwen-fixes-2026-10/sol-train-29-note-input-complexity.md
+new file mode 100644
+index 0000000000..834c08ac45
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/sol-train-29-note-input-complexity.md
+@@ -0,0 +1,61 @@
++# Train 29 NoteCanvas input complexity
++
++Hosted quality-gates at aa20403519482cec35723ac029c61ddbb52e7e75 fail Gate 4
++on NoteCanvas::mousePressEvent (CCN 11). This is a product-source metric failure,
++not the previously repaired tools merge function or an infrastructure outage.
++The newly nested parent lookup for empty-editor activation is extracted unchanged
++into containingNoteEditor in the same anonymous namespace. Lookup order, left-click
++guard, clip acquisition, editor activation, null-state refusal, focus and button
++dispatch remain unchanged. There is no new public API or allocation path.
++
++The existing complexity-regression-check.py now measures this ninth repaired
++function. Its original fixtures and all eight prior targets remain enforced.
++Both changed source paths and this report are explained in fork-sources.txt.
++CMake registers the unchanged Gate 4 executable with --check as
++NoteCanvasComplexityGate, with its reason in upstream-modifications.txt; this
++lets the runner verify the actual failed gate without rewriting its baseline.
++No gate, threshold, baseline or behavioral assertion changes.
++
++## Verification
++
++- `python3 tests/complexity-regression-check.py .` after adding the target but
++  before the product refactor: exit 1, mousePressEvent CCN 11 > 10.
++- `PYTHONPATH="$PWD/build/ci-python" bash tests/complexity-gate.sh --check`
++  with private Lizard 1.25.1 and original product source: exit 1, same hosted
++  regression. The existing local Lizard 1.24.0 also reproduces the metric failure.
++- `PYTHONPATH="$PWD/build/ci-python" python3 tests/complexity-regression-check.py .`
++  after extraction: exit 0, all nine functions at or under CCN 10.
++- `git apply --check` of the complete binary diff a21e15e372e2^..a21e15e372e2:
++  exit 0 against this delta. The pending signal/gesture/layout repair remains
++  separate and required; no pending repair is superseded.
++
++Configure (owner options, one private build):
++
++```sh
++cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo -DCMAKE_EXE_LINKER_FLAGS:STRING=-Wl,--strip-debug -DUSE_WERROR:BOOL=ON -DWANT_ABLETON_LINK:BOOL=ON -DWANT_ALSA:BOOL=ON -DWANT_CALF:BOOL=ON -DWANT_CAPS:BOOL=ON -DWANT_CARLA:BOOL=ON -DWANT_CMT:BOOL=ON -DWANT_COLLAB:BOOL=ON -DWANT_DEBUG_CPACK:BOOL=ON -DWANT_GIG:BOOL=ON -DWANT_JACK:BOOL=ON -DWANT_LV2:BOOL=ON -DWANT_MP3LAME:BOOL=ON -DWANT_OGGVORBIS:BOOL=ON -DWANT_OSS:BOOL=ON -DWANT_PORTAUDIO:BOOL=ON -DWANT_PULSEAUDIO:BOOL=ON -DWANT_QT6:BOOL=ON -DWANT_RUBBERBAND:BOOL=ON -DWANT_SDL:BOOL=ON -DWANT_SF2:BOOL=ON -DWANT_SID:BOOL=ON -DWANT_SNDIO:BOOL=ON -DWANT_SOUNDIO:BOOL=ON -DWANT_STEM_SPLIT:BOOL=ON -DWANT_STK:BOOL=ON -DWANT_SUIL:BOOL=ON -DWANT_SWH:BOOL=ON -DWANT_TAP:BOOL=ON -DWANT_VST:BOOL=ON -DWANT_VST3_TEST_INSTRUMENT:BOOL=ON -DWANT_VST_32:BOOL=ON -DWANT_VST_64:BOOL=ON -DWANT_WASM:BOOL=ON -DWANT_WEAKJACK:BOOL=ON -DZENE_TELEMETRY:BOOL=ON -DZENE_WANT_FFMPEG:BOOL=ON -DZENE_WANT_LIBAAF:BOOL=ON -DWANT_COVERAGE:BOOL=OFF -DWANT_CPACK_TARBALL:BOOL=OFF -DWANT_DEBUG_ASAN:BOOL=OFF -DWANT_DEBUG_FPE:BOOL=OFF -DWANT_DEBUG_GPROF:BOOL=OFF -DWANT_DEBUG_MSAN:BOOL=OFF -DWANT_DEBUG_RTSAN:BOOL=OFF -DWANT_DEBUG_TSAN:BOOL=OFF -DWANT_DEBUG_UBSAN:BOOL=OFF -DWANT_WINMM:BOOL=OFF -DWANT_CLAP:STRING=ON -DWANT_VST3:STRING=ON -DLMMS_CLAP_FETCH=ON -DONNXRUNTIME_ROOT=/home/kruzzzzy/.local/zene-deps/onnxruntime-linux-x64-1.28.0 -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache '-DCMAKE_CXX_FLAGS=-isystem /usr/include/cairo -Wno-error=deprecated-declarations -Wno-error=unused-result -Wno-error=sfinae-incomplete' '-DCMAKE_C_FLAGS=-isystem /usr/include/cairo -Wno-error=deprecated-declarations -Wno-error=unused-result -Wno-error=sfinae-incomplete'
++```
++
++- `PYTHONPATH="$PWD/build/ci-python" bash tests/complexity-gate.sh --check`
++  after extraction: exit 0, no regressions, baseline not written.
++- The unchanged `code_lines()` function from tests/file-length-gate.sh measures
++  NoteCanvasInput.cpp at exactly 500 code lines, within its unchanged 500 limit.
++  An initial local assertion incorrectly required strictly fewer than 500; the
++  corrected check uses the actual gate rule (at most 500) and passes.
++
++- Configure above: exit 0. `cmake --build build --target zene NoteEditorTest NoteEditorFlTest -j12`:
++  exit 0, 1244 initial build steps. Repeating the same command after CTest
++  registration regenerated CMake and relinked the affected binaries, exit 0.
++- From `build/tests`:
++  `PYTHONPATH="$PWD/../ci-python" ctest --output-on-failure -R '^(NoteEditorTest|NoteEditorFlTest|complexity-regression-check|NoteCanvasComplexityGate)$'`:
++  exit 0, 4/4 tests passed in 29.39 seconds, using Lizard 1.25.1.
++- `bash tests/no-upstream-regression-gate.sh`: exit 0 on the final source delta.
++- `bash tests/fork-sources-gate.sh`: exit 0, no stale declarations.
++- `bash tests/evidence-gate.sh`: exit 0.
++- `git diff --check`: exit 0.
++
++The declaration and evidence gates read tracked files locally; the runner must
++repeat them after committing the explicit new report path. The metric regression
++fails on the original dispatcher and passes after the extraction; the behavior
++suites verify the refactor against existing note input contracts.
++Native hosted CI and the full train remain required. Existing unrelated
++file-length debt is neither reanchored nor exempted here.
+diff --git a/src/gui/noteeditor/NoteCanvasInput.cpp b/src/gui/noteeditor/NoteCanvasInput.cpp
+index 1f7605d4dc..2fcbb111d1 100644
+--- a/src/gui/noteeditor/NoteCanvasInput.cpp
++++ b/src/gui/noteeditor/NoteCanvasInput.cpp
+@@ -49,6 +49,17 @@ namespace lmms::gui
+ namespace
+ {
+ 
++//! Find the editor through the canvas's possible wrapper widgets.
++NoteEditor* containingNoteEditor(QWidget* parent)
++{
++	auto* editor = qobject_cast<NoteEditor*>(parent);
++	for (QWidget* widget = parent; editor == nullptr && widget != nullptr; widget = widget->parentWidget())
++	{
++		editor = qobject_cast<NoteEditor*>(widget);
++	}
++	return editor;
++}
++
+ QJsonArray idsOf(const std::vector<Note*>& notes)
+ {
+ 	QJsonArray ids;
+@@ -155,11 +166,7 @@ void NoteCanvas::mousePressEvent(QMouseEvent* event)
+ 	{
+ 		// Owner 2026-10-29 (a Windows tester could not place a note): an empty editor is no dead end. A left click
+ 		// opens a clip on the selected instrument (clipForEmptyEditor) and goes on to place its note there.
+-		auto* editor = qobject_cast<NoteEditor*>(parentWidget());
+-		for (QWidget* w = parentWidget(); editor == nullptr && w != nullptr; w = w->parentWidget())
+-		{
+-			editor = qobject_cast<NoteEditor*>(w);
+-		}
++		auto* editor = containingNoteEditor(parentWidget());
+ 		MidiClip* clip = event->button() == Qt::LeftButton && editor != nullptr ? clipForEmptyEditor() : nullptr;
+ 		if (clip == nullptr) { return; }
+ 		editor->setClip(clip);
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 1cd6922f86..5b90c5b79e 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -6474,6 +6474,13 @@ if(PYTHON3_EXECUTABLE)
+ 	set_tests_properties(Qt5OverloadedSignalCheck PROPERTIES TIMEOUT 300)
+ endif()
+ 
++# Train 29: rerun the actual failed Gate 4 in non-writing mode alongside the
++# focused metric assertion and note-editor behavior tests.
++add_test(NAME NoteCanvasComplexityGate
++	COMMAND bash ${CMAKE_SOURCE_DIR}/tests/complexity-gate.sh --check)
++set_tests_properties(NoteCanvasComplexityGate PROPERTIES
++	WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} TIMEOUT 300)
++
+ # Per-method complexity regression (cluster ci-6d61162ce0abfd39, 2026-11-10). Hosted CI failed
+ # Gate 4 - the CCN <= 10 ratchet - at a1a98b67b2 with eight regressions, each a function that had
+ # grown past the target. The repair is a behaviour-preserving extraction, so the complexity IS the
+diff --git a/tests/complexity-regression-check.py b/tests/complexity-regression-check.py
+index 221971b0ae..58aa430ade 100644
+--- a/tests/complexity-regression-check.py
++++ b/tests/complexity-regression-check.py
+@@ -6,7 +6,7 @@ ratchet (CCN <= 10) - at a1a98b67b2 with eight regressions, reproduced locally w
+ lizard (1.25.1). The repair is a behaviour-preserving extraction in each function; the only
+ observable change IS the complexity, so that is what this check holds in place.
+ 
+-The check measures the eight functions with lizard and asserts each is at or under the target.
++The check measures the repaired functions with lizard and asserts each is at or under the target.
+ It runs its own red/green fixtures first (a 12-branch function must be flagged, a one-liner must
+ not), so a scanner that cannot fail fails here instead. No build, no clock, no I/O beyond
+ reading the sources and running lizard.
+@@ -24,7 +24,8 @@ import tempfile
+ 
+ CCN_LIMIT = 10
+ 
+-# (repo-relative file, lizard's name for the function) - the eight Gate 4 regressions.
++# (repo-relative file, lizard's name for the function). Also holds the train-29
++# mousePressEvent regression: empty-editor activation must not grow the input dispatcher.
+ TARGETS = [
+ 	("src/wasm/WasmSandbox.cpp", "lmms::wasm::WasmSandbox::loadModuleBytes"),
+ 	("tests/src/gui/XyPadPairTest.cpp", "dotCentreAlong"),
+@@ -34,6 +35,7 @@ TARGETS = [
+ 	("src/core/ControlCommandsSessionRecordLand.cpp", "lmms::sessionrecord::landPairState"),
+ 	("tests/stem_commands_lib.py", "wav_facts"),
+ 	("src/core/VideoAudioExtract.cpp", "lmms::extract"),
++	("src/gui/noteeditor/NoteCanvasInput.cpp", "lmms::gui::NoteCanvas::mousePressEvent"),
+ ]
+ 
+ 
+diff --git a/tests/fork-sources.txt b/tests/fork-sources.txt
+index 71ca085a42..790f934db9 100644
+--- a/tests/fork-sources.txt
++++ b/tests/fork-sources.txt
+@@ -2207,7 +2207,10 @@ src/gui/noteeditor/NoteBackgroundAudio.cpp
+ src/gui/noteeditor/NoteCanvas.cpp
+ src/gui/noteeditor/NoteCanvasAccess.cpp
+ src/gui/noteeditor/NoteCanvasGestures.cpp
++# Train 29: isolate parent lookup to hold the mouse dispatcher under CCN 10; existing note gestures are unchanged.
+ src/gui/noteeditor/NoteCanvasInput.cpp
++# Train 29 NoteCanvas complexity repair and verification report.
++docs/qwen-fixes-2026-10/sol-train-29-note-input-complexity.md
+ src/gui/noteeditor/NoteCanvasKeys.cpp
+ src/gui/noteeditor/NoteEditor.cpp
+ src/gui/noteeditor/NoteEditorMenus.cpp
+@@ -3621,6 +3624,7 @@ docs/qwen-fixes-2026-10/cluster-ci-165e1914b308f189.md
+ tests/vst2-fixture-darwin-headers-check.py
+ tests/threads-target-windows-configure.py
+ tests/cmake-threads-scope.sh
++# Train 29: also holds NoteCanvas::mousePressEvent at CCN <= 10 (red before lookup extraction).
+ tests/complexity-regression-check.py
+ # cluster ci-3eb9bda8aa6785a3 (2026-11): the MinGW64 PPA signing key is committed and pinned with signed-by=
+ # instead of fetched from a network keyserver at run time; the regression checks the script, verifies the real
+diff --git a/tests/upstream-modifications.txt b/tests/upstream-modifications.txt
+index bb7677508c..cf78cd398f 100644
+--- a/tests/upstream-modifications.txt
++++ b/tests/upstream-modifications.txt
+@@ -26,6 +26,7 @@
+ # (2026-09-09 form of this file: an empty allowlist used only for "compile-only fixes".
+ # It never held a line, and Gate 6 was red from the first behavioural change.)
+ 
++tests/CMakeLists.txt	Train 29 NoteCanvas complexity: register the unchanged complexity gate with --check as NoteCanvasComplexityGate so repair verification cannot rewrite its baseline.
+ tests/CMakeLists.txt	ci-6d61162ce0abfd39: register MmpzGitToolsComplexity and focused MmpzGitMergeTest beside the unchanged full merge-driver suite; the tools gate runs in check mode without writing a baseline.
+ tests/CMakeLists.txt	cluster new-p23-97: register SfzFilePoolTest and link it to the built sfizz library and its header dependencies for direct FilePool regression coverage.
+ tests/fork-sources.txt	cluster new-p23-97: register the new direct FilePool regression test in the fork-added source manifest.
+-- 
+2.56.0
+

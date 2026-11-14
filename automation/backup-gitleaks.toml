@@ -1,0 +1,20 @@
+title = "Zene train records: default rules and verified public hash identifiers"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Negative-control proof_key is a SHA-256 artifact identifier, not an API credential"
+targetRules = ["generic-api-key"]
+regexTarget = "match"
+regexes = ['''proof_key": "[0-9a-f]{64}"''']
+paths = ['''trains/m0-train-[0-9]+/repairs\.json''']
+condition = "AND"
+
+[[allowlists]]
+description = "Two reviewed repair notes quote the public PPA signing-key fingerprint"
+targetRules = ["generic-api-key"]
+regexTarget = "match"
+regexes = ['''key the old line names, `[0-9A-Fa-f]{40}`''']
+paths = ['''repair-patches/(376675301cfa273f518e5fdb0b2e97743cc15d8f|ee9b376701b8624f8a3018c092522bd6c7f82381)\.patch''']
+condition = "AND"

@@ -1,0 +1,127 @@
+[
+  {
+    "bytes": 1007137,
+    "file": "evidence/train-8-bar.log.gz",
+    "sha256_uncompressed": "c55650b0e54b543049074f1abd52172a430619418badf1c3ab34c107ffd586f4"
+  },
+  {
+    "bytes": 174445,
+    "file": "evidence/train-8-build-bar.log.gz",
+    "sha256_uncompressed": "844b1227723238d3b1d93c3c78739edc6a7665780d218891f3ee567076037cf7"
+  },
+  {
+    "bytes": 322582,
+    "file": "evidence/train-8-build.log.gz",
+    "sha256_uncompressed": "6af4d2ab2b34fffbcf3a9e24e8e2b07f82d2b722105b59a6944add7c16e13e6d"
+  },
+  {
+    "bytes": 3280848,
+    "file": "evidence/train-8-gates.log.gz",
+    "sha256_uncompressed": "0974838a334b3b8a90bccddbb17735fab1be56c7919608a38f59046774eec163"
+  },
+  {
+    "bytes": 706,
+    "file": "evidence/train-8-gdb-AbletonLinkSessionTest.log.gz",
+    "sha256_uncompressed": "c37631a91808b5663fc4e7c224c99e8a7d0d53dc62fb03347aab91de4c3531e6"
+  },
+  {
+    "bytes": 1118,
+    "file": "evidence/train-8-gdb-CarlaMidiHandoffTest.log.gz",
+    "sha256_uncompressed": "a6c5c42efd83598281cbcd81f3a583550b30b92dd4d1fa953ae9385abb8fd77e"
+  },
+  {
+    "bytes": 723980,
+    "file": "evidence/train-8-gdb-ControlRenderSurround.log.gz",
+    "sha256_uncompressed": "bcaa67038e4e7d8a92b3b5eafdaa147d2cbb745428180b0ede7b9f9db2c54f04"
+  },
+  {
+    "bytes": 8852,
+    "file": "evidence/train-8-rev-build.log.gz",
+    "sha256_uncompressed": "043f5f056ca6900d1504db876a2586e2d95a892fc8a1bee5663b87ea391bb424"
+  },
+  {
+    "bytes": 284,
+    "file": "evidence/train-8-rev.log.gz",
+    "sha256_uncompressed": "6a18c75a53163e079e37195897b12a1f8b673ffd13eb31bd8826e20dabbfcec2"
+  },
+  {
+    "bytes": 2402,
+    "file": "evidence/train-8-run.out.gz",
+    "sha256_uncompressed": "b8aab7b42d111e3c97a49a6d688bdb7157a0ee2b3966b81cd6958c1d5f12370d"
+  },
+  {
+    "bytes": 2112,
+    "file": "evidence/train-8-run2.out.gz",
+    "sha256_uncompressed": "74f2ef9d17e09513e15251210ffc7bffc6bca6ebf00d808ba09d8c512bbc691e"
+  },
+  {
+    "bytes": 1972,
+    "file": "evidence/train-8-run3.out.gz",
+    "sha256_uncompressed": "610dfbfbaaa9db1ed13e8cb49a61b81e8ac6e566925afce7d4358d5186debc60"
+  },
+  {
+    "bytes": 1092522,
+    "file": "evidence/train-8-snapshot.json.gz",
+    "sha256_uncompressed": "7b46578bd1f092fab59ebef7054b467e97df18cbecb999579ef1902d9e00a775"
+  },
+  {
+    "bytes": 116785,
+    "file": "evidence/train-8-solo-AbletonLinkSessionTest.log.gz",
+    "sha256_uncompressed": "e6c55eaf79da7150f24e0247e9dc4ba11940f02026a5e1de1d52ac7dc770f22c"
+  },
+  {
+    "bytes": 1505,
+    "file": "evidence/train-8-solo-CarlaMidiHandoffTest.log.gz",
+    "sha256_uncompressed": "81612537a15e4fdba03d4ed1968275eca27efe0321b2f578ecf9b731b76056bd"
+  },
+  {
+    "bytes": 1283,
+    "file": "evidence/train-8-solo-ControlAbsentSocket.log.gz",
+    "sha256_uncompressed": "63f81fee83c3b00ae273c4fa1aff19dd64f19abc31511b8dda53140b521efda7"
+  },
+  {
+    "bytes": 5164,
+    "file": "evidence/train-8-solo-ControlMcpGroupCoverage.log.gz",
+    "sha256_uncompressed": "577b5c8640afbcd4614784402b11f9b405c9dd6cc37aac716ea8fdaa23704dbf"
+  },
+  {
+    "bytes": 723981,
+    "file": "evidence/train-8-solo-ControlRenderSurround.log.gz",
+    "sha256_uncompressed": "8ced87e668507f376186f5e8e2c6f07ff223747d94a1f32c11b6c32a052fb25f"
+  },
+  {
+    "bytes": 7311,
+    "file": "evidence/train-8-solo-ControlSocketPathSafety.log.gz",
+    "sha256_uncompressed": "cb0c94a45c9c68a70cefc4ce14df6e7addeb7b0c8ea8638edc94f154cfccb368"
+  },
+  {
+    "bytes": 280,
+    "file": "evidence/train-8-solo-ControlStemExportVerb.log.gz",
+    "sha256_uncompressed": "604b735f08ead375828404d6f12f2748987dbdd326b6fe20ffa5357d99ac323b"
+  },
+  {
+    "bytes": 278,
+    "file": "evidence/train-8-solo-LinkAudioStreamTest.log.gz",
+    "sha256_uncompressed": "f5883761e75596b7af87b2b75ca123c191e6d71aa6511e1485fd7ec9ef4945a3"
+  },
+  {
+    "bytes": 51328,
+    "file": "evidence/train-8-solo-MmpzGitDepthTest.log.gz",
+    "sha256_uncompressed": "67bdfd78042ded28fd12bb558e31ef9b30c2336dd98520b2f3a42448a20d3a25"
+  },
+  {
+    "bytes": 4337,
+    "file": "evidence/train-8-solo-ScriptDawRemovalUndoTest.log.gz",
+    "sha256_uncompressed": "d6619cc831741a206e5f8070c202e5951d43d6b9a2cf3f9e9d9698f9b88f5158"
+  },
+  {
+    "bytes": 2246,
+    "file": "evidence/train-8-solo-ScriptMemoryBudgetTest.log.gz",
+    "sha256_uncompressed": "0ce82fc6e2a9f9b22b5aaa36cea448939c76287f045592a9bdcb918f94e21e66"
+  },
+  {
+    "bytes": 53817,
+    "file": "evidence/train-8-solo-agent_surface.log.gz",
+    "sha256_uncompressed": "ef34f6720be77530349ae5078ece826baf48b8ec4ba7beee3bbcd6fef09c21ae"
+  }
+]

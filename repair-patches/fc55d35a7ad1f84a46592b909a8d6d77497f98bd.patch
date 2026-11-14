@@ -1,0 +1,497 @@
+From fc55d35a7ad1f84a46592b909a8d6d77497f98bd Mon Sep 17 00:00:00 2001
+From: Zene train Sol <noreply@zene.invalid>
+Date: Thu, 12 Nov 2026 13:39:56 +0000
+Subject: [PATCH] fix(train-sol): Refactored merge_elem into helpers measuring
+ CCN 7 or below, preserving merge output and conflict ordering; added focused
+ merge tests and the unchanged tools-gate check.
+
+Sol-Repair-Id: sol-repair-1794490796549102044
+---
+ .../sol-train-27-tools-complexity.md          |  95 ++++++
+ tests/CMakeLists.txt                          |  10 +
+ tests/fork-sources.txt                        |   2 +
+ tests/tools-sources.txt                       |   1 +
+ tests/upstream-modifications.txt              |   1 +
+ tools/mmpz-git/mmpz_git.py                    | 297 +++++++++---------
+ 6 files changed, 258 insertions(+), 148 deletions(-)
+ create mode 100644 docs/qwen-fixes-2026-10/sol-train-27-tools-complexity.md
+
+diff --git a/docs/qwen-fixes-2026-10/sol-train-27-tools-complexity.md b/docs/qwen-fixes-2026-10/sol-train-27-tools-complexity.md
+new file mode 100644
+index 0000000000..9cab1e6c4a
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/sol-train-27-tools-complexity.md
+@@ -0,0 +1,95 @@
++# Train 27: tools merge complexity
++
++Hosted run 43226162933 at d96c1125f4562ceb76a054976531622082d349f5
++rejects `merge_elem` at CCN 59. This is developer-tool source complexity, not a
++hosted infrastructure outage. The existing issue ci-6d61162ce0abfd39 still points
++to the older product-scope diagnostic; this repair addresses the current tools
++failure directly without altering its budget, queue or review records.
++
++## Repair
++
++`_ElementMerge` separates missing-element decisions, attribute changes, child order,
++child dispatch and conflict recording. `merge_elem` retains its public call signature
++and signature snapshots. Delete/modify decisions still use deep pre-mutation
++signatures. Safe comment hosts are passed before detaching children, and add/add
++comments retain their original placement after the surviving child is appended.
++All extracted methods measure CCN at most 7; merge_elem measures 5.
++
++No baseline, exemption, gate script or existing assertion changes. The full
++MmpzGitDepthTest is unchanged. Two additional ctest registrations run its merge-related
++classes and the unchanged tools gate in check mode. CMake and tools-source changes
++are registered with reasons, and declarations are inserted away from pending CI
++repair append hunks so those already-verified repairs remain separate.
++
++## Verification
++
++A private `build/ci-python` install of Lizard 1.25.1 reproduces the hosted analyzer
++rather than relying on local 1.24's multiline-signature parsing bug.
++
++- `python3 -m pip install --target build/ci-python 'lizard==1.25.1'`: exit 0.
++- `PYTHONPATH=build/ci-python bash tests/complexity-gate.sh --scope tools --check`:
++  original HEAD source exit 1, merge_elem CCN 59; repaired source exit 0.
++- From build/tests with absolute PYTHONPATH to that install,
++  `ctest -R '^MmpzGitToolsComplexity$' --output-on-failure`:
++  original HEAD source exit 8; repaired source exit 0. Source restored in finally.
++- `PYTHONPATH=build/ci-python bash tests/file-length-gate.sh --scope tools --check`:
++  exit 0 without a baseline change.
++
++The exploratory full Python suite ran 51 tests and reported 39 failures, all in
++compression identity checks (38 fixture recompressions plus a v1 refusal control).
++Restoring HEAD and running `python3 tools/mmpz-git/tests/test_mmpz_git.py Container V2ContainerRefusal.test_controls_still_succeed_on_v1_and_on_plain_xml -v`
++reproduces the same 39 failures. Those tests and compression implementation remain
++unchanged; this repair does not claim the full suite passes. Seven optional binary/
++Qt helper cases were skipped in the exploratory run before a local Zene was built.
++
++Final build and ctest results are recorded below.
++
++## Additional merge verification
++
++`python3 tools/mmpz-git/tests/test_mmpz_git.py -v Merge MergeDepth MusicalPresentation LargeAssets GitDriverFlow`:
++exit 0, 20 tests passed, no skips. The cases cover disjoint edits, conflicts,
++nested edits versus deletion/rename, safe marker hosts, large embedded samples
++and actual git merge-driver use.
++
++An in-memory comparison loaded HEAD and the refactor as separate modules and
++merged every pair of nine XML variants (unchanged, two tempo edits, two note edits,
++rename, deletion, and two different additions). All 81 pairs returned identical
++serialized XML and conflict records, or identical exception outcomes. No temporary
++source checkout or alternative implementation is committed.
++
++`bash tests/no-upstream-regression-gate.sh`, `bash tests/fork-sources-gate.sh`, and
++`bash tests/evidence-gate.sh` all exit 0. Gates that enumerate tracked paths must
++also run after the runner commits the explicit repair paths. No source outside this
++private checkout was edited; no commits or queue writes were made.
++
++## Build configuration
++
++Exact configure command (WANT_WASM resolves to ON):
++
++```sh
++cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo -DCMAKE_EXE_LINKER_FLAGS:STRING=-Wl,--strip-debug -DUSE_WERROR:BOOL=ON -DWANT_ABLETON_LINK:BOOL=ON -DWANT_ALSA:BOOL=ON -DWANT_CALF:BOOL=ON -DWANT_CAPS:BOOL=ON -DWANT_CARLA:BOOL=ON -DWANT_CMT:BOOL=ON -DWANT_COLLAB:BOOL=ON -DWANT_DEBUG_CPACK:BOOL=ON -DWANT_GIG:BOOL=ON -DWANT_JACK:BOOL=ON -DWANT_LV2:BOOL=ON -DWANT_MP3LAME:BOOL=ON -DWANT_OGGVORBIS:BOOL=ON -DWANT_OSS:BOOL=ON -DWANT_PORTAUDIO:BOOL=ON -DWANT_PULSEAUDIO:BOOL=ON -DWANT_QT6:BOOL=ON -DWANT_RUBBERBAND:BOOL=ON -DWANT_SDL:BOOL=ON -DWANT_SF2:BOOL=ON -DWANT_SID:BOOL=ON -DWANT_SNDIO:BOOL=ON -DWANT_SOUNDIO:BOOL=ON -DWANT_STEM_SPLIT:BOOL=ON -DWANT_STK:BOOL=ON -DWANT_SUIL:BOOL=ON -DWANT_SWH:BOOL=ON -DWANT_TAP:BOOL=ON -DWANT_VST:BOOL=ON -DWANT_VST3_TEST_INSTRUMENT:BOOL=ON -DWANT_VST_32:BOOL=ON -DWANT_VST_64:BOOL=ON -DWANT_WASM:BOOL=ON -DWANT_WEAKJACK:BOOL=ON -DZENE_TELEMETRY:BOOL=ON -DZENE_WANT_FFMPEG:BOOL=ON -DZENE_WANT_LIBAAF:BOOL=ON -DWANT_COVERAGE:BOOL=OFF -DWANT_CPACK_TARBALL:BOOL=OFF -DWANT_DEBUG_ASAN:BOOL=OFF -DWANT_DEBUG_FPE:BOOL=OFF -DWANT_DEBUG_GPROF:BOOL=OFF -DWANT_DEBUG_MSAN:BOOL=OFF -DWANT_DEBUG_RTSAN:BOOL=OFF -DWANT_DEBUG_TSAN:BOOL=OFF -DWANT_DEBUG_UBSAN:BOOL=OFF -DWANT_WINMM:BOOL=OFF -DWANT_CLAP:STRING=ON -DWANT_VST3:STRING=ON -DLMMS_CLAP_FETCH=ON -DONNXRUNTIME_ROOT=/home/kruzzzzy/.local/zene-deps/onnxruntime-linux-x64-1.28.0 -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache '-DCMAKE_CXX_FLAGS=-isystem /usr/include/cairo -Wno-error=deprecated-declarations -Wno-error=unused-result -Wno-error=sfinae-incomplete' '-DCMAKE_C_FLAGS=-isystem /usr/include/cairo -Wno-error=deprecated-declarations -Wno-error=unused-result -Wno-error=sfinae-incomplete'
++```
++
++`cmake --build build --target zene -j12`: exit 0, 1,222 steps completed.
++
++The pending combined CI repair ee9b376701b8 remains applicable: its binary-inclusive
++diff passes `git apply --check` against this worktree. It is not superseded.
++
++## Final ctest verification
++
++After `cmake -S . -B build` (exit 0), repeat
++`cmake --build build --target zene -j12`: exit 0 (resource regeneration and relink).
++From build/tests, with PYTHONPATH set to this checkout's absolute
++`build/ci-python` path:
++
++```sh
++ctest -R '^(MmpzGitToolsComplexity|MmpzGitMergeTest)$' --output-on-failure --no-tests=error
++```
++
++Exit 0: **2/2 matched and passed**, 4.47 seconds; the focused merge entry runs
++20 unittest cases, none skipped. Lizard 1.25.1 supplies the tools gate.
++The same two entries also pass under system Lizard 1.24.0. The original-source
++red control used 1.25.1 and failed with CCN 59; no parser bug or baseline update
++is used to obtain the green result. `git diff --check`: exit 0.
++The unchanged full suite still retains the independently reproduced compression
++failures; a hosted CI rerun and normal review remain required before promotion.
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index ca7ed8c989..2841a27dbb 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -8163,6 +8163,16 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
+ 	# running instance: it operates on project files directly.  The binary-
+ 	# dependent classes (BinarySafety, AudibleDiffBinary) skip when build/zene
+ 	# is absent, exactly as the pre-existing Qt6 test skips without scratch/qtsave2.
++	# Keep the tools ratchet beside the merge-driver behavior suite. This invokes
++	# the unchanged gate in CI check mode; it never rewrites a baseline.
++	add_test(NAME MmpzGitToolsComplexity
++		COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/complexity-gate.sh --scope tools --check)
++	set_tests_properties(MmpzGitToolsComplexity PROPERTIES TIMEOUT 120)
++	add_test(NAME MmpzGitMergeTest
++		COMMAND ${PYTHON3_EXECUTABLE}
++			${CMAKE_SOURCE_DIR}/tools/mmpz-git/tests/test_mmpz_git.py -v
++			Merge MergeDepth MusicalPresentation LargeAssets GitDriverFlow)
++	set_tests_properties(MmpzGitMergeTest PROPERTIES TIMEOUT 180)
+ 	add_test(NAME MmpzGitDepthTest
+ 		COMMAND ${PYTHON3_EXECUTABLE}
+ 			${CMAKE_SOURCE_DIR}/tools/mmpz-git/tests/test_mmpz_git.py -v)
+diff --git a/tests/fork-sources.txt b/tests/fork-sources.txt
+index 7ab6a1a245..25524a3c74 100644
+--- a/tests/fork-sources.txt
++++ b/tests/fork-sources.txt
+@@ -2162,6 +2162,8 @@ include/MidiInputGate.h
+ tests/src/core/MidiInputGateTest.cpp
+ tests/src/core/MidiAlsaSeqShutdownTest.cpp
+ tests/src/core/MidiAlsaRawShutdownTest.cpp
++# Train 27 tools-complexity refactor: cause, unchanged enforcement, negative controls and validation.
++docs/qwen-fixes-2026-10/sol-train-27-tools-complexity.md
+ docs/050-features/Q050-488.md
+ docs/qwen-fixes-2026-10/cluster-Q050-488.md
+ # 0.5.0 Q050-141: a finger's touch event as the mouse gesture the widget already handles.
+diff --git a/tests/tools-sources.txt b/tests/tools-sources.txt
+index 493a8c277f..5579bf46ee 100644
+--- a/tests/tools-sources.txt
++++ b/tests/tools-sources.txt
+@@ -152,6 +152,7 @@ tools/mcp-zene-control/zene_control/tools.py
+ tools/mmpz-git/demo_check.py
+ tools/mmpz-git/demo_edits.py
+ tools/mmpz-git/depth-demo.sh
++# ci-6d61162ce0abfd39: split recursive merge phases into bounded-complexity helpers; preserve deep signatures, mutation and conflict-comment ordering.
+ tools/mmpz-git/mmpz_git.py
+ tools/mmpz-git/render-recipe.sh
+ # ARCH-4 S3 (2026-09-22): rev_report.py names which side of a three-way merge
+diff --git a/tests/upstream-modifications.txt b/tests/upstream-modifications.txt
+index 50b528482d..a12aa7e3fe 100644
+--- a/tests/upstream-modifications.txt
++++ b/tests/upstream-modifications.txt
+@@ -26,6 +26,7 @@
+ # (2026-09-09 form of this file: an empty allowlist used only for "compile-only fixes".
+ # It never held a line, and Gate 6 was red from the first behavioural change.)
+ 
++tests/CMakeLists.txt	ci-6d61162ce0abfd39: register MmpzGitToolsComplexity and focused MmpzGitMergeTest beside the unchanged full merge-driver suite; the tools gate runs in check mode without writing a baseline.
+ tests/CMakeLists.txt	cluster new-p23-97: register SfzFilePoolTest and link it to the built sfizz library and its header dependencies for direct FilePool regression coverage.
+ tests/fork-sources.txt	cluster new-p23-97: register the new direct FilePool regression test in the fork-added source manifest.
+ tests/all-sources.txt	cluster new-p23-97: regenerate the entry list from its published recipe after the train snapshot reintroduced the excluded vendored sfizz paths; the new SfzFilePoolTest source is included.
+diff --git a/tools/mmpz-git/mmpz_git.py b/tools/mmpz-git/mmpz_git.py
+index a8dc0bb1ce..202ec0c883 100644
+--- a/tools/mmpz-git/mmpz_git.py
++++ b/tools/mmpz-git/mmpz_git.py
+@@ -966,163 +966,164 @@ def _loc_for(elem, parent_loc, path):
+     return (track, pat, pat_pos, note, path)
+ 
+ 
+-def merge_elem(doc, o, a, b, path, conflicts, sigs=None, loc=(), meter=None,
+-               host=None):
+-    """3-way merge element `a` (ours) with `b` (theirs) against `o` (base).
+-
+-    Mutates `a`.  Returns the merged element (may be `a`, `b` or None).
+-
+-    `sigs` carries {side: sig_index} snapshots taken *before* any mutation, so
+-    "was this subtree modified?" is answered over the whole subtree instead of
+-    by attributes plus direct-child count.  The shallow test was the silent
+-    data-loss bug: an edit nested two levels down (a note inside a pattern
+-    inside a track) is invisible to it, so a delete or rename on one side
+-    discarded the other side's notes while reporting a clean merge.
++class _ElementMerge:
++    """One recursive merge's context, with separate element, attribute and child steps."""
++
++    def __init__(self, doc, path, conflicts, sigs, loc, meter, host):
++        self.doc, self.path, self.conflicts = doc, path, conflicts
++        self.sigs, self.loc, self.meter, self.host = sigs, loc, meter, host
++        self.pending_comment = None
++        self.io, self.ia, self.ib = sigs.get("o", {}), sigs.get("a", {}), sigs.get("b", {})
++
++    def record(self, kind, where, field, base, ours, theirs, detail="", where_loc=None):
++        rec = conflict_record(kind, where_loc or self.loc, field, base, ours, theirs,
++                              detail=detail, path=where)
++        self.conflicts.append(rec)
++        return rec
++
++    def mark(self, rec, host, path):
++        host.appendChild(_conflict_comment(self.doc, rec, self.meter,
++                                           len(self.conflicts), path.count("/")))
++
++    def added(self, a, b, path, loc, host, defer=False):
++        if to_bytes_sig(a) != to_bytes_sig(b):
++            rec = self.record("add/add", path, None, None, _snippet(a), _snippet(b),
++                              detail="both sides added different content", where_loc=loc)
++            if defer:
++                self.pending_comment = (rec, host, path)
++            else:
++                self.mark(rec, host, path)
++        return a
++
++    def deleted(self, survivor, base, side, path, loc, host):
++        signatures = self.ia if side == "theirs" else self.ib
++        if signatures.get(id(survivor)) == self.io.get(id(base)):
++            return None
++        kind = "delete/modify" if side == "theirs" else "modify/delete"
++        detail = "%s deleted, %s changed it (%s)" % (
++            side, "ours" if side == "theirs" else "theirs", describe_change(survivor, base))
++        rec = self.record(kind, path, None, None, None, None,
++                          detail=detail, where_loc=loc)
++        self.mark(rec, host, path)
++        return survivor
++
++    def missing(self, o, a, b):
++        if o is None:
++            if a is None:
++                return b
++            if b is None:
++                return a
++            return self.added(a, b, self.path, self.loc, self.host)
++        if a is None and b is None:
++            return None
++        if b is None:
++            return self.deleted(a, o, "theirs", self.path, self.loc, self.host)
++        return self.deleted(b, o, "ours", self.path, self.loc, self.host)
++
++    def attribute(self, a, key, original, ours, theirs):
++        if ours == theirs:
++            return
++        if ours == original:
++            if theirs is not None:
++                a.setAttribute(key, theirs)
++            elif a.hasAttribute(key):
++                a.removeAttribute(key)
++        elif theirs != original:
++            rec = self.record("attribute", self.path, key, original, ours, theirs)
++            self.mark(rec, self.host, self.path)
++
++    def attributes(self, o, a, b):
++        ao, aa, ab = _attrs(o), _attrs(a), _attrs(b)
++        for key in sorted(set(ao) | set(aa) | set(ab)):
++            self.attribute(a, key, ao.get(key), aa.get(key), ab.get(key))
++
++    @staticmethod
++    def keys(items):
++        return [key for key, _ in items]
++
++    @staticmethod
++    def order_text(keys):
++        return ", ".join(str(key) for key in keys)
++
++    def order(self, om, am, bm):
++        order = self.keys(om)
++        for key in self.keys(am) + self.keys(bm):
++            if key not in order:
++                order.append(key)
++        akeys, bkeys, okeys = self.keys(am), self.keys(bm), self.keys(om)
++        if akeys != bkeys and set(akeys) == set(bkeys) == set(okeys):
++            rec = self.record("order", self.path, None,
++                              self.order_text(okeys),
++                              self.order_text(akeys),
++                              self.order_text(bkeys),
++                              detail="children reordered differently")
++            self.mark(rec, self.host, self.path)
++            return okeys
++        return order
++
++    def child(self, oe, ae, be):
++        elem = ae if ae is not None else be
++        path = self.path + "/" + _label(elem)
++        loc = _loc_for(elem, self.loc, path)
++        # Children were detached before recursion. Carry the safe comment host;
++        # consulting parentNode here would lose it and misplace conflict markers.
++        host = host_of(elem, self.host)
++        if oe is None:
++            return self.added_child(ae, be, path, loc, host)
++        if ae is None:
++            return self.deleted(be, oe, "ours", path, loc, host)
++        if be is None:
++            return self.deleted(ae, oe, "theirs", path, loc, host)
++        return merge_elem(self.doc, oe, ae, be, path, self.conflicts,
++                          self.sigs, loc, self.meter, host)
++
++    def added_child(self, a, b, path, loc, host):
++        if a is None:
++            return b
++        if b is None:
++            return a
++        # Preserve the original ordering: append the surviving child before its
++        # add/add comment when the safe host is the parent being rebuilt.
++        return self.added(a, b, path, loc, host, defer=True)
++
++    def children(self, o, a, b):
++        om, am, bm = keyed_children(o), keyed_children(a), keyed_children(b)
++        odict, adict, bdict = dict(om), dict(am), dict(bm)
++        order = self.order(om, am, bm)
++        for elem in _children(a):
++            a.removeChild(elem)
++        for key in order:
++            self.pending_comment = None
++            merged = self.child(odict.get(key), adict.get(key), bdict.get(key))
++            if merged is not None:
++                a.appendChild(merged)
++            if self.pending_comment is not None:
++                self.mark(*self.pending_comment)
++
++    def run(self, o, a, b):
++        if o is None or a is None or b is None:
++            return self.missing(o, a, b)
++        self.attributes(o, a, b)
++        self.children(o, a, b)
++        return a
++
++
++def merge_elem(doc, o, a, b, path, conflicts, sigs=None, loc=(), meter=None, host=None):
++    """Mutate ours in a three-way subtree merge, retaining deep signature snapshots.
++
++    Signatures must be captured before mutation: shallow attribute/child-count
++    comparisons can silently discard a nested note edit when the other side deletes
++    its track. The safe comment host is passed down before detaching children.
+     """
+     if meter is None:
+         meter = (TICKS_PER_BAR, 4)
+     if sigs is None:
+         sigs = {}
+-    # The caller passed the safe host for a comment about *this* element.
+-    # Children are detached before recursion (the parent rebuilds its child
+-    # list), so parentNode cannot be consulted here -- it is gone.
+     if host is None:
+         host = host_of(a, doc.documentElement)
+     if host is None:
+         host = doc.documentElement
+-    io, ia, ib = sigs.get("o", {}), sigs.get("a", {}), sigs.get("b", {})
+-
+-    def record(kind, where, field, base, ours, theirs, detail="", where_loc=None):
+-        conflicts.append(conflict_record(kind, where_loc or loc, field, base,
+-                                         ours, theirs, detail=detail, path=where))
+-        return conflicts[-1]
+-
+-    if o is None and a is None:
+-        return b
+-    if o is None and b is None:
+-        return a
+-    if o is None:
+-        # both sides have it, base does not: an add/add
+-        if to_bytes_sig(a) == to_bytes_sig(b):
+-            return a
+-        record("add/add", path, None, None, _snippet(a), _snippet(b),
+-               detail="both sides added different content")
+-        host.appendChild(_conflict_comment(doc, conflicts[-1], meter, len(conflicts),
+-                                        path.count("/")))
+-        return a
+-    if b is None:  # deleted by theirs
+-        if a is None:
+-            return None
+-        if ia.get(id(a)) == io.get(id(o)):
+-            return None  # clean delete: ours left it alone
+-        rec = record("delete/modify", path, None, None, None, None,
+-                     detail="theirs deleted, ours changed it (%s)" % describe_change(a, o))
+-        host.appendChild(_conflict_comment(doc, rec, meter, len(conflicts),
+-                                        path.count("/")))
+-        return a
+-    if a is None:  # deleted by ours
+-        if ib.get(id(b)) == io.get(id(o)):
+-            return None
+-        rec = record("modify/delete", path, None, None, None, None,
+-                     detail="ours deleted, theirs changed it (%s)" % describe_change(b, o))
+-        # `b` is the surviving copy; mark it so the file names the conflict too
+-        host.appendChild(_conflict_comment(doc, rec, meter, len(conflicts),
+-                                        path.count("/")))
+-        return b
+-
+-    # --- attributes ---
+-    ao, aa, ab = _attrs(o), _attrs(a), _attrs(b)
+-    for k in sorted(set(ao) | set(aa) | set(ab)):
+-        ov, av, bv = ao.get(k), aa.get(k), ab.get(k)
+-        if av == bv:
+-            continue
+-        if av == ov:                      # theirs changed it
+-            if bv is None:
+-                if a.hasAttribute(k):
+-                    a.removeAttribute(k)
+-            else:
+-                a.setAttribute(k, bv)
+-        elif bv == ov:                    # ours changed it
+-            pass
+-        else:                             # both changed differently
+-            rec = record("attribute", path, k, ov, av, bv)
+-            host.appendChild(_conflict_comment(doc, rec, meter, len(conflicts),
+-                                            path.count("/")))
+-
+-    # --- children ---
+-    om, am, bm = keyed_children(o), keyed_children(a), keyed_children(b)
+-    odict, adict, bdict = dict(om), dict(am), dict(bm)
+-    order = [k for k, _ in om]
+-    for k in [k for k, _ in am] + [k for k, _ in bm]:
+-        if k not in order:
+-            order.append(k)
+-
+-    # order conflict detection
+-    akeys = [k for k, _ in am]
+-    bkeys = [k for k, _ in bm]
+-    okeys = [k for k, _ in om]
+-    if akeys != bkeys and set(akeys) == set(bkeys) == set(okeys):
+-        rec = record("order", path, None,
+-                     ", ".join(str(k) for k in okeys),
+-                     ", ".join(str(k) for k in akeys),
+-                     ", ".join(str(k) for k in bkeys),
+-                     detail="children reordered differently")
+-        host.appendChild(_conflict_comment(doc, rec, meter, len(conflicts),
+-                                        path.count("/")))
+-        order = okeys  # keep base order
+-
+-    # rebuild child list in merged order
+-    for e in _children(a):
+-        a.removeChild(e)
+-    for k in order:
+-        oe, ae, be = odict.get(k), adict.get(k), bdict.get(k)
+-        elem = ae if ae is not None else be
+-        child_path = path + "/" + _label(elem)
+-        child_loc = _loc_for(elem, loc, child_path)
+-        child_host = host_of(elem, host)
+-        if ae is not None and be is None and oe is not None:
+-            # deleted by theirs
+-            if ia.get(id(ae)) != io.get(id(oe)):
+-                rec = record("delete/modify", child_path, None, None, None, None,
+-                             detail="theirs deleted, ours changed it (%s)"
+-                                    % describe_change(ae, oe),
+-                             where_loc=_loc_for(ae, loc, child_path))
+-                child_host.appendChild(_conflict_comment(doc, rec, meter, len(conflicts),
+-                                                        child_path.count("/")))
+-                a.appendChild(ae)
+-            # else: clean delete -> drop
+-        elif ae is None and be is not None and oe is not None:
+-            if ib.get(id(be)) != io.get(id(oe)):
+-                rec = record("modify/delete", child_path, None, None, None, None,
+-                             detail="ours deleted, theirs changed it (%s)"
+-                                    % describe_change(be, oe),
+-                             where_loc=_loc_for(be, loc, child_path))
+-                child_host.appendChild(_conflict_comment(doc, rec, meter, len(conflicts),
+-                                                        child_path.count("/")))
+-                a.appendChild(be)
+-        elif ae is None and be is not None:
+-            a.appendChild(be)             # added by theirs only
+-        elif ae is not None and be is None and oe is None:
+-            a.appendChild(ae)             # added by ours only
+-        elif ae is not None and be is not None and oe is None:
+-            # add/add
+-            if to_bytes_sig(ae) == to_bytes_sig(be):
+-                a.appendChild(ae)
+-            else:
+-                record("add/add", child_path, None, None, _snippet(ae), _snippet(be),
+-                       detail="both sides added different content",
+-                       where_loc=_loc_for(ae, loc, child_path))
+-                a.appendChild(ae)
+-                child_host.appendChild(_conflict_comment(doc, conflicts[-1], meter,
+-                                                         len(conflicts), child_path.count("/")))
+-        elif ae is not None and be is not None:
+-            merged = merge_elem(doc, oe, ae, be, child_path, conflicts, sigs,
+-                                child_loc, meter, child_host)
+-            if merged is not None:
+-                a.appendChild(merged)
+-        elif ae is not None:
+-            a.appendChild(ae)
+-    return a
++    return _ElementMerge(doc, path, conflicts, sigs, loc, meter, host).run(o, a, b)
+ 
+ 
+ def to_bytes_sig(elem) -> bytes:
+-- 
+2.56.0
+

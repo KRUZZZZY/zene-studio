@@ -1,0 +1,38 @@
+{
+  "base": "050/m0-train-25",
+  "display_version": "0.4.19.0-alpha",
+  "evidence": "first-parent-promoted-ancestry",
+  "feature_items": [
+    "Q050-063",
+    "Q050-129",
+    "Q050-155.1",
+    "Q050-221.1",
+    "Q050-227.1",
+    "Q050-242",
+    "Q050-283.1",
+    "Q050-313",
+    "Q050-442",
+    "Q050-501"
+  ],
+  "feature_merge_evidence": [
+    "e2841a21edef0c90f69f6493405467bd3025834a\tMerge integration/Q050-283.1-081630835b (accepted; 050/m0-train-26, automatic train)",
+    "b0814000b5f3cb2eb8a3739a3e2161157e6ee28b\tMerge integration/Q050-155.1-081630835b (accepted; 050/m0-train-26, automatic train)",
+    "b9aab40e00bb813be3276583fda364dac9bcdc4c\tMerge integration/Q050-063-081630835b (accepted; 050/m0-train-26, automatic train)",
+    "575bc0613dfc787773c7b69de004c6baab458eba\tMerge integration/Q050-129-081630835b (accepted; 050/m0-train-26, automatic train)",
+    "3aa905c1a8e635e140770f79a84116ebf6b72248\tMerge integration/Q050-313-081630835b (accepted; 050/m0-train-26, automatic train)",
+    "cc30a7b5112d91e6bcbcc16f5def335454c72009\tMerge feat/050-Q050-442-oc (accepted; 050/m0-train-26, automatic train)",
+    "a68be872803aa621b31c769a14d461b00d0b197d\tMerge integration/Q050-501-081630835b (accepted; 050/m0-train-26, automatic train)",
+    "88e28126a19f3d9edbe9dd72984626e592baf1df\tMerge feat/050-Q050-221.1-oc (accepted; 050/m0-train-26, automatic train)",
+    "da1742c0795d93af654dbd3000b677008681fcf0\tMerge feat/050-Q050-242-oc (accepted; 050/m0-train-26, automatic train)",
+    "e5a61485a338ff0c6cbe6be7460db38f3ffb801b\tMerge feat/050-Q050-227.1-oc (accepted; 050/m0-train-26, automatic train)"
+  ],
+  "feature_train": 19,
+  "kind": "feature",
+  "milestone": "0.4",
+  "revision": 0,
+  "sha": "af010bc3cc055d477045a54e2d866f59a95017d7",
+  "stage": "alpha",
+  "train": "050/m0-train-26",
+  "train_label": "19.0",
+  "version": "0.4.19-alpha.0"
+}

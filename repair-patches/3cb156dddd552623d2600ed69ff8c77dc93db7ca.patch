@@ -1,0 +1,1926 @@
+From 3cb156dddd552623d2600ed69ff8c77dc93db7ca Mon Sep 17 00:00:00 2001
+From: Zene train Sol <noreply@zene.invalid>
+Date: Fri, 13 Nov 2026 23:25:12 +0000
+Subject: [PATCH] =?UTF-8?q?fix(train-sol):=20Relocated=20the=20CI=20repair?=
+ =?UTF-8?q?=E2=80=99s=20fork-source=20registrations=20away=20from=20omitte?=
+ =?UTF-8?q?d=20Q050-275=20context,=20preserving=20every=20fix,=20regressio?=
+ =?UTF-8?q?n=20and=20current=20selection=20entry;=20recorded=20fresh=20ver?=
+ =?UTF-8?q?ification.?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Sol-Repair-Id: sol-repair-1794612312237616032
+---
+ .../cluster-ci-017caf2edd434b66.md            | 184 +++++++++++
+ .../cluster-ci-632a20737fe640fa.md            | 178 ++++++++++
+ .../cluster-ci-c22070dd8cbbc7c0.md            | 222 +++++++++++++
+ .../sol-train-29-ci-integration.md            |  73 ++++
+ .../sol-train-29-ci-rebase.md                 |  54 +++
+ .../sol-train-29-ci-registration-rebase.md    |  61 ++++
+ include/ArrangerZoom.h                        |  12 +-
+ src/gui/ArrangerAids.cpp                      |  14 +-
+ src/gui/ArrangerZoom.cpp                      |   4 +-
+ src/gui/editors/SongEditor.cpp                |   5 +-
+ tests/CMakeLists.txt                          |  49 +++
+ tests/arranger-zoom-no-gestures-check.py      | 311 ++++++++++++++++++
+ tests/fork-sources.txt                        |  16 +
+ tests/qt5-signal-overload-arm-check.py        | 221 +++++++++++++
+ tests/qt5-signal-overload-check.py            | 304 +++++++++++++++++
+ tests/src/gui/ArrangerTimelineTest.cpp        |   4 +
+ tests/upstream-modifications.txt              |   2 +
+ 17 files changed, 1705 insertions(+), 9 deletions(-)
+ create mode 100644 docs/qwen-fixes-2026-10/cluster-ci-017caf2edd434b66.md
+ create mode 100644 docs/qwen-fixes-2026-10/cluster-ci-632a20737fe640fa.md
+ create mode 100644 docs/qwen-fixes-2026-10/cluster-ci-c22070dd8cbbc7c0.md
+ create mode 100644 docs/qwen-fixes-2026-10/sol-train-29-ci-integration.md
+ create mode 100644 docs/qwen-fixes-2026-10/sol-train-29-ci-rebase.md
+ create mode 100644 docs/qwen-fixes-2026-10/sol-train-29-ci-registration-rebase.md
+ create mode 100644 tests/arranger-zoom-no-gestures-check.py
+ create mode 100644 tests/qt5-signal-overload-arm-check.py
+ create mode 100644 tests/qt5-signal-overload-check.py
+
+diff --git a/docs/qwen-fixes-2026-10/cluster-ci-017caf2edd434b66.md b/docs/qwen-fixes-2026-10/cluster-ci-017caf2edd434b66.md
+new file mode 100644
+index 0000000000..466acade79
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/cluster-ci-017caf2edd434b66.md
+@@ -0,0 +1,184 @@
++FIXED
++
++# cluster ci-017caf2edd434b66 - CI regression: build / mingw64
++
++## Verdict
++
++FIXED. The finding is REAL on this branch: the hosted `mingw64` job at
++`3ab01006f613b223654f56481b789b605c444a84` stopped in `src/gui/ControlCommandsArrangerView.cpp`
++with
++
++```
++include/ArrangerZoom.h:81:64: error: 'Qt::GestureState' has not been declared
++```
++
++The job builds against the tobydox PPA's MinGW Qt 5 (`qt5base-mingw-w64`,
++`.github/workflows/deps-ubuntu-24.04-mingw.txt`), which is configured without gesture support, so
++its QtCore/qtcore-config.h carries `QT_NO_GESTURES` - the same way the same file carries
++`QT_NO_ICONV` for a disabled feature. Everything gesture-typed is behind that macro:
++
++* `Qt::GestureState` and `Qt::GestureType` - `/usr/include/qt6/QtCore/qnamespace.h:1658`
++  (`#ifndef QT_NO_GESTURES`), same guard in Qt 5.15's qnamespace.h:1682
++* `QWidget::grabGesture`/`ungrabGesture` - `QtWidgets/qwidget.h:363`
++* `QGestureEvent`, `QPinchGesture`, `QGesture` - `QtWidgets/qgesture.h:52`
++
++So the product had three unguarded uses on that configuration, plus one in the test:
++
++* `include/ArrangerZoom.h:81` - the exported API took `Qt::GestureState`
++* `src/gui/ArrangerZoom.cpp:193` - the definition (and `Qt::GestureFinished`/`GestureCanceled` at :195)
++* `src/gui/ArrangerAids.cpp:31,33,123,125,131-140,143,145` - the `PinchZoom` filter, its Qt gesture
++  includes, `grabGesture` and `QPinchGesture`
++* `tests/src/gui/ArrangerTimelineTest.cpp:277` - the canceled-pinch case named `Qt::GestureCanceled`
++
++The same defect was fixed on the train-21 line by `6072ae1357` + `14cf88571f`, and that fix is not
++an ancestor of this branch (`git merge-base --is-ancestor 6072ae1357 HEAD` -> exit 1), so it is not
++ALREADY-FIXED here: the code at HEAD still has the unguarded declaration. This entry re-lands the
++guard on the current code, and adds a regression that rebuilds the affected translation units under
++a gesture-less Qt.
++
++## The fix (cause, not symptom)
++
++* `include/ArrangerZoom.h:80-89`: the exported `finishPinch(int, int, bool ended)` is the one
++  definition on every Qt, and the `Qt::GestureState` overload is an inline forwarder inside
++  `#ifndef QT_NO_GESTURES`. A gesture-less build therefore has the API it can call and no
++  reference to a type that does not exist; a gestures build keeps the exact same call shape and
++  the same `finished || canceled` rule (one expression, in the inline forwarder).
++* `src/gui/ArrangerZoom.cpp:193-196`: definition matches the bool declaration.
++* `src/gui/ArrangerAids.cpp:29-37,120-161,172-174`: the two gesture includes, the `PinchZoom` class
++  and its installation are inside `#ifndef QT_NO_GESTURES`. On a gesture-less build the arranger
++  simply installs no pinch filter - the same behaviour the platform's Qt offers at all; the
++  cross-hair overlay and the single-touch selection path are untouched.
++* `tests/src/gui/ArrangerTimelineTest.cpp:277-281`: the canceled-pinch case calls the bool form
++  under `QT_NO_GESTURES` and the gesture-state form otherwise. The assertion is identical.
++
++Callers and siblings checked: `finishPinch` has exactly two call sites (`src/gui/ArrangerAids.cpp:143`
++and the test above) and one definition; `ArrangerZoom.h` is included by `ArrangerZoom.cpp`,
++`ArrangerAids.cpp`, `ArrangerNavigator.cpp`, `editors/SongEditor.cpp`,
++`ControlCommandsArrangerView.cpp`, `ArrangerKeysNavigatorTest.cpp` and
++`ArrangerOverlaysVideoLaneTest.cpp` - all seven compile in the regression, so nothing else names
++`Qt::GestureState`. No other file in `src/`/`include/` includes a Qt gesture header
++(`rg -n 'QPinchGesture|QGestureEvent|grabGesture|Qt::PinchGesture' src include` -> only the two
++guarded sites).
++
++## Regression
++
++`tests/arranger-zoom-no-gestures-check.py` (ctest `ArrangerZoomNoGestures`, registered in
++`tests/CMakeLists.txt:6487-6499`, manifest `tests/fork-sources.txt`) is deterministic and needs no
++gesture-less Qt of its own: it takes the affected translation units' exact compile lines from this
++build's `compile_commands.json` and rebuilds them against a shadow `QtCore/qtcore-config.h` whose
++`QT_FEATURE_gestures` is `-1` and which defines `QT_NO_GESTURES` - the configuration Qt's own
++configure writes for that feature set, under which Qt's headers stay coherent (forcing the macro on
++a gestures-enabled Qt instead breaks qevent.h itself, which is not the failing platform). Two probes
++keep the simulation honest: `Qt::GestureStarted` must be undeclared with the shadow and declared
++without it. It then compiles the six affected TUs (including the QtTest one, moc'd from the same
++compile line) and both API spellings. Nothing here is timed, sampled or raced; there is no clock,
++no sleep and no thread.
++
++Test matrix:
++
++| Path | Case | Covered by |
++| --- | --- | --- |
++| normal | gestures build keeps `finishPinch(..., Qt::GestureState)` and the pinch filter | `ArrangerZoomNoGestures` "still exists with gestures"; `ArrangerTimelineTest` (built and run on this gestures host) |
++| failure/edge | gesture-less build: header, definition, pinch filter and test TU all compile | `ArrangerZoomNoGestures` shadow compile of the six TUs |
++| failure/edge | canceled pinch still records the starting zoom (behaviour preserved across the API shape) | `ArrangerTimelineTest::aCanceledPinchKeepsItsStartingZoomInHistory` |
++| platform | MinGW/Qt5-without-gestures is the only configuration that sees this | the shadow config reproduces the CI diagnostic verbatim; the hosted job runs no tests, so the check is the gate |
++
++## Evidence table (commands as run, exit codes as observed)
++
++Logs: the designated run log folder
++`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-017caf2edd434b66.r2/logs` rejects every
++write in this session (`touch` and a Python `open(...,'w')` both `PermissionError`;
++`findmnt` shows the btrfs subvolume is `rw`, the mode is 0755 and owned by this user, so this is a
++harness sandbox, not the repository). To keep every build/test log as a NEW numbered file I wrote
++them to `build/qwen-logs/` in this worktree and mirrored the whole set to
++`/home/kruzzzzy/.local/share/zene-bunny-fix/dsh/home/ci-017caf2edd434b66.r2-logs/`, which is
++writable. The commands below name the file in the mirrored set.
++
++| # | Evidence | Command | Result |
++| --- | --- | --- | --- |
++| 1 | Pre-fix reproduction on this branch (RED) | `python3 tests/arranger-zoom-no-gestures-check.py --build-dir build --moc /usr/lib/qt6/moc > build/qwen-logs/check-1-red.log 2>&1` | EXIT=1; `ArrangerZoom.h:81:64: error: 'Qt::GestureState' has not been declared`, plus `QPinchGesture does not name a type` and `class QWidget has no member named grabGesture` |
++| 2 | Build after the fix | `cmake --build build --target zene ArrangerTimelineTest ArrangerZoomBoundTest ArrangerKeysNavigatorTest ArrangerOverlaysVideoLaneTest -j$(nproc) > build/qwen-logs/build-1.log 2>&1` | EXIT=0 |
++| 3 | Regression GREEN with the fix | `cd build/tests && ctest -R "ArrangerZoomNoGestures\|ArrangerTimelineTest\|ArrangerZoomBoundTest\|ArrangerKeysNavigatorTest\|ArrangerOverlaysVideoLaneTest" --output-on-failure > ../qwen-logs/test-3-green-refixed.log 2>&1` | EXIT=0; 5/5 passed |
++| 4 | Step 4b RED: product patch reversed | `git diff 3ab01006f6 HEAD -- include/ArrangerZoom.h src/gui/ArrangerZoom.cpp src/gui/ArrangerAids.cpp > build/qwen-logs/fix.patch; git apply -R build/qwen-logs/fix.patch` | DIFF_EXIT=0, REVERT_EXIT=0 |
++| 5 | Step 4b: rebuild the reversed tree | `cmake --build build --target zene ArrangerTimelineTest -j$(nproc) > build/qwen-logs/build-7-red-final.log 2>&1` | EXIT=0 |
++| 6 | Step 4b RED run | `cd build/tests && ctest -R "ArrangerZoomNoGestures\|ArrangerTimelineTest" --output-on-failure > ../qwen-logs/test-8-red-final-committed.log 2>&1` | EXIT=8; 1/2 passed, `ArrangerZoomNoGestures` failed, 7 gesture cases do not build |
++| 7 | Step 4b: patch re-applied | `git apply build/qwen-logs/fix.patch` | EXIT=0 |
++| 8 | Step 4b GREEN run | `cmake --build build --target zene ArrangerTimelineTest -j$(nproc) > build/qwen-logs/build-8-green-final.log 2>&1` then `cd build/tests && ctest -R "Arranger" --output-on-failure > ../qwen-logs/test-9-green-final-committed.log 2>&1` | build EXIT=0; ctest EXIT=0, 8/8 passed |
++| 9 | Whole `Arranger` family | `cmake --build build --target ArrangerTakePunchTest ArrangerFileDropTest ArrangerClipboardKeysTest -j$(nproc)` then `cd build/tests && ctest -R "Arranger" --output-on-failure > ../qwen-logs/test-6-arranger-all.log 2>&1` | build EXIT=0; ctest EXIT=0, 8/8 passed |
++| 10 | Gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > build/qwen-logs/feature-check-<n>.log 2>&1` | EXIT=0; 8/8 PASS (last run feature-check-5.log) (fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length) |
++| 11 | Completion check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> ci-017caf2edd434b66 > build/qwen-logs/submit-check-<n>.log 2>&1` | EXIT=0; every mechanical item PASS (last run submit-check-3.log), all five ASK items answered in the Self-check section |
++
++The first gate run before the script split was EXIT=1 for one reason only:
++`complexity ... NEW: new function over target: compile_source@... (CCN 12); main@... (CCN 11)`
++(`build/qwen-logs/feature-check-1.log`). I split `compile_source` into `moc_include` +
++`compile_source` and `main` into `load_build`/`write_fixtures`/`main` (no threshold or baseline was
++touched); the rerun is row 10, 8/8 PASS.
++
++The check itself was then hardened in a second commit (`2ac31f9f63`): on a host whose Qt has no
++gestures the typed `Qt::GestureState` fixture is SKIPped rather than failed, because there the six
++shadow compiles ARE the shipped configuration and that spelling genuinely does not exist - a
++supported platform must not fail its own regression. On this gestures host it still runs and must
++pass (`check-5-green.log`). The reversal proof above (rows 4-8) and the gates (row 10) were rerun
++after that commit, against the tree being submitted.
++
++
++## Files committed
++
++* `include/ArrangerZoom.h`
++* `src/gui/ArrangerZoom.cpp`
++* `src/gui/ArrangerAids.cpp`
++* `tests/src/gui/ArrangerTimelineTest.cpp`
++* `tests/arranger-zoom-no-gestures-check.py` (new; registered in `tests/fork-sources.txt`)
++* `tests/CMakeLists.txt` (one `add_test` + one timeout; declared in `tests/upstream-modifications.txt`)
++* `tests/fork-sources.txt`, `tests/upstream-modifications.txt` (registration/ledger)
++* `docs/qwen-fixes-2026-10/cluster-ci-017caf2edd434b66.md` (this report)
++
++## Self-check
++
++**The regression test FAILS with the product change reverted and PASSES with it (exit codes).**
++Rows 4-8 above are the reversal proof on the rebuilt tree: with
++`include/ArrangerZoom.h`, `src/gui/ArrangerZoom.cpp` and `src/gui/ArrangerAids.cpp` reverted,
++`ctest -R "ArrangerZoomNoGestures|ArrangerTimelineTest"` exits 8 (1/2 passed, `ArrangerZoomNoGestures`
++failed; the check reports exactly the CI diagnostic,
++`ArrangerZoom.h:81:64: error: 'Qt::GestureState' has not been declared`, plus the
++`QPinchGesture`/`grabGesture` errors, and the bool-API fixture fails to compile). With the patch
++re-applied and rebuilt, the whole `Arranger` family exits 0 with 8/8 tests passed (row 8). The RED
++and GREEN runs use the same build tree and the same committed test; only the product files differ.
++
++**The test is deterministic: no wall-clock timing, sleeps or races (name the seam or injected
++values it uses).** The seam is the build's own `compile_commands.json`: the check takes each
++affected translation unit's recorded compile line and adds a shadow `QtCore/qtcore-config.h`
++containing `#define QT_FEATURE_gestures -1` and `#define QT_NO_GESTURES 1`. It is a pure compiler
++invocation with `-fsyntax-only`; there is no clock, no sleep, no thread, no sampling and no
++network. The two probe fixtures are the negative control of the seam itself: with the shadow
++`Qt::GestureStarted` must be undeclared (so a check that silently lost the shadow fails), and
++without it the same probe must compile (so a host that has gestures still measures something).
++
++**The fix is at the cause and complete: every caller and sibling of what you changed was checked and
++stays consistent.** `finishPinch` has one definition and two call sites, both updated (the pinch
++filter forwards `pinch->state()` to the inline overload, which applies the same
++`finished || canceled` rule; the test calls the bool form where the enum does not exist). Every
++translation unit that includes `ArrangerZoom.h` compiles under the shadow
++(`ArrangerZoom.cpp`, `ArrangerAids.cpp`, `ControlCommandsArrangerView.cpp`,
++`ArrangerNavigator.cpp`, `editors/SongEditor.cpp`, `tests/src/gui/ArrangerTimelineTest.cpp`), and
++the two remaining test includes (`ArrangerKeysNavigatorTest.cpp`,
++`ArrangerOverlaysVideoLaneTest.cpp`) are unaffected because neither names a gesture type - they are
++built and run in row 9. `rg` over `src/` and `include/` shows the only other Qt gesture API uses are
++inside the guarded `PinchZoom` class; no second path into the pinch exists.
++
++**No collateral damage: old projects and saved data still load as before, and any limit or check you
++added does not hit other callers that legitimately exceed it.** No serialization, project,
++undo/redo or command code changed; the fix is a compile-time guard plus one boolean-typed parameter
++with the identical rule. On a gestures build the `Qt::GestureState` overload is inline and does the
++same comparison, so the pinch history behaviour and the `arrangement.zoom_back` walk are unchanged -
++proved by `ArrangerTimelineTest`, including `aCanceledPinchKeepsItsStartingZoomInHistory`, still
++passing (rows 3, 8). No new limit or runtime check was added, so no other caller can be affected.
++Nothing was added to an audio-thread path: `finishPinch`/`ArrangerAids` are UI-thread (zoom/gesture
++handling), and the change only moves an enum comparison into an inline forwarder.
++
++**If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or the intended contract
++that shows it.** Not applicable - the verdict is FIXED, and the branch evidence that rules
++ALREADY-FIXED out is above: at HEAD `include/ArrangerZoom.h:81` still declared
++`finishPinch(int, int, Qt::GestureState)` unconditionally, and the historical fix `6072ae1357`
++(plus its test half `14cf88571f`) is on `fix/ci-train21`/`product/ci/050-m0-train-21`, not an
++ancestor of this branch.
+diff --git a/docs/qwen-fixes-2026-10/cluster-ci-632a20737fe640fa.md b/docs/qwen-fixes-2026-10/cluster-ci-632a20737fe640fa.md
+new file mode 100644
+index 0000000000..df28732487
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/cluster-ci-632a20737fe640fa.md
+@@ -0,0 +1,178 @@
++FIXED
++
++Cluster ci-632a20737fe640fa (CI regression: `build / linux-x86_64`, train 050/m0-train-28 at
++3ab01006f613b223654f56481b789b605c444a84).
++
++## Verdict and evidence
++
++REAL. The hosted `linux-x86_64` job builds with the distribution's Qt 5.15
++(`/usr/include/x86_64-linux-gnu/qt5/...` in the job's own error trace), and Qt 5 declares
++`QSpinBox::valueChanged` twice - `valueChanged(int)` and `valueChanged(const QString&)` -
++while Qt 6 (the only Qt this worktree builds against, `WANT_QT6:BOOL=ON`) keeps a single
++`valueChanged(int)`. The bare function-pointer take at
++
++    src/gui/FollowActionEditor.cpp:207
++    QObject::connect(jump, &QSpinBox::valueChanged, jump, [jump] { jump->setProperty("edited", true); });
++
++is therefore an *unresolved overloaded function type* for Qt 5's `QObject::connect` and the
++translation unit fails:
++
++    FollowActionEditor.cpp:207:25: error: no matching function for call to
++      'lmms::gui::FollowActionEditor::connect(QSpinBox*&, <unresolved overloaded function type>,
++       QSpinBox*&, lmms::gui::FollowActionEditor::addRow(const QJsonObject&)::<lambda()>)'
++
++Evidence, in order of collection:
++
++| # | Evidence | Command | Exit |
++|---|---|---|---:|
++| 1 | Hosted CI log, verbatim error at `src/gui/FollowActionEditor.cpp:207` (log line 2891) | `grep -n "error:" /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/train-ci/3ab01006f613b223654f56481b789b605c444a84/run-43466002708-job-132025174461.log` | 0 (1 matching `error:`) |
++| 2 | Minimal Qt 5 probe against the host's Qt 5.15.19 headers reproduces the same diagnostic | `/usr/bin/c++ -std=gnu++20 -fsyntax-only -I/usr/include/qt qt5-probe.cpp` (`01-qt5-probe-before.log`) | 1 |
++| 3 | The real file, compiled against Qt 5 headers with the worktree's own include set, fails at line 207 | `/usr/bin/c++ -std=gnu++20 -fsyntax-only -I. -Iinclude -Isrc -Ibuild/src -Ibuild/include -Ibuild $(pkg-config --cflags Qt5Widgets) src/gui/FollowActionEditor.cpp` (`05-qt5-real-file-min.log`) | 1 |
++| 4 | Same file with the fix compiled against Qt 5 | same command (`10-qt5-real-file-after.log`, `06-qt5-fixed-probe.log`) | 0 |
++| 5 | The tree's only bare take of a signal Qt 5 overloads | `python3 tests/qt5-signal-overload-check.py` (`08-scan-before.log`) | 1 |
++
++Why this is not ALREADY-FIXED: at HEAD (`3ab01006f6`) the bare take is still present at
++`src/gui/FollowActionEditor.cpp:207`, and the Qt 6 build here compiles it - the defect is a
++Qt-5-only compile error with no source-level marker. A full-tree sweep of every tracked
++first-party C/C++ file (step 5 above, and the scan in the regression test) finds exactly
++one site: `FollowActionEditor.cpp:207`. Siblings such as `UndoHistoryPanel.cpp:90,108`,
++`SampleEditorDialog.cpp:180-182`, `BrowserSearchView.cpp:204-205`, `StepGridPanel.cpp:181-185`
++and `ExternalDeviceCard.cpp:128-131` already spell `QOverload<int>::of(...)` /
++`qOverload<int>(...)`, which is why they were never affected; the fix brings line 207 into
++that same convention. Qt 6-only API was not used; `QOverload<int>::of(&QSpinBox::valueChanged)`
++names the identical `int` overload on both major versions, so behaviour is unchanged.
++
++## The fix
++
++`src/gui/FollowActionEditor.cpp:207-209` (one product change):
++
++    // Qt 5 declares valueChanged twice (int and QString) and Qt 6 once, so name the overload the box steps:
++    // the bare &QSpinBox::valueChanged is ill-formed on the Qt 5 hosted build.
++    QObject::connect(jump, QOverload<int>::of(&QSpinBox::valueChanged), jump, [jump] { jump->setProperty("edited", true); });  // a step
++
++No signature, no handler and no other caller changes: `jumpOf()` still reads the same
++`edited`/`loaded` properties, so the editor writes exactly the chain it wrote before (the
++existing `FollowActionEditorTest` cases pass unchanged). This is GUI-only code; nothing on
++an audio path is touched, no command is added, no undo step changes.
++
++## Regression (deterministic, no clock, no sleeps)
++
++New `tests/qt5-signal-overload-check.py`, registered as ctest `Qt5SignalOverloadCheck`
++(`tests/CMakeLists.txt`, guarded by `PYTHON3_EXECUTABLE`, run on every platform):
++
++* **Source scan** of every tracked first-party C/C++ file (git-tracked list, vendored trees
++  excluded exactly as in `tests/all-sources.txt`) for `&QSpinBox::valueChanged`,
++  `&QDoubleSpinBox::valueChanged`, `&QComboBox::{currentIndexChanged,activated,highlighted}`,
++  `&QProcess::{finished,error}`, `&QButtonGroup::{buttonClicked,buttonPressed,buttonReleased}`
++  and `&QNetworkReply|QAbstractSocket::error` not preceded by a `QOverload<...>::of(`,
++  `qOverload<...>(` or `static_cast<...>(` cast. It is red on the Qt 6 hosts too, so the
++  regression does not depend on which Qt the runner has.
++* **Self-test fixtures** inside the script: four known-bad lines must be reported with their
++  exact lines and four known-good spellings (including a global `QOverload<int, QProcess::ExitStatus>`
++  and a comment/string that mention the signal) must not - a scanner that cannot fail fails.
++* **Compile probe** when `pkg-config Qt5Widgets` yields a Qt 5 tree: the known-bad take must be
++  rejected and the portable one accepted. On a host without Qt 5 it reports `skipped`
++  (the source scan is authoritative), so the test is deterministic on every platform.
++
++This is the regression that fails on the exact hosted shape: the scan names
++`src/gui/FollowActionEditor.cpp:207`, and on this host the Qt 5 probe independently confirms
++the overload set that the scanner models.
++
++## RED / GREEN (step 4b)
++
++Product patch saved to `fix.patch` with `git diff -- src/gui/FollowActionEditor.cpp` (exit 0),
++reverse-applied with `git apply -R` (exit 0), rebuilt, then re-applied (exit 0) and rebuilt.
++
++| Step | Command | Exit |
++|---|---|---:|
++| Save product-only patch | `git diff -- src/gui/FollowActionEditor.cpp > fix.patch` | 0 |
++| Reverse the fix | `git apply -R fix.patch` | 0 |
++| Rebuild reverted tree | `cmake --build build --target zene` (`24-build-red-final.log`) | 0 |
++| **RED** - test on reverted product code | `cd build/tests && ctest -R Qt5SignalOverloadCheck --output-on-failure` (`25-ctest-red-final.log`) | **8** |
++| Restore the fix | `git apply fix.patch` | 0 |
++| Rebuild restored tree | `cmake --build build --target zene` (`26-build-green-final.log`) | 0 |
++| **GREEN** - test restored, with its family | `cd build/tests && ctest -R "Qt5SignalOverloadCheck\|MocQt5TrailingReturnCheck\|FollowActionEditorTest" --output-on-failure` (`27-ctest-green-final.log`) | **0** |
++
++Tally: `1/3` then `3/3` tests passed - `FollowActionEditorTest` 0.08 s,
++`MocQt5TrailingReturnCheck` 2.29 s, `Qt5SignalOverloadCheck` 2.01 s; zero tests run would
++have been an error.
++
++RED assertion, verbatim (`25-ctest-red-final.log`):
++
++    src/gui/FollowActionEditor.cpp:207: bare &QSpinBox::valueChanged - that signal is overloaded in Qt 5 (the hosted linux-x86_64 build fails here); write QOverload<...>::of(&QSpinBox::valueChanged)
++    probe: Qt 5 rejects the bare take and accepts QOverload<int>::of
++    FAIL: 1 unguarded overloaded-signal take(s)
++
++An earlier RED/GREEN pair was taken before the test's `iter_sources` was split to satisfy the
++CCN ratchet (`17-ctest-red.log`, exit 8; `19-ctest-green-restored.log`, exit 0); the table
++above is the final test's own pair.
++
++## Gates and registration
++
++| Gate | Command | Exit |
++|---|---|---:|
++| feature_check (first run, before the CCN split) | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (`20-feature-check.log`) | 1 - `FAIL complexity NEW: new function over target: iter_sources@220-237 (CCN 14)` |
++| feature_check (final) | same (`23-feature-check-2.log`) | **0** - all 8 rows PASS |
++
++Final table: fork-sources PASS, all-sources-reproduce PASS, no-upstream-regression PASS,
++check-namespace PASS, no-tautology PASS, doc-figures PASS, complexity PASS (no new item in
++your files), file-length PASS. The complexity failure was fixed in the code, not the gate:
++`iter_sources` was split into `tracked_names` / `walked_names` / `is_scanned_source`.
++
++Registration: the new test is a `tests/*.py` source, so it is listed in
++`tests/fork-sources.txt` (with this report), the test is registered in `tests/CMakeLists.txt`,
++and the change touches no inherited product file - Gate 6 (`no-upstream-regression`) passed
++without a `tests/upstream-modifications.txt` entry because `src/gui/FollowActionEditor.cpp`
++is fork-NEW (already in `tests/fork-sources.txt`).
++
++## Files committed
++
++* `src/gui/FollowActionEditor.cpp` - the fix (one connect).
++* `tests/qt5-signal-overload-check.py` - the regression (new).
++* `tests/CMakeLists.txt` - registers `Qt5SignalOverloadCheck`.
++* `tests/fork-sources.txt` - registers the new test and this report.
++* `docs/qwen-fixes-2026-10/cluster-ci-632a20737fe640fa.md` - this report.
++
++## Self-check
++
++* **The regression test FAILS with the product change reverted and PASSES with it (exit
++  codes).** RED `ctest -R Qt5SignalOverloadCheck` exit **8** after `git apply -R fix.patch`
++  and a rebuild; GREEN exit **0** after `git apply fix.patch` and a rebuild. See the RED/GREEN
++  table; logs `24`/`25` (red) and `26`/`27` (green).
++* **The test is deterministic: no wall-clock timing, sleeps or races.** The scanner is pure
++  text over a sorted git-tracked file list with fixed fixture line expectations; the optional
++  Qt 5 probe compiles two fixed strings with the compiler named by `CMAKE_CXX_COMPILER`. No
++  timestamps, threads or ordering assumptions; the probe's presence is decided by
++  `pkg-config Qt5Widgets`, and its absence is a reported skip, never a pass-by-luck.
++* **The fix is at the cause and complete.** The sweep over all tracked first-party sources
++  (`08-scan-before.log`) found exactly one unguarded take, at the failing line; every sibling
++  in the same class of call already used `QOverload`/`qOverload`, and every other
++  `QSpinBox::valueChanged`/`QDoubleSpinBox::valueChanged`/`QComboBox::currentIndexChanged`
++  connect in the tree is guarded (list in the Verdict section). The `QLineEdit::textEdited`
++  connect below it is not overloaded and needs no change.
++* **No collateral damage.** The change is a cast: the same `int` overload is connected on
++  Qt 5 and Qt 6, so the lambda fires exactly when it fired before and `FollowActionEditorTest`
++  (chance precision, jump clamping, typed-edit and step-edit cases) passes unchanged. No
++  project format, saved data or limit is touched - the editor's `chain()` output is identical.
++* **Realtime, undo, commands.** `src/gui/FollowActionEditor.cpp` is GUI-only dialog code; it
++  is not reached from `process`/`play`/render. No command, no command id and no undo step was
++  added; OK still writes the chain through the pre-existing `session.set_slot` /
++  `session.set_scene` call and one undo takes it back.
++* **Log folder note.** The task's LOG FOLDER
++  (`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-632a20737fe640fa.r1/logs`) is not
++  writable by this session: `touch`, `python3 open(..., "w")` and the `write` tool all return
++  `EACCES`, and the restriction applies to its parents and to `~/Documents` and `~/.local/share`
++  as well (Landlock-style write jail; `chmod 777` on the directory did not help). Every log
++  listed above was therefore written to
++  `/home/kruzzzzy/.local/share/zene-bunny-fix/dsh/home/ci-632a20737fe640fa.r1-logs/` with the
++  numbered names quoted in this report; the commands are exactly the ones run. `feature_check`
++  and the worktree's `build/` are inside the jail and were used normally.
++* **Verdict is neither ALREADY-FIXED nor FALSE-POSITIVE.** The defect is live at the branch
++  tip: `src/gui/FollowActionEditor.cpp:207` at base `3ab01006f6` holds the bare
++  `&QSpinBox::valueChanged`, and the Qt 5 compile probe reproduces the hosted error with that
++  exact line (`05-qt5-real-file-min.log`, exit 1). Qt 5.15's declaration pair
++  (`valueChanged(int)` / `valueChanged(const QString&)`) is the contract that makes the bare
++  take ill-formed; Qt 6's single overload is why the Qt 6 host here never saw it.
++* **Pre-submit check.** `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree>
++  ci-632a20737fe640fa` - EXIT **0**, RESULT: PASS - submit (`29-submit-check.log`): commits on
++  the branch, clean tree, report, tests added or changed and gates all PASS.
+diff --git a/docs/qwen-fixes-2026-10/cluster-ci-c22070dd8cbbc7c0.md b/docs/qwen-fixes-2026-10/cluster-ci-c22070dd8cbbc7c0.md
+new file mode 100644
+index 0000000000..0e12110e7a
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/cluster-ci-c22070dd8cbbc7c0.md
+@@ -0,0 +1,222 @@
++FIXED - cluster ci-c22070dd8cbbc7c0: Qt 5 build stops on an ambiguous `QSpinBox::valueChanged` member pointer in FollowActionEditor.cpp
++
++Verdict: **REAL**, product/build-portability defect (not infrastructure, not a test-side defect).
++The hosted `build / linux-arm64` job (`.github/workflows/build.yml:304-560`) builds against the
++distribution's Qt 5 (`source /opt/qt5*/bin/qt5*-env.sh` in the Configure step,
++`.github/workflows/build.yml:158`), where `QSpinBox` declares **two** `valueChanged` signals,
++while this box's configured Qt 6 tree (`build/CMakeCache.txt:791` `WANT_QT6:BOOL=ON`) declares
++only one. Reproduced on the pinned commit `3ab01006f613b223654f56481b789b605c444a84` with this
++box's Qt 5.15.13 headers; the one-line fix is the disambiguated form the rest of the tree already
++uses.
++
++## The reported failure
++
++The job stopped at 32 % compiling `src/CMakeFiles/lmmsobjs.dir/gui/FollowActionEditor.cpp.o`:
++
++```
++src/gui/FollowActionEditor.cpp:207:25: error: no matching function for call to
++'lmms::gui::FollowActionEditor::connect(QSpinBox*&, <unresolved overloaded function type>,
++QSpinBox*&, lmms::gui::FollowActionEditor::addRow(const QJsonObject&)::<lambda()>)'
++  207 | QObject::connect(jump, &QSpinBox::valueChanged, jump, [jump] { jump->setProperty("edited", true); });  // a step
++      | ~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++```
++
++The candidate list in the CI log is the ordinary `QObject::connect` overload set failing at
++template argument deduction for `Func1` (`couldn't deduce template parameter 'Func1'`) - the
++signature of an unresolved overloaded function name, not of a missing include or a wrong slot.
++
++## Decision: REAL, product code
++
++- Qt 5.15's `qspinbox.h:108` declares `void valueChanged(int);` and `:112` (under
++  `QT_DEPRECATED_SINCE(5, 14)`) declares `void valueChanged(const QString &);`. Qt 6's
++  `qspinbox.h:73` has only `void valueChanged(int);` (the deprecated text overload became
++  `textChanged`). So `&QSpinBox::valueChanged` is an `<unresolved overloaded function type>` on
++  the CI toolchain and a single function on this box's Qt 6 - the exact asymmetry the log shows.
++- The line is fork-NEW code (`tests/fork-sources.txt:2089`), introduced by
++  `7917f8d863 fix(gui): keep a follow-action jump scene the box cannot show (cluster new-p20-49)`.
++  It is not an infrastructure fault and not a test-source fault: it is a product GUI translation
++  unit that the Qt 5 job compiles and the Qt 6 job here does not reject.
++- Classification: **product** (Qt 5 build-portability defect in a product source).
++
++## Reproduction on this commit (Qt 5.15.13, this box)
++
++The lane's `cmake` is guarded against configuring (a parent job owns the lane build tree), so the
++exact translation unit was compiled with its own recorded command from
++`build/compile_commands.json`, re-pointed at this box's Qt 5 headers (5.15.13,
++`~/.local/opt/qt5/usr`, the same 5.15 line the CI job installs):
++
++```
++# qt5-compile-command.txt is the compile_commands.json entry for src/gui/FollowActionEditor.cpp
++# with -isystem /usr/include/qt6* -> ~/.local/opt/qt5/usr/include/x86_64-linux-gnu/qt5/*
++bash -c "$(cat qt5-compile-command.txt)"     # EXIT 1
++```
++
++EXIT **1**, byte-for-byte the CI diagnostic (`build-1-qt5-red.log:2-3`):
++
++```
++src/gui/FollowActionEditor.cpp:207:25: error: no matching function for call to
++‘lmms::gui::FollowActionEditor::connect(QSpinBox*&, <unresolved overloaded function type>,
++QSpinBox*&, lmms::gui::FollowActionEditor::addRow(const QJsonObject&)::<lambda()>)’
++```
++
++The same command with the fix applied exits **0** (`build-3-qt5-green-single-tu.log`,
++`build-11-qt5-product-postfix.log`). The test translation unit also compiles under Qt 5 both
++before and after the fix (the defect is in the product source only):
++`build-10-qt5-test-prefix.log` EXIT 0, `build-12-qt5-test-postfix.log` EXIT 0.
++
++## The fix (smallest, no behaviour change)
++
++`src/gui/FollowActionEditor.cpp:207-210`:
++
++```cpp
++	// Qt 5 publishes a second valueChanged(const QString&) on QSpinBox, so the member pointer needs its int overload
++	// named or the Qt 5 build cannot deduce connect's signal argument; Qt 6 declares only this one.
++	QObject::connect(jump, QOverload<int>::of(&QSpinBox::valueChanged), jump,
++		[jump] { jump->setProperty("edited", true); });  // a step
++```
++
++`QOverload<int>::of` selects the same `valueChanged(int)` signal Qt 6 resolves on its own, so the
++connection, the lambda, the `edited` property and therefore `jumpOf()`'s typed-vs-loaded behaviour
++are identical. This is the form already used at `src/gui/UndoHistoryPanel.cpp:90`,
++`src/gui/BrowserSearchView.cpp:204-205`, `src/gui/ChordProgressionPanel.cpp:134`,
++`src/gui/SampleEditorDialog.cpp:180-182` and `src/gui/instrument/ExternalDeviceCard.cpp:128-131`.
++
++Completeness - every sibling and every caller of the changed line:
++
++- Swept every first-party source (`src/ include/ plugins/ tests/`, vendored trees excluded) for
++  every `&Q<Class>::<member>` member pointer (`git`-tracked C/C++ only) and intersected it with the
++  Qt 5.15 headers: exactly one unqualified use of a Qt 5-overloaded signal exists in the tree -
++  this line. `QComboBox::currentIndexChanged`/`activated`/`highlighted`, `QProcess::finished` and
++  the `QButtonGroup` int overloads are all already written with `QOverload`/`qOverload`/
++  `static_cast`; `QSocketNotifier::activated`'s second Qt 5 overload is compiled only under
++  `Q_MOC_RUN`/`BUILDING_QSOCKETNOTIFIER` (`qsocketnotifier.h:77-84`), so its member pointers are
++  unambiguous. `QWidget::update`/`setFocus` uses are already `qOverload<>(...)`.
++- The other signals on the same row (`QLineEdit::textEdited` at `:210`) have a single overload.
++- The sibling connect in the same function (`QComboBox::currentIndexChanged`, `:93`) was already
++  `QOverload<int>::of(...)`, so the row is now consistent.
++- No header changed; `zene` and `FollowActionEditorTest` were rebuilt (they link this object).
++
++## Regression test
++
++`tests/qt5-signal-overload-check.py` (221 lines), registered as ctest
++**`Qt5SignalOverloadCheck`** (`tests/CMakeLists.txt:6426-6441`, beside `MocQt5TrailingReturnCheck`,
++wherever a python3 is). It is a source scan: no build, no Qt, no moc, no clock, no sleeps, no
++threads, so it runs on the Qt 6 hosts where the defect compiles and is deterministic.
++
++- It knows the Qt 5.15 signals that have two overloads, each pinned with the header lines that
++  declare them (`QSpinBox`/`QDoubleSpinBox::valueChanged`, `QComboBox::currentIndexChanged`/
++  `activated`/`highlighted`, `QProcess::finished`, the `QButtonGroup` int overloads) and requires
++  every `&Class::signal` member pointer to those to sit inside a `QOverload<...>::of(...)`,
++  `qOverload<...>(...)` or `static_cast<...>(...)` call.
++- Comments and string/char literals are blanked first, so a mention in prose or in an error string
++  is not a finding.
++- Before scanning the tree it runs its own fixtures: a red fixture (an unqualified
++  `&QSpinBox::valueChanged` and `&QComboBox::currentIndexChanged`, checked at exact line numbers),
++  a green fixture (the three disambiguating forms plus an unambiguous signal), and a prose
++  mention. A scanner that cannot fail, fails. `--self-test` runs only those fixtures.
++
++## Commands and exit codes
++
++All logs are in the brief's LOG FOLDER. This session's write jail denies
++`openat`/`touch`/`mkdir` anywhere under `~/.local/share/zene-bunny-fix/qwen/runs/**`
++(`log-folder-write-denial.log`, EXIT 1) - the same landlock-style jail recorded for earlier lanes -
++so every log was produced in `$TMPDIR/qwen-logs-ci-c22070dd8cbbc7c0/` (on disk) and mirrored
++unchanged, under the same file names, to
++`~/.local/share/zene-bunny-fix/dsh/home/ci-c22070dd8cbbc7c0.r1-logs/`.
++
++| Step | Command | EXIT | Log |
++| --- | --- | --- | --- |
++| Repro, Qt 5.15.13 TU (unfixed) | `bash -c "$(cat qt5-compile-command.txt)"` | **1** | `build-1-qt5-red.log` |
++| Regenerate build system + build test target | `cmake --build build --target FollowActionEditorTest` | 0 | `build-2-regenerate-and-test.log` |
++| **RED** ctest, unfixed product | `cd build/tests && ctest -R '^Qt5SignalOverloadCheck$' --output-on-failure` | **8** (1 test, 1 failed) | `test-1-red.log` |
++| Qt 5 TU after fix | `bash -c "$(cat qt5-compile-command.txt)"` | 0 | `build-3-qt5-green-single-tu.log` |
++| Rebuild product + test | `cmake --build build --target zene FollowActionEditorTest` | 0 | `build-4-green-rebuild.log` |
++| **GREEN** ctest | `ctest -R '^Qt5SignalOverloadCheck$' --output-on-failure` | 0 (1/1) | `test-2-green.log` |
++| **4b** save + reverse product diff | `git diff -- src/gui/FollowActionEditor.cpp > fix.patch`; `git apply -R fix.patch` | 0 / 0 | `fix.patch` |
++| **4b** rebuild reverted | `cmake --build build --target zene FollowActionEditorTest` | 0 | `build-5-reverted-rebuild.log` |
++| **4b** RED again | `ctest -R '^Qt5SignalOverloadCheck$' --output-on-failure` | **8** (1 failed) | `test-3-reverted-red.log` |
++| **4b** re-apply + rebuild | `git apply fix.patch`; `cmake --build build --target zene FollowActionEditorTest` | 0 / 0 | `build-6-reapplied-rebuild.log` |
++| **4b** GREEN again | `ctest -R '^Qt5SignalOverloadCheck$' --output-on-failure` | 0 (1/1) | `test-4-reapplied-green.log` |
++| Family ctest | `ctest -R '^(Qt5SignalOverloadCheck\|FollowActionEditorTest\|MocQt5TrailingReturnCheck)$' --output-on-failure` | 0 (**3/3**) | `test-5-family-green.log`, `test-6-final-family.log` |
++| Sibling Qt 5 checks still pass | `python3 tests/moc-qt5-trailing-return-check.py .` | 0 | `check-3-moc-family.log` |
++| Check script py-syntax | `python3 -m py_compile tests/qt5-signal-overload-check.py` | 0 | n/a |
++| Whitespace | `git diff --check` | 0 | n/a |
++| Qt 5.15.13 TU with fix reverted (before 4b restore) | `bash -c "$(cat qt5-compile-command.txt)"` | **1** | `build-9-qt5-product-prefix.log` |
++| Qt 5.15.13 TU with fix restored | `bash -c "$(cat qt5-compile-command.txt)"` | 0 | `build-11-qt5-product-postfix.log` |
++| Qt 5.15.13 test TU, both states | `bash -c "$(cat qt5-test-compile-command.txt)"` | 0 / 0 | `build-10-qt5-test-prefix.log`, `build-12-qt5-test-postfix.log` |
++| Gate 9 (fork-sources) | `bash tests/fork-sources-gate.sh` | 0 | `gate-3-fork-sources-final.log` |
++| **Gates** | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 (8/8 PASS) | `feature-check-2-final.log` |
++
++The Qt 5 `moc` on this box is `moc 5.15.13` (`~/.local/opt/qt5/usr/lib/x86_64-linux-gnu/qt5/bin/moc`);
++it mangled the test source without error (`moc-1-qt5-test.log`, EXIT 0), which is why the test
++translation unit also compiles under Qt 5 in both states - only the product line was ambiguous.
++
++## Test matrix
++
++| Path | Before the fix | After the fix | Evidence |
++| --- | --- | --- | --- |
++| Qt 5.15 build of `src/gui/FollowActionEditor.cpp` (the CI job) | compile error, EXIT 1, the CI message | EXIT 0 | `build-1-qt5-red.log`, `build-11-qt5-product-postfix.log` |
++| Qt 6 build of `zene` + `FollowActionEditorTest` (this box) | builds | builds | `build-4`, `build-13` |
++| Normal path: a Jump box step marks the row edited, OK writes the typed scene | existing slots pass | existing slots pass | `FollowActionEditorTest` 10/10 slots (`Totals: 10 passed, 0 failed`), `test-6-final-family.log` |
++| Edge paths: a loaded scene past the grid kept until typed, INT_MAX, -1 sentinel, passive focus loss, a row removed while its controls get focus | existing slots pass | unchanged (the connect target and lambda are identical) | same |
++| Qt 5 signal-overload sweep, whole first-party tree | 1 finding (this line) | 0 findings | `check-1-red-tree.log`, `check-4-green-tree.log` |
++| Audio-thread constraints | no audio-path file touched; the connect runs in the GUI row builder | no allocation/lock/wait/log added on any audio path | diff is one `connect` in `addRow` |
++| Undo / commands | no command added or changed; `chain()` unchanged | one honest OK step, as before | `git diff` (product hunk is the one connect) |
++
++## Collateral damage
++
++None. The signal selected is the same `valueChanged(int)` Qt 6 was already resolving, and the
++lambda and context object are unchanged, so `jumpOf()` still sees `edited` exactly on a user step
++or typed value and a loaded out-of-grid scene is still written back as loaded. No save/load format,
++limit, check or command changed. The only new file is the source-reading check (221 lines, under
++the 500-line cap; its functions are CCN <= 7).
++
++## Self-check
++
++- **The regression test FAILS with the product change reverted and PASSES with it.** Reversing the
++  product hunk (`git diff -- src/gui/FollowActionEditor.cpp > fix.patch`, `git apply -R fix.patch`,
++  both EXIT 0) and rebuilding (`build-5-reverted-rebuild.log`, EXIT 0) gives
++  `ctest -R '^Qt5SignalOverloadCheck$'` **EXIT 8** (`test-3-reverted-red.log`: it names
++  `src/gui/FollowActionEditor.cpp:207`); re-applying (`git apply fix.patch`, EXIT 0), rebuilding
++  (`build-6-reapplied-rebuild.log`, EXIT 0) gives **EXIT 0** (`test-4-reapplied-green.log`). The
++  same reverse/restore cycle also moved the real Qt 5 compile: EXIT 1
++  (`build-9-qt5-product-prefix.log`) then EXIT 0 (`build-11-qt5-product-postfix.log`).
++- **The test is deterministic.** It is a pure source scan with fixed inline fixtures and pinned Qt 5
++  header line numbers: no build, no moc, no Qt runtime, no wall-clock, no sleeps, no threads. It
++  needs no injected timestamps.
++- **The fix is at the cause and complete.** Every first-party use of a Qt 5-overloaded signal was
++  enumerated against the Qt 5.15 headers; this is the only unqualified one, and the other signals
++  in the same function (`QComboBox::currentIndexChanged` at `:93`, `QLineEdit::textEdited` at
++  `:210`) are already unambiguous. No header changed; `zene` and `FollowActionEditorTest` were
++  rebuilt and the family ctest passes 3/3.
++- **No collateral damage.** Old projects and saved follow-action chains load and write exactly as
++  before (same signal, same lambda, same `edited` semantics - the `FollowActionEditorTest` slots
++  covering the typed, stepped, in-range, out-of-grid, INT_MAX and -1 paths all pass). No limit or
++  check was added to product code; the new check reads sources only. No new command, no control
++  snapshot movement, no audio-thread code, one OK step.
++- **ALREADY-FIXED / FALSE-POSITIVE:** N/A - the verdict is FIXED, and the failure was reproduced on
++  the pinned commit with the Qt 5.15 line the CI job installs (`build-1-qt5-red.log`, EXIT 1, the
++  identical diagnostic).
++- **Registration.** `tests/qt5-signal-overload-check.py` is registered in `tests/fork-sources.txt`
++  (line 3390, with its cluster note); the ctest is in `tests/CMakeLists.txt:6426-6441`. Gate 9
++  passes (2527 fork-NEW entries, 0 stale), and `feature_check.py` reports 8/8 PASS.
++
++## Environment notes (honest)
++
++- The lane guard refuses `cmake -S/-B` (configuring is the parent's job), so the Qt 5 proof uses the
++  recorded `compile_commands.json` command for each translation unit, re-pointed at this box's Qt 5
++  5.15.13 headers; the product and test commands are stored as `qt5-compile-command.txt` and
++  `qt5-test-compile-command.txt` beside the logs.
++- The live build tree is Qt 6 (`WANT_QT6:BOOL=ON`), which is why only the source-reading check can
++  catch this class on this box; the check is registered on every platform a python3 is.
++- Only this one file of the Qt 5 product build was compiled under Qt 5 (the finding's own
++  translation unit). The rest of the tree's Qt 5 build is not claimed.
++
++## Files committed
++
++- `src/gui/FollowActionEditor.cpp` - one `connect` disambiguated with `QOverload<int>::of` plus a
++  comment saying why.
++- `tests/qt5-signal-overload-check.py` - new source-reading regression check (fork-NEW).
++- `tests/CMakeLists.txt` - registers ctest `Qt5SignalOverloadCheck`.
++- `tests/fork-sources.txt` - registers the new check script.
++- `docs/qwen-fixes-2026-10/cluster-ci-c22070dd8cbbc7c0.md` - this report.
+diff --git a/docs/qwen-fixes-2026-10/sol-train-29-ci-integration.md b/docs/qwen-fixes-2026-10/sol-train-29-ci-integration.md
+new file mode 100644
+index 0000000000..635deeebf4
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/sol-train-29-ci-integration.md
+@@ -0,0 +1,73 @@
++# Train 29 CI repair integration
++
++The train applied the Windows ARM64 repair aa2040351948 and then failed replaying
++6cc60cb31f: all three Qt 5 platform repairs change the same FollowActionEditor
++signal connection, and both Linux repairs introduce a different scanner under the
++same filename/CTest name. This replacement preserves the already applied Windows
++repair as a prerequisite, retains the x86 scanner and its real Qt 5 compile probe,
++and retains the ARM scanner under a distinct path and CTest name. The independent
++MinGW repair 397694798e is integrated unchanged except shared registration context.
++No gate, baseline, assertion, or resource limit is relaxed.
++
++Supersedes the Linux x86, Linux ARM and MinGW pending records only. The Windows
++record remains required because its changes precede this delta in the checkout.
++The accepted source semantics remain QOverload<int>::of for the step signal;
++no-gestures Qt gets the bool pinch-completion API and no pinch filter, while
++Qt builds with gestures retain the typed overload and existing behavior.
++
++Changed files: ArrangerZoom.h, ArrangerZoom.cpp, ArrangerAids.cpp and the existing
++ArrangerTimelineTest retain the accepted MinGW changes; three accepted Python
++regressions and their three reports are preserved; CMake and source ledgers
++register the combined checks and this report. The ARM scanner is only renamed.
++
++## Commands and results
++
++Configure (owner options, one private build), exit 0:
++
++```sh
++cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo -DCMAKE_EXE_LINKER_FLAGS:STRING=-Wl,--strip-debug -DUSE_WERROR:BOOL=ON -DWANT_ABLETON_LINK:BOOL=ON -DWANT_ALSA:BOOL=ON -DWANT_CALF:BOOL=ON -DWANT_CAPS:BOOL=ON -DWANT_CARLA:BOOL=ON -DWANT_CMT:BOOL=ON -DWANT_COLLAB:BOOL=ON -DWANT_DEBUG_CPACK:BOOL=ON -DWANT_GIG:BOOL=ON -DWANT_JACK:BOOL=ON -DWANT_LV2:BOOL=ON -DWANT_MP3LAME:BOOL=ON -DWANT_OGGVORBIS:BOOL=ON -DWANT_OSS:BOOL=ON -DWANT_PORTAUDIO:BOOL=ON -DWANT_PULSEAUDIO:BOOL=ON -DWANT_QT6:BOOL=ON -DWANT_RUBBERBAND:BOOL=ON -DWANT_SDL:BOOL=ON -DWANT_SF2:BOOL=ON -DWANT_SID:BOOL=ON -DWANT_SNDIO:BOOL=ON -DWANT_SOUNDIO:BOOL=ON -DWANT_STEM_SPLIT:BOOL=ON -DWANT_STK:BOOL=ON -DWANT_SUIL:BOOL=ON -DWANT_SWH:BOOL=ON -DWANT_TAP:BOOL=ON -DWANT_VST:BOOL=ON -DWANT_VST3_TEST_INSTRUMENT:BOOL=ON -DWANT_VST_32:BOOL=ON -DWANT_VST_64:BOOL=ON -DWANT_WASM:BOOL=ON -DWANT_WEAKJACK:BOOL=ON -DZENE_TELEMETRY:BOOL=ON -DZENE_WANT_FFMPEG:BOOL=ON -DZENE_WANT_LIBAAF:BOOL=ON -DWANT_COVERAGE:BOOL=OFF -DWANT_CPACK_TARBALL:BOOL=OFF -DWANT_DEBUG_ASAN:BOOL=OFF -DWANT_DEBUG_FPE:BOOL=OFF -DWANT_DEBUG_GPROF:BOOL=OFF -DWANT_DEBUG_MSAN:BOOL=OFF -DWANT_DEBUG_RTSAN:BOOL=OFF -DWANT_DEBUG_TSAN:BOOL=OFF -DWANT_DEBUG_UBSAN:BOOL=OFF -DWANT_WINMM:BOOL=OFF -DWANT_CLAP:STRING=ON -DWANT_VST3:STRING=ON -DLMMS_CLAP_FETCH=ON -DONNXRUNTIME_ROOT=/home/kruzzzzy/.local/zene-deps/onnxruntime-linux-x64-1.28.0 -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache '-DCMAKE_CXX_FLAGS=-isystem /usr/include/cairo -Wno-error=deprecated-declarations -Wno-error=unused-result -Wno-error=sfinae-incomplete' '-DCMAKE_C_FLAGS=-isystem /usr/include/cairo -Wno-error=deprecated-declarations -Wno-error=unused-result -Wno-error=sfinae-incomplete'
++```
++
++- `python3 tests/qt5-signal-overload-check.py --root . --cxx c++`: exit 0;
++  self-test passes and Qt 5 rejects the bare signal and accepts the explicit overload.
++- `python3 tests/qt5-signal-overload-arm-check.py --root .`: exit 0;
++  red/green fixtures pass and the current source scan is clean.
++
++- `cmake --build build --target zene FollowActionEditorTest ArrangerTimelineTest -j12`:
++  exit 0 (1244 initial steps). Rebuilt after the layout correction with the same
++  command, exit 0 (5 final steps).
++- `python3 build/sol32-negative-control.py`: exit 0; this temporary verification
++  driver restored the four pre-repair gesture files from HEAD, ran
++  `ctest --output-on-failure -R '^ArrangerZoomNoGestures$'` from build/tests,
++  observed exit 8 with seven failed compilation/API cases, then restored all four
++  repaired files in a finally block. No source reversal remains.
++- All three accepted signal scanners' `scan_text` routines were checked against
++  `git show c233621e80:src/gui/FollowActionEditor.cpp` and the current source:
++  each reports one finding on the original and zero on the repaired source.
++- From `build/tests`:
++  `ctest --output-on-failure -R '^(Qt5OverloadedSignalCheck|Qt5SignalOverloadCheck|Qt5SignalOverloadArmCheck|ArrangerZoomNoGestures|FollowActionEditorTest|ArrangerTimelineTest)$'`:
++  final exit 0, 6/6 passed in 27.80 seconds. The gesture check compiles six real
++  translation units under a shadow Qt feature configuration with gestures off,
++  confirms the enum is absent, and checks both API forms where supported.
++- `bash tests/no-upstream-regression-gate.sh`: exit 0.
++- `bash tests/fork-sources-gate.sh`: exit 0.
++- `bash tests/unregistered-tests-gate.sh`: exit 0.
++- `bash tests/evidence-gate.sh`: exit 0.
++- `git diff --check`: exit 0.
++
++## Additional failure found during verification
++
++The first combined run passed 5/6 but exposed the existing
++`ArrangerTimelineTest::theRulerHasAUsableLayoutHeight` failure: 28 pixels against
++its unchanged scaled 32-pixel requirement. The theme's fixed em-based bounds
++replace the constructor's minimum during stylesheet processing. Merely polishing
++before setting the minimum was insufficient (the second combined run also failed
++5/6). The final SongEditor.cpp change scopes the intended scaled 32-pixel height
++to the arranger ruler's own stylesheet, retaining it through repolishing. The
++unchanged assertion and the full timeline test then pass. No assertion or test
++selection was removed.
++
++Registration gates inspect tracked files locally; the runner must repeat them
++after committing the explicit new paths. The known broader file-length debt was
++not rebaselined or exempted by this repair.
++Native hosted builds remain required; local Qt probes do not replace them.
+diff --git a/docs/qwen-fixes-2026-10/sol-train-29-ci-rebase.md b/docs/qwen-fixes-2026-10/sol-train-29-ci-rebase.md
+new file mode 100644
+index 0000000000..2d9ec9c012
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/sol-train-29-ci-rebase.md
+@@ -0,0 +1,54 @@
++# Train 29 CI repair replay reconciliation (failure 34)
++
++The selected train at c7e71afe47 retains the Windows ARM64 signal repair but
++omits bugs/qwen-new-p21-173. Replaying a21e15e372e2 fails only on the two
++provenance additions in tests/upstream-modifications.txt: their old context
++included three FreeBoy rows belonging to that omitted selection.
++
++This replacement retains every product, regression, registration and historical
++report byte from a21e15e372e2. It adds those two provenance rows against the
++current ledger without restoring the omitted branch's rows. It supersedes
++sol-repair-1794605312345629946 only; the Windows repair and the separate
++NoteCanvas complexity repair remain required. No tests, assertions, gates,
++baselines or resource limits change from the preserved repair.
++
++Changed paths and reasons are recorded in the original integration report and
++source ledgers; this additional registered report records the replay repair.
++The original report's negative controls and verification refer to failure 32.
++
++## Current checkout verification
++
++- `git diff --binary a21e15e372e2^ a21e15e372e2 | git apply --check -`:
++  exit 1, only tests/upstream-modifications.txt fails.
++- `git diff --binary a21e15e372e2^ a21e15e372e2 -- . ':(exclude)tests/upstream-modifications.txt' | git apply --check`:
++  exit 0; applied that delta and placed its two ledger entries beside the existing SongEditor declaration,
++  avoiding dependence on the changing end of the selected train ledger.
++- `git diff --binary 3edb6accd286^ 3edb6accd286 | git apply --check`:
++  exit 0 after reconciliation; the pending complexity repair can follow this one.
++- Configure uses exactly the owner option command reproduced in
++  sol-train-29-ci-integration.md, in this checkout's sole build directory.
++- Configure: exit 0 (5.5 seconds configuring, 47.1 seconds generating).
++- `cmake --build build --target zene FollowActionEditorTest ArrangerTimelineTest -j12`:
++  exit 0, 1244 steps; 90 GB free after the build (12 GB stop threshold retained).
++- From `build/tests`,
++  `ctest --output-on-failure -R '^(Qt5OverloadedSignalCheck|Qt5SignalOverloadCheck|Qt5SignalOverloadArmCheck|ArrangerZoomNoGestures|FollowActionEditorTest|ArrangerTimelineTest)$'`:
++  exit 0, 6/6 passed in 34.53 seconds. The Qt 5 compiler probe retains its
++  rejected bare-signal control; the no-gestures check compiles the affected real
++  translation units and verifies both pinch API configurations.
++- `bash tests/no-upstream-regression-gate.sh`: exit 0.
++- `bash tests/fork-sources-gate.sh`: exit 0.
++- `bash tests/evidence-gate.sh`: exit 0.
++- `bash tests/unregistered-tests-gate.sh`: exit 0, 793 test sources scanned.
++- `git diff --check`: exit 0.
++- Read-only Luna review (`repair34-review`): no blocking defect; confirmed retained
++  source/test coverage and compatibility with the pending NoteCanvas repair.
++- Direct byte comparison: all 12 product, regression and historical report paths
++  match a21e15e372e2. The CMake added/deleted lines match its patch exactly;
++  differences outside that patch are the deliberately omitted FreeBoy selection.
++  Removing the two newly inserted provenance entries yields the current HEAD's
++  ledger exactly.
++
++The local registration/evidence gates inspect tracked files; the runner must
++repeat them after committing the explicitly registered new paths. The full train,
++native hosted builds, and the separately pending NoteCanvas complexity repair
++remain required. This replay repair does not assert that all release gates pass.
+diff --git a/docs/qwen-fixes-2026-10/sol-train-29-ci-registration-rebase.md b/docs/qwen-fixes-2026-10/sol-train-29-ci-registration-rebase.md
+new file mode 100644
+index 0000000000..3b229ac5d9
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/sol-train-29-ci-registration-rebase.md
+@@ -0,0 +1,61 @@
++# Train 29 registration replay reconciliation (failure 36)
++
++The train at d16023e93b already contains the Windows ARM64 and NoteCanvas
++complexity repairs. Replaying 22878e9ade16 fails only at the appended fork-source
++registration block: its patch context names the omitted Q050-275 feature report.
++The new selection adds Q050-294.3 and Q050-296.1 instead.
++
++This replacement retains the complete intended source, regression, CMake and
++provenance delta from 22878e9ade16. Its fork-source declarations are inserted
++before the first existing manifest entry, away from the changing selection tail;
++all current declarations and both newly selected features remain intact. This
++report is registered in that same block. No source behavior, assertion, baseline,
++gate or resource limit changes beyond the preserved repair.
++
++Supersedes sol-repair-1794608813596401012 only. The separate Windows ARM64
++and NoteCanvas repair records remain prerequisites. Historical reports retain
++their original verification claims; results below refer to this checkout.
++
++## Verification
++
++- `git diff --binary 22878e9ade16^ 22878e9ade16 | git apply --check`:
++  exit 1, only tests/fork-sources.txt fails.
++- `git diff --binary 22878e9ade16^ 22878e9ade16 -- . ':(exclude)tests/fork-sources.txt' | git apply --check`:
++  exit 0; applied it and reconciled the registration block separately.
++- Configure uses the full owner command reproduced in sol-train-29-ci-integration.md,
++  in the sole private build directory.
++- Configure: exit 0, 5.1 seconds configuring and 44.3 seconds generating.
++- `python3 -m pip install --target build/ci-python lizard==1.25.1`: exit 0;
++  pins the local analyzer to the hosted CI version without changing repository dependencies.
++- From `build/tests`,
++  `PYTHONPATH="$PWD/../ci-python" ctest --output-on-failure -R '^(complexity-regression-check|NoteCanvasComplexityGate)$'`:
++  exit 0, 2/2 passed in 26.08 seconds. The registered gate invokes the unchanged
++  complexity executable with --check; no baseline is written.
++- `bash tests/no-upstream-regression-gate.sh`: exit 0.
++- `bash tests/fork-sources-gate.sh`: exit 0.
++- `bash tests/evidence-gate.sh`: exit 0.
++- `bash tests/unregistered-tests-gate.sh`: exit 0, 794 test sources scanned.
++- Direct comparison confirms all 13 product, regression and historical report
++  files match 22878e9ade16 byte for byte. CMake and provenance added/deleted
++  lines match its delta exactly; removing the inserted fork registration block
++  yields the current HEAD manifest byte for byte.
++- Read-only Luna review confirmed the retained repair delta. It initially flagged
++  unrelated Q050-294.3 Markdown reports absent from the source manifest; follow-up
++  review confirmed those unchanged reports are outside Gate 9's source scope,
++  while all three Q050-294.3 source/test additions are registered. No blocking
++  concern remains from that review; its independent Gate 9 run exits 0.
++- `cmake --build build --target zene FollowActionEditorTest ArrangerTimelineTest -j12`:
++  exit 0, 1245 steps; 90 GB free after build, above the unchanged 12 GB stop threshold.
++- From `build/tests`,
++  `ctest --output-on-failure -R '^(Qt5OverloadedSignalCheck|Qt5SignalOverloadCheck|Qt5SignalOverloadArmCheck|ArrangerZoomNoGestures|FollowActionEditorTest|ArrangerTimelineTest)$'`:
++  exit 0, 6/6 passed in 32.79 seconds. The preserved signal test includes its real
++  Qt 5 rejected/accepted compiler controls; the gesture test compiles affected
++  translation units with gestures disabled and checks both pinch API forms.
++- `git diff --check`: exit 0.
++
++All eight selected checks passed across the two ctest invocations; neither
++matched zero tests. Original behavioral negative-control evidence remains in the
++preserved integration report. This reconciliation introduces no new behavior.
++The local source/evidence gates inspect tracked files, so the runner must repeat
++them after committing the explicit new paths. Full train, native hosted CI and
++all release gates remain required; no overall release pass is claimed here.
+diff --git a/include/ArrangerZoom.h b/include/ArrangerZoom.h
+index 4f8931a037..4ddb468ea5 100644
+--- a/include/ArrangerZoom.h
++++ b/include/ArrangerZoom.h
+@@ -77,8 +77,16 @@ constexpr int WheelBurstMs = 400;
+ 
+ //! The zoom history arrangement.zoom_back walks (zoom model values, newest last; UI thread).
+ LMMS_EXPORT void remember(int value);
+-//! Record the starting zoom when a pinch ends or is canceled, if it changed.
+-LMMS_EXPORT void finishPinch(int startValue, int currentValue, Qt::GestureState state);
++//! Record the starting zoom when a pinch has ended (finished or canceled), if it changed.
++LMMS_EXPORT void finishPinch(int startValue, int currentValue, bool ended);
++#ifndef QT_NO_GESTURES
++//! The gesture-state form, where Qt has gestures. A Qt built without them (MinGW Qt 5 in the
++//! hosted mingw64 job) declares no Qt::GestureState, so the exported overload takes a bool.
++inline void finishPinch(int startValue, int currentValue, Qt::GestureState state)
++{
++	finishPinch(startValue, currentValue, state == Qt::GestureFinished || state == Qt::GestureCanceled);
++}
++#endif
+ //! Step one back: take the newest remembered extent into @a earlier and queue @a current so
+ //! arrangement.zoom_forward can return to it; false when there is nothing earlier (UI thread).
+ LMMS_EXPORT bool takeEarlier(int current, int* earlier);
+diff --git a/src/gui/ArrangerAids.cpp b/src/gui/ArrangerAids.cpp
+index 032fd36542..7d73ad5a95 100644
+--- a/src/gui/ArrangerAids.cpp
++++ b/src/gui/ArrangerAids.cpp
+@@ -28,12 +28,14 @@
+ 
+ #include <QCursor>
+ #include <QEvent>
+-#include <QGestureEvent>
+ #include <QPainter>
+-#include <QPinchGesture>
+ #include <QPointer>
+ #include <QTimer>
+ #include <QWidget>
++#ifndef QT_NO_GESTURES
++#include <QGestureEvent>
++#include <QPinchGesture>
++#endif
+ 
+ #include "ArrangerZoom.h"
+ #include "AutomatableModel.h"
+@@ -112,7 +114,10 @@ private:
+ 
+ /*! A pinch on the arranger. 0.5.0 theme 9: it zooms continuously (as finely as the zoom model goes) around
+  *  the tick under the pinch's centre where it began, and the zoom it started from joins the history
+- *  arrangement.zoom_back walks once, when it ends or is canceled - not one entry per step. */
++ *  arrangement.zoom_back walks once, when it ends or is canceled - not one entry per step.
++ *  Compiled only where Qt has gestures: a Qt without them declares no QPinchGesture, no
++ *  QGestureEvent and no QWidget::grabGesture (MinGW Qt 5 in the hosted mingw64 job). */
++#ifndef QT_NO_GESTURES
+ class PinchZoom : public QObject
+ {
+ public:
+@@ -153,6 +158,7 @@ private:
+ 	int m_startValue = 0;
+ 	tick_t m_anchor = 0;
+ };
++#endif // QT_NO_GESTURES
+ 
+ QPointer<CrosshairOverlay> s_overlay;
+ bool s_shown = false;
+@@ -163,7 +169,9 @@ void installArrangerAids(QWidget* arranger)
+ {
+ 	if (arranger == nullptr || !s_overlay.isNull()) { return; }
+ 	s_overlay = new CrosshairOverlay(arranger);
++#ifndef QT_NO_GESTURES
+ 	new PinchZoom(arranger);
++#endif
+ 	// A tap or one-finger drag selects clips: install where the content is, so the finger's event is
+ 	// delivered to the viewport under it rather than swallowed by the arranger that accepts touch for
+ 	// the pinch above.
+diff --git a/src/gui/ArrangerZoom.cpp b/src/gui/ArrangerZoom.cpp
+index b1cb4673f3..890ccf2286 100644
+--- a/src/gui/ArrangerZoom.cpp
++++ b/src/gui/ArrangerZoom.cpp
+@@ -190,9 +190,9 @@ void remember(int value)
+ 	trim();
+ }
+ 
+-void finishPinch(int startValue, int currentValue, Qt::GestureState state)
++void finishPinch(int startValue, int currentValue, bool ended)
+ {
+-	if ((state == Qt::GestureFinished || state == Qt::GestureCanceled) && currentValue != startValue) { remember(startValue); }
++	if (ended && currentValue != startValue) { remember(startValue); }
+ }
+ 
+ bool takeEarlier(int current, int* earlier)
+diff --git a/src/gui/editors/SongEditor.cpp b/src/gui/editors/SongEditor.cpp
+index 9b74eef8d7..a71e51e205 100644
+--- a/src/gui/editors/SongEditor.cpp
++++ b/src/gui/editors/SongEditor.cpp
+@@ -166,8 +166,9 @@ SongEditor::SongEditor( Song * song ) :
+ 	m_mpsStatus = nullptr;
+ 
+ 
+-	// Keep the ruler visible and clickable on high-DPI displays.
+-	m_timeLine->setMinimumHeight(scaledPixels(32));
++	// The theme fixes timeline heights in em. Keep this arranger ruler at its
++	// accessible scaled height through later stylesheet polishing as well.
++	m_timeLine->setStyleSheet(QStringLiteral("min-height: %1px; max-height: %1px;").arg(scaledPixels(32)));
+ 	static_cast<QVBoxLayout *>( layout() )->insertWidget( 0, m_timeLine );
+ 
+ 	m_leftRightScroll = new QScrollBar( Qt::Horizontal, this );
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 2364c3dd12..904e3f48ee 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -8918,3 +8918,52 @@ endif()
+ 
+ # Q050-054.1: both construct the real Engine (the second the real application) and need a Qt platform plug-in.
+ set_tests_properties(MidiTakeRecordTest MidiTakeMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
++
++# Qt 5 signal-overload portability (cluster ci-632a20737fe640fa, 2026-11-13). Qt 5 declares
++# QSpinBox::valueChanged twice (int and QString) and Qt 6 only once, so a bare
++# `&QSpinBox::valueChanged` was an unresolved overload on the hosted linux-x86_64 job
++# (src/gui/FollowActionEditor.cpp:207) while every Qt 6 host here compiled it. The check
++# scans every tracked first-party source, runs its own red/green fixtures, and - where a
++# Qt 5 development tree is present - compiles the known-bad and known-good takes. It is
++# registered wherever a python3 is, so the regression is red on the Qt 6 hosts too.
++if(PYTHON3_EXECUTABLE)
++	add_test(NAME Qt5SignalOverloadCheck
++		COMMAND ${PYTHON3_EXECUTABLE}
++			${CMAKE_CURRENT_SOURCE_DIR}/qt5-signal-overload-check.py
++			--root ${CMAKE_SOURCE_DIR}
++			--cxx ${CMAKE_CXX_COMPILER})
++	set_tests_properties(Qt5SignalOverloadCheck PROPERTIES TIMEOUT 300)
++endif()
++
++
++# Qt 5 signal-overload portability (cluster ci-c22070dd8cbbc7c0, 2026-11-13). The hosted
++# linux-arm64 job builds against Qt 5, which publishes a second `valueChanged(const QString&)`
++# on QSpinBox/QDoubleSpinBox (and a second overload on QComboBox, QProcess and QButtonGroup).
++# `&QSpinBox::valueChanged` is then an unresolved overload and the connect template cannot
++# deduce its argument - "src/gui/FollowActionEditor.cpp:207: error: no matching function for
++# call to ...connect(... <unresolved overloaded function type> ...)" stopped the build - while
++# this box's Qt 6 declares only the int one. The check reads sources only and runs its own
++# red/green fixtures, so it is registered wherever a python3 is, including the Qt 6 hosts
++# where the defect compiles.
++if(PYTHON3_EXECUTABLE)
++	add_test(NAME Qt5SignalOverloadArmCheck
++		COMMAND ${PYTHON3_EXECUTABLE}
++			${CMAKE_CURRENT_SOURCE_DIR}/qt5-signal-overload-arm-check.py
++			--root ${CMAKE_SOURCE_DIR})
++	set_tests_properties(Qt5SignalOverloadArmCheck PROPERTIES TIMEOUT 300)
++endif()
++
++
++# cluster ci-017caf2edd434b66: the arranger's gesture code must build on a Qt without gesture
++# support (the hosted mingw64 job's Qt 5 defines QT_NO_GESTURES, so Qt::GestureState and
++# QPinchGesture do not exist there). The hosted job runs no tests, so this check rebuilds the
++# affected translation units from this build's own compile_commands.json against a shadow
++# QtCore/qtcore-config.h with gestures off, and fails on the first one that no longer builds.
++if(PYTHON3_EXECUTABLE)
++	add_test(NAME ArrangerZoomNoGestures
++		COMMAND ${PYTHON3_EXECUTABLE}
++			${CMAKE_CURRENT_SOURCE_DIR}/arranger-zoom-no-gestures-check.py
++			--build-dir ${CMAKE_BINARY_DIR}
++			--moc $<TARGET_FILE:Qt${QT_VERSION_MAJOR}::moc>)
++	set_tests_properties(ArrangerZoomNoGestures PROPERTIES TIMEOUT 300)
++endif()
+diff --git a/tests/arranger-zoom-no-gestures-check.py b/tests/arranger-zoom-no-gestures-check.py
+new file mode 100644
+index 0000000000..557e3be601
+--- /dev/null
++++ b/tests/arranger-zoom-no-gestures-check.py
+@@ -0,0 +1,311 @@
++#!/usr/bin/env python3
++"""Regression for cluster ci-017caf2edd434b66: the arranger's gesture code must compile on a Qt
++built without gesture support.
++
++The hosted mingw64 job builds against the tobydox PPA's Qt 5, whose QtCore/qtcore-config.h
++carries `QT_NO_GESTURES` (the same file carries `QT_NO_ICONV` for a disabled feature). Qt's
++`Qt::GestureState` - and QWidget::grabGesture, QGestureEvent, QPinchGesture - exist only when
++gestures are enabled (`#ifndef QT_NO_GESTURES` in qnamespace.h and qwidget.h), so
++`include/ArrangerZoom.h`'s unconditional `Qt::GestureState` parameter failed the build:
++
++    include/ArrangerZoom.h:81:64: error: 'Qt::GestureState' has not been declared
++      (src/gui/ControlCommandsArrangerView.cpp, job 132025174898)
++
++The same missing guard was in src/gui/ArrangerZoom.cpp's definition, src/gui/ArrangerAids.cpp's
++QPinchGesture filter, and tests/src/gui/ArrangerTimelineTest.cpp's canceled-pinch case.
++
++This box's Qt has gestures, so the check does not rely on the host's features: it rebuilds each
++affected translation unit from this build's own compile_commands.json against a SHADOW
++`QtCore/qtcore-config.h` whose gestures feature is off - exactly the configuration Qt's own
++configure writes for a gesture-less Qt, and one under which Qt's headers stay coherent (defining
++QT_NO_GESTURES on a gestures-enabled Qt instead breaks qevent.h itself, which is not the failing
++platform). Two probes keep the simulation honest: Qt::GestureStarted must be undeclared under the
++shadow and declared without it. The API is exercised both ways: the bool form must compile under
++the shadow (a Qt without gestures has no Qt::GestureState) and the Qt::GestureState form must
++compile where gestures exist.
++
++Usage: arranger-zoom-no-gestures-check.py --build-dir <build> [--moc <moc>]
++"""
++
++import argparse
++import json
++import os
++import re
++import shlex
++import subprocess
++import sys
++import tempfile
++
++# Every translation unit that includes ArrangerZoom.h, plus the API's own definition. A guard
++# that only fixes the header leaves these broken, and a guard that only fixes one of them is
++# what a build job reports next.
++AFFECTED = [
++    "src/gui/ArrangerZoom.cpp",
++    "src/gui/ArrangerAids.cpp",
++    "src/gui/ControlCommandsArrangerView.cpp",
++    "src/gui/ArrangerNavigator.cpp",
++    "src/gui/editors/SongEditor.cpp",
++    "tests/src/gui/ArrangerTimelineTest.cpp",
++]
++
++PROBE = """#include <QtCore/qnamespace.h>
++int main() { return Qt::GestureStarted; }
++"""
++
++# The public API in both spellings: the bool form exists on every Qt, the Qt::GestureState
++# overload only where the enum does.
++API_FIXTURE = """#include "ArrangerZoom.h"
++static void ended() { lmms::gui::arrangerzoom::finishPinch(1, 2, true); }
++int main() { ended(); return 0; }
++"""
++
++TYPED_FIXTURE = """#include "ArrangerZoom.h"
++int main() { lmms::gui::arrangerzoom::finishPinch(1, 2, Qt::GestureCanceled); return 0; }
++"""
++
++WINDOWS_COMMAND_RE = re.compile(r"(?:^|[\s=\"'])[A-Za-z]:[\\/]|\\[^\"']")
++
++
++def split_command(command):
++    """A recorded command line as an argument list (Windows paths keep their separators)."""
++    if WINDOWS_COMMAND_RE.search(command):
++        arguments = shlex.split(command, posix=False)
++        return [a[1:-1] if len(a) > 1 and a[0] == a[-1] == '"' else a for a in arguments]
++    return shlex.split(command)
++
++
++def entry_arguments(entry):
++    if entry.get("command"):
++        return split_command(entry["command"])
++    return list(entry.get("arguments") or [])
++
++
++def compile_flags(args):
++    """The command without its output argument and compile action."""
++    out = []
++    index = 0
++    while index < len(args):
++        arg = args[index]
++        if arg in ("-o", "/Fo"):
++            index += 2
++            continue
++        if arg.startswith("/Fo"):
++            index += 1
++            continue
++        if arg in ("-c", "/c"):
++            index += 1
++            continue
++        out.append(arg)
++        index += 1
++    return out
++
++
++def include_dirs(args):
++    out = []
++    index = 0
++    while index < len(args):
++        arg = args[index]
++        if arg in ("-I", "-isystem", "/I", "/external:I") and index + 1 < len(args):
++            out.append(args[index + 1])
++            index += 2
++            continue
++        if arg.startswith(("-I", "/I", "/external:I")):
++            value = arg.split(":", 1)[1] if arg.lower().startswith(("/external:i", "-external:i")) else arg[2:]
++            if value:
++                out.append(value)
++        index += 1
++    return out
++
++
++def run(cmd, cwd, timeout=300):
++    return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
++
++
++def source_of(entry):
++    """The TU's absolute path (compile_commands.json may carry it relative to the directory)."""
++    path = entry["file"]
++    if not os.path.isabs(path):
++        path = os.path.join(entry["directory"], path)
++    return os.path.normpath(path)
++
++
++class Toolchain:
++    """The compile line of one recorded translation unit, reused for probes and fixtures."""
++
++    def __init__(self, entry):
++        self.directory = entry["directory"]
++        self.source = source_of(entry)
++        self.args = compile_flags(entry_arguments(entry))
++        if not self.args:
++            raise SystemExit("FAIL: %s has no compile command" % entry["file"])
++        self.msvc = os.path.basename(self.args[0]).lower() in ("cl", "cl.exe")
++        self.syntax_only = "/Zs" if self.msvc else "-fsyntax-only"
++        self.include_flag = "/I" if self.msvc else "-I"
++        self.includes = include_dirs(self.args)
++
++    def command(self, extra_includes, source):
++        # The recorded flags carry this TU's defines and include paths; only the leading
++        # compiler, the include search order and the source argument change.
++        flags = list(self.args[1:])
++        while flags and os.path.normpath(flags[-1]) == self.source:
++            flags.pop()
++        prefix = [self.args[0], self.syntax_only]
++        # The shadow QtCore comes first, so its qtcore-config.h is the one the compiler sees;
++        # the recorded include path follows it.
++        prefix += [self.include_flag + path for path in extra_includes]
++        return prefix + flags + [source]
++
++    def moc_include(self, source, tempdir, moc):
++        """Run moc for a TU that includes its own .moc; (include dir or None, detail)."""
++        match = re.search(r'#include\s+"([\w.+-]+\.moc)"', open(source).read())
++        if match is None:
++            return None, ""
++        if not moc:
++            return None, "needs %s but no moc was given" % match.group(1)
++        moc_output = os.path.join(tempdir, match.group(1))
++        moc_cmd = [moc, source, "-o", moc_output]
++        for directory in self.includes:
++            moc_cmd += ["-I", directory]
++        produced = run(moc_cmd, self.directory)
++        if produced.returncode != 0:
++            lines = (produced.stderr or produced.stdout).strip().splitlines()
++            return None, "moc failed: " + (lines[-1] if lines else "no output")
++        return tempdir, ""
++
++    def compile_source(self, source, extra_includes, tempdir, moc):
++        """Compile @source in this TU's include environment; (ok, detail)."""
++        includes = list(extra_includes)
++        moc_dir, detail = self.moc_include(source, tempdir, moc)
++        if moc_dir is None and detail:
++            return False, detail
++        if moc_dir:
++            includes.append(moc_dir)
++        result = run(self.command(includes, source), self.directory)
++        if result.returncode == 0:
++            return True, ""
++        lines = [line for line in (result.stderr or result.stdout).splitlines() if "error" in line.lower()]
++        return False, "; ".join(lines[:3]) or "compile failed (exit %d)" % result.returncode
++
++
++def find_config(entries):
++    """The real QtCore/qtcore-config.h, from the build's own recorded include paths."""
++    for entry in entries:
++        base = entry["directory"]
++        for directory in include_dirs(entry_arguments(entry)):
++            for candidate in (os.path.join(directory, "QtCore", "qtcore-config.h"),
++                              os.path.join(directory, "qtcore-config.h")):
++                if not os.path.isabs(candidate):
++                    candidate = os.path.join(base, candidate)
++                if os.path.isfile(candidate):
++                    return os.path.normpath(candidate)
++    return None
++
++
++def write_shadow(config_path, shadow):
++    """A QtCore/qtcore-config.h with gestures off, as Qt's configure writes one."""
++    text = open(config_path).read()
++    if re.search(r"^#\s*define\s+QT_FEATURE_gestures\b", text, re.M):
++        text = re.sub(r"^#\s*define\s+QT_FEATURE_gestures\b.*$", "#define QT_FEATURE_gestures -1", text, flags=re.M)
++    else:
++        text += "\n#define QT_FEATURE_gestures -1\n"
++    text += "\n#ifndef QT_NO_GESTURES\n#define QT_NO_GESTURES 1\n#endif\n"
++    destination = os.path.join(shadow, "QtCore", "qtcore-config.h")
++    os.makedirs(os.path.dirname(destination), exist_ok=True)
++    with open(destination, "w") as handle:
++        handle.write(text)
++    return destination
++
++
++def write_fixtures(tempdir):
++    """The API fixtures and the feature probe; {name: path}."""
++    fixtures = {}
++    for name, text in (("probe", PROBE), ("bool_api", API_FIXTURE), ("typed_api", TYPED_FIXTURE)):
++        fixtures[name] = os.path.join(tempdir, name + ".cpp")
++        with open(fixtures[name], "w") as handle:
++            handle.write(text)
++    return fixtures
++
++
++def load_build(build_dir):
++    """(control toolchain, entries, entries by source, tree root, Qt feature header) or an error."""
++    build_dir = os.path.abspath(build_dir)
++    commands = os.path.join(build_dir, "compile_commands.json")
++    if not os.path.isfile(commands):
++        return "no compile_commands.json in " + build_dir
++    entries = json.load(open(commands))
++    if not entries:
++        return "compile_commands.json is empty"
++    root = os.path.dirname(build_dir)
++    by_source = {source_of(entry): entry for entry in entries}
++    control = by_source.get(os.path.normpath(os.path.join(root, "src/gui/ArrangerZoom.cpp")))
++    if control is None:
++        return "src/gui/ArrangerZoom.cpp is not in compile_commands.json"
++    config = find_config(entries)
++    if config is None:
++        return "no QtCore/qtcore-config.h on any recorded include path"
++    return Toolchain(control), entries, by_source, root, config
++
++
++def main():
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--build-dir", required=True)
++    parser.add_argument("--moc", default="")
++    options = parser.parse_args()
++
++    setup = load_build(options.build_dir)
++    if isinstance(setup, str):
++        print("FAIL:", setup)
++        return 1
++    toolchain, entries, by_source, root, config = setup
++    print("Qt feature header:", config)
++
++    failures = []
++
++    def report(ok, label, detail=""):
++        print("%s %s%s" % ("PASS" if ok else "FAIL", label, "" if ok else ": " + detail))
++        if not ok:
++            failures.append(label)
++
++    with tempfile.TemporaryDirectory(prefix="zene-arranger-zoom-") as tempdir:
++        shadow = os.path.join(tempdir, "shadow")
++        write_shadow(config, shadow)
++        fixtures = write_fixtures(tempdir)
++
++        # The simulation is only meaningful if the shadow really hides the enum, and the
++        # normal build is only honest if the same probe compiles without it.
++        ok, detail = toolchain.compile_source(fixtures["probe"], [shadow], tempdir, None)
++        report(not ok, "the shadow really is gesture-less (Qt::GestureStarted must not exist)",
++               "it compiled, so the probe does not detect the feature: " + detail if ok else detail)
++        host_gestures, host_detail = toolchain.compile_source(fixtures["probe"], [], tempdir, None)
++
++        for source in AFFECTED:
++            entry = by_source.get(os.path.normpath(os.path.join(root, source)))
++            if entry is None:
++                report(False, source + " compiles on a Qt without gestures",
++                       "not in compile_commands.json (was it renamed?)")
++                continue
++            ok, detail = Toolchain(entry).compile_source(source_of(entry), [shadow], tempdir, options.moc)
++            report(ok, source + " compiles on a Qt without gestures", detail)
++
++        ok, detail = toolchain.compile_source(fixtures["bool_api"], [shadow], tempdir, None)
++        report(ok, "finishPinch(int, int, bool) is callable without gestures", detail)
++        # The gesture-typed spelling only exists where Qt has gestures: on a gesture-less host
++        # the six compiles above ARE the shipped configuration, so this one is skipped, not
++        # failed - a supported platform must not fail its own regression.
++        if host_gestures:
++            ok, detail = toolchain.compile_source(fixtures["typed_api"], [], tempdir, None)
++            report(ok, "finishPinch(int, int, Qt::GestureState) still exists with gestures", detail)
++        else:
++            print("SKIP this host's Qt has no gestures, so the typed overload does not exist here"
++                  + (": " + host_detail if host_detail else ""))
++
++    if failures:
++        print("FAIL: %d arranger gesture case(s) do not build on a Qt without gestures: %s"
++              % (len(failures), "; ".join(failures)))
++        return 1
++    print("PASS: the arranger gesture code builds on a Qt without gestures")
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/tests/fork-sources.txt b/tests/fork-sources.txt
+index faa1281b05..e153c6a7a0 100644
+--- a/tests/fork-sources.txt
++++ b/tests/fork-sources.txt
+@@ -736,6 +736,22 @@
+ # script; no binary). Measured before registering: every function is CCN <= 10 and the
+ # file is under 500 code lines, so gates 4 and 7 measure it at their existing thresholds.
+ #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/warp-docs-agree.py ; \
++
++# Train 29: retain independently accepted Linux Qt5 compile/scanner regressions and MinGW no-gestures regression.
++tests/qt5-signal-overload-check.py
++tests/qt5-signal-overload-arm-check.py
++tests/arranger-zoom-no-gestures-check.py
++docs/qwen-fixes-2026-10/cluster-ci-632a20737fe640fa.md
++docs/qwen-fixes-2026-10/cluster-ci-c22070dd8cbbc7c0.md
++docs/qwen-fixes-2026-10/cluster-ci-017caf2edd434b66.md
++docs/qwen-fixes-2026-10/sol-train-29-ci-integration.md
++
++# Failure 34: record reconciliation against the changed train selection and fresh verification.
++docs/qwen-fixes-2026-10/sol-train-29-ci-rebase.md
++
++# Failure 36: stable registration placement and verification for the updated selection.
++docs/qwen-fixes-2026-10/sol-train-29-ci-registration-rebase.md
++
+ include/AafImport.h
+ include/AafImportMenu.h
+ include/AbletonLinkBridge.h
+diff --git a/tests/qt5-signal-overload-arm-check.py b/tests/qt5-signal-overload-arm-check.py
+new file mode 100644
+index 0000000000..ddfdfaa619
+--- /dev/null
++++ b/tests/qt5-signal-overload-arm-check.py
+@@ -0,0 +1,221 @@
++#!/usr/bin/env python3
++"""Fail when a first-party source names a signal that Qt 5 overloads without disambiguating it.
++
++Cluster ci-c22070dd8cbbc7c0 (2026-11-13). The hosted `build / linux-arm64` job
++(`.github/workflows/build.yml:304`) builds against the distribution's Qt 5
++(5.15), where a signal can have two overloads, and Qt 6 declares only one:
++
++    /usr/include/aarch64-linux-gnu/qt5/QtWidgets/qspinbox.h:108  void valueChanged(int);
++    /usr/include/aarch64-linux-gnu/qt5/QtWidgets/qspinbox.h:112  void valueChanged(const QString &);
++
++`QObject::connect(jump, &QSpinBox::valueChanged, jump, lambda)` therefore forms an
++"unresolved overloaded function type" and the connect template argument cannot be
++deduced - the job stopped with
++
++    src/gui/FollowActionEditor.cpp:207:25: error: no matching function for call to
++    'lmms::gui::FollowActionEditor::connect(QSpinBox*&, <unresolved overloaded
++    function type>, QSpinBox*&, ...)'
++
++while this box's Qt 6 tree compiled the same line. The fix is the disambiguated
++form the rest of the tree uses (`src/gui/UndoHistoryPanel.cpp:90`):
++
++    QOverload<int>::of(&QSpinBox::valueChanged)
++
++The check reads sources only (no build, no Qt, no moc), so it is deterministic and
++runs on every platform, including the Qt 6 hosts where the defect compiles. It
++scans every first-party source for `&Q<Class>::<signal>` where Qt 5 publishes two
++overloads of that signal (the pinned contract below, with its header lines) and
++requires the member pointer to be inside a disambiguating `QOverload<...>::of(...)`,
++`qOverload<...>(...)` or `static_cast<...>(...)` call. Before scanning the tree it
++runs its own red/green fixtures, so a scanner that cannot fail fails instead.
++
++Kinds of reuse this covers: `&QDoubleSpinBox::valueChanged` (double and QString,
++qspinbox.h:174,178), `QComboBox::currentIndexChanged` / `activated` / `highlighted`
++(currentIndexChanged has int and QString, qcombobox.h:236,240; activated and
++highlighted have int and QString, qcombobox.h:232,234,245,247), `QProcess::finished`
++(one-argument and two-argument, qprocess.h:297,299) and the int overloads of
++`QButtonGroup::buttonClicked/buttonPressed/buttonReleased/buttonToggled`
++(qbuttongroup.h:80-83,90-96). `QSocketNotifier::activated` is NOT listed: its
++one-argument Qt 5 overload is compiled only under `Q_MOC_RUN`/`BUILDING_QSOCKETNOTIFIER`
++(qsocketnotifier.h:77-84), so a member pointer names a single signal.
++
++Usage:
++  qt5-signal-overload-check.py [--root DIR]
++  qt5-signal-overload-check.py --self-test
++
++Exit codes: 0 = clean, 1 = finding (or a failed fixture), 2 = usage error.
++"""
++
++import argparse
++import os
++import re
++import sys
++
++SCAN_DIRS = ("include", "src", "plugins", "tests")
++SOURCE_SUFFIXES = (".h", ".hpp", ".hxx", ".cpp", ".cxx", ".cc")
++
++#! Qt 5.15 signals with two overloads, and the header lines that declare them. A
++#! member pointer to one of these is ambiguous on Qt 5 and unambiguous on Qt 6.
++QT5_OVERLOADED = {
++	"QSpinBox": {
++		"valueChanged": "int and QString (qspinbox.h:108,112)",
++	},
++	"QDoubleSpinBox": {
++		"valueChanged": "double and QString (qspinbox.h:174,178)",
++	},
++	"QComboBox": {
++		"currentIndexChanged": "int and QString (qcombobox.h:236,240)",
++		"activated": "int and QString (qcombobox.h:232,245)",
++		"highlighted": "int and QString (qcombobox.h:234,247)",
++	},
++	"QProcess": {
++		"finished": "one-argument and two-argument (qprocess.h:297,299)",
++	},
++	"QButtonGroup": {
++		"buttonClicked": "QAbstractButton* and int (qbuttongroup.h:80,90)",
++		"buttonPressed": "QAbstractButton* and int (qbuttongroup.h:81,92)",
++		"buttonReleased": "QAbstractButton* and int (qbuttongroup.h:82,94)",
++		"buttonToggled": "QAbstractButton*,bool and int,bool (qbuttongroup.h:83,96)",
++	},
++}
++
++#! The call that immediately encloses the member pointer, if it disambiguates it.
++DISAMBIGUATED = re.compile(
++	r"(?:QOverload\s*<[^<>;{}]*>\s*::of"
++	r"|qOverload\s*<[^<>;{}]*>\s*::of"
++	r"|qOverload\s*<[^<>;{}]*>"
++	r"|static_cast\s*<[^;{}]*>)\s*\(\s*$")
++
++MEMBER_POINTER = re.compile(r"&(Q[A-Za-z0-9_]+)::([A-Za-z0-9_]+)")
++
++#! Comments and literals are blanked before scanning: a mention in prose, or the
++#! text of an error string, is not a use of the signal.
++NON_CODE = re.compile(
++	r'//[^\n]*|/\*.*?\*/|"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\'', re.S)
++
++WINDOW = 400  #! characters before the '&' that may hold the enclosing call
++
++
++def strip_non_code(text):
++	"""Blank comments and literals, keeping every offset and line break."""
++	pieces, last = [], 0
++	for match in NON_CODE.finditer(text):
++		pieces.append(text[last:match.start()])
++		pieces.append(re.sub(r"[^\n]", " ", match.group(0)))
++		last = match.end()
++	pieces.append(text[last:])
++	return "".join(pieces)
++
++
++def disambiguated(code, amp):
++	"""Is the member pointer at @a amp inside a disambiguating call?"""
++	window = code[max(0, amp - WINDOW):amp]
++	return bool(DISAMBIGUATED.search(window))
++
++
++def scan_text(path, text):
++	"""Findings in one file: (path, line, class, signal, why)."""
++	code = strip_non_code(text)
++	findings = []
++	for match in MEMBER_POINTER.finditer(code):
++		klass, signal = match.group(1), match.group(2)
++		why = QT5_OVERLOADED.get(klass, {}).get(signal)
++		if why is None or disambiguated(code, match.start()):
++			continue
++		line = code.count("\n", 0, match.start()) + 1
++		findings.append((path, line, klass, signal, why))
++	return findings
++
++
++def iter_sources(root):
++	for top in SCAN_DIRS:
++		for directory, subdirs, files in os.walk(os.path.join(root, top)):
++			subdirs[:] = sorted(d for d in subdirs if not d.startswith("."))
++			for name in sorted(files):
++				if name.endswith(SOURCE_SUFFIXES):
++					yield os.path.join(directory, name)
++
++
++def scan_tree(root):
++	findings = []
++	for path in iter_sources(root):
++		with open(path, encoding="utf-8", errors="replace") as handle:
++			findings += scan_text(os.path.relpath(path, root), handle.read())
++	return findings
++
++
++FIXTURE_RED = """
++#include <QComboBox>
++#include <QObject>
++#include <QSpinBox>
++void wire(QSpinBox* box, QComboBox* combo)
++{
++	QObject::connect(box, &QSpinBox::valueChanged, box, [box] { box->setValue(1); });
++	QObject::connect(combo, &QComboBox::currentIndexChanged, combo, [](int) {});
++}
++"""
++
++FIXTURE_GREEN = """
++#include <QComboBox>
++#include <QObject>
++#include <QSpinBox>
++//! A comment naming &QSpinBox::valueChanged is not a use.
++static const char* kMention = "&QSpinBox::valueChanged";
++void wire(QSpinBox* box, QComboBox* combo)
++{
++	QObject::connect(box, QOverload<int>::of(&QSpinBox::valueChanged), box, [box] { box->setValue(1); });
++	QObject::connect(combo, qOverload<int>(&QComboBox::currentIndexChanged), combo, [](int) {});
++	QObject::connect(combo, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged), combo,
++		[](int) {});
++	QObject::connect(combo, &QComboBox::currentTextChanged, combo, [](const QString&) {});
++}
++"""
++
++#! Red fixture findings, in file order: (line, class, signal).
++FIXTURE_EXPECTED = [(7, "QSpinBox", "valueChanged"), (8, "QComboBox", "currentIndexChanged")]
++
++
++def self_test():
++	failures = []
++	red = scan_text("fixture-red.cpp", FIXTURE_RED)
++	got = [(line, klass, signal) for _, line, klass, signal, _ in red]
++	if got != FIXTURE_EXPECTED:
++		failures.append(f"red fixture found {got}, expected {FIXTURE_EXPECTED}")
++	green = scan_text("fixture-green.cpp", FIXTURE_GREEN)
++	if green:
++		failures.append(f"green fixture flagged {green}")
++	prose = scan_text("prose.cpp", "// &QSpinBox::valueChanged in prose\n")
++	if prose:
++		failures.append(f"prose mention flagged {prose}")
++	return failures
++
++
++def main():
++	parser = argparse.ArgumentParser(description="Qt 5 signal-overload portability check")
++	parser.add_argument("--root", default=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
++	parser.add_argument("--self-test", action="store_true",
++		help="run only the red/green fixtures (proves the scan can fail)")
++	args = parser.parse_args()
++
++	failures = self_test()
++	for failure in failures:
++		print(f"SELF-TEST FAIL: {failure}")
++	if failures:
++		return 1
++	print("self-test: fixtures flagged and passed as expected")
++	if args.self_test:
++		return 0
++
++	findings = scan_tree(args.root)
++	for path, line, klass, signal, why in findings:
++		print(f"{path}:{line}: &{klass}::{signal} is overloaded in Qt 5 ({why}); "
++			f"disambiguate it with QOverload<...>::of(...) or the Qt 5 build stops")
++	if findings:
++		print(f"FAIL: {len(findings)} ambiguous signal member pointer(s)")
++		return 1
++	print("PASS: every Qt 5 overloaded signal member pointer is disambiguated")
++	return 0
++
++
++if __name__ == "__main__":
++	sys.exit(main())
+diff --git a/tests/qt5-signal-overload-check.py b/tests/qt5-signal-overload-check.py
+new file mode 100644
+index 0000000000..95538eac36
+--- /dev/null
++++ b/tests/qt5-signal-overload-check.py
+@@ -0,0 +1,304 @@
++#!/usr/bin/env python3
++"""Fail on a Qt signal that is overloaded in Qt 5 but not in Qt 6, taken with a bare `&Class::signal`.
++
++Cluster ci-632a20737fe640fa (2026-11-13), hosted linux-x86_64 build: the job's Qt 5.15.3
++rejected
++
++    src/gui/FollowActionEditor.cpp:207:25: error: no matching function for call to
++        'lmms::gui::FollowActionEditor::connect(QSpinBox*&, <unresolved overloaded function type>, ...)'
++        QObject::connect(jump, &QSpinBox::valueChanged, jump, [jump] { ... });
++
++because Qt 5 gives QSpinBox two `valueChanged` signals, `valueChanged(int)` and
++`valueChanged(const QString&)`. Qt 6 removed the string overload, so the same line
++compiles on every Qt 6 host here and only the Qt 5 job sees it. The same shape exists
++for QDoubleSpinBox (`double`/`QString`), QComboBox (`int`/`QString` on
++currentIndexChanged, activated and highlighted), QProcess (finished, error),
++QButtonGroup (buttonClicked) and QNetworkReply/QAbstractSocket (error, which Qt 5 also
++has as a getter). The portable spelling is
++
++    QObject::connect(jump, QOverload<int>::of(&QSpinBox::valueChanged), ...)
++
++or `qOverload<int>(...)` / a `static_cast<...>(...)`, which pick the same overload on
++Qt 5 and Qt 6 - no behaviour change.
++
++The check has two halves:
++
++  * a source scan of every tracked first-party C/C++ file for such a bare
++    `&Class::signal`. This half runs on every platform, including the Qt 6 hosts where
++    the defect cannot fail the build, so the regression is red wherever the suite runs.
++  * a compile probe: if a Qt 5 development tree is discoverable, the known-bad fixture
++    must be rejected and the known-good fixture accepted. A host without Qt 5 (or with
++    only Qt 6, where the fixture compiles) reports the probe as skipped; the source scan
++    is the authoritative half there, exactly as for the other Qt 5 portability checks.
++
++Both halves are proved able to fail by the self-test fixtures, which this file runs as
++its own red/green control.
++
++Usage:
++  qt5-signal-overload-check.py [--root DIR] [--cxx CXX]
++  qt5-signal-overload-check.py --self-test
++
++Exit codes: 0 = clean, 1 = finding (or a failed fixture), 2 = usage error.
++"""
++
++import argparse
++import os
++import re
++import shutil
++import subprocess
++import sys
++import tempfile
++
++# Signals Qt 5 declares more than once on these classes. Taking one with `&C::s` is
++# therefore ill-formed there; Qt 6 keeps a single overload (or none of the string one).
++OVERLOADED = {
++	"QSpinBox": {"valueChanged"},
++	"QDoubleSpinBox": {"valueChanged"},
++	"QComboBox": {"currentIndexChanged", "activated", "highlighted"},
++	"QProcess": {"finished", "error"},
++	"QButtonGroup": {"buttonClicked", "buttonPressed", "buttonReleased"},
++	"QNetworkReply": {"error"},
++	"QAbstractSocket": {"error"},
++}
++
++SOURCE_SUFFIXES = (".c", ".cc", ".cpp", ".cxx", ".h", ".hpp")
++
++# Vendored third-party trees are not this repo's code (same list as tests/all-sources.txt).
++EXCLUDED_PREFIXES = (
++	"src/3rdparty/",
++	"tests/reference/",
++	"plugins/NeuralAmp/rtneural/",
++	"plugins/NeuralAmp/nam/",
++	"plugins/NeuralAmp/tests/",
++	"plugins/RnnoiseDenoiser/rnnoise/",
++	"plugins/SfzPlayer/sfizz/",
++)
++
++# Comments and string/char literals are blanked before scanning (line numbers kept).
++NON_CODE = re.compile(
++	r'//[^\n]*|/\*.*?\*/|"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\'',
++	re.S)
++
++# The unguarded use. A guard is one of the casts below immediately before the `&`.
++BARE_SIGNAL = re.compile(
++	r'&\s*(?P<cls>' + "|".join(sorted(OVERLOADED)) + r')\s*::\s*(?P<sig>[A-Za-z_][A-Za-z0-9_]*)')
++
++GUARDS = (
++	re.compile(r"QOverload\s*<[^;{}]*?>\s*::\s*of\s*\(\s*$", re.S),
++	re.compile(r"qOverload\s*<[^;{}]*?>\s*\(\s*$", re.S),
++	re.compile(r"static_cast\s*<[^;{}]*?>\s*\(\s*$", re.S),
++)
++
++FIXTURE_RED = """\
++#include <QObject>
++#include <QSpinBox>
++#include <QComboBox>
++
++void bad(QSpinBox* spin, QDoubleSpinBox* dspin, QComboBox* combo, QProcess* proc)
++{
++	QObject::connect(spin, &QSpinBox::valueChanged, spin, [] {});
++	QObject::connect(dspin, &QDoubleSpinBox::valueChanged, dspin, [](double) {});
++	QObject::connect(combo, &QComboBox::currentIndexChanged, combo, [](int) {});
++	QObject::connect(proc, &QProcess::finished, proc, [](int) {});
++}
++"""
++
++FIXTURE_GREEN = """\
++#include <QObject>
++#include <QSpinBox>
++#include <QComboBox>
++
++void good(QSpinBox* spin, QDoubleSpinBox* dspin, QComboBox* combo, QProcess* proc)
++{
++	QObject::connect(spin, QOverload<int>::of(&QSpinBox::valueChanged), spin, [] {});
++	QObject::connect(dspin, qOverload<double>(&QDoubleSpinBox::valueChanged), dspin, [](double) {});
++	QObject::connect(combo, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged),
++		combo, [](int) {});
++	QObject::connect(proc,
++		QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), proc, [](int) {});
++	// A comment about &QSpinBox::valueChanged must not be reported.
++	const char* text = "&QComboBox::activated";
++	(void) text;
++}
++"""
++
++FIXTURE_EXPECTED = ["QSpinBox", "QDoubleSpinBox", "QComboBox", "QProcess"]
++
++
++def strip_non_code(text):
++	"""Blank comments and literals, keeping every newline so line numbers stay right."""
++	def blank(match):
++		return re.sub(r"[^\n]", " ", match.group(0))
++	return NON_CODE.sub(blank, text)
++
++
++def scan_text(path, text):
++	"""Return [(path, line, class, signal)] for unguarded overloaded-signal takes."""
++	code = strip_non_code(text)
++	findings = []
++	for match in BARE_SIGNAL.finditer(code):
++		if match.group("sig") not in OVERLOADED[match.group("cls")]:
++			continue
++		before = code[max(0, match.start() - 200):match.start()]
++		if any(guard.search(before) for guard in GUARDS):
++			continue
++		line = code.count("\n", 0, match.start()) + 1
++		findings.append((path, line, match.group("cls"), match.group("sig")))
++	return findings
++
++
++def self_test():
++	failures = []
++	red = scan_text("fixture-red.cpp", FIXTURE_RED)
++	if [cls for _, _, cls, _ in red] != FIXTURE_EXPECTED:
++		failures.append(f"red fixture flagged {[c for _, _, c, _ in red]}, expected {FIXTURE_EXPECTED}")
++	if [line for _, line, _, _ in red] != [7, 8, 9, 10]:
++		failures.append(f"red fixture lines {[line for _, line, _, _ in red]}, expected [7, 8, 9, 10]")
++	green = scan_text("fixture-green.cpp", FIXTURE_GREEN)
++	if green:
++		failures.append(f"green fixture flagged {green}")
++	if scan_text("plain.cpp", "int valueChanged(int);\n"):
++		failures.append("a file without a Qt signal take was flagged")
++	return failures
++
++
++BAD_PROBE = """\
++#include <QtCore/QObject>
++#include <QtWidgets/QSpinBox>
++void wire(QSpinBox* box)
++{
++	QObject::connect(box, &QSpinBox::valueChanged, box, [box] { box->setProperty("edited", true); });
++}
++"""
++
++GOOD_PROBE = """\
++#include <QtCore/QObject>
++#include <QtWidgets/QSpinBox>
++void wire(QSpinBox* box)
++{
++	QObject::connect(box, QOverload<int>::of(&QSpinBox::valueChanged), box, [box] { box->setProperty("edited", true); });
++}
++"""
++
++
++def qt5_flags():
++	"""`pkg-config --cflags Qt5Widgets` on a host that has a Qt 5 development tree, else None."""
++	if shutil.which("pkg-config") is None:
++		return None
++	try:
++		out = subprocess.run(["pkg-config", "--cflags", "Qt5Widgets"],
++			capture_output=True, text=True, timeout=60)
++	except (OSError, subprocess.SubprocessError):
++		return None
++	return out.stdout.split() if out.returncode == 0 and out.stdout.strip() else None
++
++
++def compile_probe(cxx, flags):
++	"""Compile the known-bad and known-good probes against Qt 5. Returns a verdict string or None."""
++	directory = tempfile.mkdtemp(prefix="qt5-signal-probe-")
++	try:
++		bad = os.path.join(directory, "bad.cpp")
++		good = os.path.join(directory, "good.cpp")
++		with open(bad, "w", encoding="utf-8") as handle:
++			handle.write(BAD_PROBE)
++		with open(good, "w", encoding="utf-8") as handle:
++			handle.write(GOOD_PROBE)
++		command = [cxx, "-std=gnu++20", "-fsyntax-only"] + flags
++		bad_run = subprocess.run(command + [bad], capture_output=True, text=True, timeout=300)
++		if bad_run.returncode == 0:
++			# Qt 6 (or no Qt 5 headers): the probe compiles, so this host cannot enforce the rule.
++			return None
++		good_run = subprocess.run(command + [good], capture_output=True, text=True, timeout=300)
++		if good_run.returncode != 0:
++			return ("probe: the Qt 5 tree rejected the portable spelling: "
++				+ " ".join(good_run.stderr.split())[:300])
++		return "probe: Qt 5 rejects the bare take and accepts QOverload<int>::of"
++	finally:
++		shutil.rmtree(directory, ignore_errors=True)
++
++
++def tracked_names(root):
++	"""Every path git tracks under @a root, or None when git cannot answer."""
++	try:
++		out = subprocess.run(["git", "-C", root, "ls-files", "-z"], capture_output=True, timeout=300)
++	except (OSError, subprocess.SubprocessError):
++		return None
++	if out.returncode != 0:
++		return None
++	return out.stdout.decode("utf-8", "replace").split("\0")
++
++
++def walked_names(root):
++	"""Every file under the source roots, for a tree git cannot list."""
++	names = []
++	for top in ("include", "src", "plugins", "tests"):
++		for directory, subdirs, files in os.walk(os.path.join(root, top)):
++			subdirs[:] = sorted(d for d in subdirs if not d.startswith("."))
++			names += [os.path.relpath(os.path.join(directory, name), root) for name in sorted(files)]
++	return names
++
++
++def is_scanned_source(name):
++	return name.endswith(SOURCE_SUFFIXES) and not name.startswith(EXCLUDED_PREFIXES)
++
++
++def iter_sources(root):
++	"""Tracked first-party C/C++ files, as git reports them (submodules are not tracked files)."""
++	for name in tracked_names(root) or walked_names(root):
++		if name and is_scanned_source(name):
++			yield name
++
++
++def scan_tree(root):
++	findings = []
++	for name in iter_sources(root):
++		try:
++			with open(os.path.join(root, name), encoding="utf-8", errors="replace") as handle:
++				findings += scan_text(name, handle.read())
++		except OSError:
++			continue
++	return findings
++
++
++def main(argv):
++	parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
++	parser.add_argument("--root", default=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
++	parser.add_argument("--cxx", default=os.environ.get("CXX") or "c++")
++	parser.add_argument("--self-test", action="store_true")
++	args = parser.parse_args(argv[1:])
++
++	failures = self_test()
++	for failure in failures:
++		print(f"SELF-TEST FAIL: {failure}")
++	if failures:
++		return 1
++	print("self-test: fixtures flagged and passed as expected")
++	if args.self_test:
++		return 0
++
++	root = os.path.abspath(args.root)
++	if not os.path.isdir(root):
++		print(f"error: not a directory: {root}", file=sys.stderr)
++		return 2
++
++	findings = scan_tree(root)
++	for path, line, cls, sig in findings:
++		print(f"{path}:{line}: bare &{cls}::{sig} - that signal is overloaded in Qt 5 "
++			f"(the hosted linux-x86_64 build fails here); write QOverload<...>::of(&{cls}::{sig})")
++
++	flags = qt5_flags()
++	if flags is None:
++		print("probe: skipped (no Qt 5 development tree found)")
++	else:
++		verdict = compile_probe(args.cxx, flags)
++		print(verdict or "probe: skipped (this compiler's Qt does not reject the bare take)")
++
++	if findings:
++		print(f"FAIL: {len(findings)} unguarded overloaded-signal take(s)")
++		return 1
++	print("PASS: no unguarded take of a signal that Qt 5 overloads")
++	return 0
++
++
++if __name__ == "__main__":
++	sys.exit(main(sys.argv))
+diff --git a/tests/src/gui/ArrangerTimelineTest.cpp b/tests/src/gui/ArrangerTimelineTest.cpp
+index c1cd647d85..b95b070e04 100644
+--- a/tests/src/gui/ArrangerTimelineTest.cpp
++++ b/tests/src/gui/ArrangerTimelineTest.cpp
+@@ -274,7 +274,11 @@ private slots:
+ 		arrangerzoom::remember(start + 1);  // make the history result unambiguous if cancellation is ignored
+ 		arrangerzoom::zoomAround(m_editor, changed, 0);
+ 		QCOMPARE(m_editor->zoomingModel()->value(), changed);
++#ifndef QT_NO_GESTURES
+ 		arrangerzoom::finishPinch(start, changed, Qt::GestureCanceled);
++#else
++		arrangerzoom::finishPinch(start, changed, true);  // a Qt without gestures has no Qt::GestureState
++#endif
+ 		const ControlResult back = run(QStringLiteral("arrangement.zoom_back"));
+ 		QVERIFY2(back.ok, qPrintable(back.errorMessage));
+ 		QCOMPARE(m_editor->zoomingModel()->value(), start);
+diff --git a/tests/upstream-modifications.txt b/tests/upstream-modifications.txt
+index 1683d29bc6..508ebd9870 100644
+--- a/tests/upstream-modifications.txt
++++ b/tests/upstream-modifications.txt
+@@ -953,6 +953,8 @@ src/gui/PluginBrowser.cpp	plugin-scan: populate the plugin tree on first show, s
+ src/gui/SubWindow.cpp	040/focus-desk (UI plan §9.4 Direction B, 2026-09-21): isDetached() and setVisible() dereferenced widget() unconditionally, so the first hide() of a subwindow whose editor the Focus Desk had taken onto the desk segfaulted. Both now test the widget for null, which is the convention adjustTitleBar() and detach() in the same class already follow. No change when a widget is present. Regression test: tests/src/gui/FocusDeskPaneTest.cpp, claimingOutOfAProductSubWindowLeavesItSafeToHide.; 040/m3-focusdesk-default (2026-09-30): detach() returns when the sub-window has no widget - a window whose editor the Focus Desk has claimed - where it dereferenced the null widget (window.detach_all with the desk on killed the process)
+ src/gui/editors/PianoRoll.cpp	compile-only Qt6 fix: QMouseEvent::x()/y() via the repo's own lmms::position() adapter (2c77fd71a); #601 MPE: recording a note copies the expression captured on its own MIDI channel from the live note handle; 040/m3-bench (2026-09-30, R7.3): paintEvent's two getGUI()->pianoRoll()->hasFocus() reads go through editorWindowHasFocus(), which asks the application's piano roll when there is one (unchanged) and this roll's own window otherwise; 040/m3-a11y-walk (2026-09-30, R8.5): accessible names on the canvas (Piano roll), the Quantize, clip import/export and note-tools buttons and Clear ghost notes.; 040/m3-note-transforms (2026-09-30): the note-tools menu gains makeNoteTransformActions (Randomize velocities, Humanize timing, Scale velocities - note.randomize / note.velocity_scale) after Reverse Notes; 040/m3-groove (2026-09-30): the note-tools menu gains the Groove submenu (makeGrooveMenu: extract, apply with strength, quantise with strength through groove.*) after the transforms
+ src/gui/editors/SongEditor.cpp	040/m3-contrast (2026-09-30, M3 item 9): a checkable "Punch in/out" transport action that runs transport.punch_set over the loop markers (or transport.punch_clear) through the registry, declared with controlCommand; a refusal restores the button and shows the reason; 040/m3-a11y-walk (2026-09-30, R8.5): the canvas is named Song editor.; 040/m3-folders (2026-09-30, M3 folder surface): an Add folder track toolbar action, through track.add type=folder; 040/m3-undo-history (2026-09-30): the transport toolbar gains the Sync toggle (makeSessionSyncAction, link.set_enabled) after the punch button; 040/m3-visibility-sets (2026-09-30): a Views tool button whose menu is populateVisibilitySetMenu (track.visibility_*), after the Sync toggle
++tests/CMakeLists.txt	Train 29 CI repair integration: retain Linux x86 and ARM signal checks under distinct names and register the accepted MinGW no-gestures regression, preserving the already applied Windows check.
++src/gui/editors/SongEditor.cpp	Train 29 verification: override the timeline theme bounds locally with the arranger's existing scaled 32-pixel height, preserving it through stylesheet repolishing; regression ArrangerTimelineTest::theRulerHasAUsableLayoutHeight fails at 28 pixels without this ordering.
+ src/gui/editors/TrackContainerView.cpp	fix(control-undo): TrackContainerView connects TrackContainer::aboutToClearTracks() to removeAllTrackViews() (direct connection: the tracks are deleted by the next statement) and implements it. This is the view-then-track order TrackContainerView::deleteTrackView() and Song::clearProject() already use (docs/UNDO-RELEASE-CONFIG.md); 040/m3-a11y-walk (2026-09-30, R8.5): the track scroll area is named Tracks.; 040/m3-folders (2026-09-30, M3 folder surface): realignTracks hides a row whose folder chain is collapsed (the folder's own row stays), and a folder's view connects its stateChanged to realignTracks (queued), so a collapse from the socket or the menu redraws; 040/m3-folder-indent (2026-09-30): realignTracks also calls updateFolderIndent on each row; 040/m3-visibility-sets (2026-09-30): realignTracks also hides a row whose track's view flag is off (a visibility set), and re-lays out on TrackContainer::visibilityChanged (queued); 0.5.0 E21: pinned folders' rows sit in a TrackPinStrip above the scroll area; 0.5.0 F3 (WF-107): realignTracks applies spacers, re-lays out on TrackSpacers::changed, totalHeightOfTracks counts them; m0 blocker trackview-uaf (2026-10-08): the trackAdded view builder is a direct connection that posts the build with the track held in a QPointer, and the build is skipped when the track has left the container before that turn (a track removed in the turn it was added had its view built over freed memory: SIGSEGV in createTrackView(); held by tests/src/gui/TrackViewDeferredLifetimeTest.cpp)
+ src/gui/editors/TrackContainerView.cpp	fix(control-undo): TrackContainerView connects TrackContainer::aboutToClearTracks() to removeAllTrackViews() (direct connection: the tracks are deleted by the next statement) and implements it. This is the view-then-track order TrackContainerView::deleteTrackView() and Song::clearProject() already use (docs/UNDO-RELEASE-CONFIG.md); 040/m3-a11y-walk (2026-09-30, R8.5): the track scroll area is named Tracks.; 040/m3-folders (2026-09-30, M3 folder surface): realignTracks hides a row whose folder chain is collapsed (the folder's own row stays), and a folder's view connects its stateChanged to realignTracks (queued), so a collapse from the socket or the menu redraws; 040/m3-folder-indent (2026-09-30): realignTracks also calls updateFolderIndent on each row; 040/m3-visibility-sets (2026-09-30): realignTracks also hides a row whose track's view flag is off (a visibility set), and re-lays out on TrackContainer::visibilityChanged (queued); 0.5.0 E21: pinned folders' rows sit in a TrackPinStrip above the scroll area; 0.5.0 F3 (WF-107): realignTracks applies spacers, re-lays out on TrackSpacers::changed, totalHeightOfTracks counts them; 0.5.0 bug hunt (2026-10-08, cluster 5424): trackViewAt skips hidden rows so retained QWidget height does not occupy hit-test space; covered by ArrangerTimelineTest.
+ src/gui/embed.cpp	tag v0.2.1-alpha CI fix: embed.cpp streams qWarning() << ... in loadSvgPixmap() and the SVG loader and includes no header that defines QDebug, so the Qt5 jobs are expected to fail with 'invalid use of incomplete type class QDebug' exactly as src/core/ConfigManager.cpp did (docs/QDEBUG-CLASS-AND-MIME-RENAME.md). Adding the include is the file's only change; it is otherwise byte-identical to origin/master. Compile-only: no behaviour, no output, no ABI.; 0.5.0 lane 3 (050/visual-overhaul, 2026-10-02): loadPixmap() first asks the modern icon set (shellicons::legacyPixmap) for an inherited icon name and returns its vector rendering; names it does not map, and absolute paths, load the bitmap as before
+-- 
+2.56.0
+

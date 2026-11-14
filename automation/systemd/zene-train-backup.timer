@@ -1,0 +1,10 @@
+[Unit]
+Description=Refresh Zene train backup and CI evidence every five minutes
+
+[Timer]
+OnBootSec=5min
+OnUnitInactiveSec=5min
+Unit=zene-train-backup.service
+
+[Install]
+WantedBy=timers.target

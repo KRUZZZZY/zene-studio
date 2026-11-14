@@ -1,0 +1,42 @@
+[
+  {
+    "bytes": 2163064,
+    "file": "evidence/train-20-bar.log.gz",
+    "sha256_uncompressed": "612956025bbfc996210c24ec1f1359732fff4b5e7485bbbbfd26cc37eb7d1ced"
+  },
+  {
+    "bytes": 211999,
+    "file": "evidence/train-20-build-bar.log.gz",
+    "sha256_uncompressed": "c845a9979b02c977c4fe927f43467b9558b503b1b8b03e03e4f01971ed987ca8"
+  },
+  {
+    "bytes": 366749,
+    "file": "evidence/train-20-build.log.gz",
+    "sha256_uncompressed": "91b6ea35e6b97869967b22df612b9d46e91a2d771fec8671940febf2dd1e89ad"
+  },
+  {
+    "bytes": 4251730,
+    "file": "evidence/train-20-gates.log.gz",
+    "sha256_uncompressed": "e4f1f889e79b640e7b1987ff61f9d6707f73d30bd8099424312bf5331df25b8a"
+  },
+  {
+    "bytes": 8852,
+    "file": "evidence/train-20-rev-build.log.gz",
+    "sha256_uncompressed": "1b0638ca1f1cd3211a09d419ffda551a87439c85c7c21320af941766598fd2e8"
+  },
+  {
+    "bytes": 284,
+    "file": "evidence/train-20-rev.log.gz",
+    "sha256_uncompressed": "70a42030bd9fad89a73a63271b82c18e961d1bbb52a9c70176d45eb02f454bef"
+  },
+  {
+    "bytes": 1156749,
+    "file": "evidence/train-20-snapshot.json.gz",
+    "sha256_uncompressed": "3114ec46c01de8bae7b997d64a596276a635c93cdf5610cd6b247101df4972b9"
+  },
+  {
+    "bytes": 3312,
+    "file": "evidence/train-20-solo-ControlVideoClipsMcp.log.gz",
+    "sha256_uncompressed": "8cc272384c2df0c24b9983cdfef102b804d9875a1b30dc6e70c0816ad26328e4"
+  }
+]

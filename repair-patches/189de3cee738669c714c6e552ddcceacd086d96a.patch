@@ -1,0 +1,492 @@
+From 189de3cee738669c714c6e552ddcceacd086d96a Mon Sep 17 00:00:00 2001
+From: Zene CI repair <noreply@zene.invalid>
+Date: Sat, 14 Nov 2026 09:06:19 +0000
+Subject: [PATCH] fix(ci): CI regression: build / linux-x86_64
+
+CI-Repair-Id: ci-repair-ci-aa184f959f204bcd-811bd4d9a5a4
+---
+ .../cluster-ci-aa184f959f204bcd.md            | 156 +++++++++++++
+ tests/CMakeLists.txt                          |  23 ++
+ tests/fork-sources.txt                        |   8 +
+ tests/src/core/MountNamespaceTestSupport.h    |  14 +-
+ tests/unused-result-fortify-check.py          | 214 ++++++++++++++++++
+ 5 files changed, 411 insertions(+), 4 deletions(-)
+ create mode 100644 docs/qwen-fixes-2026-10/cluster-ci-aa184f959f204bcd.md
+ create mode 100644 tests/unused-result-fortify-check.py
+
+diff --git a/docs/qwen-fixes-2026-10/cluster-ci-aa184f959f204bcd.md b/docs/qwen-fixes-2026-10/cluster-ci-aa184f959f204bcd.md
+new file mode 100644
+index 0000000000..59496f9249
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/cluster-ci-aa184f959f204bcd.md
+@@ -0,0 +1,156 @@
++FIXED
++
++# cluster ci-aa184f959f204bcd - linux-x86_64 build: `-Werror=unused-result` on the mount-namespace helper
++
++## Verdict and evidence
++
++REAL, product-side test-infrastructure defect (a fork-NEW test helper), reproduced locally.
++
++The hosted `linux-x86_64` job stopped with
++
++```
++tests/src/core/MountNamespaceTestSupport.h:110:22: error: ignoring return value of
++'ssize_t write(int, const void*, size_t)' declared with attribute 'warn_unused_result'
++[-Werror=unused-result]
++tests/src/core/MountNamespaceTestSupport.h:78:22: error: ... same at (void)::write(writeEnd, ...)
++```
++
++Code at the base commit 40b4322860:
++
++- `tests/src/core/MountNamespaceTestSupport.h:78` - `(void)::write(writeEnd, &done, 1);`
++- `tests/src/core/MountNamespaceTestSupport.h:110` - `(void)::write(toChild[1], &go, 1);`
++
++Why it fails there and not here:
++
++- `/usr/include/unistd.h:378` declares `write` with `__wur`; `/usr/include/sys/cdefs.h:578-581`
++  defines `__wur` as `__attribute__((warn_unused_result))` only when `__USE_FORTIFY_LEVEL > 0`.
++- Ubuntu 24.04's gcc turns on `_FORTIFY_SOURCE=3` by default at `-O2`; the job builds
++  `RelWithDebInfo` (`-O2`) and passes `-DUSE_WERROR=ON` (`.github/workflows/build.yml:79`,
++  `cmake/modules/ErrorFlags.cmake:42-46`), so `-Wall`'s `-Wunused-result` is an error.
++- A `(void)` cast is not a use; only consuming the result silences `warn_unused_result`.
++- This box's build tree was configured with `-Wno-error=unused-result` in `CMAKE_CXX_FLAGS`
++  (`build/CMakeCache.txt:82`), which is exactly why the same header compiles locally and the
++  defect only appears on the hosted job.
++
++Reproduced locally against the REAL header with the TU's own recorded flags plus hosted
++hardening (`-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3 -Werror=unused-result`): the two errors are
++byte-for-byte the hosted ones (see `build/qwen-logs/red-check-1.log` and `red-direct-3.log`).
++
++No other first-party C/C++ file casts away a `__wur` result: a scan of `tests/`, `include/`,
++`src/`, `plugins/` (vendored trees excluded) for `(void)::read/write/pread/pwrite/readlink/
++realpath/system/remove/dup/dup2(...)` and for bare statement-position calls returns nothing.
++The two sites in this header are the whole class.
++
++## Fix (at the cause)
++
++`tests/src/core/MountNamespaceTestSupport.h` now USES both write results:
++
++- `mapOwnUidIntoNamespace` returns `written && reported`, where
++  `reported = ::write(writeEnd, &done, 1) == 1`.
++- `enterOwnMountNamespace` computes `signalled = ::write(toChild[1], &go, 1) == 1` and returns
++  `unshared && signalled && answered && done == 1`.
++
++Semantics are unchanged, only honest: if the handshake byte is not written, the peer reads
++EOF/0 instead of 1 and the function already answered "no namespace"; the result is now
++checked rather than assumed. No caller, limit, save format, command, undo path or audio-thread
++path is touched (this is a test helper compiled only into `RecordToolsTest`; the only includer
++is `tests/src/core/RecordToolsTest.cpp:52`, verified with grep over `tests include src plugins`).
++
++## Regression test
++
++`tests/unused-result-fortify-check.py` (registered as ctest `UnusedResultFortifyCheck` in
++`tests/CMakeLists.txt:9011-9031`).
++
++- Reads `build/compile_commands.json`, takes the recorded command of
++  `tests/src/core/RecordToolsTest.cpp`, drops that build's `-Wno-error=unused-result`,
++  `-Werror`, `-o`/`-c` and any `-D_FORTIFY_SOURCE`, then compiles a probe that CALLS every
++  function of the real header with `-D_FORTIFY_SOURCE=3 -Werror=unused-result`.
++- Two fixtures keep it honest: a discarded `write` result must be rejected (else the script
++  FAILS - a green run would prove nothing), and a used one must compile (else the flags are
++  too strict).
++- Deterministic: no timing, sleeps, network or fork/exec of the product; it is a single
++  compiler invocation over fixed source with injected flags. On a non-Linux host, where the
++  header's `#ifdef __linux__` block does not exist, it prints SKIP and exits 0.
++- The probe's first draft merely named the helpers; the compiler does not gimplify an inline
++  function nobody calls, so it wrongly passed with the fix reverted. The probe now calls them
++  from `main`; the RED run below is against that corrected probe.
++
++## Exact commands and exit codes
++
++Logs are under `build/qwen-logs/` (gitignored, inside the worktree). The prescribed LOG FOLDER
++`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-aa184f959f204bcd.r1/logs` is
++root-owned `drwxr-xr-x` and NOT writable by uid 1000 in this sandbox (`touch` -> EACCES;
++`rmdir`/recreate -> EPERM), so every log was written to `build/qwen-logs/` instead.
++
++```
++# RED proof: revert only the product file, run the registered test
++git diff -- tests/src/core/MountNamespaceTestSupport.h > build/qwen-logs/fix.patch   # EXIT=0
++git apply -R build/qwen-logs/fix.patch                                              # EXIT=0
++cd build/tests && ctest -R UnusedResultFortifyCheck --output-on-failure \
++  > ../qwen-logs/ctest-red-2.log 2>&1; echo EXIT=$?                                  # EXIT=8
++#   0% tests passed, 1 tests failed out of 1
++#   MountNamespaceTestSupport.h:110:22: error: ... [-Werror=unused-result]
++#   MountNamespaceTestSupport.h:78:22:  error: ... [-Werror=unused-result]
++
++# GREEN: restore the fix, rebuild the affected target, run the same test
++git apply build/qwen-logs/fix.patch                                                 # EXIT=0
++cmake --build build --target RecordToolsTest -j20 \
++  > build/qwen-logs/build-4-final.log 2>&1; echo EXIT=$?                            # EXIT=0
++cd build/tests && ctest -R UnusedResultFortifyCheck --output-on-failure \
++  > ../qwen-logs/ctest-green-2.log 2>&1; echo EXIT=$?                               # EXIT=0
++#   100% tests passed, 0 tests failed out of 1
++
++# Family regression (RecordToolsTest + the three sibling hosted-portability checks)
++cd build/tests && ctest -R \
++ '^(RecordToolsTest|UnusedResultFortifyCheck|Qt5SignalOverloadCheck|Qt5SignalOverloadArmCheck|ArrangerZoomNoGestures)$' \
++ --output-on-failure > ../qwen-logs/ctest-family-1.log 2>&1; echo EXIT=$?           # EXIT=0
++#   100% tests passed, 0 tests failed out of 5
++
++# Gates
++python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> \
++  > build/qwen-logs/feature-check-1.log 2>&1; echo EXIT=$?                          # EXIT=0
++#   PASS fork-sources / all-sources-reproduce / no-upstream-regression / check-namespace /
++#        no-tautology / doc-figures / complexity (no new item) / file-length (no new item)
++
++# Pre-submit
++python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> ci-aa184f959f204bcd
++```
++
++Measured complexity of the new script (`python3 -m lizard tests/unused-result-fortify-check.py
++-C 10`): 6 functions, max CCN 8, 214 lines - no threshold exceeded, so the fork-scoped
++ratchets measure it at their existing thresholds. It is registered in `tests/fork-sources.txt`
++(entry plus this report) by the same rule as the Train 29 `tests/*.py` scanners.
++
++## Files committed
++
++- `tests/src/core/MountNamespaceTestSupport.h` - use both `write` results (the fix)
++- `tests/unused-result-fortify-check.py` - the regression probe
++- `tests/CMakeLists.txt` - ctest registration `UnusedResultFortifyCheck`
++- `tests/fork-sources.txt` - registration of the probe and this report
++- `docs/qwen-fixes-2026-10/cluster-ci-aa184f959f204bcd.md` - this report
++
++## Self-check
++
++- **Regression FAILS with the product change reverted, PASSES with it.**
++  RED: `git apply -R build/qwen-logs/fix.patch` (EXIT=0), `ctest -R UnusedResultFortifyCheck`
++  -> EXIT=8, one test failed, with the hosted `-Werror=unused-result` errors at lines 78 and
++  110 (`build/qwen-logs/ctest-red-2.log`). GREEN: `git apply build/qwen-logs/fix.patch`
++  (EXIT=0), `cmake --build build --target RecordToolsTest` (EXIT=0),
++  `ctest -R UnusedResultFortifyCheck` -> EXIT=0, 1/1 passed (`ctest-green-2.log`).
++- **Deterministic.** No wall-clock timing, sleeps, threads or races: the seam is the build's
++  own recorded compile command plus injected `-D_FORTIFY_SOURCE=3 -Werror=unused-result`
++  (`compile_only_arguments()` / `FORTIFY` in the script), and the checked source is fixed.
++  The two fixtures pin the flags' sensitivity and fairness.
++- **Fix at the cause and complete.** Both `(void)::write` sites are fixed (lines 78 and 110 at
++  the base). The only includer of the header is `RecordToolsTest.cpp`; `RecordToolsTest` was
++  rebuilt (EXIT=0) and passes (EXIT=0). A whole-tree scan found no other first-party
++  cast-away `__wur` call. A sibling write at line 75 already compared its result and is
++  unchanged.
++- **No collateral damage.** The handshake's success/failure answers are unchanged for every
++  reachable path (a write that fails yields the same "no namespace" answer as before, now by
++  construction rather than by assumption). No save format, limit, command, undo step or
++  audio-thread code is touched; `RecordToolsTest` (including
++  `armedRoutesOnOneFilesystemUnderTwoMountPointsShareItsFreeSpace`, the case that uses the
++  namespace) passes 1/1 in `ctest-recordtools-green.log`.
++- **ALREADY-FIXED / FALSE-POSITIVE.** Not claimed; the defect is present at the reported
++  commit and reproduced locally.
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 3d570f752c..7609c36b8e 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -9008,6 +9008,29 @@ if(PYTHON3_EXECUTABLE)
+ endif()
+ 
+ 
++# cluster ci-aa184f959f204bcd: the mount-namespace test helper must compile under the hosted
++# job's hardening. tests/src/core/MountNamespaceTestSupport.h discarded two ::write() results
++# with a (void) cast; glibc declares write __wur under _FORTIFY_SOURCE (Ubuntu 24.04's gcc
++# defines level 3 at -O2), and -Werror=unused-result turns the cast into a build error:
++#
++#   MountNamespaceTestSupport.h:110:22: error: ignoring return value of 'ssize_t write(...)'
++#   declared with attribute 'warn_unused_result' [-Werror=unused-result]
++#
++# The local build tree carries -Wno-error=unused-result, so the defect compiles here. The
++# check recompiles the header through the affected translation unit's own recorded flags,
++# with this build's relaxations removed and -D_FORTIFY_SOURCE=3 -Werror=unused-result added,
++# so it is red on this host too. Its two fixtures prove the flags can reject a discarded
++# result and still accept a used one.
++if(PYTHON3_EXECUTABLE)
++	add_test(NAME UnusedResultFortifyCheck
++		COMMAND ${PYTHON3_EXECUTABLE}
++			${CMAKE_CURRENT_SOURCE_DIR}/unused-result-fortify-check.py
++			--build-dir ${CMAKE_BINARY_DIR}
++			--compiler ${CMAKE_CXX_COMPILER})
++	set_tests_properties(UnusedResultFortifyCheck PROPERTIES TIMEOUT 300)
++endif()
++
++
+ # cluster ci-017caf2edd434b66: the arranger's gesture code must build on a Qt without gesture
+ # support (the hosted mingw64 job's Qt 5 defines QT_NO_GESTURES, so Qt::GestureState and
+ # QPinchGesture do not exist there). The hosted job runs no tests, so this check rebuilds the
+diff --git a/tests/fork-sources.txt b/tests/fork-sources.txt
+index f094ce55c7..3f6ed91eb5 100644
+--- a/tests/fork-sources.txt
++++ b/tests/fork-sources.txt
+@@ -819,6 +819,14 @@ include/AccessibilityAudit.h
+ tests/train-39-portability-check.py
+ docs/qwen-fixes-2026-10/sol-train-29-hosted-portability.md
+ 
++# cluster ci-aa184f959f204bcd: the hosted-fortification compiler probe for the mount-namespace
++# test helper (tests/src/core/MountNamespaceTestSupport.h) and its repair report. The probe is a
++# tests/*.py driver, registered here by the same rule as the Qt 5 scanners above; measured before
++# registering, every function is CCN <= 10 and the file is under 500 lines, so gates 4 and 7
++# measure it at their existing thresholds rather than moving a baseline.
++tests/unused-result-fortify-check.py
++docs/qwen-fixes-2026-10/cluster-ci-aa184f959f204bcd.md
++
+ include/AccessibleCanvas.h
+ include/AccessibleWidgets.h
+ include/AddTrackMenu.h
+diff --git a/tests/src/core/MountNamespaceTestSupport.h b/tests/src/core/MountNamespaceTestSupport.h
+index 1d102de568..36f936bed4 100644
+--- a/tests/src/core/MountNamespaceTestSupport.h
++++ b/tests/src/core/MountNamespaceTestSupport.h
+@@ -75,8 +75,12 @@ inline bool mapOwnUidIntoNamespace(pid_t parentPid, int readEnd, int writeEnd)
+ 	const bool written = len > 0 && ::write(fd, line, static_cast<size_t>(len)) == len;
+ 	::close(fd);
+ 	char done = written ? 1 : 0;
+-	(void)::write(writeEnd, &done, 1);
+-	return written;
++	// The result is USED, not cast away: glibc's write is __wur under _FORTIFY_SOURCE
++	// (the hosted job's gcc defines level 3 at -O2) and a (void) cast does not silence
++	// warn_unused_result, so -Werror=unused-result rejected the cast. A parent that never
++	// gets the byte reads EOF when this child exits and reports failure - the same answer.
++	const bool reported = ::write(writeEnd, &done, 1) == 1;
++	return written && reported;
+ }
+ 
+ //! Puts this process in a mount namespace of its own, with its own uid mapped in it, so a
+@@ -107,14 +111,16 @@ inline bool enterOwnMountNamespace()
+ 	::close(toParent[1]);
+ 	const bool unshared = ::unshare(CLONE_NEWUSER | CLONE_NEWNS) == 0;
+ 	char go = 1;
+-	(void)::write(toChild[1], &go, 1);
++	// Used, not cast away (see mapOwnUidIntoNamespace): a child that never received the go
++	// byte cannot have mapped the uid, so it cannot answer done == 1 either.
++	const bool signalled = ::write(toChild[1], &go, 1) == 1;
+ 	char done = 0;
+ 	const bool answered = ::read(toParent[0], &done, 1) == 1;
+ 	::close(toChild[1]);
+ 	::close(toParent[0]);
+ 	int status = 0;
+ 	::waitpid(child, &status, 0);
+-	return unshared && answered && done == 1;
++	return unshared && signalled && answered && done == 1;
+ }
+ 
+ //! Binds @a source onto @a target in this process's mount namespace: one filesystem under two
+diff --git a/tests/unused-result-fortify-check.py b/tests/unused-result-fortify-check.py
+new file mode 100644
+index 0000000000..92c51fd137
+--- /dev/null
++++ b/tests/unused-result-fortify-check.py
+@@ -0,0 +1,214 @@
++#!/usr/bin/env python3
++"""Fail when a hosted Linux build would reject tests/src/core/MountNamespaceTestSupport.h.
++
++Cluster ci-aa184f959f204bcd. The hosted `build / linux-x86_64` job stopped at
++
++    tests/src/core/MountNamespaceTestSupport.h:110:22: error: ignoring return value of
++    'ssize_t write(int, const void*, size_t)' declared with attribute
++    'warn_unused_result' [-Werror=unused-result]
++
++and the same diagnostic at line 78. The two `(void)::write(...)` calls in the header are
++not a use of the write: glibc's `write` is declared `__wur` (/usr/include/unistd.h:378),
++which is `__attribute__((warn_unused_result))` exactly when fortification is on
++(/usr/include/sys/cdefs.h:578-581). Ubuntu 24.04's gcc defines `_FORTIFY_SOURCE=3` by
++default at -O2, the job configures -DUSE_WERROR=ON (cmake/modules/ErrorFlags.cmake:42-46)
++and RelWithDebInfo (-O2), and a `(void)` cast does not silence warn_unused_result - only
++using the result does. This box's build tree carries `-Wno-error=unused-result` in
++CMAKE_CXX_FLAGS, which is why the defect compiles locally.
++
++The check is deterministic and independent of the host's own hardening: it takes the
++standard, defines and include paths from this build's compile_commands.json entry for
++the one translation unit that includes the header (RecordToolsTest.cpp), drops that
++build's `-Wno-error=unused-result` / `-Werror` / fortify defines, and compiles a probe
++against the REAL header with
++`-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3 -Werror=unused-result`.
++
++Two fixtures keep it honest under the same flags:
++  * a discarded `write` result must be REJECTED - if it compiles, the check cannot see
++    the defect at all and FAILS rather than reporting a green run that proves nothing;
++  * a used `write` result must COMPILE - otherwise the flags are too strict and the
++    header verdict would be meaningless.
++The header's namespace helpers exist only under `#ifdef __linux__`, so a non-Linux host
++prints SKIP and exits 0: there is no write call there to check.
++
++Usage:
++  unused-result-fortify-check.py --build-dir <build> [--compiler <c++>]
++
++Exit codes: 0 = the header compiles under hosted hardening (or the host is not Linux:
++SKIP), 1 = a finding or a failed fixture, 2 = usage/setup error.
++"""
++
++import argparse
++import json
++import os
++import pathlib
++import shlex
++import subprocess
++import sys
++import tempfile
++
++HEADER = "tests/src/core/MountNamespaceTestSupport.h"
++AFFECTED = "tests/src/core/RecordToolsTest.cpp"
++
++#! Compiled, never executed: main CALLS every function of the header - including the two
++#! namespace helpers whose write calls this cluster's defect is about - so each body is
++#! compiled rather than discarded unused. An inline function nobody calls is not
++#! gimplified, and -Wunused-result is emitted from the gimplified body: a probe that only
++#! declared the calls would miss the very defect it exists to catch.
++PROBE = """#include "MountNamespaceTestSupport.h"
++
++int main()
++{
++	const bool entered = lmms::testsupport::enterOwnMountNamespace();
++	const bool bound = lmms::testsupport::bindMountForTest(QStringLiteral("/a"),
++	                                                       QStringLiteral("/b"));
++	lmms::testsupport::unbindMountForTest(QStringLiteral("/b"));
++	const bool mapped = lmms::testsupport::mapOwnUidIntoNamespace(0, -1, -1);
++	const bool device = lmms::testsupport::filesystemDevice(QStringLiteral("/")) != 0;
++	return (entered && bound && mapped && device) ? 0 : 1;
++}
++"""
++
++BAD = """#include <unistd.h>
++
++int main()
++{
++	char byte = 1;
++	(void)::write(1, &byte, 1);
++	return 0;
++}
++"""
++
++GOOD = """#include <unistd.h>
++
++int main()
++{
++	char byte = 1;
++	return ::write(1, &byte, 1) == 1 ? 0 : 1;
++}
++"""
++
++#! Arguments that decide where output goes or what the recorded build suppresses; the
++#! check replaces them with its own. A pair of these consumes the next argument.
++OUTPUT_FLAGS = ("-o", "-MF", "-MT", "-MQ")
++SOLO_FLAGS = ("-c", "-MD", "-MMD", "-MP")
++#! The local build's own relaxations and hardening defines: the hosted job has neither
++#! the relaxation nor an explicit fortify define (gcc supplies level 3 at -O2 there).
++RELAXATIONS = ("-Wno-error=unused-result", "-Wno-unused-result", "-Werror")
++FORTIFY = ("-U_FORTIFY_SOURCE", "-D_FORTIFY_SOURCE=3")
++
++
++def split_command(command):
++	"""A recorded command line as an argument list."""
++	return shlex.split(command, posix=(os.name != "nt"))
++
++
++def recorded_arguments(build, source):
++	"""The compile_commands.json arguments for one translation unit, minus the source."""
++	path = build / "compile_commands.json"
++	if not path.is_file():
++		raise SystemExit(f"setup error: {path} is missing (configure with "
++		                 "CMAKE_EXPORT_COMPILE_COMMANDS=ON)")
++	entries = json.loads(path.read_text(encoding="utf-8"))
++	for entry in entries:
++		if pathlib.Path(entry["file"]).as_posix().endswith(source):
++			arguments = entry.get("arguments") or split_command(entry["command"])
++			return list(arguments), pathlib.Path(entry["file"]).as_posix()
++	raise SystemExit(f"setup error: {source} is not in {path}")
++
++
++def compile_only_arguments(arguments, source_path):
++	"""The recorded command as reusable compile flags (no source, no -o, no -Werror)."""
++	flags = [arguments[0]]
++	index = 1
++	while index < len(arguments):
++		argument = arguments[index]
++		if argument == source_path:
++			index += 1
++			continue
++		if argument in OUTPUT_FLAGS:
++			index += 2
++			continue
++		if argument in SOLO_FLAGS or argument in RELAXATIONS or \
++		   argument.startswith(("-D_FORTIFY_SOURCE", "-U_FORTIFY_SOURCE")):
++			index += 1
++			continue
++		flags.append(argument)
++		index += 1
++	return flags
++
++
++def compile_probe(flags, source, output, work):
++	command = [flags[0], *flags[1:], *FORTIFY, "-Werror=unused-result", "-c",
++	           str(source), "-o", str(output)]
++	result = subprocess.run(command, cwd=work, text=True, stdout=subprocess.PIPE,
++	                        stderr=subprocess.STDOUT, check=False)
++	return result.returncode, result.stdout
++
++
++def diagnose(label, output):
++	print(f"FAIL {label}:")
++	print(output.strip() or "the compiler produced no diagnostic")
++
++
++def main():
++	parser = argparse.ArgumentParser(description=__doc__,
++	                                 formatter_class=argparse.RawDescriptionHelpFormatter)
++	parser.add_argument("--build-dir", type=pathlib.Path, required=True)
++	parser.add_argument("--compiler", default=os.environ.get("CXX") or "c++")
++	args = parser.parse_args()
++	if not sys.platform.startswith("linux"):
++		print("SKIP the header's namespace helpers are Linux-only (__linux__); "
++		      "there is no write call to harden on this host")
++		return 0
++	build = args.build_dir.resolve()
++	root = pathlib.Path(__file__).resolve().parents[1]
++	header = root / HEADER
++	if not header.is_file():
++		print(f"setup error: {header} is missing")
++		return 2
++
++	recorded, source_path = recorded_arguments(build, AFFECTED)
++	flags = compile_only_arguments(recorded, source_path)
++	flags[0] = args.compiler
++	# The header is included by name from its own directory by the test source; the probe
++	# is written elsewhere, so name that directory explicitly.
++	flags += ["-I", str(root / "tests/src/core")]
++
++	with tempfile.TemporaryDirectory(prefix="unused-result-fortify-") as temp:
++		work = pathlib.Path(temp)
++		fixtures = {"bad": BAD, "good": GOOD}
++		for name, text in fixtures.items():
++			(work / f"{name}.cpp").write_text(text, encoding="utf-8")
++
++		# 1. Can these flags see the defect at all? On a libc whose write carries no
++		# __wur under fortification this check cannot fail, so it must not pretend.
++		code, output = compile_probe(flags, work / "bad.cpp", work / "bad.o", work)
++		if code == 0:
++			diagnose("the discarded-write fixture compiled: these flags cannot see the "
++			         "defect, so a green header verdict here would prove nothing", output)
++			return 1
++		print("PASS the discarded-write fixture is rejected (the check can fail)")
++
++		# 2. Are the flags fair? A used result must compile.
++		code, output = compile_probe(flags, work / "good.cpp", work / "good.o", work)
++		if code != 0:
++			diagnose("the checked-write fixture was rejected (the flags are too strict)", output)
++			return 1
++		print("PASS the checked-write fixture compiles")
++
++		# 3. The real header, through the affected translation unit's own flags.
++		(work / "probe.cpp").write_text(PROBE, encoding="utf-8")
++		code, output = compile_probe(flags, work / "probe.cpp", work / "probe.o", work)
++		if code != 0:
++			diagnose(f"{HEADER} does not compile under hosted hardening "
++			         "(-D_FORTIFY_SOURCE=3 -Werror=unused-result)", output)
++			return 1
++		print(f"PASS {HEADER} compiles under hosted hardening")
++
++	print("RESULT: every write result in the header is used, not cast away")
++	return 0
++
++
++if __name__ == "__main__":
++	sys.exit(main())
+-- 
+2.56.0
+

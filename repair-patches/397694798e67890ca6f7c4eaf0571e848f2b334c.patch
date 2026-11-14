@@ -1,0 +1,685 @@
+From 397694798e67890ca6f7c4eaf0571e848f2b334c Mon Sep 17 00:00:00 2001
+From: Zene CI repair <noreply@zene.invalid>
+Date: Fri, 13 Nov 2026 19:45:14 +0000
+Subject: [PATCH] fix(ci): CI regression: build / mingw64
+
+CI-Repair-Id: ci-repair-ci-017caf2edd434b66-4ea66098cdd2
+---
+ .../cluster-ci-017caf2edd434b66.md            | 184 +++++++++++
+ include/ArrangerZoom.h                        |  12 +-
+ src/gui/ArrangerAids.cpp                      |  14 +-
+ src/gui/ArrangerZoom.cpp                      |   4 +-
+ tests/CMakeLists.txt                          |  14 +
+ tests/arranger-zoom-no-gestures-check.py      | 311 ++++++++++++++++++
+ tests/fork-sources.txt                        |   4 +
+ tests/src/gui/ArrangerTimelineTest.cpp        |   4 +
+ tests/upstream-modifications.txt              |   1 +
+ 9 files changed, 541 insertions(+), 7 deletions(-)
+ create mode 100644 docs/qwen-fixes-2026-10/cluster-ci-017caf2edd434b66.md
+ create mode 100644 tests/arranger-zoom-no-gestures-check.py
+
+diff --git a/docs/qwen-fixes-2026-10/cluster-ci-017caf2edd434b66.md b/docs/qwen-fixes-2026-10/cluster-ci-017caf2edd434b66.md
+new file mode 100644
+index 0000000000..466acade79
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/cluster-ci-017caf2edd434b66.md
+@@ -0,0 +1,184 @@
++FIXED
++
++# cluster ci-017caf2edd434b66 - CI regression: build / mingw64
++
++## Verdict
++
++FIXED. The finding is REAL on this branch: the hosted `mingw64` job at
++`3ab01006f613b223654f56481b789b605c444a84` stopped in `src/gui/ControlCommandsArrangerView.cpp`
++with
++
++```
++include/ArrangerZoom.h:81:64: error: 'Qt::GestureState' has not been declared
++```
++
++The job builds against the tobydox PPA's MinGW Qt 5 (`qt5base-mingw-w64`,
++`.github/workflows/deps-ubuntu-24.04-mingw.txt`), which is configured without gesture support, so
++its QtCore/qtcore-config.h carries `QT_NO_GESTURES` - the same way the same file carries
++`QT_NO_ICONV` for a disabled feature. Everything gesture-typed is behind that macro:
++
++* `Qt::GestureState` and `Qt::GestureType` - `/usr/include/qt6/QtCore/qnamespace.h:1658`
++  (`#ifndef QT_NO_GESTURES`), same guard in Qt 5.15's qnamespace.h:1682
++* `QWidget::grabGesture`/`ungrabGesture` - `QtWidgets/qwidget.h:363`
++* `QGestureEvent`, `QPinchGesture`, `QGesture` - `QtWidgets/qgesture.h:52`
++
++So the product had three unguarded uses on that configuration, plus one in the test:
++
++* `include/ArrangerZoom.h:81` - the exported API took `Qt::GestureState`
++* `src/gui/ArrangerZoom.cpp:193` - the definition (and `Qt::GestureFinished`/`GestureCanceled` at :195)
++* `src/gui/ArrangerAids.cpp:31,33,123,125,131-140,143,145` - the `PinchZoom` filter, its Qt gesture
++  includes, `grabGesture` and `QPinchGesture`
++* `tests/src/gui/ArrangerTimelineTest.cpp:277` - the canceled-pinch case named `Qt::GestureCanceled`
++
++The same defect was fixed on the train-21 line by `6072ae1357` + `14cf88571f`, and that fix is not
++an ancestor of this branch (`git merge-base --is-ancestor 6072ae1357 HEAD` -> exit 1), so it is not
++ALREADY-FIXED here: the code at HEAD still has the unguarded declaration. This entry re-lands the
++guard on the current code, and adds a regression that rebuilds the affected translation units under
++a gesture-less Qt.
++
++## The fix (cause, not symptom)
++
++* `include/ArrangerZoom.h:80-89`: the exported `finishPinch(int, int, bool ended)` is the one
++  definition on every Qt, and the `Qt::GestureState` overload is an inline forwarder inside
++  `#ifndef QT_NO_GESTURES`. A gesture-less build therefore has the API it can call and no
++  reference to a type that does not exist; a gestures build keeps the exact same call shape and
++  the same `finished || canceled` rule (one expression, in the inline forwarder).
++* `src/gui/ArrangerZoom.cpp:193-196`: definition matches the bool declaration.
++* `src/gui/ArrangerAids.cpp:29-37,120-161,172-174`: the two gesture includes, the `PinchZoom` class
++  and its installation are inside `#ifndef QT_NO_GESTURES`. On a gesture-less build the arranger
++  simply installs no pinch filter - the same behaviour the platform's Qt offers at all; the
++  cross-hair overlay and the single-touch selection path are untouched.
++* `tests/src/gui/ArrangerTimelineTest.cpp:277-281`: the canceled-pinch case calls the bool form
++  under `QT_NO_GESTURES` and the gesture-state form otherwise. The assertion is identical.
++
++Callers and siblings checked: `finishPinch` has exactly two call sites (`src/gui/ArrangerAids.cpp:143`
++and the test above) and one definition; `ArrangerZoom.h` is included by `ArrangerZoom.cpp`,
++`ArrangerAids.cpp`, `ArrangerNavigator.cpp`, `editors/SongEditor.cpp`,
++`ControlCommandsArrangerView.cpp`, `ArrangerKeysNavigatorTest.cpp` and
++`ArrangerOverlaysVideoLaneTest.cpp` - all seven compile in the regression, so nothing else names
++`Qt::GestureState`. No other file in `src/`/`include/` includes a Qt gesture header
++(`rg -n 'QPinchGesture|QGestureEvent|grabGesture|Qt::PinchGesture' src include` -> only the two
++guarded sites).
++
++## Regression
++
++`tests/arranger-zoom-no-gestures-check.py` (ctest `ArrangerZoomNoGestures`, registered in
++`tests/CMakeLists.txt:6487-6499`, manifest `tests/fork-sources.txt`) is deterministic and needs no
++gesture-less Qt of its own: it takes the affected translation units' exact compile lines from this
++build's `compile_commands.json` and rebuilds them against a shadow `QtCore/qtcore-config.h` whose
++`QT_FEATURE_gestures` is `-1` and which defines `QT_NO_GESTURES` - the configuration Qt's own
++configure writes for that feature set, under which Qt's headers stay coherent (forcing the macro on
++a gestures-enabled Qt instead breaks qevent.h itself, which is not the failing platform). Two probes
++keep the simulation honest: `Qt::GestureStarted` must be undeclared with the shadow and declared
++without it. It then compiles the six affected TUs (including the QtTest one, moc'd from the same
++compile line) and both API spellings. Nothing here is timed, sampled or raced; there is no clock,
++no sleep and no thread.
++
++Test matrix:
++
++| Path | Case | Covered by |
++| --- | --- | --- |
++| normal | gestures build keeps `finishPinch(..., Qt::GestureState)` and the pinch filter | `ArrangerZoomNoGestures` "still exists with gestures"; `ArrangerTimelineTest` (built and run on this gestures host) |
++| failure/edge | gesture-less build: header, definition, pinch filter and test TU all compile | `ArrangerZoomNoGestures` shadow compile of the six TUs |
++| failure/edge | canceled pinch still records the starting zoom (behaviour preserved across the API shape) | `ArrangerTimelineTest::aCanceledPinchKeepsItsStartingZoomInHistory` |
++| platform | MinGW/Qt5-without-gestures is the only configuration that sees this | the shadow config reproduces the CI diagnostic verbatim; the hosted job runs no tests, so the check is the gate |
++
++## Evidence table (commands as run, exit codes as observed)
++
++Logs: the designated run log folder
++`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-017caf2edd434b66.r2/logs` rejects every
++write in this session (`touch` and a Python `open(...,'w')` both `PermissionError`;
++`findmnt` shows the btrfs subvolume is `rw`, the mode is 0755 and owned by this user, so this is a
++harness sandbox, not the repository). To keep every build/test log as a NEW numbered file I wrote
++them to `build/qwen-logs/` in this worktree and mirrored the whole set to
++`/home/kruzzzzy/.local/share/zene-bunny-fix/dsh/home/ci-017caf2edd434b66.r2-logs/`, which is
++writable. The commands below name the file in the mirrored set.
++
++| # | Evidence | Command | Result |
++| --- | --- | --- | --- |
++| 1 | Pre-fix reproduction on this branch (RED) | `python3 tests/arranger-zoom-no-gestures-check.py --build-dir build --moc /usr/lib/qt6/moc > build/qwen-logs/check-1-red.log 2>&1` | EXIT=1; `ArrangerZoom.h:81:64: error: 'Qt::GestureState' has not been declared`, plus `QPinchGesture does not name a type` and `class QWidget has no member named grabGesture` |
++| 2 | Build after the fix | `cmake --build build --target zene ArrangerTimelineTest ArrangerZoomBoundTest ArrangerKeysNavigatorTest ArrangerOverlaysVideoLaneTest -j$(nproc) > build/qwen-logs/build-1.log 2>&1` | EXIT=0 |
++| 3 | Regression GREEN with the fix | `cd build/tests && ctest -R "ArrangerZoomNoGestures\|ArrangerTimelineTest\|ArrangerZoomBoundTest\|ArrangerKeysNavigatorTest\|ArrangerOverlaysVideoLaneTest" --output-on-failure > ../qwen-logs/test-3-green-refixed.log 2>&1` | EXIT=0; 5/5 passed |
++| 4 | Step 4b RED: product patch reversed | `git diff 3ab01006f6 HEAD -- include/ArrangerZoom.h src/gui/ArrangerZoom.cpp src/gui/ArrangerAids.cpp > build/qwen-logs/fix.patch; git apply -R build/qwen-logs/fix.patch` | DIFF_EXIT=0, REVERT_EXIT=0 |
++| 5 | Step 4b: rebuild the reversed tree | `cmake --build build --target zene ArrangerTimelineTest -j$(nproc) > build/qwen-logs/build-7-red-final.log 2>&1` | EXIT=0 |
++| 6 | Step 4b RED run | `cd build/tests && ctest -R "ArrangerZoomNoGestures\|ArrangerTimelineTest" --output-on-failure > ../qwen-logs/test-8-red-final-committed.log 2>&1` | EXIT=8; 1/2 passed, `ArrangerZoomNoGestures` failed, 7 gesture cases do not build |
++| 7 | Step 4b: patch re-applied | `git apply build/qwen-logs/fix.patch` | EXIT=0 |
++| 8 | Step 4b GREEN run | `cmake --build build --target zene ArrangerTimelineTest -j$(nproc) > build/qwen-logs/build-8-green-final.log 2>&1` then `cd build/tests && ctest -R "Arranger" --output-on-failure > ../qwen-logs/test-9-green-final-committed.log 2>&1` | build EXIT=0; ctest EXIT=0, 8/8 passed |
++| 9 | Whole `Arranger` family | `cmake --build build --target ArrangerTakePunchTest ArrangerFileDropTest ArrangerClipboardKeysTest -j$(nproc)` then `cd build/tests && ctest -R "Arranger" --output-on-failure > ../qwen-logs/test-6-arranger-all.log 2>&1` | build EXIT=0; ctest EXIT=0, 8/8 passed |
++| 10 | Gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > build/qwen-logs/feature-check-<n>.log 2>&1` | EXIT=0; 8/8 PASS (last run feature-check-5.log) (fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length) |
++| 11 | Completion check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> ci-017caf2edd434b66 > build/qwen-logs/submit-check-<n>.log 2>&1` | EXIT=0; every mechanical item PASS (last run submit-check-3.log), all five ASK items answered in the Self-check section |
++
++The first gate run before the script split was EXIT=1 for one reason only:
++`complexity ... NEW: new function over target: compile_source@... (CCN 12); main@... (CCN 11)`
++(`build/qwen-logs/feature-check-1.log`). I split `compile_source` into `moc_include` +
++`compile_source` and `main` into `load_build`/`write_fixtures`/`main` (no threshold or baseline was
++touched); the rerun is row 10, 8/8 PASS.
++
++The check itself was then hardened in a second commit (`2ac31f9f63`): on a host whose Qt has no
++gestures the typed `Qt::GestureState` fixture is SKIPped rather than failed, because there the six
++shadow compiles ARE the shipped configuration and that spelling genuinely does not exist - a
++supported platform must not fail its own regression. On this gestures host it still runs and must
++pass (`check-5-green.log`). The reversal proof above (rows 4-8) and the gates (row 10) were rerun
++after that commit, against the tree being submitted.
++
++
++## Files committed
++
++* `include/ArrangerZoom.h`
++* `src/gui/ArrangerZoom.cpp`
++* `src/gui/ArrangerAids.cpp`
++* `tests/src/gui/ArrangerTimelineTest.cpp`
++* `tests/arranger-zoom-no-gestures-check.py` (new; registered in `tests/fork-sources.txt`)
++* `tests/CMakeLists.txt` (one `add_test` + one timeout; declared in `tests/upstream-modifications.txt`)
++* `tests/fork-sources.txt`, `tests/upstream-modifications.txt` (registration/ledger)
++* `docs/qwen-fixes-2026-10/cluster-ci-017caf2edd434b66.md` (this report)
++
++## Self-check
++
++**The regression test FAILS with the product change reverted and PASSES with it (exit codes).**
++Rows 4-8 above are the reversal proof on the rebuilt tree: with
++`include/ArrangerZoom.h`, `src/gui/ArrangerZoom.cpp` and `src/gui/ArrangerAids.cpp` reverted,
++`ctest -R "ArrangerZoomNoGestures|ArrangerTimelineTest"` exits 8 (1/2 passed, `ArrangerZoomNoGestures`
++failed; the check reports exactly the CI diagnostic,
++`ArrangerZoom.h:81:64: error: 'Qt::GestureState' has not been declared`, plus the
++`QPinchGesture`/`grabGesture` errors, and the bool-API fixture fails to compile). With the patch
++re-applied and rebuilt, the whole `Arranger` family exits 0 with 8/8 tests passed (row 8). The RED
++and GREEN runs use the same build tree and the same committed test; only the product files differ.
++
++**The test is deterministic: no wall-clock timing, sleeps or races (name the seam or injected
++values it uses).** The seam is the build's own `compile_commands.json`: the check takes each
++affected translation unit's recorded compile line and adds a shadow `QtCore/qtcore-config.h`
++containing `#define QT_FEATURE_gestures -1` and `#define QT_NO_GESTURES 1`. It is a pure compiler
++invocation with `-fsyntax-only`; there is no clock, no sleep, no thread, no sampling and no
++network. The two probe fixtures are the negative control of the seam itself: with the shadow
++`Qt::GestureStarted` must be undeclared (so a check that silently lost the shadow fails), and
++without it the same probe must compile (so a host that has gestures still measures something).
++
++**The fix is at the cause and complete: every caller and sibling of what you changed was checked and
++stays consistent.** `finishPinch` has one definition and two call sites, both updated (the pinch
++filter forwards `pinch->state()` to the inline overload, which applies the same
++`finished || canceled` rule; the test calls the bool form where the enum does not exist). Every
++translation unit that includes `ArrangerZoom.h` compiles under the shadow
++(`ArrangerZoom.cpp`, `ArrangerAids.cpp`, `ControlCommandsArrangerView.cpp`,
++`ArrangerNavigator.cpp`, `editors/SongEditor.cpp`, `tests/src/gui/ArrangerTimelineTest.cpp`), and
++the two remaining test includes (`ArrangerKeysNavigatorTest.cpp`,
++`ArrangerOverlaysVideoLaneTest.cpp`) are unaffected because neither names a gesture type - they are
++built and run in row 9. `rg` over `src/` and `include/` shows the only other Qt gesture API uses are
++inside the guarded `PinchZoom` class; no second path into the pinch exists.
++
++**No collateral damage: old projects and saved data still load as before, and any limit or check you
++added does not hit other callers that legitimately exceed it.** No serialization, project,
++undo/redo or command code changed; the fix is a compile-time guard plus one boolean-typed parameter
++with the identical rule. On a gestures build the `Qt::GestureState` overload is inline and does the
++same comparison, so the pinch history behaviour and the `arrangement.zoom_back` walk are unchanged -
++proved by `ArrangerTimelineTest`, including `aCanceledPinchKeepsItsStartingZoomInHistory`, still
++passing (rows 3, 8). No new limit or runtime check was added, so no other caller can be affected.
++Nothing was added to an audio-thread path: `finishPinch`/`ArrangerAids` are UI-thread (zoom/gesture
++handling), and the change only moves an enum comparison into an inline forwarder.
++
++**If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or the intended contract
++that shows it.** Not applicable - the verdict is FIXED, and the branch evidence that rules
++ALREADY-FIXED out is above: at HEAD `include/ArrangerZoom.h:81` still declared
++`finishPinch(int, int, Qt::GestureState)` unconditionally, and the historical fix `6072ae1357`
++(plus its test half `14cf88571f`) is on `fix/ci-train21`/`product/ci/050-m0-train-21`, not an
++ancestor of this branch.
+diff --git a/include/ArrangerZoom.h b/include/ArrangerZoom.h
+index 4f8931a037..4ddb468ea5 100644
+--- a/include/ArrangerZoom.h
++++ b/include/ArrangerZoom.h
+@@ -77,8 +77,16 @@ constexpr int WheelBurstMs = 400;
+ 
+ //! The zoom history arrangement.zoom_back walks (zoom model values, newest last; UI thread).
+ LMMS_EXPORT void remember(int value);
+-//! Record the starting zoom when a pinch ends or is canceled, if it changed.
+-LMMS_EXPORT void finishPinch(int startValue, int currentValue, Qt::GestureState state);
++//! Record the starting zoom when a pinch has ended (finished or canceled), if it changed.
++LMMS_EXPORT void finishPinch(int startValue, int currentValue, bool ended);
++#ifndef QT_NO_GESTURES
++//! The gesture-state form, where Qt has gestures. A Qt built without them (MinGW Qt 5 in the
++//! hosted mingw64 job) declares no Qt::GestureState, so the exported overload takes a bool.
++inline void finishPinch(int startValue, int currentValue, Qt::GestureState state)
++{
++	finishPinch(startValue, currentValue, state == Qt::GestureFinished || state == Qt::GestureCanceled);
++}
++#endif
+ //! Step one back: take the newest remembered extent into @a earlier and queue @a current so
+ //! arrangement.zoom_forward can return to it; false when there is nothing earlier (UI thread).
+ LMMS_EXPORT bool takeEarlier(int current, int* earlier);
+diff --git a/src/gui/ArrangerAids.cpp b/src/gui/ArrangerAids.cpp
+index 032fd36542..7d73ad5a95 100644
+--- a/src/gui/ArrangerAids.cpp
++++ b/src/gui/ArrangerAids.cpp
+@@ -28,12 +28,14 @@
+ 
+ #include <QCursor>
+ #include <QEvent>
+-#include <QGestureEvent>
+ #include <QPainter>
+-#include <QPinchGesture>
+ #include <QPointer>
+ #include <QTimer>
+ #include <QWidget>
++#ifndef QT_NO_GESTURES
++#include <QGestureEvent>
++#include <QPinchGesture>
++#endif
+ 
+ #include "ArrangerZoom.h"
+ #include "AutomatableModel.h"
+@@ -112,7 +114,10 @@ private:
+ 
+ /*! A pinch on the arranger. 0.5.0 theme 9: it zooms continuously (as finely as the zoom model goes) around
+  *  the tick under the pinch's centre where it began, and the zoom it started from joins the history
+- *  arrangement.zoom_back walks once, when it ends or is canceled - not one entry per step. */
++ *  arrangement.zoom_back walks once, when it ends or is canceled - not one entry per step.
++ *  Compiled only where Qt has gestures: a Qt without them declares no QPinchGesture, no
++ *  QGestureEvent and no QWidget::grabGesture (MinGW Qt 5 in the hosted mingw64 job). */
++#ifndef QT_NO_GESTURES
+ class PinchZoom : public QObject
+ {
+ public:
+@@ -153,6 +158,7 @@ private:
+ 	int m_startValue = 0;
+ 	tick_t m_anchor = 0;
+ };
++#endif // QT_NO_GESTURES
+ 
+ QPointer<CrosshairOverlay> s_overlay;
+ bool s_shown = false;
+@@ -163,7 +169,9 @@ void installArrangerAids(QWidget* arranger)
+ {
+ 	if (arranger == nullptr || !s_overlay.isNull()) { return; }
+ 	s_overlay = new CrosshairOverlay(arranger);
++#ifndef QT_NO_GESTURES
+ 	new PinchZoom(arranger);
++#endif
+ 	// A tap or one-finger drag selects clips: install where the content is, so the finger's event is
+ 	// delivered to the viewport under it rather than swallowed by the arranger that accepts touch for
+ 	// the pinch above.
+diff --git a/src/gui/ArrangerZoom.cpp b/src/gui/ArrangerZoom.cpp
+index b1cb4673f3..890ccf2286 100644
+--- a/src/gui/ArrangerZoom.cpp
++++ b/src/gui/ArrangerZoom.cpp
+@@ -190,9 +190,9 @@ void remember(int value)
+ 	trim();
+ }
+ 
+-void finishPinch(int startValue, int currentValue, Qt::GestureState state)
++void finishPinch(int startValue, int currentValue, bool ended)
+ {
+-	if ((state == Qt::GestureFinished || state == Qt::GestureCanceled) && currentValue != startValue) { remember(startValue); }
++	if (ended && currentValue != startValue) { remember(startValue); }
+ }
+ 
+ bool takeEarlier(int current, int* earlier)
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 1f9706ab25..202e7bf646 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -6484,6 +6484,20 @@ if(PYTHON3_EXECUTABLE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND NOT MSVC
+ 	set_tests_properties(FenvShimMsvcInclude PROPERTIES TIMEOUT 60)
+ endif()
+ 
++# cluster ci-017caf2edd434b66: the arranger's gesture code must build on a Qt without gesture
++# support (the hosted mingw64 job's Qt 5 defines QT_NO_GESTURES, so Qt::GestureState and
++# QPinchGesture do not exist there). The hosted job runs no tests, so this check rebuilds the
++# affected translation units from this build's own compile_commands.json against a shadow
++# QtCore/qtcore-config.h with gestures off, and fails on the first one that no longer builds.
++if(PYTHON3_EXECUTABLE)
++	add_test(NAME ArrangerZoomNoGestures
++		COMMAND ${PYTHON3_EXECUTABLE}
++			${CMAKE_CURRENT_SOURCE_DIR}/arranger-zoom-no-gestures-check.py
++			--build-dir ${CMAKE_BINARY_DIR}
++			--moc $<TARGET_FILE:Qt${QT_VERSION_MAJOR}::moc>)
++	set_tests_properties(ArrangerZoomNoGestures PROPERTIES TIMEOUT 300)
++endif()
++
+ # A static thread_local data member of a class with a DLL interface is an MSVC
+ # error (C2492) and a warning-free build on GCC/Clang, so the hosted msvc-x64
+ # job is the only one that sees it. The check reads include/ and src/ headers
+diff --git a/tests/arranger-zoom-no-gestures-check.py b/tests/arranger-zoom-no-gestures-check.py
+new file mode 100644
+index 0000000000..557e3be601
+--- /dev/null
++++ b/tests/arranger-zoom-no-gestures-check.py
+@@ -0,0 +1,311 @@
++#!/usr/bin/env python3
++"""Regression for cluster ci-017caf2edd434b66: the arranger's gesture code must compile on a Qt
++built without gesture support.
++
++The hosted mingw64 job builds against the tobydox PPA's Qt 5, whose QtCore/qtcore-config.h
++carries `QT_NO_GESTURES` (the same file carries `QT_NO_ICONV` for a disabled feature). Qt's
++`Qt::GestureState` - and QWidget::grabGesture, QGestureEvent, QPinchGesture - exist only when
++gestures are enabled (`#ifndef QT_NO_GESTURES` in qnamespace.h and qwidget.h), so
++`include/ArrangerZoom.h`'s unconditional `Qt::GestureState` parameter failed the build:
++
++    include/ArrangerZoom.h:81:64: error: 'Qt::GestureState' has not been declared
++      (src/gui/ControlCommandsArrangerView.cpp, job 132025174898)
++
++The same missing guard was in src/gui/ArrangerZoom.cpp's definition, src/gui/ArrangerAids.cpp's
++QPinchGesture filter, and tests/src/gui/ArrangerTimelineTest.cpp's canceled-pinch case.
++
++This box's Qt has gestures, so the check does not rely on the host's features: it rebuilds each
++affected translation unit from this build's own compile_commands.json against a SHADOW
++`QtCore/qtcore-config.h` whose gestures feature is off - exactly the configuration Qt's own
++configure writes for a gesture-less Qt, and one under which Qt's headers stay coherent (defining
++QT_NO_GESTURES on a gestures-enabled Qt instead breaks qevent.h itself, which is not the failing
++platform). Two probes keep the simulation honest: Qt::GestureStarted must be undeclared under the
++shadow and declared without it. The API is exercised both ways: the bool form must compile under
++the shadow (a Qt without gestures has no Qt::GestureState) and the Qt::GestureState form must
++compile where gestures exist.
++
++Usage: arranger-zoom-no-gestures-check.py --build-dir <build> [--moc <moc>]
++"""
++
++import argparse
++import json
++import os
++import re
++import shlex
++import subprocess
++import sys
++import tempfile
++
++# Every translation unit that includes ArrangerZoom.h, plus the API's own definition. A guard
++# that only fixes the header leaves these broken, and a guard that only fixes one of them is
++# what a build job reports next.
++AFFECTED = [
++    "src/gui/ArrangerZoom.cpp",
++    "src/gui/ArrangerAids.cpp",
++    "src/gui/ControlCommandsArrangerView.cpp",
++    "src/gui/ArrangerNavigator.cpp",
++    "src/gui/editors/SongEditor.cpp",
++    "tests/src/gui/ArrangerTimelineTest.cpp",
++]
++
++PROBE = """#include <QtCore/qnamespace.h>
++int main() { return Qt::GestureStarted; }
++"""
++
++# The public API in both spellings: the bool form exists on every Qt, the Qt::GestureState
++# overload only where the enum does.
++API_FIXTURE = """#include "ArrangerZoom.h"
++static void ended() { lmms::gui::arrangerzoom::finishPinch(1, 2, true); }
++int main() { ended(); return 0; }
++"""
++
++TYPED_FIXTURE = """#include "ArrangerZoom.h"
++int main() { lmms::gui::arrangerzoom::finishPinch(1, 2, Qt::GestureCanceled); return 0; }
++"""
++
++WINDOWS_COMMAND_RE = re.compile(r"(?:^|[\s=\"'])[A-Za-z]:[\\/]|\\[^\"']")
++
++
++def split_command(command):
++    """A recorded command line as an argument list (Windows paths keep their separators)."""
++    if WINDOWS_COMMAND_RE.search(command):
++        arguments = shlex.split(command, posix=False)
++        return [a[1:-1] if len(a) > 1 and a[0] == a[-1] == '"' else a for a in arguments]
++    return shlex.split(command)
++
++
++def entry_arguments(entry):
++    if entry.get("command"):
++        return split_command(entry["command"])
++    return list(entry.get("arguments") or [])
++
++
++def compile_flags(args):
++    """The command without its output argument and compile action."""
++    out = []
++    index = 0
++    while index < len(args):
++        arg = args[index]
++        if arg in ("-o", "/Fo"):
++            index += 2
++            continue
++        if arg.startswith("/Fo"):
++            index += 1
++            continue
++        if arg in ("-c", "/c"):
++            index += 1
++            continue
++        out.append(arg)
++        index += 1
++    return out
++
++
++def include_dirs(args):
++    out = []
++    index = 0
++    while index < len(args):
++        arg = args[index]
++        if arg in ("-I", "-isystem", "/I", "/external:I") and index + 1 < len(args):
++            out.append(args[index + 1])
++            index += 2
++            continue
++        if arg.startswith(("-I", "/I", "/external:I")):
++            value = arg.split(":", 1)[1] if arg.lower().startswith(("/external:i", "-external:i")) else arg[2:]
++            if value:
++                out.append(value)
++        index += 1
++    return out
++
++
++def run(cmd, cwd, timeout=300):
++    return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
++
++
++def source_of(entry):
++    """The TU's absolute path (compile_commands.json may carry it relative to the directory)."""
++    path = entry["file"]
++    if not os.path.isabs(path):
++        path = os.path.join(entry["directory"], path)
++    return os.path.normpath(path)
++
++
++class Toolchain:
++    """The compile line of one recorded translation unit, reused for probes and fixtures."""
++
++    def __init__(self, entry):
++        self.directory = entry["directory"]
++        self.source = source_of(entry)
++        self.args = compile_flags(entry_arguments(entry))
++        if not self.args:
++            raise SystemExit("FAIL: %s has no compile command" % entry["file"])
++        self.msvc = os.path.basename(self.args[0]).lower() in ("cl", "cl.exe")
++        self.syntax_only = "/Zs" if self.msvc else "-fsyntax-only"
++        self.include_flag = "/I" if self.msvc else "-I"
++        self.includes = include_dirs(self.args)
++
++    def command(self, extra_includes, source):
++        # The recorded flags carry this TU's defines and include paths; only the leading
++        # compiler, the include search order and the source argument change.
++        flags = list(self.args[1:])
++        while flags and os.path.normpath(flags[-1]) == self.source:
++            flags.pop()
++        prefix = [self.args[0], self.syntax_only]
++        # The shadow QtCore comes first, so its qtcore-config.h is the one the compiler sees;
++        # the recorded include path follows it.
++        prefix += [self.include_flag + path for path in extra_includes]
++        return prefix + flags + [source]
++
++    def moc_include(self, source, tempdir, moc):
++        """Run moc for a TU that includes its own .moc; (include dir or None, detail)."""
++        match = re.search(r'#include\s+"([\w.+-]+\.moc)"', open(source).read())
++        if match is None:
++            return None, ""
++        if not moc:
++            return None, "needs %s but no moc was given" % match.group(1)
++        moc_output = os.path.join(tempdir, match.group(1))
++        moc_cmd = [moc, source, "-o", moc_output]
++        for directory in self.includes:
++            moc_cmd += ["-I", directory]
++        produced = run(moc_cmd, self.directory)
++        if produced.returncode != 0:
++            lines = (produced.stderr or produced.stdout).strip().splitlines()
++            return None, "moc failed: " + (lines[-1] if lines else "no output")
++        return tempdir, ""
++
++    def compile_source(self, source, extra_includes, tempdir, moc):
++        """Compile @source in this TU's include environment; (ok, detail)."""
++        includes = list(extra_includes)
++        moc_dir, detail = self.moc_include(source, tempdir, moc)
++        if moc_dir is None and detail:
++            return False, detail
++        if moc_dir:
++            includes.append(moc_dir)
++        result = run(self.command(includes, source), self.directory)
++        if result.returncode == 0:
++            return True, ""
++        lines = [line for line in (result.stderr or result.stdout).splitlines() if "error" in line.lower()]
++        return False, "; ".join(lines[:3]) or "compile failed (exit %d)" % result.returncode
++
++
++def find_config(entries):
++    """The real QtCore/qtcore-config.h, from the build's own recorded include paths."""
++    for entry in entries:
++        base = entry["directory"]
++        for directory in include_dirs(entry_arguments(entry)):
++            for candidate in (os.path.join(directory, "QtCore", "qtcore-config.h"),
++                              os.path.join(directory, "qtcore-config.h")):
++                if not os.path.isabs(candidate):
++                    candidate = os.path.join(base, candidate)
++                if os.path.isfile(candidate):
++                    return os.path.normpath(candidate)
++    return None
++
++
++def write_shadow(config_path, shadow):
++    """A QtCore/qtcore-config.h with gestures off, as Qt's configure writes one."""
++    text = open(config_path).read()
++    if re.search(r"^#\s*define\s+QT_FEATURE_gestures\b", text, re.M):
++        text = re.sub(r"^#\s*define\s+QT_FEATURE_gestures\b.*$", "#define QT_FEATURE_gestures -1", text, flags=re.M)
++    else:
++        text += "\n#define QT_FEATURE_gestures -1\n"
++    text += "\n#ifndef QT_NO_GESTURES\n#define QT_NO_GESTURES 1\n#endif\n"
++    destination = os.path.join(shadow, "QtCore", "qtcore-config.h")
++    os.makedirs(os.path.dirname(destination), exist_ok=True)
++    with open(destination, "w") as handle:
++        handle.write(text)
++    return destination
++
++
++def write_fixtures(tempdir):
++    """The API fixtures and the feature probe; {name: path}."""
++    fixtures = {}
++    for name, text in (("probe", PROBE), ("bool_api", API_FIXTURE), ("typed_api", TYPED_FIXTURE)):
++        fixtures[name] = os.path.join(tempdir, name + ".cpp")
++        with open(fixtures[name], "w") as handle:
++            handle.write(text)
++    return fixtures
++
++
++def load_build(build_dir):
++    """(control toolchain, entries, entries by source, tree root, Qt feature header) or an error."""
++    build_dir = os.path.abspath(build_dir)
++    commands = os.path.join(build_dir, "compile_commands.json")
++    if not os.path.isfile(commands):
++        return "no compile_commands.json in " + build_dir
++    entries = json.load(open(commands))
++    if not entries:
++        return "compile_commands.json is empty"
++    root = os.path.dirname(build_dir)
++    by_source = {source_of(entry): entry for entry in entries}
++    control = by_source.get(os.path.normpath(os.path.join(root, "src/gui/ArrangerZoom.cpp")))
++    if control is None:
++        return "src/gui/ArrangerZoom.cpp is not in compile_commands.json"
++    config = find_config(entries)
++    if config is None:
++        return "no QtCore/qtcore-config.h on any recorded include path"
++    return Toolchain(control), entries, by_source, root, config
++
++
++def main():
++    parser = argparse.ArgumentParser()
++    parser.add_argument("--build-dir", required=True)
++    parser.add_argument("--moc", default="")
++    options = parser.parse_args()
++
++    setup = load_build(options.build_dir)
++    if isinstance(setup, str):
++        print("FAIL:", setup)
++        return 1
++    toolchain, entries, by_source, root, config = setup
++    print("Qt feature header:", config)
++
++    failures = []
++
++    def report(ok, label, detail=""):
++        print("%s %s%s" % ("PASS" if ok else "FAIL", label, "" if ok else ": " + detail))
++        if not ok:
++            failures.append(label)
++
++    with tempfile.TemporaryDirectory(prefix="zene-arranger-zoom-") as tempdir:
++        shadow = os.path.join(tempdir, "shadow")
++        write_shadow(config, shadow)
++        fixtures = write_fixtures(tempdir)
++
++        # The simulation is only meaningful if the shadow really hides the enum, and the
++        # normal build is only honest if the same probe compiles without it.
++        ok, detail = toolchain.compile_source(fixtures["probe"], [shadow], tempdir, None)
++        report(not ok, "the shadow really is gesture-less (Qt::GestureStarted must not exist)",
++               "it compiled, so the probe does not detect the feature: " + detail if ok else detail)
++        host_gestures, host_detail = toolchain.compile_source(fixtures["probe"], [], tempdir, None)
++
++        for source in AFFECTED:
++            entry = by_source.get(os.path.normpath(os.path.join(root, source)))
++            if entry is None:
++                report(False, source + " compiles on a Qt without gestures",
++                       "not in compile_commands.json (was it renamed?)")
++                continue
++            ok, detail = Toolchain(entry).compile_source(source_of(entry), [shadow], tempdir, options.moc)
++            report(ok, source + " compiles on a Qt without gestures", detail)
++
++        ok, detail = toolchain.compile_source(fixtures["bool_api"], [shadow], tempdir, None)
++        report(ok, "finishPinch(int, int, bool) is callable without gestures", detail)
++        # The gesture-typed spelling only exists where Qt has gestures: on a gesture-less host
++        # the six compiles above ARE the shipped configuration, so this one is skipped, not
++        # failed - a supported platform must not fail its own regression.
++        if host_gestures:
++            ok, detail = toolchain.compile_source(fixtures["typed_api"], [], tempdir, None)
++            report(ok, "finishPinch(int, int, Qt::GestureState) still exists with gestures", detail)
++        else:
++            print("SKIP this host's Qt has no gestures, so the typed overload does not exist here"
++                  + (": " + host_detail if host_detail else ""))
++
++    if failures:
++        print("FAIL: %d arranger gesture case(s) do not build on a Qt without gestures: %s"
++              % (len(failures), "; ".join(failures)))
++        return 1
++    print("PASS: the arranger gesture code builds on a Qt without gestures")
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/tests/fork-sources.txt b/tests/fork-sources.txt
+index 1ad2f30e2b..f035b80ba0 100644
+--- a/tests/fork-sources.txt
++++ b/tests/fork-sources.txt
+@@ -2352,6 +2352,10 @@ tests/exprtk.hpp
+ # cluster ci-v041-6: checks include/fenv.h takes no #include_next under cl.exe's
+ # predefines (MSVC C1021), by preprocessing it with the host GCC/Clang (ctest FenvShimMsvcInclude).
+ tests/fenv-shim-msvc-check.py
++# cluster ci-017caf2edd434b66: rebuilds the arranger's gesture translation units against a Qt
++# configured without gestures (ctest ArrangerZoomNoGestures); the hosted mingw64 job's Qt 5 has
++# QT_NO_GESTURES, so Qt::GestureState does not exist there.
++tests/arranger-zoom-no-gestures-check.py
+ tests/freeze_bounce_evidence.py
+ tests/golden_audio_lib.py
+ tests/golden_audio_record.py
+diff --git a/tests/src/gui/ArrangerTimelineTest.cpp b/tests/src/gui/ArrangerTimelineTest.cpp
+index c1cd647d85..b95b070e04 100644
+--- a/tests/src/gui/ArrangerTimelineTest.cpp
++++ b/tests/src/gui/ArrangerTimelineTest.cpp
+@@ -274,7 +274,11 @@ private slots:
+ 		arrangerzoom::remember(start + 1);  // make the history result unambiguous if cancellation is ignored
+ 		arrangerzoom::zoomAround(m_editor, changed, 0);
+ 		QCOMPARE(m_editor->zoomingModel()->value(), changed);
++#ifndef QT_NO_GESTURES
+ 		arrangerzoom::finishPinch(start, changed, Qt::GestureCanceled);
++#else
++		arrangerzoom::finishPinch(start, changed, true);  // a Qt without gestures has no Qt::GestureState
++#endif
+ 		const ControlResult back = run(QStringLiteral("arrangement.zoom_back"));
+ 		QVERIFY2(back.ok, qPrintable(back.errorMessage));
+ 		QCOMPARE(m_editor->zoomingModel()->value(), start);
+diff --git a/tests/upstream-modifications.txt b/tests/upstream-modifications.txt
+index 6793ee6dfb..6563eedd60 100644
+--- a/tests/upstream-modifications.txt
++++ b/tests/upstream-modifications.txt
+@@ -5881,3 +5881,4 @@ tests/CMakeLists.txt	cluster new-p14-342 QA: make a targeted build of UndoHistor
+ include/MeterModel.h	# Tap handling divides by a zero time-signature numerator
+ include/QuadratureLfo.h	new-p16-180: reject non-finite stereo offsets so a NaN or infinite offset keeps the previous offset and the right channel stays finite; regression DeviceDspTest::quadratureLfoIgnoresNonFiniteOffset in tests/src/core/DeviceDspTest.cpp.
+ tests/src/core/RecordingRealtimeTest.cpp	new-p12-215 (integration, 2026-10-29): adds ringBufferReadRefusesNullDestination, the accepted cluster regression, alongside the line's ringBufferReadRejectsNullDestination (new-p10-345); both stage a frame and prove read(nullptr, n) returns 0 without consuming it, so removing the null guard in SampleFrameRingBuffer::read() segfaults the slot.
++tests/CMakeLists.txt	cluster ci-017caf2edd434b66: registers ArrangerZoomNoGestures (tests/arranger-zoom-no-gestures-check.py), the regression for the hosted mingw64 build failure where Qt 5 is configured without gestures (QT_NO_GESTURES) so include/ArrangerZoom.h's Qt::GestureState parameter, ArrangerZoom.cpp's definition, ArrangerAids.cpp's QPinchGesture filter and ArrangerTimelineTest's canceled-pinch case did not compile; one add_test and one timeout property, no existing test changes.
+-- 
+2.56.0
+

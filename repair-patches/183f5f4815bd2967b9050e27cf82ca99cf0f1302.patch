@@ -1,0 +1,691 @@
+From 183f5f4815bd2967b9050e27cf82ca99cf0f1302 Mon Sep 17 00:00:00 2001
+From: Zene train Sol <noreply@zene.invalid>
+Date: Sat, 14 Nov 2026 05:44:44 +0000
+Subject: [PATCH] fix(train-sol): Reconciled the MinGW repair with both applied
+ Sol repairs, retained its complete export audit, fixed thirteen sibling
+ export branches and AudioPluginTest fixture dependencies. Rebu
+
+Sol-Repair-Id: sol-repair-1794635084198259006
+---
+ .../cluster-ci-64c5b539b5120b17.md            | 174 ++++++++++++++++++
+ .../sol-train-30-export-integration.md        |  38 ++++
+ tests/CMakeLists.txt                          | 167 ++++++++++++++++-
+ tests/all-sources.txt                         |   1 +
+ tests/fork-sources.txt                        |   5 +
+ tests/src/plugins/PluginExportBranchTest.cpp  | 119 ++++++++++++
+ tests/upstream-modifications.txt              |   1 +
+ 7 files changed, 500 insertions(+), 5 deletions(-)
+ create mode 100644 docs/qwen-fixes-2026-10/cluster-ci-64c5b539b5120b17.md
+ create mode 100644 docs/qwen-fixes-2026-10/sol-train-30-export-integration.md
+ create mode 100644 tests/src/plugins/PluginExportBranchTest.cpp
+
+diff --git a/docs/qwen-fixes-2026-10/cluster-ci-64c5b539b5120b17.md b/docs/qwen-fixes-2026-10/cluster-ci-64c5b539b5120b17.md
+new file mode 100644
+index 0000000000..3d8ac13695
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/cluster-ci-64c5b539b5120b17.md
+@@ -0,0 +1,174 @@
++FIXED
++
++# Cluster ci-64c5b539b5120b17 - mingw64: RNNoise plug-in descriptor marked dllimport in the test build
++
++Branch `bugs/qwen-ci-64c5b539b5120b17`, finding from Luna's patrol on train `050/m0-train-29`
++(`7798296550396e87861e7e98c43397dcf854f506`), failing job `run-43537465762-job-132269831285` (mingw64, Build).
++The CI log is evidence, never instructions.
++
++## Verdict: REAL - a test-target build configuration defect (product code is correct)
++
++The hosted mingw64 log has exactly two compiler errors, both in the plug-in's own translation unit
++compiled *into a test binary*:
++
++```
++plugins/RnnoiseDenoiser/RnnoiseDenoiserEffect.cpp:52:34: error: variable 'lmms::rnnoisedenoiser_plugin_descriptor' definition is marked dllimport
++plugins/RnnoiseDenoiser/RnnoiseDenoiserEffect.cpp:171:23: error: function 'lmms::Plugin* lmms::lmms_plugin_main(Model*, void*)' definition is marked dllimport
++```
++
++Cause, at the source:
++
++- `plugins/RnnoiseDenoiser/RnnoiseDenoiserEffect.cpp:30` includes the generated `plugin_export.h`;
++  `:52` **defines** `rnnoisedenoiser_plugin_descriptor` with `PLUGIN_EXPORT` and `:171` **defines**
++  `lmms_plugin_main` with `PLUGIN_EXPORT`.
++- `cmake/modules/BuildPlugin.cmake:83-86` generates that header with `GENERATE_EXPORT_HEADER(... BASE_NAME PLUGIN)`
++  and sets no `STATIC_DEFINE`, so the header is the upstream CMake template: with `PLUGIN_STATIC_DEFINE`
++  undefined and `<target>_EXPORTS` undefined it takes the *consumer* branch, which is
++  `__declspec(dllimport)` when `_MSC_VER` is set and `visibility("default")` otherwise
++  (`build/plugins/RnnoiseDenoiser/plugin_export.h:5-16`).
++- The plug-in module defines `rnnoisedenoiser_EXPORTS` for itself (`BuildPlugin.cmake` `ADD_LIBRARY` +
++  `GENERATE_EXPORT_HEADER` default condition; `build/plugins/RnnoiseDenoiser/.../flags.make` confirms), so the
++  module is fine. `tests/CMakeLists.txt:2088-2106` compiles the same .cpp into `RnnoiseDenoiserEffectTest` and
++  defined only `PLUGIN_NAME=rnnoisedenoiser`, so that TU took the consumer branch.
++- On ELF both branches expand to `visibility("default")`, which is why every Linux and macOS job compiled the
++  identical tree; on Windows the consumer branch is `dllimport`, and defining a dllimport symbol is ill-formed.
++  Reproduced with the box's clang cross-target (`probe-01-windows-export-branch.log`): consumer branch
++  `EXIT=1` with `definition of dllimport data` / `dllimport cannot be applied to non-inline function definition`;
++  static branch `EXIT=0`.
++
++The #11.14 train carried the same class of defect in **twelve sibling targets**: every test target that compiles
++an exporting plug-in source without either `PLUGIN_STATIC_DEFINE` or `<target>_EXPORTS`. They are listed in the
++regression's own failure output below. This is not a guessed generalisation: the audit derives the population
++from the targets themselves, and the fix is the same one-line define per target that the repo already uses in
++`Lb302NotePathTest`, `MultitapEchoBoundsTest`, `DispersionNonFiniteTest`, `OscilloscopeControlsPersistenceTest`,
++`DelayLfoAutomationTest`, `EqPeakHandoffTest`, `ClapEffectIntegrationTest`, `ClapInstrumentViewTest`,
++`Vst3EffectIntegrationTest`, `ZynAddSubFxInstrumentTest` (all pre-existing).
++
++## Fix (tests/CMakeLists.txt only; no product source, no header, no data)
++
++`PLUGIN_STATIC_DEFINE` on the thirteen affected test targets:
++`RnnoiseDenoiserEffectTest`, `PatmanLoadTest`, `NeuralAmpModelLoadTest`, `TapTempoTest`,
++`BitInvaderAllocationTest`, `MalletsInstrumentViewTest`, `ReverbSCPluginStateTest`, `SlicerTZoomTest`,
++`TripleOscillatorUserWaveTest`, `DelayControlsTest`, `PeakControllerEffectZeroFrameTest`,
++`ConvolutionFftwPlanScopeTest`, `AudioPluginTest`. Each one compiles a plug-in's `PLUGIN_EXPORT` *definitions*
++into its own binary, so the static branch of that plug-in's export header is the correct one; a target that
++links the module instead keeps importing it, and the module builds keep `<target>_EXPORTS` (verified: the
++`rnnoisedenoiser` module's flags still carry `-Drnnoisedenoiser_EXPORTS` and no `PLUGIN_STATIC_DEFINE`, the test
++target carries `PLUGIN_STATIC_DEFINE` and no `_EXPORTS`).
++
++No audio-thread code, undo, command, saved data or limit is touched; `tests/CMakeLists.txt` is a build file.
++
++## Regression that fails before the fix and passes after
++
++New `tests/src/plugins/PluginExportBranchTest.cpp`, registered in `LMMS_TESTS`. The audit at the bottom of
++`tests/CMakeLists.txt` walks `BUILDSYSTEM_TARGETS` of the tests directory, keeps every EXECUTABLE that compiles a
++source under `plugins/` which **defines** `PLUGIN_EXPORT` (`Descriptor PLUGIN_EXPORT` or `PLUGIN_EXPORT Plugin*`)
++and includes a generated `*_export.h`, reads the export condition out of that generated header
++(`ifdef <base>_EXPORTS`), and emits one compile definition per site:
++
++```
++ZENE_PLUGIN_EXPORT_SITE_<n>_TAKES_EXPORT_BRANCH=$<BOOL:$<OR:$<IN_LIST:PLUGIN_STATIC_DEFINE,
++    $<TARGET_PROPERTY:<test target>,COMPILE_DEFINITIONS>>,
++    $<IN_LIST:<condition>,$<TARGET_PROPERTY:<test target>,COMPILE_DEFINITIONS>>>>
++```
++
++which the compiler evaluates, so the test reads the *build fact*, not a configure-time guess - a target's
++`COMPILE_DEFINITIONS` are generator-expression content, invisible to `if()`. The generated row table is static
++content (required by `file(GENERATE)`), and the row *names* are stable, which is why the verdict travels through
++the macro name. A population floor (`>= 20` sites) and a canary (`RnnoiseDenoiserEffectTest` must be in the
++audited set) keep the check from passing vacuously if the scan or a target is removed.
++
++Determinism: no timing, sleep, race or filesystem mutation at run time; the test compares integers the compiler
++computed from the target's own compile definitions at build time.
++
++## Evidence table (log folder
++`/home/kruzzzzy/.local/share/zene-bunny-fix/dsh/home/ci-64c5b539b5120b17.r1-logs/`)
++
++The brief's log folder is not writable from this lane (`Permission denied` on the folder itself and its parents,
++while the worktree and `/tmp` are writable; `stat` shows `drwxr-xr-x kruzzzzy` and no Landlock entry applies to
++that path). Every log below is in the DSH run-log directory named above, which is writable, and the failed path
++is recorded rather than worked around silently.
++
++| Step | Command | EXIT | Log |
++| --- | --- | --- | --- |
++| Baseline: build target on the original tree | `cmake --build build --target RnnoiseDenoiserEffectTest -j4` | 0 | `build-01-baseline-rnnoise.log` |
++| Baseline: test on the original tree | `ctest -R '^RnnoiseDenoiserEffectTest$' --output-on-failure` | 0 (1/1) | `test-01-baseline-rnnoise.log` |
++| Windows-branch probe, consumer | `clang++ --target=x86_64-pc-windows-gnu -fdeclspec -include defs.h -c winprobe.cpp` | 1 | `probe-01-windows-export-branch.log` |
++| Windows-branch probe, static | same, `PLUGIN_EXPORT` empty | 0 | `probe-01-windows-export-branch.log` |
++| RED build (test committed, fix reverted) | `cmake --build build --target PluginExportBranchTest -j4` | 0 | `build-13-test-only-red.log` |
++| **RED run** | `ctest -R '^PluginExportBranchTest$' --output-on-failure` | **8** | `test-03-test-only-red.log` |
++| GREEN build (test + fix) | `cmake --build build --target PluginExportBranchTest RnnoiseDenoiserEffectTest ... (13 targets) -j4` | 0 | `build-14-green-fixed-targets.log` |
++| **GREEN run** | `ctest -R '^PluginExportBranchTest$' --output-on-failure` | **0** | `test-04-green-plugin-export-branch.log` |
++| 4b: patch + reverse | `git diff -- tests/CMakeLists.txt > logs/fix.patch && git apply -R logs/fix.patch` | 0 / 0 | `fix.patch` |
++| 4b: rebuild reverted | `cmake --build build --target PluginExportBranchTest RnnoiseDenoiserEffectTest -j4` | 0 | `build-15-red-reverted.log` |
++| **4b: run reverted (must FAIL)** | `ctest -R '^PluginExportBranchTest$' --output-on-failure` | **8** | `test-05-red-reverted.log` |
++| 4b: reapply | `git apply logs/fix.patch` | 0 | - |
++| 4b: rebuild restored + run | build 13 targets, then `ctest` | 0 / **0** (14/14) | `build-16-green-restored.log`, `test-09-green-family.log` |
++| Sibling plugin tests (pre-existing static branch) | build `DispersionNonFiniteTest MultitapEchoBoundsTest Lb302NotePathTest`, run | 0 / 0 (3/3) | `build-20-siblings.log`, `test-10-siblings.log` |
++| RNNoise family | `ctest -R 'Rnnoise' --output-on-failure` | 0 (2/2) | `test-13-rnnoise-family.log` |
++| App + module still build | `cmake --build build --target zene rnnoisedenoiser -j4` | 0 | `build-19-zene-and-module.log` |
++| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | **0**, 8/8 PASS | `gates-01.log` |
++
++The RED failure (verbatim, from `test-05-red-reverted.log`) names all thirteen offenders, including the CI's own
++target:
++
++```
++FAIL!  : PluginExportBranchTest::everyTranslatedPluginDefinitionTakesTheExportBranch()
++  'offenders.isEmpty()' returned FALSE. (... RnnoiseDenoiserEffectTest
++  (plugins/RnnoiseDenoiser/RnnoiseDenoiserEffect.cpp: defines neither PLUGIN_STATIC_DEFINE nor
++  rnnoisedenoiser_EXPORTS); PatmanLoadTest ...; NeuralAmpModelLoadTest ...; TapTempoTest ...;
++  BitInvaderAllocationTest ...; MalletsInstrumentViewTest ...; ReverbSCPluginStateTest ...;
++  SlicerTZoomTest ...; TripleOscillatorUserWaveTest ...; DelayControlsTest ...;
++  PeakControllerEffectZeroFrameTest ...; ConvolutionFftwPlanScopeTest ...; AudioPluginTest ...)
++```
++
++Two local environment notes, neither a code failure: `AudioPluginTest` first failed because this box had never
++built the modules it loads (`libeq.so`, `gate`, `nam_harness`); after building them the test passes
++(`test-07-audioplugin.log`, `test-08-audioplugin.log`). A preprocessing probe of mine wrote the rnnoise test
++object (`... .cpp.o`) by accident; the object was deleted and the target rebuilt before any test was believed
++(`build-22-rnnoise-rebuild.log`). `RnnoiseHarnessOutputTest` is Not Run until its CLI dependency is built
++(`build-21`), then passes.
++
++## Completeness / siblings
++
++- Every compile site of an exporting plug-in TU was enumerated across the whole build (compile_commands.json):
++  28 test sites took the wrong branch before, 0 after; the 15 pre-existing correct sites and all 79 module
++  builds are unchanged.
++- The reference modules `partc_ref_*` compile frozen copies under `tests/reference/` against the frozen
++  `tests/reference/plugin_export.h` (a `_MSC_VER`-only dllexport/attribute header with no import branch), and
++  they define their own `<target>_EXPORTS`; not affected, not touched.
++- `plugins/VstBase/vst_base.cpp` / CarlaBase use a different generated header (`vstbase_export.h`,
++  `carlabase_export.h`) and are not compiled into any test target here; not affected.
++- The plug-in modules keep `dllexport` (`<target>_EXPORTS`); the test binaries that compile the same code take
++  the static branch, which is the pattern the repo already uses for ten other plugin tests.
++
++## Self-check
++
++- **Verdict REAL with code evidence.** `plugins/RnnoiseDenoiser/RnnoiseDenoiserEffect.cpp:30,52,171`;
++  `cmake/modules/BuildPlugin.cmake:83-86`; `build/plugins/RnnoiseDenoiser/plugin_export.h:5-16`;
++  `tests/CMakeLists.txt` (the `RnnoiseDenoiserEffectTest` block, now with `PLUGIN_STATIC_DEFINE`). Windows-branch
++  probe log shows the exact CI diagnostics and that the static branch compiles.
++- **RED/GREEN with exit codes.** RED `ctest` EXIT=8 (`test-03`, `test-05`), GREEN `ctest` EXIT=0 (`test-04`,
++  `test-09`), 4b reversal/reapplication EXIT=0/0 and the reverted tree rebuilt before running.
++- **Deterministic.** No timing, sleep or race: the values are compile definitions the compiler evaluates from
++  the targets' own properties; the test compares integers and names.
++- **Affected-family count.** 14/14 passed (`PluginExportBranchTest` + the 13 fixed targets, `test-09`); RNNoise
++  family 2/2 (`test-13`); three pre-existing-static siblings 3/3 (`test-10`). Zero-test runs: none.
++- **At the cause, complete.** Whole-tree enumeration: 0 test compile sites without an export branch after the
++  fix; module builds untouched; the audit is automatic for future plug-in tests, so the class cannot come back
++  silently.
++- **No collateral damage.** Only test-target compile definitions changed. No saved data, project file, limit,
++  command, undo entry or audio-thread path is involved; the product binaries (`zene`, `rnnoisedenoiser`) still
++  build (`build-19`).
++- **Registration.** `tests/fork-sources.txt` (new test + this report), `tests/all-sources.txt` (new test, sorted),
++  `tests/upstream-modifications.txt` (`tests/CMakeLists.txt` with its reason).
++- **Gates.** `feature_check.py` EXIT=0, 8/8 PASS (`gates-01.log`, re-run with this report in the tree:
++  `gates-02.log`, 6 changed files, 8/8 PASS).
++- **`submit_check.py`.** `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree>
++  ci-64c5b539b5120b17` EXIT=0, "PASS - submit", no FAIL rows (`submit-01.log`).
++- **ALREADY-FIXED / FALSE-POSITIVE.** Not applicable: the verdict is FIXED. `git log --oneline -S'PLUGIN_STATIC_DEFINE'
++  -- tests/CMakeLists.txt` shows this branch had never had the define on these thirteen blocks, and the RED run on
++  the branch tip reproduces the CI class.
++- **Undo / commands / realtime.** Not applicable by construction: the diff touches only `tests/CMakeLists.txt`
++  (test-target compile definitions and one configure-time audit), one test source, the two scope manifests and this
++  report. No product code, command, undo step or audio-thread function changed.
+diff --git a/docs/qwen-fixes-2026-10/sol-train-30-export-integration.md b/docs/qwen-fixes-2026-10/sol-train-30-export-integration.md
+new file mode 100644
+index 0000000000..d617682d5d
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/sol-train-30-export-integration.md
+@@ -0,0 +1,38 @@
++# Train 40: reconcile the accepted MinGW export repair
++
++The train stopped before building because `ci-repair-ci-64c5b539b5120b17-eb547c5a8266` (`c3d3a2f2250f939aab82f3024fdb18af59a9a34c`) was authored against `7798296550396e87861e7e98c43397dcf854f506`, before the two applied Sol repairs. This is a patch integration failure, not a resource kill or infrastructure outage.
++
++## Repair delta
++
++Keep both applied repairs intact. RNNoise already defines `rnnoisedenoiser_EXPORTS`; retain that valid export branch and its Train39 compiler probe. Integrate the accepted repair's twelve additional `PLUGIN_STATIC_DEFINE` target definitions, its complete `PluginExportBranchTest` population/canary/offender assertions, generated audit table, and original repair report. The owner's enabled WASM configuration exposes one further offender, `WasmSandboxTest`, which also compiles exporting plug-in definitions directly; give it the same static definition. Preserve FileLengthGate, all split source registrations and dependencies, and every Train39 probe and Linux debug option.
++
++Changed paths and reasons:
++
++- `tests/CMakeLists.txt`: reconcile RNNoise's overlapping definition, retain both appended probe/audit blocks, add twelve accepted sibling export fixes plus the enabled-WASM sibling fix and the accepted audit registration; declare the EQ, Gate and NAM harness runtime fixtures required by AudioPluginTest.
++- `tests/src/plugins/PluginExportBranchTest.cpp`: retain the accepted regression without changing its assertions.
++- `docs/qwen-fixes-2026-10/cluster-ci-64c5b539b5120b17.md`: retain the accepted repair's original evidence narrative; its thirteen-target description refers to its original base, while this integration needs twelve of those target fixes plus the additional enabled-WASM target fix.
++- `tests/all-sources.txt`, `tests/fork-sources.txt`, `tests/upstream-modifications.txt`: register the new source/reports with reasons in stable existing manifest context, preserving all current entries.
++- This report: record current-base reproduction and verification.
++
++Only the conflicting MinGW repair is superseded. `sol-repair-1794619548741537751` and `sol-repair-1794623254087098975` remain required.
++
++## Verification
++
++Commands run in the private source root except CTest, which runs from `build/tests`. Build parallelism is 12; free disk space is monitored against the 12 GB stop threshold. Native hosted Windows verification and the full train remain required.
++
++1. `bash /tmp/sol26-configure-command.txt`: exit 0, using the exact owner-supplied all-features configuration (Qt6, WERROR, WASM enabled, executable debug stripping and ccache) in this worktree's sole `build` directory.
++2. Audit-only negative control: retain current HEAD's existing RNNoise fix, add the accepted audit without the sibling export fixes. `cmake --build build --target zene PluginExportBranchTest -j12`: exit 0. From `build/tests`, `ctest -R '^PluginExportBranchTest$' -j1 --timeout 900 --no-tests=error --output-on-failure`: exit 8, failing on thirteen named offenders (twelve accepted siblings plus WasmSandboxTest). The generated audit includes 29 sites and its RNNoise canary; RNNoise is not an offender.
++3. Apply the reconciled definitions. `cmake --build build --target zene PluginExportBranchTest RnnoiseDenoiserEffectTest PatmanLoadTest MalletsInstrumentViewTest BitInvaderAllocationTest NeuralAmpModelLoadTest TapTempoTest ReverbSCPluginStateTest SlicerTZoomTest TripleOscillatorUserWaveTest DelayControlsTest PeakControllerEffectZeroFrameTest ConvolutionFftwPlanScopeTest AudioPluginTest WasmSandboxTest -j12`: exit 0. All 29 generated site verdicts take an export/static branch.
++4. Initial 23-entry run: 22 pass; AudioPluginTest fails in initTestCase because its hard-required EQ module is absent after a targeted build. Its source also requires Gate and the NAM harness. Declare these fixture dependencies without changing any assertion. `cmake --build build --target zene AudioPluginTest -j12`: exit 0, builds the required fixtures.
++5. Final command, from `build/tests`:
++
++```sh
++PATH=/tmp/sol39-lizard125/bin:$PATH PYTHONPATH=/tmp/sol39-lizard125 ctest -R '^(PluginExportBranchTest|RnnoiseDenoiserEffectTest|PatmanLoadTest|MalletsInstrumentViewTest|BitInvaderAllocationTest|NeuralAmpModelLoadTest|TapTempoTest|ReverbSCPluginStateTest|SlicerTZoomTest|TripleOscillatorUserWaveTest|DelayControlsTest|PeakControllerEffectZeroFrameTest|ConvolutionFftwPlanScopeTest|AudioPluginTest|WasmSandboxTest|Train39-(vst2|sfz|qt5|rnnoise|disk)|FileLengthGate|NoteCanvasComplexityGate|complexity-regression-check)$' -j1 --timeout 900 --no-tests=error --output-on-failure
++```
++
++Exit 0: **23/23 entries pass, 39.88 seconds**. This includes all affected rebuilt plug-in suites, the failing-then-passing export audit, five retained Train39 compiler/ELF probes, and the unchanged file-length and complexity checks. The complexity check uses hosted-version Lizard 1.25.1 without writing the baseline. The existing Zig-dependent WASM demonstration case skips because no Zig toolchain is installed; the other WASM cases run. Free disk remained above 74 GB.
++
++6. `bash tests/no-upstream-regression-gate.sh`, `bash tests/fork-sources-gate.sh`, `bash tests/evidence-gate.sh`, `bash tests/unregistered-tests-gate.sh`: each exits 0. `git diff --check`: exit 0. No gate, baseline, exemption, test assertion or resource limit was changed.
++7. Independent read-only review confirmed preservation of the accepted audit and report, prior repairs, registrations and all thirteen export fixes. Follow-up review confirmed the runtime fixture dependencies and observed the final 23/23 result; native hosted and full-train verification remain outstanding.
++
++Temporary execution logs are kept outside tracked sources under `/tmp/sol40-*`; the original accepted evidence narrative remains byte-for-byte intact.
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index b1ead0e290..3d570f752c 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -2078,6 +2078,13 @@ list(APPEND LMMS_TESTS src/core/SurroundDevicePathTest.cpp)
+ # reason as the tests above: the negative control reads the high-numbered names out of `ctest -N`.
+ list(APPEND LMMS_TESTS src/core/MidiTakeRecordTest.cpp src/gui/MidiTakeMenuTest.cpp)
+ 
++# cluster ci-64c5b539b5120b17: every test target that compiles a plug-in's own PLUGIN_EXPORT
++# definitions must take that plug-in's export branch, not the consumer branch. On Windows the two
++# branches differ (dllexport vs dllimport), and a definition marked dllimport is an error - the
++# hosted mingw64 job died on exactly that in RnnoiseDenoiserEffectTest. The population is read out
++# of the targets' own sources at configure time by the audit at the bottom of this file.
++list(APPEND LMMS_TESTS src/plugins/PluginExportBranchTest.cpp)
++
+ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
+ 	# TODO CMake 3.20: Use cmake_path
+ 	get_filename_component(LMMS_TEST_NAME ${LMMS_TEST_SRC} NAME_WE)
+@@ -2470,7 +2477,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
+ 			${CMAKE_SOURCE_DIR}/plugins/Patman
+ 			${CMAKE_BINARY_DIR}/plugins/Patman
+ 		)
+-		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_NAME=patman)
++		# The plug-in's own PLUGIN_EXPORT definitions are compiled in here, so the generated
++		# export header must take its static branch (Windows: dllimport is not definable).
++		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_STATIC_DEFINE PLUGIN_NAME=patman)
+ 		add_dependencies(${LMMS_TEST_NAME} patman)
+ 		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES
+ 			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+@@ -2485,6 +2494,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
+ 			${CMAKE_BINARY_DIR}/plugins/Stk/Mallets
+ 		)
+ 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
++			PLUGIN_STATIC_DEFINE
+ 			PLUGIN_NAME=malletsstk
+ 			MALLETS_TEST_STK_DIR="${STK_RAWWAVE_ROOT}"
+ 			MALLETS_TEST_PLUGIN_DIR="${CMAKE_SOURCE_DIR}/plugins/Stk/Mallets")
+@@ -2568,7 +2578,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
+ 			${CMAKE_SOURCE_DIR}/plugins/BitInvader/BitInvader.h)
+ 		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+ 			${CMAKE_SOURCE_DIR}/plugins/BitInvader ${CMAKE_BINARY_DIR}/plugins/BitInvader)
+-		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_NAME=bitinvader)
++		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_STATIC_DEFINE PLUGIN_NAME=bitinvader)
+ 	endif()
+ 	# cluster new-p17-203: the Watsyn wavetable-snapshot regression compiles the plug-in's
+ 	# own sources into the test (the SlicerT/Vibed/BitInvader shape), so the note path under
+@@ -2996,7 +3006,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
+ 		target_include_directories(${LMMS_TEST_NAME} PRIVATE ${NAM_DIR} "${CMAKE_BINARY_DIR}/plugins/NeuralAmp"
+ 			${NAM_DIR}/rtneural/modules/Eigen ${NAM_DIR}/rtneural/modules/json)
+ 		target_compile_options(${LMMS_TEST_NAME} PRIVATE ${ZENE_NAM_EIGEN_OPTIONS})
+-		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE ZENE_NAM_TEST_SEAM PLUGIN_NAME=neuralamp)
++		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_STATIC_DEFINE ZENE_NAM_TEST_SEAM PLUGIN_NAME=neuralamp)
+ 		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+ 	endif()
+ 
+@@ -3245,7 +3255,7 @@ target_include_directories(TapTempoTest PRIVATE
+ 	${CMAKE_SOURCE_DIR}/plugins/TapTempo
+ 	${CMAKE_BINARY_DIR}/plugins/TapTempo
+ )
+-target_compile_definitions(TapTempoTest PRIVATE PLUGIN_NAME=taptempo)
++target_compile_definitions(TapTempoTest PRIVATE PLUGIN_STATIC_DEFINE PLUGIN_NAME=taptempo)
+ set_tests_properties(TapTempoTest PROPERTIES
+ 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+ 
+@@ -3402,6 +3412,7 @@ target_link_libraries(ReverbSCPluginStateTest PRIVATE
+ )
+ target_compile_features(ReverbSCPluginStateTest PRIVATE cxx_std_20)
+ target_compile_definitions(ReverbSCPluginStateTest PRIVATE
++	PLUGIN_STATIC_DEFINE
+ 	LMMS_TESTING
+ 	PLUGIN_NAME=reverbsc
+ 	$<$<COMPILE_LANGUAGE:C>:malloc=sp_test_malloc>
+@@ -4706,6 +4717,7 @@ target_link_libraries(SlicerTZoomTest PRIVATE
+ )
+ target_compile_features(SlicerTZoomTest PRIVATE cxx_std_20)
+ target_compile_definitions(SlicerTZoomTest PRIVATE
++	PLUGIN_STATIC_DEFINE
+ 	LMMS_TESTING
+ 	PLUGIN_NAME=slicert
+ )
+@@ -4818,6 +4830,7 @@ target_link_libraries(TripleOscillatorUserWaveTest PRIVATE
+ )
+ target_compile_features(TripleOscillatorUserWaveTest PRIVATE cxx_std_20)
+ target_compile_definitions(TripleOscillatorUserWaveTest PRIVATE
++	PLUGIN_STATIC_DEFINE
+ 	LMMS_TESTING
+ 	PLUGIN_NAME=tripleoscillator
+ )
+@@ -4853,6 +4866,7 @@ target_link_libraries(DelayControlsTest PRIVATE
+ )
+ target_compile_features(DelayControlsTest PRIVATE cxx_std_20)
+ target_compile_definitions(DelayControlsTest PRIVATE
++	PLUGIN_STATIC_DEFINE
+ 	LMMS_TESTING
+ 	PLUGIN_NAME=delay
+ )
+@@ -4882,6 +4896,7 @@ target_link_libraries(PeakControllerEffectZeroFrameTest PRIVATE
+ )
+ target_compile_features(PeakControllerEffectZeroFrameTest PRIVATE cxx_std_20)
+ target_compile_definitions(PeakControllerEffectZeroFrameTest PRIVATE
++	PLUGIN_STATIC_DEFINE
+ 	LMMS_TESTING
+ 	PLUGIN_NAME=peakcontrollereffect
+ )
+@@ -4951,6 +4966,7 @@ target_link_libraries(ConvolutionFftwPlanScopeTest PRIVATE
+ )
+ target_compile_features(ConvolutionFftwPlanScopeTest PRIVATE cxx_std_20)
+ target_compile_definitions(ConvolutionFftwPlanScopeTest PRIVATE
++	PLUGIN_STATIC_DEFINE
+ 	LMMS_TESTING
+ 	PLUGIN_NAME=convolutionreverb
+ )
+@@ -5156,6 +5172,7 @@ if(WANT_WASM)
+ 
+ 	target_compile_features(WasmSandboxTest PRIVATE cxx_std_20)
+ 	target_compile_definitions(WasmSandboxTest PRIVATE
++		PLUGIN_STATIC_DEFINE
+ 		LMMS_TESTING
+ 		PLUGIN_NAME=wasm_effect
+ 		WASM_MODULES_DIR="${CMAKE_BINARY_DIR}/wasm-modules"
+@@ -5966,12 +5983,20 @@ target_link_libraries(AudioPluginTest PRIVATE
+ )
+ target_compile_features(AudioPluginTest PRIVATE cxx_std_20)
+ target_compile_definitions(AudioPluginTest PRIVATE
++	# The TapTempo sources are compiled in, so their PLUGIN_EXPORT definitions are this
++	# target's, not the module's: take the static branch (the module's own build keeps
++	# taptempo_EXPORTS).
++	PLUGIN_STATIC_DEFINE
+ 	LMMS_TESTING
+ 	PLUGIN_NAME=taptempo
+ 	SYNTHETIC_PLUGIN_PATH="$<TARGET_FILE:synthetic_audio_plugin>"
+ )
+ set_target_properties(AudioPluginTest PROPERTIES ENABLE_EXPORTS ON)
+-add_dependencies(AudioPluginTest synthetic_audio_plugin patman)
++# These runtime fixtures are loaded by AudioPluginTest; targeted builds must include them.
++add_dependencies(AudioPluginTest synthetic_audio_plugin patman eq gate)
++if(TARGET nam_harness)
++	add_dependencies(AudioPluginTest nam_harness)
++endif()
+ set_tests_properties(AudioPluginTest PROPERTIES
+ 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+ )
+@@ -9035,3 +9060,135 @@ if(TARGET AudioBusTest)
+ 	file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/train39-test-link-option.h"
+ 		CONTENT "#define ZENE_TEST_STRIP_DEBUG_REQUESTED $<BOOL:${ZENE_TEST_STRIP_DEBUG}>\n#define ZENE_TEST_LINK_STRIPS_DEBUG $<IN_LIST:-Wl$<COMMA>--strip-debug,$<TARGET_PROPERTY:AudioBusTest,LINK_OPTIONS>>\n")
+ endif()
++
++
++# ---------------------------------------------------------------------------
++# cluster ci-64c5b539b5120b17: the export branch of every plug-in translation unit
++# compiled into a TEST target.
++#
++# Hosted mingw64 (run 43537465762, job 132269831285) stopped on
++#   plugins/RnnoiseDenoiser/RnnoiseDenoiserEffect.cpp:52:34: error: variable
++#       'lmms::rnnoisedenoiser_plugin_descriptor' definition is marked dllimport
++#   plugins/RnnoiseDenoiser/RnnoiseDenoiserEffect.cpp:171:23: error: function
++#       'lmms::Plugin* lmms::lmms_plugin_main(Model*, void*)' definition is marked dllimport
++# because RnnoiseDenoiserEffectTest compiles the plug-in's own source into its
++# binary and defined neither PLUGIN_STATIC_DEFINE nor rnnoisedenoiser_EXPORTS, so
++# the generated plugin_export.h took its consumer branch. On ELF both branches
++# expand to visibility("default") - which is why every Linux and macOS job
++# compiled the identical tree - but on Windows the consumer branch is
++# __declspec(dllimport), and defining a dllimport symbol is ill-formed.
++#
++# The audit below is the mechanical form of that rule for the whole directory:
++# for every EXECUTABLE target here that compiles a source under plugins/ which
++# defines PLUGIN_EXPORT and includes a generated export header, the target must
++# define either PLUGIN_STATIC_DEFINE or the export condition named inside that
++# header (<plug-in target>_EXPORTS). The population comes from the targets
++# themselves, so a new plug-in test is audited the moment it is added.
++# PluginExportBranchTest reads the generated table and fails on any offender,
++# naming it and the macro it lacks.
++#
++# The table is generated, not checked here, because the targets' compile
++# definitions are generator-expression content: a configure-time `if()` cannot
++# see them, and this file must not guess. Rows are
++#   <target> TAB <export condition> TAB <compile definitions, space separated> |
++set(ZENE_PLUGIN_EXPORT_AUDIT_TARGETS "")
++set(ZENE_PLUGIN_EXPORT_SITE_COUNT 0)
++set(ZENE_PLUGIN_EXPORT_SITE_TABLE "")
++if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.19)
++	get_property(ZENE_TEST_DIR_TARGETS DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" PROPERTY BUILDSYSTEM_TARGETS)
++else()
++	get_property(ZENE_TEST_DIR_TARGETS DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
++endif()
++foreach(ZENE_AUDIT_TARGET IN LISTS ZENE_TEST_DIR_TARGETS)
++	get_target_property(ZENE_AUDIT_TYPE "${ZENE_AUDIT_TARGET}" TYPE)
++	if(NOT ZENE_AUDIT_TYPE STREQUAL "EXECUTABLE")
++		continue()
++	endif()
++	get_target_property(ZENE_AUDIT_SOURCES "${ZENE_AUDIT_TARGET}" SOURCES)
++	if(NOT ZENE_AUDIT_SOURCES)
++		continue()
++	endif()
++	set(ZENE_AUDIT_TARGET_LISTED FALSE)
++	foreach(ZENE_AUDIT_SRC IN LISTS ZENE_AUDIT_SOURCES)
++		if(NOT IS_ABSOLUTE "${ZENE_AUDIT_SRC}")
++			set(ZENE_AUDIT_SRC "${CMAKE_CURRENT_SOURCE_DIR}/${ZENE_AUDIT_SRC}")
++		endif()
++		string(FIND "${ZENE_AUDIT_SRC}" "${CMAKE_SOURCE_DIR}/plugins/" ZENE_AUDIT_PLUGIN_POS)
++		if(NOT ZENE_AUDIT_PLUGIN_POS EQUAL 0)
++			continue()
++		endif()
++		if(NOT ZENE_AUDIT_SRC MATCHES "\\.cpp$")
++			continue()
++		endif()
++		if(NOT EXISTS "${ZENE_AUDIT_SRC}")
++			continue()
++		endif()
++		file(READ "${ZENE_AUDIT_SRC}" ZENE_AUDIT_TEXT)
++		# A descriptor or entry point this translation unit DEFINES with PLUGIN_EXPORT.
++		if(NOT (ZENE_AUDIT_TEXT MATCHES "Descriptor[ \t\r\n]+PLUGIN_EXPORT"
++			OR ZENE_AUDIT_TEXT MATCHES "PLUGIN_EXPORT[ \t\r\n]+Plugin[ \t\r\n]*\\*"))
++			continue()
++		endif()
++		if(NOT ZENE_AUDIT_TEXT MATCHES "#[ \t]*include[ \t]*\"[A-Za-z0-9_]+_export\\.h\"")
++			continue()
++		endif()
++		# The header this TU includes is generated beside the plug-in target:
++		# build/plugins/<plug-in dir>/<base>_export.h. Its `ifdef <name>_EXPORTS`
++		# is the condition the plug-in's own build defines, i.e. the branch the
++		# test must reproduce (or override with PLUGIN_STATIC_DEFINE).
++		get_filename_component(ZENE_AUDIT_SRC_DIR "${ZENE_AUDIT_SRC}" DIRECTORY)
++		file(RELATIVE_PATH ZENE_AUDIT_RELDIR "${CMAKE_SOURCE_DIR}/plugins" "${ZENE_AUDIT_SRC_DIR}")
++		file(GLOB ZENE_AUDIT_HEADERS "${CMAKE_BINARY_DIR}/plugins/${ZENE_AUDIT_RELDIR}/*_export.h")
++		if(NOT ZENE_AUDIT_HEADERS)
++			message(WARNING "PluginExportBranchTest: no generated export header for ${ZENE_AUDIT_SRC}; "
++				"the audit cannot tell which export branch ${ZENE_AUDIT_TARGET} takes")
++			continue()
++		endif()
++		list(GET ZENE_AUDIT_HEADERS 0 ZENE_AUDIT_HEADER)
++		file(READ "${ZENE_AUDIT_HEADER}" ZENE_AUDIT_HEADER_TEXT)
++		if(NOT ZENE_AUDIT_HEADER_TEXT MATCHES "ifdef[ \t]+([A-Za-z0-9_]+)_EXPORTS")
++			message(WARNING "PluginExportBranchTest: ${ZENE_AUDIT_HEADER} names no <target>_EXPORTS condition")
++			continue()
++		endif()
++		set(ZENE_AUDIT_CONDITION "${CMAKE_MATCH_1}_EXPORTS")
++		file(RELATIVE_PATH ZENE_AUDIT_RELSRC "${CMAKE_SOURCE_DIR}" "${ZENE_AUDIT_SRC}")
++		# The per-site verdict is a COMPILE DEFINITION on the test target, because a
++		# target's compile definitions are generator-expression content: a configure-time
++		# `if()` cannot read them, and this file must not guess. The definition is 1 when
++		# the target defines PLUGIN_STATIC_DEFINE or the header's own export condition.
++		if(TARGET PluginExportBranchTest)
++			target_compile_definitions(PluginExportBranchTest PRIVATE
++				"ZENE_PLUGIN_EXPORT_SITE_${ZENE_PLUGIN_EXPORT_SITE_COUNT}_TAKES_EXPORT_BRANCH=$<BOOL:$<OR:$<IN_LIST:PLUGIN_STATIC_DEFINE,$<TARGET_PROPERTY:${ZENE_AUDIT_TARGET},COMPILE_DEFINITIONS>>,$<IN_LIST:${ZENE_AUDIT_CONDITION},$<TARGET_PROPERTY:${ZENE_AUDIT_TARGET},COMPILE_DEFINITIONS>>>>")
++		endif()
++		# Static row content only: the verdict reached the compiler through the macro
++		# above, whose NAME is stable for every configuration, so file(GENERATE) has one
++		# content (it refuses content that evaluates the configuration or object files).
++		string(APPEND ZENE_PLUGIN_EXPORT_SITE_TABLE
++			"X(${ZENE_PLUGIN_EXPORT_SITE_COUNT}, \"${ZENE_AUDIT_TARGET}\", \"${ZENE_AUDIT_CONDITION}\", \"${ZENE_AUDIT_RELSRC}\", ZENE_PLUGIN_EXPORT_SITE_${ZENE_PLUGIN_EXPORT_SITE_COUNT}_TAKES_EXPORT_BRANCH) ")
++		math(EXPR ZENE_PLUGIN_EXPORT_SITE_COUNT "${ZENE_PLUGIN_EXPORT_SITE_COUNT} + 1")
++		set(ZENE_AUDIT_TARGET_LISTED TRUE)
++	endforeach()
++	if(ZENE_AUDIT_TARGET_LISTED)
++		list(APPEND ZENE_PLUGIN_EXPORT_AUDIT_TARGETS "${ZENE_AUDIT_TARGET}")
++	endif()
++endforeach()
++list(LENGTH ZENE_PLUGIN_EXPORT_AUDIT_TARGETS ZENE_PLUGIN_EXPORT_TARGET_COUNT)
++list(JOIN ZENE_PLUGIN_EXPORT_AUDIT_TARGETS ";" ZENE_PLUGIN_EXPORT_TARGET_LIST)
++file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/PluginExportBranchTargets.h" CONTENT
++"#ifndef ZENE_PLUGIN_EXPORT_BRANCH_TARGETS_H
++#define ZENE_PLUGIN_EXPORT_BRANCH_TARGETS_H
++
++#define ZENE_PLUGIN_EXPORT_SITE_COUNT ${ZENE_PLUGIN_EXPORT_SITE_COUNT}
++#define ZENE_PLUGIN_EXPORT_TARGET_COUNT ${ZENE_PLUGIN_EXPORT_TARGET_COUNT}
++#define ZENE_PLUGIN_EXPORT_CANARY_PRESENT $<BOOL:$<IN_LIST:RnnoiseDenoiserEffectTest,${ZENE_PLUGIN_EXPORT_TARGET_LIST}>>
++
++// X(index, target, export condition, plug-in source, verdict macro). The rows sit on
++// one line: each X-macro use expands to a single entry, and C++ sees the whole row
++// list inside a braced initialiser.
++#define ZENE_PLUGIN_EXPORT_SITES(X) ${ZENE_PLUGIN_EXPORT_SITE_TABLE}
++#endif
++")
++if(TARGET PluginExportBranchTest)
++	target_include_directories(PluginExportBranchTest PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
++	target_sources(PluginExportBranchTest PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/PluginExportBranchTargets.h")
++endif()
+diff --git a/tests/all-sources.txt b/tests/all-sources.txt
+index d1297a67d8..789ba54230 100644
+--- a/tests/all-sources.txt
++++ b/tests/all-sources.txt
+@@ -3602,6 +3602,7 @@ tests/src/plugins/OscilloscopeControlsPersistenceTest.cpp
+ tests/src/plugins/PartialInitFailureLadspa.cpp
+ tests/src/plugins/PatmanLoadTest.cpp
+ tests/src/plugins/PeakControllerEffectZeroFrameTest.cpp
++tests/src/plugins/PluginExportBranchTest.cpp
+ tests/src/plugins/PluginPortsHarness.h
+ tests/src/plugins/PluginPortsMigrationReference.cpp
+ tests/src/plugins/PluginPortsMigrationTest.cpp
+diff --git a/tests/fork-sources.txt b/tests/fork-sources.txt
+index 976d0b6749..f094ce55c7 100644
+--- a/tests/fork-sources.txt
++++ b/tests/fork-sources.txt
+@@ -808,6 +808,11 @@ include/AafImportMenu.h
+ include/AbletonLinkBridge.h
+ include/AbletonLinkSession.h
+ include/Accessibility.h
++# Train 40: retain the independently accepted direct-source plug-in export audit and its report.
++tests/src/plugins/PluginExportBranchTest.cpp
++docs/qwen-fixes-2026-10/cluster-ci-64c5b539b5120b17.md
++docs/qwen-fixes-2026-10/sol-train-30-export-integration.md
++
+ include/AccessibilityAudit.h
+ 
+ # Train 39: portable hosted compiler and executable-debug regression probes and repair evidence.
+diff --git a/tests/src/plugins/PluginExportBranchTest.cpp b/tests/src/plugins/PluginExportBranchTest.cpp
+new file mode 100644
+index 0000000000..59af6711ed
+--- /dev/null
++++ b/tests/src/plugins/PluginExportBranchTest.cpp
+@@ -0,0 +1,119 @@
++/*
++ * PluginExportBranchTest.cpp - every test that compiles a plug-in's own sources into
++ * its binary must take that plug-in's *export* branch, not the consumer branch
++ *
++ * Copyright (c) 2026 Zene Studio contributors
++ *
++ * This file is part of LMMS - https://lmms.io
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public
++ * License as published by the Free Software Foundation; either
++ * version 2 of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public
++ * License along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
++ */
++
++#include <QtTest>
++
++#include <QStringList>
++
++#include <array>
++
++// Generated at configure time by the audit at the bottom of tests/CMakeLists.txt: one row
++// per (test target, plug-in source) pair that compiles a plug-in's own PLUGIN_EXPORT
++// definitions, and one compile definition per row holding whether that target defines
++// PLUGIN_STATIC_DEFINE or the export condition of the plug-in's generated header.
++// The verdicts are `1`/`0` evaluated by the compiler from the targets' own
++// COMPILE_DEFINITIONS (generator expressions), so this test reads a build fact.
++#include "PluginExportBranchTargets.h"
++
++namespace
++{
++
++struct Site
++{
++	QString target;
++	QString exportCondition;
++	QString source;
++};
++
++QList<Site> auditedSites()
++{
++	QList<Site> sites;
++#define ZENE_PLUGIN_EXPORT_SITE(index, target, condition, source, verdict) \
++	sites.append(Site{QStringLiteral(target), QStringLiteral(condition), QStringLiteral(source)});
++	ZENE_PLUGIN_EXPORT_SITES(ZENE_PLUGIN_EXPORT_SITE)
++#undef ZENE_PLUGIN_EXPORT_SITE
++	return sites;
++}
++
++std::array<int, ZENE_PLUGIN_EXPORT_SITE_COUNT> siteVerdicts()
++{
++	std::array<int, ZENE_PLUGIN_EXPORT_SITE_COUNT> verdicts{};
++#define ZENE_PLUGIN_EXPORT_SITE(index, target, condition, source, verdict) \
++	verdicts[index] = (verdict);
++	ZENE_PLUGIN_EXPORT_SITES(ZENE_PLUGIN_EXPORT_SITE)
++#undef ZENE_PLUGIN_EXPORT_SITE
++	return verdicts;
++}
++
++} // namespace
++
++class PluginExportBranchTest : public QObject
++{
++	Q_OBJECT
++
++private slots:
++	// Hosted mingw64, run 43537465762 job 132269831285: RnnoiseDenoiserEffectTest compiled
++	// plugins/RnnoiseDenoiser/RnnoiseDenoiserEffect.cpp, which *defines* the plug-in's
++	// PLUGIN_EXPORT descriptor and lmms_plugin_main. The generated plugin_export.h took its
++	// consumer branch, so on Windows PLUGIN_EXPORT was __declspec(dllimport) and both
++	// definitions were ill-formed:
++	//   error: variable 'lmms::rnnoisedenoiser_plugin_descriptor' definition is marked dllimport
++	//   error: function 'lmms::Plugin* lmms::lmms_plugin_main(Model*, void*)' definition is marked dllimport
++	// On ELF both branches expand to visibility("default"), so a Linux compiler cannot observe
++	// the difference; the defect is a build-configuration fact, which is what this test reads.
++	void everyTranslatedPluginDefinitionTakesTheExportBranch()
++	{
++		// A scan that finds nothing would pass vacuously; the test targets that compile a
++		// plug-in's own sources are the population. The floor sits below today's count so
++		// adding a sibling target needs no edit here, and a broken scan cannot pass.
++		QVERIFY2(ZENE_PLUGIN_EXPORT_SITE_COUNT >= 20,
++			qPrintable(QStringLiteral("the configure-time audit saw only %1 test targets compiling a "
++				"plug-in's own PLUGIN_EXPORT definition; the scan is broken, not the tree")
++				.arg(ZENE_PLUGIN_EXPORT_SITE_COUNT)));
++		const QList<Site> sites = auditedSites();
++		QCOMPARE(sites.size(), ZENE_PLUGIN_EXPORT_SITE_COUNT);
++		// The target the hosted mingw64 job failed on must be part of the audited set, so a
++		// rename or removal of that target cannot turn this regression green by omission.
++		QCOMPARE(ZENE_PLUGIN_EXPORT_CANARY_PRESENT, 1);
++
++		const auto verdicts = siteVerdicts();
++		QStringList offenders;
++		for (int i = 0; i < sites.size(); ++i)
++		{
++			if (verdicts[static_cast<std::size_t>(i)] != 0)
++			{
++				continue;
++			}
++			offenders.append(QStringLiteral("%1 (%2: defines neither PLUGIN_STATIC_DEFINE nor %3)")
++				.arg(sites.at(i).target, sites.at(i).source, sites.at(i).exportCondition));
++		}
++		QVERIFY2(offenders.isEmpty(),
++			qPrintable(QStringLiteral("these test targets compile a plug-in's PLUGIN_EXPORT definitions "
++				"but take neither export branch, so on Windows PLUGIN_EXPORT is __declspec(dllimport) "
++				"and defining it is an error: %1").arg(offenders.join(QStringLiteral("; ")))));
++	}
++};
++
++QTEST_GUILESS_MAIN(PluginExportBranchTest)
++
++#include "PluginExportBranchTest.moc"
+diff --git a/tests/upstream-modifications.txt b/tests/upstream-modifications.txt
+index feb0eb6414..47d1e4af52 100644
+--- a/tests/upstream-modifications.txt
++++ b/tests/upstream-modifications.txt
+@@ -825,6 +825,7 @@ src/core/CMakeLists.txt	0.3.0 row 30 pitch-preserving time-stretch: lists the ne
+ src/core/Clip.cpp	#611 Slice 0 relocated the clip->source mapping here, so this file is already an inherited one this fork owns. fade/crossfade/clip-gain wave: saveClipEdits/loadClipEdits (attributes gain/fadein/fadeout/fadeinshape/fadeoutshape, each written ONLY when it differs from the neutral default) and the ClipEdits copy in the copy constructor, so a clone or a split carries its fades; comping (task #600): the same saveClipEdits/loadClipEdits pair is where a clip's take-lane tag is written (`lane`, only when above 0) and read back (reset to 0 when the attribute is absent - the reset is what makes the pre-assignment state reachable from a journal checkpoint), plus the m_laneIndex copy in the copy constructor; stable ids slice 2 (feature row 51): the Clip constructor allocates the id, saveState writes it as an `id` attribute on the clip's own element and restoreState takes the file's value (or keeps the constructor's, counted); the override calls JournallingObject::saveState/restoreState BY NAME - SerializingObject's drops the journallingObject child and takes the undo mechanism with it - and a clip built from a copy payload keeps its own id (rule R4/R5); 040/arch4-s4 (2026-09-22, ARCH-4 slice S4, SPEC-ARCH-4 1.7 Requirement 6): the lane/link reset-on-absence defaults are declared once in a file-local CLIP_RESTORE_SCHEMA and read through clipRestoreDefault() - same defaults as before ("0", "0"), same std::max clamp, comment consolidated onto the schema; the link comment keeps its SPEC-stable-ids R3 observe-rationale at the site. Proven by ControlLinkCommandsTest, TakeLaneCompTest and the registered write-refusal gate. 040/arch4-s9 (2026-09-22, ARCH-4 slice S9, SPEC-ARCH-4 census row 5): saveWarp/loadWarp - the `<warp>` child formerly written by SampleClip::saveSettings (498-527) and read by SampleClip::loadSettings (589-635) - called from saveState/restoreState; the reader runs right after loadSettings and UNCONDITIONALLY before the copy-payload guard, because every payload carried the child (a pasted/cloned clip keeps its warp), and reset-on-absence is kept in its else branch (SPEC-ARCH-4 1.7 R6 form for a child element); the copy constructor copies the four warp members. Output stays byte-identical: the child is insertBefore'd into the position saveSettings used to give it ([warp][journallingObject]), and the revision fingerprint still stamps last, after it. Negative control: neutering the else branch fails ClipWarpPersistenceTest::restoringAnElementWithoutAWarpUnwarpsTheClip and ControlWarpCommandsTest::markerEditsAreReversibleThroughTheJournal (measured, docs/s9-logs/negative-control.md). 040/arch4-s7 (2026-09-22, ARCH-4 slice S7, SPEC-ARCH-4 migration upconversion row): comment-only - saveClipEdits' lane-attribute comment now says the index resolves against the `<z:lane id>` entities of the `<z:lanes>` section instead of an anonymous slot. The write (`lane` above 0 only), the CLIP_RESTORE_SCHEMA "lane"->"0" default and the load line are byte-for-byte unchanged, so s4's reset-on-absence rule still carries the lane tag (lane absent => lane 0) exactly as before. Held by TakeLaneTest (unchanged) and the new registered LanesUpconvertTest.; 040/survey-fixes G4 (2026-09-28): copyStateTo refreshes the automation editor only when a GUI exists (it dereferenced getGUI() unguarded, so a headless state copy crashed); 040/rubberband (2026-09-29, owner decision 12 - Rubber Band optional, WSOLA the default): saveWarp writes stretch="rubberband" for the new mode and loadWarp reads it; "wsola" and absence read exactly as before, and an unknown value is the default Resample; 0.5.0 L05 (ED-172): the logarithmic and S-curve fade shapes read back from the project; 0.5.0 L05 (ED-153): saveClipEdits/loadClipEdits carry the formant handling (formantkeep, formant), written only when set and read back as off when absent; 0.5.0 L07 (ED-029): the clip edits' content loop written as attribute 'loop' only when set and read back as 0 when absent; 0.5.0 L04/L05 (ED-022, ED-152/ED-179): 'snappoint' and the speed attributes written only when set, read back as defaults when absent; 0.5.0 W3 (ED-179): saveSpeed/loadSpeed carry prefadein/prefadeout, written only when set and read back as 0 when absent; 0.5.0 review round 3: an unreadable speed attribute loads as 100%; 0.5.0 audio-clips (ED-029/ED-028): saveClipEdits/loadClipEdits carry an audio clip's loop - loopfrom/loopframes (source frames) and loopoffset - written only when the clip loops and read back as no loop when absent; decisions-r3-takes (2026-10-09 owner ruling): persists the take-group identity and resets transient active-lane mirror on load.
+ .github/workflows/build.yml	Train 39 Linux disk exhaustion: retain debug-bearing objects and ordinary symbols, remove duplicate test-artifact DWARF via ZENE_TEST_STRIP_DEBUG on both Linux jobs, retaining production binary debug data; preserve tests, gates and resource limits.
+ tests/CMakeLists.txt	Train 39 Windows RNNoise test export: direct-source fixture defines rnnoisedenoiser_EXPORTS and exposes the configured definition to a compiler regression; register hosted portability probes and opt-in Linux test-only DWARF removal, preserving production debug information.
++tests/CMakeLists.txt	Train 40: reconcile the MinGW direct-source test export repair with the existing RNNoise export and host probes, preserve all audit assertions and fix twelve accepted sibling export branches plus the additional WasmSandboxTest branch exposed with WASM enabled; declare AudioPluginTest runtime fixture dependencies for reproducible targeted builds.
+ src/core/ConfigManager.cpp	wave R rename (018d2041f): the bundled data search path moved from share/lmms/ to share/zene/, and the build-tree discovery moved from the lmms_SOURCE_DIR/lmms_BINARY_DIR CMake cache entries to the zene_ spelling the renamed CMake project writes (the old lmms_ entry is still accepted, so an existing build tree keeps working).; wave R rename: runtime data/working paths derive from the renamed install layout; #625 headless load: the config parse-error and config-write-failure boxes are not opened in an unattended run (saveConfigFile is reachable from project.open via the recent-projects list); tag v0.2.0-alpha CI fix: saveConfigFile's unattended qWarning() branch needs <QDebug> included by name -- <QtGlobal> only forward-declares QDebug, so the linux-x86_64 and linux-arm64 jobs failed with 'invalid use of incomplete type class QDebug' (Qt5; Qt6 pulls QDebug in transitively through <QApplication>, which is why the same tree builds on a Qt6-only box); cluster 2405: clears the ConfigManager singleton pointer before destruction so later callers recreate a live manager
+ src/core/AutomatableModel.cpp	post-alpha/automation-modes: the mode state machine, the transport run token, the monotone clock and the trim offset; appended in its own banner-marked block at the end of the file; automation-touch-race: the destructor reports itself to the song (Song::forgetAutomatedModel) so the song's last-frame automated-value cache drops a control that is destroyed while the transport runs, instead of dereferencing it in the next processAutomations()/stop() (held by AutomationModesTest::testDestroyedControlIsNotDereferenced); 0.3.0 row 9 sample-accurate automation (030/sample-accurate-automation, board task #646, docs/SAMPLE-ACCURATE-AUTOMATION.md): valueBuffer() gains ONE branch - a published ramp fills the per-sample buffer from the curve - and the two accessors are defined below it; the controller path, the linked-model path and the old-new interpolation path are unchanged and remain the fallback for every block that publishes nothing; diagnostics 2026-09-23: the controllerValue scale-type qFatal now names the offending enum value and model pointer (it fired on freed memory during the UAF; the message is what identified the bug class).; 050 L06 ED-191: setValue records the last touched model id (not for automated writes)
+ src/core/AutomationClip.cpp	0.3.0 row 9 sample-accurate automation (030/sample-accurate-automation, board task #646, docs/SAMPLE-ACCURATE-AUTOMATION.md): defines setSampleAccurate()/rampValueAt()/addRampKnot()/writeBlockRamp(), and saveSettings() writes <automationclip sample_accurate> ONLY when the flag is on while loadSettings() RESETS it on absence (which is what lets a checkpoint taken before the first edit take the flag back). The node parsing, the other attributes and valueAt() are untouched; 040/m2-ramp-default (2026-09-30, R1.2): saveSettings writes sample_accurate only for an explicit setting ("1" unchanged, "0" for off) and loadSettings reads absence as Default; a static_assert pins the ramp cap against the densest block; 050 L06 (file-length ratchet): flipY/flipX moved verbatim to AutomationClipTransforms.cpp (with the new drawShape/transformRange/thin/bendValueAt); valueAt honours a point's own curve (ED-185); the relative flag and each point's curve are saved/loaded (ED-199, ED-185); 0.5.0 bug hunt: the copy constructor carries the relative flag and the ramp setting; 0.5.0 bug hunt cluster new-p9-566: valuesAfter() returns before std::next() when lowerBound is end(), avoiding increment of a past-the-end iterator
+-- 
+2.56.0
+

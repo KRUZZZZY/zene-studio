@@ -1,0 +1,960 @@
+From 0cd9c91eb992f080b73e9e98e0f1a60ad35922fa Mon Sep 17 00:00:00 2001
+From: Zene CI repair <noreply@zene.invalid>
+Date: Sat, 14 Nov 2026 10:23:26 +0000
+Subject: [PATCH] fix(ci): CI regression: build / macos-x86_64
+
+CI-Repair-Id: ci-repair-ci-9d1768ed0beb1636-aeebf5fad8a2
+---
+ .../cluster-ci-9d1768ed0beb1636.md            | 187 ++++++++++++++++++
+ tests/CMakeLists.txt                          |  40 +++-
+ tests/fork-sources.txt                        |   4 +
+ tests/nam-model-loader-portability-check.py   | 148 ++++++++++++++
+ tests/nam-portability-registration-check.py   | 182 +++++++++++++++++
+ tests/src/core/NamModelLoaderTest.cpp         | 128 +++++++++---
+ tests/upstream-modifications.txt              |   1 +
+ 7 files changed, 659 insertions(+), 31 deletions(-)
+ create mode 100644 docs/qwen-fixes-2026-10/cluster-ci-9d1768ed0beb1636.md
+ create mode 100644 tests/nam-model-loader-portability-check.py
+ create mode 100644 tests/nam-portability-registration-check.py
+
+diff --git a/docs/qwen-fixes-2026-10/cluster-ci-9d1768ed0beb1636.md b/docs/qwen-fixes-2026-10/cluster-ci-9d1768ed0beb1636.md
+new file mode 100644
+index 0000000000..d9331ecc01
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/cluster-ci-9d1768ed0beb1636.md
+@@ -0,0 +1,187 @@
++FIXED — cluster ci-9d1768ed0beb1636 (CI regression: build / macos-x86_64)
++
++## Verdict and cause
++
++REAL on this branch. The defect is in the test sources, not the product and not the CI
++infrastructure. There were two layers, and the second one is the layer this round fixes.
++
++**1. The macOS failure the patrol reported.** At `40b4322860` the hosted macos-x86_64 job
++builds for a deployment target below macOS 10.15 (`CMakeLists.txt:263-277` sets this project's
++floor to 10.13, and CI derives a lower-than-10.15 target from a dependency binary). libc++
++marks `std::filesystem` unavailable there, so the build stopped on the newly added NAM loader
++regression:
++
++    tests/src/core/NamModelLoaderTest.cpp:137:46: error: 'path' is unavailable: introduced in macOS 10.15
++    tests/src/core/NamModelLoaderTest.cpp:141:17: error: 'basic_ofstream' is unavailable: introduced in macOS 10.15
++    tests/src/core/NamModelLoaderTest.cpp:250:23: error: 'file_size' is unavailable: introduced in macOS 10.15
++    tests/src/core/NamModelLoaderTest.cpp:329:57: error: 'temp_directory_path' is unavailable ...
++
++Verified against the exact commit with `git show 40b4322860:tests/src/core/NamModelLoaderTest.cpp`:
++`#include <filesystem>` at :38, `rejectsModelJson(const std::filesystem::path&` at :137,
++`std::filesystem::file_size` at :250 and the temporary-directory helpers at :329-:390. The
++fix for this layer is the committed `15ef744f0e` (plain `std::string` paths plus
++`mkdtemp`/`mkdir` and `stat`/`_stat64`; no `std::filesystem` left in the file). It is
++preserved unchanged in this round.
++
++**2. The registration blocker QA round 1 sent back.** The portability CTest added with that
++fix was guarded at `tests/CMakeLists.txt:6157` as
++`if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)`, but the file's only
++`find_program(PYTHON3_EXECUTABLE ...)` stood far below it, at :6425. CMake evaluates the
++condition with whatever the variable holds at that point: a warm tree with
++`PYTHON3_EXECUTABLE` in its cache registered the CTest, so the previous round's green run
++proved nothing about a clean configure; a fresh configure - every hosted job - evaluated the
++guard while the variable was still undefined and silently dropped the test. Measured here
++against the unfixed file: a fresh configure then
++`ctest -N -R '^NamModelLoader|^NamPortability'` listed only `NamModelLoaderTest`
++(`build/qwen-logs/ctest-N-red-final.log`), while the same clean configure of the fixed file
++lists both `NamModelLoaderPortabilityCheck` and `NamPortabilityRegistrationCheck`
++(`build/qwen-logs/test-16-fresh-green-final.log`). A regression CTest that a clean configure
++never registers protects nothing.
++
++The contract was already established before the failing commit, which is why this is a
++missing guard and not a design question:
++
++- `CMakeLists.txt:263-277`: the supported macOS floor is 10.13, and the product's own POSIX
++  paths therefore avoid `std::filesystem` (`src/core/BounceInPlace.cpp:310-321`,
++  `src/core/DataFile.cpp:160-170`, `src/core/ProjectRevisions.cpp:72-80`).
++- The loader's sibling regressions already avoid it for the same reason
++  (`plugins/NeuralAmp/tests/NamModelMonoOutputTest.cpp:73`,
++  `plugins/NeuralAmp/tests/nam_harness.cpp:397-399`,
++  `tests/src/core/TwoTrackRecordingHarness.cpp:106-124` and `:274-285`).
++- The other `std::filesystem` uses in `tests/` are `_WIN32`-guarded (`BounceInPlaceTest.cpp:35`,
++  `VstSubPluginFeaturesTest.cpp:22`) or in a probe no target builds
++  (`TwoTrackAlsaCaptureProbe.cpp`).
++
++## Fix (this round, on top of `15ef744f0e`)
++
++- `tests/CMakeLists.txt:18-24`: one `find_program(PYTHON3_EXECUTABLE ...)` near the top of the
++  file, with its reason stated, so every `if(... AND PYTHON3_EXECUTABLE)` below it - including
++  the portability registration at :6157 - is evaluated after discovery. The late duplicate at
++  the old :6408 is removed (a comment at :6432 records where it went). This is the correction
++  QA asked for and committed as `194d2fae98`, now on this branch together with the rest.
++- `tests/CMakeLists.txt:6165-6178`: new CTest `NamPortabilityRegistrationCheck` running
++  `tests/nam-portability-registration-check.py`. It fails on the ordering defect itself and,
++  on Linux, when the configured tree did not register `NamModelLoaderPortabilityCheck`.
++- `tests/nam-portability-registration-check.py` (new, 182 lines): reads the real
++  `tests/CMakeLists.txt` with comments stripped, requires the first use of
++  `PYTHON3_EXECUTABLE` to follow its discovery, requires the portability `add_test` to sit
++  behind an `if()` naming both `PYTHON3_EXECUTABLE` and Linux, and requires it to name an
++  existing script. Two probe texts run first - a use-before-discovery text must be refused and
++  an ordered text must pass - so a check that cannot fail fails here.
++- `tests/fork-sources.txt`, `tests/upstream-modifications.txt`: registration of the new script
++  and the ledger reason for the inherited `tests/CMakeLists.txt` change. The adapted
++  `NamModelLoaderTest.cpp` and its portability check from `15ef744f0e` are untouched.
++
++Nothing in the product, the audio thread, undo, the command surface or the saved-data path is
++touched: the diff is CMake, one test-side Python check and two ledgers.
++
++## Regression test matrix (run from `build/tests` on rebuilt targets)
++
++| Requirement | Test | Result |
++|---|---|---|
++| Ordinary load / valid model | `NamModelLoaderTest`, `NamModelMonoOutputTest`, `NamLoaderTest_valid` | PASS |
++| Malformed, overflow, limits, invalid rates/weights, size boundary | `NamModelLoaderTest` (all refusal cases inside the binary) | PASS |
++| Realtime processing / prewarm | `NeuralAmpModelLoadTest` (`audioThreadAllocatesNothingWhileModelsSwap`: 0 allocations, finite output), `NamModelPrewarmTest` (`multiBlockPrewarmUsesSilence`) | PASS |
++| Portability, adapted source | `NamModelLoaderPortabilityCheck` | PASS |
++| Portability, old filesystem source (negative control) | `NamModelLoaderPortabilityCheck` with `40b4322860`'s `NamModelLoaderTest.cpp` restored | FAIL (exit 8) |
++| Clean-configure registration | fresh `cmake -S . -B <fresh>` + `ctest -N` / focused `ctest` | FAIL before, PASS after |
++| Registration ordering | `NamPortabilityRegistrationCheck` | PASS (RED when the product ordering is reverted) |
++| Hosted macos-x86_64 native build | needs the macOS runner; see "Blocked capability" | not runnable here |
++
++## Evidence (exact commands and exit codes)
++
++Worktree: `/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-9d1768ed0beb1636`.
++`LOGS` below is that worktree's `build/qwen-logs`, because the designated
++`~/.local/share/zene-bunny-fix/qwen/runs/ci-9d1768ed0beb1636.r3/logs` is not writable in this
++session (see "Blocked capability").
++
++| Step | Command | Exit |
++|---|---|---|
++| RED, ordering check on the unfixed file | `python3 tests/nam-portability-registration-check.py --source-root .` (`check-1-red-source.log`) | 1 |
++| Fresh configure, unfixed file | `/usr/bin/cmake -S . -B "$TMPDIR/fresh-pre" -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWANT_QT6=ON -DLMMS_CLAP_PATH="$PWD/build/clap"` (`configure-2-pre-fix.log`) | 0 |
++| Unfixed file: no portability CTest in a clean tree | `cd "$TMPDIR/fresh-pre/tests" && /usr/bin/ctest -N -R "^NamModelLoader"` (`ctest-N-pre-fix.log`) | 0 (1 test; portability missing) |
++| Regression sees a configured tree that lacks it | `python3 tests/nam-portability-registration-check.py --source-root . --build-dir "$TMPDIR/fresh-pre"` (`check-6-red-stale-tree.log`) | 1 |
++| GREEN, ordering check after the fix | `python3 tests/nam-portability-registration-check.py --source-root . --build-dir build` (`check-4-green-lane.log`) | 0 |
++| Fresh configure, fixed file | `/usr/bin/cmake -S . -B "$TMPDIR/fresh-post2" ... -DWANT_QT6=ON -DLMMS_CLAP_PATH="$PWD/build/clap"` (`configure-4-post-fix-final.log`) | 0 |
++| Fresh tree registers both CTests | `cd "$TMPDIR/fresh-post2/tests" && /usr/bin/ctest -R "^NamModelLoaderPortabilityCheck$\|^NamPortabilityRegistrationCheck$" --output-on-failure` (`test-9-fresh-final.log`) | 0 (2/2) |
++| Build family targets | `cmake --build build --target NamModelLoaderTest NamModelMonoOutputTest NamModelPrewarmTest NeuralAmpModelLoadTest nam_harness` (`build-2-family.log`) | 0 |
++| Family suite | `/usr/bin/ctest -R "NamModel\|NamLoader\|NamPortability\|NeuralAmpModelLoadTest" --output-on-failure` (`test-15-family-green-final.log`) | 0 (14/14) |
++| Realtime pair, explicit | `/usr/bin/ctest -R "NeuralAmpModelLoadTest\|NamModelPrewarmTest" --output-on-failure` (`test-3-realtime.log`) | 0 (2/2) |
++| Negative control, old filesystem source | `/usr/bin/ctest -R "^NamModelLoaderPortabilityCheck$"` with `40b4322860`'s test source restored (`test-17-red-old-filesystem-final.log`) | 8 |
++| Restored source, rebuild + rerun | `cmake --build build --target NamModelLoaderTest` (`build-11-restore-nam-final.log`), `/usr/bin/ctest -R "^NamModelLoaderTest$\|^NamModelLoaderPortabilityCheck$"` (`test-18-green-portability-final.log`) | 0, 0 (2/2) |
++| 4b: reverse the product change (CMake ordering only; the registration and the test script stay) | `diff -u tests/CMakeLists.txt build/qwen-logs/CMakeLists.product-reverted.txt > build/qwen-logs/fix.patch && git apply build/qwen-logs/fix.patch` | 0 |
++| 4b: RED, ordering check | `python3 tests/nam-portability-registration-check.py --source-root .` (`check-14-red-final.log`) | 1 |
++| 4b: RED, ctest | `cmake --build build --target rebuild_cache`, then `/usr/bin/ctest -R "^NamPortabilityRegistrationCheck$" --output-on-failure` (`test-14-red-ctest-final.log`) | 0, 8 |
++| 4b: RED, clean configure | `/usr/bin/cmake -S . -B "$TMPDIR/fresh-red4" ...` (`configure-7-red-final.log`), `/usr/bin/ctest -N -R "^NamModelLoader\|^NamPortability"` (`ctest-N-red-final.log`) | 0 (1 test; portability missing) |
++| 4b: restore the product change | `git apply -R build/qwen-logs/fix.patch` | 0 |
++| 4b: GREEN, regenerate + family | `cmake --build build --target rebuild_cache` (`build-10-rebuild-cache-green.log`), `/usr/bin/ctest -R "NamModel\|NamLoader\|NamPortability\|NeuralAmpModelLoadTest"` (`test-15-family-green-final.log`) | 0, 0 (14/14) |
++| 4b: GREEN, clean configure | `/usr/bin/cmake -S . -B "$TMPDIR/fresh-green-final" ...` (`configure-8-green-final.log`), focused `/usr/bin/ctest` (`test-16-fresh-green-final.log`) | 0, 0 (2/2) |
++| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (`feature-check-3-final.log`) | 0 (all eight rows PASS) |
++
++Reverted-state assertion text, copied from `build/qwen-logs/check-14-red-final.log`:
++
++    FAIL: tests/CMakeLists.txt uses PYTHON3_EXECUTABLE at line 6150 but discovers it at line 6425;
++    a fresh configure evaluates the use while the variable is undefined
++
++Restored-state text, copied from `build/qwen-logs/check-13-green-split.log`:
++
++    PASS: tests/CMakeLists.txt discovers PYTHON3_EXECUTABLE (line 24) before every use
++    PASS: NamModelLoaderPortabilityCheck is a guarded Linux CTest naming an existing script
++    PASS: the configured tree registered NamModelLoaderPortabilityCheck
++
++## Blocked capability
++
++- **Hosted macos-x86_64 native build.** This workspace has no Darwin/Xcode runner, so the
++  below-10.15 deployment-target compile cannot be executed here. The shadow `<filesystem>`
++  check covers the contract and fails on the pre-fix source (exit 8); native confirmation
++  still needs the hosted job.
++- **The designated log directory is not writable.** Every write under
++  `~/.local/share/zene-bunny-fix/qwen/runs/ci-9d1768ed0beb1636.r3/logs` (and the run directory
++  itself) is refused with `EACCES`, although `stat` shows it owned by this uid with `rwx`;
++  `/home/kruzzzzy` itself is refused too, while the worktree and `$TMPDIR` are writable. All
++  logs for this round are therefore in `<worktree>/build/qwen-logs/` (build-ignored) and are
++  complete; they are listed in the table above.
++
++## Self-check
++
++- **The regression FAILS with the product change reverted and PASSES with it.** Reverted
++  ordering: `NamPortabilityRegistrationCheck` exit 8 (0/1) and the direct script exit 1 with
++  the use-before-discovery line quoted above; a clean configure of the reverted tree lists
++  only `NamModelLoaderTest`. Restored: script exit 0, CTest exit 0, clean configure lists and
++  passes 2/2. The older filesystem adaptation is separately proven by restoring
++  `40b4322860`'s source: `NamModelLoaderPortabilityCheck` exit 8; restored source exit 0 (2/2).
++- **Deterministic.** No wall-clock timing, sleeps, network or races: the check reads the
++  committed CMake file with comments stripped, compares fixed line positions and runs two fixed
++  probe texts; the registered-tree check reads the generated `tests/CTestTestfile.cmake`. The
++  portability check recompiles from the recorded compile command against a static shadow
++  header.
++- **Cause and completeness.** Every use of `PYTHON3_EXECUTABLE` in `tests/CMakeLists.txt`
++  (209 lines mention it; first use at :6157; one discovery at :24) now follows discovery. No other
++  file in the tree references it (`grep` over `CMakeLists.txt` and `*.cmake`, output above);
++  the duplicate late discovery is removed rather than left as a second definition.
++- **No collateral damage.** No loader assertion, fixture or behaviour changed. The CMake edit
++  is an ordering move with identical semantics for every other registration; the tree's
++  registered-test list gains exactly the two intended entries in a clean configure
++  (853 -> 855 tests: `NamModelLoaderPortabilityCheck`, `NamPortabilityRegistrationCheck`).
++  Old projects and saved data are untouched.
++- **No audio-thread, undo or command changes.** No product source is in the diff; no control
++  command, snapshot canary or reversibility surface is touched.
++- **Registration and gates.** New script registered in `tests/fork-sources.txt`; the inherited
++  `tests/CMakeLists.txt` change recorded in `tests/upstream-modifications.txt`;
++  `feature_check.py` exits 0 with every row PASS (the first run flagged
++  `registration_problem` at CCN 11, which was split into helpers, not waived).
++
++## Files committed
++
++This round:
++
++- `tests/CMakeLists.txt` (Python discovery moved before first use; `NamPortabilityRegistrationCheck` registered)
++- `tests/nam-portability-registration-check.py` (regression; new)
++- `tests/fork-sources.txt` (new-script registration)
++- `tests/upstream-modifications.txt` (ledger reason for the inherited file)
++- `docs/qwen-fixes-2026-10/cluster-ci-9d1768ed0beb1636.md` (this report)
++
++Already on the branch from the previous round (`15ef744f0e`), unchanged here:
++
++- `tests/src/core/NamModelLoaderTest.cpp` (filesystem adaptation)
++- `tests/nam-model-loader-portability-check.py` (portability check; new)
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 3d570f752c..1a0d9452db 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -16,6 +16,13 @@ endif()
+ set(CMAKE_INCLUDE_CURRENT_DIR ON)
+ set(CMAKE_AUTOMOC ON)
+ 
++# Python is used by several CTests registered throughout this file (the agent control
++# surface, the NAM portability checks, the docs gates). Discover it HERE, before the first
++# `if(... AND PYTHON3_EXECUTABLE)` - a condition that runs before discovery is false on a
++# fresh configure (the cache only hides it in a warm tree) and silently drops the test it
++# guards. `tests/nam-portability-registration-check.py` enforces that order.
++find_program(PYTHON3_EXECUTABLE NAMES python3 python3.exe python)
++
+ # --- MSVC + Ninja: ONE link at a time in THIS directory ----------------------
+ # Every target built from this file - the ~75 test executables the LMMS_TESTS
+ # loop creates, FakeRemotePluginClient, the partc_ref_* reference MODULEs, the
+@@ -6141,6 +6148,37 @@ endif()
+ target_compile_features(NamModelLoaderTest PRIVATE cxx_std_20)
+ target_compile_options(NamModelLoaderTest PRIVATE ${ZENE_NAM_EIGEN_OPTIONS})
+ 
++# The hosted macos-x86_64 job builds for a deployment target below macOS 10.15, where libc++
++# marks std::filesystem unavailable ("'path' is unavailable: introduced in macOS 10.15").
++# Recompile the real NamModelLoaderTest translation unit against a shadow <filesystem> that
++# errors - the same availability contract - and run red/green probes first, so a use of
++# std::filesystem is red on the Linux host that provides it (this CTest is Linux-only; the
++# macOS job proves the real thing natively).
++if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
++	add_test(NAME NamModelLoaderPortabilityCheck
++		COMMAND ${PYTHON3_EXECUTABLE}
++			${CMAKE_CURRENT_SOURCE_DIR}/nam-model-loader-portability-check.py
++			--source-root ${CMAKE_SOURCE_DIR}
++			--build-dir ${CMAKE_BINARY_DIR})
++	set_tests_properties(NamModelLoaderPortabilityCheck PROPERTIES TIMEOUT 300)
++endif()
++
++# The registration above is load-bearing: the macOS availability contract is only checked
++# when the CTest exists. A use of PYTHON3_EXECUTABLE before its discovery made the condition
++# false on a fresh configure and silently dropped it. This one fails on that ordering and,
++# where the guarded CTest is registered at all (Linux), on a configured tree that lacks it.
++if(PYTHON3_EXECUTABLE)
++	set(NAM_PORTABILITY_REGISTRATION_ARGS --source-root ${CMAKE_SOURCE_DIR})
++	if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
++		list(APPEND NAM_PORTABILITY_REGISTRATION_ARGS --build-dir ${CMAKE_BINARY_DIR})
++	endif()
++	add_test(NAME NamPortabilityRegistrationCheck
++		COMMAND ${PYTHON3_EXECUTABLE}
++			${CMAKE_CURRENT_SOURCE_DIR}/nam-portability-registration-check.py
++			${NAM_PORTABILITY_REGISTRATION_ARGS})
++	set_tests_properties(NamPortabilityRegistrationCheck PROPERTIES TIMEOUT 120)
++endif()
++
+ # Native VST3 instrument fixture and its probe.
+ #
+ # Opt-in on purpose: cmake/modules/Vst3Sdk.cmake builds lmms_vst3_sdk whenever
+@@ -6391,7 +6429,7 @@ endif()
+ # EXTERNAL Python client over the AF_UNIX socket, so the socket, the wire
+ # framing and the command groups are exercised end to end.
+ # ---------------------------------------------------------------------------
+-find_program(PYTHON3_EXECUTABLE NAMES python3 python3.exe python)
++# (PYTHON3_EXECUTABLE is discovered once, near the top of this file.)
+ # Cluster ci-0ff72c5279856e5d: the windows-arm64 configure regression. That job failed at
+ # the generate step because Threads::Threads was not defined above the tests on Windows -
+ # the top-level pthread check is gated to the pthread platforms, and FindSDL2.cmake's own
+diff --git a/tests/fork-sources.txt b/tests/fork-sources.txt
+index f094ce55c7..8575c9cdf1 100644
+--- a/tests/fork-sources.txt
++++ b/tests/fork-sources.txt
+@@ -3759,3 +3759,7 @@ include/ShellRecordMenu.h
+ src/gui/shell/ShellRecordMenu.cpp
+ # cluster new-p10-318 (2026-10): fix and verification report for the Peak Controller zero-frame block (fork-NEW).
+ docs/qwen-fixes-2026-10/cluster-new-p10-318.md
++# cluster ci-9d1768ed0beb1636 (2026-11-14): keep the NAM loader regression buildable below macOS 10.15.
++tests/nam-model-loader-portability-check.py
++docs/qwen-fixes-2026-10/cluster-ci-9d1768ed0beb1636.md
++tests/nam-portability-registration-check.py
+diff --git a/tests/nam-model-loader-portability-check.py b/tests/nam-model-loader-portability-check.py
+new file mode 100644
+index 0000000000..382dfb5c51
+--- /dev/null
++++ b/tests/nam-model-loader-portability-check.py
+@@ -0,0 +1,148 @@
++#!/usr/bin/env python3
++"""Fail when the NAM loader regression needs <filesystem>, which macOS below 10.15 lacks.
++
++Cluster ci-9d1768ed0beb1636 (2026-11-14). The hosted macos-x86_64 job builds for a deployment
++target below macOS 10.15 (this project's supported floor is 10.13, and CI's macos-env.sh
++derives a target from a dependency binary). libc++ marks std::filesystem unavailable there,
++so the build stopped on the then-new regression:
++
++    tests/src/core/NamModelLoaderTest.cpp:137:46: error: 'path' is unavailable:
++    introduced in macOS 10.15 unknown
++
++Every Linux and Windows host compiled it, so the defect reached the train. The loader's other
++portable regressions (NamModelMonoOutputTest, nam_harness) already use plain std::string paths
++with mkdtemp/stat for exactly this reason.
++
++This check recompiles the real translation unit from this build's own compile_commands.json
++with a shadow <filesystem> that errors - the availability contract the macOS job enforces.
++Two probes run first: one that includes <filesystem> must fail under the shadow, and one that
++does not must compile. A check that cannot fail fails.
++
++Usage: nam-model-loader-portability-check.py --source-root <tree> --build-dir <build>
++"""
++
++import argparse
++import json
++import os
++import shlex
++import subprocess
++import sys
++import tempfile
++
++TARGET = "tests/src/core/NamModelLoaderTest.cpp"
++RED_PROBE = "#include <filesystem>\nint main() { return 0; }\n"
++GREEN_PROBE = "#include <cstdio>\nint main() { return 0; }\n"
++
++
++def run(command, cwd, timeout=300):
++	return subprocess.run(command, cwd=cwd, capture_output=True, text=True, timeout=timeout)
++
++
++def split_command(entry):
++	if entry.get("command"):
++		return shlex.split(entry["command"])
++	return list(entry.get("arguments") or [])
++
++
++def source_of(entry):
++	path = entry["file"]
++	if not os.path.isabs(path):
++		path = os.path.join(entry["directory"], path)
++	return os.path.normpath(path)
++
++
++def syntax_command(entry, shadow):
++	"""The recorded compile line, with the shadow include and no output/compile action."""
++	cleaned = []
++	skip = False
++	for argument in split_command(entry):
++		if skip:
++			skip = False
++			continue
++		if argument in ("-o", "-MF", "-MT", "-MQ"):
++			skip = True
++			continue
++		if argument in ("-c", "-MD", "-MMD", "-MP"):
++			continue
++		if argument.startswith(("-o", "-MF", "-MT", "-MQ")):
++			continue
++		cleaned.append(argument)
++	if not cleaned:
++		return None
++	cleaned.extend(["-I" + shadow, "-fsyntax-only"])
++	return cleaned
++
++
++def load_entry(build_dir, source_root):
++	path = os.path.join(os.path.abspath(build_dir), "compile_commands.json")
++	if not os.path.isfile(path):
++		return None, "no compile_commands.json in " + os.path.abspath(build_dir)
++	with open(path, encoding="utf-8") as stream:
++		entries = json.load(stream)
++	wanted = os.path.normpath(os.path.join(os.path.abspath(source_root), TARGET))
++	for entry in entries:
++		if source_of(entry) == wanted:
++			return entry, ""
++	return None, TARGET + " is not in compile_commands.json (was it renamed?)"
++
++
++def error_lines(result):
++	lines = [line for line in (result.stderr or result.stdout).splitlines() if "error" in line.lower()]
++	return "; ".join(lines[:3]) or "compiler exited %d" % result.returncode
++
++
++def main():
++	parser = argparse.ArgumentParser(description=__doc__)
++	parser.add_argument("--source-root", required=True)
++	parser.add_argument("--build-dir", required=True)
++	options = parser.parse_args()
++
++	entry, error = load_entry(options.build_dir, options.source_root)
++	if entry is None:
++		print("FAIL:", error)
++		return 1
++	command = split_command(entry)
++	if not command:
++		print("FAIL:", TARGET, "has no compile command")
++		return 1
++	compiler = command[0]
++
++	with tempfile.TemporaryDirectory(prefix="zene-nam-filesystem-") as temporary:
++		shadow = os.path.join(temporary, "shadow")
++		os.makedirs(shadow)
++		with open(os.path.join(shadow, "filesystem"), "w", encoding="utf-8") as stream:
++			stream.write("#error <filesystem> is unavailable below macOS 10.15\n")
++		red = os.path.join(temporary, "red.cpp")
++		green = os.path.join(temporary, "green.cpp")
++		for path, text in ((red, RED_PROBE), (green, GREEN_PROBE)):
++			with open(path, "w", encoding="utf-8") as stream:
++				stream.write(text)
++
++		probe = [compiler, "-std=c++20", "-fsyntax-only", "-I" + shadow]
++		red_result = run(probe + [red], temporary)
++		if red_result.returncode == 0:
++			print("FAIL: the shadow lets <filesystem> through, so this check cannot detect the defect")
++			return 1
++		print("PASS: a probe that includes <filesystem> is refused under the shadow")
++		green_result = run(probe + [green], temporary)
++		if green_result.returncode != 0:
++			print("FAIL: a probe without <filesystem> does not compile under the shadow:",
++				error_lines(green_result))
++			return 1
++		print("PASS: a probe without <filesystem> compiles under the shadow")
++
++		line = syntax_command(entry, shadow)
++		if line is None:
++			print("FAIL:", TARGET, "has no compile command")
++			return 1
++		result = run(line, entry["directory"])
++		if result.returncode != 0:
++			print("FAIL:", TARGET, "does not compile when <filesystem> is unavailable:",
++				error_lines(result))
++			return 1
++		print("PASS:", TARGET, "compiles when <filesystem> is unavailable (macOS < 10.15)")
++	return 0
++
++
++if __name__ == "__main__":
++	sys.exit(main())
+diff --git a/tests/nam-portability-registration-check.py b/tests/nam-portability-registration-check.py
+new file mode 100644
+index 0000000000..91b0b4f0d5
+--- /dev/null
++++ b/tests/nam-portability-registration-check.py
+@@ -0,0 +1,182 @@
++#!/usr/bin/env python3
++"""Fail when tests/CMakeLists.txt uses PYTHON3_EXECUTABLE before it discovers it.
++
++Cluster ci-9d1768ed0beb1636 (2026-11-14). The regression that keeps NamModelLoaderTest
++buildable below macOS 10.15 was registered inside `if(... AND PYTHON3_EXECUTABLE)`, but the
++first `find_program(PYTHON3_EXECUTABLE ...)` in tests/CMakeLists.txt came later in the file.
++A configure whose cache already held PYTHON3_EXECUTABLE (this lane's warm build tree)
++registered the check; a FRESH configure - every hosted job - evaluated the condition while
++the variable was still undefined and silently omitted the CTest. A regression that a clean
++configure never registers cannot protect anything.
++
++This check enforces the ordering contract on the real file, and that the portability CTest
++still exists, is guarded on Linux and on Python, and names a script that exists. Given a
++build tree, it also requires the generated tests/CTestTestfile.cmake to contain the CTest -
++the registration a configure actually produced. Two probes run first - a use-before-discovery
++text must be refused and an ordered text must pass - so a check that cannot fail fails here
++instead.
++
++Deterministic: it reads the committed CMakeLists.txt and fixed probe texts; no clock, sleeps,
++network or configure.
++
++Usage: nam-portability-registration-check.py [--source-root <tree>] [--build-dir <build>]
++"""
++
++import argparse
++import os
++import re
++import sys
++
++CMAKE = os.path.join("tests", "CMakeLists.txt")
++TEST_NAME = "NamModelLoaderPortabilityCheck"
++DISCOVERY = re.compile(r"^\s*(?:find_program|set)\s*\(\s*PYTHON3_EXECUTABLE\b")
++USE = re.compile(r"PYTHON3_EXECUTABLE")
++ADD_TEST = re.compile(r"add_test\s*\(\s*NAME\s+" + TEST_NAME + r"\b")
++GUARD = re.compile(r"^\s*if\s*\(", re.I)
++
++
++def code_lines(text):
++	"""The file's lines with CMake comments removed (a `#` outside a quoted string)."""
++	lines = []
++	for raw in text.splitlines():
++		out = []
++		quoted = False
++		for character in raw:
++			if character == '"':
++				quoted = not quoted
++			if character == "#" and not quoted:
++				break
++			out.append(character)
++		lines.append("".join(out))
++	return lines
++
++
++def first_use_before_discovery(text):
++	"""(use line, discovery line) of the first use before discovery, or (None, discovery)."""
++	lines = code_lines(text)
++	discovery = None
++	for number, line in enumerate(lines, 1):
++		if DISCOVERY.search(line):
++			discovery = number
++			break
++	for number, line in enumerate(lines, 1):
++		if discovery is not None and number >= discovery:
++			break
++		if USE.search(line):
++			return number, discovery
++	return None, discovery
++
++
++def add_test_line(lines):
++	"""The 1-based line of the portability add_test, or None."""
++	for number, line in enumerate(lines, 1):
++		if ADD_TEST.search(line):
++			return number
++	return None
++
++
++def guard_line(lines, added):
++	"""The 1-based line of the if() that encloses the add_test, or None."""
++	for number in range(added - 1, 0, -1):
++		if GUARD.search(lines[number - 1]):
++			return number
++	return None
++
++
++def guard_problem(lines, added):
++	"""'' when the enclosing if() names Python and Linux, else the reason."""
++	guard = guard_line(lines, added)
++	if guard is None:
++		return TEST_NAME + " is registered outside any if() guard"
++	condition = " ".join(lines[guard - 1:added])
++	if "PYTHON3_EXECUTABLE" not in condition:
++		return TEST_NAME + " is not guarded on PYTHON3_EXECUTABLE (line %d)" % guard
++	if 'CMAKE_SYSTEM_NAME STREQUAL "Linux"' not in condition:
++		return TEST_NAME + " is not guarded on Linux (line %d)" % guard
++	return ""
++
++
++def script_problem(lines, added, source_root):
++	"""'' when the block names an existing tests/*.py, else the reason."""
++	block = " ".join(lines[added - 1:added + 8])
++	match = re.search(r"([\w./+${}-]+\.py)", block)
++	if match is None:
++		return TEST_NAME + " names no Python script"
++	script = os.path.join(source_root, "tests", os.path.basename(match.group(1)))
++	if not os.path.isfile(script):
++		return "the registered script does not exist: " + script
++	return ""
++
++
++def registration_problem(text, source_root):
++	"""'' when the portability CTest is present and properly guarded, else the reason."""
++	lines = code_lines(text)
++	added = add_test_line(lines)
++	if added is None:
++		return "no add_test(NAME " + TEST_NAME + " ...) in " + CMAKE
++	return guard_problem(lines, added) or script_problem(lines, added, source_root)
++
++
++def generated_problem(build_dir):
++	"""'' when the configured tree registered the CTest, else the reason."""
++	generated = os.path.join(build_dir, "tests", "CTestTestfile.cmake")
++	if not os.path.isfile(generated):
++		return "no generated " + generated + " (was this tree configured?)"
++	with open(generated, encoding="utf-8") as stream:
++		text = stream.read()
++	if ADD_TEST.search(text) is None and ("add_test(" + TEST_NAME) not in text:
++		return "the configured tree at " + build_dir + " did not register " + TEST_NAME
++	return ""
++
++
++def main():
++	parser = argparse.ArgumentParser(description=__doc__)
++	parser.add_argument("--source-root", default=".")
++	parser.add_argument("--build-dir", default="")
++	options = parser.parse_args()
++	root = os.path.abspath(options.source_root)
++	path = os.path.join(root, CMAKE)
++	if not os.path.isfile(path):
++		print("FAIL: no " + CMAKE + " under " + root)
++		return 2
++	with open(path, encoding="utf-8") as stream:
++		text = stream.read()
++
++	bad = "if(PYTHON3_EXECUTABLE)\nadd_test(NAME X COMMAND y)\nendif()\nfind_program(PYTHON3_EXECUTABLE NAMES python3)\n"
++	good = "find_program(PYTHON3_EXECUTABLE NAMES python3)\nif(PYTHON3_EXECUTABLE)\nadd_test(NAME X COMMAND y)\nendif()\n"
++	bad_use, _ = first_use_before_discovery(bad)
++	good_use, good_discovery = first_use_before_discovery(good)
++	if bad_use is None:
++		print("FAIL: the ordering probe does not detect a use before discovery")
++		return 2
++	if good_use is not None or good_discovery is None:
++		print("FAIL: the ordering probe refuses a correctly ordered file")
++		return 2
++	print("PASS: the ordering probe detects a use before discovery and accepts the reverse")
++
++	use, discovery = first_use_before_discovery(text)
++	if discovery is None:
++		print("FAIL: " + CMAKE + " never discovers PYTHON3_EXECUTABLE")
++		return 1
++	if use is not None:
++		print("FAIL: " + CMAKE + " uses PYTHON3_EXECUTABLE at line %d but discovers it at line %d;"
++			" a fresh configure evaluates the use while the variable is undefined" % (use, discovery))
++		return 1
++	print("PASS: "+ CMAKE + " discovers PYTHON3_EXECUTABLE (line %d) before every use" % discovery)
++
++	problem = registration_problem(text, root)
++	if problem:
++		print("FAIL:", problem)
++		return 1
++	print("PASS: " + TEST_NAME + " is a guarded Linux CTest naming an existing script")
++	if options.build_dir:
++		problem = generated_problem(os.path.abspath(options.build_dir))
++		if problem:
++			print("FAIL:", problem)
++			return 1
++		print("PASS: the configured tree registered " + TEST_NAME)
++	return 0
++
++
++if __name__ == "__main__":
++	sys.exit(main())
+diff --git a/tests/src/core/NamModelLoaderTest.cpp b/tests/src/core/NamModelLoaderTest.cpp
+index 9a0bfda1ea..12aa6ad6ea 100644
+--- a/tests/src/core/NamModelLoaderTest.cpp
++++ b/tests/src/core/NamModelLoaderTest.cpp
+@@ -33,16 +33,21 @@
+ #include "NamModel.h"
+ 
+ #include <algorithm>
++#include <cerrno>
+ #include <cstddef>
+ #include <cstdint>
+-#include <filesystem>
++#include <cstdio>
++#include <cstdlib>
+ #include <fstream>
+ #include <iostream>
+ #include <limits>
+ #include <sstream>
+ #include <string>
++#include <sys/stat.h>
+ 
+ #ifdef _WIN32
++#include <direct.h>
++#include <io.h>
+ #include <process.h>
+ #else
+ #include <unistd.h>
+@@ -85,6 +90,68 @@ long long testProcessId()
+ }
+ 
+ 
++class TemporaryFixtureDirectory
++{
++public:
++	bool create()
++	{
++#ifdef _WIN32
++		const char* temporaryDirectory = std::getenv("TEMP");
++		const std::string base = temporaryDirectory != nullptr ? temporaryDirectory : ".";
++		for (int attempt = 0; attempt < 1000; ++attempt)
++		{
++			m_path = base + "/zene-nam-loader-test-" + std::to_string(testProcessId()) +
++				"-" + std::to_string(attempt);
++			if (_mkdir(m_path.c_str()) == 0)
++			{
++				m_created = true;
++				return true;
++			}
++			if (errno != EEXIST)
++			{
++				return false;
++			}
++		}
++		return false;
++#else
++		const char* temporaryDirectory = std::getenv("TMPDIR");
++		const std::string base = temporaryDirectory != nullptr ? temporaryDirectory : "/tmp";
++		m_path = base + "/zene-nam-loader-test-" + std::to_string(testProcessId()) + "-XXXXXX";
++		if (mkdtemp(&m_path[0]) == nullptr)
++		{
++			return false;
++		}
++		m_created = true;
++		return true;
++#endif
++	}
++
++	~TemporaryFixtureDirectory()
++	{
++		if (m_created)
++		{
++			const std::string fixture = fixturePath();
++#ifdef _WIN32
++			_unlink(fixture.c_str());
++			_rmdir(m_path.c_str());
++#else
++			unlink(fixture.c_str());
++			rmdir(m_path.c_str());
++#endif
++		}
++	}
++
++	std::string fixturePath() const
++	{
++		return m_path + "/invalid.nam";
++	}
++
++private:
++	std::string m_path;
++	bool m_created = false;
++};
++
++
+ std::size_t expectedWeights(const ModelShape& shape)
+ {
+ 	const std::size_t channels = nonnegative(shape.channels);
+@@ -134,7 +201,7 @@ std::string modelJson(const ModelShape& shape, const std::string& sampleRateJson
+ }
+ 
+ 
+-bool rejectsModelJson(const std::filesystem::path& path, const std::string& content,
++bool rejectsModelJson(const std::string& path, const std::string& content,
+ 	const char* label, const char* expectedError = nullptr)
+ {
+ 	{
+@@ -148,7 +215,7 @@ bool rejectsModelJson(const std::filesystem::path& path, const std::string& cont
+ 	}
+ 
+ 	std::string error;
+-	const auto model = lmms::nam::NamModel::loadFromFile(path.string(), &error);
++	const auto model = lmms::nam::NamModel::loadFromFile(path, &error);
+ 	if (model || error.empty() ||
+ 	    (expectedError != nullptr && error.find(expectedError) == std::string::npos))
+ 	{
+@@ -160,14 +227,14 @@ bool rejectsModelJson(const std::filesystem::path& path, const std::string& cont
+ }
+ 
+ 
+-bool rejectsModel(const std::filesystem::path& path, const ModelShape& shape,
++bool rejectsModel(const std::string& path, const ModelShape& shape,
+ 	const char* label)
+ {
+ 	return rejectsModelJson(path, modelJson(shape), label);
+ }
+ 
+ 
+-bool rejectsInvalidSampleRates(const std::filesystem::path& path)
++bool rejectsInvalidSampleRates(const std::string& path)
+ {
+ 	const auto rejectsRate = [&path](const std::string& sampleRate, const char* label,
+ 		const char* expectedError)
+@@ -184,7 +251,7 @@ bool rejectsInvalidSampleRates(const std::filesystem::path& path)
+ 		}
+ 
+ 		std::string error;
+-		const auto model = lmms::nam::NamModel::loadFromFile(path.string(), &error);
++		const auto model = lmms::nam::NamModel::loadFromFile(path, &error);
+ 		if (model || error.empty() || error.find(expectedError) == std::string::npos)
+ 		{
+ 			std::cerr << "loader accepted or misreported invalid sample_rate: " << label
+@@ -200,7 +267,7 @@ bool rejectsInvalidSampleRates(const std::filesystem::path& path)
+ }
+ 
+ 
+-bool rejectsOverflowingWeights(const std::filesystem::path& path)
++bool rejectsOverflowingWeights(const std::string& path)
+ {
+ 	const ModelShape shape;
+ 	const std::size_t headScaleIndex = expectedWeights(shape) - 1;
+@@ -212,7 +279,7 @@ bool rejectsOverflowingWeights(const std::filesystem::path& path)
+ }
+ 
+ 
+-bool loadsModelWithSampleRate(const std::filesystem::path& path,
++bool loadsModelWithSampleRate(const std::string& path,
+ 	const std::string& sampleRate, double expectedSampleRate)
+ {
+ 	{
+@@ -226,7 +293,7 @@ bool loadsModelWithSampleRate(const std::filesystem::path& path,
+ 	}
+ 
+ 	std::string error;
+-	const auto model = lmms::nam::NamModel::loadFromFile(path.string(), &error);
++	const auto model = lmms::nam::NamModel::loadFromFile(path, &error);
+ 	if (!model || model->spec().sampleRate != expectedSampleRate)
+ 	{
+ 		std::cerr << "loader refused a valid sample_rate fixture: " << error << '\n';
+@@ -238,16 +305,27 @@ bool loadsModelWithSampleRate(const std::filesystem::path& path,
+ 
+ /// The parse limit: 512 MiB of engine memory divided by the parser's worst
+ /// measured expansion of 32 bytes of heap per byte of .nam text.
+-constexpr std::uintmax_t kParseLimitBytes = 512ULL * 1024ULL * 1024ULL / 32ULL;
++constexpr std::uint64_t kParseLimitBytes = 512ULL * 1024ULL * 1024ULL / 32ULL;
+ 
+ 
+-bool writeFixture(const std::filesystem::path& path, const std::string& content)
++bool writeFixture(const std::string& path, const std::string& content)
+ {
+ 	{
+ 		std::ofstream output(path, std::ios::binary | std::ios::trunc);
+ 		output << content;
+ 	}
+-	if (std::filesystem::file_size(path) != content.size())
++	bool hasExpectedSize = false;
++#ifdef _WIN32
++	struct _stat64 fileInfo;
++	if (_stat64(path.c_str(), &fileInfo) == 0 && fileInfo.st_size >= 0)
++#else
++	struct stat fileInfo;
++	if (stat(path.c_str(), &fileInfo) == 0 && fileInfo.st_size >= 0)
++#endif
++	{
++		hasExpectedSize = static_cast<std::uint64_t>(fileInfo.st_size) == content.size();
++	}
++	if (!hasExpectedSize)
+ 	{
+ 		std::cerr << "could not write model fixture\n";
+ 		return false;
+@@ -267,7 +345,7 @@ std::string paddedModelJson(const ModelShape& shape, std::uintmax_t bytes)
+ }
+ 
+ 
+-bool refusesOversizedFile(const std::filesystem::path& path)
++bool refusesOversizedFile(const std::string& path)
+ {
+ 	if (!writeFixture(path, paddedModelJson(ModelShape{}, kParseLimitBytes + 1)))
+ 	{
+@@ -275,7 +353,7 @@ bool refusesOversizedFile(const std::filesystem::path& path)
+ 	}
+ 
+ 	std::string error;
+-	const auto model = lmms::nam::NamModel::loadFromFile(path.string(), &error);
++	const auto model = lmms::nam::NamModel::loadFromFile(path, &error);
+ 	if (model || error.find("size limit") == std::string::npos)
+ 	{
+ 		std::cerr << "loader accepted or misreported a model file one byte over the "
+@@ -286,7 +364,7 @@ bool refusesOversizedFile(const std::filesystem::path& path)
+ }
+ 
+ 
+-bool loadsFileAtLimit(const std::filesystem::path& path)
++bool loadsFileAtLimit(const std::string& path)
+ {
+ 	if (!writeFixture(path, paddedModelJson(ModelShape{}, kParseLimitBytes)))
+ 	{
+@@ -294,7 +372,7 @@ bool loadsFileAtLimit(const std::filesystem::path& path)
+ 	}
+ 
+ 	std::string error;
+-	const auto model = lmms::nam::NamModel::loadFromFile(path.string(), &error);
++	const auto model = lmms::nam::NamModel::loadFromFile(path, &error);
+ 	if (!model)
+ 	{
+ 		std::cerr << "loader refused a model file exactly at the parse limit: "
+@@ -305,7 +383,7 @@ bool loadsFileAtLimit(const std::filesystem::path& path)
+ }
+ 
+ 
+-bool validatesSampleRatesAndFileLimits(const std::filesystem::path& path)
++bool validatesSampleRatesAndFileLimits(const std::string& path)
+ {
+ 	return rejectsInvalidSampleRates(path) &&
+ 		loadsModelWithSampleRate(path, "48000", 48000.0) &&
+@@ -326,21 +404,18 @@ int main()
+ 		return 1;
+ 	}
+ 
+-	const auto directory = std::filesystem::temp_directory_path() /
+-		("zene-nam-loader-test-" + std::to_string(testProcessId()));
+-	std::filesystem::remove_all(directory);
+-	if (!std::filesystem::create_directory(directory))
++	TemporaryFixtureDirectory directory;
++	if (!directory.create())
+ 	{
+ 		std::cerr << "could not create temporary fixture directory\n";
+ 		return 1;
+ 	}
+-	const auto fixture = directory / "invalid.nam";
++	const std::string fixture = directory.fixturePath();
+ 
+ 	ModelShape overflow;
+ 	overflow.dilation = std::numeric_limits<int>::max();
+ 	if (!rejectsModel(fixture, overflow, "receptive-field overflow"))
+ 	{
+-		std::filesystem::remove_all(directory);
+ 		return 1;
+ 	}
+ 
+@@ -348,7 +423,6 @@ int main()
+ 	zeroHead.headSize = 0;
+ 	if (!rejectsModel(fixture, zeroHead, "zero head size"))
+ 	{
+-		std::filesystem::remove_all(directory);
+ 		return 1;
+ 	}
+ 
+@@ -356,7 +430,6 @@ int main()
+ 	zeroChannels.channels = 0;
+ 	if (!rejectsModel(fixture, zeroChannels, "zero channel count"))
+ 	{
+-		std::filesystem::remove_all(directory);
+ 		return 1;
+ 	}
+ 
+@@ -364,7 +437,6 @@ int main()
+ 	zeroBottleneck.bottleneck = 0;
+ 	if (!rejectsModel(fixture, zeroBottleneck, "zero bottleneck"))
+ 	{
+-		std::filesystem::remove_all(directory);
+ 		return 1;
+ 	}
+ 
+@@ -372,7 +444,6 @@ int main()
+ 	zeroDilation.dilation = 0;
+ 	if (!rejectsModel(fixture, zeroDilation, "zero dilation"))
+ 	{
+-		std::filesystem::remove_all(directory);
+ 		return 1;
+ 	}
+ 
+@@ -381,16 +452,13 @@ int main()
+ 	tooManyLayers.layerCount = 257;
+ 	if (!rejectsModel(fixture, tooManyLayers, "too many layers"))
+ 	{
+-		std::filesystem::remove_all(directory);
+ 		return 1;
+ 	}
+ 
+ 	if (!validatesSampleRatesAndFileLimits(fixture))
+ 	{
+-		std::filesystem::remove_all(directory);
+ 		return 1;
+ 	}
+ 
+-	std::filesystem::remove_all(directory);
+ 	return 0;
+ }
+diff --git a/tests/upstream-modifications.txt b/tests/upstream-modifications.txt
+index 47d1e4af52..ddce699c52 100644
+--- a/tests/upstream-modifications.txt
++++ b/tests/upstream-modifications.txt
+@@ -5920,3 +5920,4 @@ include/LadspaManager.h	cluster new-p10-193: keep scanned LADSPA QLibraries aliv
+ src/core/LadspaManager.cpp	cluster new-p10-193: store each successfully scanned QLibrary in m_loadedLibraries instead of destroying the local after the scan, so descriptor function pointers in m_ladspaManagerMap never dangle into an unloaded library; isLibraryLoaded() reports ownership under LMMS_TESTING.
+ include/AutomationEditor.h	new-p15-275: AutomationEditor::m_clip is a QPointer<AutomationClip> (was a raw pointer) so deleting the open clip clears the editor instead of leaving a dangling pointer for update/paint to dereference. Same pattern as the existing QPointer ghost pointers; held by tests/src/gui/AutomationEditorEditingTest.cpp deletingTheOpenClipClearsTheEditor.
+ tests/src/gui/AutomationEditorEditingTest.cpp	# The automation editor can retain a dangling clip pointer
++tests/CMakeLists.txt	cluster ci-9d1768ed0beb1636: register the NamModelLoaderPortabilityCheck ctest, which recompiles the real NamModelLoaderTest translation unit through this build's compile_commands.json against a shadow <filesystem> that errors (libc++ marks std::filesystem unavailable below macOS 10.15), with red/green probes first; no existing test registration, environment, timeout or property changes. Follow-up (QA review r1): discover PYTHON3_EXECUTABLE near the top of the file, before the first `if(... AND PYTHON3_EXECUTABLE)` that guards a registration - the old order made a fresh configure silently drop the grant. Add the NamPortabilityRegistrationCheck ctest, which fails on that ordering or a configured tree that lacks the portability CTest. No existing registration, environment, timeout or property changes.
+-- 
+2.56.0
+

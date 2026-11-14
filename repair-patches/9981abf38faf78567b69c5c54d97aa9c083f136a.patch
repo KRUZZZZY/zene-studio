@@ -1,0 +1,351 @@
+From 9981abf38faf78567b69c5c54d97aa9c083f136a Mon Sep 17 00:00:00 2001
+From: Zene CI repair <noreply@zene.invalid>
+Date: Sat, 14 Nov 2026 08:58:57 +0000
+Subject: [PATCH] fix(ci): CI regression: build / linux-arm64
+
+CI-Repair-Id: ci-repair-ci-0b372147c313d00a-fe1ffe2cdf4a
+---
+ .../cluster-ci-0b372147c313d00a.md            | 131 ++++++++++++++++++
+ tests/CMakeLists.txt                          |  13 ++
+ tests/src/core/MountNamespaceTestSupport.h    |  12 +-
+ tests/train-39-portability-check.py           |  83 ++++++++++-
+ tests/upstream-modifications.txt              |   1 +
+ 5 files changed, 231 insertions(+), 9 deletions(-)
+ create mode 100644 docs/qwen-fixes-2026-10/cluster-ci-0b372147c313d00a.md
+
+diff --git a/docs/qwen-fixes-2026-10/cluster-ci-0b372147c313d00a.md b/docs/qwen-fixes-2026-10/cluster-ci-0b372147c313d00a.md
+new file mode 100644
+index 0000000000..eef039a30d
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/cluster-ci-0b372147c313d00a.md
+@@ -0,0 +1,131 @@
++FIXED — hosted linux-arm64 build failure in `tests/src/core/MountNamespaceTestSupport.h`.
++
++## Finding and decision
++
++REAL. The hosted `linux-arm64` build stopped at `MountNamespaceTestSupport.h:78`
++and `:110`:
++
++```
++error: ignoring return value of 'ssize_t write(int, const void*, size_t)'
++       declared with attribute 'warn_unused_result' [-Werror=unused-result]
++```
++
++Evidence: `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/train-ci/40b4322860e9c2133f412a4b921b63b057dd710c/run-43569206372-job-132369662657.log`
++(lines for `RecordToolsTest.cpp.o`, exit 2). Classification: a TEST-SUPPORT
++source defect, not a product runtime bug and not infrastructure. The header is
++compiled into `RecordToolsTest`, so it breaks the product build.
++
++Cause: the helper discarded the results of two handshake writes with
++`(void)::write(...)`. Under `_FORTIFY_SOURCE`, glibc declares `write()` with
++`warn_unused_result`, and GCC does not suppress that diagnostic for a void cast
++of the fortified call. The same header compiles locally only because this
++build's cache carries the workaround `-Wno-error=unused-result`; the check below
++sets the hosted flags explicitly, so it does not depend on that cache.
++
++## Fix
++
++Both writes are now checked at the cause (file:line after the fix):
++
++- `tests/src/core/MountNamespaceTestSupport.h:78` — `const bool notified =
++  ::write(writeEnd, &done, 1) == 1;` and `return written && notified;` (the
++  handshake only succeeds when the uid map was written AND the notification was
++  delivered).
++- `tests/src/core/MountNamespaceTestSupport.h:110` — `const bool released =
++  ::write(toChild[1], &go, 1) == 1;` and line 117 returns
++  `unshared && released && answered && done == 1` (a failed release byte is an
++  incomplete handshake, never a silent success).
++
++The `read`, `close`, `waitpid`, `mount` and `stat` calls in the same helper were
++checked: their results were already handled or none is declared
++`warn_unused_result`. `git grep` over all tracked C/C++ found no other discarded
++`write()` result. `RecordToolsTest` is the only consumer of the header.
++
++## Regression test
++
++New mode `unused-result` in `tests/train-39-portability-check.py`, registered as
++`Train39-unused-result` in `tests/CMakeLists.txt:9056` (GNU/Linux only, because
++the diagnostic requires GCC's fortify behaviour; the local Clang control accepts
++`(void)::write`, so Clang is not a platform where this can fail).
++
++The probe is deterministic and compile-only. It uses the fixed configuration
++`-std=c++20 -O2 -D_FORTIFY_SOURCE=3 -Werror=unused-result -c` and:
++
++1. a discarded-write control that MUST be rejected (proves the probe can fail);
++2. a checked-write control that MUST compile (proves the flags do not reject
++   `write()` itself);
++3. a translation unit that includes the real header and calls both helpers,
++   compiled with the real Qt Core include directories — this must compile.
++
++Test matrix: normal path = real header compiles and `RecordToolsTest` passes;
++failure path = discarded write rejected by the control; reconfiguration = a
++failed handshake write now returns `false` instead of an unchecked call;
++audio-thread = not applicable (test-only helper, used before the test starts any
++threads); supported platforms = the Linux body is unchanged semantically and the
++non-Linux stub is untouched.
++
++## Commands run (exit codes copied from the logs)
++
++Log folder: `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-0b372147c313d00a.r1/logs`
++
++RED before the fix, `build/tests`:
++
++```sh
++ctest -R Train39-unused-result --output-on-failure > LOGS/test-red-1.log 2>&1
++# EXIT=8: 1/1 failed; the probe reproduces header errors at :78 and :110
++```
++
++Rebuild after the fix:
++
++```sh
++cmake --build build --target RecordToolsTest -j12 > LOGS/build-2.log 2>&1
++# EXIT=0
++ctest -R 'Train39-unused-result|RecordToolsTest' --output-on-failure > LOGS/test-green-1.log 2>&1
++# EXIT=0: 2/2 passed (RecordToolsTest, Train39-unused-result)
++ctest -R '^Train39' --output-on-failure > LOGS/test-train39-family.log 2>&1
++# EXIT=0: 6/6 passed (vst2, disk, rnnoise, sfz, unused-result, qt5)
++```
++
++Step 4b, product change reverted:
++
++```sh
++git diff -- tests/src/core/MountNamespaceTestSupport.h > LOGS/fix.patch   # 1497 bytes
++git apply -R LOGS/fix.patch                                              # EXIT=0
++cmake --build build --target RecordToolsTest -j12 > LOGS/build-3-reversed.log 2>&1  # EXIT=0
++ctest -R Train39-unused-result --output-on-failure > LOGS/test-red-2.log 2>&1       # EXIT=8
++# FAIL at MountNamespaceTestSupport.h:78 and :110
++git apply LOGS/fix.patch                                                # EXIT=0
++cmake --build build --target RecordToolsTest -j12 > LOGS/build-4-reapplied.log 2>&1  # EXIT=0
++ctest -R Train39-unused-result --output-on-failure > LOGS/test-green-2.log 2>&1      # EXIT=0
++```
++
++Fallback path without CMake-supplied Qt includes (pkg-config):
++`python3 tests/train-39-portability-check.py unused-result --cxx /usr/bin/c++ > LOGS/test-fallback.log 2>&1` — EXIT=0.
++
++Gates before commit (`feature-check-2.log`):
++
++```sh
++python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > LOGS/feature-check-2.log 2>&1
++# EXIT=0; PASS fork-sources, all-sources-reproduce, no-upstream-regression,
++# check-namespace, no-tautology, doc-figures, complexity, file-length
++```
++
++## Files committed
++
++- `tests/src/core/MountNamespaceTestSupport.h` (fix)
++- `tests/train-39-portability-check.py` (regression probe)
++- `tests/CMakeLists.txt` (register `Train39-unused-result`)
++- `tests/upstream-modifications.txt` (ledger entry for the inherited CMake test list)
++- `docs/qwen-fixes-2026-10/cluster-ci-0b372147c313d00a.md` (this report)
++
++No product behaviour, saved data, project format, command surface, undo or
++audio-thread path changes. The header is test-only and both new branches only
++turn an unchecked failure into an honest `false` handshake result.
++
++## Self-check
++
++- **Regression FAILS reverted / PASSES restored:** reverted product hunk — rebuild EXIT=0, `ctest -R Train39-unused-result` EXIT=8 with errors at :78/:110 (`test-red-2.log`); restored — rebuild EXIT=0, same ctest EXIT=0 (`test-green-2.log`).
++- **Deterministic, no timing/sleeps/races:** the probe is compile-only with fixed flags `-O2 -D_FORTIFY_SOURCE=3 -Werror=unused-result`; its discarded-write and checked-write controls are both compiled on every run.
++- **Cause and completeness:** both write results in the helper are checked (:78, :110/:117); `git grep` over tracked C/C++ found no other discarded `write()`; the only consumer, `RecordToolsTest`, was rebuilt and passed; the whole Train39 family is 6/6.
++- **No collateral damage:** the header is Linux-only test support, the non-Linux stub is unchanged, no project/save/load path is touched, no limit or check was added, and `RecordToolsTest` still passes. The CMake test registration runs only under GNU/Linux, where the hosted diagnostic exists.
++- **Verdict evidence:** REAL is shown by the untrusted hosted log plus a local reproduction at the identical two lines; the post-fix compile of the real header and the 2/2 and 6/6 ctest runs are recorded above.
++- **ALREADY-FIXED / FALSE-POSITIVE evidence item:** not applicable — the verdict is FIXED and the product header hunk is in this commit.
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 3d570f752c..9c78ef60cf 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -9047,6 +9047,19 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
+ 				${CMAKE_CURRENT_SOURCE_DIR}/train-39-portability-check.py sfz --cc ${TRAIN39_CLANG})
+ 		endif()
+ 	endif()
++	# cluster ci-0b372147c313d00a: GCC with _FORTIFY_SOURCE declares write() with
++	# warn_unused_result, and (void) does not silence -Wunused-result there - hosted
++	# linux-arm64 stopped on MountNamespaceTestSupport.h:78/110. Compile the real helper
++	# header in a used translation unit with the hosted configuration's flags; the probe's
++	# controls prove it rejects a discarded result and accepts a checked one.
++	if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
++		add_test(NAME Train39-unused-result COMMAND ${PYTHON3_EXECUTABLE}
++			${CMAKE_CURRENT_SOURCE_DIR}/train-39-portability-check.py unused-result
++			--source-root ${CMAKE_SOURCE_DIR}
++			--cxx ${CMAKE_CXX_COMPILER}
++			--qt-include ${Qt${QT_VERSION_MAJOR}Core_INCLUDE_DIRS})
++		set_tests_properties(Train39-unused-result PROPERTIES TIMEOUT 120)
++	endif()
+ 	execute_process(COMMAND pkg-config --exists Qt5Widgets Qt5Xml Qt5Network
+ 		RESULT_VARIABLE TRAIN39_HAS_QT5 OUTPUT_QUIET ERROR_QUIET)
+ 	if(TRAIN39_HAS_QT5 EQUAL 0 AND TARGET carlabase)
+diff --git a/tests/src/core/MountNamespaceTestSupport.h b/tests/src/core/MountNamespaceTestSupport.h
+index 1d102de568..df64c2c2a4 100644
+--- a/tests/src/core/MountNamespaceTestSupport.h
++++ b/tests/src/core/MountNamespaceTestSupport.h
+@@ -74,9 +74,9 @@ inline bool mapOwnUidIntoNamespace(pid_t parentPid, int readEnd, int writeEnd)
+ 	const int len = ::snprintf(line, sizeof(line), "%ld %ld 1\n", uid, uid);
+ 	const bool written = len > 0 && ::write(fd, line, static_cast<size_t>(len)) == len;
+ 	::close(fd);
+-	char done = written ? 1 : 0;
+-	(void)::write(writeEnd, &done, 1);
+-	return written;
++	const char done = written ? 1 : 0;
++	const bool notified = ::write(writeEnd, &done, 1) == 1;
++	return written && notified;
+ }
+ 
+ //! Puts this process in a mount namespace of its own, with its own uid mapped in it, so a
+@@ -106,15 +106,15 @@ inline bool enterOwnMountNamespace()
+ 	::close(toChild[0]);
+ 	::close(toParent[1]);
+ 	const bool unshared = ::unshare(CLONE_NEWUSER | CLONE_NEWNS) == 0;
+-	char go = 1;
+-	(void)::write(toChild[1], &go, 1);
++	const char go = 1;
++	const bool released = ::write(toChild[1], &go, 1) == 1;
+ 	char done = 0;
+ 	const bool answered = ::read(toParent[0], &done, 1) == 1;
+ 	::close(toChild[1]);
+ 	::close(toParent[0]);
+ 	int status = 0;
+ 	::waitpid(child, &status, 0);
+-	return unshared && answered && done == 1;
++	return unshared && released && answered && done == 1;
+ }
+ 
+ //! Binds @a source onto @a target in this process's mount namespace: one filesystem under two
+diff --git a/tests/train-39-portability-check.py b/tests/train-39-portability-check.py
+index ee8d9aaac3..091dbbf127 100644
+--- a/tests/train-39-portability-check.py
++++ b/tests/train-39-portability-check.py
+@@ -1,7 +1,7 @@
+ #!/usr/bin/env python3
+ """Focused regression checks for train 39 portability fixes.
+ 
+-Usage: python3 tests/train-39-portability-check.py [all|vst2|sfz|qt5|rnnoise|disk]
++Usage: python3 tests/train-39-portability-check.py [all|vst2|sfz|qt5|rnnoise|disk|unused-result]
+ Optional paths/tools: --source-root, --build-dir, --cc, --cxx.
+ """
+ 
+@@ -155,6 +155,79 @@ def test_rnnoise(root: pathlib.Path, build: pathlib.Path, clang: str | None) ->
+ 		return all(checks)
+ 
+ 
++def test_unused_result(root: pathlib.Path, cxx: str, qt_include: list[str]) -> bool:
++	header = root / "tests/src/core/MountNamespaceTestSupport.h"
++	if not require_file(header, "mount namespace test support header"):
++		return False
++	flags = ["-std=c++20", "-O2", "-D_FORTIFY_SOURCE=3", "-Werror=unused-result", "-c"]
++	qt_flags: list[str] = []
++	for directory in qt_include:
++		qt_flags.extend(["-I", directory])
++	if not qt_flags:
++		for package in ("Qt6Core", "Qt5Core"):
++			part, error = pkg_flags(package, "--cflags")
++			if not error:
++				qt_flags = part
++				break
++		if not qt_flags:
++			print("FAIL unused-result Qt flags: neither Qt6Core nor Qt5Core is available")
++			return False
++	with tempfile.TemporaryDirectory(prefix="train39-unused-result-") as temp:
++		dirpath = pathlib.Path(temp)
++		checks: list[bool] = []
++
++		# The control makes the probe falsifiable: under these flags, a discarded write
++		# result must be rejected, which is exactly what the hosted job reported.
++		ignored = dirpath / "ignored-write.cpp"
++		ignored.write_text(
++			"#include <unistd.h>\n"
++			"void probe()\n"
++			"{\n"
++			"\tchar byte = 0;\n"
++			"\t(void)::write(1, &byte, 1);\n"
++			"}\n", encoding="utf-8")
++		control = run([cxx, *flags, str(ignored), "-o", str(dirpath / "ignored-write.o")])
++		if control.returncode == 0:
++			print("FAIL unused-result control: a discarded write compiled, so the probe cannot detect the defect")
++			checks.append(False)
++		else:
++			print("PASS unused-result control: a discarded write result is rejected")
++			checks.append(True)
++
++		# ...while a checked write is accepted, so the flags reject the discarded result
++		# and not write() itself.
++		checked = dirpath / "checked-write.cpp"
++		checked.write_text(
++			"#include <unistd.h>\n"
++			"void probe()\n"
++			"{\n"
++			"\tchar byte = 0;\n"
++			"\tconst bool written = ::write(1, &byte, 1) == 1;\n"
++			"\t(void)written;\n"
++			"}\n", encoding="utf-8")
++		checks.append(report("unused-result checked write fixture",
++			run([cxx, *flags, str(checked), "-o", str(dirpath / "checked-write.o")])))
++
++		# The real header, compiled in a translation unit that uses both helpers: the
++		# hosted linux-arm64 build stopped on these two ignored write() results (lines
++		# 78 and 110), and (void) did not silence -Wunused-result under fortify.
++		probe = dirpath / "mount-namespace-probe.cpp"
++		probe.write_text(
++			'#include "MountNamespaceTestSupport.h"\n'
++			"\n"
++			"int main()\n"
++			"{\n"
++			"\tint descriptors[2] = {-1, -1};\n"
++			"\t(void)lmms::testsupport::mapOwnUidIntoNamespace(1, descriptors[0], descriptors[1]);\n"
++			"\t(void)lmms::testsupport::enterOwnMountNamespace();\n"
++			"\treturn 0;\n"
++			"}\n", encoding="utf-8")
++		checks.append(report("mount namespace helper checks every write result",
++			run([cxx, *flags, "-I", str(header.parent), *qt_flags, str(probe),
++			     "-o", str(dirpath / "mount-namespace-probe.o")])))
++		return all(checks)
++
++
+ def linux_jobs_have_strip_flag(workflow: str) -> tuple[bool, str]:
+ 	jobs = re.split(r"(?m)^  ([A-Za-z0-9_-]+):\s*$", workflow)
+ 	blocks = {jobs[i]: jobs[i + 1] for i in range(1, len(jobs), 2)}
+@@ -225,13 +298,15 @@ def test_disk(root: pathlib.Path, cc: str, build: pathlib.Path) -> bool:
+ 
+ def parse_args() -> argparse.Namespace:
+ 	parser = argparse.ArgumentParser(description=__doc__)
+-	parser.add_argument("mode", nargs="?", choices=("all", "vst2", "sfz", "qt5", "rnnoise", "disk"), default="all")
++	parser.add_argument("mode", nargs="?", choices=("all", "vst2", "sfz", "qt5", "rnnoise", "disk",
++	                                                "unused-result"), default="all")
+ 	parser.add_argument("--source-root", type=pathlib.Path,
+ 	                    default=pathlib.Path(__file__).resolve().parents[1])
+ 	parser.add_argument("--build-dir", type=pathlib.Path)
+ 	parser.add_argument("--cc", default=os.environ.get("CC") or shutil.which("clang") or "cc")
+ 	parser.add_argument("--cxx", default=os.environ.get("CXX") or "c++")
+ 	parser.add_argument("--clang", default=shutil.which("clang"))
++	parser.add_argument("--qt-include", nargs="*", default=[])
+ 	return parser.parse_args()
+ 
+ 
+@@ -239,13 +314,15 @@ def main() -> int:
+ 	args = parse_args()
+ 	root = args.source_root.resolve()
+ 	build = (args.build_dir or root / "build").resolve()
+-	selected = ("vst2", "sfz", "qt5", "rnnoise", "disk") if args.mode == "all" else (args.mode,)
++	selected = ("vst2", "sfz", "qt5", "rnnoise", "disk",
++	            "unused-result") if args.mode == "all" else (args.mode,)
+ 	runners = {
+ 		"vst2": lambda: test_vst2(root, args.cc),
+ 		"sfz": lambda: test_sfz(root, args.cc),
+ 		"qt5": lambda: test_qt5(root, args.cxx, build),
+ 		"rnnoise": lambda: test_rnnoise(root, build, args.clang),
+ 		"disk": lambda: test_disk(root, args.cc, build),
++		"unused-result": lambda: test_unused_result(root, args.cxx, args.qt_include),
+ 	}
+ 	results = [runners[name]() for name in selected]
+ 	print(f"RESULT {sum(results)}/{len(results)} groups passed")
+diff --git a/tests/upstream-modifications.txt b/tests/upstream-modifications.txt
+index 47d1e4af52..9792a2a32f 100644
+--- a/tests/upstream-modifications.txt
++++ b/tests/upstream-modifications.txt
+@@ -5920,3 +5920,4 @@ include/LadspaManager.h	cluster new-p10-193: keep scanned LADSPA QLibraries aliv
+ src/core/LadspaManager.cpp	cluster new-p10-193: store each successfully scanned QLibrary in m_loadedLibraries instead of destroying the local after the scan, so descriptor function pointers in m_ladspaManagerMap never dangle into an unloaded library; isLibraryLoaded() reports ownership under LMMS_TESTING.
+ include/AutomationEditor.h	new-p15-275: AutomationEditor::m_clip is a QPointer<AutomationClip> (was a raw pointer) so deleting the open clip clears the editor instead of leaving a dangling pointer for update/paint to dereference. Same pattern as the existing QPointer ghost pointers; held by tests/src/gui/AutomationEditorEditingTest.cpp deletingTheOpenClipClearsTheEditor.
+ tests/src/gui/AutomationEditorEditingTest.cpp	# The automation editor can retain a dangling clip pointer
++tests/CMakeLists.txt	cluster ci-0b372147c313d00a: register Train39-unused-result, a GNU/Linux compile probe of tests/src/core/MountNamespaceTestSupport.h with -O2 -D_FORTIFY_SOURCE=3 -Werror=unused-result. Its discarded-write control must be rejected and its checked-write control accepted before the real header is compiled; this reproduces the hosted linux-arm64 failure at lines 78/110 without changing any product target or gate.
+-- 
+2.56.0
+

@@ -1,0 +1,18 @@
+{
+  "base": "050/m0-train-3",
+  "display_version": "0.4.2.0-alpha",
+  "evidence": "first-parent-promoted-ancestry",
+  "feature_items": [],
+  "feature_merge_evidence": [
+    "4b835ab0522b518abbd19ccb084b87b0b1604e4d\tmerge(m0-train-4): feat/050-L02-session-land (independently reviewed)"
+  ],
+  "feature_train": 2,
+  "kind": "feature",
+  "milestone": "0.4",
+  "revision": 0,
+  "sha": "4b835ab0522b518abbd19ccb084b87b0b1604e4d",
+  "stage": "alpha",
+  "train": "050/m0-train-4",
+  "train_label": "2.0",
+  "version": "0.4.2-alpha.0"
+}
