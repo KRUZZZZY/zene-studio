@@ -67,8 +67,7 @@ tree: 3/3 passed, exit 0 (`006-ctest-green.log`).
   `theSocketWritesOneUndoStep` read the stored `ui/earcons` back, and `uistore::applyStoredEarcons`
   (`src/gui/UiConfigStore.cpp:99-106`) re-applies it at startup, ignoring an out-of-range stored level.
 - **Completeness through the real user and agent paths, with edge cases.** User path: **View > Earcons > <Category> >
-  Enabled / 25-100 %** builds a `CommandCall` and runs the registered `view.earcons`; `theViewMenuSwitchesEditOnAndSetsIt
-  Level` triggers the real `QAction`s and checks the in-memory state, the stored document and the menu check state. Agent
+  Enabled / 25-100 %** builds a `CommandCall` and runs the registered `view.earcons`; `theViewMenuSwitchesEditOnAndSetsItsLevel` triggers the real `QAction`s and checks the in-memory state, the stored document and the menu check state. Agent
   path: the socket/MCP call, `theSocketWritesOneUndoStep` plus `invalidArgumentsAreTyped`. Edge cases tried: missing
   category, unknown category (`bogus`), level 1.5, level -1, no `enabled`/`level` at all, `enabled` as the number 1, a
   stored level out of range (ignored), every category off at startup, and a song that wraps its loop with `LoopWrap`
