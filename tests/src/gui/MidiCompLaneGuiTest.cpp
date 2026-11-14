@@ -348,6 +348,7 @@ private slots:
 		const auto panels = getGUI()->mainWindow()->findChildren<TakeLanesPanel*>();
 		QCOMPARE(panels.size(), beforePanels + 1);
 		auto* panel = panels.last();
+		QVERIFY(panel->consolidateButton()->isHidden());
 		QTest::mouseClick(panel->addLaneButton(), Qt::LeftButton);
 		QTest::mouseClick(panel->addLaneButton(), Qt::LeftButton);
 		QVERIFY(run(QStringLiteral("comp.assign"), {{QStringLiteral("clip"), control::clipIdOf(first)}, {QStringLiteral("lane"), 0}}).ok);
