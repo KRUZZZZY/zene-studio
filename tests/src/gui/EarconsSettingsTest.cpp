@@ -245,6 +245,50 @@ private slots:
 		QVERIFY2(peak() > 0.f, "the refused earcon was silent while enabled");
 	}
 
+	//! The edit hook: a mutating command that ran is heard while its category is on.
+	void anAppliedEditIsHeard()
+	{
+		QVERIFY(invoke(QStringLiteral("view.earcons"),
+			{{QStringLiteral("category"), QStringLiteral("edit")}, {QStringLiteral("enabled"), true}}).ok);
+		flush();
+		CommandCall call;
+		call.id = QStringLiteral("view.crosshair");
+		call.fixed = {{QStringLiteral("enabled"), true}};
+		call.ask = false;
+		const ControlResult ran = runCommand(nullptr, call);
+		QVERIFY2(ran.ok, qPrintable(ran.errorMessage));
+		QVERIFY2(peak() > 0.f, "the edit earcon was silent for an applied edit");
+
+		QVERIFY(invoke(QStringLiteral("view.earcons"),
+			{{QStringLiteral("category"), QStringLiteral("edit")}, {QStringLiteral("enabled"), false}}).ok);
+		flush();
+		call.fixed = {{QStringLiteral("enabled"), false}};
+		QVERIFY(runCommand(nullptr, call).ok);
+		QCOMPARE(peak(), 0.f);
+	}
+
+	//! The record hook: starting and stopping a recording are heard while the category is on.
+	void recordingStartAndStopAreHeard()
+	{
+		QVERIFY(invoke(QStringLiteral("view.earcons"),
+			{{QStringLiteral("category"), QStringLiteral("record")}, {QStringLiteral("enabled"), true}}).ok);
+		flush();
+		a11y::announceTransition(nullptr, a11y::Transition::RecordStarted);
+		QVERIFY2(peak() > 0.f, "the record-start earcon was silent");
+		flush();
+		a11y::announceTransition(nullptr, a11y::Transition::RecordStopped);
+		QVERIFY2(peak() > 0.f, "the record-stop earcon was silent");
+
+		QVERIFY(invoke(QStringLiteral("view.earcons"),
+			{{QStringLiteral("category"), QStringLiteral("record")}, {QStringLiteral("enabled"), false}}).ok);
+		flush();
+		a11y::announceTransition(nullptr, a11y::Transition::RecordStarted);
+		QCOMPARE(peak(), 0.f);
+		flush();
+		a11y::announceTransition(nullptr, a11y::Transition::RecordStopped);
+		QCOMPARE(peak(), 0.f);
+	}
+
 	void theAutomationBoundaryIsHeard()
 	{
 		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
