@@ -8,8 +8,8 @@ centre of the AT-SPI box — is 6 px below that, on the footer's **Devices** swi
 it actually is on screen toggles the model and the button's checked state, and opens nothing.
 `ShellSelection::eventFilter` is not the cause: it returns `false` and does not consume the press.
 
-No product code changed. This commit adds one guard test (`tests/src/gui/MixerSelectionIdentityTest.cpp`),
-this report and the logs it cites.
+No product code changed. This commit adds two guard tests (`tests/src/gui/MixerSelectionIdentityTest.cpp`),
+this report and the evidence log it cites.
 
 ## 1. What the sweep did (evidence run `m0-train-29`)
 
@@ -55,7 +55,7 @@ it (`03-probe-fit-at-heights.log` (EVIDENCE.md), all window heights, `shown=20x2
 
 - `src/gui/MixerChannelView.cpp:146-150`: `m_muteButton` has `setObjectName("btn-mute")`,
   `setToolTip(tr("Mute this channel"))`, `setCheckable(true)` and `setModel(&mixerChannel->m_muteModel)`.
-  `guimain`'s Master channel is `Engine::mixer()->mixerChannel(0)`, so option (a) of the finding —
+  the Master channel is `Engine::mixer()->mixerChannel(0)`, so option (a) of the finding —
   "Mute Master" being some other control — is excluded: the probe asserts
   `mute->model() == &master->m_muteModel` and it holds.
 - `src/gui/widgets/AutomatableButton.cpp:114-127`: `mousePressEvent`, left button, checkable → `toggle()`
