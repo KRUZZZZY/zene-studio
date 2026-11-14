@@ -3826,3 +3826,8 @@ docs/qwen-fixes-2026-10/cluster-new-p10-318.md
 include/LegacyVst2Conversion.h
 src/core/LegacyVst2Conversion.cpp
 tests/src/core/LegacyVst2ConversionTest.cpp
+
+# Q050-481.3: legacy VST2 host project and reference render.
+tests/src/gui/LegacyVst2ProjectTest.cpp
+tests/data/legacy-projects/vst2-vestige-vsteffect.mmp
+tests/data/legacy-projects/vst2-vestige-vsteffect.reference.json

@@ -3426,6 +3426,7 @@ tests/src/gui/KnobKeyboardTest.cpp
 tests/src/gui/LadspaDescriptionTest.cpp
 tests/src/gui/LadspaPortDialogTest.cpp
 tests/src/gui/LaneReadoutTest.cpp
+tests/src/gui/LegacyVst2ProjectTest.cpp
 tests/src/gui/LfoGraphTest.cpp
 tests/src/gui/LibraryMenusTest.cpp
 tests/src/gui/LinkedModelGroupViewLifetimeTest.cpp

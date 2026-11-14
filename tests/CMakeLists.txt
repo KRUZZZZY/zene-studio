@@ -1458,6 +1458,7 @@ set(LMMS_TESTS
 	# automation, presets, device and project state and the plug-in's own editor, against the in-tree VST2 test
 	# effect, native and through Carla's Wine bridge (needs a real Carla runtime).
 	src/gui/CarlaVst2EffectHostingTest.cpp
+	src/gui/LegacyVst2ProjectTest.cpp
 	# Q050-481.2 review r1: an export through a stalling VST2 effect never waits inside a render period, and keeps
 	# the effect's output (the exporter waits between periods).
 	src/gui/CarlaVst2EffectExportTest.cpp
@@ -2671,6 +2672,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		# Q050-481.2: carlavst2effect hosts the VST2 test effect, carlavst2 the instrument that feeds it.
 		OR LMMS_TEST_NAME STREQUAL "CarlaVst2EffectHostingTest"
 		OR LMMS_TEST_NAME STREQUAL "CarlaVst2EffectExportTest"
+		OR LMMS_TEST_NAME STREQUAL "LegacyVst2ProjectTest"
 		OR LMMS_TEST_NAME STREQUAL "ReferenceProjectPanelTest"
 		# The LV2 state round trip loads the host's real LV2 effects.
 		OR LMMS_TEST_NAME STREQUAL "Lv2StateTest"
@@ -4031,7 +4033,7 @@ endif()
 # instrument, with the same Carla runtime and Wine prefix. Without the runtime every case reports Skipped.
 # CarlaVst2EffectExportTest (review r1): the same environment, for the export through a stalling VST2 effect.
 add_subdirectory(data/vst2-test-effect)
-foreach(test CarlaVst2EffectHostingTest CarlaVst2EffectExportTest)
+foreach(test CarlaVst2EffectHostingTest CarlaVst2EffectExportTest LegacyVst2ProjectTest)
 	set_tests_properties(${test} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 900)
 	target_compile_definitions(${test} PRIVATE
 		CARLA_VST2_NATIVE_FIXTURE_DIR="${LMMS_VST2_TEST_NATIVE_DIR}"
@@ -9383,3 +9385,10 @@ if(TARGET PluginExportBranchTest)
 	target_include_directories(PluginExportBranchTest PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
 	target_sources(PluginExportBranchTest PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/PluginExportBranchTargets.h")
 endif()
+
+target_compile_definitions(LegacyVst2ProjectTest PRIVATE LEGACY_VST2_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data/legacy-projects")
+foreach(module vestige vsteffect NativeLinuxRemoteVstPlugin64)
+	if(TARGET ${module})
+		add_dependencies(LegacyVst2ProjectTest ${module})
+	endif()
+endforeach()
