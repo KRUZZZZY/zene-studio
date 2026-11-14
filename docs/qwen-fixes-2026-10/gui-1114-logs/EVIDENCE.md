@@ -442,7 +442,7 @@ Total Test time (real) =  16.30 sec
 ## 14-feature-check.log
 
 ```text
-feature-check zene-qwen-gui-1114-tab-mixer-mute-master (base 779829655, 2 changed files; logs in /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-gui-1114-tab-mixer-mute-master/build/feature-check)
+feature-check zene-qwen-gui-1114-tab-mixer-mute-master (base 779829655, 3 changed files; logs in /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-gui-1114-tab-mixer-mute-master/build/feature-check)
   PASS  fork-sources            exit 0
   PASS  all-sources-reproduce   exit 0
   PASS  no-upstream-regression  exit 0
