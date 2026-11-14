@@ -315,7 +315,7 @@ void SampleClip::acceptRecordedTake(std::shared_ptr<const SampleBuffer> take, st
 	// the clip's own content, as it always did.
 	if (continues || m_recordPasses > 0)
 	{
-		if (take) { addRecordedLane(std::move(take)); }
+		if (take) { addRecordedLane(std::move(take), false, true); }
 		++m_recordPasses;
 		if (!continues) { m_recordPasses = 0; }
 	}
@@ -402,7 +402,7 @@ SampleClip* SampleClip::newLaneClip(SampleTrack* track, SampleClip* source, std:
 	return take_clip;
 }
 
-void SampleClip::addRecordedLane(std::shared_ptr<const SampleBuffer> take, bool newestIsActive)
+void SampleClip::addRecordedLane(std::shared_ptr<const SampleBuffer> take, bool newestIsActive, bool loopPass)
 {
 	auto* track = dynamic_cast<SampleTrack*>(getTrack());
 	if (track == nullptr) { return; }
@@ -414,6 +414,12 @@ void SampleClip::addRecordedLane(std::shared_ptr<const SampleBuffer> take, bool 
 		// clip's group (Keep History: the new pass is active whatever was chosen). No clip mute flag is
 		// changed here.
 		track->takeLanes().recordTake(id(), lane, track->getClips(), newestIsActive);
+		// Overdub keeps the earlier passes of a loop recording audible: Play all takes is switched on. Replace
+		// and Keep History leave the newest pass the only audible one. Play all takes is never switched off here.
+		if (loopPass && recordoptions::options().mode == recordoptions::Mode::Overdub)
+		{
+			track->takeLanes().setPlayAllTakes(true);
+		}
 	}
 	Engine::getSong()->setModified();
 }

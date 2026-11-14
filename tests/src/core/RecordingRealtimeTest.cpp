@@ -173,6 +173,44 @@ private:
 		QTest::qWait(50);
 	}
 
+	//! Three loop passes on \a clip (armed, one bar long): the first two loop wraps end passes 1 and 2, the stop ends pass 3.
+	void recordThreeLoopPasses(lmms::SampleClip* clip)
+	{
+		auto* song = lmms::Engine::getSong();
+		song->playAndRecord();
+		driveRecordPeriods(30, 0.05f);
+		clip->playbackPositionChanged();  // loop wrap 1 ends pass 1
+		QTest::qWait(50);
+		driveRecordPeriods(30, 0.1f);
+		clip->playbackPositionChanged();  // loop wrap 2 ends pass 2
+		QTest::qWait(50);
+		driveRecordPeriods(30, 0.2f);
+		song->stop();                     // pass 3 ends with the stop
+		QTRY_VERIFY_WITH_TIMEOUT(!clip->isRecord(), 3000);
+	}
+
+	//! comp.get_state of \a track; empty when the command fails.
+	static QJsonObject compStateOf(lmms::SampleTrack* track)
+	{
+		const auto state = lmms::ControlRegistry::instance()->invoke(QStringLiteral("comp.get_state"),
+			{{QStringLiteral("track"), lmms::control::trackIdOf(track)}});
+		return state.ok ? state.result : QJsonObject();
+	}
+
+	//! The 'audible' flags of \a track's takes in take-group order, as comp.get_state reports them.
+	static std::vector<bool> audibleFlags(lmms::SampleTrack* track)
+	{
+		std::vector<bool> flags;
+		for (const QJsonValue& group : compStateOf(track).value(QStringLiteral("take_groups")).toArray())
+		{
+			for (const QJsonValue& take : group.toObject().value(QStringLiteral("takes")).toArray())
+			{
+				flags.push_back(take.toObject().value(QStringLiteral("audible")).toBool());
+			}
+		}
+		return flags;
+	}
+
 	//! The clips of \a track other than \a shell, in track order.
 	static std::vector<lmms::SampleClip*> others(lmms::Track* track, const lmms::Clip* shell)
 	{
@@ -1199,6 +1237,7 @@ private slots:
 	//! Three loop passes make three takes; the newest lane is active, and Play all takes sums them.
 	void onlyTheNewestLoopPassIsAudible()
 	{
+		lmms::recordoptions::setOptions({0, 0, lmms::recordoptions::Mode::Replace});
 		auto* song = lmms::Engine::getSong();
 		song->stop();
 		auto* track = new lmms::SampleTrack(song);
@@ -1208,16 +1247,7 @@ private slots:
 		clip->setAutoResize(false);
 		clip->setRecord(true);
 
-		song->playAndRecord();
-		driveRecordPeriods(30, 0.05f);
-		clip->playbackPositionChanged();  // loop wrap 1 ends pass 1
-		QTest::qWait(50);
-		driveRecordPeriods(30, 0.1f);
-		clip->playbackPositionChanged();  // loop wrap 2 ends pass 2
-		QTest::qWait(50);
-		driveRecordPeriods(30, 0.2f);
-		song->stop();                     // pass 3 ends with the stop
-		QTRY_VERIFY_WITH_TIMEOUT(!clip->isRecord(), 3000);
+		recordThreeLoopPasses(clip);
 
 		QCOMPARE(track->takeLanes().laneCount(), 3);
 		std::vector<lmms::Clip*> takes;
@@ -1261,6 +1291,152 @@ private slots:
 		QVERIFY2(ratio > 1.6f && ratio < 1.9f,
 			qPrintable(QStringLiteral("the earlier passes did not sound in the unmuted render: ratio %1").arg(ratio)));
 		delete track;
+		lmms::recordoptions::setOptions({});
+	}
+
+	//! Loop passes are three take lanes in every record mode: none muted, the newest pass active, and comp.get_state
+	//! reports one take group of three takes.
+	void threeLoopPassesAreThreeTakesInEveryMode()
+	{
+		const lmms::recordoptions::Mode modes[] = {lmms::recordoptions::Mode::Overdub,
+			lmms::recordoptions::Mode::Replace, lmms::recordoptions::Mode::KeepHistory};
+		for (const lmms::recordoptions::Mode mode : modes)
+		{
+			lmms::recordoptions::setOptions({0, 0, mode});
+			ArmedClip armed = armedClip(false);
+			recordThreeLoopPasses(armed.clip);
+			const int groupId = armed.clip->id();
+			QCOMPARE(armed.track->takeLanes().laneCount(), 3);
+			const std::vector<lmms::SampleClip*> takes = others(armed.track, armed.clip);
+			QCOMPARE(takes.size(), std::size_t{3});
+			for (lmms::SampleClip* take : takes)
+			{
+				QCOMPARE(take->takeGroupId(), groupId);
+				QVERIFY(!take->isMuted());
+			}
+			const int newest = takes.back()->laneIndex();
+			QCOMPARE(armed.track->takeLanes().activeTakeLane(groupId), newest);
+
+			const QJsonObject state = compStateOf(armed.track);
+			QCOMPARE(state.value(QStringLiteral("lane_count")).toInt(), 3);
+			// The top-level take_count also counts the shell clip: a clip with no take
+				// group has the default laneIndex 0, so lane 0 counts it. The three-take proof
+				// is lane_count == 3 plus the take_groups[0].takes size check below.
+			const QJsonArray groups = state.value(QStringLiteral("take_groups")).toArray();
+			QCOMPARE(static_cast<int>(groups.size()), 1);
+			const QJsonObject group = groups.at(0).toObject();
+			QCOMPARE(static_cast<int>(group.value(QStringLiteral("takes")).toArray().size()), 3);
+			QCOMPARE(group.value(QStringLiteral("active_lane")).toInt(), newest);
+			lmms::recordoptions::setOptions({});
+			delete armed.track;
+		}
+	}
+
+	//! The record mode decides what plays: Overdub keeps every loop pass audible (Play all takes on); Replace and
+	//! Keep History keep only the newest audible. The Overdub render sums the passes, Replace plays the newest one.
+	void theRecordModeDecidesWhetherEarlierLoopPassesAreMuted()
+	{
+		auto* song = lmms::Engine::getSong();
+		auto* engine = lmms::Engine::audioEngine();
+		const auto peak = [&] {
+			float p = 0.0f;
+			song->playSong();
+			for (int i = 0; i < 10; ++i)  // skip the round trip, then measure
+			{
+				const auto out = engine->renderNextPeriod();
+				if (i < 3) { continue; }
+				for (const auto& f : out) { p = std::max(p, std::abs(f.left())); }
+			}
+			song->stop();
+			return p;
+		};
+		const std::vector<bool> newestOnly{false, false, true};
+		const std::vector<bool> allAudible{true, true, true};
+
+		lmms::recordoptions::setOptions({0, 0, lmms::recordoptions::Mode::Replace});
+		ArmedClip replace = armedClip(false);
+		recordThreeLoopPasses(replace.clip);
+		QVERIFY(!compStateOf(replace.track).value(QStringLiteral("play_all_takes")).toBool());
+		QVERIFY2(audibleFlags(replace.track) == newestOnly, "Replace: an earlier pass is audible");
+		const float replacePeak = peak();
+		QVERIFY2(replacePeak > 0.0f, "the Replace take was silent");
+		lmms::recordoptions::setOptions({});
+		delete replace.track;
+
+		lmms::recordoptions::setOptions({0, 0, lmms::recordoptions::Mode::KeepHistory});
+		ArmedClip kept = armedClip(false);
+		recordThreeLoopPasses(kept.clip);
+		QVERIFY(!compStateOf(kept.track).value(QStringLiteral("play_all_takes")).toBool());
+		QVERIFY2(audibleFlags(kept.track) == newestOnly, "Keep History: an earlier pass is audible");
+		lmms::recordoptions::setOptions({});
+		delete kept.track;
+
+		lmms::recordoptions::setOptions({0, 0, lmms::recordoptions::Mode::Overdub});
+		ArmedClip overdub = armedClip(false);
+		recordThreeLoopPasses(overdub.clip);
+		QVERIFY(compStateOf(overdub.track).value(QStringLiteral("play_all_takes")).toBool());
+		QVERIFY2(audibleFlags(overdub.track) == allAudible, "Overdub: an earlier pass is silent");
+		const float overdubPeak = peak();
+		lmms::recordoptions::setOptions({});
+		delete overdub.track;
+		QVERIFY2(overdubPeak >= 1.6f * replacePeak,
+			qPrintable(QStringLiteral("Overdub peak %1 is not 1.6x the Replace peak %2").arg(overdubPeak).arg(replacePeak)));
+	}
+
+	//! Overdub and Replace loop passes are in the project: after save and reopen the lanes, the active take, Play
+	//! all takes and the audible flags are the same.
+	void loopPassLanesAndModeStateSurviveSaveAndReload()
+	{
+		const lmms::recordoptions::Mode modes[] = {lmms::recordoptions::Mode::Overdub,
+			lmms::recordoptions::Mode::Replace};
+		for (const lmms::recordoptions::Mode mode : modes)
+		{
+			lmms::recordoptions::setOptions({0, 0, mode});
+			ArmedClip armed = armedClip(false);
+			recordThreeLoopPasses(armed.clip);
+			const int groupId = armed.clip->id();
+			const int active = armed.track->takeLanes().activeTakeLane(groupId);
+			const bool playAll = armed.track->takeLanes().playAllTakes();
+			const std::vector<bool> audible = audibleFlags(armed.track);
+			QVERIFY(active >= 0);
+			QCOMPARE(audible.size(), std::size_t{3});
+
+			QTemporaryDir dir;
+			QVERIFY(dir.isValid());
+			const QString project = dir.filePath(QStringLiteral("loop-passes.mmp"));
+			auto* song = lmms::Engine::getSong();
+			QVERIFY2(song->saveProjectFile(project, false), "project save failed");
+			song->loadProject(project);
+
+			lmms::SampleTrack* reopened = trackById(armed.trackId);
+			QVERIFY2(reopened != nullptr, "reopen lost the track");
+			QCOMPARE(reopened->takeLanes().laneCount(), 3);
+			QCOMPARE(reopened->takeLanes().activeTakeLane(groupId), active);
+			QCOMPARE(reopened->takeLanes().playAllTakes(), playAll);
+			int inGroup = 0;
+			for (lmms::Clip* c : reopened->getClips())
+			{
+				auto* sc = dynamic_cast<lmms::SampleClip*>(c);
+				if (sc != nullptr && sc->takeGroupId() == groupId) { ++inGroup; }
+			}
+			QCOMPARE(inGroup, 3);
+			QVERIFY2(audibleFlags(reopened) == audible, "the audible flags changed over the reload");
+			lmms::recordoptions::setOptions({});
+			delete reopened;
+		}
+	}
+
+	//! A plain recording (no loop pass) over an empty clip in Overdub is the clip's own content, as before: no
+	//! take lanes, and Play all takes stays off.
+	void aPlainRecordingInOverdubIsNotALoopPass()
+	{
+		lmms::recordoptions::setOptions({0, 0, lmms::recordoptions::Mode::Overdub});
+		ArmedClip armed = armedClip(false);
+		recordPass(armed.clip, 0.25f);
+		QCOMPARE(armed.track->takeLanes().laneCount(), 0);
+		QVERIFY(!armed.track->takeLanes().playAllTakes());
+		lmms::recordoptions::setOptions({});
+		delete armed.track;
 	}
 
 	//! The transport starts a pass on an armed clip whose takes are all in use: the pass is

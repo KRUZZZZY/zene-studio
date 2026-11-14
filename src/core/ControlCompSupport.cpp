@@ -134,6 +134,8 @@ QJsonArray takeGroupsState(const Track* track)
 			QJsonObject take;
 			take.insert(QStringLiteral("clip"), takeClipId(clip));
 			take.insert(QStringLiteral("lane"), clip->laneIndex());
+			// What the playback gate plays: every take under Play all takes, otherwise the active lane only.
+			take.insert(QStringLiteral("audible"), model.playAllTakes() || clip->laneIndex() == selection.activeLane);
 			takes.append(take);
 		}
 		entry.insert(QStringLiteral("takes"), takes);

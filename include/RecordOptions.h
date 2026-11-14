@@ -52,7 +52,9 @@ class Song;
  *    that a recorded note overlaps and replaces the clip's audio; keep_history keeps an audio clip's
  *    earlier audio and every new pass as take lanes (the newest pass active; comp.take_select chooses
  *    another) and, for MIDI, keeps notes as overdub does (MIDI take lanes are not kept yet). A loop
- *    recording's passes are take lanes in every mode (the loop policy is a separate unit).
+ *    recording's every pass is a take lane in every mode. Overdub keeps the earlier passes audible (Play all
+ *    takes is switched on); Replace and Keep History keep only the newest pass audible, and comp.take_select
+ *    chooses an earlier one.
  *    Theme 7 (owner decision 2026-10-03): Replace erases NOTES only - every note from before the pass that
  *    a recorded note overlaps in time, at any pitch - and never the clip's controller lanes (CC, pitch
  *    bend, aftertouch, program) or any automation. modeScope() is that sentence, for the record controls.
