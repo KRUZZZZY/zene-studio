@@ -3438,6 +3438,7 @@ tests/src/gui/MidiClipLinkedEditTest.cpp
 tests/src/gui/MidiClipStepMenuTest.cpp
 tests/src/gui/MidiClockMenuTest.cpp
 tests/src/gui/MidiCommandBindingsGuiTest.cpp
+tests/src/gui/MidiCompLaneGuiTest.cpp
 tests/src/gui/MidiControllerMenuTest.cpp
 tests/src/gui/MidiLearnGuiTest.cpp
 tests/src/gui/MidiReconnectActionTest.cpp
