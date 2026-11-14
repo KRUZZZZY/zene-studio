@@ -2,7 +2,7 @@ IMPLEMENTED
 
 # Q050-334.2 - Versioned public TypeScript session SDK (stage 2 of 2 of Q050-334)
 
-Branch `feat/050-Q050-334.2-oc` from `050/m0-train-26` (`af010bc3cc`). The package is in `tools/zene-session-sdk/`
+Branch `feat/050-Q050-334.2-oc` from `050/m0-train-26` (`af010bc3cc`). It now also contains merge `00ccb2579a` of `050/m0-train-31` (stage 1, with its C++) and the round-3 fix commits (`6662d9e339`, `5a9e50574f`, `27eaa073f5`, `696b59269a`, `0abc754cb0`). The package is in `tools/zene-session-sdk/`
 (`@zene-studio/session-sdk` 0.1.0), and it uses stage 1's event protocol unchanged. This unit changes no C++, adds or
 changes no command, and changes no project format. The feature record is `docs/050-features/Q050-334.2.md`. Logs are
 in `~/.local/share/zene-bunny-fix/qwen/runs/Q050-334.2.r1/logs/` (round 1) and `.../Q050-334.2.r2/logs/` (round 2).
@@ -148,3 +148,64 @@ Round 1 and round 2 gate logs are not in the round-3 folder; see the round folde
   refactor of a test launcher and two docs. No command was added or changed, so no snapshot was regenerated.
 - **GUI surface: none for this unit.** There is no GUI for events (`docs/050-features/Q050-334.1.md:68-69`: no GUI
   panel or menu), and every SDK edit is an existing registered command. So there is no new GUI check to run here.
+
+## Round 3 completion check
+
+Run in this pass (logs in `Q050-334.2.r3/logs/`): `submit_check.py $W Q050-334.2` exit 0, `RESULT: PASS - submit`, no FAIL
+row, three WARN rows explained below (`031-submit-check-final.log`); `feature_check.py $W` exit 0, 8 of 8 rows PASS
+(`032-feature-check-submit.log`). The round-3 ctest and mutation runs (018 to 029) are listed under "Round 3" above.
+
+- **Each new test fails with the product change reverted, then passes restored.** Round 1 (table above): with `src/`
+  moved away, `ctest -R "SessionSdk" --output-on-failure` exit 8 (`ctest-7-reverted-final.log`); restored, exit 0
+  (`ctest-9-restored-final.log`). Round 3, changed behaviour: removing `resync()`'s unsubscribe, exit 8
+  (`022-ctest-sdk-mutation-resync.log`); removing `LiveSession.start()`'s cleanup, exit 8
+  (`024-ctest-sdk-mutation-startup.log`); restored, `ctest -R "^ControlSessionSdk$"` exit 0 (`020`, 53 PASS). Not re-run
+  in this pass.
+- **Every acceptance criterion is proven by a test I ran.** Criterion 1 (typed package, example, docs): `ZeneSessionSdkTypecheck`
+  exit 0 (`019`), and `ControlSessionSdk` exit 0 (`020`, `SDK_VERSION` and the example). Criterion 2 (connect, read,
+  edit, event, unsubscribe, recovery after disconnect or overflow): `ControlSessionSdk` exit 0 (`020`, 53 PASS),
+  `--repeat until-fail:5` exit 0 (`021`, 5 of 5), recheck exit 0 (`029`, 53 PASS). The user-visible path is the agent
+  control socket, driven through the SDK's exports in `tools/zene-session-sdk/test/integration.ts`.
+- **Each edit is one undo step; honest reversibility classes.** No command is new or changed: the submit gate's
+  agent-command row reports "no command file changed" (PASS, `031`). The SDK's edits go through the existing registered
+  commands `track.add` and `track.rename`, and `control.undo` is the undo. The existing check is
+  `tools/zene-session-sdk/test/integration.ts:129-143`, run in `020` (exit 0): one `control.undo` produced exactly one
+  `undo` event (line 143), and the track count was `before + 1` afterwards, so one undo removed the last edit only. No
+  new reversibility class exists. The `events.*` class is stage 1's (`not_mutating`, per the report); not re-checked here.
+- **Nothing on the audio thread.** This unit's own commits change no C++: `git diff --name-only 00ccb2579a HEAD -- src/`
+  lists 0 files, and so does `c20ef591b5..HEAD` (`c20ef591b5` is the train-31 tip). The 148 `src/` files that differ from
+  `af010bc3cc` come from train-31 (stage 1, Q050-334.1), not from this unit. The submit gate's audio-path row (no
+  allocation, lock, signal or I/O added inside audio-path functions) is PASS (`031`). TSan was not run on this box.
+- **Old projects load and render as before; new data round-trips.** No `src/` file changed in this unit, so the load,
+  save and render code is unchanged by it, and the SDK stores nothing in a project. The project format is unchanged. No
+  load or render run was done in round 3, and no round-trip test was added, because no format changed.
+- **Completeness: real user path and agent path, with edge cases.** The user-visible path is the agent control socket
+  (no GUI for events). Edge cases and where each is covered:
+  - default `queue_limit` 256: `tests/control-project-events.py:95` (stage 1, `ControlProjectEvents`; not re-run).
+  - `queue_limit` 0 gives `invalid_args`: `control-project-events.py:98` (stage 1; not re-run).
+  - documented max 4096: **not covered**. The cap is documented at `src/core/ControlCommandsEvents.cpp:89`; I found no
+    test that asks for 4097. Stated as a gap, not claimed.
+  - second subscribe gives `busy`: `control-project-events.py:97`; SDK `integration.ts:119-120` (`020`, exit 0).
+  - unsubscribe after end: stage 1 `control-project-events.py:141-142` (`not_found`); the SDK returns `null` client-side
+    (`integration.ts:162`, `020`).
+  - proto other than 1 is refused: `tests/control-socket-integration.py:1910` (`proto=99` gives `refused`), server at
+    `src/core/ControlServer.cpp:96`; stage 1, not re-run.
+  - proto replies carry 1: `src/core/ControlCommandsControl.cpp:112`; SDK connect check `integration.ts:111` (`020`).
+  - overflow by burst: `control-project-events.py:166-227` (stage 1) and `integration.ts:262-271` (`020`).
+  - oversized `args_omitted`: `tests/src/core/ControlEventHubTest.cpp:169` (stage 1 C++ unit test; not re-run).
+  - disconnect and reconnect with seq and session comparison: `control-project-events.py:95` (stage 1), and
+    `integration.ts` (`missed === 2`, nothing replayed; `020`).
+  - renamed or missing target: `integration.ts:127` (`not_found` for `track.rename` on a missing track, `020`) and
+    `control-project-events.py:106`.
+  - undo shifting rows: `integration.ts:143` (undo is its own event kind, `020`). Stale generation: the disconnect and
+    reconnect path above. Reopen after save: **not exercised**; this unit does not touch save or load.
+  - Zero-test check: `ControlSessionSdk` runs show 53 PASS lines in `LastTest.log` (`020`, `029`), and `018` lists exactly
+    the two SDK tests. I did not re-verify that the round-3 ctest runs were from `build/tests`.
+- **Portability: Qt 5.15, MSVC and macOS.** This unit adds no C++ and no Qt API, so no Qt-6-only, `windows.h` or
+  `std::filesystem` item is present. POSIX is verified on this Linux host: `ControlSessionSdk` (`020`, `029`) and the
+  POSIX pipe smoke (`026`, exit 0). The Windows named pipe is CI-only: `ControlSessionSdkPipeSmoke` is registered only
+  under WIN32 (`tests/CMakeLists.txt:8829-8835`) and was not run here.
+- **GUI test drives the visible control.** There is no GUI surface for this unit. Events have no GUI panel or menu
+  (`docs/050-features/Q050-334.1.md:68-69`), and the SDK is an external program. The submit gate's three WARN rows (GUI
+  path, GUI test, agent command) are explained by that: no GUI entry point or GUI test was added, and no command file
+  changed. No GUI behaviour is claimed.
