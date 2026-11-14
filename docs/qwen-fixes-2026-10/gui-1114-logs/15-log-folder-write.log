@@ -1,0 +1,2 @@
+WRITE FAILED: PermissionError(13, 'Permission denied')
+dir: True writable: True

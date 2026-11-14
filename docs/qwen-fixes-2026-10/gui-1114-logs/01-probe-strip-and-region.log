@@ -1,0 +1,23 @@
+********* Start testing of MixerSelectionIdentityTest *********
+Config: Using QtTest library 6.12.0, Qt 6.12.0 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 16.2.1 20260810), cachyos unknown
+INFO   : MixerSelectionIdentityTest::initTestCase() entering
+QDEBUG : MixerSelectionIdentityTest::initTestCase() Lv2 plugin SUMMARY: 36 of 36  loaded in 8 msecs.
+MainWindow: unattended run: skipping the first-run setup dialog; configure audio and MIDI in the --config file
+QWARN  : MixerSelectionIdentityTest::initTestCase() This plugin does not support propagateSizeHints()
+QINFO  : MixerSelectionIdentityTest::initTestCase() plugin-scan: 0 file(s), 0 quarantined, 0 served from cache, 0 known-bad skipped, 0 scanned, 0 plugin(s)
+QWARN  : MixerSelectionIdentityTest::initTestCase() QWidget::setMinimumSize: (/lmms::gui::PositionLine) Negative sizes (0,-32) are not possible
+QWARN  : MixerSelectionIdentityTest::initTestCase() QWidget::setMaximumSize: (/lmms::gui::PositionLine) Negative sizes (16777215,-32) are not possible
+PASS   : MixerSelectionIdentityTest::initTestCase()
+INFO   : MixerSelectionIdentityTest::probeSplitterHints() entering
+QWARN  : MixerSelectionIdentityTest::probeSplitterHints() This plugin does not support propagateSizeHints()
+QWARN  : MixerSelectionIdentityTest::probeSplitterHints() PROBE t0 rowsMinHint=301 rowsH=885 sizes=583,300 bottomH=300 bottomMinHint=474 winMinH=416 muteY=966
+QWARN  : MixerSelectionIdentityTest::probeSplitterHints() This plugin does not support propagateSizeHints()
+QWARN  : MixerSelectionIdentityTest::probeSplitterHints() PROBE t1 rowsMinHint=353 sizes=583,300 bottomH=300 muteY=966 winMinH=468
+QWARN  : MixerSelectionIdentityTest::probeSplitterHints() PROBE t2 sizes=409,474 bottomH=474 muteY=792 winMinH=468
+QWARN  : MixerSelectionIdentityTest::probeSplitterHints() PROBE t3 sizes=409,474 bottomH=474 muteY=792 onScreen=1 winMinH=468
+QWARN  : MixerSelectionIdentityTest::probeSplitterHints() PROBE t4 mute=1 checked=1 devices=0
+PASS   : MixerSelectionIdentityTest::probeSplitterHints()
+INFO   : MixerSelectionIdentityTest::cleanupTestCase() entering
+PASS   : MixerSelectionIdentityTest::cleanupTestCase()
+Totals: 3 passed, 0 failed, 0 skipped, 0 blacklisted, 2468ms
+********* Finished testing of MixerSelectionIdentityTest *********

@@ -1,0 +1,47 @@
+********* Start testing of MixerSelectionIdentityTest *********
+Config: Using QtTest library 6.12.0, Qt 6.12.0 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 16.2.1 20260810), cachyos unknown
+INFO   : MixerSelectionIdentityTest::initTestCase() entering
+QDEBUG : MixerSelectionIdentityTest::initTestCase() Lv2 plugin SUMMARY: 36 of 36  loaded in 10 msecs.
+MainWindow: unattended run: skipping the first-run setup dialog; configure audio and MIDI in the --config file
+QWARN  : MixerSelectionIdentityTest::initTestCase() This plugin does not support propagateSizeHints()
+QINFO  : MixerSelectionIdentityTest::initTestCase() plugin-scan: 0 file(s), 0 quarantined, 0 served from cache, 0 known-bad skipped, 0 scanned, 0 plugin(s)
+QWARN  : MixerSelectionIdentityTest::initTestCase() QWidget::setMinimumSize: (/lmms::gui::PositionLine) Negative sizes (0,-32) are not possible
+QWARN  : MixerSelectionIdentityTest::initTestCase() QWidget::setMaximumSize: (/lmms::gui::PositionLine) Negative sizes (16777215,-32) are not possible
+PASS   : MixerSelectionIdentityTest::initTestCase()
+INFO   : MixerSelectionIdentityTest::aRemovalBeforeTheSelectedChannelKeepsTheSelection() entering
+PASS   : MixerSelectionIdentityTest::aRemovalBeforeTheSelectedChannelKeepsTheSelection()
+INFO   : MixerSelectionIdentityTest::removingTheSelectedLastChannelFallsBackToMaster() entering
+PASS   : MixerSelectionIdentityTest::removingTheSelectedLastChannelFallsBackToMaster()
+INFO   : MixerSelectionIdentityTest::aReorderKeepsTheSelectedChannelSelected() entering
+PASS   : MixerSelectionIdentityTest::aReorderKeepsTheSelectedChannelSelected()
+INFO   : MixerSelectionIdentityTest::aReorderRebindsEveryStripAndKeepsTheSelection() entering
+PASS   : MixerSelectionIdentityTest::aReorderRebindsEveryStripAndKeepsTheSelection()
+INFO   : MixerSelectionIdentityTest::pressingAChildControlSelectsItsStripAndRoutesKeyboardFaderAdjustment() entering
+FAIL!  : MixerSelectionIdentityTest::pressingAChildControlSelectsItsStripAndRoutesKeyboardFaderAdjustment() 'selectedWhenActionRan' returned FALSE. ()
+   Loc: [/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-gui-1114-tab-mixer-mute-master/tests/src/gui/MixerSelectionIdentityTest.cpp(246)]
+FAIL!  : MixerSelectionIdentityTest::pressingAChildControlSelectsItsStripAndRoutesKeyboardFaderAdjustment() 'selectedWhenActionRan' returned FALSE. ()
+   Loc: [/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-gui-1114-tab-mixer-mute-master/tests/src/gui/MixerSelectionIdentityTest.cpp(246)]
+FAIL!  : MixerSelectionIdentityTest::pressingAChildControlSelectsItsStripAndRoutesKeyboardFaderAdjustment() 'selectedWhenActionRan' returned FALSE. ()
+   Loc: [/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-gui-1114-tab-mixer-mute-master/tests/src/gui/MixerSelectionIdentityTest.cpp(246)]
+FAIL!  : MixerSelectionIdentityTest::pressingAChildControlSelectsItsStripAndRoutesKeyboardFaderAdjustment() 'selectedWhenMacroActionRan' returned FALSE. ()
+   Loc: [/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-gui-1114-tab-mixer-mute-master/tests/src/gui/MixerSelectionIdentityTest.cpp(276)]
+INFO   : MixerSelectionIdentityTest::theMasterMuteButtonTogglesAndDoesNotOpenDevices() entering
+QWARN  : MixerSelectionIdentityTest::theMasterMuteButtonTogglesAndDoesNotOpenDevices() This plugin does not support propagateSizeHints()
+QWARN  : MixerSelectionIdentityTest::theMasterMuteButtonTogglesAndDoesNotOpenDevices() This plugin does not support propagateSizeHints()
+FAIL!  : MixerSelectionIdentityTest::theMasterMuteButtonTogglesAndDoesNotOpenDevices() 'onInMix' returned FALSE. (a real press on Master mute did not turn the mute model on)
+   Loc: [/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-gui-1114-tab-mixer-mute-master/tests/src/gui/MixerSelectionIdentityTest.cpp(363)]
+INFO   : MixerSelectionIdentityTest::aNewReturnStripIsLabelledReturnAtOnce() entering
+FAIL!  : MixerSelectionIdentityTest::aNewReturnStripIsLabelledReturnAtOnce() Compared values are not the same
+   Actual   (static_cast<int>(Engine::mixer()->numChannels())): 8
+   Expected (before + 1)                                      : 9
+   Loc: [/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-gui-1114-tab-mixer-mute-master/tests/src/gui/MixerSelectionIdentityTest.cpp(393)]
+INFO   : MixerSelectionIdentityTest::theReturnButtonStaysOnAThousandPixelScreen() entering
+QWARN  : MixerSelectionIdentityTest::theReturnButtonStaysOnAThousandPixelScreen() This plugin does not support propagateSizeHints()
+PASS   : MixerSelectionIdentityTest::theReturnButtonStaysOnAThousandPixelScreen()
+INFO   : MixerSelectionIdentityTest::theAddEffectButtonStaysOnAThousandPixelScreen() entering
+QWARN  : MixerSelectionIdentityTest::theAddEffectButtonStaysOnAThousandPixelScreen() This plugin does not support propagateSizeHints()
+PASS   : MixerSelectionIdentityTest::theAddEffectButtonStaysOnAThousandPixelScreen()
+INFO   : MixerSelectionIdentityTest::cleanupTestCase() entering
+PASS   : MixerSelectionIdentityTest::cleanupTestCase()
+Totals: 8 passed, 3 failed, 0 skipped, 0 blacklisted, 2752ms
+********* Finished testing of MixerSelectionIdentityTest *********

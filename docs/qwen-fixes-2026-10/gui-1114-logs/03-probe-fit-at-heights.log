@@ -1,0 +1,23 @@
+********* Start testing of MixerSelectionIdentityTest *********
+Config: Using QtTest library 6.12.0, Qt 6.12.0 (x86_64-little_endian-lp64 shared (dynamic) release build; by GCC 16.2.1 20260810), cachyos unknown
+INFO   : MixerSelectionIdentityTest::initTestCase() entering
+QDEBUG : MixerSelectionIdentityTest::initTestCase() Lv2 plugin SUMMARY: 36 of 36  loaded in 10 msecs.
+MainWindow: unattended run: skipping the first-run setup dialog; configure audio and MIDI in the --config file
+QWARN  : MixerSelectionIdentityTest::initTestCase() This plugin does not support propagateSizeHints()
+QINFO  : MixerSelectionIdentityTest::initTestCase() plugin-scan: 0 file(s), 0 quarantined, 0 served from cache, 0 known-bad skipped, 0 scanned, 0 plugin(s)
+QWARN  : MixerSelectionIdentityTest::initTestCase() QWidget::setMinimumSize: (/lmms::gui::PositionLine) Negative sizes (0,-32) are not possible
+QWARN  : MixerSelectionIdentityTest::initTestCase() QWidget::setMaximumSize: (/lmms::gui::PositionLine) Negative sizes (16777215,-32) are not possible
+PASS   : MixerSelectionIdentityTest::initTestCase()
+INFO   : MixerSelectionIdentityTest::probeSizesFit() entering
+QWARN  : MixerSelectionIdentityTest::probeSizesFit() This plugin does not support propagateSizeHints()
+QWARN  : MixerSelectionIdentityTest::probeSizesFit() This plugin does not support propagateSizeHints()
+QWARN  : MixerSelectionIdentityTest::probeSizesFit() PROBE req=1600x1000 win=1600x1000 winMinH=468 rowsH=885 sizes=409,474 need=474 shown=20x20
+QWARN  : MixerSelectionIdentityTest::probeSizesFit() PROBE req=1280x800 win=1280x800 winMinH=468 rowsH=685 sizes=231,452 need=474 shown=20x20
+QWARN  : MixerSelectionIdentityTest::probeSizesFit() PROBE req=1024x768 win=1024x768 winMinH=468 rowsH=653 sizes=231,420 need=474 shown=20x20
+QWARN  : MixerSelectionIdentityTest::probeSizesFit() PROBE req=1280x720 win=1280x720 winMinH=468 rowsH=605 sizes=231,372 need=474 shown=20x20
+QWARN  : MixerSelectionIdentityTest::probeSizesFit() PROBE req=1600x1000 win=1600x1000 winMinH=468 rowsH=885 sizes=409,474 need=474 shown=20x20
+PASS   : MixerSelectionIdentityTest::probeSizesFit()
+INFO   : MixerSelectionIdentityTest::cleanupTestCase() entering
+PASS   : MixerSelectionIdentityTest::cleanupTestCase()
+Totals: 3 passed, 0 failed, 0 skipped, 0 blacklisted, 2648ms
+********* Finished testing of MixerSelectionIdentityTest *********
