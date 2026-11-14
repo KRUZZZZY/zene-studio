@@ -677,6 +677,7 @@ instrument's window captures a bounded take (click again to stop, or let it reac
 so the waveform and, for SlicerT, the slices are ready to play. The take is a WAV in Recordings; one undo
 puts the sampler's previous sample back. Agents use record.sampler_capture, record.sampler_capture_stop,
 record.sampler_capture_status and record.sampler_capture_land for the same take.</p>
+<p>Recording while a loop plays: every pass is its own take lane in every record mode, so no Split into Loop Passes is needed. Record Mode decides which takes are heard. <b>Overdub</b> keeps the earlier passes audible (the track's Play all takes switches on); <b>Replace</b> and <b>Keep History</b> leave only the newest pass audible, and an earlier pass can be chosen again from the take list or with <code>comp.take_select</code>. The take-lanes panel's take list and <code>comp.get_state</code> (<code>take_groups[].takes[].audible</code>) show which takes are heard. Play all takes can be switched either way afterwards with <code>comp.play_all_takes</code>.</p>
 <p>SlicerT's window has a per-slice bar between the waveform and the sample name. Slice picks one playable slice
 (slice 0 plays on the key above the base note; the base note still plays the whole sample) and the waveform shades it.
 Gain (-48 to +12 dB), Pan (-1 left to +1 right; a balance, so 0 leaves the stereo sample alone), Filter (below 0 a low-pass
