@@ -253,6 +253,13 @@ sys.path.insert(0, sys.argv[1])
 import opencode_free as o
 model, cwd, out, session = sys.argv[2:6]
 try:
+    # Duet calls run_model directly, bypassing the ordinary dispatcher's cooldown checks.
+    # Never let the shared picker's fallback select a resting or exhausted provider.
+    if o.uses_dsh(model):
+        awake = o.dsh_providers_awake()
+        pinned = o.load(o.DSH_PROVIDERS, {}).get(session) if session else None
+        if not awake or (pinned and pinned not in awake):
+            raise RuntimeError("Provider usage limit: DeepSeek routes are resting or the resumed provider is unavailable")
     rc, transient = o.run_model(model, Path(cwd), sys.stdin.read(), Path(out), None, session or None)
 except RuntimeError as error:
     print(f"duet-opencode: {error}", flush=True)
@@ -325,9 +332,21 @@ def run_opencode(profile, prompt, cwd, out, log, *, write, resume=None, persist=
         except ValueError:
             pass
     text = out.read_text() if out.exists() else ""
+    # Provider refusals often leave an empty final reply. Surface the actual quota error
+    # before the orchestrator retries it as malformed JSON or spends a lead review on it.
+    limit = None
+    if rc and not killed:
+        detail = Path(log).read_text(errors="replace") if Path(log).exists() else ""
+        for f in out.parent.glob("opencode-*.stderr"):
+            detail += "\n" + f.read_text(errors="replace")
+        if re.search(r"insufficient_balance|coding_plan_exhausted|GoUsageLimitError|FreeUsageLimitError|"
+                     r"Provider usage limit:|OpenCode Go usage limit reached", detail, re.I):
+            limit = f"haiku-exec: hit your usage limit; {model} provider quota or cooldown; see {log}"
     transient = rc >= 100 and not killed
-    return Result(rc=0 if killed else (rc - 100 if rc >= 100 else rc), text=text, session=session, usage=usage,
-                  minutes=round((time.time() - t0) / 60, 1), transient=transient, killed=killed, log=str(log))
+    return Result(rc=2 if limit else (0 if killed else (rc - 100 if rc >= 100 else rc)),
+                  text=text, session=session, usage=usage, limit=limit,
+                  minutes=round((time.time() - t0) / 60, 1), transient=transient and not limit,
+                  killed=killed, log=str(log))
 
 
 # ---------------------------------------------------------------- codex (Luna)
