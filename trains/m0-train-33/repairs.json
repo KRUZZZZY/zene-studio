@@ -343,5 +343,38 @@
     "summary": "CI regression: build / msvc-x64",
     "train": "050/m0-train-32",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-a0493fd29d4e9b4b"
+  },
+  {
+    "at": "2026-11-15T15:23:33",
+    "base": "cc29a63dde09cf28bb00498a2d2a5b124d4d614d",
+    "branch": "fix/ci-repair-ci-f8d87e270a05ef5e-b6fb8e20fddc",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-f8d87e270a05ef5e.r1.md",
+        "negative_control": {
+          "artifact_hashes": {},
+          "detail": "no product change, no changed test, or a dirty tree",
+          "ok": null,
+          "proof_base": "cc29a63dde09cf28bb00498a2d2a5b124d4d614d",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-f8d87e270a05ef5e.r1/negctl",
+          "proof_key": "5c1099301734fb9e5041ed45a99854db50f997b9e97521f06e167d11d3a0b7d3"
+        },
+        "verdict": "ACCEPT"
+      }
+    ],
+    "commit": "6ab25975c894b95df506a89d36d57fbf09e7a35b",
+    "id": "ci-repair-ci-f8d87e270a05ef5e-b6fb8e20fddc",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-f8d87e270a05ef5e.md",
+      "tests/CMakeLists.txt",
+      "tests/src/core/ExportWavWriteErrorTest.cpp",
+      "tests/train-41-portability-check.py"
+    ],
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "cc29a63dde09cf28bb00498a2d2a5b124d4d614d",
+    "status": "pending",
+    "summary": "CI regression: build / mingw64",
+    "train": "050/m0-train-33",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-f8d87e270a05ef5e"
   }
 ]
