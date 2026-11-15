@@ -3821,3 +3821,31 @@ include/ShellRecordMenu.h
 src/gui/shell/ShellRecordMenu.cpp
 # cluster new-p10-318 (2026-10): fix and verification report for the Peak Controller zero-frame block (fork-NEW).
 docs/qwen-fixes-2026-10/cluster-new-p10-318.md
+# Q050-334.2 (2026-11): the public TypeScript session SDK (stage 2 of Q050-334) - the package, its example, its own
+# integration test and proxy, the ctest drivers and the reports (fork-NEW; TypeScript and Python, no C/C++).
+tools/zene-session-sdk/package.json
+tools/zene-session-sdk/package-lock.json
+tools/zene-session-sdk/tsconfig.json
+tools/zene-session-sdk/tsconfig.build.json
+tools/zene-session-sdk/.gitignore
+tools/zene-session-sdk/README.md
+tools/zene-session-sdk/CHANGELOG.md
+tools/zene-session-sdk/src/index.ts
+tools/zene-session-sdk/src/version.ts
+tools/zene-session-sdk/src/protocol.ts
+tools/zene-session-sdk/src/errors.ts
+tools/zene-session-sdk/src/listeners.ts
+tools/zene-session-sdk/src/subscription.ts
+tools/zene-session-sdk/src/client.ts
+tools/zene-session-sdk/src/live-session.ts
+tools/zene-session-sdk/examples/live-view.ts
+tools/zene-session-sdk/test/integration.ts
+tools/zene-session-sdk/test/proxy.ts
+tools/zene-session-sdk/test/pipe-smoke.ts
+tests/control-session-sdk.py
+tests/session-sdk-typecheck.py
+tests/session-sdk-pipe-smoke.py
+# Q050-334.2: its feature record.
+docs/050-features/Q050-334.2.md
+# Q050-334.2: its report.
+docs/qwen-fixes-2026-10/cluster-Q050-334.2.md
