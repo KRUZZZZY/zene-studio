@@ -2261,6 +2261,12 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		target_link_libraries(${LMMS_TEST_NAME} PRIVATE sfzplayer_sfizz)
 	endif()
 	add_test(NAME ${LMMS_TEST_NAME} COMMAND ${LMMS_TEST_NAME})
+	if(LMMS_TEST_NAME STREQUAL "AutomationModesTest")
+		# Keep the no-target render regression isolated: firstObject()'s static fallback is
+		# process-wide, so an earlier test could otherwise initialize it outside render scope.
+		add_test(NAME AutomationModesTargetlessRecordingTest
+			COMMAND ${LMMS_TEST_NAME} testRecordingClipWithoutTargetWritesNothing)
+	endif()
 	if(LMMS_TEST_NAME STREQUAL "SfizzLeakDetectorTest")
 		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES
 			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
