@@ -1,0 +1,2 @@
+cc29a63dde09cf28bb00498a2d2a5b124d4d614d	chore(train-33): snapshot regenerated live (933 ids / 78 groups, wasm.* out), canary, A16 histogram, all-sources re-derived (automatic merge train)
+5854c983c88b7645bb83436b16dcb1efd761b5c3	fix(train-sol): Fixed Qt5 JSON conversions, Windows timeout name lookup, and missing Qt compiler requirements on the shared-memory compile-check target; added compiler regressions and verification

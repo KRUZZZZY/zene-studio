@@ -209,8 +209,9 @@
       "tests/train-47-portability-check.py",
       "tests/upstream-modifications.txt"
     ],
+    "promoted_train": "050/m0-train-33",
     "source_head": "dec3f1d45c62b26bce955875521780db173a0228",
-    "status": "pending",
+    "status": "promoted",
     "summary": "Fixed Qt5 JSON conversions, Windows timeout name lookup, and missing Qt compiler requirements on the shared-memory compile-check target; added compiler regressions and verification report.",
     "train": "050/m0-train-32",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-32-1794726387615157268"

@@ -831,6 +831,21 @@
       "train": "050/m0-train-32",
       "train_label": "22.0",
       "version": "0.4.22-alpha.0"
+    },
+    {
+      "base": "050/m0-train-32",
+      "display_version": "0.4.22.1-alpha",
+      "evidence": "validated-promotion",
+      "feature_items": [],
+      "feature_train": 22,
+      "kind": "maintenance",
+      "milestone": "0.4",
+      "revision": 1,
+      "sha": "cc29a63dde09cf28bb00498a2d2a5b124d4d614d",
+      "stage": "alpha",
+      "train": "050/m0-train-33",
+      "train_label": "22.1",
+      "version": "0.4.22-alpha.1"
     }
   ],
   "milestone": [
