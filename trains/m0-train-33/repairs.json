@@ -376,5 +376,40 @@
     "summary": "CI regression: build / mingw64",
     "train": "050/m0-train-33",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-f8d87e270a05ef5e"
+  },
+  {
+    "at": "2026-11-15T15:37:53",
+    "base": "cc29a63dde09cf28bb00498a2d2a5b124d4d614d",
+    "branch": "fix/ci-repair-ci-6422986f4db9676f-a0b124207c50",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-6422986f4db9676f.r1.md",
+        "negative_control": {
+          "artifact_hashes": {},
+          "detail": "no product change, no changed test, or a dirty tree",
+          "ok": null,
+          "proof_base": "cc29a63dde09cf28bb00498a2d2a5b124d4d614d",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-6422986f4db9676f.r1/negctl",
+          "proof_key": "458de401f3b4efa4b8434421f1701f971e8e56ea194ae072be684fef7ec01865"
+        },
+        "verdict": "ACCEPT"
+      }
+    ],
+    "commit": "25aa2d7a562b8be17136dea7f81d0446e1689ba6",
+    "id": "ci-repair-ci-6422986f4db9676f-a0b124207c50",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-6422986f4db9676f.md",
+      "tests/CMakeLists.txt",
+      "tests/all-sources.txt",
+      "tests/fork-sources.txt",
+      "tests/src/core/VideoTestClip.h",
+      "tests/src/core/VideoTestClipPortabilityTest.cpp"
+    ],
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "cc29a63dde09cf28bb00498a2d2a5b124d4d614d",
+    "status": "pending",
+    "summary": "CI regression: build / linux-arm64",
+    "train": "050/m0-train-33",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-6422986f4db9676f"
   }
 ]

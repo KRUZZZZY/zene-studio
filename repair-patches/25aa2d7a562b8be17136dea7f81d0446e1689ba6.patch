@@ -1,0 +1,325 @@
+From 25aa2d7a562b8be17136dea7f81d0446e1689ba6 Mon Sep 17 00:00:00 2001
+From: Zene CI repair <noreply@zene.invalid>
+Date: Sun, 15 Nov 2026 15:37:53 +0000
+Subject: [PATCH] fix(ci): CI regression: build / linux-arm64
+
+CI-Repair-Id: ci-repair-ci-6422986f4db9676f-a0b124207c50
+---
+ .../cluster-ci-6422986f4db9676f.md            | 125 ++++++++++++++++++
+ tests/CMakeLists.txt                          |   3 +
+ tests/all-sources.txt                         |   1 +
+ tests/fork-sources.txt                        |   1 +
+ tests/src/core/VideoTestClip.h                |  24 +++-
+ .../src/core/VideoTestClipPortabilityTest.cpp |  82 ++++++++++++
+ 6 files changed, 234 insertions(+), 2 deletions(-)
+ create mode 100644 docs/qwen-fixes-2026-10/cluster-ci-6422986f4db9676f.md
+ create mode 100644 tests/src/core/VideoTestClipPortabilityTest.cpp
+
+diff --git a/docs/qwen-fixes-2026-10/cluster-ci-6422986f4db9676f.md b/docs/qwen-fixes-2026-10/cluster-ci-6422986f4db9676f.md
+new file mode 100644
+index 0000000000..971fece81b
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/cluster-ci-6422986f4db9676f.md
+@@ -0,0 +1,125 @@
++# cluster ci-6422986f4db9676f — VideoClipsTest fails to compile on a build without FFmpeg
++
++Verdict: **FIXED**
++
++## Decision
++
++**REAL — test-build portability defect, not a product runtime defect.** On the hosted `linux-arm64`
++job the project configures without FFmpeg (the Ubuntu arm64 dependency list carries no
++`libav*-dev`), yet always-built test sources reference `videotest::makeClip`, which existed only
++inside `#ifdef ZENE_HAVE_FFMPEG`. The failure in the CI log is a compile error, so the runtime
++`VideoDecoder::available()` skip in `needClips()` could never run.
++
++Evidence on the pinned commit `cc29a63dde09cf28bb00498a2d2a5b124d4d614d`:
++
++- `tests/src/core/VideoTestClip.h` (before this fix, `#ifdef ZENE_HAVE_FFMPEG` at line 50, now
++  line 55) declared and defined `makeClip()` only when FFmpeg is present.
++- `tests/src/core/VideoClipsTest.cpp:530` calls `videotest::makeClip()` unguarded.
++- `tests/src/gui/VideoClipsGuiTest.cpp:337` also calls it unguarded — the next build failure the
++  CI job would have hit after `VideoClipsTest` was repaired.
++- `CMakeLists.txt:815-826` makes FFmpeg optional; the CI dependency list
++  `.github/workflows/deps-ubuntu-24.04-gcc.txt` contains no FFmpeg packages, so
++  `ZENE_HAVE_FFMPEG` is undefined in that job.
++- The sibling call sites were already guarded and were checked:
++  `tests/src/core/VideoTrackTest.cpp:301`, `tests/src/gui/ArrangerOverlaysVideoLaneTest.cpp:400`,
++  `tests/src/core/VideoFfmpegTest.cpp:65`, and
++  `tests/src/core/VideoTestClipTest.cpp:104,133,176`.
++
++## Fix
++
++`tests/src/core/VideoTestClip.h` now offers `makeClip()` in **every** configuration:
++
++- The real FFmpeg implementation is unchanged behind
++  `#if defined(ZENE_HAVE_FFMPEG) && !defined(ZENE_TEST_VIDEO_CLIP_WITHOUT_FFMPEG)` (line 55).
++- The `#else` branch (line 242) defines an inline fallback that returns `false` and touches
++  nothing (line 250). Every always-built video test therefore compiles, its existing
++  `VideoDecoder::available()` check skips the case, and no assertion changes.
++- `ZENE_TEST_VIDEO_CLIP_WITHOUT_FFMPEG` (line 52 comment) is a test-only seam so the regression
++  below can run the no-FFmpeg branch on an FFmpeg-enabled machine. The build never defines it.
++- `#include <QString>` moved to the always-available section because the fallback signature names
++  `QString`; the fixture constants and `Palette` were already outside the conditional.
++
++No product audio code, save/load path, undo path or control command is touched. The header is
++included only by the seven test translation units listed by
++`grep -rln "VideoTestClip.h" tests/src`; all of them were rebuilt.
++
++## Deterministic regression
++
++New `tests/src/core/VideoTestClipPortabilityTest.cpp` (registered in `tests/CMakeLists.txt`,
++`tests/fork-sources.txt` and `tests/all-sources.txt`). It defines the seam and includes the
++fixture, so it exercises the no-FFmpeg branch in the normal FFmpeg-enabled developer/CI tree:
++
++| Path | Covered by |
++|---|---|
++| Normal no-FFmpeg branch | `makeClipIsDeclaredWithoutFfmpegAndRefuses`: helper exists, returns false, creates no file, constants/palette intact. |
++| Both palette spellings / empty path / missing directory | `makeClipAcceptsBothPalettesAndAnEmptyPath`: default palette, `RedBlue`, `GreenYellow`, empty and unwritable paths all decline. |
++| Compile path that CI actually hit | Both `VideoClipsTest.cpp` and `VideoClipsGuiTest.cpp` were compiled with `lmmsconfig.h`'s FFmpeg define removed; before the fix both failed with `'makeClip' is not a member of 'videotest'`, after it both exit 0. |
++| Runtime FFmpeg path | Existing `VideoClipsTest`, `VideoClipsGuiTest`, `VideoTestClipTest`, `VideoTrackTest`, `VideoFfmpegTest`, `ArrangerOverlaysVideoLaneTest` suites. |
++
++No wall-clock timing, sleeps or races: the test changes only which preprocessor branch the fixture
++provides in its own translation unit.
++
++## Evidence — exact commands and exit codes
++
++The requested log folder
++`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-6422986f4db9676f.r1/logs` was **not
++writable by this session**: `touch` as its owner returned `Permission denied` (exit 1), and even
++`chmod u+w` plus a retry failed, while the worktree and `$TMPDIR` are writable. All logs were
++therefore kept in
++`/home/kruzzzzy/.cache/zene-tmp/zene-qwen-ci-6422986f4db9676f/ci-6422986f4db9676f.r1-logs`
++(on disk, not `/tmp`), and the same commands are reproduced below with `LOGS` naming that folder.
++
++| Purpose | Exact command | Exit |
++|---|---|---:|
++| Regenerate the Makefiles for the new target (configure itself is blocked by the lane wrapper) | `cmake --build build --target cmake_check_build_system > "$LOGS/configure-1.log" 2>&1` | 0 |
++| Build the new regression on the unfixed tree | `cmake --build build --target VideoTestClipPortabilityTest -j12 > "$LOGS/build-1-red.log" 2>&1` | 0 |
++| RED regression, unfixed tree | `cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R '^VideoTestClipPortabilityTest$' --output-on-failure > "$LOGS/test-1-red.log" 2>&1` | **8** |
++| Exact CI compile failure, FFmpeg define removed from the generated config | `python3 … compile_commands.json` with `-I"$LOGS/noffmpeg-shadow"` and `-fsyntax-only` on `VideoClipsTest.cpp` and `VideoClipsGuiTest.cpp`, output in `"$LOGS/compile-noffmpeg-red.log"` | **1** (both files) |
++| Build the affected FFmpeg-enabled binaries on the unfixed tree | `cmake --build build --target VideoClipsTest VideoClipsGuiTest -j12 > "$LOGS/build-2-pre-fix-ffmpeg.log" 2>&1` | 0 |
++| Apply the fix (edit `VideoTestClip.h`) | — | — |
++| Rebuild every target that includes the header | `cmake --build build --target VideoTestClipPortabilityTest VideoClipsTest VideoClipsGuiTest VideoTestClipTest VideoTrackTest VideoFfmpegTest ArrangerOverlaysVideoLaneTest -j12 > "$LOGS/build-3-green.log" 2>&1` | 0 |
++| GREEN regression and unchanged video family | `cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R '^(VideoTestClipPortabilityTest\|VideoClipsTest\|VideoClipsGuiTest\|VideoTestClipTest\|VideoTrackTest\|VideoFfmpegTest\|ArrangerOverlaysVideoLaneTest)$' --output-on-failure > "$LOGS/test-2-green-family.log" 2>&1` | 0 (7/7) |
++| Exact CI compile check with the fix, FFmpeg define removed | same shadow-config compile, output `"$LOGS/compile-noffmpeg-green.log"` | 0 (both files) |
++| Save and reverse the product hunk | `git diff -- tests/src/core/VideoTestClip.h > "$LOGS/fix.patch"` then `git apply -R "$LOGS/fix.patch"` | 0 / 0 |
++| Rebuild with the fix reversed | `cmake --build build --target VideoTestClipPortabilityTest -j12 > "$LOGS/build-4-red-reverted.log" 2>&1` | 0 |
++| RED proof: regression must fail without the fix | `cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R '^VideoTestClipPortabilityTest$' --output-on-failure > "$LOGS/test-3-red-reverted.log" 2>&1` | **8** |
++| Restore the fix | `git apply "$LOGS/fix.patch"` | 0 |
++| Rebuild restored | `cmake --build build --target VideoTestClipPortabilityTest -j12 > "$LOGS/build-5-green-restored.log" 2>&1` | 0 |
++| GREEN proof: regression passes restored | `cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R '^VideoTestClipPortabilityTest$' --output-on-failure > "$LOGS/test-4-green-restored.log" 2>&1` | **0** |
++| Rebuild/re-run after replacing the POSIX-style missing path with `QTemporaryDir::filePath("missing/…")` | `cmake --build build --target VideoTestClipPortabilityTest -j12 > "$LOGS/build-7-portable-path.log" 2>&1`; `cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R '^VideoTestClipPortabilityTest$' --output-on-failure > "$LOGS/test-5-portable-path.log" 2>&1` | 0 / 0 |
++| Main application still builds | `cmake --build build --target zene -j12 > "$LOGS/build-6-zene.log" 2>&1` | 0 |
++| Unchanged quality gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-6422986f4db9676f > "$LOGS/gates-1.log" 2>&1` | 0 (`RESULT: PASS`, 8/8 gates) |
++
++The RED run failed exactly at
++`VideoTestClipPortabilityTest.cpp:55` — `'!videotest::makeClip(path)' returned FALSE` — because the
++unfixed header took the real FFmpeg branch and made a clip. The GREEN runs passed 1/1 and the
++unchanged family passed 7/7 (ctest exit 0).
++
++## Files committed
++
++- `tests/src/core/VideoTestClip.h` — makeClip declared in every configuration; false fallback.
++- `tests/src/core/VideoTestClipPortabilityTest.cpp` — new deterministic regression.
++- `tests/CMakeLists.txt` — registers it.
++- `tests/fork-sources.txt`, `tests/all-sources.txt` — register the new test source.
++- `docs/qwen-fixes-2026-10/cluster-ci-6422986f4db9676f.md` — this report.
++
++## Self-check
++
++- **Regression fails with the product change reverted, passes restored:** RED `ctest` exit 8
++  (`test-3-red-reverted.log`), GREEN exit 0 (`test-4-green-restored.log`); exact commands above.
++- **Deterministic, no wall-clock timing:** the test uses only the `ZENE_TEST_VIDEO_CLIP_WITHOUT_FFMPEG`
++  preprocessing seam; no sleeps, timers or threads.
++- **Cause complete, every caller/sibling checked:** `grep -rln "VideoTestClip.h" tests/src` names
++  seven translation units, all rebuilt. All `makeClip` call sites were audited; the two unguarded
++  ones (`VideoClipsTest.cpp:530`, `VideoClipsGuiTest.cpp:337`) are the reported bug and its sibling.
++  The other four call sites already guard or run only under FFmpeg.
++- **No collateral damage:** the real FFmpeg implementation is byte-for-byte unchanged; projects,
++  saves, undo and commands are untouched. The fallback is only selected when FFmpeg is absent (or
++  by the regression seam), exactly the configuration that previously did not compile. No limit or
++  check was added that could affect other callers.
++- **Audio thread / undo / commands:** no audio-path file, command file or undo code changed, so
++  nothing new allocates, frees, locks, waits or logs on the audio thread, and no control command
++  or canary changed.
++- **Registration and gates:** new test registered in `tests/CMakeLists.txt` and both source
++  manifests; `feature_check.py` exit 0 with all eight gates PASS (complexity and file-length:
++  "no new item in your files").
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 96fe7d539c..4292e9617c 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -1207,6 +1207,9 @@ set(LMMS_TESTS
+ 	# 0.5.0 L12 (Q050-042): old-version patterns keep their note and pattern lengths after upgrade and save/reopen.
+ 	src/core/LegacyPatternUpgradeTest.cpp
+ 	src/core/VideoTestClipTest.cpp
++	# cluster ci-6422986f4db9676f: the clip fixture's no-FFmpeg branch declares makeClip, so the
++	# always-built video test sources compile on the linux-arm64 job (no libav*-dev there).
++	src/core/VideoTestClipPortabilityTest.cpp
+ 	# cluster new-p9-66 (BUG 8): the default extraction WAV never names a file that is already there
+ 	src/core/VideoAudioNameTest.cpp
+ 	src/core/StableTrackIdsTest.cpp
+diff --git a/tests/all-sources.txt b/tests/all-sources.txt
+index 7c1b070163..84c9786b01 100644
+--- a/tests/all-sources.txt
++++ b/tests/all-sources.txt
+@@ -3328,6 +3328,7 @@ tests/src/core/VideoAudioNameTest.cpp
+ tests/src/core/VideoClipsTest.cpp
+ tests/src/core/VideoFfmpegTest.cpp
+ tests/src/core/VideoTestClip.h
++tests/src/core/VideoTestClipPortabilityTest.cpp
+ tests/src/core/VideoTestClipTest.cpp
+ tests/src/core/VideoTrackTest.cpp
+ tests/src/core/VideoTrackTestParts1.h
+diff --git a/tests/fork-sources.txt b/tests/fork-sources.txt
+index b966ddd530..04807ea8f2 100644
+--- a/tests/fork-sources.txt
++++ b/tests/fork-sources.txt
+@@ -3000,6 +3000,7 @@ tests/src/core/UpgradeExtendedNoteRangeTest.cpp
+ tests/src/core/VideoAudioNameTest.cpp
+ tests/src/core/VideoFfmpegTest.cpp
+ tests/src/core/VideoTestClip.h
++tests/src/core/VideoTestClipPortabilityTest.cpp
+ tests/src/core/VideoTestClipTest.cpp
+ tests/src/core/VideoTrackTest.cpp
+ # Q050-180.1 (L04): several positioned video clips - the core, lane and MCP proofs.
+diff --git a/tests/src/core/VideoTestClip.h b/tests/src/core/VideoTestClip.h
+index d2f779651b..7e5b5ccb1b 100644
+--- a/tests/src/core/VideoTestClip.h
++++ b/tests/src/core/VideoTestClip.h
+@@ -27,6 +27,8 @@
+ 
+ #include "lmmsconfig.h"
+ 
++#include <QString>
++
+ namespace videotest
+ {
+ 
+@@ -47,7 +49,10 @@ enum class Palette
+ 
+ } // namespace videotest
+ 
+-#ifdef ZENE_HAVE_FFMPEG
++/*! ZENE_TEST_VIDEO_CLIP_WITHOUT_FFMPEG selects the no-FFmpeg branch in a build that has FFmpeg, so the
++ *  regression for cluster ci-6422986f4db9676f exercises that branch on every machine instead of relying
++ *  on the optional package being absent. It is never set by the build itself. */
++#if defined(ZENE_HAVE_FFMPEG) && !defined(ZENE_TEST_VIDEO_CLIP_WITHOUT_FFMPEG)
+ 
+ #include <cmath>
+ #include <cstring>
+@@ -234,6 +239,21 @@ inline bool makeClip(const QString& path, Palette palette = Palette::RedBlue)
+ 
+ } // namespace videotest
+ 
+-#endif // ZENE_HAVE_FFMPEG
++#else // no FFmpeg (or the regression forcing that branch)
++
++namespace videotest
++{
++/*! A build without FFmpeg still declares makeClip: always-built video test sources call it after their
++ *  runtime VideoDecoder::available() check, and a helper that disappears with the optional package makes
++ *  those sources fail to compile (cluster ci-6422986f4db9676f, hosted linux-arm64). There is no clip to
++ *  make here, so it declines cleanly and leaves the path untouched. */
++inline bool makeClip(const QString&, Palette = Palette::RedBlue)
++{
++	return false;
++}
++
++} // namespace videotest
++
++#endif // ZENE_HAVE_FFMPEG && !ZENE_TEST_VIDEO_CLIP_WITHOUT_FFMPEG
+ 
+ #endif // LMMS_VIDEO_TEST_CLIP_H
+diff --git a/tests/src/core/VideoTestClipPortabilityTest.cpp b/tests/src/core/VideoTestClipPortabilityTest.cpp
+new file mode 100644
+index 0000000000..a687a29539
+--- /dev/null
++++ b/tests/src/core/VideoTestClipPortabilityTest.cpp
+@@ -0,0 +1,82 @@
++/*
++ * VideoTestClipPortabilityTest.cpp - the test-clip fixture is usable in a build without FFmpeg
++ *
++ * Copyright (c) 2026 Zene Studio contributors
++ *
++ * This file is part of LMMS - https://lmms.io
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public
++ * License as published by the Free Software Foundation; either
++ * version 2 of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public
++ * License along with this program (see COPYING); if not, write to the
++ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
++ * Boston, MA 02110-1301 USA.
++ *
++ */
++/*! Cluster ci-6422986f4db9676f: the hosted linux-arm64 job configures without FFmpeg (Ubuntu's arm64
++ *  image has no libav*-dev), and there VideoClipsTest.cpp and VideoClipsGuiTest.cpp still call
++ *  videotest::makeClip. A helper declared only under ZENE_HAVE_FFMPEG makes those always-built test
++ *  sources fail to compile, which no runtime availability check can prevent.
++ *
++ *  The seam below selects the fixture's no-FFmpeg branch in any build, so this regression exercises
++ *  that branch deterministically: it runs on the FFmpeg-enabled developer and CI trees too, instead
++ *  of depending on which optional packages a machine happens to have. The case is the ordinary
++ *  no-FFmpeg path for every always-built video test: the helper exists, declines cleanly, and leaves
++ *  no file behind, so the caller's own availability check turns the case into a skip. */
++
++#include <QtTest>
++
++#include <QFileInfo>
++#include <QString>
++#include <QTemporaryDir>
++
++#define ZENE_TEST_VIDEO_CLIP_WITHOUT_FFMPEG
++#include "VideoTestClip.h"
++
++class VideoTestClipPortabilityTest : public QObject
++{
++	Q_OBJECT
++
++private slots:
++	//! The no-FFmpeg branch declares makeClip and refuses the work without touching the filesystem.
++	void makeClipIsDeclaredWithoutFfmpegAndRefuses()
++	{
++		QTemporaryDir dir;
++		QVERIFY(dir.isValid());
++		const QString path = dir.filePath(QStringLiteral("clip.mkv"));
++		QVERIFY(!videotest::makeClip(path));
++		QVERIFY(!QFileInfo::exists(path));
++
++		// The clip's shape and palette stay known in every build (VideoTrackTest compares against
++		// them even when it skips the decode).
++		QCOMPARE(videotest::Width, 160);
++		QCOMPARE(videotest::Height, 90);
++		QCOMPARE(videotest::Fps, 25);
++		QCOMPARE(videotest::Frames, 50);
++		QCOMPARE(videotest::Rate, 44100);
++		QCOMPARE(videotest::AudioChunk, 1024);
++		QCOMPARE(static_cast<int>(videotest::Palette::RedBlue), 0);
++		QCOMPARE(static_cast<int>(videotest::Palette::GreenYellow), 1);
++	}
++
++	//! Both call-site spellings build: the default palette and the explicit second palette.
++	void makeClipAcceptsBothPalettesAndAnEmptyPath()
++	{
++		QTemporaryDir dir;
++		QVERIFY(dir.isValid());
++		QVERIFY(!videotest::makeClip(QString()));
++		QVERIFY(!videotest::makeClip(dir.filePath(QStringLiteral("missing/clip.mkv")), videotest::Palette::RedBlue));
++		QVERIFY(!videotest::makeClip(dir.filePath(QStringLiteral("missing/second.mkv")), videotest::Palette::GreenYellow));
++	}
++};
++
++QTEST_MAIN(VideoTestClipPortabilityTest)
++#include "VideoTestClipPortabilityTest.moc"
+-- 
+2.56.0
+
