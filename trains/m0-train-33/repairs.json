@@ -141,5 +141,72 @@
     "summary": "CI regression: build / linux-x86_64",
     "train": "050/m0-train-32",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-e58078851126eac9"
+  },
+  {
+    "at": "2026-11-15T14:55:06",
+    "base": "cc29a63dde09cf28bb00498a2d2a5b124d4d614d",
+    "branch": "fix/ci-repair-ci-619dd453d973527c-d3eea4a3e3ff",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-619dd453d973527c.r1.md",
+        "negative_control": {
+          "artifact_hashes": {},
+          "detail": "no product change, no changed test, or a dirty tree",
+          "ok": null,
+          "proof_base": "c20ef591b571e3c3dc7b108107d166497f1b34be",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-619dd453d973527c.r1/negctl",
+          "proof_key": "852ae31f588e1b82c8e8b65a299eafc24c7c069273941e45b6109573fac3d71e"
+        },
+        "verdict": "ACCEPT"
+      }
+    ],
+    "commit": "ef1baff3719fd2ef7b6029eb594ebd5e1c3d273c",
+    "id": "ci-repair-ci-619dd453d973527c-d3eea4a3e3ff",
+    "paths": [
+      ".github/vcpkg/ports/pcre2/README.md",
+      ".github/vcpkg/ports/pcre2/portfile.cmake",
+      "docs/qwen-fixes-2026-10/cluster-ci-619dd453d973527c.md",
+      "tests/vcpkg-pcre2-gitlink-test.py"
+    ],
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "c20ef591b571e3c3dc7b108107d166497f1b34be",
+    "status": "pending",
+    "summary": "CI regression: build / msvc-x64",
+    "train": "050/m0-train-31",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-619dd453d973527c"
+  },
+  {
+    "at": "2026-11-15T14:58:26",
+    "base": "cc29a63dde09cf28bb00498a2d2a5b124d4d614d",
+    "branch": "fix/ci-repair-ci-9b3cdba8549c073f-0a7d9ced9980",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-9b3cdba8549c073f.r1.md",
+        "negative_control": {
+          "artifact_hashes": {},
+          "detail": "no product change, no changed test, or a dirty tree",
+          "ok": null,
+          "proof_base": "dec3f1d45c62b26bce955875521780db173a0228",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-9b3cdba8549c073f.r1/negctl",
+          "proof_key": "14e4029ba48e636ab3ff2fab24e5128132ce033e7009a11d76d65536f10c814d"
+        },
+        "verdict": "ACCEPT-NOTE"
+      }
+    ],
+    "commit": "bf74b7c952ac8c9cd11c081369bfb037751c287f",
+    "id": "ci-repair-ci-9b3cdba8549c073f-0a7d9ced9980",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-9b3cdba8549c073f.md",
+      "tests/CMakeLists.txt",
+      "tests/Qt5JsonIntegerCheck.py",
+      "tests/fork-sources.txt",
+      "tests/src/core/ScriptClockTest.cpp"
+    ],
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "dec3f1d45c62b26bce955875521780db173a0228",
+    "status": "pending",
+    "summary": "CI regression: build / linux-arm64",
+    "train": "050/m0-train-32",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-9b3cdba8549c073f"
   }
 ]

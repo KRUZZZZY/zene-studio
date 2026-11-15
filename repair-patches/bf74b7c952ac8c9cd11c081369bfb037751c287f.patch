@@ -1,0 +1,687 @@
+From bf74b7c952ac8c9cd11c081369bfb037751c287f Mon Sep 17 00:00:00 2001
+From: Zene CI repair <noreply@zene.invalid>
+Date: Sun, 15 Nov 2026 14:58:26 +0000
+Subject: [PATCH] fix(ci): CI regression: build / linux-arm64
+
+CI-Repair-Id: ci-repair-ci-9b3cdba8549c073f-0a7d9ced9980
+---
+ .../cluster-ci-9b3cdba8549c073f.md            | 174 ++++++++
+ tests/CMakeLists.txt                          |  18 +
+ tests/Qt5JsonIntegerCheck.py                  | 405 ++++++++++++++++++
+ tests/fork-sources.txt                        |   8 +
+ tests/src/core/ScriptClockTest.cpp            |   5 +-
+ 5 files changed, 608 insertions(+), 2 deletions(-)
+ create mode 100644 docs/qwen-fixes-2026-10/cluster-ci-9b3cdba8549c073f.md
+ create mode 100644 tests/Qt5JsonIntegerCheck.py
+
+diff --git a/docs/qwen-fixes-2026-10/cluster-ci-9b3cdba8549c073f.md b/docs/qwen-fixes-2026-10/cluster-ci-9b3cdba8549c073f.md
+new file mode 100644
+index 0000000000..7f67b52e42
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/cluster-ci-9b3cdba8549c073f.md
+@@ -0,0 +1,174 @@
++FIXED
++
++# cluster ci-9b3cdba8549c073f - CI regression: build / linux-arm64
++
++## Verdict
++
++FIXED. The finding is REAL on this branch. At the pinned train commit
++`dec3f1d45c62b26bce955875521780db173a0228` the hosted `linux-arm64` job (run
++43681793608, job 132713785107) stopped at 59% while compiling
++`tests/src/core/ScriptClockTest.cpp`:
++
++```
++ScriptClockTest.cpp:408:92: error: 'class QJsonValue' has no member named 'toInteger'
++ScriptClockTest.cpp:415:69: error: 'class QJsonValue' has no member named 'toInteger'
++gmake[2]: *** [tests/CMakeFiles/ScriptClockTest.dir/build.make:99: ...] Error 1
++```
++
++The classification is **test-source portability**, not infrastructure and not product
++code: the product side already has the portable adapter, and the failing translation
++unit is the test.
++
++Why this job and not the others: `linux-arm64` is the Linux lane that does **not** pass
++`-DWANT_QT6=ON`. Its `CMAKE_OPTS` (`.github/workflows/build.yml:316-326`) omit it, so
++`CMakeLists.txt:142` (`option(WANT_QT6 ... OFF)`) leaves the job on Qt 5.15. The other
++Linux/macOS lanes configure Qt 6, where the line compiles. Ubuntu 24.04 arm64's Qt 5
++`QJsonValue` declares `toInt`/`toDouble` only (`/usr/include/qt/QtCore/qjsonvalue.h:114-115`
++on this box's Qt 5.15.19; the hosted job uses the same 5.15 generation), so
++`QJsonValue::toInteger` - a Qt 6 member - does not exist there.
++
++The test was added by `6bb874de58` (2026-10-15 05:39) and the tree's Qt 5 sweep
++`5d0e2ca80e` (10:43, "Qt 5 paths for the Qt 6-only APIs the train-5 fixes added") updated
++`AafImportTest`, `ArrangingCatchUpTest`, `ControlBounceRenderTest`, `ControlSuccessPathsTest`
++and `CommandFormTest` to the adapter but missed this newer file. `d7ac01db10` then made
++the adapter's Qt 5 branch match Qt 6's integer contract. The direct call survived until
++the hosted build caught it.
++
++## Cause and fix
++
++`include/DeprecationHelper.h:104-120` already defines the sanctioned adapter:
++
++```cpp
++inline qint64 jsonInteger(const QJsonValue& value, qint64 defaultValue = 0)
++{
++#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
++	return value.toInteger(defaultValue);
++#else
++	... Qt 5 double -> whole, in-range qint64, else defaultValue ...
++#endif
++}
++```
++
++`tests/src/core/ScriptClockTest.cpp` did not use it. The fix is the smallest one at the
++cause - include the adapter and route both reads through it:
++
++```diff
++ #include "ControlReversibility.h"
+++#include "DeprecationHelper.h"
++ #include "Engine.h"
++...
++-	const qint64 perId = clock.scheduleState(id).value(QStringLiteral("source_bytes")).toInteger(-1);
+++	const qint64 perId = jsonInteger(clock.scheduleState(id).value(QStringLiteral("source_bytes")), -1);
++...
++-		inState = one.value(QStringLiteral("source_bytes")).toInteger(-1);
+++		inState = jsonInteger(one.value(QStringLiteral("source_bytes")), -1);
++```
++
++On Qt 6 `jsonInteger` calls the identical `QJsonValue::toInteger(defaultValue)`, so the
++test's behaviour and the value it reads are byte-for-byte unchanged; on Qt 5 the adapter
++applies the same whole/in-range rule (commit `d7ac01db10`). No product behaviour, save
++format, undo step, command or audio-path code is touched, and no new control command is
++added.
++
++## Completeness
++
++Every direct `toInteger` call in first-party sources was checked:
++`grep -rn toInteger --include=*.cpp --include=*.h src include tests plugins` (vendored
++CarlaBase excluded) returns only the two ScriptClockTest lines and the adapter's own
++guarded implementation. After the fix the only remaining occurrence is inside
++`#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)` in `DeprecationHelper.h`. The adapter's
++other callers (e.g. `src/core/ControlCommandsRecordTools.cpp:106`,
++`src/gui/BrowserResults.cpp:104-105`, `tests/src/core/AafImportTest.cpp:527-528`) already
++use it and are unaffected.
++
++## Regression: tests/Qt5JsonIntegerCheck.py (ctest `Qt5JsonIntegerCheck`)
++
++Two deterministic halves, no timing, sleeps, threads or injected clock:
++
++1. **Source scan** of `src`, `include`, `tests/src` and `plugins` (vendored trees such as
++   `src/3rdparty`, `CarlaBase/carla`, `Sfizz`, `rtneural` are excluded) for a
++   `.toInteger(`/`->toInteger(` call outside an `#if QT_VERSION >= 6...` branch. It reads
++   sources only, so it is red on this Qt 6 host where the defect compiles - the property
++   the hosted Qt 6 lanes need. Self-test fixtures prove the scanner flags the unguarded
++   call and does not flag `jsonInteger(...)` or a Qt 6-guarded call.
++2. **Compile probe** (when pkg-config finds Qt 5): the recorded compile command of
++   `tests/src/core/ScriptClockTest.cpp` from `build/compile_commands.json` is retargeted at
++   the Qt 5 headers, with a Qt 5 `moc` generated stand-in for the Qt 6 moc file, and
++   compiled `-fsyntax-only`. Two controls run first: Qt 5 must reject a known-bad
++   `QJsonValue::toInteger` probe and accept a known-good `toInt` probe; without a Qt 5
++   tree the probe reports itself skipped, never passed.
++
++Registered in `tests/CMakeLists.txt` beside `Qt5QListApiCheck` and in
++`tests/fork-sources.txt`.
++
++## Evidence
++
++The assigned log folder
++`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-9b3cdba8549c073f.r1/logs`
++refuses writes in this session (`touch` there returns EACCES although the directory is
++`drwxr-xr-x` and owned by this user - only the worktree and its `build/` are writable, the
++same condition the previous CI cluster recorded). Every log below is therefore in
++`build/fix-logs/` inside the worktree.
++
++| step | command | exit | log |
++| --- | --- | --- | --- |
++| initial target build | `cmake --build build --target ScriptClockTest -j 8` | 0 | `build-1.log` |
++| hosted failure reproduced (manual Qt 5 retarget of the recorded command, before the fix) | `c++ ... Qt 5 flags ... -fsyntax-only tests/src/core/ScriptClockTest.cpp` | 1 (`toInteger` both lines) | `repro-qt5-red.log` |
++| RED, regression script | `python3 tests/Qt5JsonIntegerCheck.py --root . --build-dir build` | 1 | `qt5json-red.log` |
++| GREEN, regression script | same after the fix | 0 | `qt5json-green.log` |
++| rebuild (Qt 6 target) | `cmake --build build --target ScriptClockTest -j 8` | 0 | `build-2-green.log` |
++| behavior test | `cd build/tests && ctest -R '^ScriptClockTest$' --output-on-failure` | 0 (1/1) | `ctest-scriptclock-green.log` |
++| both ctests | `cd build/tests && ctest -R '^(Qt5JsonIntegerCheck\|ScriptClockTest)$' --output-on-failure` | 0 (2/2) | `ctest-both-green.log` |
++| family | `cd build/tests && ctest -R '^(Qt5\|MocQt5)' --output-on-failure -j2` | 0 (11/11) | `ctest-qt5-family.log` |
++| zene untouched | `cmake --build build --target zene -j 8` | 0 | `build-zene-noop.log` |
++| gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 (8/8 PASS) | `feature-check-4.log` |
++
++The exact RED/GREEN proof with the fix patch (4b). This defect is in the test translation
++unit itself, so there is no product file to revert; the negative control reverts the fix
++hunk while leaving the regression check in place:
++
++```
++git diff -- tests/src/core/ScriptClockTest.cpp > build/fix-logs/fix.patch   # exit 0 (29 lines)
++git apply -R build/fix-logs/fix.patch                                       # exit 0
++cmake --build build --target ScriptClockTest -j 8                           # exit 0
++cd build/tests && ctest -R '^Qt5JsonIntegerCheck$' --output-on-failure      # exit 8 (1 of 1 failed)
++  ScriptClockTest.cpp:408: QJsonValue::toInteger is Qt 6 only; use jsonInteger()
++  ScriptClockTest.cpp:415: QJsonValue::toInteger is Qt 6 only; use jsonInteger()
++  ScriptClockTest.cpp:408:92: error: 'class QJsonValue' has no member named 'toInteger'
++  ScriptClockTest.cpp:415:69: error: 'class QJsonValue' has no member named 'toInteger'
++git apply build/fix-logs/fix.patch                                          # exit 0
++cmake --build build --target ScriptClockTest -j 8                           # exit 0
++cd build/tests && ctest -R '^(Qt5JsonIntegerCheck|ScriptClockTest)$' \
++  --output-on-failure                                                       # exit 0 (2 of 2 passed)
++```
++
++Logs: `build-3-reverted.log`, `ctest-red-reverted.log`, `build-4-restored.log`,
++`ctest-green-restored.log`; the same proof was repeated after the checker's complexity
++split (`build-5-reverted-final.log`, `ctest-red-reverted-final.log` exit 8;
++`build-6-restored-final.log`, `ctest-green-restored-final.log` exit 0, 2/2).
++
++Files committed: `tests/src/core/ScriptClockTest.cpp`, `tests/Qt5JsonIntegerCheck.py`,
++`tests/CMakeLists.txt`, `tests/fork-sources.txt`, this report.
++
++## Self-check
++
++* **Regression fails with the fix reverted and passes with it.** Reverted:
++  `ctest -R '^Qt5JsonIntegerCheck$'` -> exit 8 (1/1 failed), with both source findings and
++  both Qt 5 compile errors. Restored: exit 0 (2/2 passed). Logs and commands above.
++* **Deterministic.** The check uses only checked-in sources and the recorded compile line;
++  no wall clock, sleep, thread, random value or network. The compile probe's inputs are
++  the sources plus `build/compile_commands.json`; its Qt 5 controls make a false pass
++  impossible, and no Qt 5 tree is reported as skipped rather than passed.
++* **Cause and completeness.** Both direct calls in this file are converted to the existing
++  adapter; the only other first-party occurrence is the adapter's own Qt 6-guarded body.
++  The adapter's contract is the one `d7ac01db10` established: the Qt 5 branch returns the
++  default for anything not a whole, in-range integer, exactly as Qt 6's `toInteger` does.
++  No sibling caller needs a change.
++* **No collateral damage.** The change is confined to a test source, a new test script,
++  its CMake registration and the manifest. No product code, project data, undo step,
++  command schema or audio-thread path changes. Existing Qt 6 behaviour is identical
++  because `jsonInteger` forwards to `toInteger` there.
++* **ALREADY-FIXED / FALSE-POSITIVE?** No. The cited lines compile on Qt 6 and fail on
++  Qt 5; the hosted log at
++  `run-43681793608-job-132713785107.log:6541-6549` has the identical diagnostics, and the
++  local Qt 5 compile reproduces them. The fix is a real portability change, not a waiver.
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 5486a10abd..acc69327c2 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -9276,6 +9276,24 @@ if(PYTHON3_EXECUTABLE)
+ 	set_tests_properties(Qt5QListApiCheck PROPERTIES TIMEOUT 300)
+ endif()
+ 
++# cluster ci-9b3cdba8549c073f: the hosted linux-arm64 job builds with the CMakeLists
++# default (-DWANT_QT6=OFF), so it compiles against Qt 5.15 while every other Linux job
++# configures WANT_QT6=ON. tests/src/core/ScriptClockTest.cpp called
++# QJsonValue::toInteger, which Qt 5 does not declare, and the build stopped at 59%:
++# "error: 'class QJsonValue' has no member named 'toInteger'" (lines 408 and 415). The
++# tree's adapter is lmms::jsonInteger() in include/DeprecationHelper.h. The check scans
++# first-party sources (red on the Qt 6 hosts too) and, where pkg-config finds a Qt 5
++# tree, recompiles the affected translation unit against those headers with a Qt 5 moc -
++# the hosted job's own compiler input.
++if(PYTHON3_EXECUTABLE)
++	add_test(NAME Qt5JsonIntegerCheck
++		COMMAND ${PYTHON3_EXECUTABLE}
++			${CMAKE_CURRENT_SOURCE_DIR}/Qt5JsonIntegerCheck.py
++			--root ${CMAKE_SOURCE_DIR}
++			--build-dir ${CMAKE_BINARY_DIR})
++	set_tests_properties(Qt5JsonIntegerCheck PROPERTIES TIMEOUT 300)
++endif()
++
+ 
+ 
+ # Linux namespace tests must retry interrupted writes and reject failed/short handshakes.
+diff --git a/tests/Qt5JsonIntegerCheck.py b/tests/Qt5JsonIntegerCheck.py
+new file mode 100644
+index 0000000000..88c64f7360
+--- /dev/null
++++ b/tests/Qt5JsonIntegerCheck.py
+@@ -0,0 +1,405 @@
++#!/usr/bin/env python3
++"""Fail when first-party code calls QJsonValue::toInteger outside a Qt 6 guard.
++
++Cluster ci-9b3cdba8549c073f (2026-11-15), hosted `build / linux-arm64` job: unlike the
++other Linux jobs that configure with -DWANT_QT6=ON, `linux-arm64` builds with the
++CMakeLists default, WANT_QT6=OFF, so it compiles every translation unit against Qt 5.15.
++tests/src/core/ScriptClockTest.cpp calls QJsonValue::toInteger, which Qt 5 does not
++declare, and the build stopped at 59%:
++
++    tests/src/core/ScriptClockTest.cpp:408:92: error: 'class QJsonValue' has no member
++        named 'toInteger'
++    tests/src/core/ScriptClockTest.cpp:415:69: error: 'class QJsonValue' has no member
++        named 'toInteger'
++
++The tree already has the portable spelling: lmms::jsonInteger() in
++include/DeprecationHelper.h (used by the src/core and tests files that predate this one).
++It calls QJsonValue::toInteger on Qt 6 and reproduces the same "default for a value that
++is not a whole, in-range integer" contract on Qt 5.
++
++The check has two deterministic halves:
++
++  * a source scan of the first-party trees (src, include, tests/src, plugins; vendored
++    third-party trees excluded) for a `.toInteger(`/`->toInteger(` call that is not
++    inside an `#if QT_VERSION >= 6...` branch. It reads sources only, so it is red on
++    this Qt 6 host where the defect compiles.
++  * a compile probe: where pkg-config finds a Qt 5 tree, the recorded compile command of
++    the affected translation unit (build/compile_commands.json) is retargeted at those
++    headers, with a Qt 5 moc standing in for the Qt 6-generated one, and compiled
++    `-fsyntax-only`. Before the fix that is the hosted failure; after it, clean.
++
++Both halves prove themselves: the scan has red/green fixtures, and the probe compiles a
++known-bad `toInteger` control (must be rejected by the Qt 5 tree) and a known-good
++`toInt` control (must be accepted). Without a Qt 5 tree the probe reports itself skipped,
++never passed.
++
++Usage:
++  Qt5JsonIntegerCheck.py [--root DIR] [--build-dir DIR] [--cxx CXX]
++  Qt5JsonIntegerCheck.py --self-test
++
++Exit codes: 0 = clean, 1 = finding (or a failed fixture), 2 = usage error.
++"""
++
++import argparse
++import json
++import os
++import re
++import shlex
++import shutil
++import subprocess
++import sys
++import tempfile
++
++SOURCE_DIRS = ("src", "include", "tests/src", "plugins")
++SOURCE_SUFFIXES = (".h", ".hpp", ".hxx", ".cpp", ".cxx", ".cc")
++# Vendored trees keep their own Qt-version story and are not this fork's code.
++SKIP_DIRS = {
++	".git", "build", "3rdparty", "external", "vst3sdk", "clap",
++	os.path.join("plugins", "CarlaBase", "carla"),
++	os.path.join("plugins", "NeuralAmp", "rtneural"),
++	os.path.join("plugins", "NeuralAmp", "nam"),
++	os.path.join("plugins", "SfzPlayer", "sfizz"),
++	os.path.join("plugins", "RnnoiseDenoiser", "rnnoise"),
++}
++TARGET = "tests/src/core/ScriptClockTest.cpp"
++
++# Comments, string and char literals are blanked before the scan (line numbers kept).
++NON_CODE = re.compile(r'//[^\n]*|/\*.*?\*/|"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\'', re.S)
++TO_INTEGER = re.compile(r"(?:->|\.)\s*toInteger\s*\(")
++QT6_GUARD = re.compile(r"QT_VERSION\s*(?:>=|>)\s*(?:QT_VERSION_CHECK\s*\(\s*6|6)")
++
++BAD_PROBE = """\
++#include <QJsonValue>
++int main()
++{
++	QJsonValue value(1);
++	return static_cast<int>(value.toInteger(-1));
++}
++"""
++GOOD_PROBE = """\
++#include <QJsonValue>
++int main()
++{
++	QJsonValue value(1);
++	return value.toInt(-1);
++}
++"""
++FIXTURE_BAD = """\
++#include <QJsonValue>
++qint64 bytes(const QJsonObject& state)
++{
++	return state.value(QStringLiteral("source_bytes")).toInteger(-1);
++}
++"""
++FIXTURE_GOOD = """\
++#include <QJsonValue>
++qint64 bytes(const QJsonObject& state)
++{
++	return jsonInteger(state.value(QStringLiteral("source_bytes")), -1);
++}
++"""
++FIXTURE_GUARDED = """\
++#include <QJsonValue>
++qint64 bytes(const QJsonValue& value)
++{
++#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
++	return value.toInteger(-1);
++#else
++	return value.isDouble() ? static_cast<qint64>(value.toDouble()) : -1;
++#endif
++}
++"""
++
++
++def blank_non_code(text):
++	"""Comments and literals become spaces; every newline and offset is kept."""
++	return NON_CODE.sub(lambda match: re.sub(r"[^\n]", " ", match.group(0)), text)
++
++
++def qt6_guarded_lines(lines):
++	"""0-based indices of the lines inside an `#if QT_VERSION >= 6...` branch."""
++	guarded, stack = set(), []
++	for index, line in enumerate(lines):
++		stripped = line.strip()
++		if stripped.startswith("#if"):
++			stack.append(bool(QT6_GUARD.search(stripped[3:])))
++		elif stripped.startswith("#elif") and stack:
++			stack[-1] = bool(QT6_GUARD.search(stripped[5:]))
++		elif stripped.startswith("#else") and stack:
++			stack[-1] = False
++		elif stripped.startswith("#endif") and stack:
++			stack.pop()
++		elif any(stack):
++			guarded.add(index)
++	return guarded
++
++
++def scan_text(name, text):
++	"""(path, line, what) for QJsonValue::toInteger outside a Qt 6 guard."""
++	code = blank_non_code(text)
++	lines = code.splitlines()
++	guarded = qt6_guarded_lines(lines)
++	findings = []
++	for match in TO_INTEGER.finditer(code):
++		line = code.count("\n", 0, match.start())
++		if line in guarded:
++			continue
++		findings.append((name, line + 1, "QJsonValue::toInteger is Qt 6 only; use jsonInteger()"))
++	return findings
++
++
++def read_text(path):
++	try:
++		with open(path, encoding="utf-8", errors="replace") as handle:
++			return handle.read()
++	except OSError:
++		return None
++
++
++def skipped(name):
++	name = name.replace("\\", "/").strip("/")
++	for prefix in SKIP_DIRS:
++		prefix = prefix.replace("\\", "/").strip("/")
++		if name == prefix or name.startswith(prefix + "/"):
++			return True
++	return False
++
++
++def scan_tree(root):
++	findings = []
++	for source_dir in SOURCE_DIRS:
++		base = os.path.join(root, source_dir)
++		if not os.path.isdir(base):
++			continue
++		for directory, subdirs, files in os.walk(base):
++			relative_dir = os.path.relpath(directory, root).replace("\\", "/")
++			subdirs[:] = sorted(d for d in subdirs
++				if not skipped(os.path.join(relative_dir, d)))
++			for entry in sorted(files):
++				if not entry.endswith(SOURCE_SUFFIXES):
++					continue
++				name = os.path.join(relative_dir, entry).replace("\\", "/")
++				text = read_text(os.path.join(directory, entry))
++				if text is not None:
++					findings += scan_text(name, text)
++	return findings
++
++
++def self_test():
++	failures = []
++	if not scan_text("fixture-bad.cpp", FIXTURE_BAD):
++		failures.append("the scan did not report the unguarded .toInteger() fixture")
++	if scan_text("fixture-good.cpp", FIXTURE_GOOD):
++		failures.append("the scan reported the jsonInteger() fixture")
++	if scan_text("fixture-guarded.cpp", FIXTURE_GUARDED):
++		failures.append("the scan reported toInteger() inside a QT_VERSION >= 6 guard")
++	return failures
++
++
++def run(command, cwd=None, timeout=300):
++	try:
++		return subprocess.run(command, cwd=cwd, capture_output=True, text=True, timeout=timeout)
++	except (OSError, subprocess.SubprocessError):
++		return None
++
++
++def pkg_flags(packages, option):
++	if not shutil.which("pkg-config"):
++		return None
++	result = run(["pkg-config", option, *packages])
++	if result is None or result.returncode != 0:
++		return None
++	return shlex.split(result.stdout)
++
++
++def qt5_flags():
++	if not shutil.which("pkg-config"):
++		return None
++	exists = run(["pkg-config", "--exists", "Qt5Widgets"])
++	if exists is None or exists.returncode != 0:
++		return None
++	return pkg_flags(("Qt5Widgets", "Qt5Xml", "Qt5Network", "Qt5Test"), "--cflags")
++
++
++def qt5_moc():
++	candidates = []
++	host_bins = pkg_flags(("Qt5Core",), "--variable=host_bins")
++	if host_bins:
++		candidates.append(os.path.join(host_bins[0], "moc"))
++	candidates += [shutil.which("moc-qt5"), shutil.which("moc")]
++	for candidate in candidates:
++		if not candidate or not os.path.isfile(candidate):
++			continue
++		version = run([candidate, "--version"])
++		if version is not None and version.returncode == 0 and version.stdout.strip().startswith("moc 5."):
++			return candidate
++	return None
++
++
++def is_qt6_include(directory):
++	parts = [p for p in re.split(r"[\\/]+", directory.rstrip("\\/")) if p]
++	return "qt6" in (p.lower() for p in parts)
++
++
++def include_argument(argument, following):
++	"""(value, consumed tokens, separate form) for a -I/-isystem argument, else (None, 0, False)."""
++	for prefix in ("-isystem", "-I"):
++		if argument == prefix and following is not None:
++			return following, 2, True
++		if argument.startswith(prefix) and len(argument) > len(prefix):
++			return argument[len(prefix):], 1, False
++	return None, 0, False
++
++
++def without_output_arguments(arguments):
++	"""The compile line with -o <file> and -c removed (the probe writes no object)."""
++	out, index = [], 0
++	while index < len(arguments):
++		if arguments[index] == "-o":
++			index += 2
++		elif arguments[index] == "-c":
++			index += 1
++		else:
++			out.append(arguments[index])
++			index += 1
++	return out
++
++
++def retargeted_command(arguments, flags, source, moc_dir):
++	"""The recorded Qt 6 compile line, rebuilt against the Qt 5 headers and moc."""
++	out, index = [], 0
++	arguments = without_output_arguments(arguments)
++	while index < len(arguments):
++		argument = arguments[index]
++		following = arguments[index + 1] if index + 1 < len(arguments) else None
++		value, consumed, separate = include_argument(argument, following)
++		if value is None:
++			out.append(argument)
++		elif is_qt6_include(value):
++			pass
++		elif "ScriptClockTest_autogen/include" in value.replace("\\", "/"):
++			out += [argument, moc_dir] if separate else ["-I", moc_dir]
++		else:
++			out += [argument, value] if separate else [argument]
++		index += consumed or 1
++	return out + flags + ["-fsyntax-only", source]
++
++
++def entry_for(database):
++	if not os.path.isfile(database):
++		return None
++	with open(database, encoding="utf-8", errors="replace") as handle:
++		entries = json.load(handle)
++	for entry in entries:
++		if entry.get("file", "").replace("\\", "/").endswith(TARGET):
++			return entry
++	return None
++
++
++def diagnostic(result):
++	lines = (result.stdout + result.stderr).splitlines()
++	return "\n".join(dict.fromkeys(line for line in lines
++		if "error:" in line or "fatal error:" in line))[:2000]
++
++
++def control_failure(cxx, flags, workdir):
++	"""None when the Qt 5 tree rejects toInteger and accepts toInt, else the failure text."""
++	checks = []
++	for name, text in (("bad.cpp", BAD_PROBE), ("good.cpp", GOOD_PROBE)):
++		path = os.path.join(workdir, name)
++		with open(path, "w", encoding="utf-8") as handle:
++			handle.write(text)
++		checks.append(run([cxx, "-std=gnu++20", "-fsyntax-only", *flags, path]))
++	if checks[0] is None or checks[0].returncode == 0:
++		return "probe: this Qt 5 tree accepts QJsonValue::toInteger; the control did not fail"
++	if checks[1] is None or checks[1].returncode != 0:
++		return "probe: the Qt 5 tree rejected the QJsonValue::toInt control"
++	return None
++
++
++def translation_unit_failure(entry, flags, moc, workdir):
++	"""None when the affected translation unit compiles against Qt 5, else the failure text."""
++	source = entry.get("file", "")
++	moc_file = os.path.join(workdir, os.path.splitext(os.path.basename(source))[0] + ".moc")
++	generated = run([moc, source, "-o", moc_file], cwd=entry.get("directory"))
++	if generated is None or generated.returncode != 0:
++		return f"probe: the Qt 5 moc could not process {source}"
++	arguments = shlex.split(entry["command"]) if entry.get("command") else list(entry.get("arguments") or [])
++	compiled = run(retargeted_command(arguments, flags, source, workdir),
++		cwd=entry.get("directory"))
++	if compiled is None:
++		return f"probe: the Qt 5 compile of {source} could not run"
++	if compiled.returncode != 0:
++		return f"{source}: Qt 5 rejected it\n{diagnostic(compiled)}"
++	return None
++
++
++def compile_probe(entry, flags, moc, workdir):
++	"""Compile the affected translation unit against Qt 5, after its own controls."""
++	failure = control_failure(entry.get("cxx", "c++"), flags, workdir)
++	if failure is not None:
++		return [failure]
++	failure = translation_unit_failure(entry, flags, moc, workdir)
++	return [failure] if failure is not None else []
++
++
++def check(root, build_dir, cxx):
++	findings = scan_tree(root)
++	flags = qt5_flags()
++	moc = qt5_moc() if flags is not None else None
++	if flags is None or moc is None:
++		print("probe: skipped (no Qt 5 development tree and moc found)")
++		return findings
++	entry = entry_for(os.path.join(build_dir, "compile_commands.json"))
++	if entry is None:
++		findings.append((TARGET, None, f"no compile_commands.json entry under {build_dir}"))
++		return findings
++	entry.setdefault("cxx", cxx)
++	workdir = tempfile.mkdtemp(prefix="qt5-json-integer-")
++	try:
++		failures = compile_probe(entry, flags, moc, workdir)
++	finally:
++		shutil.rmtree(workdir, ignore_errors=True)
++	for failure in failures:
++		headline, _, detail = failure.partition("\n")
++		findings.append((headline, None, detail))
++	return findings
++
++
++def report(findings):
++	for name, line, what in findings:
++		print(f"{name}:{line}: {what}" if isinstance(line, int) else f"{name}: {what}")
++	print(f"FAIL: {len(findings)} Qt-5-incompatible QJsonValue::toInteger use(s)")
++	return 1
++
++
++def main(argv):
++	parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
++	parser.add_argument("--root", default=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
++	parser.add_argument("--build-dir")
++	parser.add_argument("--cxx", default=os.environ.get("CXX") or shutil.which("c++") or "c++")
++	parser.add_argument("--self-test", action="store_true")
++	args = parser.parse_args(argv[1:])
++
++	failures = self_test()
++	for failure in failures:
++		print(f"SELF-TEST FAIL: {failure}")
++	if failures:
++		return 1
++	print("self-test: the unguarded .toInteger() fixture is flagged, jsonInteger() and a Qt 6 guard are not")
++	if args.self_test:
++		return 0
++	root = os.path.abspath(args.root)
++	if not os.path.isdir(root):
++		print(f"error: not a directory: {root}", file=sys.stderr)
++		return 2
++	build_dir = os.path.abspath(args.build_dir or os.path.join(root, "build"))
++	findings = check(root, build_dir, args.cxx)
++	if findings:
++		return report(findings)
++	print("PASS: first-party code reaches JSON integers through jsonInteger(), and the affected translation unit compiles against Qt 5")
++	return 0
++
++
++if __name__ == "__main__":
++	sys.exit(main(sys.argv))
+diff --git a/tests/fork-sources.txt b/tests/fork-sources.txt
+index 8bab20b4fb..7a88fb08b9 100644
+--- a/tests/fork-sources.txt
++++ b/tests/fork-sources.txt
+@@ -840,6 +840,14 @@ tests/Qt5QListApiCheck.py
+ # Cluster ci-151e338efff6843e: the fix and verification report for the Eq spectrum view's
+ # Qt 5 QList portability regression (hosted windows-arm64 build).
+ docs/qwen-fixes-2026-10/cluster-ci-151e338efff6843e.md
++# cluster ci-9b3cdba8549c073f: the hosted linux-arm64 job builds with -DWANT_QT6=OFF, so it
++# compiles against Qt 5, where QJsonValue::toInteger does not exist; ScriptClockTest.cpp
++# called it directly and stopped that build at 59%. The check scans first-party sources and,
++# where a Qt 5 tree is present, recompiles the affected translation unit against it
++# (-fsyntax-only). Registered wherever a python3 is, so it is red on the Qt 6 hosts too.
++tests/Qt5JsonIntegerCheck.py
++# cluster ci-9b3cdba8549c073f: the fix and verification report for that Qt 5 build break.
++docs/qwen-fixes-2026-10/cluster-ci-9b3cdba8549c073f.md
+ # cluster ci-1e541b5d1279ed2d (2026-11): the crash reporter's ARM/DISARM proof must compile against Apple's
+ # <signal.h> - compiles the two real translation units with their recorded flags under a model of Apple's
+ # sigaction() (no exception specification) and sigemptyset() (a macro) (fork-NEW test, ctest
+diff --git a/tests/src/core/ScriptClockTest.cpp b/tests/src/core/ScriptClockTest.cpp
+index 6f38e9678f..a208ea8c75 100644
+--- a/tests/src/core/ScriptClockTest.cpp
++++ b/tests/src/core/ScriptClockTest.cpp
+@@ -45,6 +45,7 @@
+ #include <limits>
+ 
+ #include "ControlReversibility.h"
++#include "DeprecationHelper.h"
+ #include "Engine.h"
+ #include "MicroTimer.h"
+ #include "ScriptClock.h"
+@@ -405,14 +406,14 @@ void ScriptClockTest::scheduleStateReportsUtf8Bytes()
+ 
+ 	// Read everything first and unschedule before any assertion, so a failure
+ 	// here cannot leave the id registered for the tests that follow.
+-	const qint64 perId = clock.scheduleState(id).value(QStringLiteral("source_bytes")).toInteger(-1);
++	const qint64 perId = jsonInteger(clock.scheduleState(id).value(QStringLiteral("source_bytes")), -1);
+ 	qint64 inState = -1;
+ 	const QJsonArray schedules = clock.stateJson().value(QStringLiteral("schedules")).toArray();
+ 	for (const QJsonValue& value : schedules)
+ 	{
+ 		const QJsonObject one = value.toObject();
+ 		if (one.value(QStringLiteral("id")).toString() != id) { continue; }
+-		inState = one.value(QStringLiteral("source_bytes")).toInteger(-1);
++		inState = jsonInteger(one.value(QStringLiteral("source_bytes")), -1);
+ 	}
+ 	QVERIFY2(clock.removeSchedule(id, &error), qPrintable(error));
+ 
+-- 
+2.56.0
+

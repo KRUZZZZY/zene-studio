@@ -1,0 +1,322 @@
+From ef1baff3719fd2ef7b6029eb594ebd5e1c3d273c Mon Sep 17 00:00:00 2001
+From: Zene CI repair <noreply@zene.invalid>
+Date: Sun, 15 Nov 2026 14:55:06 +0000
+Subject: [PATCH] fix(ci): CI regression: build / msvc-x64
+
+CI-Repair-Id: ci-repair-ci-619dd453d973527c-d3eea4a3e3ff
+---
+ .github/vcpkg/ports/pcre2/README.md           |  10 +-
+ .github/vcpkg/ports/pcre2/portfile.cmake      |   6 +-
+ .../cluster-ci-619dd453d973527c.md            | 170 ++++++++++++++++++
+ tests/vcpkg-pcre2-gitlink-test.py             |  55 ++++++
+ 4 files changed, 237 insertions(+), 4 deletions(-)
+ create mode 100644 docs/qwen-fixes-2026-10/cluster-ci-619dd453d973527c.md
+
+diff --git a/.github/vcpkg/ports/pcre2/README.md b/.github/vcpkg/ports/pcre2/README.md
+index 904fe03d5a..c7b42bb5c1 100644
+--- a/.github/vcpkg/ports/pcre2/README.md
++++ b/.github/vcpkg/ports/pcre2/README.md
+@@ -36,6 +36,10 @@ used, hash-checked, and the head path to still query.
+ The three upstream patches are stored as lossless `*.patch.json` strings because
+ unified-diff blank context lines contain a trailing space. Before any dependency
+ fetch, the portfile reconstructs them under `CURRENT_BUILDTREES_DIR/zene-patches`,
+-checks each original SHA512, and passes those exact files to vcpkg. The regression
+-checks both decoded inputs and materialized files, plus missing/tampered inputs.
+-The full repository `git diff --check` remains enabled without exemptions.
++checks each original SHA512, and passes those exact files to vcpkg. The reconstruction
++uses `file(CONFIGURE ... NEWLINE_STYLE UNIX)` rather than `file(WRITE)`: CMake opens a
++plain write in text mode, so on Windows the decoded LF bytes became CRLF and the pinned
++SHA512 failed (hosted msvc-x64, cluster ci-619dd453d973527c). `@ONLY` keeps `${...}` in
++patch text literal. The regression checks both decoded inputs and materialized files,
++including the Windows text-mode translation, plus missing/tampered inputs. The full
++repository `git diff --check` remains enabled without exemptions.
+diff --git a/.github/vcpkg/ports/pcre2/portfile.cmake b/.github/vcpkg/ports/pcre2/portfile.cmake
+index 6608720244..c1751ceb60 100644
+--- a/.github/vcpkg/ports/pcre2/portfile.cmake
++++ b/.github/vcpkg/ports/pcre2/portfile.cmake
+@@ -5,7 +5,11 @@ function(zene_pcre2_patch name expected_sha512)
+     string(JSON patch_content GET "${encoded_patch}" content)
+     set(path "${CURRENT_BUILDTREES_DIR}/zene-patches/${name}")
+     file(MAKE_DIRECTORY "${CURRENT_BUILDTREES_DIR}/zene-patches")
+-    file(WRITE "${path}" "${patch_content}")
++    # file(WRITE) is text mode: on Windows it turns every LF into CRLF, so the pinned
++    # patch SHA512 no longer matches (the hosted msvc-x64 failure). NEWLINE_STYLE makes
++    # file(CONFIGURE) binary with the requested line endings; @ONLY leaves ${...} in the
++    # patch text literal (a patch contains ${PROJECT_BINARY_DIR}).
++    file(CONFIGURE OUTPUT "${path}" CONTENT "${patch_content}" @ONLY NEWLINE_STYLE UNIX)
+     file(SHA512 "${path}" actual_sha512)
+     if(NOT actual_sha512 STREQUAL expected_sha512)
+         message(FATAL_ERROR "Upstream patch ${name} SHA512 mismatch")
+diff --git a/docs/qwen-fixes-2026-10/cluster-ci-619dd453d973527c.md b/docs/qwen-fixes-2026-10/cluster-ci-619dd453d973527c.md
+new file mode 100644
+index 0000000000..e99fb5d34e
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/cluster-ci-619dd453d973527c.md
+@@ -0,0 +1,170 @@
++FIXED
++
++# Cluster ci-619dd453d973527c: Windows `file(WRITE)` turned pinned PCRE2 patch bytes into CRLF
++
++Hosted msvc-x64 Configure failed while installing the overlay `pcre2` port:
++
++```
++CMake Error at .../.github/vcpkg/ports/pcre2/portfile.cmake:11 (message):
++  Upstream patch pcre2-10.35_fix-uwp.patch SHA512 mismatch
++Call Stack:
++  .../portfile.cmake:18 (zene_pcre2_patch)
++```
++
++That is a REAL product/infrastructure bug in the repository, not a flaky runner
++or a bad upstream pin.
++
++## Evidence: the decoded bytes were right, the materialized bytes were not
++
++`portfile.cmake:4-12` decoded each `*.patch.json` string correctly, then wrote it
++with `file(WRITE)`:
++
++```cmake
++file(WRITE "${path}" "${patch_content}")
++file(SHA512 "${path}" actual_sha512)
++if(NOT actual_sha512 STREQUAL expected_sha512)
++    message(FATAL_ERROR "Upstream patch ${name} SHA512 mismatch")
++endif()
++```
++
++CMake's `HandleWriteImpl` opens `file(WRITE)` in text mode
++(`Source/cmFileCommand.cxx`: `cmsys::ofstream file(..., std::ios::out)`), so on
++Windows the C runtime translates every `\n` to `\r\n`. The committed JSON content
++is LF (`git check-attr` says `eol: lf`; Python SHA512 of each decoded string equals
++the pinned value), so Windows hashed different bytes and failed.
++
++Proof with the same Windows CMake 4.4.4 used by the hosted job, run under wine:
++
++```
++file(WRITE)          SHA512 = d28d2687f604eee33cfc79076a0214acfc2a195b6ea786ac85918904fdbb3bec815e2cf05fbae0110a0afce25d73522ea6d9fe1eabb4b54b8c9e45130509069d
++pinned/expected      SHA512 = 92f231765fea9868c39552009fbe1096279e0dd9b1f121f5184ff945e0b0c7a0d6e2167976db2e2b5bbdfaf231175894fcf9221c4d94fc7d436e400847fda209
++file(CONFIGURE UNIX) SHA512 = 92f231765fea9868c39552009fbe1096279e0dd9b1f121f5184ff945e0b0c7a0d6e2167976db2e2b5bbdfaf231175894fcf9221c4d94fc7d436e400847fda209
++EXIT=0
++```
++
++Command: `wine .../cmake-4.4.4-windows-x86_64/bin/cmake.exe -DSRC=... -DOUT=... -P probe.cmake`
++
++## Fix at the cause
++
++`.github/vcpkg/ports/pcre2/portfile.cmake:12` now materializes the patch with:
++
++```cmake
++file(CONFIGURE OUTPUT "${path}" CONTENT "${patch_content}" @ONLY NEWLINE_STYLE UNIX)
++```
++
++`NEWLINE_STYLE UNIX` makes CMake open the generated file in binary mode and emit
++exactly the requested LF bytes. `@ONLY` is required because
++`fix-msvc-pdb-install.patch` contains literal `${PROJECT_BINARY_DIR}` text; the
++three decoded patch strings hash to the pinned SHA512 before and after this call.
++The three callers (`portfile.cmake:22,24,26`) all go through the one function; no
++other patch materialization exists in the tree (searched `zene_pcre2_patch`,
++`file(CONFIGURE`, `*.patch.json`). No product source, build flag, dependency pin,
++test assertion or gate was weakened.
++
++The README beside the port now records why the lossless JSON inputs are written
++with `file(CONFIGURE ... NEWLINE_STYLE UNIX)` rather than `file(WRITE)`.
++
++## Regression test
++
++`tests/vcpkg-pcre2-gitlink-test.py` (already registered as ctest
++`VcpkgPcre2Gitlink`) gained a behavioural Windows seam:
++`windows_text_mode_port()` copies the real overlay port and rewrites only
++`file(WRITE)`/`file(APPEND)` inside `zene_pcre2_patch` to a helper that performs the
++same LF -> CRLF translation Windows text mode performs. It then runs the real
++portfile and requires all three `PATCH-BYTES` transcript entries to equal the pinned
++SHA512. It is deterministic (no network, clock, sleep or race); `cmake -P` only.
++Before the fix this reproduces the hosted error exactly:
++
++```
++FAIL portfile completes with Windows LF->CRLF text-mode writes:
++  CMake Error at .../windows-port/portfile.cmake:11 (message):
++  Upstream patch pcre2-10.35_fix-uwp.patch SHA512 mismatch
++FAIL all three patches stay byte-identical through Windows text mode: None
++```
++
++The same test was also run end-to-end with the real Windows CMake 4.4.4 binary
++under wine (wrapper named `cmake` first in PATH); all checks passed, including
++the tagged-release path and the new Windows check (log below).
++
++## RED / GREEN evidence
++
++All commands were run from the worktree. `LOGD` is the session's writable log
++directory (`$TMPDIR/zene-qwen-ci-619dd453d973527c/qwen-logs`); the requested
++`~/.local/share/zene-bunny-fix/.../logs` path was not writable in this container
++(`touch` and the editor both returned `EACCES`; even the run directory is denied,
++while the worktree and `$TMPDIR` are writable). Logs were therefore saved in
++`LOGD`, which is listed below with every command.
++
++| Step | Exact command | Exit |
++|---|---|---|
++| RED (fix reverted) | `git diff -- .github/vcpkg/ports/pcre2/portfile.cmake > $LOGD/fix.patch && git apply -R $LOGD/fix.patch` then `cd build/tests && ctest -R VcpkgPcre2Gitlink --output-on-failure` | `0` for diff/apply, `8` for ctest (1/1 failed with the SHA512 mismatch above) |
++| GREEN (fix restored) | `git apply $LOGD/fix.patch` then `cd build/tests && ctest -R VcpkgPcre2Gitlink --output-on-failure` | `0` for apply, `0` for ctest (1/1 passed) |
++| Direct RED (pre-fix) | `python3 tests/vcpkg-pcre2-gitlink-test.py` before the edit | `1` (2 Windows checks failed) |
++| Direct GREEN (post-fix) | `python3 tests/vcpkg-pcre2-gitlink-test.py` after the edit | `0` (RESULT: PASS) |
++| Real Windows CMake | `PATH="$TMPD/bin:$PATH" TMPDIR="$TMPD" python3 tests/vcpkg-pcre2-gitlink-test.py` (wrapper runs the Windows `cmake.exe` under wine) | `0` (all checks PASS) |
++| Rebuild | `cmake --build build --target zene` | `0` |
++| Affected ctest family | `ctest -R VcpkgPcre2Gitlink` from `build/tests` | `0`, 1/1 test executed |
++| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | `0` (PASS table below) |
++| Whitespace | `git diff --check` | `0` |
++
++Gate table (`==> RESULT: PASS`, saved by `feature_check.py`):
++
++```
++PASS  fork-sources
++PASS  all-sources-reproduce
++PASS  no-upstream-regression
++PASS  check-namespace
++PASS  no-tautology
++PASS  doc-figures
++PASS  complexity              no new item in your files
++PASS  file-length             no new item in your files
++RESULT: PASS
++```
++
++The change set contains exactly:
++
++```
++.github/vcpkg/ports/pcre2/README.md
++.github/vcpkg/ports/pcre2/portfile.cmake
++tests/vcpkg-pcre2-gitlink-test.py
++docs/qwen-fixes-2026-10/cluster-ci-619dd453d973527c.md
++```
++
++## Self-check
++
++- **Regression FAILS with the product change reverted and PASSES with it (exit
++  codes).** `git apply -R` of the two-hunk portfile diff, `ctest -R
++  VcpkgPcre2Gitlink`: exit `8` (fails with `Upstream patch
++  pcre2-10.35_fix-uwp.patch SHA512 mismatch`). Re-applied: exit `0` (1/1 passed).
++  Direct Python run: `1` -> `0`. The reverse/forward patch is saved as
++  `$LOGD/fix.patch` and was produced only from the product file, not the test.
++- **Deterministic:** no wall-clock timing, sleeps, network or races. The Windows
++  seam injects the documented `file(WRITE)` LF->CRLF translation into the real
++  portfile text; the transcript is the only sink. Every path uses `cmake -P` on
++  committed inputs. A separate wine run used the actual Windows CMake binary.
++- **Cause and completeness:** the cause is the text-mode `file(WRITE)` at
++  `portfile.cmake:8` (pre-fix). All three callers of `zene_pcre2_patch` still
++  receive byte-identical patches; the `@ONLY` flag preserves the literal
++  `${PROJECT_BINARY_DIR}` text in `fix-msvc-pdb-install.patch`. Searched the whole
++  tree for any other patch materialization: none. Dependency pins, parse and
++  validation code are unchanged.
++- **No collateral damage:** patch inputs, pinned SHA512 values, vcpkg manifest,
++  sljit gitlink handling, `--head` API query, and the builtin-port red control are
++  unchanged. The generated files are byte-identical to the previous Linux output;
++  only the Windows failure path changed. No project file, save format, limit or
++  contract is touched.
++- **Realtime/undo/commands:** this is a CI dependency-fetch portfile; it contains
++  no audio-thread, undo or command code, and adds no control command or snapshot
++  change.
++- **Old projects / saved data:** no product source or serialization changed.
++- **Registration:** the test was already registered as `VcpkgPcre2Gitlink`
++  (`tests/CMakeLists.txt:3163`); no new test file or registration was needed.
++  The existing `tests/fork-sources.txt` entries already list the changed test and
++  portfile; no `tests/upstream-modifications.txt` entry is required for a
++  fork-source file.
++- **Verdict is FIXED, not ALREADY-FIXED/FALSE-POSITIVE:** the pre-fix code at
++  `portfile.cmake:8` was `file(WRITE "${path}" "${patch_content}")`, and the
++  Windows CMake probe above hashed those bytes to `d28d26...` instead of the
++  pinned `92f231...`. The failing hosted job ran the same text-mode write. That
++  is positive evidence of a real cause, so the conditional ALREADY-FIXED /
++  FALSE-POSITIVE item does not apply.
+diff --git a/tests/vcpkg-pcre2-gitlink-test.py b/tests/vcpkg-pcre2-gitlink-test.py
+index ab20d8b69c..4bec3c2f01 100644
+--- a/tests/vcpkg-pcre2-gitlink-test.py
++++ b/tests/vcpkg-pcre2-gitlink-test.py
+@@ -46,6 +46,14 @@ Assertions:
+ Deterministic: no network, no wall clock, no sleeps. Inputs are committed files; the
+ only seam is the CMake stub table (URL -> action) built below.
+ 
++CLUSTER ci-619dd453d973527c. The hosted msvc-x64 Configure failed the very SHA512 check
++above for pcre2-10.35_fix-uwp.patch. The encoded input was right, but the portfile
++materialized it with `file(WRITE)`, which CMake opens in text mode: on Windows every LF
++in the decoded content became CRLF, so the pinned SHA512 no longer matched. The Windows
++check below re-runs the real portfile with `file(WRITE)`/`file(APPEND)` translated the
++way Windows' text mode translates them (LF -> CRLF); `file(CONFIGURE ... NEWLINE_STYLE
++UNIX)` is binary and must keep the exact bytes. This is behavioural, not a source grep.
++
+ Exit codes: 0 = pass, 1 = regression, 2 = harness/setup error.
+ """
+ 
+@@ -208,6 +216,19 @@ function(vcpkg_install_copyright)
+     tx("COPYRIGHT" "${ARGN}")
+ endfunction()
+ 
++# Windows text-mode seam. The portfile under test is rewritten to call these instead of
++# file(WRITE)/file(APPEND) when the Windows check runs; CMake opens both of those in text
++# mode on Windows, which is exactly the LF -> CRLF translation reproduced here.
++function(zene_windows_file_write path content)
++    string(REPLACE "\n" "\r\n" windows_content "${content}")
++    file(WRITE "${path}" "${windows_content}")
++endfunction()
++
++function(zene_windows_file_append path content)
++    string(REPLACE "\n" "\r\n" windows_content "${content}")
++    file(APPEND "${path}" "${windows_content}")
++endfunction()
++
+ include("${PORTFILE}")
+ 
+ tx("SOURCE-DIR" "${SOURCE_PATH}")
+@@ -274,6 +295,23 @@ def run_portfile(portfile, work, use_head=False, head_version="0123456789abcdef0
+     return proc, entries
+ 
+ 
++def windows_text_mode_port(port_dir, tmp):
++    """Copy the overlay port and rewrite the patch-materialization function to the Windows
++    text-mode commands. CMake's file(WRITE)/file(APPEND) open in text mode there, turning
++    every LF into CRLF; this seam reproduces that without needing a Windows host."""
++    copy = Path(tmp) / "windows-port"
++    shutil.copytree(port_dir, copy)
++    portfile = copy / "portfile.cmake"
++    text = portfile.read_text()
++    start = text.index("function(zene_pcre2_patch")
++    end = text.index("\nendfunction()", start) + len("\nendfunction()")
++    body = text[start:end]
++    body = re.sub(r"file\((WRITE|APPEND)\s+",
++                  lambda m: f"zene_windows_file_{m.group(1).lower()}(", body)
++    portfile.write_text(text[:start] + body + text[end:])
++    return portfile
++
++
+ def load_config(checker):
+     """The repository's vcpkg configuration, or {} when it does not exist. A missing or
+     unparsable configuration is a FAIL, not a harness error: without it vcpkg falls back to
+@@ -351,6 +389,22 @@ def check_tagged_release(checker, portfile, tmp):
+                   "the jit feature still reaches the build", str(entries.get("CONFIGURE")))
+ 
+ 
++def check_windows_text_mode(checker, port_dir, tmp):
++    """The hosted msvc-x64 failure: file(WRITE) is text mode on Windows, so the decoded
++    patch's LFs became CRLFs before the SHA512 check. Re-run the real portfile with that
++    translation applied; the pinned bytes and the dependency fetch must survive it."""
++    print("Windows text mode (the hosted msvc-x64 Configure failure)")
++    portfile = windows_text_mode_port(port_dir, tmp)
++    proc, entries = run_portfile(portfile, Path(tmp) / "windows-work")
++    combined = proc.stdout + proc.stderr
++    checker.check(proc.returncode == 0, "portfile completes with Windows LF->CRLF text-mode writes",
++                  combined[-800:])
++    checker.check(sorted(entries.get("PATCH-BYTES", [])) ==
++                  sorted(f"{name} {sha}" for name, sha in PATCH_SHA512.items()),
++                  "all three patches stay byte-identical through Windows text mode",
++                  str(entries.get("PATCH-BYTES")))
++
++
+ def check_builtin_control(checker, tmp):
+     """RED CONTROL: the pinned builtin portfile is the repository without the overlay, and
+     it must reproduce the CI's own failure - the API URL and the 403 verdict."""
+@@ -439,6 +493,7 @@ def main():
+         check_builtin_control(checker, tmp)
+         check_head_control(checker, portfile, tmp)
+         if port_dir is not None:
++            check_windows_text_mode(checker, port_dir, tmp)
+             check_tampered_control(checker, port_dir, tmp)
+             check_missing_control(checker, port_dir, tmp)
+             check_patch_control(checker, port_dir, tmp, missing=False)
+-- 
+2.56.0
+
