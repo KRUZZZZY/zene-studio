@@ -200,6 +200,33 @@ def mode_render(root, build, moc):
         run(args, cwd=entry["directory"])
 
 
+def mode_wav_write_error(root, build, moc):
+    # A non-Unix translation unit: the hosted mingw64 build has Q_OS_UNIX
+    # undefined, so the Unix-only cases and their helpers disappear and the
+    # compiler's -Wunused-function can see a helper left outside the guard.
+    source = root / "tests/src/core/ExportWavWriteErrorTest.cpp"
+    require_file(source)
+    entries = compile_database(build)
+    entry, command = entry_for(entries, root, "tests/src/core/ExportWavWriteErrorTest.cpp")
+    with tempfile.TemporaryDirectory(prefix="train41-wav-write-error-") as temporary:
+        preinclude = Path(temporary) / "headers_then_non_unix.h"
+        lines = []
+        for header in source_headers(source):
+            lines.append(f'#include "{header}"' if isinstance(header, Path) else f"#include {header}")
+        lines.append("#undef Q_OS_UNIX")
+        preinclude.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        # moc preprocesses the same way, so the generated meta-object matches the
+        # translation unit: no Unix-only slots, no missing-member errors.
+        run([moc, "-UQ_OS_UNIX", str(source), "-o",
+             str(Path(temporary) / "ExportWavWriteErrorTest.moc")], cwd=root)
+        args = syntax_command(entry, command,
+                              ["-include", str(preinclude), "-Werror=unused-function"])
+        args.insert(1, "-I" + temporary)
+        args.remove("-fsyntax-only")
+        args.extend(["-c", "-o", str(Path(temporary) / "wav-write-error.o")])
+        run(args, cwd=entry["directory"])
+
+
 MODES = {
     "linux": mode_linux,
     "eq": mode_eq,
@@ -207,6 +234,7 @@ MODES = {
     "darwin-tu": mode_darwin_tu,
     "nam": mode_nam,
     "render": mode_render,
+    "wav-write-error": mode_wav_write_error,
 }
 
 
@@ -226,7 +254,7 @@ def main():
         print(f"[{name}]", flush=True)
         if name == "linux":
             check(root, args.qt_major)
-        elif name == "render":
+        elif name in {"render", "wav-write-error"}:
             check(root, build, args.moc)
         elif name in {"eq", "darwin-tu", "nam"}:
             check(root, build)

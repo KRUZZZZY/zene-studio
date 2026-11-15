@@ -48,7 +48,7 @@ enum class Palette
 
 } // namespace videotest
 
-#ifdef ZENE_HAVE_FFMPEG
+#if defined(ZENE_HAVE_FFMPEG) && !defined(ZENE_TEST_VIDEO_CLIP_WITHOUT_FFMPEG)
 
 #include <cmath>
 #include <cstring>

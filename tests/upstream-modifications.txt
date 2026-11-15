@@ -31,6 +31,12 @@ tests/CMakeLists.txt	Train 48: give SfzPlayerTest its direct Abseil dependency i
 
 # Train 47: preserve all hosted fixture assertions and Qt compiler usage requirements.
 tests/CMakeLists.txt	Train 47: link RemotePluginShmFifoCompileCheck to Qt for transitive compiler requirements and register Train47Portability source-derived compiler regressions.
+tests/CMakeLists.txt	cluster ci-e58078851126eac9 / ci-9b3cdba8549c073f / ci-2fac5540e1a657f0 / ci-bbbeb2c8d6e707a8: register the accepted Qt 5 QJsonValue portability regressions with their host/compiler conditions and skip semantics.
+tests/CMakeLists.txt	cluster ci-d2bfae2f2ab57bfb: give SfzPlayerTest the vendored Abseil include root required by its state-saver compile on hosts without system Abseil.
+tests/CMakeLists.txt	cluster ci-a0493fd29d4e9b4b: register the Qt usage-requirements compile probe for RemotePluginShmFifoCompileCheck.
+tests/CMakeLists.txt	cluster ci-9b6002ebebcf807a / ci-78cca41150908714: register the accepted no-FFmpeg VideoClips compiler probes against the hosted configuration shape.
+tests/CMakeLists.txt	cluster ci-6422986f4db9676f: register VideoTestClipPortabilityTest as the no-FFmpeg fixture API regression.
+tests/CMakeLists.txt	cluster ci-f8d87e270a05ef5e: extend Train41 portability modes with wav-write-error for the accepted export error regression.
 
 # Train 43: preserve hosted platform support, tests and unchanged gates.
 plugins/NeuralAmp/tests/nam_harness.cpp	Train 43: use native per-thread CPU timing on Windows, retaining POSIX thread timing elsewhere; remove unresolved clock_gettime64 dependency without substituting wall time.
@@ -38,8 +44,9 @@ tests/CMakeLists.txt	Train 43: register compiler contracts for older macOS, Qt5/
 tests/src/core/RemotePluginShmFifoTest.cpp	Train 43: replace macOS-11-only barriers with condition-variable rendezvous, keeping all three phases and live-thread address comparisons.
 tests/src/core/ImportTrackIoTest.cpp	Train 43: construct the identical document list through Qt5-compatible append calls.
 tests/src/gui/Warp/SampleClipWarpEditTest.cpp	Train 43: use the shared TestWorkerThread QThread subclass while retaining worker starts, waits and all overlap assertions.
-tests/vcpkg-pcre2-gitlink-test.py	Train 43: emulate Windows text-mode patch generation and preserve all existing pin, tamper and missing-input checks.
-.github/vcpkg/ports/pcre2/portfile.cmake	Train 43: explicitly generate Unix patch newlines; preserve literal template tokens and exact upstream SHA512 pins.
+tests/vcpkg-pcre2-gitlink-test.py	Train 43 / cluster ci-619dd453d973527c: emulate Windows text-mode patch generation and verify pinned deps/sljit gitlink retrieval, retaining the existing pin, tamper and missing-input checks.
+.github/vcpkg/ports/pcre2/portfile.cmake	Train 43 / cluster ci-619dd453d973527c: explicitly generate Unix patch newlines and retrieve the pinned deps/sljit gitlink from the tag archive while preserving literal template tokens and exact upstream SHA512 pins.
+.github/vcpkg/ports/pcre2/README.md	cluster ci-619dd453d973527c: document the portfile's pinned deps/sljit gitlink handling and offline-safe archive path.
 tests/CMakeLists.txt	cluster ci-aa1160348d9be203: register Qt5QStringListAssignCheck (tests/Qt5QStringListAssignCheck.py) beside the other Qt 5 portability checks so every host, Qt 5 or Qt 6, fails on a bare braced list assigned to a QStringList; registration only, no existing target, test, environment or property changes.
 tests/fork-sources.txt	cluster ci-aa1160348d9be203: register the new Qt 5 QStringList brace-assignment regression checker and its fix report in the fork-added source manifest.
 src/core/AudioEngine.cpp	cluster ci-61ad26e4f8b135f9 (2026-11-14): the model-registration test seam no longer calls std::atomic::notify_all, which Apple's libc++ marks unavailable below macOS 11 while this product's floor is 10.13; the flag the seam publishes is polled by its one consumer (ScriptDawModelRegistrationTest), so the store remains the signal and no wake can be lost. Behaviour of registerAutomatableModel is otherwise unchanged. Held by tests/macos-sync-availability-check.py and tests/src/core/ScriptDawModelRegistrationTest.cpp.

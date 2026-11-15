@@ -151,6 +151,7 @@
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/doc-pricing-model-gate.py ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/NeuralAmpHarnessBlockCount.cpp tests/src/plugins/NeuralAmpProfileArgumentsTest.cpp ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/ClapTestInstrumentUnitTest.cpp ; \
+#   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/Qt5QJsonToIntegerCheck.py tests/Qt5JsonIntegerCheck.py tests/Qt5JsonValueIntegerCheck.py tests/Qt5QJsonValueIntegerCheck.py tests/remote-plugin-shm-fifo-qt-usage-check.py tests/no-ffmpeg-video-clips-compile-check.py tests/VideoClipsNoFfmpegCheck.py docs/qwen-fixes-2026-10/cluster-ci-e58078851126eac9.md docs/qwen-fixes-2026-10/cluster-ci-619dd453d973527c.md docs/qwen-fixes-2026-10/cluster-ci-9b3cdba8549c073f.md docs/qwen-fixes-2026-10/cluster-ci-2fd63d3310176c0c.md docs/qwen-fixes-2026-10/cluster-ci-2fac5540e1a657f0.md docs/qwen-fixes-2026-10/cluster-ci-d2bfae2f2ab57bfb.md docs/qwen-fixes-2026-10/cluster-ci-a0493fd29d4e9b4b.md docs/qwen-fixes-2026-10/cluster-ci-f8d87e270a05ef5e.md docs/qwen-fixes-2026-10/cluster-ci-6422986f4db9676f.md docs/qwen-fixes-2026-10/cluster-ci-9b6002ebebcf807a.md docs/qwen-fixes-2026-10/cluster-ci-bbbeb2c8d6e707a8.md docs/qwen-fixes-2026-10/cluster-ci-e8063221c62bcc38.md docs/qwen-fixes-2026-10/cluster-ci-78cca41150908714.md ; \
 #   } | LC_ALL=C sort -u
 # Verify it - this must print REPRODUCES and nothing else:
 #   diff <(grep -vE '^[[:space:]]*(#|$)' tests/fork-sources.txt) \
@@ -253,10 +254,12 @@
 #        git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/gui/CPULoadWidgetTest.cpp ; \
 #        git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/NeuralAmpHarnessBlockCount.cpp tests/src/plugins/NeuralAmpProfileArgumentsTest.cpp ; \
 #        git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/ClapTestInstrumentUnitTest.cpp ; \
+#          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/Qt5QJsonToIntegerCheck.py tests/Qt5JsonIntegerCheck.py tests/Qt5JsonValueIntegerCheck.py tests/Qt5QJsonValueIntegerCheck.py tests/remote-plugin-shm-fifo-qt-usage-check.py tests/no-ffmpeg-video-clips-compile-check.py tests/VideoClipsNoFfmpegCheck.py docs/qwen-fixes-2026-10/cluster-ci-e58078851126eac9.md docs/qwen-fixes-2026-10/cluster-ci-619dd453d973527c.md docs/qwen-fixes-2026-10/cluster-ci-9b3cdba8549c073f.md docs/qwen-fixes-2026-10/cluster-ci-2fd63d3310176c0c.md docs/qwen-fixes-2026-10/cluster-ci-2fac5540e1a657f0.md docs/qwen-fixes-2026-10/cluster-ci-d2bfae2f2ab57bfb.md docs/qwen-fixes-2026-10/cluster-ci-a0493fd29d4e9b4b.md docs/qwen-fixes-2026-10/cluster-ci-f8d87e270a05ef5e.md docs/qwen-fixes-2026-10/cluster-ci-6422986f4db9676f.md docs/qwen-fixes-2026-10/cluster-ci-9b6002ebebcf807a.md docs/qwen-fixes-2026-10/cluster-ci-bbbeb2c8d6e707a8.md docs/qwen-fixes-2026-10/cluster-ci-e8063221c62bcc38.md docs/qwen-fixes-2026-10/cluster-ci-78cca41150908714.md ; \
 #        } | LC_ALL=C sort -u) && echo REPRODUCES
 # 2026-10-10 (new-p10-108): XyPadPairTest now exercises the Delay plug-in's XyPad directly. Its two test-local headers
 #   provide AUTOMOC inputs for the already-configured target without changing the CMake build graph.
 #          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/EqFilterTest.cpp ; \
+#          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/Qt5QJsonToIntegerCheck.py tests/Qt5JsonIntegerCheck.py tests/Qt5JsonValueIntegerCheck.py tests/Qt5QJsonValueIntegerCheck.py tests/remote-plugin-shm-fifo-qt-usage-check.py tests/no-ffmpeg-video-clips-compile-check.py tests/VideoClipsNoFfmpegCheck.py docs/qwen-fixes-2026-10/cluster-ci-e58078851126eac9.md docs/qwen-fixes-2026-10/cluster-ci-619dd453d973527c.md docs/qwen-fixes-2026-10/cluster-ci-9b3cdba8549c073f.md docs/qwen-fixes-2026-10/cluster-ci-2fd63d3310176c0c.md docs/qwen-fixes-2026-10/cluster-ci-2fac5540e1a657f0.md docs/qwen-fixes-2026-10/cluster-ci-d2bfae2f2ab57bfb.md docs/qwen-fixes-2026-10/cluster-ci-a0493fd29d4e9b4b.md docs/qwen-fixes-2026-10/cluster-ci-f8d87e270a05ef5e.md docs/qwen-fixes-2026-10/cluster-ci-6422986f4db9676f.md docs/qwen-fixes-2026-10/cluster-ci-9b6002ebebcf807a.md docs/qwen-fixes-2026-10/cluster-ci-bbbeb2c8d6e707a8.md docs/qwen-fixes-2026-10/cluster-ci-e8063221c62bcc38.md docs/qwen-fixes-2026-10/cluster-ci-78cca41150908714.md ; \
 #        } | LC_ALL=C sort -u) && echo REPRODUCES
 # 2026-10-11 (new-p9-120): the peak EQ Nyquist regression source is named in both pathspec
 # blocks above and registered here, keeping this fork-specific source list reproducible.
@@ -859,6 +862,30 @@ tests/data/vcpkg-pcre2/usage
 tests/nam-model-loader-portability-check.py
 docs/qwen-fixes-2026-10/cluster-ci-9d1768ed0beb1636.md
 tests/nam-portability-registration-check.py
+# Consolidated pending hosted portability repairs (train 34): accepted source-derived probes
+# and evidence reports are retained together in the fork source scope.
+tests/Qt5QJsonToIntegerCheck.py
+tests/Qt5JsonIntegerCheck.py
+tests/Qt5JsonValueIntegerCheck.py
+tests/Qt5QJsonValueIntegerCheck.py
+tests/remote-plugin-shm-fifo-qt-usage-check.py
+tests/no-ffmpeg-video-clips-compile-check.py
+tests/VideoClipsNoFfmpegCheck.py
+docs/qwen-fixes-2026-10/cluster-ci-e58078851126eac9.md
+docs/qwen-fixes-2026-10/cluster-ci-619dd453d973527c.md
+docs/qwen-fixes-2026-10/cluster-ci-9b3cdba8549c073f.md
+docs/qwen-fixes-2026-10/cluster-ci-2fd63d3310176c0c.md
+docs/qwen-fixes-2026-10/cluster-ci-2fac5540e1a657f0.md
+docs/qwen-fixes-2026-10/cluster-ci-d2bfae2f2ab57bfb.md
+docs/qwen-fixes-2026-10/cluster-ci-a0493fd29d4e9b4b.md
+docs/qwen-fixes-2026-10/cluster-ci-f8d87e270a05ef5e.md
+docs/qwen-fixes-2026-10/cluster-ci-6422986f4db9676f.md
+docs/qwen-fixes-2026-10/cluster-ci-9b6002ebebcf807a.md
+docs/qwen-fixes-2026-10/cluster-ci-bbbeb2c8d6e707a8.md
+docs/qwen-fixes-2026-10/cluster-ci-e8063221c62bcc38.md
+docs/qwen-fixes-2026-10/cluster-ci-78cca41150908714.md
+tests/src/core/VideoTestClipPortabilityTest.cpp
+
 # Train 31: retained CI repair inputs, pinned dependency overlay and integration evidence.
 .github/vcpkg/ports/pcre2/README.md
 .github/vcpkg/ports/pcre2/fix-msvc-pdb-install.patch.json
@@ -942,6 +969,8 @@ docs/qwen-fixes-2026-10/sol-train-32-sdk-complexity.md
 # Train 48: optional-codec and Windows test compiler contracts with verification.
 tests/train-48-portability-check.py
 docs/qwen-fixes-2026-10/sol-train-33-hosted-portability-48.md
+# Train 49: reconcile duplicate accepted repair contexts; preserve every regression.
+docs/qwen-fixes-2026-10/sol-train-34-replay-reconciliation.md
 
 # Train 47: source-derived Qt5/Windows compiler and Qt target usage regressions.
 tests/train-47-portability-check.py

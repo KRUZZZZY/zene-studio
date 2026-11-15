@@ -328,16 +328,21 @@ private:
 		return nullptr;
 	}
 
+	//! Make both clips once; skips the calling test in a build without FFmpeg (VideoTrackTest's needClip).
 	bool needClips()
 	{
 		if (!VideoDecoder::available()) { return false; }
 		if (!m_a.isEmpty() && !m_b.isEmpty()) { return true; }
+#ifdef ZENE_HAVE_FFMPEG
 		const QString a = m_home.filePath(QStringLiteral("first.mkv"));
 		const QString b = m_home.filePath(QStringLiteral("second.mkv"));
 		if (!videotest::makeClip(a) || !videotest::makeClip(b, videotest::Palette::GreenYellow)) { return false; }
 		m_a = a;
 		m_b = b;
 		return true;
+#else
+		return false;
+#endif
 	}
 
 	QTemporaryDir m_home;
