@@ -1,0 +1,509 @@
+From ee82b27152290ce4d59c686586b02c8b401b3324 Mon Sep 17 00:00:00 2001
+From: Zene train Sol <noreply@zene.invalid>
+Date: Sun, 15 Nov 2026 07:19:19 +0000
+Subject: [PATCH] fix(train-sol): Fixed Qt5 JSON conversions, Windows timeout
+ name lookup, and missing Qt compiler requirements on the shared-memory
+ compile-check target; added compiler regressions and verification
+
+Sol-Repair-Id: sol-repair-1794727159105571316
+---
+ .../sol-train-32-hosted-portability-47.md     |  56 ++++
+ tests/CMakeLists.txt                          |  10 +
+ tests/fork-sources.txt                        |   4 +
+ .../src/core/ControlShutdownHookTestParts1.h  |  12 +-
+ tests/src/core/ScriptClockTest.cpp            |   4 +-
+ tests/train-47-portability-check.py           | 286 ++++++++++++++++++
+ tests/upstream-modifications.txt              |   3 +
+ 7 files changed, 367 insertions(+), 8 deletions(-)
+ create mode 100644 docs/qwen-fixes-2026-10/sol-train-32-hosted-portability-47.md
+ create mode 100644 tests/train-47-portability-check.py
+
+diff --git a/docs/qwen-fixes-2026-10/sol-train-32-hosted-portability-47.md b/docs/qwen-fixes-2026-10/sol-train-32-hosted-portability-47.md
+new file mode 100644
+index 0000000000..10eb4b2de1
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/sol-train-32-hosted-portability-47.md
+@@ -0,0 +1,56 @@
++# Train 47 hosted compile repair
++
++Base: dec3f1d45c62b26bce955875521780db173a0228. All seven hosted jobs failed in test compilation; no provisioning or disk failure was shown. Four Qt5 jobs rejected the two Qt6-only JSON reads in ScriptClockTest, two Windows jobs rejected unqualified timeout constants in the split shutdown fixture, and MSVC rejected the shared-memory compile-check target without Qt compiler usage requirements.
++
++## Change registration
++
++- `tests/src/core/ScriptClockTest.cpp`: preserve both UTF-8 byte-count assertions, the missing-value sentinel and cleanup, using a Qt5-compatible conversion for these bounded fixture values.
++- `tests/src/core/ControlShutdownHookTestParts1.h`: qualify all six references to the existing public ControlServer timeout; no timeout or assertion changes.
++- `tests/CMakeLists.txt`: link the object compile-check target to Qt as its sibling probes do, inheriting compiler definitions/options (including MSVC /Zc:__cplusplus); register the new compiler check in stable existing context. Reason recorded in `tests/upstream-modifications.txt`.
++- `tests/train-47-portability-check.py`: source-derived compiler regressions for Qt5 JSON, Windows timeout name lookup and Qt target usage, with negative controls; registered with this report in `tests/fork-sources.txt`. Existing fork sources retain their registration. No gate executables, baselines, dependency pins, deployment floors or assertions change.
++
++## Verification
++
++The single private Qt6/WASM/WERROR build was configured with the owner options, exactly:
++
++```sh
++cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo -DCMAKE_EXE_LINKER_FLAGS:STRING=-Wl,--strip-debug -DUSE_WERROR:BOOL=ON -DWANT_ABLETON_LINK:BOOL=ON -DWANT_ALSA:BOOL=ON -DWANT_CALF:BOOL=ON -DWANT_CAPS:BOOL=ON -DWANT_CARLA:BOOL=ON -DWANT_CMT:BOOL=ON -DWANT_COLLAB:BOOL=ON -DWANT_DEBUG_CPACK:BOOL=ON -DWANT_GIG:BOOL=ON -DWANT_JACK:BOOL=ON -DWANT_LV2:BOOL=ON -DWANT_MP3LAME:BOOL=ON -DWANT_OGGVORBIS:BOOL=ON -DWANT_OSS:BOOL=ON -DWANT_PORTAUDIO:BOOL=ON -DWANT_PULSEAUDIO:BOOL=ON -DWANT_QT6:BOOL=ON -DWANT_RUBBERBAND:BOOL=ON -DWANT_SDL:BOOL=ON -DWANT_SF2:BOOL=ON -DWANT_SID:BOOL=ON -DWANT_SNDIO:BOOL=ON -DWANT_SOUNDIO:BOOL=ON -DWANT_STEM_SPLIT:BOOL=ON -DWANT_STK:BOOL=ON -DWANT_SUIL:BOOL=ON -DWANT_SWH:BOOL=ON -DWANT_TAP:BOOL=ON -DWANT_VST:BOOL=ON -DWANT_VST3_TEST_INSTRUMENT:BOOL=ON -DWANT_VST_32:BOOL=ON -DWANT_VST_64:BOOL=ON -DWANT_WASM:BOOL=ON -DWANT_WEAKJACK:BOOL=ON -DZENE_TELEMETRY:BOOL=ON -DZENE_WANT_FFMPEG:BOOL=ON -DZENE_WANT_LIBAAF:BOOL=ON -DWANT_COVERAGE:BOOL=OFF -DWANT_CPACK_TARBALL:BOOL=OFF -DWANT_DEBUG_ASAN:BOOL=OFF -DWANT_DEBUG_FPE:BOOL=OFF -DWANT_DEBUG_GPROF:BOOL=OFF -DWANT_DEBUG_MSAN:BOOL=OFF -DWANT_DEBUG_RTSAN:BOOL=OFF -DWANT_DEBUG_TSAN:BOOL=OFF -DWANT_DEBUG_UBSAN:BOOL=OFF -DWANT_WINMM:BOOL=OFF -DWANT_CLAP:STRING=ON -DWANT_VST3:STRING=ON -DLMMS_CLAP_FETCH=ON -DONNXRUNTIME_ROOT=/home/kruzzzzy/.local/zene-deps/onnxruntime-linux-x64-1.28.0 -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache '-DCMAKE_CXX_FLAGS=-isystem /usr/include/cairo -Wno-error=deprecated-declarations -Wno-error=unused-result -Wno-error=sfinae-incomplete' '-DCMAKE_C_FLAGS=-isystem /usr/include/cairo -Wno-error=deprecated-declarations -Wno-error=unused-result -Wno-error=sfinae-incomplete'
++```
++
++Configure exited 0. Targeted rebuild command:
++
++```sh
++cmake --build build --target zene ScriptClockTest ControlShutdownHookTest RemotePluginShmFifoTest -j12
++```
++
++Compiler controls:
++
++```sh
++python3 tests/train-47-portability-check.py --source-root . --build-dir build
++python3 /tmp/sol47-original-controls.py
++```
++
++Both exited 0. The temporary original-source control loaded the two fixture files from HEAD and the saved pre-fix object-target compile command. Original Qt5 JSON reads failed compilation, original Windows timeout expressions failed name lookup, and the original compile command failed the Qt usage contract. Repaired versions passed. The committed checker also compiles both negative source controls and verifies the actual target declaration in a temporary CMake usage model, where the modeled MSVC option propagates with the Qt interface link and disappears without it. It selects the exact object target, not the similarly defined executable target.
++
++Unchanged gates (all exited 0):
++
++```sh
++bash tests/no-upstream-regression-gate.sh
++bash tests/fork-sources-gate.sh
++bash tests/evidence-gate.sh
++bash tests/unregistered-tests-gate.sh
++PATH=/tmp/sol45-lizard125/bin:$PATH PYTHONPATH=/tmp/sol45-lizard125 bash tests/complexity-gate.sh --check
++git diff HEAD --check
++git diff --cached --check
++```
++
++Lizard is pinned to hosted version 1.25.1. No baseline writes or exemptions. Independent review confirmed the source changes preserve assertions and the Qt usage link repairs the MSVC compiler requirement; its initial coverage concern was addressed with the actual-declaration CMake model. Native hosted Windows/macOS compilation remains required; Linux compiler models do not claim native platform verification.
++
++
++Targeted build exited 0. CTest ran from this checkout's `build/tests`:
++
++```sh
++PATH=/tmp/sol45-lizard125/bin:$PATH PYTHONPATH=/tmp/sol45-lizard125 ctest -R '^(ScriptClockTest|ControlShutdownHookTest|RemotePluginShmFifoTest|Train47Portability|FileLengthGate|NoteCanvasComplexityGate)$' -j1 --timeout 900 --no-tests=error --output-on-failure
++```
++
++Exited 0: **6/6 entries passed in 24.78 seconds**, with rebuilt test binaries. The existing Windows client-limit case skipped on Linux, and Windows-only named-pipe paths were not run; the source-derived compiler check covers their timeout lookup. Final independent Luna review found no blocker and confirmed the actual-target compile command selection and linked/unlinked CMake model, with maximum probe function CCN 7. Disk remained above 100 GB free. No commits, pushes, queue writes or other source worktree edits were made.
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 5486a10abd..96fe7d539c 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -3197,6 +3197,8 @@ add_test(NAME RemotePluginShmFifoTest COMMAND RemotePluginShmFifoTest)
+ add_library(RemotePluginShmFifoCompileCheck OBJECT ${CMAKE_SOURCE_DIR}/src/common/RemotePluginBase.cpp)
+ target_include_directories(RemotePluginShmFifoCompileCheck PRIVATE
+ 	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>)
++# Qt exports compiler requirements too (including MSVC /Zc:__cplusplus).
++target_link_libraries(RemotePluginShmFifoCompileCheck PRIVATE ${QT_LIBRARIES})
+ target_compile_features(RemotePluginShmFifoCompileCheck PRIVATE cxx_std_20)
+ # LMMS_STATIC_DEFINE: this TU defines LMMS_EXPORT members, and outside lmmsobjs
+ # lmms_export.h makes those __declspec(dllimport) on Windows (cluster ci-v041-5).
+@@ -6215,6 +6217,14 @@ if(PYTHON3_EXECUTABLE)
+ 	set_tests_properties(NamPortabilityRegistrationCheck PROPERTIES TIMEOUT 120)
+ endif()
+ 
++# Train 47: exercise the Qt5 JSON and Windows fixture compiler contracts.
++if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
++	add_test(NAME Train47Portability COMMAND ${PYTHON3_EXECUTABLE}
++		${CMAKE_CURRENT_SOURCE_DIR}/train-47-portability-check.py
++		--source-root ${CMAKE_SOURCE_DIR} --build-dir ${CMAKE_BINARY_DIR})
++	set_tests_properties(Train47Portability PROPERTIES TIMEOUT 120)
++endif()
++
+ # Train 43: compile hosted API contracts without changing deployment targets.
+ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
+ 	add_test(NAME Train43Portability COMMAND ${PYTHON3_EXECUTABLE}
+diff --git a/tests/fork-sources.txt b/tests/fork-sources.txt
+index 8bab20b4fb..b966ddd530 100644
+--- a/tests/fork-sources.txt
++++ b/tests/fork-sources.txt
+@@ -939,6 +939,10 @@ docs/qwen-fixes-2026-10/cluster-ci-61ad26e4f8b135f9.md
+ docs/qwen-fixes-2026-10/sol-train-32-portability-replay.md
+ docs/qwen-fixes-2026-10/sol-train-32-sdk-complexity.md
+ 
++# Train 47: source-derived Qt5/Windows compiler and Qt target usage regressions.
++tests/train-47-portability-check.py
++docs/qwen-fixes-2026-10/sol-train-32-hosted-portability-47.md
++
+ # Train 43 hosted compiler contracts, native CPU timing adapter and verification report.
+ plugins/NeuralAmp/tests/NamHarnessCpuClock.h
+ tests/train-43-portability-check.py
+diff --git a/tests/src/core/ControlShutdownHookTestParts1.h b/tests/src/core/ControlShutdownHookTestParts1.h
+index 4463dc01d8..5569061ec0 100644
+--- a/tests/src/core/ControlShutdownHookTestParts1.h
++++ b/tests/src/core/ControlShutdownHookTestParts1.h
+@@ -146,19 +146,19 @@ void ControlShutdownHookTest::anIdleNamedPipePeerIsDisconnected() {
+ 	if (ReadFile(pipe.handle, &byte, sizeof(byte), &bytesRead, &operation))
+ 	{
+ 		QCOMPARE(bytesRead, DWORD{0});
+-		QVERIFY(idleWait.elapsed() >= ClientIdleTimeoutMs - 5000);
++		QVERIFY(idleWait.elapsed() >= ControlServer::ClientIdleTimeoutMs - 5000);
+ 		return;
+ 	}
+ 	const DWORD startError = GetLastError();
+ 	if (startError == ERROR_BROKEN_PIPE || startError == ERROR_PIPE_NOT_CONNECTED)
+ 	{
+-		QVERIFY(idleWait.elapsed() >= ClientIdleTimeoutMs - 5000);
++		QVERIFY(idleWait.elapsed() >= ControlServer::ClientIdleTimeoutMs - 5000);
+ 		return;
+ 	}
+ 	QVERIFY2(startError == ERROR_IO_PENDING, "the named-pipe read did not pend");
+ 
+ 	const DWORD wait = WaitForSingleObject(event.handle,
+-		static_cast<DWORD>(ClientIdleTimeoutMs + 5000));
++		static_cast<DWORD>(ControlServer::ClientIdleTimeoutMs + 5000));
+ 	if (wait != WAIT_OBJECT_0)
+ 	{
+ 		CancelIoEx(pipe.handle, &operation);
+@@ -166,7 +166,7 @@ void ControlShutdownHookTest::anIdleNamedPipePeerIsDisconnected() {
+ 		QVERIFY2(false, "the idle named-pipe client was not disconnected before the deadline");
+ 	}
+ 
+-	QVERIFY(idleWait.elapsed() >= ClientIdleTimeoutMs - 5000);
++	QVERIFY(idleWait.elapsed() >= ControlServer::ClientIdleTimeoutMs - 5000);
+ 	const BOOL completed = GetOverlappedResult(pipe.handle, &operation, &bytesRead, FALSE);
+ 	const DWORD completionError = completed ? ERROR_SUCCESS : GetLastError();
+ 	const bool disconnected = (completed && bytesRead == 0)
+@@ -193,7 +193,7 @@ void ControlShutdownHookTest::aTrickledIncompleteNamedPipeRequestDoesNotExtendTh
+ 	QElapsedTimer trickleWait;
+ 	trickleWait.start();
+ 	bool disconnected = false;
+-	while (trickleWait.elapsed() < ClientIdleTimeoutMs + 5000)
++	while (trickleWait.elapsed() < ControlServer::ClientIdleTimeoutMs + 5000)
+ 	{
+ 		DWORD writeError = ERROR_SUCCESS;
+ 		if (!writeIncompletePipeByte(pipe.handle, writeEvent.handle, &writeError))
+@@ -206,7 +206,7 @@ void ControlShutdownHookTest::aTrickledIncompleteNamedPipeRequestDoesNotExtendTh
+ 		Sleep(250);
+ 	}
+ 
+-	QVERIFY(trickleWait.elapsed() >= ClientIdleTimeoutMs - 5000);
++	QVERIFY(trickleWait.elapsed() >= ControlServer::ClientIdleTimeoutMs - 5000);
+ 	QVERIFY2(disconnected,
+ 		"trickling an incomplete request kept the named-pipe client alive past its deadline");
+ }
+diff --git a/tests/src/core/ScriptClockTest.cpp b/tests/src/core/ScriptClockTest.cpp
+index 6f38e9678f..d7b5dce740 100644
+--- a/tests/src/core/ScriptClockTest.cpp
++++ b/tests/src/core/ScriptClockTest.cpp
+@@ -405,14 +405,14 @@ void ScriptClockTest::scheduleStateReportsUtf8Bytes()
+ 
+ 	// Read everything first and unschedule before any assertion, so a failure
+ 	// here cannot leave the id registered for the tests that follow.
+-	const qint64 perId = clock.scheduleState(id).value(QStringLiteral("source_bytes")).toInteger(-1);
++	const qint64 perId = static_cast<qint64>(clock.scheduleState(id).value(QStringLiteral("source_bytes")).toDouble(-1));
+ 	qint64 inState = -1;
+ 	const QJsonArray schedules = clock.stateJson().value(QStringLiteral("schedules")).toArray();
+ 	for (const QJsonValue& value : schedules)
+ 	{
+ 		const QJsonObject one = value.toObject();
+ 		if (one.value(QStringLiteral("id")).toString() != id) { continue; }
+-		inState = one.value(QStringLiteral("source_bytes")).toInteger(-1);
++		inState = static_cast<qint64>(one.value(QStringLiteral("source_bytes")).toDouble(-1));
+ 	}
+ 	QVERIFY2(clock.removeSchedule(id, &error), qPrintable(error));
+ 
+diff --git a/tests/train-47-portability-check.py b/tests/train-47-portability-check.py
+new file mode 100644
+index 0000000000..74361ccf2a
+--- /dev/null
++++ b/tests/train-47-portability-check.py
+@@ -0,0 +1,286 @@
++#!/usr/bin/env python3
++"""Compiler regressions for Qt5 JSON, Windows timeout, and Qt target usage."""
++
++# Copyright (c) 2026 Zene Studio contributors
++#
++# This file is part of LMMS - https://lmms.io
++#
++# This program is free software; you can redistribute it and/or modify it
++# under the terms of the GNU General Public License as published by the Free
++# Software Foundation; either version 2 of the License, or (at your option)
++# any later version.
++#
++# This program is distributed in the hope that it will be useful, but WITHOUT
++# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++# FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
++# more details.
++#
++# You should have received a copy of the GNU General Public License along with
++# this program; if not, write to the Free Software Foundation, Inc., 51 Franklin
++# Street, Fifth Floor, Boston, MA 02110-1301 USA.
++
++import argparse
++import json
++from pathlib import Path
++import re
++import shlex
++import shutil
++import subprocess
++import sys
++import tempfile
++
++
++def fail(message):
++    raise RuntimeError(message)
++
++
++def require_file(path):
++    if not path.is_file():
++        fail(f"required source or build file is missing: {path}")
++
++
++def invoke(command, cwd=None):
++    return subprocess.run(command, cwd=cwd, text=True, stdout=subprocess.PIPE,
++                          stderr=subprocess.PIPE, check=False)
++
++
++def compiler():
++    tool = shutil.which("c++")
++    if tool is None:
++        fail("required tool is missing: c++")
++    return tool
++
++
++def compile_probe(command, cwd, expect_success, label):
++    result = invoke(command, cwd)
++    if (result.returncode == 0) != expect_success:
++        outcome = "succeeded" if result.returncode == 0 else result.stderr.strip()
++        fail(f"{label}: expected {'success' if expect_success else 'failure'}, got {outcome}")
++
++
++def qt5_flags():
++    tool = shutil.which("pkg-config")
++    if tool is None:
++        fail("required tool is missing: pkg-config")
++    result = invoke([tool, "--cflags", "Qt5Core"])
++    if result.returncode:
++        fail(f"pkg-config Qt5Core failed: {result.stderr.strip()}")
++    return shlex.split(result.stdout)
++
++
++def source_statements(root):
++    path = root / "tests/src/core/ScriptClockTest.cpp"
++    require_file(path)
++    text = path.read_text(encoding="utf-8")
++    first = re.search(r"^\s*const qint64 perId = .*source_bytes.*;$", text, re.M)
++    second = re.search(r"^\s*inState = .*source_bytes.*;$", text, re.M)
++    if not first or not second:
++        fail(f"could not extract both source_bytes reads from {path}")
++    return first.group(0).strip(), second.group(0).strip()
++
++
++def probe_json(root, tmp):
++    first, second = source_statements(root)
++    flags = qt5_flags()
++    compiler_tool = compiler()
++    fixture = '''#include <QJsonArray>
++#include <QJsonObject>
++#include <QJsonValue>
++struct ClockProxy {
++    QJsonObject scheduleState(const QString&) const { return {}; }
++    QJsonObject stateJson() const { return {}; }
++};
++int main() {
++    ClockProxy clock;
++    const QString id;
++    %s
++    qint64 inState = -1;
++    const QJsonArray schedules;
++    for (const QJsonValue& value : schedules) {
++        const QJsonObject one = value.toObject();
++        %s
++    }
++}
++'''
++    good = tmp / "qt5-json.cpp"
++    good.write_text(fixture % (first, second), encoding="utf-8")
++    command = [compiler_tool, "-std=c++17", "-fPIC", *flags,
++               "-fsyntax-only", str(good)]
++    compile_probe(command, root, True, "Qt5 source_bytes statements")
++    bad = tmp / "qt5-json-original.cpp"
++    bad.write_text(fixture % (first.replace("toDouble", "toInteger"),
++                              second.replace("toDouble", "toInteger")), encoding="utf-8")
++    compile_probe([*command[:-1], str(bad)], root, False,
++                  "Qt5 toInteger negative control")
++
++
++def timeout_expressions(root):
++    path = root / "tests/src/core/ControlShutdownHookTestParts1.h"
++    require_file(path)
++    text = path.read_text(encoding="utf-8")
++    expressions = re.findall(r"(?:ControlServer::)?ClientIdleTimeoutMs\s*[+-]\s*\d+", text)
++    if len(expressions) != 6:
++        fail(f"expected six timeout expressions in {path}, found {len(expressions)}")
++    return expressions
++
++
++def probe_timeouts(root, tmp):
++    expressions = timeout_expressions(root)
++    prelude = "struct ControlServer { static constexpr int ClientIdleTimeoutMs = 30000; };\n"
++    prelude += "using DWORD = unsigned long;\n"
++    good = tmp / "timeouts.cpp"
++    good.write_text(prelude + "\n".join(
++        f"constexpr auto timeout_{index} = {expression};"
++        for index, expression in enumerate(expressions)) + "\n",
++        encoding="utf-8")
++    tool = compiler()
++    command = [tool, "-std=c++17", "-fsyntax-only", str(good)]
++    compile_probe(command, root, True, "qualified Windows timeout expressions")
++    bad = tmp / "timeouts-original.cpp"
++    original = [expression.replace("ControlServer::", "") for expression in expressions]
++    bad.write_text(prelude + "\n".join(
++        f"constexpr auto timeout_{index} = {expression};"
++        for index, expression in enumerate(original)) + "\n",
++        encoding="utf-8")
++    compile_probe([*command[:-1], str(bad)], root, False,
++                  "unqualified timeout negative control")
++
++
++def compile_entry(build, root):
++    path = build / "compile_commands.json"
++    require_file(path)
++    try:
++        entries = json.loads(path.read_text(encoding="utf-8"))
++    except json.JSONDecodeError as error:
++        fail(f"invalid compilation database {path}: {error}")
++    if not isinstance(entries, list):
++        fail(f"invalid compilation database: {path}")
++    source = (root / "src/common/RemotePluginBase.cpp").resolve()
++    for entry in entries:
++        if Path(entry.get("file", "")).resolve() != source:
++            continue
++        command = entry.get("arguments") or shlex.split(entry.get("command", ""))
++        rendered = " ".join(command)
++        if "RemotePluginShmFifoCompileCheck.dir" in rendered:
++            return entry, command
++    fail(f"no RemotePluginShmFifoCompileCheck command found for {source}")
++
++
++def is_msvc(command):
++    executable = Path(command[0]).name.lower()
++    return executable in {"cl", "cl.exe", "clang-cl", "clang-cl.exe"}
++
++
++def has_define(command, name):
++    return any(token in {f"-D{name}", f"/D{name}"} or
++               token.startswith((f"-D{name}=", f"/D{name}=")) for token in command)
++
++
++def is_qt_core_define(token):
++    return token in {"-DQT_CORE_LIB", "/DQT_CORE_LIB"} or token.startswith(
++        ("-DQT_CORE_LIB=", "/DQT_CORE_LIB="))
++
++
++def discard_compile_token(token, with_qt_macro):
++    if token == "-c":
++        return True
++    if token.startswith(("-o", "-MF", "-MT", "-MQ", "/Fo", "/Fd")):
++        return True
++    return not with_qt_macro and is_qt_core_define(token)
++
++
++def compile_db_probe(entry, command, tmp, with_qt_macro):
++    msvc = is_msvc(command)
++    source = tmp / ("qt-usage.cpp")
++    source.write_text("#ifndef QT_CORE_LIB\n#error QT_CORE_LIB missing\n#endif\n",
++                      encoding="utf-8")
++    original = Path(entry["file"]).resolve()
++    adjusted = []
++    skip = False
++    for token in command:
++        if skip:
++            skip = False
++            continue
++        if token in {"-o", "-MF", "-MT", "-MQ"}:
++            skip = True
++            continue
++        if discard_compile_token(token, with_qt_macro):
++            continue
++        if Path(token).resolve() == original:
++            adjusted.append(str(source))
++            continue
++        adjusted.append(token)
++    adjusted.extend(["/Zs"] if msvc else ["-fsyntax-only"])
++    return adjusted
++
++
++def probe_compile_database(build, root, tmp):
++    entry, command = compile_entry(build, root)
++    msvc = is_msvc(command)
++    if not has_define(command, "QT_CORE_LIB"):
++        fail("RemotePluginShmFifoCompileCheck compile command lacks propagated QT_CORE_LIB")
++    if msvc and not any(token.lower() == "/zc:__cplusplus" for token in command):
++        fail("MSVC RemotePluginShmFifoCompileCheck command lacks /Zc:__cplusplus")
++    success = compile_db_probe(entry, command, tmp, True)
++    compile_probe(success, entry["directory"], True, "target Qt usage compile control")
++    missing = compile_db_probe(entry, command, tmp, False)
++    compile_probe(missing, entry["directory"], False, "missing QT_CORE_LIB negative control")
++
++
++def qt_usage_model(root, tmp, block, label):
++    source = tmp / label
++    source.mkdir()
++    (source / "src/common").mkdir(parents=True)
++    (source / "src/common/RemotePluginBase.cpp").write_text("// compile command probe\n")
++    prelude = '''cmake_minimum_required(VERSION 3.22)
++project(QtUsageModel LANGUAGES CXX)
++set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
++add_library(lmmsobjs INTERFACE)
++add_library(QtContract INTERFACE)
++target_compile_definitions(QtContract INTERFACE QT_CORE_LIB)
++target_compile_options(QtContract INTERFACE /Zc:__cplusplus)
++set(QT_LIBRARIES QtContract)
++'''
++    (source / "CMakeLists.txt").write_text(prelude + block)
++    result = invoke(["cmake", "-S", str(source), "-B", str(source / "build"), "-G", "Ninja"])
++    if result.returncode:
++        fail(f"Qt usage model configure failed: {result.stderr}")
++    commands = json.loads((source / "build/compile_commands.json").read_text())
++    return commands[0]["command"]
++
++
++def probe_msvc_usage_model(root, tmp):
++    text = (root / "tests/CMakeLists.txt").read_text()
++    begin = text.index("add_library(RemotePluginShmFifoCompileCheck OBJECT")
++    end = text.index("add_dependencies(RemotePluginShmFifoTest", begin)
++    block = text[begin:end]
++    command = qt_usage_model(root, tmp, block, "qt-linked")
++    if "/Zc:__cplusplus" not in command:
++        fail("actual compile-check target does not inherit the modeled MSVC Qt option")
++    original = re.sub(r"target_link_libraries\(RemotePluginShmFifoCompileCheck[^)]*\)", "", block)
++    missing = qt_usage_model(root, tmp, original, "qt-unlinked")
++    if "/Zc:__cplusplus" in missing:
++        fail("unlinked target negative control unexpectedly inherited the Qt option")
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--source-root", required=True, type=Path)
++    parser.add_argument("--build-dir", required=True, type=Path)
++    args = parser.parse_args()
++    root, build = args.source_root.resolve(), args.build_dir.resolve()
++    with tempfile.TemporaryDirectory(prefix="train47-portability-") as temporary:
++        tmp = Path(temporary)
++        probe_json(root, tmp)
++        probe_timeouts(root, tmp)
++        probe_compile_database(build, root, tmp)
++        probe_msvc_usage_model(root, tmp)
++    return 0
++
++
++if __name__ == "__main__":
++    try:
++        sys.exit(main())
++    except (OSError, RuntimeError, ValueError) as error:
++        print(f"train-47 portability check: {error}", file=sys.stderr)
++        sys.exit(1)
+diff --git a/tests/upstream-modifications.txt b/tests/upstream-modifications.txt
+index a72121acb4..30b5db0b3d 100644
+--- a/tests/upstream-modifications.txt
++++ b/tests/upstream-modifications.txt
+@@ -26,6 +26,9 @@
+ # (2026-09-09 form of this file: an empty allowlist used only for "compile-only fixes".
+ # It never held a line, and Gate 6 was red from the first behavioural change.)
+ 
++# Train 47: preserve all hosted fixture assertions and Qt compiler usage requirements.
++tests/CMakeLists.txt	Train 47: link RemotePluginShmFifoCompileCheck to Qt for transitive compiler requirements and register Train47Portability source-derived compiler regressions.
++
+ # Train 43: preserve hosted platform support, tests and unchanged gates.
+ plugins/NeuralAmp/tests/nam_harness.cpp	Train 43: use native per-thread CPU timing on Windows, retaining POSIX thread timing elsewhere; remove unresolved clock_gettime64 dependency without substituting wall time.
+ tests/CMakeLists.txt	Train 43: register compiler contracts for older macOS, Qt5/MinGW and Windows CPU timing; existing runtime assertions and gates retained.
+-- 
+2.56.0
+

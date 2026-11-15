@@ -142,5 +142,77 @@
     "summary": "Consolidated all seven portability repairs with stable registration context, preserved every regression, fixed WASM lane starvation exposed during verification, and reduced SDK reconnect complexity. Rebuilt targets, 37 CTest entries, unchanged gates and independent reviews pass.",
     "train": "050/m0-train-32",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-32-1794711427470902978"
+  },
+  {
+    "at": "2026-11-15T07:19:19",
+    "base": "dec3f1d45c62b26bce955875521780db173a0228",
+    "branch": "fix/sol-repair-1794727159105571316",
+    "checks": [
+      {
+        "argv": [
+          "bash",
+          "tests/no-upstream-regression-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-32-1794726387615157268",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794727112921694501.log"
+      },
+      {
+        "argv": [
+          "bash",
+          "tests/evidence-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-32-1794726387615157268",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794727120656792088.log"
+      },
+      {
+        "argv": [
+          "cmake",
+          "--build",
+          "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-32-1794726387615157268/build",
+          "--target",
+          "zene",
+          "ScriptClockTest",
+          "ControlShutdownHookTest",
+          "RemotePluginShmFifoTest",
+          "-j12"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-32-1794726387615157268",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794727135169601297.log"
+      },
+      {
+        "argv": [
+          "ctest",
+          "-R",
+          "^(ScriptClockTest|ControlShutdownHookTest|RemotePluginShmFifoTest|Train47Portability|FileLengthGate|NoteCanvasComplexityGate)$",
+          "-j1",
+          "--timeout",
+          "900",
+          "--no-tests=error",
+          "--output-on-failure"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-32-1794726387615157268/build/tests",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794727135486074057.log"
+      }
+    ],
+    "commit": "ee82b27152290ce4d59c686586b02c8b401b3324",
+    "id": "sol-repair-1794727159105571316",
+    "paths": [
+      "docs/qwen-fixes-2026-10/sol-train-32-hosted-portability-47.md",
+      "tests/CMakeLists.txt",
+      "tests/fork-sources.txt",
+      "tests/src/core/ControlShutdownHookTestParts1.h",
+      "tests/src/core/ScriptClockTest.cpp",
+      "tests/train-47-portability-check.py",
+      "tests/upstream-modifications.txt"
+    ],
+    "source_head": "dec3f1d45c62b26bce955875521780db173a0228",
+    "status": "pending",
+    "summary": "Fixed Qt5 JSON conversions, Windows timeout name lookup, and missing Qt compiler requirements on the shared-memory compile-check target; added compiler regressions and verification report.",
+    "train": "050/m0-train-32",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-32-1794726387615157268"
   }
 ]
