@@ -383,5 +383,39 @@
     "summary": "CI regression: build / macos-arm64",
     "train": "050/m0-train-32",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-2fac5540e1a657f0"
+  },
+  {
+    "at": "2026-11-15T15:20:40",
+    "base": "cc29a63dde09cf28bb00498a2d2a5b124d4d614d",
+    "branch": "fix/ci-repair-ci-a0493fd29d4e9b4b-d0b8b2742351",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-a0493fd29d4e9b4b.r2.md",
+        "negative_control": {
+          "artifact_hashes": {},
+          "detail": "no product change, no changed test, or a dirty tree",
+          "ok": null,
+          "proof_base": "dec3f1d45c62b26bce955875521780db173a0228",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-a0493fd29d4e9b4b.r2/negctl",
+          "proof_key": "ce83ecb5f407be9556aa8b2d1d5a108625d2815291c2d87aa9a1534bec3f033e"
+        },
+        "verdict": "ACCEPT"
+      }
+    ],
+    "commit": "31dfb9b82d07bdec6912ddacbc5ae174606bb669",
+    "id": "ci-repair-ci-a0493fd29d4e9b4b-d0b8b2742351",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-a0493fd29d4e9b4b.md",
+      "tests/CMakeLists.txt",
+      "tests/fork-sources.txt",
+      "tests/remote-plugin-shm-fifo-qt-usage-check.py",
+      "tests/upstream-modifications.txt"
+    ],
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "dec3f1d45c62b26bce955875521780db173a0228",
+    "status": "pending",
+    "summary": "CI regression: build / msvc-x64",
+    "train": "050/m0-train-32",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-a0493fd29d4e9b4b"
   }
 ]

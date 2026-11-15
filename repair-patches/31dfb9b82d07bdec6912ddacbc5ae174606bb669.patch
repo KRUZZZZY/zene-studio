@@ -1,0 +1,546 @@
+From 31dfb9b82d07bdec6912ddacbc5ae174606bb669 Mon Sep 17 00:00:00 2001
+From: Zene CI repair <noreply@zene.invalid>
+Date: Sun, 15 Nov 2026 15:20:40 +0000
+Subject: [PATCH] fix(ci): CI regression: build / msvc-x64
+
+CI-Repair-Id: ci-repair-ci-a0493fd29d4e9b4b-d0b8b2742351
+---
+ .../cluster-ci-a0493fd29d4e9b4b.md            | 242 ++++++++++++++++++
+ tests/CMakeLists.txt                          |  21 ++
+ tests/fork-sources.txt                        |   8 +
+ .../remote-plugin-shm-fifo-qt-usage-check.py  | 209 +++++++++++++++
+ tests/upstream-modifications.txt              |   1 +
+ 5 files changed, 481 insertions(+)
+ create mode 100644 docs/qwen-fixes-2026-10/cluster-ci-a0493fd29d4e9b4b.md
+ create mode 100644 tests/remote-plugin-shm-fifo-qt-usage-check.py
+
+diff --git a/docs/qwen-fixes-2026-10/cluster-ci-a0493fd29d4e9b4b.md b/docs/qwen-fixes-2026-10/cluster-ci-a0493fd29d4e9b4b.md
+new file mode 100644
+index 0000000000..a2999844a6
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/cluster-ci-a0493fd29d4e9b4b.md
+@@ -0,0 +1,242 @@
++FIXED
++
++# Cluster ci-a0493fd29d4e9b4b: msvc-x64 cannot compile RemotePluginShmFifoCompileCheck
++
++## Verdict
++
++REAL on the finding's commit `dec3f1d45c62b26bce955875521780db173a0228`. This is a
++build-configuration defect in the test target, not infrastructure and not a flaky
++runner. A later train commit (`5854c983c8`, "missing Qt compiler requirements on
++the shared-memory compile-check target") carries the same one-line repair, but that
++commit is not an ancestor of `dec3f1d45c`; the finding's build tree has the defect.
++
++## Evidence
++
++The CI log stops at the compile of `src/common/RemotePluginBase.cpp` in the
++`RemotePluginShmFifoCompileCheck` target with:
++
++```
++qcompilerdetection.h(1258): fatal error C1189: #error:
++  "Qt requires a C++17 compiler, and a suitable value for __cplusplus.
++   On MSVC, you must pass the /Zc:__cplusplus option to the compiler."
++```
++
++`RemotePluginBase.cpp` includes Qt through `include/RemotePluginBase.h:86`
++(`#include <QString>`). Qt 6 supplies `/Zc:__cplusplus` to consumers through
++`Qt6::Platform` (`/usr/lib/cmake/Qt6/QtPlatformTargetHelpers.cmake:77` calls
++`qt_set_msvc_cplusplus_options(Platform INTERFACE)`; that function adds
++`-Zc:__cplusplus` at `/usr/lib/cmake/Qt6/QtFlagHandlingHelpers.cmake:384-390`).
++The product's own targets get it from `lmmsobjs`
++(`src/CMakeLists.txt:340-342`, `TARGET_COMPILE_OPTIONS(lmmsobjs PUBLIC ...)`).
++
++Before the fix, `tests/CMakeLists.txt:3197-3199` compiled `RemotePluginBase.cpp`
++while borrowing only `$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>`:
++
++```
++add_library(RemotePluginShmFifoCompileCheck OBJECT ${CMAKE_SOURCE_DIR}/src/common/RemotePluginBase.cpp)
++target_include_directories(RemotePluginShmFifoCompileCheck PRIVATE
++    $<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>)
++```
++
++It linked no Qt target, so it consumed neither `QT_CORE_LIB` nor Qt's MSVC
++`/Zc:__cplusplus`. The sibling targets in the same block already link
++`${QT_LIBRARIES}` (`tests/CMakeLists.txt:3220` and `:3235`); only the compile
++check was missing it.
++
++## Fix
++
++`tests/CMakeLists.txt:3200-3204`:
++
++```cmake
++# RemotePluginBase.cpp includes <QString>, so consume Qt's usage requirements too
++# (QT_CORE_LIB and, on MSVC, /Zc:__cplusplus from Qt6::Platform); borrowing only
++# lmmsobjs's include directories left cl.exe rejecting the Qt header (cluster
++# ci-a0493fd29d4e9b4b).
++target_link_libraries(RemotePluginShmFifoCompileCheck PRIVATE ${QT_LIBRARIES})
++```
++
++The sibling audits were checked: `RemotePluginShmFifoTest` and both
++`RemotePluginShmFifoNoSysIpc*Probe` targets already link Qt; every other target
++that compiles a Qt-including translation unit either links Qt or `lmmsobjs` after
++`target_static_libraries` (`tests/CMakeLists.txt:2359-2402`). `PluginExportBranchTest`
++receives Qt's `Platform` options (its compile flags contain the GNU equivalent
++`-mno-direct-extern-access`), so it gets `/Zc:__cplusplus` on MSVC despite its own
++`QT_CORE_LIB` define being absent from `flags.make`.
++
++## Regression test
++
++`tests/remote-plugin-shm-fifo-qt-usage-check.py` is registered as
++`RemotePluginShmFifoQtUsageCheck` at `tests/CMakeLists.txt:3250-3264`. It:
++
++- reads `build/compile_commands.json`, requires the configured
++  `RemotePluginShmFifoCompileCheck` command to carry `QT_CORE_LIB`, and on MSVC
++  requires `/Zc:__cplusplus`;
++- compiles that command against a probe that errors without `QT_CORE_LIB`
++  (positive control), then removes the define and requires failure (negative
++  control);
++- extracts the target's own CMake block and configures it in a synthetic CMake
++  project whose `QtContract` interface provides `QT_CORE_LIB` and
++  `/Zc:__cplusplus`, requiring the block with the link line to inherit the option
++  and the block with the link line removed not to inherit it. The synthetic
++  project asks CMake for the host's **default generator**; it does not require
++  Ninja (qa review `ci-a0493fd29d4e9b4b.r1`).
++
++It uses `--cmake ${CMAKE_COMMAND}` (the configured absolute CMake) so the suite is
++not affected by wrapper shims in `PATH`. No wall-clock timing, sleeps or races.
++
++## Test matrix
++
++| Path | Coverage |
++|---|---|
++| normal | configured compile-check command compiles with Qt's defines (positive control) |
++| failure | removing `QT_CORE_LIB` from the same command fails (negative control) |
++| reconfiguration | the synthetic project models the current CMake block at test time using the host's default generator; a removed link line is the red case |
++| audio thread | no product runtime code touched; the change is target usage requirements only |
++| supported platforms | Linux host executes the model and the compile-database probe; the msvc-x64 CI build is the native MSVC gate |
++
++## RED/GREEN proof (exact commands and exit codes)
++
++Logs were produced in
++`$TMPDIR/ci-a0493fd29d4e9b4b-logs` (`TMPDIR=/home/kruzzzzy/.cache/zene-tmp/zene-qwen-ci-a0493fd29d4e9b4b`).
++The provided LOG FOLDER was not writable by this session: `touch` and the
++filesystem tool both failed with `EACCES` even under the reported
++`danger-full-access` policy (Landlock is enabled: `/sys/kernel/security/lsm` lists
++`landlock`). The log files remain at the path above; no claim below relies on a
++file I did not inspect.
++
++1. Pre-fix RED (test present, product line absent):
++
++```
++cmake --build build --target RemotePluginShmFifoTest RemotePluginShmFifoCompileCheck -j2
++EXIT=0
++cd build/tests && ctest -R '^RemotePluginShmFifoQtUsageCheck$' --output-on-failure
++EXIT=8
++# RemotePluginShmFifoCompileCheck compile command lacks propagated QT_CORE_LIB
++```
++
++2. With the fix, GREEN:
++
++```
++cmake --build build --target RemotePluginShmFifoTest RemotePluginShmFifoCompileCheck -j2
++EXIT=0
++cd build/tests && ctest -R '^RemotePluginShmFifoQtUsageCheck$' --output-on-failure
++EXIT=0   # 1/1 passed
++```
++
++3. Reverse the product hunk only, rebuild, RED again:
++
++```
++git apply -R "$TMPDIR/ci-a0493fd29d4e9b4b-logs/fix.patch"
++APPLY_REVERSE_EXIT=0
++cmake --build build --target RemotePluginShmFifoTest RemotePluginShmFifoCompileCheck -j2
++BUILD_EXIT=0
++cd build/tests && ctest -R '^RemotePluginShmFifoQtUsageCheck$' --output-on-failure
++CTEST_EXIT=8
++# RemotePluginShmFifoCompileCheck compile command lacks propagated QT_CORE_LIB
++```
++
++4. Restore the fix, rebuild, GREEN again:
++
++```
++git apply "$TMPDIR/ci-a0493fd29d4e9b4b-logs/fix.patch"
++APPLY_EXIT=0
++cmake --build build --target RemotePluginShmFifoTest RemotePluginShmFifoCompileCheck -j2
++BUILD_EXIT=0
++cd build/tests && ctest -R '^RemotePluginShmFifoQtUsageCheck$' --output-on-failure
++CTEST_EXIT=0   # 1/1 passed
++```
++
++The reverse patch contains only the two-line product change plus its comment; the
++test registration stays in place, so the same CTest is found in steps 3 and 4.
++
++5. Affected family, after restore:
++
++```
++cd build/tests && ctest -R '^(RemotePluginShmFifo|Train43Portability)' --output-on-failure
++EXIT=0   # 3/3 passed: RemotePluginShmFifoTest, RemotePluginShmFifoQtUsageCheck, Train43Portability
++```
++
++6. Gates:
++
++```
++python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>
++EXIT=0   # RESULT: PASS (all eight rows PASS)
++```
++
++## Round 2 rework: default generator, not Ninja
++
++QA review `ci-a0493fd29d4e9b4b.r1` found that the synthetic model hard-coded
++`-G Ninja` (the old line 160) and therefore failed on a valid host without Ninja.
++The command now passes no `-G`; CMake chooses the host's default generator.
++Nothing else in the positive/negative controls changed.
++
++`ninja` was removed from `PATH` by pointing PATH at a directory of `/usr/bin`
++symlinks with `ninja` and `ninja-build` omitted
++(`$TMPDIR/no-ninja-bin-a0493fd29d4e9b4b`), then running the same CTest:
++
++```
++cmake --build build --target zene RemotePluginShmFifoTest RemotePluginShmFifoCompileCheck -j2
++BUILD_EXIT=0
++cd build/tests && env PATH="$TMPDIR/no-ninja-bin-a0493fd29d4e9b4b" CXX=/usr/bin/c++ \
++    /usr/bin/ctest -R '^RemotePluginShmFifoQtUsageCheck$' --output-on-failure
++CTEST_EXIT=0   # 1/1 passed without Ninja
++
++cd build/tests && ctest -R '^(RemotePluginShmFifo|Train43Portability)' --output-on-failure
++EXIT=0   # 3/3 passed in the normal environment
++```
++
++With the Qt usage link reversed, the same test fails in **both** environments:
++
++```
++git apply -R "$TMPDIR/ci-a0493fd29d4e9b4b-logs/fix.patch"   # APPLY_REVERSE_EXIT=0
++cmake --build build --target RemotePluginShmFifoTest RemotePluginShmFifoCompileCheck -j2
++BUILD_EXIT=0
++cd build/tests && ctest -R '^RemotePluginShmFifoQtUsageCheck$' --output-on-failure
++NORMAL_CTEST_EXIT=8   # lacks propagated QT_CORE_LIB
++cd build/tests && env PATH="$TMPDIR/no-ninja-bin-a0493fd29d4e9b4b" CXX=/usr/bin/c++ \
++    /usr/bin/ctest -R '^RemotePluginShmFifoQtUsageCheck$' --output-on-failure
++NONINJA_CTEST_EXIT=8  # same failure
++
++git apply "$TMPDIR/ci-a0493fd29d4e9b4b-logs/fix.patch"       # APPLY_EXIT=0
++cmake --build build --target RemotePluginShmFifoTest RemotePluginShmFifoCompileCheck -j2
++BUILD_EXIT=0
++cd build/tests && ctest -R '^RemotePluginShmFifoQtUsageCheck$' --output-on-failure
++NORMAL_CTEST_EXIT=0   # 1/1 passed
++cd build/tests && env PATH="$TMPDIR/no-ninja-bin-a0493fd29d4e9b4b" CXX=/usr/bin/c++ \
++    /usr/bin/ctest -R '^RemotePluginShmFifoQtUsageCheck$' --output-on-failure
++NONINJA_CTEST_EXIT=0  # 1/1 passed
++```
++
++## Files committed
++
++- `tests/CMakeLists.txt` (fix + regression registration)
++- `tests/remote-plugin-shm-fifo-qt-usage-check.py` (new regression)
++- `tests/fork-sources.txt` (new-file registration)
++- `tests/upstream-modifications.txt` (inherited-file change reason)
++- `docs/qwen-fixes-2026-10/cluster-ci-a0493fd29d4e9b4b.md` (this report)
++
++## Self-check
++
++- **The regression test FAILS with the product change reverted and PASSES with it
++  (exit codes).** Reverse: `git apply -R .../fix.patch` EXIT=0, rebuild EXIT=0,
++  CTest EXIT=8 with `lacks propagated QT_CORE_LIB`. Restore: `git apply .../fix.patch`
++  EXIT=0, rebuild EXIT=0, CTest EXIT=0 (1/1). See section above.
++- **The test is deterministic: no wall-clock timing, sleeps or races.** It reads
++  the configured compile command, runs one syntax-only compile, and configures a
++  synthetic CMake model with the target's own block. It uses the host's default
++  CMake generator, so it does not require Ninja (proved above with Ninja absent
++  from `PATH`). No timing or scheduling.
++- **The fix is at the cause and complete: every caller and sibling checked.** The
++  three sibling targets already link Qt; the other direct-compile target
++  `zene_allocation_probe` includes no Qt. The compile database audit found no other
++  target that includes Qt directly without consuming Qt usage requirements.
++- **No collateral damage.** No runtime code, saved data, undo/command path or gate
++  changed. The only target property added is Qt's usage requirements to an object
++  library that is never linked into a product binary; existing family tests
++  (`RemotePluginShmFifoTest`, `Train43Portability`) still pass.
++- **Verdict evidence.** `src/common/RemotePluginBase.cpp` includes
++  `include/RemotePluginBase.h:86` (`<QString>`), Qt adds `/Zc:__cplusplus` through
++  `Qt6::Platform` (`QtPlatformTargetHelpers.cmake:77`,
++  `QtFlagHandlingHelpers.cmake:384-390`), and the pre-fix target linked no Qt
++  (`tests/CMakeLists.txt:3197-3199`). This is not an already-fixed tree: the fix
++  commit `5854c983c8` is absent from `dec3f1d45c`'s history.
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 5486a10abd..b85b4f36de 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -3197,6 +3197,11 @@ add_test(NAME RemotePluginShmFifoTest COMMAND RemotePluginShmFifoTest)
+ add_library(RemotePluginShmFifoCompileCheck OBJECT ${CMAKE_SOURCE_DIR}/src/common/RemotePluginBase.cpp)
+ target_include_directories(RemotePluginShmFifoCompileCheck PRIVATE
+ 	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>)
++# RemotePluginBase.cpp includes <QString>, so consume Qt's usage requirements too
++# (QT_CORE_LIB and, on MSVC, /Zc:__cplusplus from Qt6::Platform); borrowing only
++# lmmsobjs's include directories left cl.exe rejecting the Qt header (cluster
++# ci-a0493fd29d4e9b4b).
++target_link_libraries(RemotePluginShmFifoCompileCheck PRIVATE ${QT_LIBRARIES})
+ target_compile_features(RemotePluginShmFifoCompileCheck PRIVATE cxx_std_20)
+ # LMMS_STATIC_DEFINE: this TU defines LMMS_EXPORT members, and outside lmmsobjs
+ # lmms_export.h makes those __declspec(dllimport) on Windows (cluster ci-v041-5).
+@@ -3242,6 +3247,22 @@ add_dependencies(RemotePluginShmFifoTest RemotePluginShmFifoNoSysIpcAppleMacroPr
+ file(GENERATE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/RemotePluginShmFifoTestGenerated/RemotePluginShmFifoTargetDefinitions.h
+ 	CONTENT "#define ZENE_SHM_FIFO_TEST_IS_STATIC_EXPORT $<IN_LIST:LMMS_STATIC_DEFINE,$<TARGET_PROPERTY:RemotePluginShmFifoTest,COMPILE_DEFINITIONS>>\n#define ZENE_SHM_FIFO_COMPILE_CHECK_IS_STATIC_EXPORT $<IN_LIST:LMMS_STATIC_DEFINE,$<TARGET_PROPERTY:RemotePluginShmFifoCompileCheck,COMPILE_DEFINITIONS>>\n")
+ 
++# Cluster ci-a0493fd29d4e9b4b: RemotePluginBase.cpp includes <QString>, so the
++# compile-check target must consume Qt's usage requirements (QT_CORE_LIB and, on
++# MSVC, /Zc:__cplusplus from Qt6::Platform) rather than borrowing only
++# lmmsobjs's include directories. The check compiles the configured command and
++# models the target's own CMake block as MSVC, with the unlinked block as the
++# negative control.
++if(PYTHON3_EXECUTABLE AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
++	add_test(NAME RemotePluginShmFifoQtUsageCheck
++		COMMAND ${PYTHON3_EXECUTABLE}
++			${CMAKE_CURRENT_SOURCE_DIR}/remote-plugin-shm-fifo-qt-usage-check.py
++			--source-root ${CMAKE_SOURCE_DIR}
++			--build-dir ${CMAKE_BINARY_DIR}
++			--cmake ${CMAKE_COMMAND})
++	set_tests_properties(RemotePluginShmFifoQtUsageCheck PROPERTIES TIMEOUT 180)
++endif()
++
+ # ImportFilter's exception-path proof uses a real, isolated importer plugin
+ # module so the exception crosses the same PluginFactory/ImportFilter path as
+ # a third-party importer. The test pins Qt's plugin search path to this module
+diff --git a/tests/fork-sources.txt b/tests/fork-sources.txt
+index 8bab20b4fb..6f8804cbc5 100644
+--- a/tests/fork-sources.txt
++++ b/tests/fork-sources.txt
+@@ -3931,3 +3931,11 @@ tests/src/plugins/CarlaVst2LegacyStateTest.cpp
+ tests/src/gui/LegacyVst2ProjectTest.cpp
+ tests/data/legacy-projects/vst2-vestige-vsteffect.mmp
+ tests/data/legacy-projects/vst2-vestige-vsteffect.reference.json
++
++# cluster ci-a0493fd29d4e9b4b (2026-11): the MSVC build stopped because
++# RemotePluginShmFifoCompileCheck includes <QString> but consumed only lmmsobjs's
++# include directories, not Qt's usage requirements. This checker compiles the
++# configured command and models the target's CMake block as MSVC; the report
++# records the RED/GREEN proof.
++tests/remote-plugin-shm-fifo-qt-usage-check.py
++docs/qwen-fixes-2026-10/cluster-ci-a0493fd29d4e9b4b.md
+diff --git a/tests/remote-plugin-shm-fifo-qt-usage-check.py b/tests/remote-plugin-shm-fifo-qt-usage-check.py
+new file mode 100644
+index 0000000000..5cc1be1128
+--- /dev/null
++++ b/tests/remote-plugin-shm-fifo-qt-usage-check.py
+@@ -0,0 +1,209 @@
++#!/usr/bin/env python3
++"""Regression for cluster ci-a0493fd29d4e9b4b: remote FIFO compile-check Qt usage.
++
++RemotePluginShmFifoCompileCheck compiles src/common/RemotePluginBase.cpp, which
++includes <QString>. The target used to copy only lmmsobjs's include directories,
++so it never consumed Qt's usage requirements: no QT_CORE_LIB, and on MSVC no
++/Zc:__cplusplus from Qt6::Platform. cl.exe then rejected the Qt header with
++"Qt requires a C++17 compiler" (msvc-x64, run 43681793608).
++
++This check fails on the pre-fix target two ways: its configured compile command
++lacks QT_CORE_LIB, and a synthetic MSVC model built from the target's own CMake
++block does not inherit the Qt option. The unlinked block is the negative control
++and must not inherit it.
++"""
++
++# Copyright (c) 2026 Zene Studio contributors
++#
++# This file is part of LMMS - https://lmms.io
++#
++# This program is free software; you can redistribute it and/or modify it
++# under the terms of the GNU General Public License as published by the Free
++# Software Foundation; either version 2 of the License, or (at your option)
++# any later version.
++#
++# This program is distributed in the hope that it will be useful, but WITHOUT
++# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++# FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
++# more details.
++#
++# You should have received a copy of the GNU General Public License along with
++# this program; if not, write to the Free Software Foundation, Inc., 51 Franklin
++# Street, Fifth Floor, Boston, MA 02110-1301 USA.
++
++import argparse
++import json
++from pathlib import Path
++import re
++import shlex
++import subprocess
++import sys
++import tempfile
++
++
++def fail(message):
++    raise RuntimeError(message)
++
++
++def require_file(path):
++    if not path.is_file():
++        fail(f"required source or build file is missing: {path}")
++
++
++def invoke(command, cwd=None):
++    return subprocess.run(command, cwd=cwd, text=True, stdout=subprocess.PIPE,
++                          stderr=subprocess.PIPE, check=False)
++
++
++def compile_probe(command, cwd, expect_success, label):
++    result = invoke(command, cwd)
++    if (result.returncode == 0) != expect_success:
++        outcome = "succeeded" if result.returncode == 0 else result.stderr.strip()
++        fail(f"{label}: expected {'success' if expect_success else 'failure'}, got {outcome}")
++
++
++def compile_entry(build, root):
++    path = build / "compile_commands.json"
++    require_file(path)
++    try:
++        entries = json.loads(path.read_text(encoding="utf-8"))
++    except json.JSONDecodeError as error:
++        fail(f"invalid compilation database {path}: {error}")
++    if not isinstance(entries, list):
++        fail(f"invalid compilation database: {path}")
++    source = (root / "src/common/RemotePluginBase.cpp").resolve()
++    for entry in entries:
++        if Path(entry.get("file", "")).resolve() != source:
++            continue
++        command = entry.get("arguments") or shlex.split(entry.get("command", ""))
++        rendered = " ".join(command)
++        if "RemotePluginShmFifoCompileCheck.dir" in rendered:
++            return entry, command
++    fail(f"no RemotePluginShmFifoCompileCheck command found for {source}")
++
++
++def is_msvc(command):
++    executable = Path(command[0]).name.lower()
++    return executable in {"cl", "cl.exe", "clang-cl", "clang-cl.exe"}
++
++
++def has_define(command, name):
++    return any(token in {f"-D{name}", f"/D{name}"} or
++               token.startswith((f"-D{name}=", f"/D{name}=")) for token in command)
++
++
++def is_qt_core_define(token):
++    return token in {"-DQT_CORE_LIB", "/DQT_CORE_LIB"} or token.startswith(
++        ("-DQT_CORE_LIB=", "/DQT_CORE_LIB="))
++
++
++def discard_compile_token(token, with_qt_macro):
++    if token == "-c":
++        return True
++    if token.startswith(("-o", "-MF", "-MT", "-MQ", "/Fo", "/Fd")):
++        return True
++    return not with_qt_macro and is_qt_core_define(token)
++
++
++def compile_db_probe(entry, command, tmp, with_qt_macro):
++    msvc = is_msvc(command)
++    source = tmp / "qt-usage.cpp"
++    source.write_text("#ifndef QT_CORE_LIB\n#error QT_CORE_LIB missing\n#endif\n",
++                      encoding="utf-8")
++    original = Path(entry["file"]).resolve()
++    adjusted = []
++    skip = False
++    for token in command:
++        if skip:
++            skip = False
++            continue
++        if token in {"-o", "-MF", "-MT", "-MQ"}:
++            skip = True
++            continue
++        if discard_compile_token(token, with_qt_macro):
++            continue
++        if Path(token).resolve() == original:
++            adjusted.append(str(source))
++            continue
++        adjusted.append(token)
++    adjusted.extend(["/Zs"] if msvc else ["-fsyntax-only"])
++    return adjusted
++
++
++def probe_compile_database(build, root, tmp):
++    entry, command = compile_entry(build, root)
++    if not has_define(command, "QT_CORE_LIB"):
++        fail("RemotePluginShmFifoCompileCheck compile command lacks propagated QT_CORE_LIB")
++    if is_msvc(command) and not any(token.lower() == "/zc:__cplusplus" for token in command):
++        fail("MSVC RemotePluginShmFifoCompileCheck command lacks /Zc:__cplusplus")
++    success = compile_db_probe(entry, command, tmp, True)
++    compile_probe(success, entry["directory"], True, "target Qt usage compile control")
++    missing = compile_db_probe(entry, command, tmp, False)
++    compile_probe(missing, entry["directory"], False, "missing QT_CORE_LIB negative control")
++
++
++def qt_usage_model(root, tmp, block, label, cmake):
++    source = tmp / label
++    source.mkdir()
++    (source / "src/common").mkdir(parents=True)
++    (source / "src/common/RemotePluginBase.cpp").write_text("// compile command probe\n")
++    prelude = '''cmake_minimum_required(VERSION 3.22)
++project(QtUsageModel LANGUAGES CXX)
++set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
++add_library(lmmsobjs INTERFACE)
++add_library(QtContract INTERFACE)
++target_compile_definitions(QtContract INTERFACE QT_CORE_LIB)
++target_compile_options(QtContract INTERFACE /Zc:__cplusplus)
++set(QT_LIBRARIES QtContract)
++'''
++    (source / "CMakeLists.txt").write_text(prelude + block)
++    # Let CMake pick the host's default generator. The model only needs to
++    # generate compile_commands.json; a valid build/test host is not required to
++    # have Ninja (qa review ci-a0493fd29d4e9b4b.r1).
++    result = invoke([cmake, "-S", str(source), "-B", str(source / "build")])
++    if result.returncode:
++        fail(f"Qt usage model configure failed: {result.stderr}")
++    commands = json.loads((source / "build/compile_commands.json").read_text())
++    return commands[0]["command"]
++
++
++def target_block(root):
++    path = root / "tests/CMakeLists.txt"
++    require_file(path)
++    text = path.read_text(encoding="utf-8")
++    begin = text.index("add_library(RemotePluginShmFifoCompileCheck OBJECT")
++    end = text.index("add_dependencies(RemotePluginShmFifoTest", begin)
++    return text[begin:end]
++
++
++def probe_msvc_usage_model(root, tmp, cmake):
++    block = target_block(root)
++    command = qt_usage_model(root, tmp, block, "qt-linked", cmake)
++    if "/Zc:__cplusplus" not in command:
++        fail("actual compile-check target does not inherit the modeled MSVC Qt option")
++    original = re.sub(r"target_link_libraries\(RemotePluginShmFifoCompileCheck[^)]*\)", "", block)
++    missing = qt_usage_model(root, tmp, original, "qt-unlinked", cmake)
++    if "/Zc:__cplusplus" in missing:
++        fail("unlinked target negative control unexpectedly inherited the Qt option")
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--source-root", required=True, type=Path)
++    parser.add_argument("--build-dir", required=True, type=Path)
++    parser.add_argument("--cmake", required=True)
++    args = parser.parse_args()
++    root, build = args.source_root.resolve(), args.build_dir.resolve()
++    with tempfile.TemporaryDirectory(prefix="fifo-qt-usage-") as temporary:
++        tmp = Path(temporary)
++        probe_compile_database(build, root, tmp)
++        probe_msvc_usage_model(root, tmp, args.cmake)
++    return 0
++
++
++if __name__ == "__main__":
++    try:
++        sys.exit(main())
++    except (OSError, RuntimeError, ValueError) as error:
++        print(f"remote-plugin-shm-fifo qt usage check: {error}", file=sys.stderr)
++        sys.exit(1)
+diff --git a/tests/upstream-modifications.txt b/tests/upstream-modifications.txt
+index a72121acb4..5c534d1076 100644
+--- a/tests/upstream-modifications.txt
++++ b/tests/upstream-modifications.txt
+@@ -5964,3 +5964,4 @@ src/tracks/InstrumentTrack.cpp	Q050-481.3: convert legacy VeSTige/VST-effect dev
+ src/core/EffectChain.cpp	Q050-481.3: convert legacy VeSTige/VST-effect devices to Carla on load
+ plugins/Vestige/Vestige.cpp	Q050-481.3: a VeSTige plug-in that fails to load keeps its saved path (it was cleared, so saving the project lost which plug-in it was); held by LegacyVst2ProjectTest::aMissingBinaryKeepsTheLegacyDevice
+ include/InstrumentTrack.h	Q050-481.3: declare the legacy instrument conversion helper.
++tests/CMakeLists.txt	cluster ci-a0493fd29d4e9b4b: link RemotePluginShmFifoCompileCheck to ${QT_LIBRARIES} so the target that compiles RemotePluginBase.cpp consumes Qt's usage requirements (QT_CORE_LIB and, on MSVC, /Zc:__cplusplus from Qt6::Platform) instead of borrowing only lmmsobjs's include directories; register RemotePluginShmFifoQtUsageCheck, which compiles the configured command and models the target block as MSVC with the unlinked block as the negative control. Existing targets and behaviour are unchanged.
+-- 
+2.56.0
+
