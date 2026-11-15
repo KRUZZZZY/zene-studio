@@ -30,10 +30,12 @@
 #include <QApplication>
 #include <QComboBox>
 #include <QJsonObject>
+#include <QLabel>
 #include <QMenu>
 #include <QPushButton>
 #include <QTableWidget>
 #include <QTemporaryDir>
+#include <QWindow>
 
 #include <cmath>
 #include <memory>
@@ -46,6 +48,7 @@
 #include "Engine.h"
 #include "GuiApplication.h"
 #include "GuiTestApplication.h"
+#include "MainWindow.h"
 #include "MenuTestSupport.h"
 #include "Mixer.h"
 #include "MixerWindows.h"
@@ -244,6 +247,167 @@ private slots:
 		QCOMPARE(static_cast<double>(target->m_eqMidFreqModel.value()), midFreq);
 		QCOMPARE(static_cast<double>(target->m_eqHighModel.value()), high);
 		QCOMPARE(run(QStringLiteral("control.undo_depth")).result.value(QStringLiteral("depth")).toInt(), depth);
+		window->close();
+		delete lead;
+		delete pad;
+	}
+
+	//! Changing a ticked channel or a priority after Report drops the stale rows and disables Apply; Report brings them back.
+	void changingChannelsOrPrioritiesClearsTheStaleReport()
+	{
+		SampleTrack* lead = toneTrack(1, 200.0);
+		SampleTrack* pad = toneTrack(2, 200.0);
+		MixerChannel* target = Engine::mixer()->mixerChannel(2);
+		const int depth = run(QStringLiteral("control.undo_depth")).result.value(QStringLiteral("depth")).toInt();
+		const double low = target->m_eqLowModel.value();
+		const double mid = target->m_eqMidModel.value();
+		const double midFreq = target->m_eqMidFreqModel.value();
+		const double high = target->m_eqHighModel.value();
+		QMenu menu;
+		addMixerWindows(&menu);
+		QAction* open = menuAction(&menu, {QStringLiteral("Masking Report...")});
+		QVERIFY(open != nullptr);
+		open->trigger();
+		QWidget* window = windowTitled(QStringLiteral("Masking Report"));
+		QVERIFY(window != nullptr);
+		auto* channels = childNamed<QTableWidget>(window, QStringLiteral("Channels"));
+		auto* clashes = childNamed<QTableWidget>(window, QStringLiteral("Clashes"));
+		auto* report = childNamed<QPushButton>(window, QStringLiteral("Report"));
+		auto* apply = childNamed<QPushButton>(window, QStringLiteral("Apply proposal"));
+		QVERIFY(channels != nullptr && clashes != nullptr && report != nullptr && apply != nullptr);
+		const auto rowOf = [channels](const QString& id) {
+			for (int row = 0; row < channels->rowCount(); ++row)
+			{
+				if (channels->item(row, 0)->data(Qt::UserRole).toString() == id) { return row; }
+			}
+			return -1;
+		};
+		const auto tick = [channels, rowOf](const QString& id, int priority) {
+			const int row = rowOf(id);
+			if (row < 0) { return false; }
+			channels->item(row, 0)->setCheckState(Qt::Checked);
+			static_cast<QComboBox*>(channels->cellWidget(row, 1))->setCurrentIndex(priority);
+			return true;
+		};
+		const auto summary = [window] { return window->findChild<QLabel*>()->text(); };
+		const auto untouchedEq = [&] {
+			return static_cast<double>(target->m_eqLowModel.value()) == low && static_cast<double>(target->m_eqMidModel.value()) == mid
+				&& static_cast<double>(target->m_eqMidFreqModel.value()) == midFreq && static_cast<double>(target->m_eqHighModel.value()) == high
+				&& run(QStringLiteral("control.undo_depth")).result.value(QStringLiteral("depth")).toInt() == depth;
+		};
+		QVERIFY(tick(m_ch[1], 0));  // front
+		QVERIFY(tick(m_ch[2], 2));  // back
+		QTest::mouseClick(report, Qt::LeftButton);
+		QVERIFY(clashes->rowCount() >= 1);
+		clashes->selectRow(0);
+		QVERIFY(apply->isEnabled());
+
+		// Ch2's priority moves to front after the report: its rows are stale, so they go and Apply is disabled.
+		static_cast<QComboBox*>(channels->cellWidget(rowOf(m_ch[2]), 1))->setCurrentIndex(0);
+		QCOMPARE(clashes->rowCount(), 0);
+		QVERIFY(!apply->isEnabled());
+		QCOMPARE(summary(), QStringLiteral("Channel selection or priorities changed. Press Report again."));
+		QTest::mouseClick(apply, Qt::LeftButton);
+		QVERIFY(untouchedEq());
+
+		QTest::mouseClick(report, Qt::LeftButton);  // the refresh brings the rows back
+		QVERIFY(clashes->rowCount() >= 1);
+		clashes->selectRow(0);
+		QVERIFY(apply->isEnabled());
+
+		// Unticking ch1 makes the old rows stale again.
+		channels->item(rowOf(m_ch[1]), 0)->setCheckState(Qt::Unchecked);
+		QCOMPARE(clashes->rowCount(), 0);
+		QVERIFY(!apply->isEnabled());
+		QTest::mouseClick(apply, Qt::LeftButton);
+		QVERIFY(untouchedEq());
+
+		// Invalid input (only ch2 ticked) through the real Report button: no rows, Apply disabled, a message, nothing written.
+		QTest::mouseClick(report, Qt::LeftButton);
+		QCOMPARE(clashes->rowCount(), 0);
+		QVERIFY(!apply->isEnabled());
+		QVERIFY(!summary().isEmpty());
+		QTest::mouseClick(apply, Qt::LeftButton);
+		QVERIFY(untouchedEq());
+
+		window->close();
+		delete lead;
+		delete pad;
+	}
+
+	//! Ctrl+Z in the active Masking Report window takes back the applied cut in one step: MainWindow's application-wide Undo
+	//! shortcut reaches the same journal as control.undo, so every EQ value and the undo depth return to their values before Apply.
+	void ctrlZInTheReportWindowUndoesTheAppliedProposal()
+	{
+		SampleTrack* lead = toneTrack(1, 200.0);
+		SampleTrack* pad = toneTrack(2, 200.0);
+		MixerChannel* target = Engine::mixer()->mixerChannel(2);
+		const int depth = run(QStringLiteral("control.undo_depth")).result.value(QStringLiteral("depth")).toInt();
+		const double low = target->m_eqLowModel.value();
+		const double mid = target->m_eqMidModel.value();
+		const double midFreq = target->m_eqMidFreqModel.value();
+		const double high = target->m_eqHighModel.value();
+		getGUI()->mainWindow()->show();
+		QTest::qWait(50);
+		QMenu menu;
+		addMixerWindows(&menu);
+		QAction* open = menuAction(&menu, {QStringLiteral("Masking Report...")});
+		QVERIFY(open != nullptr);
+		open->trigger();
+		QWidget* window = windowTitled(QStringLiteral("Masking Report"));
+		QVERIFY(window != nullptr);
+		auto* channels = childNamed<QTableWidget>(window, QStringLiteral("Channels"));
+		auto* clashes = childNamed<QTableWidget>(window, QStringLiteral("Clashes"));
+		auto* report = childNamed<QPushButton>(window, QStringLiteral("Report"));
+		auto* apply = childNamed<QPushButton>(window, QStringLiteral("Apply proposal"));
+		QVERIFY(channels != nullptr && clashes != nullptr && report != nullptr && apply != nullptr);
+		const auto tick = [channels](const QString& id, int priority) {
+			for (int row = 0; row < channels->rowCount(); ++row)
+			{
+				if (channels->item(row, 0)->data(Qt::UserRole).toString() != id) { continue; }
+				channels->item(row, 0)->setCheckState(Qt::Checked);
+				static_cast<QComboBox*>(channels->cellWidget(row, 1))->setCurrentIndex(priority);
+				return true;
+			}
+			return false;
+		};
+		QVERIFY(tick(m_ch[1], 0));  // front
+		QVERIFY(tick(m_ch[2], 2));  // back
+		QTest::mouseClick(report, Qt::LeftButton);
+		QVERIFY(clashes->rowCount() >= 1);
+		clashes->selectRow(0);
+		QVERIFY(apply->isEnabled());
+		const QJsonObject clash = clashes->item(0, 0)->data(Qt::UserRole).toJsonObject();
+		const QJsonObject strip = clash.value(QStringLiteral("strip_eq")).toObject();
+		QTest::mouseClick(apply, Qt::LeftButton);
+		QCOMPARE(run(QStringLiteral("control.undo_depth")).result.value(QStringLiteral("depth")).toInt(), depth + 1);
+		QVERIFY(std::abs(static_cast<double>(target->m_eqMidModel.value()) - strip.value(QStringLiteral("mid")).toDouble()) < 1e-3);
+		QVERIFY(std::abs(static_cast<double>(target->m_eqMidModel.value()) - mid) > 1e-3);
+		QAction* undoAction = nullptr;
+		for (QAction* action : getGUI()->mainWindow()->findChildren<QAction*>())
+		{
+			if (action->data().toString() == QStringLiteral("control.undo")) { undoAction = action; break; }
+		}
+		QVERIFY(undoAction != nullptr);
+		QVERIFY(undoAction->isEnabled());
+		QCOMPARE(undoAction->shortcutContext(), Qt::ApplicationShortcut);
+
+		window->raise();
+		window->activateWindow();
+		QVERIFY(QTest::qWaitForWindowActive(window));
+		QApplication::setActiveWindow(window);
+		apply->setFocus();
+		QTest::qWait(50);
+		QWindow* keyWindow = window->windowHandle();
+		QVERIFY(keyWindow != nullptr);
+		QTest::keyClick(keyWindow, Qt::Key_Z, Qt::ControlModifier);
+		QTest::qWait(50);
+		QTRY_COMPARE(run(QStringLiteral("control.undo_depth")).result.value(QStringLiteral("depth")).toInt(), depth);
+		QCOMPARE(static_cast<double>(target->m_eqLowModel.value()), low);
+		QCOMPARE(static_cast<double>(target->m_eqMidModel.value()), mid);
+		QCOMPARE(static_cast<double>(target->m_eqMidFreqModel.value()), midFreq);
+		QCOMPARE(static_cast<double>(target->m_eqHighModel.value()), high);
+		QVERIFY(window->isVisible());
 		window->close();
 		delete lead;
 		delete pad;

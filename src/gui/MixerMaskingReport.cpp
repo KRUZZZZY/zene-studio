@@ -73,6 +73,7 @@ public:
 		m_clashes->setSelectionMode(QAbstractItemView::SingleSelection);
 		for (QTableWidget* table : {m_channels, m_clashes}) { table->horizontalHeader()->setStretchLastSection(true); }
 		fillChannels();
+		connect(m_channels, &QTableWidget::itemChanged, this, [this](QTableWidgetItem*) { invalidateReport(); });
 		m_apply->setAccessibleName(QObject::tr("Apply proposal"));
 		m_apply->setToolTip(QObject::tr("Write the selected clash's proposed cut to the target channel's strip EQ; one undo step"));
 		m_apply->setProperty("controlCommand", QStringLiteral("mixer.apply_masking_proposal"));
@@ -112,6 +113,7 @@ private:
 			priority->addItem(QObject::tr("Back"), QStringLiteral("back"));
 			priority->setCurrentIndex(1);
 			priority->setAccessibleName(QObject::tr("Priority of %1").arg(name->text()));
+			connect(priority, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) { invalidateReport(); });
 			m_channels->setCellWidget(row, 1, priority);
 		}
 	}
@@ -129,6 +131,16 @@ private:
 	{
 		const QItemSelectionModel* selection = m_clashes->selectionModel();
 		m_apply->setEnabled(selection != nullptr && !selection->selectedRows().isEmpty());
+	}
+
+	//! A ticked channel or a priority changed after a report: its rows may now be stale, so drop them until Report runs again.
+	void invalidateReport()
+	{
+		if (!m_reported) { return; }
+		m_reported = false;
+		m_clashes->setRowCount(0);
+		updateApplyEnabled();
+		m_summary->setText(QObject::tr("Channel selection or priorities changed. Press Report again."));
 	}
 
 	void applyProposal()
@@ -150,6 +162,7 @@ private:
 
 	void runReport()
 	{
+		m_reported = false;
 		QJsonArray ids;
 		QJsonObject priorities;
 		for (int row = 0; row < m_channels->rowCount(); ++row)
@@ -170,6 +183,7 @@ private:
 		}
 		const QJsonArray clashes = result.result.value(QStringLiteral("clashes")).toArray();
 		for (const QJsonValue& value : clashes) { addClash(value.toObject()); }
+		m_reported = true;
 		m_summary->setText(clashes.isEmpty() ? QObject::tr("No clashes between these channels.")
 			: QObject::tr("%n clash(es). Select one and press Apply to make its cut on the target's strip EQ; Report itself changes nothing.",
 				nullptr, static_cast<int>(clashes.size())));
@@ -194,6 +208,7 @@ private:
 	QTableWidget* m_clashes;
 	QPushButton* m_apply;
 	QLabel* m_summary;
+	bool m_reported = false;
 };
 
 QPointer<QDialog> s_open;
