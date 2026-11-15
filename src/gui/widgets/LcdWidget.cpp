@@ -217,12 +217,18 @@ void LcdWidget::updateSize()
 	}
 	else
 	{
+		// The caption is painted in the interface font (paintEvent), so it must fit in
+		// that font's metrics - not only in the widget font's. A caption that is wider
+		// or taller than the old fixed line is reserved its full line instead of being
+		// clipped at the widget's edge (the Microtuner's keymap range).
+		const QFontMetrics legacyMetrics(adjustedToPixelSize(font(), DEFAULT_FONT_SIZE));
+		const QFontMetrics labelMetrics(tokens::font(tokens::TextRole::Caption));
 		setFixedSize(
 			qMax<int>(
 				m_cellWidth * m_numDigits + marginX1 + marginX2,
-				QFontMetrics(adjustedToPixelSize(font(), DEFAULT_FONT_SIZE)).horizontalAdvance(m_label)
+				qMax(legacyMetrics.horizontalAdvance(m_label), labelMetrics.horizontalAdvance(m_label))
 			),
-			m_cellHeight + (2 * marginY) + 9
+			m_cellHeight + (2 * marginY) + qMax(9, labelMetrics.height() + 1)
 		);
 	}
 
