@@ -54,6 +54,13 @@ namespace control
  */
 LMMS_EXPORT MixerChannel* resolveMixerChannel(const QString& id, ControlResult* error);
 
+/*! Apply mixer.channel_eq's arguments to @a channel: clamp each value to its
+ *  range, record ONE undo step only when the EQ actually changes, and reply
+ *  with the channel's four EQ values. With only 'channel' it is a report: no
+ *  write, no step, nothing modified. Shared with mixer.apply_masking_proposal.
+ */
+LMMS_EXPORT ControlResult applyChannelEq(MixerChannel& channel, const QJsonObject& args);
+
 //! Wire name of a tap point: "post_fader" | "pre_fx" | "pre_fader" |
 //! "post_fader_no_gain". The four names are the engine's own enum values
 //! (include/Mixer.h, SidechainTapPoint), lowercased.

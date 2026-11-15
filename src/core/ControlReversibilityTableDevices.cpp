@@ -268,6 +268,8 @@ const ReversibilityRow kDeviceRows[] = {
 	R("mixer.send_meters", RC::NotMutating, false, "it reads the sends' levels. Nothing is written", "no write", ""),
 	R("mixer.eq_compare", RC::NotMutating, false, "it reads two channels' EQ settings. Nothing is written", "no write", ""),
 	R("mixer.masking_report", RC::NotMutating, false, "it analyses the channels' audio clips and proposes cuts. No EQ is written, no undo step", "no write", ""),
+	R("mixer.apply_masking_proposal", RC::TrueInverse, true, "it writes one proposal's strip EQ values to the target channel",
+		"action checkpoint: the recorded undo step puts the previous EQ back", ""),
 	R("track.midi_out", RC::TrueInverse, true, "it sets an instrument track's MIDI output ports and channel", "Track journal checkpoint", ""),
 	R("device.external_get_state", RC::NotMutating, false, "it reads an instrument track's External MIDI device. Nothing is written", "no write", ""),
 	R("device.external_set", RC::TrueInverse, true, "it sets the External MIDI device's output port, channel, bank and program",

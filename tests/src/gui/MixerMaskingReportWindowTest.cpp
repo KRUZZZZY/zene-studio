@@ -82,6 +82,23 @@ T* childNamed(QWidget* parent, const QString& accessibleName)
 	return nullptr;
 }
 
+//! A sample track on @a channel playing a @a hz tone over one second, so the reporting band sees it.
+SampleTrack* toneTrack(int channel, double hz)
+{
+	auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
+	track->mixerChannelModel()->setValue(channel);
+	const int rate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
+	std::vector<SampleFrame> frames(static_cast<std::size_t>(rate));
+	for (std::size_t i = 0; i < frames.size(); ++i)
+	{
+		const auto v = 0.5f * static_cast<float>(std::sin(2.0 * M_PI * hz * static_cast<double>(i) / rate));
+		frames[i] = SampleFrame(v, v);
+	}
+	auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)));
+	clip->setSampleBuffer(std::make_shared<SampleBuffer>(frames.data(), frames.size(), rate));
+	return track;
+}
+
 } // namespace
 
 class MixerMaskingReportWindowTest : public QObject
@@ -110,20 +127,6 @@ private slots:
 	//! Report button lists the clash with the cut on the back channel - through mixer.masking_report, changing no EQ.
 	void theMaskingReportWindowListsTheClashAndChangesNothing()
 	{
-		const auto toneTrack = [](int channel, double hz) {
-			auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
-			track->mixerChannelModel()->setValue(channel);
-			const int rate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
-			std::vector<SampleFrame> frames(static_cast<std::size_t>(rate));
-			for (std::size_t i = 0; i < frames.size(); ++i)
-			{
-				const auto v = 0.5f * static_cast<float>(std::sin(2.0 * M_PI * hz * static_cast<double>(i) / rate));
-				frames[i] = SampleFrame(v, v);
-			}
-			auto* clip = dynamic_cast<SampleClip*>(track->createClip(TimePos(0)));
-			clip->setSampleBuffer(std::make_shared<SampleBuffer>(frames.data(), frames.size(), rate));
-			return track;
-		};
 		SampleTrack* lead = toneTrack(1, 200.0);
 		SampleTrack* pad = toneTrack(2, 200.0);
 		const int depth = run(QStringLiteral("control.undo_depth")).result.value(QStringLiteral("depth")).toInt();
@@ -168,6 +171,78 @@ private slots:
 		QTest::mouseClick(report, Qt::LeftButton);  // a refresh: the same rows, still nothing written
 		QCOMPARE(clashes->item(0, 0)->data(Qt::UserRole).toJsonObject(), clash);
 		QCOMPARE(Engine::mixer()->mixerChannel(2)->m_eqMidModel.value(), padMid);
+		QCOMPARE(run(QStringLiteral("control.undo_depth")).result.value(QStringLiteral("depth")).toInt(), depth);
+		window->close();
+		delete lead;
+		delete pad;
+	}
+
+	//! Q050-231.2: the selected clash's Apply writes exactly the strip EQ the report proposed, as one undo step, and
+	//! control.undo takes it back. With no row selected the button is disabled and does nothing.
+	void applyingAProposalFromTheWindowIsOneUndoStep()
+	{
+		SampleTrack* lead = toneTrack(1, 200.0);
+		SampleTrack* pad = toneTrack(2, 200.0);
+		MixerChannel* target = Engine::mixer()->mixerChannel(2);
+		const int depth = run(QStringLiteral("control.undo_depth")).result.value(QStringLiteral("depth")).toInt();
+		const double low = target->m_eqLowModel.value();
+		const double mid = target->m_eqMidModel.value();
+		const double midFreq = target->m_eqMidFreqModel.value();
+		const double high = target->m_eqHighModel.value();
+		const double otherLow = Engine::mixer()->mixerChannel(0)->m_eqLowModel.value();
+		const double otherHigh = Engine::mixer()->mixerChannel(3)->m_eqHighModel.value();
+		QMenu menu;
+		addMixerWindows(&menu);
+		QAction* open = menuAction(&menu, {QStringLiteral("Masking Report...")});
+		QVERIFY(open != nullptr);
+		open->trigger();
+		QWidget* window = windowTitled(QStringLiteral("Masking Report"));
+		QVERIFY(window != nullptr);
+		auto* channels = childNamed<QTableWidget>(window, QStringLiteral("Channels"));
+		auto* clashes = childNamed<QTableWidget>(window, QStringLiteral("Clashes"));
+		auto* report = childNamed<QPushButton>(window, QStringLiteral("Report"));
+		auto* apply = childNamed<QPushButton>(window, QStringLiteral("Apply proposal"));
+		QVERIFY(channels != nullptr && clashes != nullptr && report != nullptr && apply != nullptr);
+		QCOMPARE(apply->property("controlCommand").toString(), QStringLiteral("mixer.apply_masking_proposal"));
+		const auto tick = [channels](const QString& id, int priority) {
+			for (int row = 0; row < channels->rowCount(); ++row)
+			{
+				if (channels->item(row, 0)->data(Qt::UserRole).toString() != id) { continue; }
+				channels->item(row, 0)->setCheckState(Qt::Checked);
+				static_cast<QComboBox*>(channels->cellWidget(row, 1))->setCurrentIndex(priority);
+				return true;
+			}
+			return false;
+		};
+		QVERIFY(tick(m_ch[1], 0));  // front
+		QVERIFY(tick(m_ch[2], 2));  // back
+		QVERIFY(!apply->isEnabled());
+		QTest::mouseClick(report, Qt::LeftButton);
+		QVERIFY(clashes->rowCount() >= 1);
+		clashes->selectRow(0);
+		QVERIFY(apply->isEnabled());
+		const QJsonObject clash = clashes->item(0, 0)->data(Qt::UserRole).toJsonObject();
+		const QJsonObject strip = clash.value(QStringLiteral("strip_eq")).toObject();
+		QVERIFY(strip.contains(QStringLiteral("mid")));
+		QCOMPARE(strip.value(QStringLiteral("channel")).toString(), m_ch[2]);
+		QTest::mouseClick(apply, Qt::LeftButton);
+		QCOMPARE(run(QStringLiteral("control.undo_depth")).result.value(QStringLiteral("depth")).toInt(), depth + 1);
+		QVERIFY(std::abs(static_cast<double>(target->m_eqMidModel.value()) - strip.value(QStringLiteral("mid")).toDouble()) < 1e-3);
+		QVERIFY(std::abs(static_cast<double>(target->m_eqMidFreqModel.value()) - strip.value(QStringLiteral("mid_freq")).toDouble()) < 1e-3);
+		QCOMPARE(static_cast<double>(target->m_eqLowModel.value()), low);
+		QCOMPARE(static_cast<double>(target->m_eqHighModel.value()), high);
+		QCOMPARE(static_cast<double>(Engine::mixer()->mixerChannel(0)->m_eqLowModel.value()), otherLow);
+		QCOMPARE(static_cast<double>(Engine::mixer()->mixerChannel(3)->m_eqHighModel.value()), otherHigh);
+		// The refresh after Apply cleared the selection: the button is disabled and a click on it writes nothing.
+		QVERIFY(!apply->isEnabled());
+		QTest::mouseClick(apply, Qt::LeftButton);
+		QCOMPARE(static_cast<double>(target->m_eqMidModel.value()), strip.value(QStringLiteral("mid")).toDouble());
+		QCOMPARE(run(QStringLiteral("control.undo_depth")).result.value(QStringLiteral("depth")).toInt(), depth + 1);
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(static_cast<double>(target->m_eqLowModel.value()), low);
+		QCOMPARE(static_cast<double>(target->m_eqMidModel.value()), mid);
+		QCOMPARE(static_cast<double>(target->m_eqMidFreqModel.value()), midFreq);
+		QCOMPARE(static_cast<double>(target->m_eqHighModel.value()), high);
 		QCOMPARE(run(QStringLiteral("control.undo_depth")).result.value(QStringLiteral("depth")).toInt(), depth);
 		window->close();
 		delete lead;

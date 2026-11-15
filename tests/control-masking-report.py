@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Q050-231.1 over the control socket: mixer.masking_report on the REAL `zene` binary, headless.
+"""Q050-231 over the control socket: masking reports and their proposal on the REAL `zene` binary, headless.
 
 Two new mixer channels each get a sample track with generated tones (sample.generate): channel A
 200 Hz and 3 kHz, channel B 200 Hz and 800 Hz. With A at front and B at back the driver proves:
@@ -8,7 +8,11 @@ Two new mixer channels each get a sample track with generated tones (sample.gene
      mixer.channel_eq arguments for it - and no clash at 800 Hz or 3 kHz (only one channel holds those);
   2. three repeated reports are byte-identical;
   3. swapping the priorities moves the target to A;
-  4. reporting leaves every channel's strip EQ and control.undo_depth exactly as they were.
+  4. reporting leaves every channel's strip EQ and control.undo_depth exactly as they were;
+  5. applying the report's strip_eq to B changes exactly the proposed keys to the proposed values,
+     touches no other channel's EQ, and records one undo step; one control.undo restores the whole
+     EQ and the depth;
+  6. an out-of-range proposal is refused as invalid_args and leaves the EQ and the depth unchanged.
 
 Usage:  QT_QPA_PLATFORM=offscreen python3 tests/control-masking-report.py <zene>
 Exit 0 only when every check held.
@@ -69,6 +73,69 @@ def check_nothing_changed(session, recorder, eq_before, depth_before):
                    "before=%r" % depth_before)
 
 
+def close(got, want):
+    return isinstance(got, (int, float)) and isinstance(want, (int, float)) \
+        and abs(float(got) - float(want)) <= 0.05
+
+
+def proposal_from_report(session, recorder, a, b):
+    report = session.result("mixer.masking_report",
+                            {"channels": [b, a], "priorities": {a: "front", b: "back"}})
+    clash = clash_at(report, a, b, 200.0)
+    strip = (clash or {}).get("strip_eq") or {}
+    recorder.check("the 200 Hz clash carries a strip_eq proposal for the back channel",
+                   strip.get("channel") == b and bool(strip), "clash=%r" % (clash,))
+    return strip
+
+
+def exact_proposed_keys(eq_before, eq_after, b, proposed):
+    before_b = eq_before.get(b) or {}
+    after_b = eq_after.get(b) or {}
+    return (all(close(after_b.get(k), v) for k, v in proposed.items())
+            and all(after_b.get(k) == v for k, v in before_b.items() if k not in proposed)
+            and all(eq_after.get(ch) == eq_before.get(ch) for ch in eq_before if ch != b))
+
+
+def check_proposal_effect(session, recorder, b, strip, eq_before, depth_before):
+    proposed = {k: v for k, v in strip.items() if k != "channel"}
+    reply = session.result("mixer.apply_masking_proposal", {"strip_eq": strip})
+    recorder.check("applying the proposal reports applied true", reply.get("applied") is True,
+                   "reply=%r" % (reply,))
+    eq_after = eq_state(session)
+    recorder.check("applying the proposal sets exactly the proposed keys to the proposed values",
+                   exact_proposed_keys(eq_before, eq_after, b, proposed),
+                   "before=%r strip=%r after=%r" % (eq_before, strip, eq_after))
+    recorder.check("applying the proposal records one undo step",
+                   session.result("control.undo_depth").get("depth") == depth_before + 1,
+                   "depth_before=%r" % (depth_before,))
+
+
+def check_undo_and_refusal(session, recorder, b, eq_before, depth_before):
+    session.result("control.undo", {})
+    recorder.check("one control.undo restores the whole EQ and the depth",
+                   eq_state(session) == eq_before
+                   and session.result("control.undo_depth").get("depth") == depth_before,
+                   "before=%r" % (eq_before,))
+    refused_eq = eq_state(session)
+    refused_depth = session.result("control.undo_depth").get("depth")
+    refused = session.typed_error("mixer.apply_masking_proposal",
+                                  {"strip_eq": {"channel": b, "low": 99}})
+    recorder.check("an out-of-range proposal is refused as invalid_args",
+                   refused.get("kind") == "invalid_args", "error=%r" % (refused,))
+    recorder.check("a refused proposal leaves every EQ and the depth unchanged",
+                   eq_state(session) == refused_eq
+                   and session.result("control.undo_depth").get("depth") == refused_depth,
+                   "before=%r" % (refused_eq,))
+
+
+def check_apply(session, recorder, a, b):
+    strip = proposal_from_report(session, recorder, a, b)
+    eq_before = eq_state(session)
+    depth_before = session.result("control.undo_depth").get("depth")
+    check_proposal_effect(session, recorder, b, strip, eq_before, depth_before)
+    check_undo_and_refusal(session, recorder, b, eq_before, depth_before)
+
+
 def drive(session, recorder):
     a = tone_channel(session, "Lead", [200.0, 3000.0])
     b = tone_channel(session, "Pad", [200.0, 800.0])
@@ -76,6 +143,7 @@ def drive(session, recorder):
     depth_before = session.result("control.undo_depth").get("depth")
     check_report(session, recorder, a, b, {"channels": [b, a], "priorities": {a: "front", b: "back"}})
     check_nothing_changed(session, recorder, eq_before, depth_before)
+    check_apply(session, recorder, a, b)
 
 
 def main(argv):
