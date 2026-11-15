@@ -3810,6 +3810,7 @@ src/core/MidiTakeCapture.cpp
 src/core/MidiTakeRecorder.cpp
 src/core/ControlCommandsMidiTakes.cpp
 tests/src/core/MidiTakeRecordTest.cpp
+tests/src/gui/MidiCompLaneGuiTest.cpp
 tests/src/gui/MidiTakeMenuTest.cpp
 tests/control-midi-take-record.py
 docs/050-features/Q050-054.1.md

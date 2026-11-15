@@ -37,6 +37,7 @@
 namespace lmms
 {
 class Clip;
+class MidiClip;
 class Track;
 }
 
@@ -122,6 +123,8 @@ protected:
 private:
 	static constexpr int RowHeight = 22;
 
+	void paintMidiNotes(QPainter& p, const MidiClip& midi, const QRect& band, const QRect& visible) const;
+	void paintLaneRow(QPainter& p, std::size_t row) const;
 	int xOf(int tick) const;
 	void paintKeyCursor(QPainter& p) const;
 	bool handlesKey(const QKeyEvent* event) const;

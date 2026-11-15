@@ -2084,6 +2084,8 @@ list(APPEND LMMS_TESTS src/core/SurroundDevicePathTest.cpp)
 # and the header's Record/Stop buttons over the real application (gui). Registered late for the same
 # reason as the tests above: the negative control reads the high-numbered names out of `ctest -N`.
 list(APPEND LMMS_TESTS src/core/MidiTakeRecordTest.cpp src/gui/MidiTakeMenuTest.cpp)
+# Q050-054.2: MIDI comping through the take lanes GUI.
+list(APPEND LMMS_TESTS src/gui/MidiCompLaneGuiTest.cpp)
 
 # cluster ci-64c5b539b5120b17: every test target that compiles a plug-in's own PLUGIN_EXPORT
 # definitions must take that plug-in's export branch, not the consumer branch. On Windows the two
@@ -2639,6 +2641,7 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		# Q050-283.2: track.set_role loads a real instrument into a neutral row.
 		OR LMMS_TEST_NAME STREQUAL "HybridTrackInstrumentRoleTest"
 		OR LMMS_TEST_NAME STREQUAL "HybridTrackRoleGuiTest"
+		OR LMMS_TEST_NAME STREQUAL "MidiCompLaneGuiTest"
 		OR LMMS_TEST_NAME STREQUAL "TrackRouteDropTest"
 		OR LMMS_TEST_NAME STREQUAL "ControlChainPresetTest"
 		# The track menu's chain presets save and apply a chain holding one real effect.
@@ -9058,7 +9061,7 @@ if(TARGET nam_harness)
 endif()
 
 # Q050-054.1: both construct the real Engine (the second the real application) and need a Qt platform plug-in.
-set_tests_properties(MidiTakeRecordTest MidiTakeMenuTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(MidiTakeRecordTest MidiTakeMenuTest MidiCompLaneGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # Qt 5 signal-overload portability (cluster ci-632a20737fe640fa, 2026-11-13). Qt 5 declares
 # QSpinBox::valueChanged twice (int and QString) and Qt 6 only once, so a bare
