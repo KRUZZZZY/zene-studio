@@ -199,7 +199,9 @@ MicrotunerConfig::MicrotunerConfig() :
 	// Add to the main window and setup fixed size etc.
 	SubWindow* subWin = getGUI()->mainWindow()->addWindowedWidget(this);
 	subWin->setAttribute(Qt::WA_DeleteOnClose, false);
-	setMinimumSize(300, 300);
+	// The lower-right keymap range is fixed-width: the window may never be narrower
+	// than the layout needs, or its labels are laid out past the right edge.
+	setMinimumSize(microtunerLayout->minimumSize().expandedTo(QSize(300, 300)));
 	setMaximumSize(500, 700);
 	subWin->hide();
 
@@ -207,6 +209,15 @@ MicrotunerConfig::MicrotunerConfig() :
 	Qt::WindowFlags flags = subWin->windowFlags();
 	flags &= ~Qt::WindowMaximizeButtonHint;
 	subWin->setWindowFlags(flags);
+}
+
+
+QSize MicrotunerConfig::sizeHint() const
+{
+	// Opening the window at a size smaller than the layout's minimum lays the keymap
+	// range out past the right edge; the layout decides how wide the window must open.
+	const QSize preferred(300, 400);
+	return layout() != nullptr ? layout()->minimumSize().expandedTo(preferred) : preferred;
 }
 
 
