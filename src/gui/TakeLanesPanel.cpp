@@ -41,6 +41,7 @@
 #include "ItemList.h"
 #include "Engine.h"
 #include "MusicalTime.h"
+#include "SampleTrack.h"
 #include "ShellChrome.h"
 #include "Song.h"
 #include "Track.h"
@@ -198,6 +199,8 @@ TakeLanesPanel::TakeLanesPanel(const QString& trackId, QWidget* parent) :
 	outer->addLayout(comp);
 
 	m_consolidate = makeButton(QStringLiteral("clip.consolidate"), tr("Consolidate the comp"));
+	// clip.consolidate renders sample-track audio; MIDI comps are not supported by that command.
+	m_consolidate->setVisible(dynamic_cast<const SampleTrack*>(track) != nullptr);
 	connect(m_consolidate, &QToolButton::clicked, this, [this] {
 		QJsonObject args{{QStringLiteral("track"), m_trackId}};
 		if (m_spanEnd > m_spanBegin)
