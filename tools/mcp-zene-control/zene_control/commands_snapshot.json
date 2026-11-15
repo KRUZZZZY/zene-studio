@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-11-14T14:17:42Z",
+  "captured_at": "2026-11-15T04:19:38Z",
   "commands": [
     {
       "args_schema": {
@@ -14381,6 +14381,28 @@
       "args_schema": {
         "additionalProperties": false,
         "properties": {
+          "strip_eq": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "strip_eq"
+        ],
+        "type": "object"
+      },
+      "description": "Apply one proposal from mixer.masking_report to the target strip EQ, as one undo step: pass a clash's exact 'strip_eq' object as 'strip_eq'. The values are absolute, so a stale proposal sets those values. It is refused, writing nothing, when 'strip_eq' is missing or not an object, 'channel' is missing or unknown, a key other than channel/low/mid/mid_freq/high is given, none of low/mid/high is, 'mid_freq' comes without 'mid', a value is not a number, or low/mid/high is outside -18..18 or mid_freq outside 100..10000 (boundaries accepted). Reply: the mixer.channel_eq reply, 'applied' (false when the proposal equals the current EQ, and then no step is recorded) and 'before' (the EQ before the write).",
+      "group": "mixer",
+      "id": "mixer.apply_masking_proposal",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
           "channel": {
             "type": "string"
           },
@@ -15059,7 +15081,7 @@
         ],
         "type": "object"
       },
-      "description": "Which frequency ranges the selected mixer 'channels' (2..16) fight over, from their audio: each channel's long-term spectrum (the unmuted audio clips on the tracks playing into it, through its strip EQ; instrument tracks are listed as unanalysed) in 24 log bands from 40 Hz to 16 kHz. A band counts for a channel within 'threshold_db' (3..40, 12) of its loudest band and above -70 dB. Each run of bands two channels share is a clash: the pair 'a'/'b', the range, and a proposed cut ('cut_db', -1..-6) on 'target' - the lower of the 'priorities' (channel id to front, middle or back; middle unless set), at equal priority the quieter channel there - with the mixer.channel_eq arguments that would make it ('strip_eq'). The same audio, EQ and priorities give the same report. Read only: it changes no EQ and records no undo step.",
+      "description": "Which frequency ranges the selected mixer 'channels' (2..16) fight over, from their audio: each channel's long-term spectrum (the unmuted audio clips on the tracks playing into it, through its strip EQ; instrument tracks are listed as unanalysed) in 24 log bands from 40 Hz to 16 kHz. A band counts for a channel within 'threshold_db' (3..40, 12) of its loudest band and above -70 dB. Each run of bands two channels share is a clash: the pair 'a'/'b', the range, and a proposed cut ('cut_db', -1..-6) on 'target' - the lower of the 'priorities' (channel id to front, middle or back; middle unless set), at equal priority the quieter channel there - with the mixer.channel_eq arguments that would make it ('strip_eq'). The same audio, EQ and priorities give the same report. Read only: it changes no EQ and records no undo step. Apply a proposal with mixer.apply_masking_proposal.",
       "group": "mixer",
       "id": "mixer.masking_report",
       "mutating": false,
@@ -40184,7 +40206,7 @@
       }
     }
   ],
-  "count": 932,
+  "count": 933,
   "instance": {
     "binary": null,
     "binary_bytes": null,
@@ -40192,15 +40214,15 @@
     "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-cachyos/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-ftglaias/zene.sock",
-    "version": "0.4.0-alpha.7051+de50c6c"
+    "source_socket": "/tmp/zctl-run-px2pzipj/zene.sock",
+    "version": "0.4.0-alpha.7111+14e637c"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 78,
-    "id_count": 932,
-    "ids_sha256": "3b318b4ce6bc29a26194052e8932b76418d03988314ffcce3785a06ecea5e944"
+    "id_count": 933,
+    "ids_sha256": "6ed23e1bffa34d2831b9e0af2639a94ac164f9d40f6b62d49aefd0a2bc912313"
   }
 }
