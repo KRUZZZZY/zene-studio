@@ -8,12 +8,6 @@
       "url": "https://github.com/KRUZZZZY/zene-studio/actions/runs/43710174466"
     },
     {
-      "conclusion": null,
-      "name": "build",
-      "status": "in_progress",
-      "url": "https://github.com/KRUZZZZY/zene-studio/actions/runs/43710174450"
-    },
-    {
       "conclusion": "success",
       "name": "checks",
       "status": "completed",
@@ -24,8 +18,14 @@
       "name": "quality-gates",
       "status": "completed",
       "url": "https://github.com/KRUZZZZY/zene-studio/actions/runs/43710174541"
+    },
+    {
+      "conclusion": "failure",
+      "name": "build",
+      "status": "completed",
+      "url": "https://github.com/KRUZZZZY/zene-studio/actions/runs/43710174450"
     }
   ],
-  "status": "running",
+  "status": "failed",
   "submitted_at": 1794742916.246687
 }
