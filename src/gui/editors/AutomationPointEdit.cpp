@@ -34,6 +34,7 @@
 #include "AutomationClip.h"
 #include "ControlAutomationSupport.h"
 #include "ControlRegistry.h"
+#include "Earcons.h"
 #include "Engine.h"
 #include "Song.h"
 
@@ -79,6 +80,7 @@ bool moveInPlace(AutomationClip* clip, int tick, int toTick, float toValue, QStr
 	clip->putValue(TimePos(toTick), toValue, false);
 	clip->getTimeMap()[TimePos(toTick)].setCurve(curve, bend);
 	Engine::getSong()->setModified();
+	earcons::play(earcons::Sound::EditApplied);
 	return true;
 }
 

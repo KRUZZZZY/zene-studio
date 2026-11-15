@@ -1285,6 +1285,7 @@ set(LMMS_SRCS
 	core/ControlCommandsW3Engine.cpp
 	core/InputMeter.cpp
 	core/RecorderTaps.cpp
+	core/Earcons.cpp
 	core/ControlCommandsDeviceTools.cpp
 	core/ControlCommandsDeviceParams.cpp
 	core/ControlCommandsModulatorTools.cpp

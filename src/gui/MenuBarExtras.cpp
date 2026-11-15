@@ -33,7 +33,9 @@
 #include "CommandForm.h"
 #include "CommandLists.h"
 #include "DeprecationHelper.h"
+#include "Earcons.h"
 #include "RenderRangeMenu.h"
+#include "UiConfigStore.h"
 
 namespace lmms::gui
 {
@@ -46,6 +48,29 @@ void checkAnnounceLevel(QMenu* menu)
 {
 	const QString current = a11y::announceLevelNames().value(static_cast<int>(a11y::announceLevel()));
 	for (QAction* action : menu->actions()) { action->setChecked(action->data().toString() == current); }
+}
+
+//! The earcon state stored in ui/earcons, as view.earcons writes it.
+QJsonObject storedEarcons() { return uistore::read(QStringLiteral("earcons")); }
+
+bool storedEnabled(const QString& category)
+{
+	return storedEarcons().value(category).toObject().value(QStringLiteral("enabled")).toBool();
+}
+
+//! Check each entry of @a menu against the state in force; @a levels is the level entries' data.
+void checkEarcons(QMenu* menu)
+{
+	const QString category = menu->property("earconCategory").toString();
+	const QJsonObject stored = storedEarcons().value(category).toObject();
+	const bool enabled = stored.value(QStringLiteral("enabled")).toBool();
+	const double level = stored.value(QStringLiteral("level")).toDouble(0.5);
+	for (QAction* action : menu->actions())
+	{
+		if (action->isSeparator()) { continue; }
+		if (action->property("earconLevel").isValid()) { action->setChecked(qFuzzyCompare(action->property("earconLevel").toDouble(), level)); }
+		else { action->setChecked(action->data().toString() == QLatin1String("enabled") ? enabled : false); }
+	}
 }
 
 } // namespace
@@ -173,6 +198,51 @@ QMenu* addAnnouncementsMenu(QMenu* view)
 		QObject::connect(menu, &QMenu::aboutToShow, menu, [menu] { checkAnnounceLevel(menu); });
 	}
 	checkAnnounceLevel(menu);
+	view->addMenu(menu);
+	return menu;
+}
+
+QMenu* addEarconsMenu(QMenu* view)
+{
+	auto* menu = view->findChild<QMenu*>(QStringLiteral("earconsMenu"), Qt::FindDirectChildrenOnly);
+	if (menu == nullptr)
+	{
+		menu = new QMenu(QObject::tr("Earcons"), view);
+		menu->setObjectName(QStringLiteral("earconsMenu"));
+		for (const QString& category : earcons::categoryNames())
+		{
+			QMenu* sub = menu->addMenu(category.at(0).toUpper() + category.mid(1));
+			sub->setObjectName(QStringLiteral("earcons_%1").arg(category));
+			sub->setProperty("earconCategory", category);
+			QAction* toggle = addCommandAction(sub, QObject::tr("Enabled"), QStringLiteral("view.earcons"), [category] {
+				return CommandCall{QStringLiteral("view.earcons"), {{QStringLiteral("category"), category},
+					{QStringLiteral("enabled"), !storedEnabled(category)}}, {}, QString(), false};
+			});
+			toggle->setData(QStringLiteral("enabled"));
+			toggle->setCheckable(true);
+			QObject::connect(toggle, &QAction::triggered, sub, [sub] { checkEarcons(sub); });
+			sub->addSeparator();
+			for (const int percent : {25, 50, 75, 100})
+			{
+				const double level = percent / 100.0;
+				QAction* action = addCommandAction(sub, QStringLiteral("%1%").arg(percent), QStringLiteral("view.earcons"),
+					[category, level] {
+						return CommandCall{QStringLiteral("view.earcons"), {{QStringLiteral("category"), category},
+							{QStringLiteral("level"), level}}, {}, QString(), false};
+					});
+				action->setProperty("earconLevel", level);
+				action->setCheckable(true);
+				QObject::connect(action, &QAction::triggered, sub, [sub] { checkEarcons(sub); });
+			}
+			QObject::connect(sub, &QMenu::aboutToShow, sub, [sub] { checkEarcons(sub); });
+		}
+		QObject::connect(menu, &QMenu::aboutToShow, menu, [menu] {
+			for (QAction* action : menu->actions())
+			{
+				if (action->menu() != nullptr) { checkEarcons(action->menu()); }
+			}
+		});
+	}
 	view->addMenu(menu);
 	return menu;
 }

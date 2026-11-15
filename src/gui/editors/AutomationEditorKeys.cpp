@@ -39,6 +39,7 @@
 #include "AutomationEditor.h"
 #include "AutomationPointEdit.h"
 #include "ControlRegistry.h"
+#include "Earcons.h"
 #include "MusicalTime.h"
 
 namespace lmms::gui
@@ -146,6 +147,7 @@ void AutomationEditor::stepKeyPoint(int direction)
 	auto it = map.constFind(TimePos(current));
 	if (direction > 0 && std::next(it) != map.constEnd()) { setKeyPoint(std::next(it).key()); }
 	else if (direction < 0 && it != map.constBegin()) { setKeyPoint(std::prev(it).key()); }
+	else { earcons::play(earcons::Sound::SelectionBoundary); }  // at the first or last point already
 }
 
 void AutomationEditor::moveKeyPoint(int ticks, float value)

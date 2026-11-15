@@ -25,6 +25,7 @@
 #ifndef LMMS_AUDIO_ENGINE_H
 #define LMMS_AUDIO_ENGINE_H
 
+#include <algorithm>
 #include <mutex>
 #include <array>
 #include <atomic>
@@ -40,6 +41,7 @@
 
 #include "AudioBufferView.h"
 #include "AudioDevice.h"
+#include "Earcons.h"
 #include "AudioResampler.h"
 #include "LmmsTypes.h"
 #include "SampleFrame.h"
@@ -670,6 +672,9 @@ private:
 #endif
 	void renderNextBuffer(AudioBufferView<float> auto dst)
 	{
+		// Q050-497: earcons are monitoring only - mixed here, on the device output path, so they are
+		// never recorded or rendered. renderNextPeriod (export, recorder taps) does not touch them.
+		earcons::beginBuffer();
 		for (auto frame = f_cnt_t{0}; frame < dst.frames(); ++frame)
 		{
 			if (m_outputBufferReadIndex == m_framesPerPeriod) { m_outputBufferReadIndex = 0; }
@@ -681,6 +686,13 @@ private:
 			if (m_hardwareOut.active()) { writeHardwareFrame(dst, frame, master); }
 			else { writeMasterFrame(dst, frame, master); }
 
+			if (const float e = earcons::nextSample(); e != 0.f)
+			{
+				for (auto ch = 0; ch < std::min<int>(2, dst.channels()); ++ch)
+				{
+					dst.sample(ch, frame) += e;
+				}
+			}
 			++m_outputBufferReadIndex;
 		}
 	}

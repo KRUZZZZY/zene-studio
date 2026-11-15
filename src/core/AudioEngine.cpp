@@ -24,6 +24,7 @@
 
 #include "AudioEngine.h"
 #include <stdexcept>
+#include "Earcons.h"
 
 #include "AutomatableModel.h"
 #include "ControlRoom.h"
@@ -802,6 +803,8 @@ void AudioEngine::initDevices()
 	// Loading audio device may have changed the sample rate
 	m_sampleVoicePool = std::make_unique<SampleVoicePool>(this);
 	ExportRenderSettings::setSrcQualityListener(&AudioEngine::onSrcQualityChanged);
+	// Q050-497: processing is not running yet, so the earcon buffers can be synthesized here.
+	earcons::prepare(outputSampleRate());
 	emit sampleRateChanged();
 }
 
@@ -1407,6 +1410,8 @@ void AudioEngine::setAudioDevice(AudioDevice* _dev, bool startNow)
 	doSetAudioDevice( _dev );
 
 	emit qualitySettingsChanged();
+	// Q050-497: the device was stopped above, so prepare() may rewrite the earcon buffers here.
+	earcons::prepare(outputSampleRate());
 	emit sampleRateChanged();
 
 	if (startNow) { startProcessing(); }
@@ -1434,6 +1439,8 @@ void AudioEngine::restoreAudioDevice()
 		delete m_audioDev;
 
 		m_audioDev = m_oldAudioDev;
+		// Q050-497: processing is stopped here, so prepare() may rewrite the earcon buffers.
+		earcons::prepare(outputSampleRate());
 		emit sampleRateChanged();
 
 		startProcessing();

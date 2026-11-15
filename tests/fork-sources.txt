@@ -779,6 +779,7 @@ tests/src/core/DeviceDspTestParts1.h
 tests/src/core/DeviceDspTestParts2.h
 tests/src/core/DeviceToolsTestParts1.h
 tests/src/core/DrumSynthTestParts1.h
+tests/src/core/EarconsTest.cpp
 tests/src/core/HardwareIoTestParts1.h
 tests/src/core/HardwareIoTestParts2.h
 tests/src/core/InstrumentRoutingTestParts1.h
@@ -3849,3 +3850,9 @@ tests/session-sdk-pipe-smoke.py
 docs/050-features/Q050-334.2.md
 # Q050-334.2: its report.
 docs/qwen-fixes-2026-10/cluster-Q050-334.2.md
+# Q050-497: the earcon set - a lock-free module mixed only into the device output, its test, and the GUI
+# switches (view.earcons, View > Earcons, the event hooks) with their test.
+include/Earcons.h
+src/core/Earcons.cpp
+tests/src/gui/EarconsSettingsTest.cpp
+tests/src/core/EarconsRenderTest.cpp

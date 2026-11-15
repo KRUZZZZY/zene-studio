@@ -220,7 +220,8 @@ QString runNow(const PaletteEntry& entry, const QJsonObject& args, QWidget* pare
 	{
 		return QObject::tr("%1: cancelled").arg(entry.label);
 	}
-	return outcomeOf(entry.label, ControlRegistry::instance()->invoke(entry.command, args));
+	const ControlResult result = ControlRegistry::instance()->invoke(entry.command, args);
+	return outcomeOf(entry.label, result);
 }
 
 //! The required arguments of @a id the selection fills, and in @a missing the labels of those it does not.

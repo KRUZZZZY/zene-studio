@@ -1033,6 +1033,10 @@ set(LMMS_TESTS
 	src/core/SessionSubSceneTest.cpp
 	# 0.5.0 L03 (W3): comp edges and groups, metronome options, punch here, remaining record time.
 	src/core/RecordToolsTest.cpp
+	# Q050-497: the lock-free earcon set, its levels and its monitoring-only mix path.
+	src/core/EarconsTest.cpp
+	# Q050-497: earcons never reach render.render's output or a master-tap take.
+	src/core/EarconsRenderTest.cpp
 	# Coverage lane (M0, 2026-10-08): the Receiver and InsertRecorder devices processed through a real EffectChain.
 	src/core/ReceiverEffectTest.cpp
 	src/core/ProjectSectionTest.cpp
@@ -1290,6 +1294,8 @@ set(LMMS_TESTS
 	# 0.5.0 themes 10/17: the List button on every canvas with an item list, and View > Screen Reader
 	# Announcements, in the real application
 	src/gui/ItemListButtonsTest.cpp
+	# 0.5.0 Q050-497: view.earcons, View > Earcons and the earcon event hooks, in the real application
+	src/gui/EarconsSettingsTest.cpp
 	src/gui/RowTableViewTest.cpp
 	# 0.5.0 wave 3 theme 11/15: lane scales and readouts; the Sample Editor's range fields
 	src/gui/LaneReadoutTest.cpp
@@ -3893,7 +3899,7 @@ set_tests_properties(NoteMelodyTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offs
 set_tests_properties(StepGridPanelTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(StepGridFillTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(LaneReadoutTest SampleEditorDialogTest SampleEditorDocsTest CrossfadeEditorTest MixerModesTest MixerMeteringTest WorkflowFeedbackTest
-	ShellHomesTest TaskCenterTest TaskIndicatorTest CPULoadWidgetTest NStateButtonActivationTest RecordRemainingTest CpuDiagnosticsDialogTest RecordModeMenuTest CanvasKeyboardTest ItemListPanelTest ItemListButtonsTest PROPERTIES
+	ShellHomesTest TaskCenterTest TaskIndicatorTest CPULoadWidgetTest NStateButtonActivationTest RecordRemainingTest CpuDiagnosticsDialogTest RecordModeMenuTest CanvasKeyboardTest ItemListPanelTest ItemListButtonsTest EarconsSettingsTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(BackgroundTasksGuiTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MixerSelectionIdentityTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

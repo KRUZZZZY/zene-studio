@@ -401,6 +401,7 @@ include/DspLoadProbe.h
 include/DummyEffect.h
 include/DummyInstrument.h
 include/DummyPlugin.h
+include/Earcons.h
 include/EditLocks.h
 include/Editor.h
 include/Effect.h
@@ -2044,6 +2045,7 @@ src/core/DeviceOptions.cpp
 src/core/DocumentIndex.cpp
 src/core/DrumPadState.cpp
 src/core/DrumSynth.cpp
+src/core/Earcons.cpp
 src/core/EditLocks.cpp
 src/core/Effect.cpp
 src/core/EffectChain.cpp
@@ -2979,6 +2981,8 @@ tests/src/core/DrumSynthLevelTest.cpp
 tests/src/core/DrumSynthTest.cpp
 tests/src/core/DrumSynthTestParts1.h
 tests/src/core/DummyPacingTest.cpp
+tests/src/core/EarconsRenderTest.cpp
+tests/src/core/EarconsTest.cpp
 tests/src/core/EffectControlsVisibilityTest.cpp
 tests/src/core/EngineRenderBenchmarkTest.cpp
 tests/src/core/EnvelopeAndLfoParametersTest.cpp
@@ -3391,6 +3395,7 @@ tests/src/gui/DelayControlsDialog.h
 tests/src/gui/DesignTokensTest.cpp
 tests/src/gui/DevicePanelTest.cpp
 tests/src/gui/DrumRackPanelTest.cpp
+tests/src/gui/EarconsSettingsTest.cpp
 tests/src/gui/EffectDeviceMenuTest.cpp
 tests/src/gui/EffectHostingMenuTest.cpp
 tests/src/gui/EffectPickerOrganiserTest.cpp

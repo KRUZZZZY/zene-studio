@@ -35,6 +35,7 @@
 #include <QMenuBar>
 
 #include "CommandMetadata.h"
+#include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "GuiApplication.h"
 #include "ShellSelection.h"

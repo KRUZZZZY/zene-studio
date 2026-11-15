@@ -43,6 +43,7 @@
 #include <exception>
 
 #include "AudioEngine.h"
+#include "Earcons.h"
 #include "Engine.h"
 #include "Mixer.h"
 #include "Song.h"
@@ -57,6 +58,14 @@ constexpr int ControlProtocolVersion = 1;
 
 namespace
 {
+
+//! Q050-497: an applied edit is heard, whatever route dispatched it (NoteEditor::run,
+//! automation point edits, a form, the palette, the socket). Failures that never reached
+//! a handler (NotFound, Requires, InvalidArgs, Busy) do not play. play() is any-thread safe.
+void playEditEarcon(bool mutating, const ControlResult& result)
+{
+	if (mutating && result.ok) { earcons::play(earcons::Sound::EditApplied); }
+}
 
 //! The text of a thrown exception, safely (what() may be null).
 QString exceptionText(const std::exception& error)
@@ -271,7 +280,7 @@ ControlResult ControlRegistry::dispatch(const QString& id, const QJsonObject& ar
 	const std::function<ControlResult(const QJsonObject&)> handler = cmd->handler;
 	const bool mutating = cmd->mutating;
 	const QString commandId = cmd->id;
-	return runOnUiThread([this, handler, mutating, commandId, args]() {
+	const ControlResult result = runOnUiThread([this, handler, mutating, commandId, args]() {
 		/*! The control surface's error boundary: NOTHING a command does escapes
 		 *  invoke() as an exception. A handler's exception is translated by the
 		 *  frame that ran it (runHandler), so its bookkeeping still runs; this
@@ -295,6 +304,8 @@ ControlResult ControlRegistry::dispatch(const QString& id, const QJsonObject& ar
 			return controlErrorFromException(commandId, mutating, QString());
 		}
 	});
+	playEditEarcon(mutating, result);
+	return result;
 }
 
 /*! Everything that has to happen around one handler: the one-command-one-step
