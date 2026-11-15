@@ -82,6 +82,9 @@ Test matrix:
 | 11 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-gui-1114-menu-edit-scales-and-keymaps` | 0 (all 8 rows PASS) | `gate-1.log` |
 | 11b | same `feature_check.py` after this report was written (8 changed files) | 0 (all 8 rows PASS) | `gate-2.log` |
 | 12 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-gui-1114-menu-edit-scales-and-keymaps gui-1114-menu-edit-scales-and-keymaps` (before the report) | 1 (expected: nothing committed, report missing) | `submit-1.log` |
+| 13 | `git add` the eight paths above, then `git commit -m "fix(cluster gui-1114-menu-edit-scales-and-keymaps): size the Microtuner from its layout and reserve keymap caption metrics"` | 0 (commit `42fe2d9b6`, 8 files) | `commit-1.log` |
+| 14 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-gui-1114-menu-edit-scales-and-keymaps` (after the commit) | 0 (all 8 rows PASS) | `gate-3-after-commit.log` |
+| 15 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-gui-1114-menu-edit-scales-and-keymaps gui-1114-menu-edit-scales-and-keymaps` (after the commit) | 0 (every row PASS) | `submit-2-after-commit.log` |
 
 The RED run failed both new cases while the existing seven cases passed (`Totals: 7 passed, 2 failed`);
 the GREEN run passed 2/2 and the final family run 7/7.
