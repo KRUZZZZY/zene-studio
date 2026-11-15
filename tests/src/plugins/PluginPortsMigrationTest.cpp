@@ -18,6 +18,7 @@
  * Licensed under the GNU General Public License version 2 or later.
  */
 
+#include "../core/PortableSync.h"
 #include "PluginPortsHarness.h"
 #include "plugins/Sid/SidPlaybackScheduler.h"
 #include <sid.h>
@@ -45,7 +46,6 @@
 #include <cmath>
 #include <cmath>
 #include <array>
-#include <barrier>
 #include <thread>
 #include <cmath>
 #include "BasicFilters.h"
@@ -4423,7 +4423,7 @@ void PluginPortsMigrationTest::watsynOverlappingNotesAreIndependentAndAllocation
 		handles[i] = acquireNote(keys[i]);
 	}
 
-	std::barrier start{static_cast<std::ptrdiff_t>(concurrentNotes + 1)};
+	lmms::testsupport::Barrier start{static_cast<std::ptrdiff_t>(concurrentNotes + 1)};
 	std::array<std::thread, concurrentNotes> workers;
 	for (std::size_t i = 0; i < concurrentNotes; ++i)
 	{

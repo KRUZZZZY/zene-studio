@@ -56,16 +56,16 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
-#include <barrier>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <memory>
-#include <semaphore>
 #include <string>
 #include <thread>
 #include <vector>
+
+#include "../core/PortableSync.h"
 
 #include "WasmOfflineRender.h"
 #include "WasmSandbox.h"
@@ -287,6 +287,7 @@ class WasmWorkerPoolTest : public QObject
 
 private slots:
 	void initTestCase();
+	void testEveryLaneCanReachTheOnlyRegisteredWorker();
 	void testPoolIsSharedAndBounded();
 	void testAQueuedBlockIsPickedUpByAWakeUp();
 	void testStopWaitsForAudioEndpointsToQuiesce();
@@ -319,6 +320,28 @@ void WasmWorkerPoolTest::initTestCase()
 		QSKIP("no assembled module: build the wasm-modules target (modules/wasm/gain.wat)");
 	}
 	m_module = path.toStdString();
+}
+
+// A wake-one post can select any parked lane. Even with just slot zero occupied,
+// each lane must be able to load that module; rotating through unused capacity
+// instead of the active prefix can leave the only capable lane asleep forever.
+void WasmWorkerPoolTest::testEveryLaneCanReachTheOnlyRegisteredWorker()
+{
+	WasmWorkerPool pool;
+	pool.shutdown(); // Drive individual lanes deterministically, without racing pool threads.
+	for (std::size_t lane = 0; lane < WasmWorkerPool::maxLanes; ++lane)
+	{
+		WasmWorker worker;
+		worker.m_modulePath = m_module;
+		worker.m_state.store(WasmWorker::State::Loading);
+		pool.m_workers[0].store(&worker);
+		pool.m_workerCount.store(1);
+		const bool drained = pool.drainOnce(lane);
+		pool.m_workers[0].store(nullptr);
+		pool.m_workerCount.store(0);
+		QVERIFY2(drained, qPrintable(QStringLiteral("lane %1 missed the only worker").arg(lane)));
+		QVERIFY2(worker.isReady(), worker.m_lastError.c_str());
+	}
 }
 
 void WasmWorkerPoolTest::testPoolIsSharedAndBounded()
@@ -412,7 +435,7 @@ void WasmWorkerPoolTest::testStopWaitsForAudioEndpointsToQuiesce()
 	QVERIFY2(worker.start(m_module, error), error.c_str());
 	QVERIFY(worker.beginAudioEndpoint());
 
-	std::binary_semaphore stopped{0};
+	testsupport::BinarySemaphore stopped{0};
 	std::thread stopper([&] {
 		worker.stop();
 		stopped.release();
@@ -465,7 +488,7 @@ void WasmWorkerPoolTest::testEntryRacesWithStopWithoutPostStopEndpointUse()
 	WasmWorker worker;
 	AudioEndpointRaceProbe probe;
 	worker.setAudioEndpointEntryTestHook(&observeAudioEndpointEntry, &probe);
-	std::barrier phase(3);
+	testsupport::Barrier phase(3);
 
 	std::thread endpoint([&] {
 		for (int race = 0; race < StopRaces; ++race)
@@ -527,7 +550,7 @@ void WasmWorkerPoolTest::testRemovalWaitsForLoadedWorkerReaders()
 	QVERIFY(slot < WasmWorkerPool::maxWorkers);
 	QCOMPARE(pool.acquireWorker(slot), &worker);
 
-	std::binary_semaphore removed{0};
+	testsupport::BinarySemaphore removed{0};
 	std::thread remover([&] {
 		pool.removeWorker(&worker);
 		removed.release();

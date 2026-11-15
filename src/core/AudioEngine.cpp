@@ -667,9 +667,11 @@ bool AudioEngine::registerAutomatableModel(AutomatableModel* model) noexcept
 		m_automatableModelRegistrationAttemptStateForTest.load(std::memory_order_acquire))
 	{
 		int expected = 0;
+		// The test polls this flag: std::atomic::notify_all needs macOS 11 and the product
+		// floor is 10.13 (cluster ci-61ad26e4f8b135f9). The store above is the signal; the
+		// waiter re-reads it, so nothing can be lost.
 		attemptState->compare_exchange_strong(expected, 1, std::memory_order_release,
 			std::memory_order_relaxed);
-		attemptState->notify_all();
 	}
 
 	const auto lock = std::lock_guard{m_changeMutex};

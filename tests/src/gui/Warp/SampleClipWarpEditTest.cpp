@@ -65,6 +65,7 @@
 #include "SongEditor.h"
 
 #include "SampleClipWarpEditTestSupport.h"
+#include "../../core/TestWorkerThread.h"
 
 using namespace lmms;
 using namespace lmms::gui;
@@ -430,13 +431,13 @@ private slots:
 		std::atomic<bool> holding{false};
 		std::atomic<bool> release{false};
 		std::atomic<bool> timedOut{false};
-		std::unique_ptr<QThread> period(QThread::create([&] {
+		std::unique_ptr<test::TestWorkerThread> period = std::make_unique<test::TestWorkerThread>([&] {
 			const auto lock = Engine::audioEngine()->requestChangesGuard();
 			holding = true;
 			QElapsedTimer held;
 			held.start();
 			while (!release) { if (held.elapsed() > 5000) { timedOut = true; return; } QThread::msleep(1); }
-		}));
+		});
 		period->start();
 		QVERIFY(waitFor(holding));
 		const WarpMarker next[] = {{kBursts[0], 96}, {kBursts[2], 168}};
@@ -460,13 +461,13 @@ private slots:
 		std::atomic<bool> holding{false};
 		std::atomic<bool> release{false};
 		std::atomic<bool> timedOut{false};
-		std::unique_ptr<QThread> period(QThread::create([&] {
+		std::unique_ptr<test::TestWorkerThread> period = std::make_unique<test::TestWorkerThread>([&] {
 			const auto lock = Engine::audioEngine()->requestChangesGuard();
 			holding = true;
 			QElapsedTimer held;
 			held.start();
 			while (!release) { if (held.elapsed() > 5000) { timedOut = true; return; } QThread::msleep(1); }
-		}));
+		});
 		period->start();
 		QVERIFY(waitFor(holding));
 
@@ -548,14 +549,14 @@ private:
 		std::atomic<bool> committed{false};
 		std::atomic<bool> commitSeen{false};
 		SampleClip* clip = m_clip;
-		std::unique_ptr<QThread> pass(QThread::create([&, clip] {
+		std::unique_ptr<test::TestWorkerThread> pass = std::make_unique<test::TestWorkerThread>([&, clip] {
 			const WarpSnapshot generation = clip->snapshotWarp();
 			const Clip::WarpPassScope scope(*clip, generation);
 			seen.before = readInPass(clip);
 			readOnce = true;
 			commitSeen = waitFor(committed);
 			seen.after = readInPass(clip);
-		}));
+		});
 		pass->start();
 		const bool started = waitFor(readOnce);
 		commit();

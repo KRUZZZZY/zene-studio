@@ -178,10 +178,7 @@ export class LiveSession<S> {
 		const maxDelay = this.options.maxReconnectDelayMs ?? 5000;
 		// After an overflow the instance has ended the subscription and the connection is fine. After a gap the
 		// instance still holds it, so start over on a new connection.
-		let current: ZeneClient | null = client.isOpen && reason === "overflow" ? client : null;
-		if (current === null) {
-			await client.close();
-		}
+		let current = await this.reconnectClient(client, reason);
 		while (!this.stopped) {
 			try {
 				if (current === null) {
@@ -203,6 +200,14 @@ export class LiveSession<S> {
 				delay = Math.min(delay * 2, maxDelay);
 			}
 		}
+	}
+
+	private async reconnectClient(client: ZeneClient, reason: SyncReason): Promise<ZeneClient | null> {
+		if (client.isOpen && reason === "overflow") {
+			return client;
+		}
+		await client.close();
+		return null;
 	}
 
 	private sleep(ms: number): Promise<void> {

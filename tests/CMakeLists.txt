@@ -3290,7 +3290,9 @@ set_tests_properties(TapTempoTest PROPERTIES
 
 # The NAM harness WAV reader is private to its CLI translation unit. Include
 # that source with its main renamed so this test exercises the reader directly.
+get_property(NAM_HARNESS_CLOCK_SOURCE GLOBAL PROPERTY ZENE_NAM_HARNESS_CLOCK_SOURCE)
 add_executable(NeuralAmpWavInputTest
+	"${NAM_HARNESS_CLOCK_SOURCE}"
 	src/core/NeuralAmpWavInputTest.cpp
 	 "${CMAKE_SOURCE_DIR}/plugins/NeuralAmp/nam/NamModel.cpp"
 	 "${CMAKE_SOURCE_DIR}/plugins/NeuralAmp/nam/NamModelLoader.cpp"
@@ -5257,6 +5259,7 @@ if(WANT_WASM)
 		${CMAKE_SOURCE_DIR}/src/wasm/WasmWorker.cpp
 		${CMAKE_SOURCE_DIR}/src/wasm/WasmWorkerPool.cpp
 		${CMAKE_SOURCE_DIR}/src/wasm/WasmOfflineRender.cpp
+		${CMAKE_SOURCE_DIR}/src/core/AudioWorkerWake.cpp
 	)
 	add_test(NAME WasmWorkerPoolTest COMMAND WasmWorkerPoolTest)
 	target_include_directories(WasmWorkerPoolTest PRIVATE
@@ -6210,6 +6213,73 @@ if(PYTHON3_EXECUTABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/nam-portability-registration-check.py
 			${NAM_PORTABILITY_REGISTRATION_ARGS})
 	set_tests_properties(NamPortabilityRegistrationCheck PROPERTIES TIMEOUT 120)
+endif()
+
+# Train 43: compile hosted API contracts without changing deployment targets.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
+	add_test(NAME Train43Portability COMMAND ${PYTHON3_EXECUTABLE}
+		${CMAKE_CURRENT_SOURCE_DIR}/train-43-portability-check.py
+		--source-root ${CMAKE_SOURCE_DIR} --build-dir ${CMAKE_BINARY_DIR}
+		--moc $<TARGET_FILE:Qt${QT_VERSION_MAJOR}::moc>)
+	set_tests_properties(Train43Portability PROPERTIES TIMEOUT 300)
+endif()
+
+# Accepted CI portability regressions, consolidated for train 32.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME Qt5QStringListAssignmentCheck
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/Qt5QStringListAssignmentCheck.py
+			--root ${CMAKE_SOURCE_DIR}
+			--build-dir ${CMAKE_BINARY_DIR}
+			--cxx ${CMAKE_CXX_COMPILER})
+	set_tests_properties(Qt5QStringListAssignmentCheck PROPERTIES TIMEOUT 600)
+endif()
+
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME Qt5WorkerThreadCheck
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/qt5-worker-thread-check.py
+			--root ${CMAKE_SOURCE_DIR}
+			--build-dir ${CMAKE_BINARY_DIR}
+			--moc $<TARGET_FILE:Qt${QT_VERSION_MAJOR}::moc>)
+	set_tests_properties(Qt5WorkerThreadCheck PROPERTIES TIMEOUT 300)
+endif()
+
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME Qt5QStringListBraceCheck
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/Qt5QStringListBraceCheck.py
+			--root ${CMAKE_SOURCE_DIR}
+			--cxx ${CMAKE_CXX_COMPILER})
+	set_tests_properties(Qt5QStringListBraceCheck PROPERTIES TIMEOUT 900)
+endif()
+
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME Qt5QStringListAssignCheck
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/Qt5QStringListAssignCheck.py
+			--root ${CMAKE_SOURCE_DIR}
+			--build-dir ${CMAKE_BINARY_DIR}
+			--cxx ${CMAKE_CXX_COMPILER})
+	set_tests_properties(Qt5QStringListAssignCheck PROPERTIES TIMEOUT 300)
+endif()
+
+if(PYTHON3_EXECUTABLE AND NOT WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+	add_test(NAME MacosSyncAvailabilityCheck
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/macos-sync-availability-check.py
+			--root ${CMAKE_SOURCE_DIR}
+			--build-dir ${CMAKE_BINARY_DIR})
+	set_tests_properties(MacosSyncAvailabilityCheck PROPERTIES TIMEOUT 300)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
+	add_test(NAME NamHarnessWindowsClockCheck
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/nam-harness-windows-clock-check.py
+			--source-root ${CMAKE_SOURCE_DIR}
+			--build-dir ${CMAKE_BINARY_DIR})
+	set_tests_properties(NamHarnessWindowsClockCheck PROPERTIES TIMEOUT 300)
 endif()
 
 # Native VST3 instrument fixture and its probe.

@@ -52,6 +52,7 @@
 #include <vector>
 
 #include "../core/AllocationProbe.h"
+#include "TestWorkerThread.h"
 
 #include "LmmsTypes.h"
 #include "WarpMarkers.h"
@@ -128,7 +129,7 @@ private slots:
 		std::atomic<bool> stop{false};
 		std::atomic<int> torn{0};
 		std::atomic<int> reads{0};
-		std::unique_ptr<QThread> reader(QThread::create([&] {
+		std::unique_ptr<test::TestWorkerThread> reader = std::make_unique<test::TestWorkerThread>([&] {
 			while (!stop)
 			{
 				const WarpSnapshot generation(publication);
@@ -138,7 +139,7 @@ private slots:
 				for (int i = 0; i < map.size(); ++i) { if (map[i].offsetTicks != map[0].offsetTicks + i) { ++torn; } }
 				++reads;
 			}
-		}));
+		});
 		reader->start();
 		for (int stamp = 1; stamp <= 20000; ++stamp) { publication.publish(stamped(stamp)); }
 		while (reads.load() < 100) { QThread::msleep(1); }

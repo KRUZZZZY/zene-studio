@@ -258,7 +258,28 @@ def run_portfile(portfile, work, use_head=False, head_version="0123456789abcdef0
     work.mkdir(parents=True)
     transcript = work / "transcript.txt"
     harness = work / "harness.cmake"
-    harness.write_text(CMAKELIB)
+    # Model Windows text-mode file(WRITE) even when this regression runs on Unix.
+    # Explicit NEWLINE_STYLE UNIX generation must still produce the pinned bytes.
+    windows_write = r'''
+macro(file operation)
+    if("${operation}" STREQUAL "WRITE")
+        set(windows_content "${ARGV2}")
+        if("${ARGV1}" MATCHES "zene-patches/")
+            string(REPLACE "\n" "\r\n" windows_content "${ARGV2}")
+        endif()
+        _file(WRITE "${ARGV1}" "${windows_content}")
+    elseif("${operation}" STREQUAL "CONFIGURE")
+        if("${ARGV}" MATCHES "NEWLINE_STYLE")
+            _file(${ARGV})
+        else()
+            _file(${ARGV} NEWLINE_STYLE CRLF)
+        endif()
+    else()
+        _file(${ARGV})
+    endif()
+endmacro()
+'''
+    harness.write_text(windows_write + CMAKELIB)
     # -D before -P: cmake applies options in order, and the script needs them at entry.
     cmd = ["cmake", f"-DPORTFILE={portfile}", f"-DWORK={work}", f"-DTRANSCRIPT_FILE={transcript}",
            f"-DVCPKG_USE_HEAD_VERSION={'ON' if use_head else 'OFF'}",
@@ -400,6 +421,26 @@ def check_missing_control(checker, port_dir, tmp):
                   "a missing gitlink fails loudly instead of silently fetching", combined[-400:])
 
 
+def check_literal_patch_control(checker, port_dir, tmp):
+    print("control: literal template tokens survive patch materialization")
+    copy = Path(tmp) / "literal-patch"
+    shutil.copytree(port_dir, copy)
+    name = next(iter(PATCH_SHA512))
+    patch = copy / (name + ".json")
+    payload = json.loads(patch.read_text())
+    payload["content"] += "@ZENE_LITERAL_TOKEN@;${ZENE_LITERAL_TOKEN}\n"
+    expected = hashlib.sha512(payload["content"].encode()).hexdigest()
+    patch.write_text(json.dumps(payload) + "\n")
+    port = copy / "portfile.cmake"
+    text = port.read_text().replace(PATCH_SHA512[name], expected)
+    port.write_text('set(ZENE_LITERAL_TOKEN "must-not-expand")\n' + text)
+    proc, entries = run_portfile(port, Path(tmp) / "literal-patch-work")
+    checker.check(proc.returncode == 0 and
+                  f"{name} {expected}" in entries.get("PATCH-BYTES", []),
+                  "literal @ and dollar tokens keep their exact hashed bytes",
+                  (proc.stdout + proc.stderr)[-500:])
+
+
 def check_patch_control(checker, port_dir, tmp, missing):
     label = "missing" if missing else "tampered"
     print(f"control: {label} encoded upstream patch")
@@ -441,6 +482,7 @@ def main():
         if port_dir is not None:
             check_tampered_control(checker, port_dir, tmp)
             check_missing_control(checker, port_dir, tmp)
+            check_literal_patch_control(checker, port_dir, tmp)
             check_patch_control(checker, port_dir, tmp, missing=False)
             check_patch_control(checker, port_dir, tmp, missing=True)
 

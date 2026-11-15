@@ -47,12 +47,12 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
-#include <semaphore>
 #include <thread>
 #include <type_traits>
 #include <utility>
 
 #include "AllocationProbe.h"
+#include "PortableSync.h"
 
 #include "AudioDevice.h"
 #include "AudioEngine.h"
@@ -225,8 +225,8 @@ private slots:
 		auto* model = new FloatModel(0.0f, -100.0f, 100.0f, 0.01f);
 		publishOne(publisher, model);
 		const ModulationAudioView view = publisher.snapshot();
-		std::binary_semaphore writeEntered{0};
-		std::binary_semaphore resumeWrite{0};
+		testsupport::BinarySemaphore writeEntered{0};
+		testsupport::BinarySemaphore resumeWrite{0};
 		QObject::connect(model, &Model::dataChanged, this, [&] {
 			writeEntered.release();
 			resumeWrite.acquire();
@@ -274,8 +274,8 @@ private slots:
 	{
 		ModulationLayerPublisher publisher;
 		auto* oldModel = new FloatModel(0.0f, -100.0f, 100.0f, 0.01f);
-		std::binary_semaphore teardownEntered{0};
-		std::binary_semaphore resumeTeardown{0};
+		testsupport::BinarySemaphore teardownEntered{0};
+		testsupport::BinarySemaphore resumeTeardown{0};
 		QObject::connect(oldModel, &AutomatableModel::aboutToBeDestroyed, this, [&] {
 			teardownEntered.release();
 			resumeTeardown.acquire();
@@ -428,7 +428,7 @@ private slots:
 		const ModulationAudioView view = publisher.snapshot();
 		const std::uint32_t token = view.entries[0].token;
 
-		std::binary_semaphore pinned{0};
+		testsupport::BinarySemaphore pinned{0};
 		std::atomic<bool> pinTaken{false};
 		std::atomic<unsigned> versionWhileWaiting{2};
 		std::atomic<int> entriesWhileWaiting{-1};
@@ -523,7 +523,7 @@ private slots:
 		const std::uint32_t slot0Token = oldView.entries[0].token;
 		QCOMPARE(publisher.sinceTrigger(0, 11, 12.75), 2.75);
 
-		std::binary_semaphore pinned{0};
+		testsupport::BinarySemaphore pinned{0};
 		std::atomic<bool> pinTaken{false};
 		std::atomic<bool> oldViewDuringWait{false};
 		double phaseDuringWait = -2.0;

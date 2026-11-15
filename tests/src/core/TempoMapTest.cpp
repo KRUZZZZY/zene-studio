@@ -54,10 +54,11 @@
 #include <chrono>
 #include <condition_variable>
 #include <future>
-#include <latch>
 #include <memory>
 #include <mutex>
 #include <thread>
+
+#include "PortableSync.h"
 
 #include "AudioEngine.h"
 #include "Engine.h"
@@ -560,8 +561,8 @@ private slots:
 		s_snapshotProbeState = &state;
 		publisher.setSnapshotProbeForTest(&countSnapshotAttempt);
 		std::atomic<bool> editInFlight{false};  //!< the writer is inside edit()
-		std::latch editEntered(1);
-		std::latch resumeEdit(1);
+		testsupport::Latch editEntered(1);
+		testsupport::Latch resumeEdit(1);
 
 		std::thread writer([&]()
 		{

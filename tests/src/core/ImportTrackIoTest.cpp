@@ -341,7 +341,9 @@ private slots:
 	void anUnparsableDocumentDoesNotShiftTheOthers()
 	{
 		control::transplant::TrackPlan plan;
-		plan.documents = {UnparsableTrack, trackDocument(Lead)};
+		plan.documents.clear();
+		plan.documents.append(UnparsableTrack);
+		plan.documents.append(trackDocument(Lead));
 		plan.need = {0, 1};
 		plan.needs.push_back({Ghost, channelDescription(Ghost)});
 		plan.needs.push_back({Keys, channelDescription(Keys)});

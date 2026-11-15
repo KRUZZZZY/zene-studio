@@ -23,6 +23,7 @@
 #ifndef LMMS_WASM_WORKER_POOL_H
 #define LMMS_WASM_WORKER_POOL_H
 
+#include "AudioWorkerWake.h"
 #include "lmms_export.h"
 
 #include <atomic>
@@ -51,7 +52,13 @@ class WasmWorker;
  *    nothing else here: one relaxed increment of the work generation and one
  *    acquire load. It takes no lock, allocates nothing and does NOT notify when
  *    every lane is awake - `wakes_suppressed` counts that case. When the pool
- *    is idle it is one `std::atomic::notify_one()`, i.e. a single futex wake.
+ *    is idle it is one lmms::workerwake post, i.e. a single futex wake
+ *    (__ulock_wake on Apple, FUTEX_WAKE on Linux) that wakes ONE lane, the shape
+ *    std::atomic::notify_one had. The wake goes through workerwake rather than
+ *    std::atomic::wait/notify: libc++ marks those unavailable below macOS 11 and
+ *    this product's floor is 10.13, the same reason the audio worker's own wake
+ *    uses it (cluster ci-61ad26e4f8b135f9). Shutdown is the exception: it wakes
+ *    every parked lane because no lane will post again.
  *  - A lane claims ONE worker at a time (WasmWorker::claimForLane()), drains
  *    that worker's queue in FIFO order and releases it. In-order draining per
  *    worker is what keeps a stateful module's blocks in the order they were
@@ -140,7 +147,7 @@ private:
 
 	//! The work generation. A lane wakes when this changes, so a wake-up that
 	//! lands between its scan and its park cannot be lost.
-	std::atomic<std::uint64_t> m_generation{0};
+	std::atomic<std::uint32_t> m_generation{0};
 	std::atomic<std::uint32_t> m_idleLanes{0};
 	std::atomic<std::uint64_t> m_lanes{0};
 	std::atomic<std::uint64_t> m_lanePasses{0};

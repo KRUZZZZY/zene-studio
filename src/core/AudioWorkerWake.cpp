@@ -76,16 +76,8 @@ static_assert(std::atomic<std::uint32_t>::is_always_lock_free,
 std::atomic<std::uint64_t> s_notifyCount{0};
 #endif
 
-} // namespace
-
-#if defined(__APPLE__)
-// Compile-time, not a test-only claim: an Apple build whose wake is not the wait-on-address
-// path would put std::atomic::wait (unavailable below macOS 11) back on the render thread.
-static_assert(compiledPrimitive() == Primitive::WaitOnAddress,
-	"the Apple wake must be the wait-on-address path");
-#endif
-
-void notify(std::atomic<std::uint32_t>& generation) noexcept
+//! The single post both entry points share; \a all chooses wake-every or wake-one.
+void wake(std::atomic<std::uint32_t>& generation, bool all) noexcept
 {
 #ifdef LMMS_TESTING
 	s_notifyCount.fetch_add(1, std::memory_order_relaxed);
@@ -98,14 +90,36 @@ void notify(std::atomic<std::uint32_t>& generation) noexcept
 #if defined(__APPLE__)
 	// Returns non-zero (ENOENT) when no worker is parked, which is not an error: the
 	// generation move is what the worker checks, so a post with no waiter loses nothing.
-	__ulock_wake(UlCompareAndWait | UlfWakeAll, static_cast<void*>(&generation), 0);
+	// Without ULF_WAKE_ALL the trap wakes one waiter, the shape notify_one had.
+	__ulock_wake(UlCompareAndWait | (all ? UlfWakeAll : 0u),
+		static_cast<void*>(&generation), 0);
 #else
 	::syscall(SYS_futex, reinterpret_cast<std::int32_t*>(&generation), FUTEX_WAKE_PRIVATE,
-		INT_MAX, nullptr, nullptr, 0);
+		all ? INT_MAX : 1, nullptr, nullptr, 0);
 #endif
 #else
-	generation.notify_all();
+	if (all) { generation.notify_all(); }
+	else { generation.notify_one(); }
 #endif
+}
+
+} // namespace
+
+#if defined(__APPLE__)
+// Compile-time, not a test-only claim: an Apple build whose wake is not the wait-on-address
+// path would put std::atomic::wait (unavailable below macOS 11) back on the render thread.
+static_assert(compiledPrimitive() == Primitive::WaitOnAddress,
+	"the Apple wake must be the wait-on-address path");
+#endif
+
+void notify(std::atomic<std::uint32_t>& generation) noexcept
+{
+	wake(generation, true);
+}
+
+void notifyOne(std::atomic<std::uint32_t>& generation) noexcept
+{
+	wake(generation, false);
 }
 
 #ifdef LMMS_WORKER_WAKE_WAIT_ON_ADDRESS

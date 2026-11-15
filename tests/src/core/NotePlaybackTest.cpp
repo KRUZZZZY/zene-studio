@@ -44,7 +44,6 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
-#include <barrier>
 #include <cmath>
 #include <new>
 #include <span>
@@ -56,6 +55,8 @@
 #include <pthread.h>
 #include <sched.h>
 #endif
+
+#include "PortableSync.h"
 
 #include "AudioDevice.h"
 #include "AudioEngine.h"
@@ -231,7 +232,7 @@ void renderMonstroVoiceSetSerial(Instrument* instrument, MonstroVoiceSet& voices
 
 void renderMonstroVoiceSetConcurrent(Instrument* instrument, MonstroVoiceSet& voices)
 {
-	std::barrier startVoices{static_cast<std::ptrdiff_t>(voices.handles.size())};
+	testsupport::Barrier startVoices{static_cast<std::ptrdiff_t>(voices.handles.size())};
 	std::vector<std::thread> workers;
 	workers.reserve(voices.handles.size());
 	for (std::size_t voice = 0; voice < voices.handles.size(); ++voice)

@@ -874,6 +874,75 @@ docs/qwen-fixes-2026-10/cluster-ci-28572f865f7a738c.md
 docs/qwen-fixes-2026-10/cluster-ci-b38398fa7833e0a4.md
 docs/qwen-fixes-2026-10/sol-train-31-ci-replay.md
 
+# cluster ci-623e9e3a015cd5b1 (2026-11-14): the hosted linux-x86_64 Qt 5 build stopped at
+# ImportTrackIoTest.cpp:344 on an ambiguous QStringList brace assignment. The check proves
+# its own red/green fixtures against the Qt 5 tree, then recompiles the real test
+# translation unit through this build's compile_commands.json with the Qt 5 headers and
+# moc; it is registered wherever a python3 is (ctest Qt5QStringListAssignmentCheck) and
+# reports itself skipped, never passed, on a host without Qt 5.
+tests/Qt5QStringListAssignmentCheck.py
+# cluster ci-623e9e3a015cd5b1: repair report and verification evidence.
+docs/qwen-fixes-2026-10/cluster-ci-623e9e3a015cd5b1.md
+# cluster ci-539b88713935565b (2026-11-14): the hosted mingw64 Qt 5.15.6 package is configured
+# with QT_FEATURE_cxx11_future=-1, so QThread::create() is not declared there and two fork-NEW
+# warp tests that called it stopped the build. The check scans first-party sources for the
+# factory and compiles the two affected translation units - plus a positive fixture using
+# tests/src/core/TestWorkerThread.h - against a Qt 5 whose qtcore-config.h has the feature off.
+# Both new files are under 500 code lines and every function is CCN <= 10, so gates 4 and 7
+# measure them at their existing thresholds rather than moving a baseline.
+tests/qt5-worker-thread-check.py
+tests/src/core/TestWorkerThread.h
+docs/qwen-fixes-2026-10/cluster-ci-539b88713935565b.md
+# Cluster ci-b5ac4280f3e4b317: the Qt 5 QStringList brace-assignment portability
+# regression. Hosted macos-arm64 builds against Qt 5.15, where QStringList's extra
+# `operator=(QList<QString>&&)`/`(const QList<QString>&)` overloads make
+# `plan.documents = {...}` ambiguous; Qt 6 aliases QStringList to QList<QString>, so the
+# Qt 6 hosts compile it. The check resolves the assigned name to its declared type and
+# scans sources only (red on the Qt 6 hosts too), and compiles the failing/fixed shape
+# where a Qt 5 tree is installed. Named after its ctest (Qt5QStringListBraceCheck).
+tests/Qt5QStringListBraceCheck.py
+# Cluster ci-b5ac4280f3e4b317: the fix and verification report for that portability
+# regression (hosted macos-arm64 Qt 5 build of ImportTrackIoTest).
+docs/qwen-fixes-2026-10/cluster-ci-b5ac4280f3e4b317.md
+# cluster ci-aa1160348d9be203: the Qt 5 QStringList brace-assignment portability
+# regression. Hosted linux-arm64 builds with Qt 5.15, where QStringList inherits
+# QList<QString> and declares operator= for it, so `documents = {a, b}` is ambiguous
+# (ImportTrackIoTest.cpp:344 stopped the build); Qt 6 aliases QStringList to QList<QString>.
+# The check scans first-party sources and, where a Qt 5 tree is present, compiles every
+# flagged translation unit against it (-fsyntax-only), so it is red on the Qt 6 hosts too.
+# The file is named after its ctest (tests/CMakeLists.txt -> Qt5QStringListAssignCheck).
+tests/Qt5QStringListAssignCheck.py
+# cluster ci-aa1160348d9be203: the fix and verification report for the hosted linux-arm64
+# Qt 5 QStringList brace-assignment build regression.
+docs/qwen-fixes-2026-10/cluster-ci-aa1160348d9be203.md
+# cluster ci-61ad26e4f8b135f9 (2026-11-14): Apple's libc++ marks <barrier>, <latch>, <semaphore>
+# and the std::atomic wait/notify members unavailable below macOS 11, while this product's floor
+# is 10.13, so the hosted macos-x86_64 job stopped on the fork-new RemotePluginShmFifoTest. The
+# tests now use tests/src/core/PortableSync.h (a mutex and a condition variable) instead of the
+# gated headers, and tests/macos-sync-availability-check.py recompiles the real translation units
+# under a model of that availability contract so the defect cannot return on a Linux host.
+tests/macos-sync-availability-check.py
+tests/src/core/PortableSync.h
+# cluster ci-443a2931bcb5dacc (2026-11): the headless NAM harness's platform-selected thread CPU clock -
+# POSIX clock_gettime in its own translation unit, Win32 GetThreadTimes on Windows - split out of
+# nam_harness.cpp so the clangarm64 link line, which names no libwinpthread, no longer meets winpthreads'
+# inline clock_gettime() -> clock_gettime64. The regression is tests/nam-harness-windows-clock-check.py
+# (CTest NamHarnessWindowsClockCheck); the report records the failure and the RED/GREEN proof.
+plugins/NeuralAmp/tests/HarnessClock.h
+plugins/NeuralAmp/tests/HarnessClockPosix.cpp
+plugins/NeuralAmp/tests/HarnessClockWindows.cpp
+tests/nam-harness-windows-clock-check.py
+docs/qwen-fixes-2026-10/cluster-ci-443a2931bcb5dacc.md
+
+# Train 32: retained macOS CI repair evidence and consolidation verification.
+docs/qwen-fixes-2026-10/cluster-ci-61ad26e4f8b135f9.md
+docs/qwen-fixes-2026-10/sol-train-32-portability-replay.md
+docs/qwen-fixes-2026-10/sol-train-32-sdk-complexity.md
+
+# Train 43 hosted compiler contracts, native CPU timing adapter and verification report.
+plugins/NeuralAmp/tests/NamHarnessCpuClock.h
+tests/train-43-portability-check.py
+docs/qwen-fixes-2026-10/sol-train-31-hosted-portability.md
 include/AccessibilityAudit.h
 
 # Train 39: portable hosted compiler and executable-debug regression probes and repair evidence.

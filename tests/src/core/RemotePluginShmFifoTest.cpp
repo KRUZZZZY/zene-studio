@@ -18,12 +18,13 @@
 #include <QtTest>
 
 #include <atomic>
-#include <barrier>
 #include <cstdint>
 #include <limits>
 #include <stdexcept>
 #include <thread>
 #include <type_traits>
+
+#include "PortableSync.h"
 
 using namespace lmms;
 
@@ -106,9 +107,9 @@ private slots:
 	void callerTokensStayDistinctDespiteLegacyHashCollision()
 	{
 		shmFifo::setCallerIdHashForTest(&collidingThreadHash);
-		std::barrier start{3};
-		std::barrier captured{3};
-		std::barrier release{3};
+		testsupport::Barrier start{3};
+		testsupport::Barrier captured{3};
+		testsupport::Barrier release{3};
 		using CallerKey = decltype(shmFifo::callerKey());
 		const bool callerKeyUsesAddress = std::is_same_v<CallerKey, const void *>;
 		CallerKey keys[2]{};
