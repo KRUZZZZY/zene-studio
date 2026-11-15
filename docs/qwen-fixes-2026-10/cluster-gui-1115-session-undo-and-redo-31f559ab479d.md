@@ -171,3 +171,10 @@ Report: this file. No new product file, no header, no command, no snapshot/canar
   (`undoDepth() == 1` asserted).
 - **Verdict FIXED (not ALREADY-FIXED/FALSE-POSITIVE):** the new test fails on the original product
   code and passes with the fix, as recorded above.
+- **Completion check.** `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree>
+  gui-1115-session-undo-and-redo-31f559ab479d` (`submit-check-1.log`) exits 1 with exactly one FAIL:
+  `gates (feature_check.py)`. Its other items PASS (commits on the branch, working tree clean, report,
+  tests changed). The gate FAIL is the sandbox limitation described under **Gates**: `feature_check.py`
+  cannot create/checkout its cached base tree outside the lane, and all eight gate commands it runs
+  pass directly (`gates-manual.log`, EXIT 0 each). The ASK items above are answered by the five bullets
+  before this one, with their log files and exit codes.
