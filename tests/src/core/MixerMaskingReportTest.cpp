@@ -56,13 +56,13 @@ ControlResult run(const QString& id, const QJsonObject& args = {}) { return Cont
 
 QString ch(int index) { return control::channelIdOf(Engine::mixer()->mixerChannel(index)); }
 
-//! A sample track on mixer channel @a channel playing one second of the sum of @a tones (each 0.25 amplitude).
-SampleTrack* toneTrack(int channel, const std::vector<double>& tones, float level = 0.25f)
+//! A sample track on mixer channel @a channel playing @a seconds of the sum of @a tones (each @a level amplitude).
+SampleTrack* toneTrack(int channel, const std::vector<double>& tones, float level = 0.25f, double seconds = 1.0)
 {
 	auto* track = dynamic_cast<SampleTrack*>(Track::create(Track::Type::Sample, Engine::getSong()));
 	track->mixerChannelModel()->setValue(channel);
 	const int rate = static_cast<int>(Engine::audioEngine()->outputSampleRate());
-	std::vector<SampleFrame> frames(static_cast<std::size_t>(rate));
+	std::vector<SampleFrame> frames(static_cast<std::size_t>(static_cast<double>(rate) * seconds));
 	for (std::size_t i = 0; i < frames.size(); ++i)
 	{
 		float v = 0.f;
@@ -325,6 +325,44 @@ private slots:
 			ControlErrorKind::InvalidArgs);
 		QVERIFY(!run(QStringLiteral("mixer.masking_report"), {{QStringLiteral("channels"), QJsonArray{ch(1), QStringLiteral("nope")}}}).ok);
 	}
+
+		//! The channel boundary: 2..16 distinct channels are reported; 17 are refused as invalid_args and write nothing.
+		void sixteenChannelsAreReportedAndSeventeenRefused()
+		{
+			while (Engine::mixer()->numChannels() < 17) { Engine::mixer()->createChannel(); }
+			QJsonArray sixteen;
+			for (int i = 0; i < 16; ++i) { sixteen.append(ch(i)); }
+			const std::vector<float> eq = allEq();
+			const int depth = undoDepth();
+			const ControlResult ok16 = run(QStringLiteral("mixer.masking_report"), {{QStringLiteral("channels"), sixteen}});
+			QVERIFY2(ok16.ok, qPrintable(ok16.errorMessage));
+			QCOMPARE(ok16.result.value(QStringLiteral("channels")).toArray().size(), 16);
+			QJsonArray seventeen = sixteen;
+			seventeen.append(ch(16));
+			const ControlResult ok17 = run(QStringLiteral("mixer.masking_report"), {{QStringLiteral("channels"), seventeen}});
+			QVERIFY(!ok17.ok);
+			QCOMPARE(ok17.errorKind, ControlErrorKind::InvalidArgs);
+			QCOMPARE(allEq(), eq);
+			QCOMPARE(undoDepth(), depth);
+		}
+
+		//! A ten-second clip runs far past the 64 frames the analysis reads: the clash is still found, bounded, and the same on every call.
+		void aClipBeyondTheAnalysisCapIsBoundedAndDeterministic()
+		{
+			while (Engine::mixer()->numChannels() < 6) { Engine::mixer()->createChannel(); }
+			SampleTrack* longTrack = toneTrack(5, {200.0}, 0.25f, 10.0);
+			const QJsonObject priorities{{ch(1), QStringLiteral("front")}, {ch(5), QStringLiteral("back")}};
+			const QJsonObject args{{QStringLiteral("channels"), QJsonArray{ch(1), ch(5)}}, {QStringLiteral("priorities"), priorities}};
+			const ControlResult first = run(QStringLiteral("mixer.masking_report"), args);
+			QVERIFY2(first.ok, qPrintable(first.errorMessage));
+			const QJsonObject clash = clashAt(first.result, ch(1), ch(5), 200.0);
+			QVERIFY(!clash.isEmpty());
+			QCOMPARE(clash.value(QStringLiteral("target")).toString(), ch(5));
+			const ControlResult second = run(QStringLiteral("mixer.masking_report"), args);
+			QVERIFY(second.ok);
+			QCOMPARE(QJsonDocument(second.result).toJson(QJsonDocument::Compact), QJsonDocument(first.result).toJson(QJsonDocument::Compact));
+			delete longTrack;
+		}
 
 private:
 	QString m_instrument;

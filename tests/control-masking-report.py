@@ -13,6 +13,8 @@ Two new mixer channels each get a sample track with generated tones (sample.gene
      touches no other channel's EQ, and records one undo step; one control.undo restores the whole
      EQ and the depth;
   6. an out-of-range proposal is refused as invalid_args and leaves the EQ and the depth unchanged.
+  7. with the transport playing, a report still names the 200 Hz clash with B as target, a proposal
+     applies and undoes in one step each, and the process keeps answering; playback is stopped at the end.
 
 Usage:  QT_QPA_PLATFORM=offscreen python3 tests/control-masking-report.py <zene>
 Exit 0 only when every check held.
@@ -20,6 +22,7 @@ Exit 0 only when every check held.
 
 import json
 import sys
+import time
 
 import control_socket_harness as H
 from freeze_bounce_evidence import Recorder, Session, report_results
@@ -136,6 +139,29 @@ def check_apply(session, recorder, a, b):
     check_undo_and_refusal(session, recorder, b, eq_before, depth_before)
 
 
+def check_playback_active(session, recorder, a, b):
+    played = session.result("transport.play", {})
+    recorder.check("transport.play reports the transport playing", played.get("playing") is True,
+                   "reply=%r" % (played,))
+    time.sleep(0.2)
+    state = session.result("transport.get_state")
+    recorder.check("the transport is still playing 0.2 s later", state.get("playing") is True,
+                   "state=%r" % (state,))
+    report = session.result("mixer.masking_report", {"channels": [b, a], "priorities": {a: "front", b: "back"}})
+    clash = clash_at(report, a, b, 200.0)
+    recorder.check("a report while playing still names the 200 Hz clash with the back channel as target",
+                   clash is not None and clash.get("target") == b, "report=%r" % (report,))
+    eq_before = eq_state(session)
+    depth_before = session.result("control.undo_depth").get("depth")
+    strip = proposal_from_report(session, recorder, a, b)
+    check_proposal_effect(session, recorder, b, strip, eq_before, depth_before)
+    check_undo_and_refusal(session, recorder, b, eq_before, depth_before)
+    session.result("transport.stop", {})
+    stopped = session.result("transport.get_state")
+    recorder.check("transport.stop leaves the transport stopped after the apply and undo",
+                   stopped.get("playing") is False, "state=%r" % (stopped,))
+
+
 def drive(session, recorder):
     a = tone_channel(session, "Lead", [200.0, 3000.0])
     b = tone_channel(session, "Pad", [200.0, 800.0])
@@ -144,6 +170,7 @@ def drive(session, recorder):
     check_report(session, recorder, a, b, {"channels": [b, a], "priorities": {a: "front", b: "back"}})
     check_nothing_changed(session, recorder, eq_before, depth_before)
     check_apply(session, recorder, a, b)
+    check_playback_active(session, recorder, a, b)
 
 
 def main(argv):
