@@ -960,6 +960,18 @@ not saved. An interface edit is reported when it leaves an undo step; the few in
 as a window's position) are not project changes and make no line. The commands are for programs on the socket: over the
 MCP bridge the lines are skipped, because a tool call cannot receive them.</p>
 
+<p id="session-sdk"><b>Writing a companion program in TypeScript.</b> Zene ships a TypeScript package,
+<code>@zene-studio/session-sdk</code> (in <code>tools/zene-session-sdk</code>, version 0.1.0), for programs that work
+alongside an open project. Start Zene with <code>--control-socket &lt;path&gt;</code>; the program then connects to that
+path. It can read the project and edit it with the same commands described here, and each edit is an ordinary undo
+step in Zene. It can also subscribe to the change lines above. A refused command comes back as an error that names
+its kind (for example <code>not_found</code>). When the program falls behind or loses the connection, the package
+subscribes again and rereads the project, then reports how many changes the program missed. Its
+<code>LiveSession</code> does this by itself, reconnecting until Zene is reachable again. The package's
+<code>README.md</code> documents connecting, reading, editing, subscribing, errors and recovery, and
+<code>examples/live-view.ts</code> is a complete example. The package adds nothing to Zene's window and nothing to your
+project files.</p>
+
 <p id="controller-scripts"><b>Controller scripts (Customise &gt; Controller Scripts).</b> A control-surface script is a
 Lua file that stays loaded and answers a MIDI controller: Start Script... (<code>controller.script_start</code>) takes a
 name, the file, and the MIDI input and output to bind; every event from the input calls the script's
