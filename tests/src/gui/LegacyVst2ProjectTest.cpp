@@ -143,6 +143,27 @@ private slots:
 			QVERIFY2(!QFileInfo::exists(plugins.filePath(QString::fromLatin1(name))), name);
 		}
 	}
+	void aVst2BinaryResolvesToACarlaInstrument()
+	{
+		QFile notes(m_variants.filePath(QStringLiteral("notes.txt")));
+		QVERIFY(notes.open(QIODevice::WriteOnly));
+		QVERIFY(notes.write("notes") > 0);
+		notes.close();
+		QVERIFY(!legacyvst2::instrumentKeyForBinary(notes.fileName()));
+		QVERIFY(!legacyvst2::instrumentKeyForBinary(m_variants.filePath(QStringLiteral("Absent.so"))));
+		if (const QString why = missing(); !why.isEmpty()) { QSKIP(qPrintable(why)); }
+		if (const QString why = missingCarlaRuntime(nativeFixture()); !why.isEmpty()) { QSKIP(qPrintable(why)); }
+		auto key = legacyvst2::instrumentKeyForBinary(nativeFixture());
+		QVERIFY(key);
+		QCOMPARE(QFileInfo(key->attributes[QStringLiteral("file")]).canonicalFilePath(),
+			QFileInfo(nativeFixture()).canonicalFilePath());
+		QCOMPARE(key->attributes[QStringLiteral("uniqueid")], QStringLiteral("1517180466"));
+		InstrumentTrack* track = newTrack();
+		track->loadInstrument(QStringLiteral("carlavst2"), &*key);
+		QCOMPARE(QString::fromLatin1(track->instrument()->descriptor()->name), QStringLiteral("carlavst2"));
+		QVERIFY(track->instrument()->unavailableReason().isEmpty());
+		QVERIFY(renderNote(track, NativeRenderMs).sounded);
+	}
 	void aLegacyProjectOpensAsCarla()
 	{
 		if (const QString why = missing(); !why.isEmpty()) { QSKIP(qPrintable(why)); }
