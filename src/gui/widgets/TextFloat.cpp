@@ -26,6 +26,7 @@
 
 #include <algorithm>
 
+#include <QApplication>
 #include <QTimer>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
@@ -69,8 +70,16 @@ TextFloat::TextFloat() :
 }
 
 TextFloat::TextFloat(const QString & title, const QString & text, const QPixmap & pixmap) :
-	QWidget(getGUI()->mainWindow(), Qt::ToolTip)
+	// gui-1115: a notice must outlive the menu that ran its command. A Qt::ToolTip is an override-redirect
+	// transient on X11, so the reactivated main window can cover it when the menu closes; a frameless tool
+	// window, kept above its parent, stays readable. Qt::WindowDoesNotAcceptFocus keeps it a notice rather
+	// than a focus target: WA_ShowWithoutActivating alone still let the tool window take the application's
+	// focus, which cleared the focused panel's widget (PanelShortcutsTest). A notice is read, not typed in.
+	QWidget(getGUI()->mainWindow(), Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint
+		| Qt::WindowDoesNotAcceptFocus)
 {
+	setAttribute(Qt::WA_ShowWithoutActivating);
+	setAttribute(Qt::WA_QuitOnClose, false);  // a tooltip never closed the application; a notice must not either
 	QHBoxLayout * mainLayout = new QHBoxLayout();
 	setLayout(mainLayout);
 
@@ -164,6 +173,22 @@ TextFloat * TextFloat::displayMessage(const QString & title,
 void TextFloat::mousePressEvent(QMouseEvent *)
 {
 	close();
+}
+
+bool TextFloat::event(QEvent * event)
+{
+	// gui-1115: the notice must never hold the application's focus. Qt still made this tool window the active
+	// window when the window that reported the message (a command form, the menu) closed, even with
+	// WA_ShowWithoutActivating and Qt::WindowDoesNotAcceptFocus; the panel that had focus then lost it
+	// (PanelShortcutsTest). Hand activation straight back to the window the notice belongs to.
+	if (event->type() == QEvent::WindowActivate && !m_returningActivation && parentWidget() != nullptr
+		&& QApplication::applicationState() == Qt::ApplicationActive)
+	{
+		m_returningActivation = true;
+		parentWidget()->window()->activateWindow();
+		m_returningActivation = false;
+	}
+	return QWidget::event(event);
 }
 
 } // namespace lmms::gui
