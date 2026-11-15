@@ -618,6 +618,7 @@ set(LMMS_SRCS
 	# those files grows for a format they do not own.
 	core/ControlDeviceVst3.cpp
 	core/ControlDeviceVst2.cpp
+	core/LegacyVst2Conversion.cpp
 	# The CLAP half of the device catalogue (feature row 79, board task #669):
 	# plugin.list enumerates the CLAP hosts' own classes - the effect host's and
 	# the instrument host's this lane adds - and plugin.load loads one onto a

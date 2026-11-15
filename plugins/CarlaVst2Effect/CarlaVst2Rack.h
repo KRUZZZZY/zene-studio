@@ -74,6 +74,12 @@ public:
 	//! @a error set when there is no Carla runtime, no such binary, or Carla cannot load it.
 	bool load(const QString& file, Binary binary, qint64 uniqueId, QString* error);
 	bool hasPlugin() const;
+	bool hasLegacyApi() const;
+	uint32_t programCount() const;
+	void setProgram(uint32_t program);
+	void setChunk(const char* chunk);
+	uint32_t legacyParameterCount() const;
+	void setLegacyParameterValue(uint32_t index, float value);
 	QString lastError() const;
 
 	//! Render worker: Carla's process for @a inOut.size() frames (at most one engine period), in place.
@@ -113,12 +119,21 @@ private:
 		using EmbedUi = void* (*)(CarlaHostHandle, uint, void*);
 		using ShowUi = void (*)(CarlaHostHandle, uint, bool);
 		using SetCallback = void (*)(CarlaHostHandle, EngineCallbackFunc, void*);
+		using Count = uint32_t (*)(CarlaHostHandle, uint);
+		using SetProgram = void (*)(CarlaHostHandle, uint, uint32_t);
+		using SetChunk = void (*)(CarlaHostHandle, uint, const char*);
+		using SetParameter = void (*)(CarlaHostHandle, uint, uint32_t, float);
 		AddPlugin addPlugin = nullptr;
 		LastError lastError = nullptr;
 		PluginCount pluginCount = nullptr;
 		EmbedUi embedUi = nullptr;
 		ShowUi showUi = nullptr;
 		SetCallback setCallback = nullptr;
+		Count programCount = nullptr;
+		SetProgram setProgram = nullptr;
+		SetChunk setChunk = nullptr;
+		Count parameterCount = nullptr;
+		SetParameter setParameter = nullptr;
 		bool complete() const { return addPlugin && lastError && pluginCount && embedUi && showUi && setCallback; }
 	};
 

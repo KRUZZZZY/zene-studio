@@ -427,6 +427,8 @@ protected slots:
 
 
 private:
+	bool loadConvertedInstrument(const QDomElement& instrumentNode);
+
 	struct NoteActivitySnapshot
 	{
 		int activeNotes;

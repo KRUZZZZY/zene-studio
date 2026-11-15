@@ -43,6 +43,7 @@
 
 #include "AudioEngine.h"
 #include "CarlaVst2SubPluginFeatures.h"
+#include "CarlaVst2Legacy.h"
 #include "Engine.h"
 #include "Knob.h"
 #include "Song.h"
@@ -339,6 +340,32 @@ void CarlaVst2EffectControls::saveSettings(QDomDocument& doc, QDomElement& eleme
 
 void CarlaVst2EffectControls::loadSettings(const QDomElement& element)
 {
+	const auto legacy = element.firstChildElement(carlavst2::legacyStateTag());
+	if (!legacy.isNull())
+	{
+		m_effect->pauseWorker();
+		auto& rack = m_effect->rack();
+		const bool available = rack.hasLegacyApi();
+		if (available)
+		{
+			carlavst2::applyLegacyState(legacy, {
+				[&rack] { return rack.programCount(); }, [&rack](uint32_t p) { rack.setProgram(p); },
+				[&rack](const char* c) { rack.setChunk(c); }, [&rack] { return rack.legacyParameterCount(); },
+				[&rack](uint32_t i, float v) { rack.setLegacyParameterValue(i, v); }});
+		}
+		m_settings = element;
+		refreshParams(false);
+		for (std::size_t i = 0; i < m_models.size(); ++i)
+		{
+			const QString name = QStringLiteral("PARAM_KNOB_") + QString::number(i);
+			if (carlavst2::hasModelSettings(element, name)) { m_models[i]->loadSettings(element, name); }
+		}
+		carlavst2::warnExtraModelSettings(element, m_models.size());
+		m_effect->resumeWorker();
+		m_effect->setLoadError(!available ? QStringLiteral("Carla host API cannot restore legacy VST2 state")
+			: rack.hasPlugin() ? QString() : QStringLiteral("Carla could not restore the saved VST2 plug-in: %1").arg(rack.lastError()));
+		return;
+	}
 	QDomElement project = element.firstChildElement(QStringLiteral("CARLA-PROJECT"));
 	if (project.isNull()) { return; }  // no Carla state: keep what the key loaded
 	QDomDocument carlaDoc(QStringLiteral("carla"));

@@ -604,8 +604,7 @@ plug-in, in a window of its own from Wine for a Windows one. Zene runs Carla for
 slow plug-in nor the Wine bridge can stall playback; the track compensates for those two periods. The plug-in's settings, including its private state (its chunk), are
 saved with the project, in presets (<code>plugin.preset_save</code> / <code>plugin.preset_load</code>) and with
 <code>plugin.state_save</code>, and come back when they are loaded. Without a Carla runtime no VST2 instrument is listed, and a
-project that used one keeps it as a placeholder until Carla is installed. Opening projects saved with the older VeSTige and VST
-effect hosts as Carla devices comes in a later release; until then those older hosts are unchanged.</p>
+project that used one keeps it as a placeholder until Carla is installed.</p>
 
 <p><strong>VST2 effects through Carla.</strong> VST2 effects are found the same way, in the same folders, and are hosted the same
 way: native ones in Carla, Windows ones through Carla's Wine bridge. They appear in the device picker that Add device (Device panel),
@@ -622,6 +621,14 @@ chain compensates for it. While a project is exported Zene waits for each VST2 p
 plug-in's settings, including its chunk, are saved with the project, in presets (<code>plugin.preset_save</code> /
 <code>plugin.preset_load</code>) and with <code>plugin.state_save</code> / <code>plugin.state_load</code>. Without a Carla runtime
 no VST2 effect is listed, and a project that used one keeps it as a placeholder until Carla is installed.</p>
+
+<p><strong>Older VST2 projects.</strong> When you open a project or preset made with the older VeSTige instrument or VST effect
+host, using File &gt; Open, the Start hub's Recent list or the agent command <code>project.open</code>, each of those devices opens
+as a Carla VST2 instrument or effect instead. Zene matches the plug-in's file to the VST2 list and keeps the same plug-in,
+parameter values, chunk (the plug-in's own saved state), automation, controller links and program. Saving writes the Carla form,
+so the next open needs no conversion. If there is no Carla runtime, or Carla cannot load the plug-in, the device opens in the
+older host as before. A missing plug-in file keeps its saved path, so nothing in the project is lost. The older host's channel
+and pin settings are not carried over: a Carla device takes the chain's stereo pair. The plug-in's editor opens closed.</p>
 
 <p>Each device card has an Actions button (⋯), and the same menu opens on a right-click: Bypass, Open Editor, Presets, A/B, Replace With…, Move Left, Move Right and Remove, then Insert, Copy, Parameters and Hosting. Under the card's header a line says the device's state in words: Bypassed, which A/B setting you hear, the delay it adds, whether its plug-in host crashed or was quarantined, and the preset it last loaded or saved. When the chain changes, the cards that did not change stay where they are. Add device, Insert and Replace open the device picker. With a mixer channel selected, Add device fills the channel's selected parallel chain (Rack &gt; Route to); an empty parallel chain has its own Add device... button under its heading. Start typing to filter it by name, vendor, format or type. The arrow keys move through the list, Enter adds the highlighted device and Escape cancels. Each row shows the device's type, format, vendor and state; favourites come first.</p>
 <p>The Inspector keeps its place as you move through a project: a section that still shows the same track, clip or channel is left as it is, and a changed section keeps your keyboard focus and scroll position. When the selected notes differ, a field says 'Multiple values', and a key, velocity or length you type there is given to every selected note; a typed start moves the first note there and keeps the spacing. Volumes read in dB, velocities and pan in %, and times in the time format. Rename a track or a mixer channel by typing in its name field.</p>

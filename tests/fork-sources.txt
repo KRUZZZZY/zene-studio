@@ -3656,6 +3656,8 @@ plugins/CarlaVst2/CMakeLists.txt
 plugins/CarlaVst2/CarlaVst2.cpp
 plugins/CarlaBase/CarlaVst2Discovery.cpp
 plugins/CarlaBase/CarlaVst2Discovery.h
+plugins/CarlaBase/CarlaVst2Legacy.cpp
+plugins/CarlaBase/CarlaVst2Legacy.h
 plugins/CarlaVst2/CarlaVst2Instrument.h
 plugins/CarlaVst2/CarlaVst2Renderer.cpp
 plugins/CarlaVst2/CarlaVst2Renderer.h
@@ -3691,6 +3693,7 @@ tests/src/gui/CarlaVst2EffectTestSupport.h
 include/OfflineRenderBarrier.h
 src/core/OfflineRenderBarrier.cpp
 docs/050-features/Q050-481.2.md
+docs/050-features/Q050-481.3.md
 docs/qwen-fixes-2026-10/cluster-Q050-481.2.md
 include/AudioDeviceDiagnostics.h
 src/core/AudioDeviceDiagnostics.cpp
@@ -3856,3 +3859,13 @@ include/Earcons.h
 src/core/Earcons.cpp
 tests/src/gui/EarconsSettingsTest.cpp
 tests/src/core/EarconsRenderTest.cpp
+
+include/LegacyVst2Conversion.h
+src/core/LegacyVst2Conversion.cpp
+tests/src/core/LegacyVst2ConversionTest.cpp
+tests/src/plugins/CarlaVst2LegacyStateTest.cpp
+
+# Q050-481.3: legacy VST2 host project and reference render.
+tests/src/gui/LegacyVst2ProjectTest.cpp
+tests/data/legacy-projects/vst2-vestige-vsteffect.mmp
+tests/data/legacy-projects/vst2-vestige-vsteffect.reference.json
