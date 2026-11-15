@@ -134,6 +134,15 @@ std::optional<Attributes> resolveFromFactory(const QString& absoluteFile, Plugin
 	return Attributes{{QStringLiteral("file"), absoluteFile}, {QStringLiteral("name"), file.completeBaseName()}};
 }
 
+std::optional<Plugin::Descriptor::SubPluginFeatures::Key> instrumentKeyForBinary(const QString& file)
+{
+	const auto suffix = QFileInfo(file).suffix().toLower();
+	if (suffix != QLatin1String("so") && suffix != QLatin1String("dll")) { return std::nullopt; }
+	const auto attrs = resolveFromFactory(PathUtil::toAbsolute(file), Plugin::Type::Instrument);
+	if (!attrs) { return std::nullopt; }
+	return Key(nullptr, QString(), *attrs);
+}
+
 QDomElement convertInstrument(const QDomElement& node, const Resolver& resolve)
 {
 	if (!conversionEnabled() || node.tagName() != QLatin1String("instrument") || node.attribute("name") != QLatin1String("vestige")) { return {}; }

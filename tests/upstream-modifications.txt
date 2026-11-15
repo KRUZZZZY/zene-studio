@@ -5970,3 +5970,42 @@ include/InstrumentTrack.h	Q050-481.3: declare the legacy instrument conversion h
 src/gui/widgets/TextFloat.cpp	cluster gui-1115-menu-help-accessibility-check: a floating notice is a frameless stay-on-top tool window, not a Qt::ToolTip transient (a menu's close reactivates the main window over the tooltip, hiding Help > Accessibility Check's report); integration fix: the notice is marked non-focusable and hands activation back to its window, so a result shown from an open menu or command form no longer clears the focused panel (PanelShortcutsTest); covered by GrooveMenuTest aReportFromTheOpenHelpMenuSurvivesTheMenuClosing.
 include/TextFloat.h	cluster gui-1115-menu-help-accessibility-check: declare TextFloat::event, which returns activation to the notice's owning window so a floating result never holds the application focus.
 tests/src/gui/GrooveMenuTest.cpp	cluster gui-1115-menu-help-accessibility-check: opens the real Help menu, clicks Accessibility Check, and requires the report to survive the menu's close with all five per-check counts.
+include/aeffectx.h	Q050-481.4: removed with the legacy VST2 host; VST2 is hosted through Carla (plugins/CarlaVst2, plugins/CarlaVst2Effect)
+plugins/Vestige/Vestige.cpp	Q050-481.4: removed with the legacy VST2 host; VST2 is hosted through Carla (plugins/CarlaVst2, plugins/CarlaVst2Effect)
+plugins/Vestige/Vestige.h	Q050-481.4: removed with the legacy VST2 host; VST2 is hosted through Carla (plugins/CarlaVst2, plugins/CarlaVst2Effect)
+plugins/Vestige/artwork.svg	Q050-481.4: removed with the legacy VST2 host; VST2 is hosted through Carla (plugins/CarlaVst2, plugins/CarlaVst2Effect)
+plugins/Vestige/controls.svg	Q050-481.4: removed with the legacy VST2 host; VST2 is hosted through Carla (plugins/CarlaVst2, plugins/CarlaVst2Effect)
+plugins/Vestige/controls_active.svg	Q050-481.4: removed with the legacy VST2 host; VST2 is hosted through Carla (plugins/CarlaVst2, plugins/CarlaVst2Effect)
+plugins/Vestige/logo-symbolic.svg	Q050-481.4: removed with the legacy VST2 host; VST2 is hosted through Carla (plugins/CarlaVst2, plugins/CarlaVst2Effect)
+plugins/Vestige/logo.svg	Q050-481.4: removed with the legacy VST2 host; VST2 is hosted through Carla (plugins/CarlaVst2, plugins/CarlaVst2Effect)
+plugins/Vestige/select_file.svg	Q050-481.4: removed with the legacy VST2 host; VST2 is hosted through Carla (plugins/CarlaVst2, plugins/CarlaVst2Effect)
+plugins/Vestige/select_file_active.svg	Q050-481.4: removed with the legacy VST2 host; VST2 is hosted through Carla (plugins/CarlaVst2, plugins/CarlaVst2Effect)
+plugins/VstBase/RemoteVstPlugin.cpp	Q050-481.4: removed with the legacy VST2 host; VST2 is hosted through Carla (plugins/CarlaVst2, plugins/CarlaVst2Effect)
+plugins/VstBase/VstPlugin.cpp	Q050-481.4: removed with the legacy VST2 host; VST2 is hosted through Carla (plugins/CarlaVst2, plugins/CarlaVst2Effect)
+plugins/VstBase/VstPlugin.h	Q050-481.4: removed with the legacy VST2 host; VST2 is hosted through Carla (plugins/CarlaVst2, plugins/CarlaVst2Effect)
+plugins/VstBase/communication.h	Q050-481.4: removed with the legacy VST2 host; VST2 is hosted through Carla (plugins/CarlaVst2, plugins/CarlaVst2Effect)
+plugins/VstBase/vst_base.cpp	Q050-481.4: removed with the legacy VST2 host; VST2 is hosted through Carla (plugins/CarlaVst2, plugins/CarlaVst2Effect)
+plugins/VstEffect/VstEffect.cpp	Q050-481.4: removed with the legacy VST2 host; VST2 is hosted through Carla (plugins/CarlaVst2, plugins/CarlaVst2Effect)
+plugins/VstEffect/VstEffect.h	Q050-481.4: removed with the legacy VST2 host; VST2 is hosted through Carla (plugins/CarlaVst2, plugins/CarlaVst2Effect)
+plugins/VstEffect/VstEffectControlDialog.cpp	Q050-481.4: removed with the legacy VST2 host; VST2 is hosted through Carla (plugins/CarlaVst2, plugins/CarlaVst2Effect)
+plugins/VstEffect/VstEffectControlDialog.h	Q050-481.4: removed with the legacy VST2 host; VST2 is hosted through Carla (plugins/CarlaVst2, plugins/CarlaVst2Effect)
+plugins/VstEffect/VstEffectControls.cpp	Q050-481.4: removed with the legacy VST2 host; VST2 is hosted through Carla (plugins/CarlaVst2, plugins/CarlaVst2Effect)
+plugins/VstEffect/VstEffectControls.h	Q050-481.4: removed with the legacy VST2 host; VST2 is hosted through Carla (plugins/CarlaVst2, plugins/CarlaVst2Effect)
+plugins/VstEffect/VstSubPluginFeatures.cpp	Q050-481.4: removed with the legacy VST2 host; VST2 is hosted through Carla (plugins/CarlaVst2, plugins/CarlaVst2Effect)
+plugins/VstEffect/VstSubPluginFeatures.h	Q050-481.4: removed with the legacy VST2 host; VST2 is hosted through Carla (plugins/CarlaVst2, plugins/CarlaVst2Effect)
+plugins/VstEffect/controls.svg	Q050-481.4: removed with the legacy VST2 host; VST2 is hosted through Carla (plugins/CarlaVst2, plugins/CarlaVst2Effect)
+plugins/VstEffect/controls_active.svg	Q050-481.4: removed with the legacy VST2 host; VST2 is hosted through Carla (plugins/CarlaVst2, plugins/CarlaVst2Effect)
+plugins/VstEffect/logo.svg	Q050-481.4: removed with the legacy VST2 host; VST2 is hosted through Carla (plugins/CarlaVst2, plugins/CarlaVst2Effect)
+src/core/Song.cpp	Q050-481.4: processAutomations skips the recording pass for an automation clip without a live target (hasLiveTarget), so the render thread never constructs firstObject()'s fallback model; a legacy VST2 project whose plug-in is a placeholder left its automation targetless and threw std::bad_alloc; AutomationModesTest::testRecordingClipWithoutTargetWritesNothing
+src/gui/editors/TrackContainerView.cpp	Q050-481.4: a VST2 binary dropped on the song editor loads as a Carla VST2 instrument via legacyvst2::instrumentKeyForBinary; Vestige, which owned the .so/.dll types, is removed
+src/gui/FileBrowser.cpp	Q050-481.4: a VST2 binary opened from the file browser loads as a Carla VST2 instrument via legacyvst2::instrumentKeyForBinary; Vestige, which owned the .so/.dll types, is removed
+.github/workflows/provision-plugin-hosting-deps.sh	# Host VST2 plug-ins through Carla - stage 4/4: Remove the legacy VST2 host modules
+plugins/VstBase/PeMachineType.h	# Host VST2 plug-ins through Carla - stage 4/4: Remove the legacy VST2 host modules
+plugins/VstBase/VstChannelCount.h	# Host VST2 plug-ins through Carla - stage 4/4: Remove the legacy VST2 host modules
+plugins/VstBase/VstMidiEventBatch.h	# Host VST2 plug-ins through Carla - stage 4/4: Remove the legacy VST2 host modules
+tests/src/core/VstChannelCountTest.cpp	# Host VST2 plug-ins through Carla - stage 4/4: Remove the legacy VST2 host modules
+tests/src/core/VstMidiEventBatchTest.cpp	# Host VST2 plug-ins through Carla - stage 4/4: Remove the legacy VST2 host modules
+tests/src/core/VstPeMachineTypeTest.cpp	# Host VST2 plug-ins through Carla - stage 4/4: Remove the legacy VST2 host modules
+tests/src/core/VstSubPluginFeaturesTest.cpp	# Host VST2 plug-ins through Carla - stage 4/4: Remove the legacy VST2 host modules
+tests/src/plugins/VestigeMidiHandoffTest.cpp	# Host VST2 plug-ins through Carla - stage 4/4: Remove the legacy VST2 host modules
+tests/src/plugins/VstEffectControlsTest.cpp	# Host VST2 plug-ins through Carla - stage 4/4: Remove the legacy VST2 host modules

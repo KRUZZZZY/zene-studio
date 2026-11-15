@@ -111,7 +111,7 @@ require_mit "$VST3_DIR/LICENSE.txt" "the VST3 SDK"
 [ -f "$VST3_DIR/pluginterfaces/vst/ivstcomponent.h" ] \
 	|| fail "no pluginterfaces/vst/ivstcomponent.h in $VST3_DIR"
 if [ -e "$VST3_DIR/pluginterfaces/vst2.x" ]; then
-	fail "$VST3_DIR/pluginterfaces/vst2.x exists: VST2 headers must never be vendored (Vestige is the only VST2 path)"
+	fail "$VST3_DIR/pluginterfaces/vst2.x exists: VST2 headers must never be vendored (VST2 is hosted through Carla)"
 fi
 
 # --- CLAP headers -----------------------------------------------------------

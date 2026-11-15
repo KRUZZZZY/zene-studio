@@ -35,11 +35,10 @@ disclosure date with the maintainers.
 **In scope** — the paths that load or interpret untrusted input:
 
 - **Plugin hosting.** Loading, running and unloading native plugins in any supported format:
-  VST2 through the built-in Vestige host, VST3, CLAP, LV2, LADSPA, SoundFont and GIG files.
-- **The out-of-process plugin boundary.** Remote plugins (VST2/Vestige, ZynAddSubFx, the
-  VstBase/VstEffect host) run in a child process and talk to the main process over a
+  VST2 through Carla, VST3, CLAP, LV2, LADSPA, SoundFont and GIG files.
+- **The out-of-process plugin boundary.** Remote plugins (ZynAddSubFx) run in a child process and talk to the main process over a
   shared-memory protocol. Memory corruption, a crash that crosses that boundary, or an escape
-  from it is in scope.
+  from it is in scope. Carla hosts native VST2 plug-ins in process and Windows plug-ins in its Wine bridge; Zene builds no VST2 client of its own.
 - **The sandboxes.** The Lua scripting sandbox (`--run-script`) and the WASM DSP sandbox
   (wasmtime). A sandbox escape — reaching the filesystem or network, or executing native code
   outside the sandbox — is a vulnerability.

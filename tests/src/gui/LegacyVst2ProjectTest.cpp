@@ -24,6 +24,7 @@
 #include "AutomationClip.h"
 #include "AutomationTrack.h"
 #include "EffectControls.h"
+#include "DummyEffect.h"
 #include "LegacyVst2Conversion.h"
 #include "OfflineRenderBarrier.h"
 #include "StartHub.h"
@@ -33,12 +34,6 @@
 
 namespace
 {
-FloatModel* model(QObject* parent, const QString& name)
-{
-	for (auto* item : parent->findChildren<FloatModel*>()) { if (item->displayName() == name) { return item; } }
-	return nullptr;
-}
-
 QList<Rendered> renderBars(const QList<double>& bars)
 {
 	QList<Rendered> result;
@@ -70,8 +65,8 @@ class LegacyVst2ProjectTest : public QObject
 	QTemporaryDir m_home, m_plugins, m_vst, m_variants;
 	QString missing() const
 	{
-		for (const auto& path : {nativeFixture(), effectNativeFixture(), QDir(m_plugins.path()).filePath(QStringLiteral("NativeLinuxRemoteVstPlugin64"))})
-			if (!QFileInfo::exists(path)) { return QStringLiteral("missing native fixture or remote host: %1").arg(path); }
+		for (const auto& path : {nativeFixture(), effectNativeFixture()})
+			if (!QFileInfo::exists(path)) { return QStringLiteral("missing native fixture: %1").arg(path); }
 		return {};
 	}
 	InstrumentTrack* firstInstrumentTrack()
@@ -129,82 +124,45 @@ private slots:
 		ShellSelection::instance()->setTrack(nullptr);
 		ControlRegistry::setReady(false); Engine::destroy();
 	}
-	void writeTheFixtureWithTheOldHost()
+	void theLegacyVst2HostsAreNotBuilt()
 	{
-		const QString dir = QString::fromLocal8Bit(qgetenv("ZENE_WRITE_LEGACY_VST2_FIXTURE"));
-		if (dir.isEmpty()) { QSKIP("fixture generator: set ZENE_WRITE_LEGACY_VST2_FIXTURE=<dir>"); }
-		if (const QString why = missing(); !why.isEmpty()) { QSKIP(qPrintable(why)); }
-		legacyvst2::setConversionEnabled(false);
-		Engine::getSong()->setTempo(600);
-		InstrumentTrack* track = newTrack(); QVERIFY(track);
-		track->loadInstrument(QStringLiteral("vestige"));
-		QVERIFY(track->instrument());
-		QDomDocument doc;
-		auto instrument = doc.createElement(QStringLiteral("vestige"));
-		instrument.setAttribute(QStringLiteral("plugin"), QStringLiteral("uservst:ZeneVst2TestInstrument.so"));
-		track->instrument()->restoreState(instrument);
-		auto* level = model(track->instrument(), QStringLiteral("0"));
-		auto* tone = model(track->instrument(), QStringLiteral("1"));
-		QVERIFY(level); QVERIFY(tone); level->setValue(0.7f);
-		EffectChain* chain = track->audioBusHandle()->effects();
-		Plugin::Descriptor::SubPluginFeatures::Key key(nullptr, QStringLiteral("test"), {{QStringLiteral("file"), QStringLiteral("uservst:ZeneVst2TestEffect.so")}});
-		Effect* effect = Effect::instantiate(QStringLiteral("vsteffect"), chain, &key); QVERIFY(effect);
-		chain->appendEffect(effect); chain->setEnabledUnjournalled(true); effect->setEnabled(true);
-		auto settings = doc.createElement(effect->controls()->nodeName());
-		effect->controls()->restoreState(settings);
-		auto* left = model(effect->controls(), QStringLiteral("0")); QVERIFY(left); left->setValue(0.6f);
-		QVERIFY(renderNote(track, 10000).sounded);
-		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0))); QVERIFY(clip);
-		clip->addNote(Note(TimePos(4 * DefaultTicksPerBar), TimePos(0), 60, 100), false);
-		auto* automation = dynamic_cast<AutomationTrack*>(Track::create(Track::Type::Automation, Engine::getSong())); QVERIFY(automation);
-		auto* autoClip = dynamic_cast<AutomationClip*>(automation->createClip(TimePos(0))); QVERIFY(autoClip);
-		QVERIFY(autoClip->addObject(tone));
-		autoClip->setProgressionType(AutomationClip::ProgressionType::Discrete);
-		autoClip->putValue(TimePos(0), 0.25f); autoClip->putValue(TimePos(2 * DefaultTicksPerBar), 0.8f);
-		QVERIFY(QDir().mkpath(dir));
-		const QString path = QDir(dir).filePath(QStringLiteral("vst2-vestige-vsteffect.mmp"));
-		QVERIFY(run(QStringLiteral("project.save"), {{QStringLiteral("path"), path}}).ok);
-		QFile file(path); QVERIFY(file.open(QIODevice::ReadOnly)); const QByteArray xml = file.readAll();
-		QVERIFY(xml.contains("uservst:")); QVERIFY(!xml.contains(m_vst.path().toUtf8()));
-		QDir buildDir(QStringLiteral(LMMS_TEST_PLUGIN_DIR)); QVERIFY(buildDir.cdUp());
-		QVERIFY(!xml.contains(buildDir.absolutePath().toUtf8()));
-		QDomDocument saved; QVERIFY(saved.setContent(xml));
-		const auto instState = saved.elementsByTagName(QStringLiteral("vestige")).at(0).toElement();
-		const auto effectState = saved.elementsByTagName(QStringLiteral("vsteffectcontrols")).at(0).toElement();
-		const auto decode = [](const QDomElement& state) {
-			return QString::fromLatin1(QByteArray::fromBase64(state.attribute(QStringLiteral("chunk")).toLatin1()));
-		};
-		QVERIFY(chunkField(decode(instState), QStringLiteral("noteons")) >= 1);
-		QVERIFY(chunkField(decode(effectState), QStringLiteral("heard")) > 0);
-		const auto points = renderBars({1.5, 3.5}); QCOMPARE(points.size(), 2);
-		QFile reference(QDir(dir).filePath(QStringLiteral("vst2-vestige-vsteffect.reference.json")));
-		QVERIFY(reference.open(QIODevice::WriteOnly | QIODevice::Truncate));
-		const QByteArray json = QByteArray("{\n  \"host\": \"VeSTige + VstEffect (NativeLinuxRemoteVstPlugin64)\",\n  \"points\": [\n")
-			+ QByteArray("    {\"bar\": 1.5, \"left\": ") + QByteArray::number(points[0].left, 'g', 9) + ", \"right\": " + QByteArray::number(points[0].right, 'g', 9) + "},\n"
-			+ "    {\"bar\": 3.5, \"left\": " + QByteArray::number(points[1].left, 'g', 9) + ", \"right\": " + QByteArray::number(points[1].right, 'g', 9) + "}\n  ]\n}\n";
-		QCOMPARE(reference.write(json), qint64(json.size()));
-	}
-	void theOldHostRendersTheReference()
-	{
-		if (const QString why = missing(); !why.isEmpty()) { QSKIP(qPrintable(why)); }
-		legacyvst2::setConversionEnabled(false);
-		const QDir dir(QStringLiteral(LEGACY_VST2_FIXTURE_DIR));
-		QVERIFY(run(QStringLiteral("project.open"), {{QStringLiteral("path"), dir.filePath(QStringLiteral("vst2-vestige-vsteffect.mmp"))}}).ok);
-		InstrumentTrack* track = nullptr;
-		for (auto* item : Engine::getSong()->tracks()) { if ((track = dynamic_cast<InstrumentTrack*>(item))) { break; } }
-		QVERIFY(track); QVERIFY(track->instrument());
-		QCOMPARE(QString::fromLatin1(track->instrument()->descriptor()->name), QStringLiteral("vestige"));
-		QVERIFY(effectOn(track)); QCOMPARE(QString::fromLatin1(effectOn(track)->descriptor()->name), QStringLiteral("vsteffect"));
-		QFile file(dir.filePath(QStringLiteral("vst2-vestige-vsteffect.reference.json"))); QVERIFY(file.open(QIODevice::ReadOnly));
-		const auto reference = QJsonDocument::fromJson(file.readAll()).object().value(QStringLiteral("points")).toArray(); QCOMPARE(reference.size(), 2);
-		const auto points = renderBars({1.5, 3.5}); QCOMPARE(points.size(), 2);
-		for (int i = 0; i < 2; ++i)
+		auto* factory = getPluginFactory();
+		QVERIFY(factory->pluginInfo("vestige").isNull());
+		QVERIFY(factory->pluginInfo("vsteffect").isNull());
+		for (const auto* descriptor : factory->descriptors())
 		{
-			const auto expected = reference[i].toObject();
-			QVERIFY(std::abs(points[i].left - expected.value(QStringLiteral("left")).toDouble()) <= Tolerance);
-			QVERIFY(std::abs(points[i].right - expected.value(QStringLiteral("right")).toDouble()) <= Tolerance);
+			QVERIFY(QString::fromLatin1(descriptor->name) != "vestige");
+			QVERIFY(QString::fromLatin1(descriptor->name) != "vsteffect");
 		}
-		QVERIFY(std::abs(points[0].right - points[1].right) > Tolerance);
+		QVERIFY(!factory->pluginInfo("carlavst2").isNull());
+		QVERIFY(!factory->pluginInfo("carlavst2effect").isNull());
+		const QDir plugins(QStringLiteral(LMMS_TEST_PLUGIN_DIR));
+		for (const auto* name : {"libvestige.so", "libvsteffect.so", "libvstbase.so",
+			"NativeLinuxRemoteVstPlugin64", "RemoteVstPlugin64", "RemoteVstPlugin32", "32/RemoteVstPlugin32"})
+		{
+			QVERIFY2(!QFileInfo::exists(plugins.filePath(QString::fromLatin1(name))), name);
+		}
+	}
+	void aVst2BinaryResolvesToACarlaInstrument()
+	{
+		QFile notes(m_variants.filePath(QStringLiteral("notes.txt")));
+		QVERIFY(notes.open(QIODevice::WriteOnly));
+		QVERIFY(notes.write("notes") > 0);
+		notes.close();
+		QVERIFY(!legacyvst2::instrumentKeyForBinary(notes.fileName()));
+		QVERIFY(!legacyvst2::instrumentKeyForBinary(m_variants.filePath(QStringLiteral("Absent.so"))));
+		if (const QString why = missing(); !why.isEmpty()) { QSKIP(qPrintable(why)); }
+		if (const QString why = missingCarlaRuntime(nativeFixture()); !why.isEmpty()) { QSKIP(qPrintable(why)); }
+		auto key = legacyvst2::instrumentKeyForBinary(nativeFixture());
+		QVERIFY(key);
+		QCOMPARE(QFileInfo(key->attributes[QStringLiteral("file")]).canonicalFilePath(),
+			QFileInfo(nativeFixture()).canonicalFilePath());
+		QCOMPARE(key->attributes[QStringLiteral("uniqueid")], QStringLiteral("1517180466"));
+		InstrumentTrack* track = newTrack();
+		track->loadInstrument(QStringLiteral("carlavst2"), &*key);
+		QCOMPARE(QString::fromLatin1(track->instrument()->descriptor()->name), QStringLiteral("carlavst2"));
+		QVERIFY(track->instrument()->unavailableReason().isEmpty());
+		QVERIFY(renderNote(track, NativeRenderMs).sounded);
 	}
 	void aLegacyProjectOpensAsCarla()
 	{
@@ -306,33 +264,43 @@ private slots:
 		QVERIFY(std::abs(effectParam(track, "Left").second - 0.6) <= Tolerance);
 		requireReference(renderBars({1.5, 3.5}));
 	}
-	void aMissingBinaryKeepsTheLegacyDevice()
+	void aMissingBinaryOpensAsAPlaceholderAndKeepsItsState()
 	{
-		if (const QString why = missing(); !why.isEmpty()) { QSKIP(qPrintable(why)); }
-		if (const QString why = missingEffectRuntime(); !why.isEmpty()) { QSKIP(qPrintable(why)); }
 		const auto path = writeVariant([](QDomDocument& doc) {
 			doc.elementsByTagName("vestige").at(0).toElement().setAttribute("plugin", "uservst:Missing.so");
 			doc.elementsByTagName("effect").at(0).toElement().firstChildElement("key").firstChildElement("attribute").setAttribute("value", "uservst:MissingFx.so");
 		});
-		QVERIFY(!path.isEmpty()); QVERIFY(run("project.open", {{"path", path}}).ok);
-		auto* track = firstInstrumentTrack(); QVERIFY(track); QVERIFY(track->instrument()); auto* effect = effectOn(track); QVERIFY(effect);
-		QVERIFY(QString::fromLatin1(track->instrument()->descriptor()->name) != "carlavst2");
-		QVERIFY(QString::fromLatin1(effect->descriptor()->name) != "carlavst2effect");
+		QVERIFY(!path.isEmpty());
+		ControlResult r = run("project.open", {{"path", path}}); QVERIFY(r.ok);
+		QCOMPARE(r.result.value("missing_device_count").toInt(), 2);
+		auto* track = firstInstrumentTrack(); QVERIFY(track); QVERIFY(track->instrument());
+		QCOMPARE(track->instrument()->nodeName(), QString("dummyinstrument"));
+		QVERIFY(!track->instrument()->unavailableReason().isEmpty());
+		QVERIFY(dynamic_cast<DummyEffect*>(effectOn(track)));
+		const auto pts = renderBars({1.5}); QCOMPARE(pts.size(), 1);
+		QVERIFY(std::abs(pts[0].left) <= Tolerance); QVERIFY(std::abs(pts[0].right) <= Tolerance);
 		const auto saved = m_variants.filePath("missing.mmp"); QVERIFY(run("project.save", {{"path", saved}}).ok);
 		QFile file(saved); QVERIFY(file.open(QIODevice::ReadOnly)); const auto xml = file.readAll();
 		QVERIFY(xml.contains("uservst:Missing.so")); QVERIFY(xml.contains("uservst:MissingFx.so"));
+		QVERIFY(xml.contains("name=\"vestige\"")); QVERIFY(xml.contains("name=\"vsteffect\""));
+		QDomDocument savedDoc; QVERIFY(savedDoc.setContent(xml));
+		QFile original(path); QVERIFY(original.open(QIODevice::ReadOnly)); QDomDocument originalDoc; QVERIFY(originalDoc.setContent(&original));
+		QCOMPARE(savedDoc.elementsByTagName("vestige").at(0).toElement().attribute("chunk"),
+			originalDoc.elementsByTagName("vestige").at(0).toElement().attribute("chunk"));
+		r = run("project.open", {{"path", saved}}); QVERIFY(r.ok);
+		QCOMPARE(r.result.value("missing_device_count").toInt(), 2);
 	}
-	void aBinaryCarlaCannotLoadFallsBackToTheLegacyReader()
+	void aBinaryCarlaCannotLoadOpensAsAPlaceholder()
 	{
-		if (const QString why = missing(); !why.isEmpty()) { QSKIP(qPrintable(why)); }
-		if (const QString why = missingEffectRuntime(); !why.isEmpty()) { QSKIP(qPrintable(why)); }
 		const auto binary = m_variants.filePath("NotAVst.so"); QFile invalid(binary); QVERIFY(invalid.open(QIODevice::WriteOnly)); QVERIFY(invalid.write("not a VST") > 0); invalid.close();
 		const auto path = writeVariant([&](QDomDocument& doc) { doc.elementsByTagName("vestige").at(0).toElement().setAttribute("plugin", binary); });
 		QVERIFY(!path.isEmpty()); QVERIFY(run("project.open", {{"path", path}}).ok);
 		auto* track = firstInstrumentTrack(); QVERIFY(track); QVERIFY(track->instrument());
-		QVERIFY(QString::fromLatin1(track->instrument()->descriptor()->name) != "carlavst2");
+		QCOMPARE(track->instrument()->nodeName(), QString("dummyinstrument"));
+		QVERIFY(!track->instrument()->unavailableReason().isEmpty());
 		const auto saved = m_variants.filePath("invalid.mmp"); QVERIFY(run("project.save", {{"path", saved}}).ok);
-		QFile file(saved); QVERIFY(file.open(QIODevice::ReadOnly)); QVERIFY(file.readAll().contains(binary.toUtf8()));
+		QFile file(saved); QVERIFY(file.open(QIODevice::ReadOnly)); const auto xml = file.readAll();
+		QVERIFY(xml.contains(binary.toUtf8())); QVERIFY(xml.contains("name=\"vestige\""));
 	}
 
 };

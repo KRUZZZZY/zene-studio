@@ -78,7 +78,7 @@ stated precisely:
 
 | family | today | selected by |
 |---|---|---|
-| VST2 (Vestige instruments, VstEffect effects) | **always** a separate process | the plugin implementation: `VstPlugin : public RemotePlugin` (`plugins/VstBase/VstPlugin.h:45`), whose constructor calls `tryLoad()` (`plugins/VstBase/VstPlugin.cpp:174`, `:177`, `:181`) → `init(remoteVstPluginExecutable, ...)` (`:213-215`). Created at `plugins/Vestige/Vestige.cpp:364` and `plugins/VstEffect/VstEffect.cpp:154`. There is no in-process VST2 host in this tree, so there is nothing to toggle here. |
+| VST2 through Carla | native plug-ins in process; Windows plug-ins in Carla’s Wine bridge | `plugins/CarlaVst2` and `plugins/CarlaVst2Effect`; Zene builds no VST2 client of its own. |
 | ZynAddSubFx | the **in-process** synth, unless the user pressed "Show GUI" in this session | `plugins/ZynAddSubFx/ZynAddSubFx.cpp:492` (`m_separateProcessModel.value() || m_hasGUI` since this change; `m_hasGUI` alone before it), with `m_hasGUI` declared at `plugins/ZynAddSubFx/ZynAddSubFx.h:126` and only ever set by the view's Show-GUI button (`plugins/ZynAddSubFx/ZynAddSubFx.cpp:707-717`). **Not saved**, so a reloaded project starts in-process again. |
 | VST3, CLAP | in-process | plugin modules loaded into the `lmms` process |
 | native (TripleOscillator, Kicker, …), LADSPA, LV2, SF2/GIG | in-process | same |
@@ -368,9 +368,7 @@ more BoolModel attribute on the element, next to `forwardmidicc`.
 - **VST3 and CLAP still run in-process**, as do the native, LADSPA, LV2 and
   SF2/GIG families. They have no client executable, so the toggle cannot apply
   to them yet; the new plugin API has to grow one first.
-- **VST2 is out of scope for a toggle** because it has no in-process path: its
-  remote process is unconditional (`plugins/VstBase/VstPlugin.cpp:174-181`).
-  Nothing here changes VST2 behaviour.
+- **VST2 is out of scope for a toggle**: Carla hosts native plug-ins in process and Windows plug-ins in its Wine bridge; Zene builds no VST2 client of its own.
 - **The toggle does not change the sound.** The client and the in-process synth
   produce the same samples to within 1 float32 ULP (measured: 2.98e-08 between
   the ON and OFF renders of a project that differs only in this attribute). That

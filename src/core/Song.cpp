@@ -791,11 +791,11 @@ void Song::processAutomations(const TrackList &tracklist, TimePos timeStart, f_c
 		TimePos relTime = timeStart - p->startPosition();
 		if (relTime >= 0 && relTime < p->length())
 		{
+			// An unresolved target has nothing to record. Avoid constructing the
+			// firstObject() fallback model on the render thread.
+			if (!p->hasLiveTarget()) { continue; }
 			const AutomatableModel* recordedModel = p->firstObject();
-			// A clip with no live target has nothing to record from: firstObject() hands back a
-			// fallback model for it, which must not be written (new-p9-439). hasLiveTarget() is a
-			// lock-free read of the flag the clip publishes on every change to its targets.
-			bool writes = p->isRecording() && p->hasLiveTarget();
+			bool writes = p->isRecording();
 			if( !writes && recordedModel
 				&& recordedModel->automationMode() != AutomatableModel::AutomationMode::Read )
 			{

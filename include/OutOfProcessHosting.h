@@ -23,9 +23,9 @@
  * executable is part of this build and the family has BOTH an in-process and a
  * client implementation - so hosting it out of process is a per-instance
  * choice. `AlwaysSeparate` means the family's only path IS a client process
- * (VST2 in this tree: plugins/VstBase/VstPlugin.cpp:174-181 starts
- * RemoteVstPlugin unconditionally, so there is no choice to offer and no
- * in-process path to fall back to). `NoClientInBuild` means exactly what it
+ * (there is no choice to offer and no in-process path to fall back to).
+ * VST2 is hosted through Carla; this product no longer builds its own VST2 client.
+ * `NoClientInBuild` means exactly what it
  * says: no client executable for that family is part of this build. It is NOT a
  * claim that the family could never be hosted out of process - for the formats
  * that live behind a host module (CLAP, VST3), it is the honest statement that

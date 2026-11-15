@@ -154,12 +154,15 @@ private slots:
 		QVERIFY2(!zyn.reason.isEmpty(), "the ZynAddSubFx family states no reason");
 		QVERIFY(canHostOutOfProcess(QStringLiteral("zynaddsubfx"), nullptr));
 
-		// VST2: the client process is what the family IS, not a choice.
+		// Legacy VST2 family keys no longer claim a client in this build.
 		for (const QString& key : {QStringLiteral("vestige"), QStringLiteral("vsteffect")})
 		{
 			const Family family = familyFor(key);
-			QCOMPARE(family.availability, Availability::AlwaysSeparate);
-			QCOMPARE(family.client, QString::fromLatin1(Vst2Client));
+			QVERIFY(family.availability != Availability::AlwaysSeparate);
+			QVERIFY(family.client.isEmpty());
+			QString reason;
+			QVERIFY(!canHostOutOfProcess(key, &reason));
+			QVERIFY(!reason.isEmpty());
 		}
 
 		// The in-process families the row names: no client executable in this

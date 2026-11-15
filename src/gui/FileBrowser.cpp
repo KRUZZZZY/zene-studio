@@ -57,6 +57,7 @@
 #include "InstrumentTrack.h"
 #include "InstrumentTrackWindow.h"
 #include "KeyboardShortcuts.h"
+#include "LegacyVst2Conversion.h"
 #include "MainWindow.h"
 #include "PatternStore.h"
 #include "Plugin.h"
@@ -982,6 +983,14 @@ void FileBrowserTreeWidget::handleFile(FileItem * f, InstrumentTrack * it)
 
 		case FileItem::FileHandling::LoadByPlugin:
 		{
+			if (f->type() == FileItem::FileType::VstPlugin)
+			{
+				if (auto key = legacyvst2::instrumentKeyForBinary(f->fullName()))
+				{
+					it->loadInstrument("carlavst2", &*key);
+				}
+				break;
+			}
 			const QString e = f->extension();
 			Instrument * i = it->instrument();
 			if( i == nullptr ||
