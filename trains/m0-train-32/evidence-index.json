@@ -1,0 +1,82 @@
+[
+  {
+    "bytes": 2269802,
+    "file": "evidence/train-32-bar.log.gz",
+    "sha256_uncompressed": "65c04b3272599bf00ac7e7c9a1ff90c13ff89e1fde3a2c5b15f755e0b34bdf82"
+  },
+  {
+    "bytes": 285,
+    "file": "evidence/train-32-bisect-MidiCommandBindingsGuiTest.log.gz",
+    "sha256_uncompressed": "2fa34e4018fa9131ef845e64d0a5ae70c0067d3b69d1f08febe3278fd5aa9407"
+  },
+  {
+    "bytes": 82672,
+    "file": "evidence/train-32-bisect-build.log.gz",
+    "sha256_uncompressed": "a636dd46dd25fff3290b7b738feca83d2220af7a159e66f97e7581cf35d3513d"
+  },
+  {
+    "bytes": 479407,
+    "file": "evidence/train-32-bisect-rebuild.log.gz",
+    "sha256_uncompressed": "3d6fbceee0b31c92b63b46b55f2742b16351f97868b7ffff2edcda6d991e7ada"
+  },
+  {
+    "bytes": 248005,
+    "file": "evidence/train-32-build-bar.log.gz",
+    "sha256_uncompressed": "f66178890932194971cf0d4585e047f9eab3fc25766c8327f2870f0ad0c9d2cb"
+  },
+  {
+    "bytes": 479731,
+    "file": "evidence/train-32-build.log.gz",
+    "sha256_uncompressed": "d1f2441f58adaf6d7fd8bda1038402b19e69e22b641daabbc54fa28d2bac2043"
+  },
+  {
+    "bytes": 4435933,
+    "file": "evidence/train-32-gates.log.gz",
+    "sha256_uncompressed": "4349731ca863d7daf3e904c8161ba0e4bf79b388df79acdb47cf073b295a3a63"
+  },
+  {
+    "bytes": 2499,
+    "file": "evidence/train-32-gdb-MidiCommandBindingsGuiTest.log.gz",
+    "sha256_uncompressed": "26a6f36a49c46980877501b581680b4fa767eba9147df5dbea75043ade9ee6c2"
+  },
+  {
+    "bytes": 2898,
+    "file": "evidence/train-32-repeat-MidiCommandBindingsGuiTest-0.log.gz",
+    "sha256_uncompressed": "12c88c22723476b9c3877dc90d196701a9c8e072e5722212946b3a637ce26e27"
+  },
+  {
+    "bytes": 2898,
+    "file": "evidence/train-32-repeat-MidiCommandBindingsGuiTest-1.log.gz",
+    "sha256_uncompressed": "8b9d6ceed9b6e90a33efccb1114bd9f8fe8b64163f0f93812504ed143f20ae30"
+  },
+  {
+    "bytes": 2898,
+    "file": "evidence/train-32-repeat-MidiCommandBindingsGuiTest-2.log.gz",
+    "sha256_uncompressed": "fbd2028173854cf0aa9077c5d0a7ee7637eb23184f12f4a3c9991695ebdac910"
+  },
+  {
+    "bytes": 2898,
+    "file": "evidence/train-32-repeat-MidiCommandBindingsGuiTest-3.log.gz",
+    "sha256_uncompressed": "519beb55a16e86b4490edf8b894e810ada3a42c0cc5b99ea34418695c65e7d08"
+  },
+  {
+    "bytes": 8888,
+    "file": "evidence/train-32-rev-build.log.gz",
+    "sha256_uncompressed": "a75d71453b368cbeba90b8a2a6041e835fe3f21039253362a0d7309d5b8df274"
+  },
+  {
+    "bytes": 284,
+    "file": "evidence/train-32-rev.log.gz",
+    "sha256_uncompressed": "e56c3435c85934305410df42aed08850f8d68f5aafdee4f52b18017ff413e3e8"
+  },
+  {
+    "bytes": 1263512,
+    "file": "evidence/train-32-snapshot.json.gz",
+    "sha256_uncompressed": "6d0829d5fe63327905942a214878ecf30e0848ac82097fc60768b3930d91c454"
+  },
+  {
+    "bytes": 2898,
+    "file": "evidence/train-32-solo-MidiCommandBindingsGuiTest.log.gz",
+    "sha256_uncompressed": "8db6fa6a49a61611c49ad940ceb541fbdac831b503c34c817571a5cc2f2816b6"
+  }
+]

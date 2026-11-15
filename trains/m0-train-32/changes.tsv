@@ -1,0 +1,8 @@
+dec3f1d45c62b26bce955875521780db173a0228	chore(train-32): snapshot regenerated live (933 ids / 78 groups, wasm.* out), canary, A16 histogram, all-sources re-derived (automatic merge train)
+14e637c6007768ec38e2aaba2fa5b980b112b02d	fix(train-sol): Consolidated all seven portability repairs with stable registration context, preserved every regression, fixed WASM lane starvation exposed during verification, and reduced SDK rec
+5e20a1f4cf562dd1fc555c07facf22bda5f30f0f	Merge feat/050-Q050-481.3-oc (accepted; 050/m0-train-32, automatic train)
+b298c07cc6f38374480827ca71b769edcbe0f2f2	Merge feat/050-Q050-334.2-oc (accepted; 050/m0-train-32, automatic train)
+4a394afc58364d2bf8210033a45a4977c2499278	Merge feat/050-Q050-054.2-oc (accepted; 050/m0-train-32, automatic train)
+2ffa6068592d7ab470e78cefea5b8cbe7febf9b8	Merge feat/050-Q050-201-oc (accepted; 050/m0-train-32, automatic train)
+1d533c6cb3749fc7e0c20e2d64d777d1cee1905e	Merge feat/050-Q050-231.2-oc (accepted; 050/m0-train-32, automatic train)
+9200f550c33912ba63daeddec916048fc1734c92	Merge bugs/qwen-gui-1114-menu-edit-scales-and-keymaps (accepted; 050/m0-train-32, automatic train)

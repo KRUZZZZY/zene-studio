@@ -637,8 +637,9 @@
       "tests/vcpkg-pcre2-gitlink-test.py",
       "tools/zene-session-sdk/src/live-session.ts"
     ],
+    "promoted_train": "050/m0-train-32",
     "source_head": "cd3f0853ab4e3c9684ccbbecdb21243546556c2e",
-    "status": "pending",
+    "status": "promoted",
     "summary": "Consolidated all seven portability repairs with stable registration context, preserved every regression, fixed WASM lane starvation exposed during verification, and reduced SDK reconnect complexity. Rebuilt targets, 37 CTest entries, unchanged gates and independent reviews pass.",
     "train": "050/m0-train-32",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-32-1794711427470902978"

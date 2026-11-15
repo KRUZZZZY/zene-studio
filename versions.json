@@ -810,6 +810,27 @@
       "train": "050/m0-train-31",
       "train_label": "21.2",
       "version": "0.4.21-alpha.2"
+    },
+    {
+      "base": "050/m0-train-31",
+      "display_version": "0.4.22.0-alpha",
+      "evidence": "validated-promotion",
+      "feature_items": [
+        "Q050-054.2",
+        "Q050-201",
+        "Q050-231.2",
+        "Q050-334.2",
+        "Q050-481.3"
+      ],
+      "feature_train": 22,
+      "kind": "feature",
+      "milestone": "0.4",
+      "revision": 0,
+      "sha": "dec3f1d45c62b26bce955875521780db173a0228",
+      "stage": "alpha",
+      "train": "050/m0-train-32",
+      "train_label": "22.0",
+      "version": "0.4.22-alpha.0"
     }
   ],
   "milestone": [
