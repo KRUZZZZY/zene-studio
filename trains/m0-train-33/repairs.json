@@ -208,5 +208,37 @@
     "summary": "CI regression: build / linux-arm64",
     "train": "050/m0-train-32",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-9b3cdba8549c073f"
+  },
+  {
+    "at": "2026-11-15T15:05:19",
+    "base": "cc29a63dde09cf28bb00498a2d2a5b124d4d614d",
+    "branch": "fix/ci-repair-ci-2fd63d3310176c0c-655d6b253348",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-2fd63d3310176c0c.r1.md",
+        "negative_control": {
+          "artifact_hashes": {},
+          "detail": "no product change, no changed test, or a dirty tree",
+          "ok": null,
+          "proof_base": "dec3f1d45c62b26bce955875521780db173a0228",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-2fd63d3310176c0c.r1/negctl",
+          "proof_key": "85acdfee6d60faba433fb9941de816c16246b99102e457376e52078967d5da0e"
+        },
+        "verdict": "ACCEPT"
+      }
+    ],
+    "commit": "ccb07d8093f86229f2311f52afab2f188fb14701",
+    "id": "ci-repair-ci-2fd63d3310176c0c-655d6b253348",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-2fd63d3310176c0c.md",
+      "tests/src/core/ControlShutdownHookTest.cpp",
+      "tests/src/core/ControlShutdownHookTestParts1.h"
+    ],
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "dec3f1d45c62b26bce955875521780db173a0228",
+    "status": "pending",
+    "summary": "CI regression: build / mingw64",
+    "train": "050/m0-train-32",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-2fd63d3310176c0c"
   }
 ]
