@@ -434,11 +434,26 @@ QString summaryValue(const QString& key, const QJsonValue& value)
 QString resultSummary(const QJsonObject& result, int maxLines)
 {
 	QStringList lines;
+	bool truncated = false;
+	const auto add = [&](const QString& key, const QJsonValue& value) {
+		if (lines.size() >= maxLines) { truncated = true; return; }
+		lines.append(QStringLiteral("%1: %2").arg(fieldLabel(key), summaryValue(key, value)));
+	};
+	// A nested "summary" object IS the answer in brief (the accessibility audit's per-check counts): read its
+	// entries first, as lines of their own. The notice is capped, and the audit's bookkeeping fields would
+	// otherwise push the five counts past the cap and show "Summary: 5 value(s)" instead.
+	const QJsonValue summary = result.value(QStringLiteral("summary"));
+	if (summary.isObject())
+	{
+		const QJsonObject counts = summary.toObject();
+		for (auto it = counts.begin(); it != counts.end(); ++it) { add(it.key(), it.value()); }
+	}
 	for (auto it = result.begin(); it != result.end(); ++it)
 	{
-		if (lines.size() >= maxLines) { lines.append(QStringLiteral("…")); break; }
-		lines.append(QStringLiteral("%1: %2").arg(fieldLabel(it.key()), summaryValue(it.key(), it.value())));
+		if (it.key() == QLatin1String("summary") && it.value().isObject()) { continue; }
+		add(it.key(), it.value());
 	}
+	if (truncated) { lines.append(QStringLiteral("…")); }
 	return lines.isEmpty() ? tr("Done.") : lines.join(QLatin1Char('\n'));
 }
 
