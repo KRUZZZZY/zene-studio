@@ -5993,3 +5993,13 @@ plugins/VstEffect/logo.svg	Q050-481.4: removed with the legacy VST2 host; VST2 i
 src/core/Song.cpp	Q050-481.4: processAutomations skips the recording pass for an automation clip without a live target (hasLiveTarget), so the render thread never constructs firstObject()'s fallback model; a legacy VST2 project whose plug-in is a placeholder left its automation targetless and threw std::bad_alloc; AutomationModesTest::testRecordingClipWithoutTargetWritesNothing
 src/gui/editors/TrackContainerView.cpp	Q050-481.4: a VST2 binary dropped on the song editor loads as a Carla VST2 instrument via legacyvst2::instrumentKeyForBinary; Vestige, which owned the .so/.dll types, is removed
 src/gui/FileBrowser.cpp	Q050-481.4: a VST2 binary opened from the file browser loads as a Carla VST2 instrument via legacyvst2::instrumentKeyForBinary; Vestige, which owned the .so/.dll types, is removed
+.github/workflows/provision-plugin-hosting-deps.sh	# Host VST2 plug-ins through Carla - stage 4/4: Remove the legacy VST2 host modules
+plugins/VstBase/PeMachineType.h	# Host VST2 plug-ins through Carla - stage 4/4: Remove the legacy VST2 host modules
+plugins/VstBase/VstChannelCount.h	# Host VST2 plug-ins through Carla - stage 4/4: Remove the legacy VST2 host modules
+plugins/VstBase/VstMidiEventBatch.h	# Host VST2 plug-ins through Carla - stage 4/4: Remove the legacy VST2 host modules
+tests/src/core/VstChannelCountTest.cpp	# Host VST2 plug-ins through Carla - stage 4/4: Remove the legacy VST2 host modules
+tests/src/core/VstMidiEventBatchTest.cpp	# Host VST2 plug-ins through Carla - stage 4/4: Remove the legacy VST2 host modules
+tests/src/core/VstPeMachineTypeTest.cpp	# Host VST2 plug-ins through Carla - stage 4/4: Remove the legacy VST2 host modules
+tests/src/core/VstSubPluginFeaturesTest.cpp	# Host VST2 plug-ins through Carla - stage 4/4: Remove the legacy VST2 host modules
+tests/src/plugins/VestigeMidiHandoffTest.cpp	# Host VST2 plug-ins through Carla - stage 4/4: Remove the legacy VST2 host modules
+tests/src/plugins/VstEffectControlsTest.cpp	# Host VST2 plug-ins through Carla - stage 4/4: Remove the legacy VST2 host modules
