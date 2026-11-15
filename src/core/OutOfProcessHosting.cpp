@@ -10,9 +10,13 @@
  *                 and the module ships BOTH implementations (LocalZynAddSubFx is
  *                 the default, RemoteZynAddSubFx is the client) - the one family
  *                 in this tree where the choice is real.
- *   VST2          is hosted through Carla (plugins/CarlaVst2 and
- *                 plugins/CarlaVst2Effect; Q050-481.4). The product no longer
- *                 builds its own VST2 client.
+ *   VST2          plugins/VstBase/VstPlugin.cpp:174-181 picks
+ *                 REMOTE_VST_PLUGIN_FILEPATH_64 / _32 /
+ *                 NATIVE_LINUX_REMOTE_VST_PLUGIN_FILEPATH_64 and calls
+ *                 init(remoteVstPluginExecutable, ...) from tryLoad(); there is
+ *                 no in-process VST2 host in this tree, so the client process is
+ *                 what VST2 IS and there is nothing to toggle
+ *                 (docs/OOP-HOSTING.md section 1.3).
  *   CLAP/VST3     the host module is loaded into THIS process
  *                 (plugins/ClapEffect/ClapHost.cpp, plugins/Vst3Effect/Vst3Host.cpp)
  *                 and no client executable exists for either - the honest next
@@ -57,10 +61,15 @@ namespace
 //! the refusals and in the test all come from one place.
 constexpr int kMaxCrashesPerClient = 3;
 
+//! The client executable VST2 always runs in (the platform's own name is chosen
+//! by VstPlugin::tryLoad(); this is the family's token, which is what the
+//! refusal and the record are keyed by).
+constexpr auto Vst2ClientToken = "RemoteVstPlugin";
+
 /*! The family table.
  *
  *  Order is the key order families() reports and it is stable across runs: the
- *  family that has a client process first, then the hosted formats, then
+ *  two families that have a client process first, then the hosted formats, then
  *  the in-tree modules. A family whose key is absent from this table is still
  *  answered - see familyFor() - so a new module does not have to be added here
  *  to be refused honestly.
@@ -74,6 +83,15 @@ QVector<Family> buildFamilies()
 				"(LocalZynAddSubFx, the default) and the client executable RemoteZynAddSubFx - so running "
 				"an instance in a separate process is a per-instance choice (the `separateprocess` "
 				"attribute, driven by oop.set_mode)")},
+		{QStringLiteral("vestige"), QStringLiteral("VeSTige (VST2 instrument)"),
+			Availability::AlwaysSeparate, QString::fromLatin1(Vst2ClientToken),
+			QStringLiteral("VST2 has no in-process path in this tree: VstPlugin::tryLoad() starts the "
+				"remote VST client unconditionally (plugins/VstBase/VstPlugin.cpp:174-181), so every "
+				"VST2 instance is ALREADY out of process and there is no in-process mode to fall back to")},
+		{QStringLiteral("vsteffect"), QStringLiteral("VST2 effect"),
+			Availability::AlwaysSeparate, QString::fromLatin1(Vst2ClientToken),
+			QStringLiteral("same as the VST2 instrument half: the client process is the only VST2 path "
+				"this build has (plugins/VstEffect/VstEffect.cpp, plugins/VstBase/VstPlugin.cpp)")},
 		{QStringLiteral("clapeffect"), QStringLiteral("CLAP effect"),
 			Availability::NoClientInBuild, QString(),
 			QStringLiteral("the CLAP host module runs inside THIS process (plugins/ClapEffect/ClapHost.cpp) "

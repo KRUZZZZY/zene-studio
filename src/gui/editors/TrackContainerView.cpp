@@ -46,7 +46,6 @@
 #include "ImportFilter.h"
 #include "Instrument.h"
 #include "InstrumentTrack.h"
-#include "LegacyVst2Conversion.h"
 #include "PatternTrack.h"
 #include "Song.h"
 #include "ArrangerFileDrop.h"
@@ -589,16 +588,6 @@ void TrackContainerView::dropEvent( QDropEvent * _de )
 		|| type == "soundfontfile" || type == "vstpluginfile"
 		|| type == "patchfile" )
 	{
-		if (type == "vstpluginfile")
-		{
-			auto key = legacyvst2::instrumentKeyForBinary(value);
-			if (!key) { _de->ignore(); return; }
-			auto it = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, m_tc));
-			it->loadInstrument("carlavst2", &*key);
-			control::assignNewTrackChannel(it);
-			_de->accept();
-			return;
-		}
 		auto it = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, m_tc));
 		PluginFactory::PluginInfoAndKey piakn =
 			getPluginFactory()->pluginSupportingExtension(FileItem::extension(value));

@@ -48,7 +48,7 @@ advanced or diagnostic operations remain socket-only.**
 
 **The DAW core inherited from LMMS**: the Piano Roll, Song Editor and Beat/Bassline editor; a mixer
 with a multi-channel port model, sidechain sends and no fixed channel limit; 15+ built-in
-synthesizers; SoundFont2; VST2 through Carla; LADSPA; LV2; GUS patches — this inherited format list is the
+synthesizers; SoundFont2; VST2 (Vestige); LADSPA; LV2; GUS patches — this inherited format list is the
 **Linux** build's, and availability varies by platform (see the *plug-in formats vs. tested
 compatibility* paragraph below, which keeps loading apart from tested third-party support); full MIDI
 import/export; Lua 5.4 scripting; slide notes; HiDPI scaling; and self-contained, XML-based
@@ -99,9 +99,10 @@ X11-embedded editors only), and the notes a user plays reach it through the trac
 
 **Plug-in formats vs. tested compatibility — two different claims.** On **Linux** — one of the
 platforms these release builds target — this build **loads** the formats it is built with: VST3
-effects and instruments, CLAP effects and instruments, VST2 through Carla, LV2, LADSPA, SoundFont2
+effects and instruments, CLAP effects and instruments, VST2 through Vestige, LV2, LADSPA, SoundFont2
 and GUS patches, plus the built-in instruments. **Format availability varies by platform**: each
-platform's build enables its own set, so that list is the Linux one — a macOS build has no VST2 host for macOS (.vst) plug-ins: its Carla VST2 modules accept only Linux ELF (.so) and Windows PE (.dll) binaries, and that path is untested on macOS. **Loading a format is not the same as having
+platform's build enables its own set, so that list is the Linux one — CMake disables VST hosting on
+Apple builds, so a macOS build has no VST2/Vestige path. **Loading a format is not the same as having
 tested a particular maker's product.** Apart from the MIT fixtures in the source tree and the pinned plug-ins measured in
 `docs/PLUGIN-COMPATIBILITY.md` (load, editor and state round-trip, with what failed), **no other third-party
 plug-in has been tested by us**, there is **no verified Wine/yabridge path** for plug-ins

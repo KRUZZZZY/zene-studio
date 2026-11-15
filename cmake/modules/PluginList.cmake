@@ -89,8 +89,11 @@ SET(LMMS_PLUGIN_LIST
 	Stk
 	TapTempo
 	TransientShaper
+	VstBase
 	Vst3Effect
 	Vst3Instrument
+	Vestige
+	VstEffect
 	WasmEffect
 	Watsyn
 	WaveShaper

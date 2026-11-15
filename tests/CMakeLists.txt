@@ -66,6 +66,7 @@ set(LMMS_TESTS
 	src/core/AllocationProbeTest.cpp
 	src/plugins/LadspaChannelCountsTest.cpp
 	src/plugins/RnnoiseDenoiserEffectTest.cpp
+	src/plugins/VstEffectControlsTest.cpp
 	src/core/LegacyVst2ConversionTest.cpp
 	src/core/ArrayVectorTest.cpp
 	# Short ALSA writes must advance through every remaining frame in a period.
@@ -679,6 +680,7 @@ set(LMMS_TESTS
 	src/core/MissingDevicesRound2Test.cpp
 	# ReverbSC's C allocation API: invalid channel counts and allocation failures.
 	src/plugins/ReverbSCCreateTest.cpp
+	src/core/VstSubPluginFeaturesTest.cpp
 	# The reader half of ARCH-4 S2b, integration rather than unit: a project opened
 	# with sections named to SKIP. Pinned here: the content element name DERIVED from
 	# the root's type attribute (the "pattern" -> midiclip compat mapping is what
@@ -716,6 +718,15 @@ set(LMMS_TESTS
 	# Q050-045: a real SIGKILL of a recording child, recovery measured against the captured frames.
 	src/core/RecordingCrashLossTest.cpp
 	src/core/RetroMidiRingTest.cpp
+	# The VST remote client's per-period MIDI helpers (plugins/VstBase/VstMidiEventBatch.h): an
+	# allocation-free sort and a bounded queue. The client itself is an out-of-process executable.
+	src/core/VstMidiEventBatchTest.cpp
+	# The channel counts the VST remote client converts from the plugin's signed numInputs/numOutputs
+	# (plugins/VstBase/VstChannelCount.h): an out-of-range count is refused, never wrapped into range.
+	src/core/VstChannelCountTest.cpp
+	# The VST host's PE machine-type probe (plugins/VstBase/PeMachineType.h) reads only bytes inside the file:
+	# a truncated or malformed binary is rejected, never read past the mapping.
+	src/core/VstPeMachineTypeTest.cpp
 	# The bounded lock-free MIDI hand-off the instrument hosts use to get events off their audio paths
 	# (include/MidiHandoffQueue.h): FIFO, drop-and-count when full, no allocation, no lost accepted event.
 	src/core/MidiHandoffQueueTest.cpp
@@ -1976,6 +1987,12 @@ endfunction()
 add_library(q050018_no_entry MODULE src/plugins/MissingDevicesNoEntryModule.cpp)
 set_target_properties(q050018_no_entry PROPERTIES OUTPUT_NAME "q050018-no-entry")
 
+# VstEffectControlsTest compiles the VstEffect plug-in's sources against its target's include
+# paths and definitions; where that plug-in is not built (macOS: no VST2 host) there is nothing to test.
+if(NOT TARGET vsteffect)
+	list(REMOVE_ITEM LMMS_TESTS src/plugins/VstEffectControlsTest.cpp)
+endif()
+
 # Targets that compile plugins/NeuralAmp/nam/*.cpp pull in vendored Eigen, whose NEON kernels trip
 # -Wdeprecated-enum-enum-conversion on aarch64; -DUSE_WERROR must not make that an error (the plugin
 # target does the same, plugins/NeuralAmp/CMakeLists.txt).
@@ -2008,6 +2025,19 @@ list(APPEND LMMS_TESTS src/plugins/VibedWaveformHandoffTest.cpp)
 # The test compiles the Mallets sources, so it is registered only where STK is found.
 if(LMMS_HAVE_STK)
 	list(APPEND LMMS_TESTS src/plugins/MalletsInstrumentViewTest.cpp)
+endif()
+
+# cluster new-p14-358 / 5451: the VeSTige VST host's MIDI path. "Turn off all notes"
+# has to end the notes of every MIDI channel, and the note path must reach the plug-in
+# through the bounded hand-off queue instead of the plug-in mutex. It is registered LAST
+# for the same reason as the test above: the mechanical negative control reads the ctest
+# test NAMES out of `ctest -N`, and only the high-numbered ones are visible to it.
+list(APPEND LMMS_TESTS src/plugins/VestigeMidiHandoffTest.cpp)
+
+# The VeSTige plug-in is a VST2 host: where that host is not built (macOS: no VST2
+# host) there is nothing to test.
+if(NOT TARGET vestige)
+	list(REMOVE_ITEM LMMS_TESTS src/plugins/VestigeMidiHandoffTest.cpp)
 endif()
 
 # Cluster new-p15-300: the compressor's control dialog shared its visualizer fields with the
@@ -2190,6 +2220,30 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			PLUGIN_NAME=tripleoscillator tripleoscillator_EXPORTS)
 	endif()
+	# cluster new-p14-358 / 5451: VestigeMidiHandoffTest compiles the VeSTige plug-in's
+	# own sources into the test (the SlicerT and Vibed tests' shape), so the "Turn off all
+	# notes" button and the note path under test are the shipping ones. The plug-in's
+	# artwork is generated in its build directory; without CMP0118 the GENERATED mark is
+	# per-directory, so a fresh configure of THIS directory would refuse a file that does
+	# not exist yet. add_dependencies below orders its build.
+	if(LMMS_TEST_NAME STREQUAL "VestigeMidiHandoffTest")
+		set_source_files_properties("${CMAKE_BINARY_DIR}/plugins/Vestige/qrc_vestige.cpp"
+			PROPERTIES GENERATED TRUE)
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/Vestige/Vestige.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Vestige/Vestige.h
+			${CMAKE_BINARY_DIR}/plugins/Vestige/qrc_vestige.cpp)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/Vestige
+			${CMAKE_BINARY_DIR}/plugins/Vestige)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_NAME=vestige)
+		target_link_libraries(${LMMS_TEST_NAME} PRIVATE vstbase)
+		add_dependencies(${LMMS_TEST_NAME} vestige)
+		# The vstbase module resolves the LMMS core symbols from its host process,
+		# so the test binary has to export its symbols exactly like the zene
+		# executable does.
+		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
+	endif()
 	if(LMMS_TEST_NAME STREQUAL "CompressorVisualizerTest")
 		# Cluster new-p15-300: the regression reads the compressor's header to check that the
 		# visualizer state the control dialog and the audio thread share is published
@@ -2262,12 +2316,6 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		target_link_libraries(${LMMS_TEST_NAME} PRIVATE sfzplayer_sfizz)
 	endif()
 	add_test(NAME ${LMMS_TEST_NAME} COMMAND ${LMMS_TEST_NAME})
-	if(LMMS_TEST_NAME STREQUAL "AutomationModesTest")
-		# Keep the no-target render regression isolated: firstObject()'s static fallback is
-		# process-wide, so an earlier test could otherwise initialize it outside render scope.
-		add_test(NAME AutomationModesTargetlessRecordingTest
-			COMMAND ${LMMS_TEST_NAME} testRecordingClipWithoutTargetWritesNothing)
-	endif()
 	if(LMMS_TEST_NAME STREQUAL "SfizzLeakDetectorTest")
 		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES
 			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -2278,6 +2326,13 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "RnnoiseDenoiserEffectTest")
 		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "VstSubPluginFeaturesTest")
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/VstEffect/VstSubPluginFeatures.cpp)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/VstEffect)
+		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES TIMEOUT 10)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "LadspaPortDialogTest")
 		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES
@@ -2366,6 +2421,23 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/external/abseil-cpp
 			${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/external/simde)
 		target_link_libraries(${LMMS_TEST_NAME} PRIVATE sfzplayer_sfizz)
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "VstEffectControlsTest")
+		# vsteffect's resource source is generated in the plug-in's build directory; without
+		# CMP0118 the GENERATED mark is per-directory, so a fresh configure of THIS directory
+		# would refuse a file that does not exist yet. add_dependencies below orders its build.
+		set_source_files_properties("${CMAKE_BINARY_DIR}/plugins/VstEffect/qrc_vsteffect.cpp"
+			PROPERTIES GENERATED TRUE)
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/VstEffect/VstEffectControls.cpp
+			${CMAKE_SOURCE_DIR}/plugins/VstEffect/VstEffectControlDialog.cpp
+			${CMAKE_BINARY_DIR}/plugins/VstEffect/qrc_vsteffect.cpp)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			$<TARGET_PROPERTY:vsteffect,INCLUDE_DIRECTORIES>)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			$<TARGET_PROPERTY:vsteffect,COMPILE_DEFINITIONS>)
+		target_link_libraries(${LMMS_TEST_NAME} PRIVATE vstbase)
+		add_dependencies(${LMMS_TEST_NAME} vsteffect)
 	endif()
 	if(LMMS_TEST_NAME STREQUAL "DeviceDspTest")
 		target_link_libraries(${LMMS_TEST_NAME} PRIVATE hiir)
@@ -9512,3 +9584,8 @@ if(TARGET PluginExportBranchTest)
 endif()
 
 target_compile_definitions(LegacyVst2ProjectTest PRIVATE LEGACY_VST2_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data/legacy-projects")
+foreach(module vestige vsteffect NativeLinuxRemoteVstPlugin64)
+	if(TARGET ${module})
+		add_dependencies(LegacyVst2ProjectTest ${module})
+	endif()
+endforeach()

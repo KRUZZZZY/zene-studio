@@ -1000,6 +1000,7 @@ include/WorkspaceMenus.h
 include/WorkspaceWindows.h
 include/XmlDepthGuard.h
 include/XyPad.h
+include/aeffectx.h
 include/base64.h
 include/embed.h
 include/endian_handling.h
@@ -1479,6 +1480,8 @@ plugins/Vectorscope/VectorView.cpp
 plugins/Vectorscope/VectorView.h
 plugins/Vectorscope/Vectorscope.cpp
 plugins/Vectorscope/Vectorscope.h
+plugins/Vestige/Vestige.cpp
+plugins/Vestige/Vestige.h
 plugins/Vibed/NineButtonSelector.cpp
 plugins/Vibed/NineButtonSelector.h
 plugins/Vibed/Vibed.cpp
@@ -1517,6 +1520,22 @@ plugins/Vst3Instrument/Vst3Instrument.cpp
 plugins/Vst3Instrument/Vst3Instrument.h
 plugins/Vst3Instrument/Vst3InstrumentView.cpp
 plugins/Vst3Instrument/Vst3InstrumentView.h
+plugins/VstBase/PeMachineType.h
+plugins/VstBase/RemoteVstPlugin.cpp
+plugins/VstBase/VstChannelCount.h
+plugins/VstBase/VstMidiEventBatch.h
+plugins/VstBase/VstPlugin.cpp
+plugins/VstBase/VstPlugin.h
+plugins/VstBase/communication.h
+plugins/VstBase/vst_base.cpp
+plugins/VstEffect/VstEffect.cpp
+plugins/VstEffect/VstEffect.h
+plugins/VstEffect/VstEffectControlDialog.cpp
+plugins/VstEffect/VstEffectControlDialog.h
+plugins/VstEffect/VstEffectControls.cpp
+plugins/VstEffect/VstEffectControls.h
+plugins/VstEffect/VstSubPluginFeatures.cpp
+plugins/VstEffect/VstSubPluginFeatures.h
 plugins/WasmEffect/WasmEffect.cpp
 plugins/WasmEffect/WasmEffect.h
 plugins/WasmEffect/WasmEffectControlDialog.cpp
@@ -3314,6 +3333,10 @@ tests/src/core/VideoTestClipTest.cpp
 tests/src/core/VideoTrackTest.cpp
 tests/src/core/VideoTrackTestParts1.h
 tests/src/core/VideoTrackTestParts2.h
+tests/src/core/VstChannelCountTest.cpp
+tests/src/core/VstMidiEventBatchTest.cpp
+tests/src/core/VstPeMachineTypeTest.cpp
+tests/src/core/VstSubPluginFeaturesTest.cpp
 tests/src/core/W3EngineTest.cpp
 tests/src/core/WarpMarkersTest.cpp
 tests/src/core/WarpQuantizeTest.cpp
@@ -3625,6 +3648,7 @@ tests/src/plugins/SlicerTWaveformTest.cpp
 tests/src/plugins/SlicerTZoomTest.cpp
 tests/src/plugins/SyntheticAudioPlugin.cpp
 tests/src/plugins/TripleOscillatorUserWaveTest.cpp
+tests/src/plugins/VestigeMidiHandoffTest.cpp
 tests/src/plugins/VibedSubBaseRateTest.cpp
 tests/src/plugins/VibedWaveformHandoffTest.cpp
 tests/src/plugins/VibratingStringTest.cpp
@@ -3636,6 +3660,7 @@ tests/src/plugins/Vst3HostTest.cpp
 tests/src/plugins/Vst3InstrumentFixtureProbe.cpp
 tests/src/plugins/Vst3InstrumentIntegrationTest.cpp
 tests/src/plugins/Vst3InstrumentTest.cpp
+tests/src/plugins/VstEffectControlsTest.cpp
 tests/src/plugins/WatsynParamHandoffTest.cpp
 tests/src/plugins/WatsynSelectedGraphTest.cpp
 tests/src/plugins/WatsynWaveSnapshotTest.cpp

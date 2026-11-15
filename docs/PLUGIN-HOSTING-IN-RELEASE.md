@@ -80,7 +80,8 @@ which are exactly the paths both `CMakeLists.txt` files default to
 (`${CMAKE_BINARY_DIR}/vst3sdk`, `${CMAKE_BINARY_DIR}/clap`), so the configure line
 needs no extra `-D`. It then **verifies**, and fails non-zero with a reason if any
 of these does not hold: the checkout is at the pinned commit; `LICENSE.txt` is the
-MIT licence; no `pluginterfaces/vst2.x` exists (the GPLv2 constraint — VST2 is hosted through Carla). A cached tree is re-verified against the pin on every run and
+MIT licence; no `pluginterfaces/vst2.x` exists (the GPLv2 constraint — VST2 stays
+Vestige-only). A cached tree is re-verified against the pin on every run and
 re-cloned if it is not at it, so a stale or truncated cache cannot be used
 silently.
 

@@ -47,6 +47,7 @@ namespace ooptest
 //! The client executable the family table gives the ZynAddSubFx family
 inline constexpr auto ZynClient = "RemoteZynAddSubFx";
 //! The client executable the family table gives the VST2 family
+inline constexpr auto Vst2Client = "RemoteVstPlugin";
 
 #ifdef OUTOFPROC_ZYN_PLUGIN_PATH
 inline auto zynModulePath() -> QString { return QStringLiteral(OUTOFPROC_ZYN_PLUGIN_PATH); }

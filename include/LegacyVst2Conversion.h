@@ -38,8 +38,6 @@ using Resolver = std::function<std::optional<Attributes>(const QString& absolute
 
 //! Resolve a plug-in binary through the factory.
 LMMS_EXPORT std::optional<Attributes> resolveFromFactory(const QString& absoluteFile, Plugin::Type type);
-//! Resolve a VST2 binary to an instrument key; call only on the GUI thread, as discovery runs QProcess.
-LMMS_EXPORT std::optional<Plugin::Descriptor::SubPluginFeatures::Key> instrumentKeyForBinary(const QString& file);
 //! Convert a legacy instrument node.
 LMMS_EXPORT QDomElement convertInstrument(const QDomElement& instrumentNode, const Resolver& resolve = resolveFromFactory);
 //! Convert a legacy effect node.
