@@ -361,5 +361,78 @@
     "summary": "CI regression: build / linux-arm64",
     "train": "050/m0-train-31",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-aa1160348d9be203"
+  },
+  {
+    "at": "2026-11-15T01:19:01",
+    "base": "c20ef591b571e3c3dc7b108107d166497f1b34be",
+    "branch": "fix/ci-repair-ci-61ad26e4f8b135f9-c678bbe4cdd2",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-61ad26e4f8b135f9.r2.md",
+        "negative_control": {
+          "artifact_hashes": {
+            "test-restored.log": "f08bffaf338de086dadd5f00ff1e23d4179febb5489f639d04b7a4f56ece43f5",
+            "test-reverted.log": "d4378b1807840269c11bfcc02a34934e47c72684d2076397f1953b7eef20aa41"
+          },
+          "detail": "AudioWorkerWakeTest, MacosSyncAvailabilityCheck, ModulationAudioViewTest, NotePlaybackTest, PluginPortsMigrationTest, RemotePluginShmFifoTest, ScriptDawModelRegistrationTest, TempoMapTest: they fail without it (rc 8) and pass with it",
+          "ok": true,
+          "product_files": [
+            "include/AudioWorkerWake.h",
+            "src/core/AudioEngine.cpp",
+            "src/core/AudioWorkerWake.cpp",
+            "src/wasm/WasmWorkerPool.cpp",
+            "src/wasm/WasmWorkerPool.h"
+          ],
+          "proof_base": "c20ef591b571e3c3dc7b108107d166497f1b34be",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-61ad26e4f8b135f9.r2/negctl",
+          "proof_key": "4fdbe221df191bdd4ea752ae21033263553ff66f21b3518d0f1528a9485d27ad",
+          "restored_rc": 0,
+          "reverted_build_rc": 0,
+          "reverted_rc": 8,
+          "tests": [
+            "AudioWorkerWakeTest",
+            "MacosSyncAvailabilityCheck",
+            "ModulationAudioViewTest",
+            "NotePlaybackTest",
+            "PluginPortsMigrationTest",
+            "RemotePluginShmFifoTest",
+            "ScriptDawModelRegistrationTest",
+            "TempoMapTest"
+          ],
+          "tree_clean": true
+        },
+        "verdict": "ACCEPT-NOTE"
+      }
+    ],
+    "commit": "61064f103e01134d73a97fba64d899b2f736292e",
+    "id": "ci-repair-ci-61ad26e4f8b135f9-c678bbe4cdd2",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-61ad26e4f8b135f9.md",
+      "include/AudioWorkerWake.h",
+      "src/core/AudioEngine.cpp",
+      "src/core/AudioWorkerWake.cpp",
+      "src/wasm/WasmWorkerPool.cpp",
+      "src/wasm/WasmWorkerPool.h",
+      "tests/CMakeLists.txt",
+      "tests/all-sources.txt",
+      "tests/fork-sources.txt",
+      "tests/macos-sync-availability-check.py",
+      "tests/src/core/AudioWorkerWakeTest.cpp",
+      "tests/src/core/ModulationAudioViewTest.cpp",
+      "tests/src/core/NotePlaybackTest.cpp",
+      "tests/src/core/PortableSync.h",
+      "tests/src/core/RemotePluginShmFifoTest.cpp",
+      "tests/src/core/ScriptDawModelRegistrationTest.cpp",
+      "tests/src/core/TempoMapTest.cpp",
+      "tests/src/plugins/PluginPortsMigrationTest.cpp",
+      "tests/src/wasm/WasmWorkerPoolTest.cpp",
+      "tests/upstream-modifications.txt"
+    ],
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "c20ef591b571e3c3dc7b108107d166497f1b34be",
+    "status": "pending",
+    "summary": "CI regression: build / macos-x86_64",
+    "train": "050/m0-train-31",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-61ad26e4f8b135f9"
   }
 ]

@@ -1,0 +1,1463 @@
+From 61064f103e01134d73a97fba64d899b2f736292e Mon Sep 17 00:00:00 2001
+From: Zene CI repair <noreply@zene.invalid>
+Date: Sun, 15 Nov 2026 01:19:01 +0000
+Subject: [PATCH] fix(ci): CI regression: build / macos-x86_64
+
+CI-Repair-Id: ci-repair-ci-61ad26e4f8b135f9-c678bbe4cdd2
+---
+ .../cluster-ci-61ad26e4f8b135f9.md            | 315 ++++++++++++++++
+ include/AudioWorkerWake.h                     |  16 +-
+ src/core/AudioEngine.cpp                      |   4 +-
+ src/core/AudioWorkerWake.cpp                  |  40 ++-
+ src/wasm/WasmWorkerPool.cpp                   |  13 +-
+ src/wasm/WasmWorkerPool.h                     |  11 +-
+ tests/CMakeLists.txt                          |  20 ++
+ tests/all-sources.txt                         |   1 +
+ tests/fork-sources.txt                        |  11 +
+ tests/macos-sync-availability-check.py        | 335 ++++++++++++++++++
+ tests/src/core/AudioWorkerWakeTest.cpp        |  27 ++
+ tests/src/core/ModulationAudioViewTest.cpp    |  14 +-
+ tests/src/core/NotePlaybackTest.cpp           |   5 +-
+ tests/src/core/PortableSync.h                 | 157 ++++++++
+ tests/src/core/RemotePluginShmFifoTest.cpp    |   9 +-
+ .../core/ScriptDawModelRegistrationTest.cpp   |   6 +-
+ tests/src/core/TempoMapTest.cpp               |   7 +-
+ .../src/plugins/PluginPortsMigrationTest.cpp  |   4 +-
+ tests/src/wasm/WasmWorkerPoolTest.cpp         |  10 +-
+ tests/upstream-modifications.txt              |   1 +
+ 20 files changed, 954 insertions(+), 52 deletions(-)
+ create mode 100644 docs/qwen-fixes-2026-10/cluster-ci-61ad26e4f8b135f9.md
+ create mode 100644 tests/macos-sync-availability-check.py
+ create mode 100644 tests/src/core/PortableSync.h
+
+diff --git a/docs/qwen-fixes-2026-10/cluster-ci-61ad26e4f8b135f9.md b/docs/qwen-fixes-2026-10/cluster-ci-61ad26e4f8b135f9.md
+new file mode 100644
+index 0000000000..dccd78018c
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/cluster-ci-61ad26e4f8b135f9.md
+@@ -0,0 +1,315 @@
++FIXED
++
++Cluster ci-61ad26e4f8b135f9 (CI regression: `build / macos-x86_64`, train 050/m0-train-31 at
++`c20ef591b571e3c3dc7b108107d166497f1b34be`, job 132496796528, log
++`run-43611324689-job-132496796528.log` line 1731).
++
++## Verdict and evidence
++
++REAL, product and test side. The hosted `macos-x86_64` job builds for a deployment target below
++macOS 11 (this project's supported floor is 10.13: `CMakeLists.txt:264-278`,
++`README.md:22-38`), and Apple's libc++ marks the C++20 synchronisation primitives unavailable
++there - `_LIBCPP_AVAILABILITY_SYNC`, which is `availability(macos, strict, introduced = 11.0)`
++on `<barrier>`, `<latch>`, `<semaphore>` and on `std::atomic`'s `wait` / `notify_one` /
++`notify_all`. The job stopped on the fork-new regression test:
++
++    tests/src/core/RemotePluginShmFifoTest.cpp:109:16: error: 'barrier' is unavailable: introduced in macOS 11.0 unknown
++    tests/src/core/RemotePluginShmFifoTest.cpp:117:10: error: 'arrive_and_wait' is unavailable: introduced in macOS 11.0 unknown
++
++Site list, all confirmed by reading the tree and by the new check's RED run
++(`logs/19-step4b-full-revert-check.log`, 26 failing lines):
++
++| Site | Gated construct |
++| --- | --- |
++| `tests/src/core/RemotePluginShmFifoTest.cpp:21,109-111,117-131` | `<barrier>`, `std::barrier` x3 |
++| `tests/src/core/NotePlaybackTest.cpp:47,234,243` | `<barrier>`, `std::barrier` |
++| `tests/src/core/TempoMapTest.cpp:57,563-564,571-572,581,601` | `<latch>`, `std::latch` x2 |
++| `tests/src/core/ModulationAudioViewTest.cpp:50,228-229,277-278,431,526` | `<semaphore>`, `std::binary_semaphore` x6 |
++| `tests/src/plugins/PluginPortsMigrationTest.cpp:48,4426,4431,4441` | `<barrier>`, `std::barrier` |
++| `tests/src/wasm/WasmWorkerPoolTest.cpp:59,65,415,468,530` | `<barrier>`, `<semaphore>` |
++| `src/core/AudioEngine.cpp:672` | `std::atomic<int>::notify_all` (test seam, product TU) |
++| `tests/src/core/ScriptDawModelRegistrationTest.cpp:124,134,144` | `std::atomic<int>::wait` / `notify_all` (the seam's one consumer) |
++| `src/wasm/WasmWorkerPool.cpp:84,153,234` | `std::atomic<uint64_t>::notify_all` / `notify_one` / `wait` (product TU, `WANT_WASM`) |
++
++The product already answered this class once: `src/core/AudioWorkerWake.cpp:37-165` and
++`include/AudioWorkerWake.h:61-115` replace the audio worker's wake with `__ulock_wait` /
++`__ulock_wake` (macOS 10.12) and a Linux futex, with a compile-time assertion that an Apple
++build takes that path. `src/wasm/WasmWorkerPool` was the one remaining product wake still
++built on `std::atomic::wait`/`notify_*`, and `AudioEngine`'s test seam still called
++`notify_all` even though its only consumer is a control-thread test.
++
++Why this is not a test-infrastructure artefact: two earlier trains
++(`710d06ff8f`, `203b137e33`) hid the same failure by raising the *test targets'* deployment
++floor to 11.0. Those commits are not ancestors of this branch (`git merge-base --is-ancestor
++203b137e33 HEAD` exits 1), and re-applying the trick would compile the tests for an OS the
++product does not support while leaving the same primitives in product code. Their own round-7
++follow-up (`24fbd10f1f`) already dropped `AudioEngine`'s `notify_all` for a poll, which is
++independent confirmation that the product half is real rather than a macOS runner quirk.
++
++## Fix
++
++At the cause, in this order:
++
++1. `tests/src/core/PortableSync.h` (new): `lmms::testsupport::Barrier`, `Latch` and
++   `BinarySemaphore`, implemented with `std::mutex` + `std::condition_variable` (available long
++   before macOS 10.13), with the same contracts the tests used - fixed-count rendezvous,
++   one-shot gate, and `try_acquire_for` for the timed "did the writer reach the model" checks.
++   Predicated waits, so a spurious wake cannot release a thread early.
++2. The six test TUs above use it. No assertion, count, timeout or ordering changed; the
++   replacements are mechanical (`std::barrier start{3}` -> `testsupport::Barrier start{3}`).
++3. `src/core/AudioEngine.cpp:666-674`: the seam's `compare_exchange_strong` is kept and the
++   `notify_all` is gone, with the reason in a comment. The store was always the signal; its one
++   consumer (`tests/src/core/ScriptDawModelRegistrationTest.cpp:121-131`, `:134`, `:143`) now
++   re-reads the flag with `std::this_thread::yield()` in the loop instead of `wait`, the same
++   shape the round-7 train used. Nothing new runs on the audio thread: this seam is
++   `LMMS_TESTING`-only and is consulted on the control thread.
++4. `src/wasm/WasmWorkerPool.{h,cpp}`: the pool parks and posts through
++   `lmms::workerwake::notify` / `notifyOne` / `wait` (the audio worker's own primitive) instead of
++   `m_generation.notify_*` / `wait`, and the generation is `std::atomic<uint32_t>` because the
++   trap reads a 32-bit word. `workerwake::notify` wakes every waiter, which is what
++   `notify_all` meant in `shutdown()`; `notifyWork()` uses `workerwake::notifyOne`, preserving
++   the single-waiter shape `std::atomic::notify_one` had (see "Round 2 rework" below), and the
++   existing `m_idleLanes` check keeps it to the parked case, so the audio thread still takes no
++   lock and allocates nothing. `tests/CMakeLists.txt` compiles
++   `src/core/AudioWorkerWake.cpp` into `WasmWorkerPoolTest`, which builds the pool's sources
++   directly instead of linking `lmmsobjs`.
++
++## Regression test
++
++`tests/macos-sync-availability-check.py`, registered as ctest `MacosSyncAvailabilityCheck`
++(`tests/CMakeLists.txt:6202-6216`) and in `tests/fork-sources.txt` (both recipe copies).
++
++It has two halves, and both run on the Linux development box, because a macOS-only check would
++be untestable here:
++
++1. COMPILE MODEL. A shadow `<barrier>`, `<latch>`, `<semaphore>` directory ahead of the system
++   headers refuses a *direct* include exactly as libc++ refuses the declarations. Seven real
++   translation units (plus the two wasm ones when `WANT_WASM` is on) are recompiled from the
++   build's own `compile_commands.json` with `-fsyntax-only`. Red and green probes run first, so
++   a model that cannot fail fails the check.
++2. SOURCE SCAN. `std::atomic`'s `wait`/`notify_*` are class members of the real `<atomic>` and
++   cannot be shadowed by a header, so the check scans every first-party source for a gated type
++   or header and for a declared `std::atomic<...>` object that is the receiver of `.wait(`,
++   `.notify_one(` or `.notify_all(`. Comments are blanked first (newlines preserved, so line
++   numbers are exact) and the one audited exception is
++   `src/core/AudioWorkerWake.cpp:148-158`: its `generation.wait(...)` sits behind
++   `#ifndef LMMS_WORKER_WAKE_WAIT_ON_ADDRESS`, which Apple and Linux both define, so no Apple
++   build compiles it.
++
++There is no thread, no sleep and no clock in the check: a fixed set of compiler invocations and
++a fixed scan over fixed inputs.
++
++RED -> GREEN, all with `QT_QPA_PLATFORM=offscreen`:
++
++    python3 tests/macos-sync-availability-check.py --root . --build-dir build   # before fix
++    -> exit 1; 26 FAIL lines, e.g. tests/src/core/RemotePluginShmFifoTest.cpp:109
++       "std::barrier is macOS 11 only"; src/core/AudioEngine.cpp:672
++
++    ctest -R MacosSyncAvailabilityCheck --output-on-failure   # from build/tests, before fix
++    -> exit 8, test 789 ***Failed
++
++    python3 tests/macos-sync-availability-check.py --root . --build-dir build   # after fix
++    -> exit 0: "PASS: 7 translation units compile ..." and the scan PASS
++
++    ctest -R MacosSyncAvailabilityCheck --output-on-failure
++    -> exit 0, test 789 Passed (21-24 s)
++
++The full family rebuilt and green (log `40-ctest-final-recheck.log`):
++
++    cmake --build build --target zene RemotePluginShmFifoTest ScriptDawModelRegistrationTest \
++        NotePlaybackTest TempoMapTest ModulationAudioViewTest PluginPortsMigrationTest \
++        AudioWorkerWakeTest AudioEngineTeardownTest ThreadPoolTest   -> exit 0
++    cd build/tests && ctest -R "MacosSyncAvailabilityCheck|RemotePluginShmFifoTest|\
++        ScriptDawModelRegistrationTest|NotePlaybackTest|TempoMapTest|ModulationAudioViewTest|\
++        PluginPortsMigrationTest|AudioWorkerWakeTest|AudioEngineTeardownTest|ThreadPoolTest"
++    -> exit 0, 10/10 passed
++
++The optional wasm half was proved by hand, because this tree is configured with
++`WANT_WASM=OFF` (a configure is the parent lane's job, so no second build tree was made):
++`g++ -std=c++20 -fsyntax-only` over `src/wasm/WasmWorkerPool.cpp` and
++`tests/src/wasm/WasmWorkerPoolTest.cpp` (with Qt 6 and wasmtime 48.0.1 headers) both exit 0
++(logs `04-wasm-pool-syntax.log`, `05-wasm-test-syntax.log`), and a link probe that instantiates
++the pool and calls `stats()` links against `libwasmtime.a` and exits 0 (`23-wasm-link-probe.log`).
++
++### Step 4b - revert / reapply
++
++Product hunks (`src/core/AudioEngine.cpp`, `src/wasm/WasmWorkerPool.{h,cpp}`, captured in
++`logs/fix.patch`):
++
++    git apply -R logs/fix.patch                        -> exit 0
++    cmake --build build --target zene ScriptDawModelRegistrationTest   -> exit 0
++    ctest -R MacosSyncAvailabilityCheck                -> exit 8 (test 789 Failed)
++      FAIL: src/core/AudioEngine.cpp:672 std::atomic 'attemptState' is waited/notified
++    git apply logs/fix.patch                           -> exit 0
++    cmake --build build --target zene ScriptDawModelRegistrationTest   -> exit 0
++    ctest -R MacosSyncAvailabilityCheck                -> exit 0 (test 789 Passed)
++
++Test hunks (`logs/fix-tests.patch`), separately, because the product half alone must also be
++caught:
++
++    git apply -R logs/fix-tests.patch                  -> exit 0
++    cmake --build build --target RemotePluginShmFifoTest ScriptDawModelRegistrationTest -> exit 0
++    python3 tests/macos-sync-availability-check.py ... -> exit 1; 26 FAIL lines
++    ctest -R MacosSyncAvailabilityCheck                -> exit 8 (test 789 Failed)
++    git apply logs/fix-tests.patch                     -> exit 0
++    cmake --build build --target ... six test targets  -> exit 0
++    ctest -R MacosSyncAvailabilityCheck                -> exit 0 (test 789 Passed)
++
++Both halves together reverted also exit 1 / 8 (`19-...`, `20-...`).
++
++The six runtime tests named in the round-1 review
++(`ModulationAudioViewTest`, `NotePlaybackTest`, `PluginPortsMigrationTest`,
++`RemotePluginShmFifoTest`, `ScriptDawModelRegistrationTest`, `TempoMapTest`) are
++behaviour-preservation checks: they drive the same workflows through the replacement
++`PortableSync` primitives, so they pass when the round-1 product change is reverted. They are not
++the macOS proof; `MacosSyncAvailabilityCheck`'s compile model is, and it fails on the reverted
++product source (`src/core/AudioEngine.cpp`'s `notify_all`). The round-2 regression proof is the
++new single-waiter source case described next.
++
++## Round 2 rework - single-waiter WASM work post
++
++The round-1 tip `721e386ba32d04bc391ae08446d848fe1fef3bf9` sent every
++`WasmWorkerPool::notifyWork()` through `lmms::workerwake::notify`, whose platform half woke all
++waiters (`__ulock_wake` with `ULF_WAKE_ALL`, `FUTEX_WAKE_PRIVATE` with `INT_MAX`). Before the
++macOS fix the same call was `m_generation.notify_one()`, so one queued block woke every parked
++lane and each one scanned the worker list - a behaviour regression on the audio-driven path, not
++the original build failure.
++
++The rework restores the old shape at the platform helper:
++
++| Site | Behaviour |
++| --- | --- |
++| `include/AudioWorkerWake.h:100-104` | `notifyOne()` declared beside `notify()`: same contract, wake at most one waiter |
++| `src/core/AudioWorkerWake.cpp:79-123` | one shared `wake(generation, all)` post; Apple omits `ULF_WAKE_ALL`, Linux passes `1` instead of `INT_MAX`, the fallback calls `notify_one()`; `notify()` keeps the wake-all values |
++| `src/wasm/WasmWorkerPool.cpp:143-158` | `notifyWork()` calls `workerwake::notifyOne` |
++| `src/wasm/WasmWorkerPool.cpp:77-89` | `shutdown()` keeps `workerwake::notify`, because every parked lane must see the stop flag |
++| `src/wasm/WasmWorkerPool.h:50-62` | the threading contract says "wakes ONE lane", with shutdown named as the exception |
++
++The other caller of `notify()` is `AudioEngineWorkerThread::wakeWorkers()`
++(`src/core/AudioEngineWorkerThread.cpp:251`), which still wants every audio worker woken; it is
++unchanged.
++
++Regression test: `AudioWorkerWakeTest::theWasmPoolWakesOneLaneForWorkAndAllOnShutdown`
++(`tests/src/core/AudioWorkerWakeTest.cpp`). It reads the shipping `notifyWork()` and `shutdown()`
++bodies from `ZENE_SOURCE_DIR` with the existing comment/literal-stripping reader, asserts
++`notifyWork()` names `workerwake::notifyOne(` and not `workerwake::notify(`, and asserts
++`shutdown()` still names `workerwake::notify(`. It is deterministic (fixed source input, no
++threads, sleeps or clock) and runs in the default configure; `WasmWorkerPoolTest` is only built
++with `WANT_WASM=ON`.
++
++Evidence (`EXIT` copied from the commands, logs in
++`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-61ad26e4f8b135f9.r2/logs/`):
++
++| Step | Command | Result |
++| --- | --- | --- |
++| fix capture | `git diff -- include/AudioWorkerWake.h src/core/AudioWorkerWake.cpp src/wasm/WasmWorkerPool.cpp src/wasm/WasmWorkerPool.h > .../fix.patch` | `EXIT=0`, 143 lines (`logs/fix.patch`) |
++| reverse | `git apply -R .../fix.patch` | `EXIT=0` |
++| RED build | `cmake --build build --target AudioWorkerWakeTest -j$(nproc)` (`logs/03-build-reverted.log`) | `EXIT=0` |
++| RED test | `cd build/tests && ctest -R '^AudioWorkerWakeTest$' --output-on-failure` (`logs/04-ctest-red.log`) | `EXIT=8`; `theWasmPoolWakesOneLaneForWorkAndAllOnShutdown` failed: `notifyWork.find("workerwake::notifyOne(") ... returned FALSE` |
++| reapply | `git apply .../fix.patch` | `EXIT=0` |
++| GREEN build | `cmake --build build --target zene AudioWorkerWakeTest -j$(nproc)` (`logs/05-build-reapplied.log`) | `EXIT=0` |
++| GREEN test | same ctest (`logs/06-ctest-green-reapplied.log`) | `EXIT=0`, 1/1 passed |
++| family build | `cmake --build build --target zene AudioWorkerWakeTest ModulationAudioViewTest NotePlaybackTest PluginPortsMigrationTest RemotePluginShmFifoTest ScriptDawModelRegistrationTest TempoMapTest -j$(nproc)` (`logs/10-build-family.log`) | `EXIT=0` |
++| availability + focused family | `ctest -R '^(MacosSyncAvailabilityCheck\|AudioWorkerWakeTest\|ModulationAudioViewTest\|NotePlaybackTest\|PluginPortsMigrationTest\|RemotePluginShmFifoTest\|ScriptDawModelRegistrationTest\|TempoMapTest)$' --output-on-failure` (`logs/11-ctest-family.log`) | `EXIT=0`, 8/8 passed |
++| optional wasm TU | `g++ -std=c++20 -fsyntax-only ... src/wasm/WasmWorkerPool.cpp` (`logs/07-wasm-pool-syntax.log`) | `EXIT=0` |
++| optional wasm test TU | Qt6 moc + `g++ -std=c++20 -fsyntax-only ... tests/src/wasm/WasmWorkerPoolTest.cpp` (`logs/13-moc.log`, `logs/14-wasm-test-syntax.log`) | `EXIT=0` |
++
++## Gates and registration
++
++    python3 .../feature_check.py <worktree>     -> exit 0, all 8 rows PASS
++      (fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace,
++       no-tautology, doc-figures, complexity, file-length)
++    python3 .../submit_check.py <worktree> ci-61ad26e4f8b135f9 -> see commit message / final run
++
++Registration, same commit: `tests/src/core/PortableSync.h` and
++`tests/macos-sync-availability-check.py` are fork-NEW, so they entered
++`tests/fork-sources.txt` (with a pathspec line in *both* copies of its recipe, so the manifest
++still reproduces) and `tests/all-sources.txt` (sorted position; the manifest reproduces
++byte-exactly). The inherited product file changed, `src/core/AudioEngine.cpp`, is declared in
++`tests/upstream-modifications.txt` with its reason. `src/wasm/WasmWorkerPool.{h,cpp}` were
++already fork-NEW entries. `tests/src/core/PortableSync.h` needs no `tests/CMakeLists.txt`
++registration (it is a header compiled through the seven TUs), and the new CTest is registered.
++
++**Log folder.** All round-2 build and test logs are in
++`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-61ad26e4f8b135f9.r2/logs/` (writable in
++this session; numbered `01-` .. `14-`, plus `fix.patch`). The round-1 logs cited in the earlier
++sections are the ones recorded in `$TMPDIR/zene-qwen-ci-61ad26e4f8b135f9/logs/`, because the r1
++folder was not writable then.
++
++## Self-check
++
++**1. The regression test FAILS with your product change reverted and PASSES with it (exit
++codes).** Yes. Product hunks reversed: `git apply -R logs/fix.patch` exit 0, rebuild exit 0,
++`ctest -R MacosSyncAvailabilityCheck` **exit 8**, failing exactly on
++`src/core/AudioEngine.cpp:672 std::atomic 'attemptState' is waited/notified`. Reapplied:
++`git apply` exit 0, rebuild exit 0, same ctest **exit 0**. Test hunks reversed: `git apply -R
++logs/fix-tests.patch` exit 0, rebuild exit 0, script **exit 1** with 26 FAIL lines (first:
++`tests/src/core/RemotePluginShmFifoTest.cpp:109 std::barrier is macOS 11 only`), ctest **exit
++8**; reapplied, rebuild exit 0, ctest **exit 0**. Logs `16-`..`20-`, `28-`..`36-`.
++
++Round 2, for the single-waiter rework: `logs/fix.patch` reversed (`git apply -R`, exit 0),
++`AudioWorkerWakeTest` rebuilt (exit 0), the test **failed with exit 8** on exactly
++`theWasmPoolWakesOneLaneForWorkAndAllOnShutdown`: `notifyWork.find("workerwake::notifyOne(")
++... returned FALSE`. Reapplied (`git apply`, exit 0), rebuilt (exit 0), the same test **passed
++with exit 0** (1/1). Logs `03-`..`06-`.
++
++**2. The test is deterministic: no wall-clock timing, sleeps or races (name the seam or
++injected values it uses).** The check has no thread, sleep or clock: it runs a fixed list of
++compiler invocations over fixed inputs (a shadow header set and the seven TUs recorded in
++`compile_commands.json`) and one regex scan over `git ls-files`. Its only variability is which
++optional wasm TUs exist, which it reports explicitly. The round-2 source case is deterministic
++in the same way: it reads one fixed file (`ZENE_SOURCE_DIR/src/wasm/WasmWorkerPool.cpp`) with the
++existing comment/literal-stripping reader and compares strings; there is no thread, sleep or
++clock in it. The runtime tests it protects already
++used event seams rather than clock deadlines before this change -
++`shmFifo::setCallerIdHashForTest` (an injected caller-id hash),
++`ModulationLayerPublisher`'s token generation, `AudioEngine::setAutomatableModelRegistrationAttemptStateForTest`
++(the injected flag), `TempoMapPublisher::setSnapshotProbeForTest`,
++`WasmWorker::setAudioEndpointEntryTestHook` - and the replacement primitives are predicated
++`condition_variable` waits, not timed polls. The one `try_acquire_for` in the semaphore keeps its
++existing meaning ("the writer reached the model within this budget") and is unchanged.
++
++**3. The fix is at the cause and complete: every caller and sibling of what you changed was
++checked and stays consistent.** The population was read out of the whole tree, not guessed:
++`rg -n '#include <(barrier|latch|semaphore)>|std::(barrier|latch|binary_semaphore|counting_semaphore)'`
++plus `rg -n 'notify_all\(|notify_one\(|\.wait\([^)]*memory_order'` over `src/`, `include/`,
++`plugins/` and `tests/`. That produced exactly the nine sites tabled above; all nine are fixed
++or (for `AudioWorkerWake`) audited and exempted with a reason. The other `notify_*` hits
++(`ThreadPool`, `RemotePluginClient`, `VideoFramePump`, `LinkAudioStream`, `MidiClockCapture`,
++`RubberBandStretch`) are `std::condition_variable` methods, which Apple does not gate. The
++`AudioEngine` seam keeps its `LMMS_TESTING` guard and its release/acquire ordering; its one
++consumer and its sibling test are updated together (`ScriptDawModelRegistrationTest`), and the
++`AudioWorkerWakeTest` that already guards the product wake still passes. The wasm pool's public
++`Stats` API is unchanged; only the private generation's width changed, consistently in the
++`.h` and `.cpp`, which were edited together and whose only other includer
++(`src/wasm/WasmWorker.cpp:66,98,468`) only calls `addWorker`/`removeWorker`/`notifyWork`.
++The round-2 population was re-read with `rg -n 'workerwake::notify|workerwake::wait'`: the only
++`notify()` callers are `AudioEngineWorkerThread::wakeWorkers()` (all workers, unchanged) and
++`WasmWorkerPool::shutdown()` (all parked lanes, kept); the only `notifyOne()` caller is
++`WasmWorkerPool::notifyWork()` (one lane, restored). All three use the same generation-word
++protocol and the same non-blocking post.
++
++**4. No collateral damage: old projects and saved data still load as before, and any limit or
++check you added does not hit other callers that legitimately exceed it.** No serialised format,
++project schema, model default, command id or control surface changed - the diff touches a
++test-seam notify, a private wake primitive, test synchronisation and build registration only.
++Old projects therefore load and render through exactly the same code paths
++(`registerAutomatableModel` still returns the same values and still takes `m_changeMutex` after
++the seam store; the wasm generation is still "the value is the signal", just spelled through
++`workerwake`). The only new check is a source/compile scan, and its single exemption is written
++down in the script (the `AudioWorkerWake.cpp` fallback behind `#ifndef
++LMMS_WORKER_WAKE_WAIT_ON_ADDRESS`) rather than silencing a whole file or directory. The ten-test
++family, including the tests that load projects and render
++(`PluginPortsMigrationTest`, `NotePlaybackTest`, `TempoMapTest`, `AudioEngineTeardownTest`,
++`ThreadPoolTest`), was rebuilt and passes: exit 0, 10/10 (`logs/15-build-extra.log`,
++`logs/16-ctest-ten.log`). The wake-one restore changes only how many parked WASM lanes a work
++post releases; lane draining, ordering, the SPSC queues and every project format are untouched.
++
++**5. If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or the intended
++contract that shows it.** Not claimed: the verdict is FIXED, and the RED runs above show the
++defect present at `c20ef591b5` (`RemotePluginShmFifoTest.cpp:109`,
++`src/core/AudioEngine.cpp:672`). The nearest "already fixed" evidence was checked and
++deliberately not reused: `fix/ci-train21` carries a test-target floor workaround
++(`tests/CMakeLists.txt:2468-2476` there) and a poll-based `AudioEngine` seam, but
++`git merge-base --is-ancestor 203b137e33 HEAD` exits 1, so none of it is on this branch, and a
++test-only deployment floor is not a product fix.
+diff --git a/include/AudioWorkerWake.h b/include/AudioWorkerWake.h
+index 883785dc77..7d7409de82 100644
+--- a/include/AudioWorkerWake.h
++++ b/include/AudioWorkerWake.h
+@@ -50,9 +50,9 @@
+ //   makes the shipping wake path - not a stand-in for it - the thing the tests on the
+ //   development box exercise, with only the two-syscall shim differing from Apple.
+ //
+-// * Windows (and any POSIX without those calls): std::atomic::wait / notify_all, which is
+-//   what the tree used before. Both MSVC and mingw provide it; nothing in the CI matrix
+-//   changes there.
++// * Windows (and any POSIX without those calls): std::atomic::wait / notify_all / notify_one,
++//   which is what the tree used before. Both MSVC and mingw provide them; nothing in the CI
++//   matrix changes there.
+ //
+ // The selection lives here, in the header, so the implementation, the test and any future
+ // caller compile against the same answer.
+@@ -72,8 +72,8 @@ namespace lmms::workerwake
+ //! The primitive this build's wake uses.
+ enum class Primitive
+ {
+-	//! std::atomic::wait / notify_all. Correct wherever C++20 is complete; unavailable below
+-	//! macOS 11, which is why no Apple build selects it.
++	//! std::atomic::wait / notify_one / notify_all. Correct wherever C++20 is complete;
++	//! unavailable below macOS 11, which is why no Apple build selects it.
+ 	AtomicWait,
+ 	//! Compare-and-wait on the generation word itself: no mutex, no allocation, and no wait
+ 	//! on the notifying side (__ulock_wake on Apple, FUTEX_WAKE on Linux).
+@@ -97,6 +97,12 @@ constexpr Primitive compiledPrimitive() noexcept
+ //! every period, so it must not take a mutex, allocate, free or wait.
+ void notify(std::atomic<std::uint32_t>& generation) noexcept;
+ 
++//! Wake at most one thread waiting on \a generation, the shape std::atomic::notify_one had.
++//! A caller that queues one unit of work uses this so the other parked workers stay asleep
++//! instead of scanning for work that is not theirs. Same contract and cost as notify(): the
++//! caller advances the word first, the post never blocks.
++void notifyOne(std::atomic<std::uint32_t>& generation) noexcept;
++
+ //! Block until \a generation no longer equals \a seen. A spurious return is allowed - the
+ //! caller re-reads the word and re-checks its own quit flag - and a value that already moved
+ //! makes this return at once, which is the no-lost-wake guarantee. The wait side is a parked
+diff --git a/src/core/AudioEngine.cpp b/src/core/AudioEngine.cpp
+index 2aaa21197d..1652a2cb1c 100644
+--- a/src/core/AudioEngine.cpp
++++ b/src/core/AudioEngine.cpp
+@@ -667,9 +667,11 @@ bool AudioEngine::registerAutomatableModel(AutomatableModel* model) noexcept
+ 		m_automatableModelRegistrationAttemptStateForTest.load(std::memory_order_acquire))
+ 	{
+ 		int expected = 0;
++		// The test polls this flag: std::atomic::notify_all needs macOS 11 and the product
++		// floor is 10.13 (cluster ci-61ad26e4f8b135f9). The store above is the signal; the
++		// waiter re-reads it, so nothing can be lost.
+ 		attemptState->compare_exchange_strong(expected, 1, std::memory_order_release,
+ 			std::memory_order_relaxed);
+-		attemptState->notify_all();
+ 	}
+ 
+ 	const auto lock = std::lock_guard{m_changeMutex};
+diff --git a/src/core/AudioWorkerWake.cpp b/src/core/AudioWorkerWake.cpp
+index b01326717e..f50fc465a7 100644
+--- a/src/core/AudioWorkerWake.cpp
++++ b/src/core/AudioWorkerWake.cpp
+@@ -76,16 +76,8 @@ static_assert(std::atomic<std::uint32_t>::is_always_lock_free,
+ std::atomic<std::uint64_t> s_notifyCount{0};
+ #endif
+ 
+-} // namespace
+-
+-#if defined(__APPLE__)
+-// Compile-time, not a test-only claim: an Apple build whose wake is not the wait-on-address
+-// path would put std::atomic::wait (unavailable below macOS 11) back on the render thread.
+-static_assert(compiledPrimitive() == Primitive::WaitOnAddress,
+-	"the Apple wake must be the wait-on-address path");
+-#endif
+-
+-void notify(std::atomic<std::uint32_t>& generation) noexcept
++//! The single post both entry points share; \a all chooses wake-every or wake-one.
++void wake(std::atomic<std::uint32_t>& generation, bool all) noexcept
+ {
+ #ifdef LMMS_TESTING
+ 	s_notifyCount.fetch_add(1, std::memory_order_relaxed);
+@@ -98,14 +90,36 @@ void notify(std::atomic<std::uint32_t>& generation) noexcept
+ #if defined(__APPLE__)
+ 	// Returns non-zero (ENOENT) when no worker is parked, which is not an error: the
+ 	// generation move is what the worker checks, so a post with no waiter loses nothing.
+-	__ulock_wake(UlCompareAndWait | UlfWakeAll, static_cast<void*>(&generation), 0);
++	// Without ULF_WAKE_ALL the trap wakes one waiter, the shape notify_one had.
++	__ulock_wake(UlCompareAndWait | (all ? UlfWakeAll : 0u),
++		static_cast<void*>(&generation), 0);
+ #else
+ 	::syscall(SYS_futex, reinterpret_cast<std::int32_t*>(&generation), FUTEX_WAKE_PRIVATE,
+-		INT_MAX, nullptr, nullptr, 0);
++		all ? INT_MAX : 1, nullptr, nullptr, 0);
+ #endif
+ #else
+-	generation.notify_all();
++	if (all) { generation.notify_all(); }
++	else { generation.notify_one(); }
++#endif
++}
++
++} // namespace
++
++#if defined(__APPLE__)
++// Compile-time, not a test-only claim: an Apple build whose wake is not the wait-on-address
++// path would put std::atomic::wait (unavailable below macOS 11) back on the render thread.
++static_assert(compiledPrimitive() == Primitive::WaitOnAddress,
++	"the Apple wake must be the wait-on-address path");
+ #endif
++
++void notify(std::atomic<std::uint32_t>& generation) noexcept
++{
++	wake(generation, true);
++}
++
++void notifyOne(std::atomic<std::uint32_t>& generation) noexcept
++{
++	wake(generation, false);
+ }
+ 
+ #ifdef LMMS_WORKER_WAKE_WAIT_ON_ADDRESS
+diff --git a/src/wasm/WasmWorkerPool.cpp b/src/wasm/WasmWorkerPool.cpp
+index 9a8c1df4aa..4327c939c7 100644
+--- a/src/wasm/WasmWorkerPool.cpp
++++ b/src/wasm/WasmWorkerPool.cpp
+@@ -79,9 +79,9 @@ void WasmWorkerPool::shutdown()
+ 	const bool wasStopped = m_stop.exchange(true, std::memory_order_acq_rel);
+ 	if (wasStopped) { return; }
+ 	// Wake every parked lane so it sees the stop flag rather than waiting for
+-	// work that will never come.
++	// work that will never come. workerwake wakes every waiter on the word.
+ 	m_generation.fetch_add(1, std::memory_order_release);
+-	m_generation.notify_all();
++	lmms::workerwake::notify(m_generation);
+ 	for (std::thread& lane : m_threads)
+ 	{
+ 		if (lane.joinable()) { lane.join(); }
+@@ -150,7 +150,10 @@ bool WasmWorkerPool::notifyWork()
+ 		m_wakesSuppressed.fetch_add(1, std::memory_order_relaxed);
+ 		return false;
+ 	}
+-	m_generation.notify_one();
++	// One queued block needs one lane: workerwake::notifyOne preserves the
++	// single-waiter wake std::atomic::notify_one had, so the other parked lanes
++	// stay asleep instead of scanning the workers again.
++	lmms::workerwake::notifyOne(m_generation);
+ 	m_wakeups.fetch_add(1, std::memory_order_relaxed);
+ 	return true;
+ }
+@@ -226,12 +229,12 @@ void WasmWorkerPool::laneMain(std::size_t lane)
+ 		// hand-off lossless: a notifyWork() that lands after the scan either
+ 		// finds this lane idle (and wakes it) or has already bumped the
+ 		// generation (and the wait below returns immediately).
+-		const std::uint64_t generation = m_generation.load(std::memory_order_acquire);
++		const std::uint32_t generation = m_generation.load(std::memory_order_acquire);
+ 		m_idleLanes.fetch_add(1, std::memory_order_release);
+ 		if (!hasPendingWork() && !m_stop.load(std::memory_order_acquire))
+ 		{
+ 			m_parks.fetch_add(1, std::memory_order_relaxed);
+-			m_generation.wait(generation, std::memory_order_acquire);
++			lmms::workerwake::wait(m_generation, generation);
+ 		}
+ 		m_idleLanes.fetch_sub(1, std::memory_order_release);
+ 	}
+diff --git a/src/wasm/WasmWorkerPool.h b/src/wasm/WasmWorkerPool.h
+index dea6f95141..3fdf63a8c8 100644
+--- a/src/wasm/WasmWorkerPool.h
++++ b/src/wasm/WasmWorkerPool.h
+@@ -23,6 +23,7 @@
+ #ifndef LMMS_WASM_WORKER_POOL_H
+ #define LMMS_WASM_WORKER_POOL_H
+ 
++#include "AudioWorkerWake.h"
+ #include "lmms_export.h"
+ 
+ #include <atomic>
+@@ -51,7 +52,13 @@ class WasmWorker;
+  *    nothing else here: one relaxed increment of the work generation and one
+  *    acquire load. It takes no lock, allocates nothing and does NOT notify when
+  *    every lane is awake - `wakes_suppressed` counts that case. When the pool
+- *    is idle it is one `std::atomic::notify_one()`, i.e. a single futex wake.
++ *    is idle it is one lmms::workerwake post, i.e. a single futex wake
++ *    (__ulock_wake on Apple, FUTEX_WAKE on Linux) that wakes ONE lane, the shape
++ *    std::atomic::notify_one had. The wake goes through workerwake rather than
++ *    std::atomic::wait/notify: libc++ marks those unavailable below macOS 11 and
++ *    this product's floor is 10.13, the same reason the audio worker's own wake
++ *    uses it (cluster ci-61ad26e4f8b135f9). Shutdown is the exception: it wakes
++ *    every parked lane because no lane will post again.
+  *  - A lane claims ONE worker at a time (WasmWorker::claimForLane()), drains
+  *    that worker's queue in FIFO order and releases it. In-order draining per
+  *    worker is what keeps a stateful module's blocks in the order they were
+@@ -140,7 +147,7 @@ private:
+ 
+ 	//! The work generation. A lane wakes when this changes, so a wake-up that
+ 	//! lands between its scan and its park cannot be lost.
+-	std::atomic<std::uint64_t> m_generation{0};
++	std::atomic<std::uint32_t> m_generation{0};
+ 	std::atomic<std::uint32_t> m_idleLanes{0};
+ 	std::atomic<std::uint64_t> m_lanes{0};
+ 	std::atomic<std::uint64_t> m_lanePasses{0};
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 526928a9d5..f5a257267b 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -5251,6 +5251,10 @@ if(WANT_WASM)
+ 		${CMAKE_SOURCE_DIR}/src/wasm/WasmWorker.cpp
+ 		${CMAKE_SOURCE_DIR}/src/wasm/WasmWorkerPool.cpp
+ 		${CMAKE_SOURCE_DIR}/src/wasm/WasmOfflineRender.cpp
++		# The pool parks and wakes through lmms::workerwake (cluster ci-61ad26e4f8b135f9:
++		# std::atomic::wait/notify is unavailable below macOS 11), so this test compiles
++		# that one core source rather than linking lmmsobjs.
++		${CMAKE_SOURCE_DIR}/src/core/AudioWorkerWake.cpp
+ 	)
+ 	add_test(NAME WasmWorkerPoolTest COMMAND WasmWorkerPoolTest)
+ 	target_include_directories(WasmWorkerPoolTest PRIVATE
+@@ -6195,6 +6199,22 @@ if(PYTHON3_EXECUTABLE)
+ 	set_tests_properties(NamPortabilityRegistrationCheck PROPERTIES TIMEOUT 120)
+ endif()
+ 
++# cluster ci-61ad26e4f8b135f9 (2026-11-14): the hosted macos-x86_64 job builds for a deployment
++# target below macOS 11, where Apple's libc++ marks <barrier>, <latch>, <semaphore> and the
++# std::atomic wait/notify members unavailable; this product's floor is 10.13, so they must not
++# appear in shipping code either. The tests compile those REAL translation units from the build's
++# own compile_commands.json against a shadow of the three headers, and scan the sources for the
++# atomic members (which are class members and cannot be shadowed). The macos jobs prove the real
++# contract natively; every other host runs the model, so the regression is not macOS-only.
++if(PYTHON3_EXECUTABLE AND NOT WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
++	add_test(NAME MacosSyncAvailabilityCheck
++		COMMAND ${PYTHON3_EXECUTABLE}
++			${CMAKE_CURRENT_SOURCE_DIR}/macos-sync-availability-check.py
++			--root ${CMAKE_SOURCE_DIR}
++			--build-dir ${CMAKE_BINARY_DIR})
++	set_tests_properties(MacosSyncAvailabilityCheck PROPERTIES TIMEOUT 300)
++endif()
++
+ # Native VST3 instrument fixture and its probe.
+ #
+ # Opt-in on purpose: cmake/modules/Vst3Sdk.cmake builds lmms_vst3_sdk whenever
+diff --git a/tests/all-sources.txt b/tests/all-sources.txt
+index 014bb99f09..8003d28a29 100644
+--- a/tests/all-sources.txt
++++ b/tests/all-sources.txt
+@@ -3145,6 +3145,7 @@ tests/src/core/PluginScanWorkerTest.cpp
+ tests/src/core/PluginWindowPlatformTest.cpp
+ tests/src/core/PortMappingCodecTest.cpp
+ tests/src/core/PortMappingOrchestratorTest.cpp
++tests/src/core/PortableSync.h
+ tests/src/core/PresetBindingsTest.cpp
+ tests/src/core/ProjectContainerEntriesTest.cpp
+ tests/src/core/ProjectContainerSaveTest.cpp
+diff --git a/tests/fork-sources.txt b/tests/fork-sources.txt
+index 05e640c9f6..2b4309130b 100644
+--- a/tests/fork-sources.txt
++++ b/tests/fork-sources.txt
+@@ -111,6 +111,7 @@
+ #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-surface-hardening.py ; \
+ #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-shell.py ; \
+ #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-note-editor.py ; \
++#   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/macos-sync-availability-check.py ; \
+ #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/ExprSynthAllocationTest.cpp ; \
+ #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/SlicerTWaveformTest.cpp ; \
+ #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/MpeConsumerProbe.h tests/src/plugins/MpeTestConsumer.cpp ; \
+@@ -213,6 +214,7 @@
+ # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-surface-hardening.py ; \
+ # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-shell.py ; \
+ # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-note-editor.py ; \
++# git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/macos-sync-availability-check.py ; \
+ # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-tempo-map-persistence.py ; \
+ # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/SlicerTWaveformTest.cpp ; \
+ # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/MpeConsumerProbe.h tests/src/plugins/MpeTestConsumer.cpp ; \
+@@ -737,6 +739,15 @@
+ # file is under 500 code lines, so gates 4 and 7 measure it at their existing thresholds.
+ #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/warp-docs-agree.py ; \
+ 
++# cluster ci-61ad26e4f8b135f9 (2026-11-14): Apple's libc++ marks <barrier>, <latch>, <semaphore>
++# and the std::atomic wait/notify members unavailable below macOS 11, while this product's floor
++# is 10.13, so the hosted macos-x86_64 job stopped on the fork-new RemotePluginShmFifoTest. The
++# tests now use tests/src/core/PortableSync.h (a mutex and a condition variable) instead of the
++# gated headers, and tests/macos-sync-availability-check.py recompiles the real translation units
++# under a model of that availability contract so the defect cannot return on a Linux host.
++tests/macos-sync-availability-check.py
++tests/src/core/PortableSync.h
++
+ # Train 29: retain independently accepted Linux Qt5 compile/scanner regressions and MinGW no-gestures regression.
+ tests/qt5-signal-overload-check.py
+ tests/qt5-signal-overload-arm-check.py
+diff --git a/tests/macos-sync-availability-check.py b/tests/macos-sync-availability-check.py
+new file mode 100644
+index 0000000000..8aef78be89
+--- /dev/null
++++ b/tests/macos-sync-availability-check.py
+@@ -0,0 +1,335 @@
++#!/usr/bin/env python3
++"""Fail when a translation unit needs a C++20 synchronisation primitive macOS below 11 lacks.
++
++Cluster ci-61ad26e4f8b135f9 (2026-11-14). The hosted macos-x86_64 job builds for a deployment
++target below macOS 11 - this project's supported floor is 10.13, and CI's macos-env.sh derives
++a target from a dependency binary - where Apple's libc++ marks the C++20 synchronisation
++primitives unavailable (_LIBCPP_AVAILABILITY_SYNC):
++
++    tests/src/core/RemotePluginShmFifoTest.cpp:109:16: error: 'barrier' is unavailable:
++    introduced in macOS 11.0 unknown
++
++<barrier>, <latch>, <semaphore> and std::atomic's wait/notify_one/notify_all members are all
++gated that way. Every Linux and Windows host compiled the same code, so the defect reached the
++train.
++
++Raising each test target's deployment floor would hide the product's own floor instead of
++fixing anything, so the tests use tests/src/core/PortableSync.h (a mutex and a condition
++variable, available long before 10.13) and the AudioEngine test seam polls a flag instead of
++calling std::atomic::notify_all. A product wake that may not lock or allocate keeps its own
++primitive, lmms::workerwake (include/AudioWorkerWake.h).
++
++The check has two halves, both deterministic (fixed inputs, no timing, no threads):
++
++  1. COMPILE MODEL. A shadow <barrier>/<latch>/<semaphore> ahead of the system headers refuses
++     each header exactly as libc++ does below macOS 11, and every real translation unit listed
++     below is recompiled from this build's own compile_commands.json. Red and green probes run
++     first, so a model that cannot fail fails the check.
++  2. SOURCE SCAN. Two things the shadow cannot model: a file that includes a gated header
++     through a path the shadow does not see, and the std::atomic wait/notify members, which are
++     members of the real <atomic> and not a header at all. The scan (comments stripped) fails on
++     any std::barrier / std::latch / std::binary_semaphore / std::counting_semaphore use, any
++     #include of the three headers, and any first-party object declared as std::atomic<...> that
++     is then the receiver of .wait(, .notify_one( or .notify_all(. The one audited exception is
++     src/core/AudioWorkerWake.cpp: its fallback for platforms without a compare-and-wait trap is
++     behind #ifndef LMMS_WORKER_WAKE_WAIT_ON_ADDRESS, which Apple and Linux both define, so no
++     Apple build compiles it; the Apple path is __ulock_wait/__ulock_wake (macOS 10.12).
++
++Usage: macos-sync-availability-check.py --root <tree> --build-dir <build>
++"""
++
++import argparse
++import json
++import os
++import re
++import shlex
++import subprocess
++import sys
++import tempfile
++
++#: TUs that must be in a default configure and must compile under the model.
++REQUIRED_TARGETS = [
++	"src/core/AudioEngine.cpp",
++	"tests/src/core/ModulationAudioViewTest.cpp",
++	"tests/src/core/NotePlaybackTest.cpp",
++	"tests/src/core/RemotePluginShmFifoTest.cpp",
++	"tests/src/core/ScriptDawModelRegistrationTest.cpp",
++	"tests/src/core/TempoMapTest.cpp",
++	"tests/src/plugins/PluginPortsMigrationTest.cpp",
++]
++
++#: TUs that only exist when the optional wasm sandbox is configured.
++OPTIONAL_TARGETS = ["src/wasm/WasmWorkerPool.cpp", "tests/src/wasm/WasmWorkerPoolTest.cpp"]
++
++SYNC_HEADERS = ("barrier", "latch", "semaphore")
++
++SYNC_RED_PROBE = "#include <barrier>\nint main() { std::barrier<> b{1}; b.arrive_and_wait(); }\n"
++SYNC_GREEN_PROBE = "#include <cstddef>\nint main() { return 0; }\n"
++
++#: Vendored trees that are not this repo's code (the same exclusions tests/all-sources.txt uses).
++VENDORED = (
++	"src/3rdparty/",
++	"tests/reference/",
++	"plugins/NeuralAmp/rtneural/",
++	"plugins/NeuralAmp/nam/",
++	"plugins/NeuralAmp/tests/",
++	"plugins/RnnoiseDenoiser/rnnoise/",
++	"plugins/SfzPlayer/sfizz/",
++)
++
++#: The audited exception, with the reason stated in the module docstring.
++ATOMIC_SCAN_EXCEPTIONS = {"src/core/AudioWorkerWake.cpp"}
++
++ATOMIC_DECLARATION = re.compile(
++	r"std::atomic\s*<[^;{}]*>\s*[\s*&]*(?:const\s+)?[\s*&]*([A-Za-z_]\w*)\s*(?=[=;{[(])")
++ATOMIC_RECEIVER_CALL = re.compile(r"\b([A-Za-z_]\w*)\s*(?:\.|->)\s*(?:wait|notify_one|notify_all)\s*\(")
++GATED_TYPE = re.compile(r"\bstd::(barrier|latch|binary_semaphore|counting_semaphore)\b")
++GATED_INCLUDE = re.compile(r"^\s*#\s*include\s*<(barrier|latch|semaphore)>")
++
++
++def strip_comments(text):
++	"""Text with // and /* */ comments blanked, so prose about a primitive is not a use."""
++	out = []
++	index = 0
++	length = len(text)
++	while index < length:
++		if text.startswith("//", index):
++			end = text.find("\n", index)
++			index = length if end < 0 else end
++		elif text.startswith("/*", index):
++			end = text.find("*/", index + 2)
++			stop = length if end < 0 else end + 2
++			# Keep every newline the comment held, so reported line numbers stay exact.
++			out.append(" " + "\n" * text.count("\n", index, stop))
++			index = stop
++		elif text[index] in "\"'":
++			quote = text[index]
++			end = index + 1
++			while end < length and text[end] != quote:
++				end += 2 if text[end] == "\\" else 1
++			out.append(text[index:end + 1])
++			index = end + 1
++		else:
++			out.append(text[index])
++			index += 1
++	return "".join(out)
++
++
++def run(command, cwd, timeout=300):
++	return subprocess.run(command, cwd=cwd, capture_output=True, text=True, timeout=timeout)
++
++
++def split_command(entry):
++	if entry.get("command"):
++		return shlex.split(entry["command"])
++	return list(entry.get("arguments") or [])
++
++
++def source_of(entry):
++	path = entry["file"]
++	if not os.path.isabs(path):
++		path = os.path.join(entry["directory"], path)
++	return os.path.normpath(path)
++
++
++def syntax_command(entry, extra):
++	"""The recorded compile line, plus extras, without output or compile action."""
++	cleaned = []
++	skip = False
++	for argument in split_command(entry):
++		if skip:
++			skip = False
++			continue
++		if argument in ("-o", "-MF", "-MT", "-MQ"):
++			skip = True
++			continue
++		if argument in ("-c", "-MD", "-MMD", "-MP"):
++			continue
++		if argument.startswith(("-o", "-MF", "-MT", "-MQ")):
++			continue
++		cleaned.append(argument)
++	if not cleaned:
++		return None
++	cleaned.extend(extra)
++	cleaned.append("-fsyntax-only")
++	return cleaned
++
++
++def error_lines(result):
++	lines = [line for line in (result.stderr or result.stdout).splitlines() if "error" in line.lower()]
++	return " | ".join(lines[:3]) or "compiler exited %d" % result.returncode
++
++
++def first_party_sources(root):
++	result = run(["git", "ls-files", "*.c", "*.cc", "*.cpp", "*.cxx", "*.h", "*.hpp"], root)
++	if result.returncode != 0:
++		raise RuntimeError("git ls-files failed: " + result.stderr.strip())
++	return [path for path in result.stdout.splitlines()
++		if path and not path.startswith(VENDORED)]
++
++
++def scan_line(relative, number, line, declarations):
++	"""One hit tuple for a line that uses a gated primitive, or None."""
++	include = GATED_INCLUDE.match(line)
++	if include:
++		return (relative, number, "#include <%s> is macOS 11 only" % include.group(1), line.strip())
++	use = GATED_TYPE.search(line)
++	if use:
++		return (relative, number, "std::%s is macOS 11 only" % use.group(1), line.strip())
++	for name in ATOMIC_RECEIVER_CALL.findall(line):
++		if name in declarations:
++			return (relative, number,
++				"std::atomic %r is waited/notified (macOS 11 only)" % name, line.strip())
++	return None
++
++
++def scan_source(relative, text, hits):
++	"""Append every hit in one file's comment-stripped text."""
++	declarations = set(ATOMIC_DECLARATION.findall(text))
++	for number, line in enumerate(text.splitlines(), 1):
++		hit = scan_line(relative, number, line, declarations)
++		if hit is not None:
++			hits.append(hit)
++
++
++def source_scan(root):
++	"""(relative, line, message, text) for every gated header, type or atomic wait/notify use."""
++	hits = []
++	for relative in first_party_sources(root):
++		try:
++			with open(os.path.join(root, relative), encoding="utf-8", errors="replace") as stream:
++				text = strip_comments(stream.read())
++		except OSError:
++			continue
++		scan_source(relative, text, hits)
++	return [hit for hit in hits if hit[0] not in ATOMIC_SCAN_EXCEPTIONS]
++
++
++def write_shadow(temporary):
++	"""A shadow include directory that refuses the three headers to a translation unit."""
++	shadow = os.path.join(temporary, "shadow")
++	os.makedirs(shadow)
++	for header in SYNC_HEADERS:
++		# Refuse a header the translation unit includes ITSELF, then defer to the real one.
++		# libc++ refuses the declarations rather than the header, so a standard header that
++		# includes <semaphore> internally (libstdc++'s <stop_token> does) must keep working:
++		# below macOS 11 what breaks is a use, and a use needs the direct include.
++		with open(os.path.join(shadow, header), "w", encoding="utf-8") as stream:
++			stream.write("#if __INCLUDE_LEVEL__ <= 1\n"
++				"#error <%s> is unavailable below macOS 11\n"
++				"#endif\n"
++				"#include_next <%s>\n" % (header, header))
++	return shadow
++
++
++def probe_shadow(compiler, temporary, shadow):
++	"""Failures of the model's own red/green probes: a model that cannot fail fails here."""
++	failures = []
++	probe = os.path.join(temporary, "probe.cpp")
++	for text, expected, label in (
++		(SYNC_RED_PROBE, False, "includes <barrier>"),
++		(SYNC_GREEN_PROBE, True, "does not include a gated header"),
++	):
++		with open(probe, "w", encoding="utf-8") as stream:
++			stream.write(text)
++		result = run([compiler, "-std=c++20", "-I" + shadow, probe], temporary)
++		if (result.returncode == 0) != expected:
++			failures.append("the shadow model is broken: a probe that %s %s" % (
++				label, "compiled" if result.returncode == 0 else "did not compile"))
++	return failures
++
++
++def select_targets(root, by_source):
++	"""(absolute targets, optional labels, failure) from the compile database."""
++	required = [os.path.normpath(os.path.join(root, target)) for target in REQUIRED_TARGETS]
++	missing = [target for target in required if target not in by_source]
++	if missing:
++		return [], [], "not in compile_commands.json: " + ", ".join(
++			os.path.relpath(target, root) for target in missing)
++	targets = list(required)
++	optional = []
++	for target in OPTIONAL_TARGETS:
++		candidate = os.path.normpath(os.path.join(root, target))
++		if candidate in by_source:
++			targets.append(candidate)
++			optional.append(target)
++	return targets, optional, ""
++
++
++def compile_one(root, by_source, target, shadow):
++	"""One failure string for a target that does not compile under the shadow, or ''."""
++	entry = by_source[target]
++	name = os.path.relpath(target, root)
++	command = syntax_command(entry, ["-I" + shadow])
++	if command is None:
++		return name + " has no compile command"
++	result = run(command, entry["directory"])
++	if result.returncode == 0:
++		return ""
++	return ("%s does not compile when <barrier>/<latch>/<semaphore> are unavailable "
++		"(macOS < 11): %s" % (name, error_lines(result)))
++
++
++def compile_model(root, build_dir):
++	"""(failures, number of targets compiled) for the compile half of the check."""
++	path = os.path.join(os.path.abspath(build_dir), "compile_commands.json")
++	if not os.path.isfile(path):
++		return ["no compile_commands.json in " + os.path.abspath(build_dir)], 0
++	with open(path, encoding="utf-8") as stream:
++		by_source = {source_of(entry): entry for entry in json.load(stream)}
++	targets, optional, failure = select_targets(root, by_source)
++	if failure:
++		return [failure], 0
++	first_command = split_command(by_source[targets[0]])
++	if not first_command:
++		return [REQUIRED_TARGETS[0] + " has no compile command"], 0
++	compiler = first_command[0]
++	with tempfile.TemporaryDirectory(prefix="zene-macos-sync-") as temporary:
++		shadow = write_shadow(temporary)
++		failures = probe_shadow(compiler, temporary, shadow)
++		for target in targets:
++			failure = compile_one(root, by_source, target, shadow)
++			if failure:
++				failures.append(failure)
++	if optional:
++		print("Also checked the configured optional wasm translation units:", ", ".join(optional))
++	else:
++		print("The optional wasm translation units are not in this configure (WANT_WASM off)")
++	return failures, len(targets)
++
++
++def main():
++	parser = argparse.ArgumentParser(description=__doc__)
++	parser.add_argument("--root", required=True)
++	parser.add_argument("--build-dir", required=True)
++	options = parser.parse_args()
++	root = os.path.abspath(options.root)
++
++	failures, compiled = compile_model(root, options.build_dir)
++	if compiled and not failures:
++		print("PASS: %d translation units compile when the macOS-11-only headers are unavailable"
++			% compiled)
++	for failure in failures:
++		print("FAIL:", failure)
++
++	try:
++		hits = source_scan(root)
++	except RuntimeError as error:
++		print("FAIL:", error)
++		hits = []
++	if hits:
++		for relative, number, message, line in hits[:20]:
++			print("FAIL: %s:%d %s: %s" % (relative, number, message, line))
++		if len(hits) > 20:
++			print("FAIL: ... and %d more" % (len(hits) - 20))
++	else:
++		print("PASS: no first-party source uses a macOS-11-only header, type or atomic wait/notify "
++			"(except the audited %s fallback)" % ", ".join(sorted(ATOMIC_SCAN_EXCEPTIONS)))
++
++	if failures or hits:
++		return 1
++	return 0
++
++
++if __name__ == "__main__":
++	sys.exit(main())
+diff --git a/tests/src/core/AudioWorkerWakeTest.cpp b/tests/src/core/AudioWorkerWakeTest.cpp
+index 20125a7b38..5fd09f5601 100644
+--- a/tests/src/core/AudioWorkerWakeTest.cpp
++++ b/tests/src/core/AudioWorkerWakeTest.cpp
+@@ -41,6 +41,8 @@
+ //   * theWakePathNamesNoLockOrAllocationInItsSource: a source scan of the two functions, so
+ //     the property is checked on every platform, including a macOS job whose libSystem calls
+ //     an executable cannot interpose.
++//   * theWasmPoolWakesOneLaneForWorkAndAllOnShutdown: the WASM pool's ordinary post keeps the
++//     single-waiter shape std::atomic::notify_one had, while shutdown still wakes every lane.
+ //   * repeatedWakeupsDeliverEveryPeriodWithoutDeadlock: many periods, real workers, every job
+ //     exactly once, bounded join.
+ //   * quitRacingAWakeupAlwaysJoinsTheWorker: shutdown raced against a wake, repeatedly.
+@@ -441,6 +443,31 @@ private slots:
+ 		}
+ 	}
+ 
++	//! The macOS-availability fix moved the WASM pool's posts onto workerwake, and in doing
++	//! so one queued block must not wake every parked lane: std::atomic::notify_one used to
++	//! wake exactly one. WasmWorkerPoolTest exists only with WANT_WASM, so this read of the
++	//! shipping functions runs in the default configure, from the tree the binary was built
++	//! from. shutdown() is the sibling that still has to release every parked lane.
++	void theWasmPoolWakesOneLaneForWorkAndAllOnShutdown()
++	{
++		bool found = false;
++		const std::string notifyWork = functionBody(
++			sourcePath("src/wasm/WasmWorkerPool.cpp"),
++			"bool WasmWorkerPool::notifyWork()", found);
++		QVERIFY2(found, "could not read notifyWork() in src/wasm/WasmWorkerPool.cpp");
++		const std::string shutdown = functionBody(
++			sourcePath("src/wasm/WasmWorkerPool.cpp"),
++			"void WasmWorkerPool::shutdown()", found);
++		QVERIFY2(found, "could not read shutdown() in src/wasm/WasmWorkerPool.cpp");
++
++		QVERIFY2(notifyWork.find("workerwake::notifyOne(") != std::string::npos,
++			"notifyWork() does not wake exactly one parked lane");
++		QVERIFY2(notifyWork.find("workerwake::notify(") == std::string::npos,
++			"notifyWork() wakes every parked lane; one queued block must not scan them all");
++		QVERIFY2(shutdown.find("workerwake::notify(") != std::string::npos,
++			"shutdown() must still wake every parked lane");
++	}
++
+ 	//! AC2, the pool half, deterministic: a job queued before the wake is taken by a worker,
+ 	//! proven through the drain probe rather than by racing the caller. The probe parks the
+ 	//! worker in the two windows that make it a fact: `BeforeWait` (it has read the generation,
+diff --git a/tests/src/core/ModulationAudioViewTest.cpp b/tests/src/core/ModulationAudioViewTest.cpp
+index 9cb24528fe..740e6d2742 100644
+--- a/tests/src/core/ModulationAudioViewTest.cpp
++++ b/tests/src/core/ModulationAudioViewTest.cpp
+@@ -47,12 +47,12 @@
+ #include <atomic>
+ #include <chrono>
+ #include <cstdint>
+-#include <semaphore>
+ #include <thread>
+ #include <type_traits>
+ #include <utility>
+ 
+ #include "AllocationProbe.h"
++#include "PortableSync.h"
+ 
+ #include "AudioDevice.h"
+ #include "AudioEngine.h"
+@@ -225,8 +225,8 @@ private slots:
+ 		auto* model = new FloatModel(0.0f, -100.0f, 100.0f, 0.01f);
+ 		publishOne(publisher, model);
+ 		const ModulationAudioView view = publisher.snapshot();
+-		std::binary_semaphore writeEntered{0};
+-		std::binary_semaphore resumeWrite{0};
++		testsupport::BinarySemaphore writeEntered{0};
++		testsupport::BinarySemaphore resumeWrite{0};
+ 		QObject::connect(model, &Model::dataChanged, this, [&] {
+ 			writeEntered.release();
+ 			resumeWrite.acquire();
+@@ -274,8 +274,8 @@ private slots:
+ 	{
+ 		ModulationLayerPublisher publisher;
+ 		auto* oldModel = new FloatModel(0.0f, -100.0f, 100.0f, 0.01f);
+-		std::binary_semaphore teardownEntered{0};
+-		std::binary_semaphore resumeTeardown{0};
++		testsupport::BinarySemaphore teardownEntered{0};
++		testsupport::BinarySemaphore resumeTeardown{0};
+ 		QObject::connect(oldModel, &AutomatableModel::aboutToBeDestroyed, this, [&] {
+ 			teardownEntered.release();
+ 			resumeTeardown.acquire();
+@@ -428,7 +428,7 @@ private slots:
+ 		const ModulationAudioView view = publisher.snapshot();
+ 		const std::uint32_t token = view.entries[0].token;
+ 
+-		std::binary_semaphore pinned{0};
++		testsupport::BinarySemaphore pinned{0};
+ 		std::atomic<bool> pinTaken{false};
+ 		std::atomic<unsigned> versionWhileWaiting{2};
+ 		std::atomic<int> entriesWhileWaiting{-1};
+@@ -523,7 +523,7 @@ private slots:
+ 		const std::uint32_t slot0Token = oldView.entries[0].token;
+ 		QCOMPARE(publisher.sinceTrigger(0, 11, 12.75), 2.75);
+ 
+-		std::binary_semaphore pinned{0};
++		testsupport::BinarySemaphore pinned{0};
+ 		std::atomic<bool> pinTaken{false};
+ 		std::atomic<bool> oldViewDuringWait{false};
+ 		double phaseDuringWait = -2.0;
+diff --git a/tests/src/core/NotePlaybackTest.cpp b/tests/src/core/NotePlaybackTest.cpp
+index d59fcbbe04..1da11f5422 100644
+--- a/tests/src/core/NotePlaybackTest.cpp
++++ b/tests/src/core/NotePlaybackTest.cpp
+@@ -44,7 +44,6 @@
+ #include <cstdint>
+ #include <cstring>
+ #include <limits>
+-#include <barrier>
+ #include <cmath>
+ #include <new>
+ #include <span>
+@@ -57,6 +56,8 @@
+ #include <sched.h>
+ #endif
+ 
++#include "PortableSync.h"
++
+ #include "AudioDevice.h"
+ #include "AudioEngine.h"
+ #include "ControlRegistry.h"
+@@ -231,7 +232,7 @@ void renderMonstroVoiceSetSerial(Instrument* instrument, MonstroVoiceSet& voices
+ 
+ void renderMonstroVoiceSetConcurrent(Instrument* instrument, MonstroVoiceSet& voices)
+ {
+-	std::barrier startVoices{static_cast<std::ptrdiff_t>(voices.handles.size())};
++	testsupport::Barrier startVoices{static_cast<std::ptrdiff_t>(voices.handles.size())};
+ 	std::vector<std::thread> workers;
+ 	workers.reserve(voices.handles.size());
+ 	for (std::size_t voice = 0; voice < voices.handles.size(); ++voice)
+diff --git a/tests/src/core/PortableSync.h b/tests/src/core/PortableSync.h
+new file mode 100644
+index 0000000000..9789d8e8e4
+--- /dev/null
++++ b/tests/src/core/PortableSync.h
+@@ -0,0 +1,157 @@
++/*
++ * PortableSync.h - test synchronisation that compiles below macOS 11
++ *
++ * Copyright (c) 2026 Zene Studio contributors
++ *
++ * This file is part of LMMS - https://lmms.io
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public
++ * License as published by the Free Software Foundation; either
++ * version 2 of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public
++ * License along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
++ */
++
++#ifndef ZENE_TESTS_PORTABLE_SYNC_H
++#define ZENE_TESTS_PORTABLE_SYNC_H
++
++#include <chrono>
++#include <condition_variable>
++#include <cstddef>
++#include <cstdint>
++#include <mutex>
++
++// Apple's libc++ marks <barrier>, <latch> and <semaphore> unavailable below macOS 11
++// (_LIBCPP_AVAILABILITY_SYNC), and this project supports macOS 10.13. Tests used those
++// headers and the hosted macos-x86_64 job stopped at
++//
++//     tests/src/core/RemotePluginShmFifoTest.cpp:109:16: error: 'barrier' is unavailable:
++//     introduced in macOS 11.0 unknown
++//
++// cluster ci-61ad26e4f8b135f9. Raising each test target's deployment floor hides the
++// product's own floor rather than fixing anything, and the primitives have the same
++// fixed-count rendezvous, latch and permit semantics expressed here with a mutex and a
++// condition variable: available on every target this project builds for (and macOS since
++// before 10.13). These are test-only rendezvous points - no render thread ever touches
++// them, so the condition variable's cost is irrelevant. A product wake that must not
++// lock or allocate has its own primitive: lmms::workerwake (include/AudioWorkerWake.h).
++//
++// The names and call shapes deliberately mirror the standard types they replace
++// (arrive_and_wait, count_down/wait, release/acquire/try_acquire_for) so a test reads the
++// same way and the replacement stays mechanical. tests/macos-sync-availability-check.py
++// keeps the standard, gated spellings out of the tree.
++
++namespace lmms::testsupport
++{
++
++//! A fixed-count rendezvous: a thread's arrive_and_wait() returns only after count threads
++//! have arrived. Same contract as std::barrier<> with no completion function.
++class Barrier
++{
++public:
++	explicit Barrier(std::ptrdiff_t count) : m_count{count} {}
++
++	void arrive_and_wait()
++	{
++		std::unique_lock<std::mutex> lock{m_mutex};
++		const std::uint64_t generation = m_generation;
++		++m_waiting;
++		if (m_waiting == m_count)
++		{
++			m_waiting = 0;
++			++m_generation;
++			m_cv.notify_all();
++			return;
++		}
++		// A predicate, not a bare wait: a spurious wake must not release a thread before
++		// the whole count has arrived.
++		m_cv.wait(lock, [this, generation] { return m_generation != generation; });
++	}
++
++private:
++	std::mutex m_mutex;
++	std::condition_variable m_cv;
++	std::ptrdiff_t m_count;
++	std::ptrdiff_t m_waiting{0};
++	std::uint64_t m_generation{0};
++};
++
++//! A one-shot gate: wait() returns once count_down() has been called \a count times.
++//! Same contract as std::latch.
++class Latch
++{
++public:
++	explicit Latch(std::ptrdiff_t count) : m_count{count} {}
++
++	void count_down()
++	{
++		const std::lock_guard<std::mutex> lock{m_mutex};
++		if (--m_count <= 0)
++		{
++			m_cv.notify_all();
++		}
++	}
++
++	void wait()
++	{
++		std::unique_lock<std::mutex> lock{m_mutex};
++		m_cv.wait(lock, [this] { return m_count <= 0; });
++	}
++
++private:
++	std::mutex m_mutex;
++	std::condition_variable m_cv;
++	std::ptrdiff_t m_count;
++};
++
++//! A binary permit: release() grants one, acquire() consumes one. Same contract as
++//! std::binary_semaphore, including the timed acquisition the audio-view regressions use
++//! to decide "the writer did reach the model" instead of sleeping.
++class BinarySemaphore
++{
++public:
++	//! Same constructor as std::binary_semaphore: a nonzero initial count is one permit.
++	explicit BinarySemaphore(std::ptrdiff_t initial = 0) : m_available{initial > 0} {}
++
++	void release()
++	{
++		{
++			const std::lock_guard<std::mutex> lock{m_mutex};
++			m_available = true;
++		}
++		m_cv.notify_one();
++	}
++
++	void acquire()
++	{
++		std::unique_lock<std::mutex> lock{m_mutex};
++		m_cv.wait(lock, [this] { return m_available; });
++		m_available = false;
++	}
++
++	template <typename Rep, typename Period>
++	bool try_acquire_for(const std::chrono::duration<Rep, Period>& timeout)
++	{
++		std::unique_lock<std::mutex> lock{m_mutex};
++		if (!m_cv.wait_for(lock, timeout, [this] { return m_available; })) { return false; }
++		m_available = false;
++		return true;
++	}
++
++private:
++	std::mutex m_mutex;
++	std::condition_variable m_cv;
++	bool m_available{false};
++};
++
++} // namespace lmms::testsupport
++
++#endif // ZENE_TESTS_PORTABLE_SYNC_H
+diff --git a/tests/src/core/RemotePluginShmFifoTest.cpp b/tests/src/core/RemotePluginShmFifoTest.cpp
+index adb083023b..1157aa3739 100644
+--- a/tests/src/core/RemotePluginShmFifoTest.cpp
++++ b/tests/src/core/RemotePluginShmFifoTest.cpp
+@@ -18,13 +18,14 @@
+ #include <QtTest>
+ 
+ #include <atomic>
+-#include <barrier>
+ #include <cstdint>
+ #include <limits>
+ #include <stdexcept>
+ #include <thread>
+ #include <type_traits>
+ 
++#include "PortableSync.h"
++
+ using namespace lmms;
+ 
+ // RemotePluginShmFifoNoSysIpcProbe.cpp
+@@ -106,9 +107,9 @@ private slots:
+ 	void callerTokensStayDistinctDespiteLegacyHashCollision()
+ 	{
+ 		shmFifo::setCallerIdHashForTest(&collidingThreadHash);
+-		std::barrier start{3};
+-		std::barrier captured{3};
+-		std::barrier release{3};
++		testsupport::Barrier start{3};
++		testsupport::Barrier captured{3};
++		testsupport::Barrier release{3};
+ 		using CallerKey = decltype(shmFifo::callerKey());
+ 		const bool callerKeyUsesAddress = std::is_same_v<CallerKey, const void *>;
+ 		CallerKey keys[2]{};
+diff --git a/tests/src/core/ScriptDawModelRegistrationTest.cpp b/tests/src/core/ScriptDawModelRegistrationTest.cpp
+index c9405f4dde..525083b37d 100644
+--- a/tests/src/core/ScriptDawModelRegistrationTest.cpp
++++ b/tests/src/core/ScriptDawModelRegistrationTest.cpp
+@@ -119,9 +119,11 @@ private slots:
+ 			audioEngine->requestChangeInModel();
+ 			acquiredLock.set_value();
+ 			int event = buildEvent.load(std::memory_order_acquire);
++			// Polled, not std::atomic::wait: that needs macOS 11 and AudioEngine (floor 10.13)
++			// cannot notify. The flag is the signal, so no wake can be lost.
+ 			while (event == 0)
+ 			{
+-				buildEvent.wait(event, std::memory_order_acquire);
++				std::this_thread::yield();
+ 				event = buildEvent.load(std::memory_order_acquire);
+ 			}
+ 			audioEngine->doneChangeInModel();
+@@ -131,7 +133,6 @@ private slots:
+ 			int pending = 0;
+ 			buildEvent.compare_exchange_strong(pending, 2, std::memory_order_release,
+ 				std::memory_order_relaxed);
+-			buildEvent.notify_all();
+ 			if (holder.joinable()) { holder.join(); }
+ 			audioEngine->setAutomatableModelRegistrationAttemptStateForTest(nullptr);
+ 		});
+@@ -141,7 +142,6 @@ private slots:
+ 		int pending = 0;
+ 		buildEvent.compare_exchange_strong(pending, 2, std::memory_order_release,
+ 			std::memory_order_relaxed);
+-		buildEvent.notify_all();
+ 		const int observedEvent = buildEvent.load(std::memory_order_acquire);
+ 		holder.join();
+ 		audioEngine->setAutomatableModelRegistrationAttemptStateForTest(nullptr);
+diff --git a/tests/src/core/TempoMapTest.cpp b/tests/src/core/TempoMapTest.cpp
+index fd83e1c765..6d11889299 100644
+--- a/tests/src/core/TempoMapTest.cpp
++++ b/tests/src/core/TempoMapTest.cpp
+@@ -54,11 +54,12 @@
+ #include <chrono>
+ #include <condition_variable>
+ #include <future>
+-#include <latch>
+ #include <memory>
+ #include <mutex>
+ #include <thread>
+ 
++#include "PortableSync.h"
++
+ #include "AudioEngine.h"
+ #include "Engine.h"
+ #include "Song.h"
+@@ -560,8 +561,8 @@ private slots:
+ 		s_snapshotProbeState = &state;
+ 		publisher.setSnapshotProbeForTest(&countSnapshotAttempt);
+ 		std::atomic<bool> editInFlight{false};  //!< the writer is inside edit()
+-		std::latch editEntered(1);
+-		std::latch resumeEdit(1);
++		testsupport::Latch editEntered(1);
++		testsupport::Latch resumeEdit(1);
+ 
+ 		std::thread writer([&]()
+ 		{
+diff --git a/tests/src/plugins/PluginPortsMigrationTest.cpp b/tests/src/plugins/PluginPortsMigrationTest.cpp
+index fc48061017..a3edf5876f 100644
+--- a/tests/src/plugins/PluginPortsMigrationTest.cpp
++++ b/tests/src/plugins/PluginPortsMigrationTest.cpp
+@@ -18,6 +18,7 @@
+  * Licensed under the GNU General Public License version 2 or later.
+  */
+ 
++#include "../core/PortableSync.h"
+ #include "PluginPortsHarness.h"
+ #include "plugins/Sid/SidPlaybackScheduler.h"
+ #include <sid.h>
+@@ -45,7 +46,6 @@
+ #include <cmath>
+ #include <cmath>
+ #include <array>
+-#include <barrier>
+ #include <thread>
+ #include <cmath>
+ #include "BasicFilters.h"
+@@ -4423,7 +4423,7 @@ void PluginPortsMigrationTest::watsynOverlappingNotesAreIndependentAndAllocation
+ 		handles[i] = acquireNote(keys[i]);
+ 	}
+ 
+-	std::barrier start{static_cast<std::ptrdiff_t>(concurrentNotes + 1)};
++	lmms::testsupport::Barrier start{static_cast<std::ptrdiff_t>(concurrentNotes + 1)};
+ 	std::array<std::thread, concurrentNotes> workers;
+ 	for (std::size_t i = 0; i < concurrentNotes; ++i)
+ 	{
+diff --git a/tests/src/wasm/WasmWorkerPoolTest.cpp b/tests/src/wasm/WasmWorkerPoolTest.cpp
+index ec2aa2b0fd..762e8ad115 100644
+--- a/tests/src/wasm/WasmWorkerPoolTest.cpp
++++ b/tests/src/wasm/WasmWorkerPoolTest.cpp
+@@ -56,17 +56,17 @@
+ #include <algorithm>
+ #include <array>
+ #include <atomic>
+-#include <barrier>
+ #include <chrono>
+ #include <cmath>
+ #include <cstdint>
+ #include <cstring>
+ #include <memory>
+-#include <semaphore>
+ #include <string>
+ #include <thread>
+ #include <vector>
+ 
++#include "../core/PortableSync.h"
++
+ #include "WasmOfflineRender.h"
+ #include "WasmSandbox.h"
+ #include "WasmWorker.h"
+@@ -412,7 +412,7 @@ void WasmWorkerPoolTest::testStopWaitsForAudioEndpointsToQuiesce()
+ 	QVERIFY2(worker.start(m_module, error), error.c_str());
+ 	QVERIFY(worker.beginAudioEndpoint());
+ 
+-	std::binary_semaphore stopped{0};
++	testsupport::BinarySemaphore stopped{0};
+ 	std::thread stopper([&] {
+ 		worker.stop();
+ 		stopped.release();
+@@ -465,7 +465,7 @@ void WasmWorkerPoolTest::testEntryRacesWithStopWithoutPostStopEndpointUse()
+ 	WasmWorker worker;
+ 	AudioEndpointRaceProbe probe;
+ 	worker.setAudioEndpointEntryTestHook(&observeAudioEndpointEntry, &probe);
+-	std::barrier phase(3);
++	testsupport::Barrier phase(3);
+ 
+ 	std::thread endpoint([&] {
+ 		for (int race = 0; race < StopRaces; ++race)
+@@ -527,7 +527,7 @@ void WasmWorkerPoolTest::testRemovalWaitsForLoadedWorkerReaders()
+ 	QVERIFY(slot < WasmWorkerPool::maxWorkers);
+ 	QCOMPARE(pool.acquireWorker(slot), &worker);
+ 
+-	std::binary_semaphore removed{0};
++	testsupport::BinarySemaphore removed{0};
+ 	std::thread remover([&] {
+ 		pool.removeWorker(&worker);
+ 		removed.release();
+diff --git a/tests/upstream-modifications.txt b/tests/upstream-modifications.txt
+index f02a6814f8..60a384412c 100644
+--- a/tests/upstream-modifications.txt
++++ b/tests/upstream-modifications.txt
+@@ -5931,3 +5931,4 @@ include/LadspaManager.h	cluster new-p10-193: keep scanned LADSPA QLibraries aliv
+ src/core/LadspaManager.cpp	cluster new-p10-193: store each successfully scanned QLibrary in m_loadedLibraries instead of destroying the local after the scan, so descriptor function pointers in m_ladspaManagerMap never dangle into an unloaded library; isLibraryLoaded() reports ownership under LMMS_TESTING.
+ include/AutomationEditor.h	new-p15-275: AutomationEditor::m_clip is a QPointer<AutomationClip> (was a raw pointer) so deleting the open clip clears the editor instead of leaving a dangling pointer for update/paint to dereference. Same pattern as the existing QPointer ghost pointers; held by tests/src/gui/AutomationEditorEditingTest.cpp deletingTheOpenClipClearsTheEditor.
+ tests/src/gui/AutomationEditorEditingTest.cpp	# The automation editor can retain a dangling clip pointer
++src/core/AudioEngine.cpp	cluster ci-61ad26e4f8b135f9 (2026-11-14): the model-registration test seam no longer calls std::atomic::notify_all, which Apple's libc++ marks unavailable below macOS 11 while this product's floor is 10.13; the flag the seam publishes is polled by its one consumer (ScriptDawModelRegistrationTest), so the store remains the signal and no wake can be lost. Behaviour of registerAutomatableModel is otherwise unchanged. Held by tests/macos-sync-availability-check.py and tests/src/core/ScriptDawModelRegistrationTest.cpp.
+-- 
+2.56.0
+
