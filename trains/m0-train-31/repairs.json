@@ -217,8 +217,9 @@
       "tests/vcpkg-pcre2-gitlink-test.py"
     ],
     "source_head": "c20ef591b571e3c3dc7b108107d166497f1b34be",
-    "status": "pending",
+    "status": "superseded",
     "summary": "Fixed all five hosted portability causes, preserved dependency pins and test assertions, and added compiler and clock regressions. Targeted rebuild, 17 tests and unchanged gates pass; verification is recorded in docs/qwen-fixes-2026-10/sol-train-31-hosted-portability.md.",
+    "superseded_by": "sol-repair-1794712912414055246",
     "train": "050/m0-train-31",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-31-1794674665162449605"
   },
@@ -251,8 +252,9 @@
     ],
     "source": "independently-reviewed-ci-agent",
     "source_head": "c20ef591b571e3c3dc7b108107d166497f1b34be",
-    "status": "pending",
+    "status": "superseded",
     "summary": "CI regression: build / linux-x86_64",
+    "superseded_by": "sol-repair-1794712912414055246",
     "train": "050/m0-train-31",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-623e9e3a015cd5b1"
   },
@@ -288,8 +290,9 @@
     ],
     "source": "independently-reviewed-ci-agent",
     "source_head": "c20ef591b571e3c3dc7b108107d166497f1b34be",
-    "status": "pending",
+    "status": "superseded",
     "summary": "CI regression: build / mingw64",
+    "superseded_by": "sol-repair-1794712912414055246",
     "train": "050/m0-train-31",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-539b88713935565b"
   },
@@ -322,8 +325,9 @@
     ],
     "source": "independently-reviewed-ci-agent",
     "source_head": "c20ef591b571e3c3dc7b108107d166497f1b34be",
-    "status": "pending",
+    "status": "superseded",
     "summary": "CI regression: build / macos-arm64",
+    "superseded_by": "sol-repair-1794712912414055246",
     "train": "050/m0-train-31",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-b5ac4280f3e4b317"
   },
@@ -357,8 +361,9 @@
     ],
     "source": "independently-reviewed-ci-agent",
     "source_head": "c20ef591b571e3c3dc7b108107d166497f1b34be",
-    "status": "pending",
+    "status": "superseded",
     "summary": "CI regression: build / linux-arm64",
+    "superseded_by": "sol-repair-1794712912414055246",
     "train": "050/m0-train-31",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-aa1160348d9be203"
   },
@@ -430,8 +435,9 @@
     ],
     "source": "independently-reviewed-ci-agent",
     "source_head": "c20ef591b571e3c3dc7b108107d166497f1b34be",
-    "status": "pending",
+    "status": "superseded",
     "summary": "CI regression: build / macos-x86_64",
+    "superseded_by": "sol-repair-1794712912414055246",
     "train": "050/m0-train-31",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-61ad26e4f8b135f9"
   },
@@ -488,9 +494,153 @@
     ],
     "source": "independently-reviewed-ci-agent",
     "source_head": "c20ef591b571e3c3dc7b108107d166497f1b34be",
-    "status": "pending",
+    "status": "superseded",
     "summary": "CI regression: build / windows-arm64",
+    "superseded_by": "sol-repair-1794712912414055246",
     "train": "050/m0-train-31",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-443a2931bcb5dacc"
+  },
+  {
+    "at": "2026-11-15T03:21:52",
+    "base": "c20ef591b571e3c3dc7b108107d166497f1b34be",
+    "branch": "fix/sol-repair-1794712912414055246",
+    "checks": [
+      {
+        "argv": [
+          "bash",
+          "tests/no-upstream-regression-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-32-1794711427470902978",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794712738345329175.log"
+      },
+      {
+        "argv": [
+          "bash",
+          "tests/evidence-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-32-1794711427470902978",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794712746989157438.log"
+      },
+      {
+        "argv": [
+          "bash",
+          "tests/fork-sources-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-32-1794711427470902978",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794712759299829426.log"
+      },
+      {
+        "argv": [
+          "bash",
+          "tests/unregistered-tests-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-32-1794711427470902978",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794712759566414395.log"
+      },
+      {
+        "argv": [
+          "cmake",
+          "--build",
+          "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-32-1794711427470902978/build",
+          "--target",
+          "zene",
+          "AudioWorkerWakeTest",
+          "ModulationAudioViewTest",
+          "NotePlaybackTest",
+          "PluginPortsMigrationTest",
+          "RemotePluginShmFifoTest",
+          "ScriptDawModelRegistrationTest",
+          "TempoMapTest",
+          "WasmWorkerPoolTest",
+          "WarpMarkersTest",
+          "SampleClipWarpEditTest",
+          "ImportTrackIoTest",
+          "NeuralAmpWavInputTest",
+          "NeuralAmpHarnessBlockCount",
+          "AudioPluginTest",
+          "nam_harness",
+          "decimator_1202",
+          "-j12"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-32-1794711427470902978",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794712759632040737.log"
+      },
+      {
+        "argv": [
+          "ctest",
+          "-R",
+          "^(AudioWorkerWakeTest|ModulationAudioViewTest|NotePlaybackTest|PluginPortsMigrationTest|RemotePluginShmFifoTest|ScriptDawModelRegistrationTest|TempoMapTest|WasmWorkerPoolTest|WarpMarkersTest|SampleClipWarpEditTest|ImportTrackIoTest|NeuralAmpWavInputTest|NeuralAmpHarnessBlockCount|AudioPluginTest|NeuralAmpCompareRateTest|NeuralAmpWavRunSampleRateWarning|NeuralAmpHarnessRateValidation|NamLoaderTest_.*|Qt5QStringListAssignmentCheck|Qt5QStringListBraceCheck|Qt5QStringListAssignCheck|Qt5WorkerThreadCheck|MacosSyncAvailabilityCheck|NamHarnessWindowsClockCheck|Train43Portability|VcpkgPcre2Gitlink|ZeneSessionSdkTypecheck|ControlSessionSdk|FileLengthGate|NoteCanvasComplexityGate)$",
+          "-j1",
+          "--timeout",
+          "900",
+          "--no-tests=error",
+          "--output-on-failure"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-32-1794711427470902978/build/tests",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794712759897298702.log"
+      }
+    ],
+    "commit": "193b909495fc208373d99e81a140d9489e3d0a98",
+    "id": "sol-repair-1794712912414055246",
+    "paths": [
+      ".github/vcpkg/ports/pcre2/portfile.cmake",
+      "docs/qwen-fixes-2026-10/cluster-ci-443a2931bcb5dacc.md",
+      "docs/qwen-fixes-2026-10/cluster-ci-539b88713935565b.md",
+      "docs/qwen-fixes-2026-10/cluster-ci-61ad26e4f8b135f9.md",
+      "docs/qwen-fixes-2026-10/cluster-ci-623e9e3a015cd5b1.md",
+      "docs/qwen-fixes-2026-10/cluster-ci-aa1160348d9be203.md",
+      "docs/qwen-fixes-2026-10/cluster-ci-b5ac4280f3e4b317.md",
+      "docs/qwen-fixes-2026-10/sol-train-31-hosted-portability.md",
+      "docs/qwen-fixes-2026-10/sol-train-32-portability-replay.md",
+      "docs/qwen-fixes-2026-10/sol-train-32-sdk-complexity.md",
+      "include/AudioWorkerWake.h",
+      "plugins/NeuralAmp/tests/CMakeLists.txt",
+      "plugins/NeuralAmp/tests/HarnessClock.h",
+      "plugins/NeuralAmp/tests/HarnessClockPosix.cpp",
+      "plugins/NeuralAmp/tests/HarnessClockWindows.cpp",
+      "plugins/NeuralAmp/tests/NamHarnessCpuClock.h",
+      "plugins/NeuralAmp/tests/nam_harness.cpp",
+      "src/core/AudioEngine.cpp",
+      "src/core/AudioWorkerWake.cpp",
+      "src/wasm/WasmWorkerPool.cpp",
+      "src/wasm/WasmWorkerPool.h",
+      "tests/CMakeLists.txt",
+      "tests/Qt5QStringListAssignCheck.py",
+      "tests/Qt5QStringListAssignmentCheck.py",
+      "tests/Qt5QStringListBraceCheck.py",
+      "tests/all-sources.txt",
+      "tests/fork-sources.txt",
+      "tests/macos-sync-availability-check.py",
+      "tests/nam-harness-windows-clock-check.py",
+      "tests/qt5-worker-thread-check.py",
+      "tests/src/core/AudioWorkerWakeTest.cpp",
+      "tests/src/core/ImportTrackIoTest.cpp",
+      "tests/src/core/ModulationAudioViewTest.cpp",
+      "tests/src/core/NotePlaybackTest.cpp",
+      "tests/src/core/PortableSync.h",
+      "tests/src/core/RemotePluginShmFifoTest.cpp",
+      "tests/src/core/ScriptDawModelRegistrationTest.cpp",
+      "tests/src/core/TempoMapTest.cpp",
+      "tests/src/core/TestWorkerThread.h",
+      "tests/src/core/WarpMarkersTest.cpp",
+      "tests/src/gui/Warp/SampleClipWarpEditTest.cpp",
+      "tests/src/plugins/PluginPortsMigrationTest.cpp",
+      "tests/src/wasm/WasmWorkerPoolTest.cpp",
+      "tests/train-43-portability-check.py",
+      "tests/upstream-modifications.txt",
+      "tests/vcpkg-pcre2-gitlink-test.py",
+      "tools/zene-session-sdk/src/live-session.ts"
+    ],
+    "source_head": "cd3f0853ab4e3c9684ccbbecdb21243546556c2e",
+    "status": "pending",
+    "summary": "Consolidated all seven portability repairs with stable registration context, preserved every regression, fixed WASM lane starvation exposed during verification, and reduced SDK reconnect complexity. Rebuilt targets, 37 CTest entries, unchanged gates and independent reviews pass.",
+    "train": "050/m0-train-32",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-32-1794711427470902978"
   }
 ]
