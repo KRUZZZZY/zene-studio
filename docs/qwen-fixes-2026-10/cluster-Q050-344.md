@@ -17,7 +17,7 @@ Branch `feat/050-Q050-344-oc`. Docs-only unit plus one hermetic docs gate. The o
 | 2 | Doc revert then restore | `git diff HEAD~1 -- docs > /tmp/q344.patch; git apply -R`; gate; `git apply`; gate | revert exit 1 (4 problems); restore exit 0 (`OK`) | `logs/revert-3.log`, `logs/restore-3.log` |
 
 Commits: `f44ddd0095` (gate, red on current docs), `7579e79eef` (gate locators accept ARA2 headings),
-`7df6f0d579` (docs deferral).
+`7df6f0d579` (docs deferral), the refactor commit (see git log) (splits the two gate functions under CCN 10).
 
 ## Notes
 
@@ -31,7 +31,7 @@ Commits: `f44ddd0095` (gate, red on current docs), `7579e79eef` (gate locators a
 ## Self-check
 
 Completion check run before the commit: `logs/submit-3-pre.log` (`RESULT: FAIL - 3 item(s)`). Gate run:
-`logs/feature-3-pre.log` (`RESULT: FAIL`, only `complexity` failing). Both are re-run after the commit.
+`logs/feature-3-pre.log` (`RESULT: FAIL`, only `complexity` failing). Both are re-run after the commit: `logs/submit-4.log` and `logs/feature-4.log`.
 
 - Each new test fails with the product change reverted: no product code changed, so there is nothing
   to revert. The gate's own RED is the doc revert: `logs/revert-3.log` exit 1 (4 problems), restored
@@ -45,8 +45,8 @@ Completion check run before the commit: `logs/submit-3-pre.log` (`RESULT: FAIL -
 - Audio thread: nothing added. Submit check PASS "no allocation, lock, signal or I/O added inside
   audio-path functions".
 - Old projects and save/load: no project format or load/save code touched.
-- Completeness: user path is the deferral text in README, the manual and `docs/FEATURE-LIST-0.3.0.md` /
-  `docs/KNOWN-LIMITATIONS.md`; agent path has no `ara.*` commands, and the gate checks that no lane or
+- Completeness: user path is the deferral text in `docs/FEATURE-LIST-0.3.0.md` and `docs/KNOWN-LIMITATIONS.md`
+  (README and the manual carry no ARA claim and are swept by the gate); agent path has no `ara.*` commands, and the gate checks that no lane or
   command claim exists. Edge cases tried: a deleted input (self-test case g, exit 2), a dropped lane
   phrase (case h, exit 1), and the ARA2 heading locators (case i, exit 0).
 - GUI path and GUI test: not applicable. Docs-only unit with no GUI action; the GUI and command-surface
@@ -54,6 +54,7 @@ Completion check run before the commit: `logs/submit-3-pre.log` (`RESULT: FAIL -
 - User manual WARN: `data/manual/index.html` is intentionally unchanged (see Notes).
 - Qt 5.15 / MSVC / macOS portability: no C++ or Qt code changed. The gate is Python stdlib file reads;
   the submit check's Windows-path PASS line covers the path check.
-- Complexity FAIL (`feature_check.py`): new functions `check` (CCN 13) and `check_public` (CCN 12) in
-  `tests/ara-deferral-docs-gate.py`. This is in the test helper, not docs or registration, so it is left
-  unfixed in this unit. Splitting those two functions is the one-step fix if the lead wants it.
+- Complexity (`feature_check.py`): the two functions over CCN 10, `check` (CCN 13) and `check_public`
+  (CCN 12) in `tests/ara-deferral-docs-gate.py`, were split into helpers in the refactor commit (see git
+  log). Every gate function is now CCN 9 or under, and `feature_check` reports the evidence in
+  `logs/feature-4.log`.

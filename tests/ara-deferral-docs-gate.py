@@ -162,27 +162,37 @@ def check_feature_list(lines, problems):
     return set(range(s, e))
 
 
+def ara_mention_problem(line):
+    """Return the reason an ARA/Melodyne mention is unsafe, or None when it holds."""
+    if "0.5.0" in line and not LANE_MARK_RE.search(line):
+        return ("ARA/Melodyne tied to 0.5.0 without 'deferred', "
+                "'not' or 'No' (0.5.0 lane claim)")
+    if SUPPORT_VERB_RE.search(line) and not SUPPORT_MARK_RE.search(line):
+        return "ARA/Melodyne support or lane claim without a deferral or negation word"
+    if not SWEEP_MARK_RE.search(line):
+        return "ARA/Melodyne mention without a deferral marker"
+    return None
+
+
+def check_public_line(rel, n, line, problems):
+    where = f"{rel}:{n + 1}"
+    snip = line.strip()[:100]
+    if ARA_RE.search(line):
+        reason = ara_mention_problem(line)
+        if reason:
+            problems.append(f"{where}: {reason}: {snip}")
+    if ARA_CMD_RE.search(line):
+        problems.append(f"{where}: 'ara.<name>' command mention outside the deferral "
+                        f"sections: {snip}")
+
+
 def check_public(targets, exempt, problems):
     for rel, lines in targets:
         skip = exempt.get(rel, set())
         for n, line in enumerate(lines):
             if n in skip or not line.strip():
                 continue
-            where = f"{rel}:{n + 1}"
-            snip = line.strip()[:100]
-            if ARA_RE.search(line):
-                if "0.5.0" in line and not LANE_MARK_RE.search(line):
-                    problems.append(f"{where}: ARA/Melodyne tied to 0.5.0 without 'deferred', "
-                                    f"'not' or 'No' (0.5.0 lane claim): {snip}")
-                elif SUPPORT_VERB_RE.search(line) and not SUPPORT_MARK_RE.search(line):
-                    problems.append(f"{where}: ARA/Melodyne support or lane claim without a "
-                                    f"deferral or negation word: {snip}")
-                elif not SWEEP_MARK_RE.search(line):
-                    problems.append(f"{where}: ARA/Melodyne mention without a deferral marker: "
-                                    f"{snip}")
-            if ARA_CMD_RE.search(line):
-                problems.append(f"{where}: 'ara.<name>' command mention outside the deferral "
-                                f"sections: {snip}")
+            check_public_line(rel, n, line, problems)
 
 
 def walk_ids(node, out):
@@ -211,30 +221,47 @@ def check_snapshot(raw, problems):
                         f"(ARA commands are not on the agent surface)")
 
 
-def check(root):
-    """Return (exit_code, messages). 2 = setup error, 1 = mismatch, 0 = every check holds."""
+def load_inputs(root):
+    """Return (missing, raw): the INPUTS absent under root, and their text keyed by path."""
     missing = [rel for rel in INPUTS if not os.path.isfile(os.path.join(root, rel))]
     if missing:
-        return 2, [f"ara-deferral-docs-gate: missing input file: {rel}" for rel in missing]
-    raw = {rel: read(os.path.join(root, rel)) for rel in INPUTS}
-    problems = []
-    exempt = {
-        KNOWN_LIMITATIONS: check_known_limitations(raw[KNOWN_LIMITATIONS].splitlines(), problems),
-        FEATURE_LIST: check_feature_list(raw[FEATURE_LIST].splitlines(), problems),
-    }
-    targets = [
-        (README, raw[README].splitlines()),
-        (MANUAL, [TAG_RE.sub(" ", line) for line in raw[MANUAL].splitlines()]),
-    ]
+        return missing, {}
+    return [], {rel: read(os.path.join(root, rel)) for rel in INPUTS}
+
+
+def public_docs(root, raw):
+    """Yield (rel, text) for every top-level docs/*.md except the qwen-fixes reports."""
     docs_dir = os.path.join(root, "docs")
     for name in sorted(os.listdir(docs_dir)):
         rel = f"docs/{name}"
         if (not name.endswith(".md") or name.startswith("qwen-fixes-")
                 or not os.path.isfile(os.path.join(root, rel))):
             continue
-        text = raw[rel] if rel in raw else read(os.path.join(root, rel))
+        yield rel, raw[rel] if rel in raw else read(os.path.join(root, rel))
+
+
+def public_targets(root, raw):
+    """Return (rel, lines) pairs for every public surface the sweep covers."""
+    targets = [
+        (README, raw[README].splitlines()),
+        (MANUAL, [TAG_RE.sub(" ", line) for line in raw[MANUAL].splitlines()]),
+    ]
+    for rel, text in public_docs(root, raw):
         targets.append((rel, text.splitlines()))
-    check_public(targets, exempt, problems)
+    return targets
+
+
+def check(root):
+    """Return (exit_code, messages). 2 = setup error, 1 = mismatch, 0 = every check holds."""
+    missing, raw = load_inputs(root)
+    if missing:
+        return 2, [f"ara-deferral-docs-gate: missing input file: {rel}" for rel in missing]
+    problems = []
+    exempt = {
+        KNOWN_LIMITATIONS: check_known_limitations(raw[KNOWN_LIMITATIONS].splitlines(), problems),
+        FEATURE_LIST: check_feature_list(raw[FEATURE_LIST].splitlines(), problems),
+    }
+    check_public(public_targets(root, raw), exempt, problems)
     check_snapshot(raw[SNAPSHOT], problems)
     return (1 if problems else 0), problems
 
