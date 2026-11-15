@@ -411,5 +411,40 @@
     "summary": "CI regression: build / linux-arm64",
     "train": "050/m0-train-33",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-6422986f4db9676f"
+  },
+  {
+    "at": "2026-11-15T15:45:19",
+    "base": "cc29a63dde09cf28bb00498a2d2a5b124d4d614d",
+    "branch": "fix/ci-repair-ci-9b6002ebebcf807a-0cba1a670472",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-9b6002ebebcf807a.r1.md",
+        "negative_control": {
+          "artifact_hashes": {},
+          "detail": "no product change, no changed test, or a dirty tree",
+          "ok": null,
+          "proof_base": "cc29a63dde09cf28bb00498a2d2a5b124d4d614d",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-9b6002ebebcf807a.r1/negctl",
+          "proof_key": "34e91c590dcc64036b35914aad716ecd3753d856dfab127897708aed0b34ec27"
+        },
+        "verdict": "ACCEPT"
+      }
+    ],
+    "commit": "9edd834aaf1de3effbbf7168d3f47fba44f62fd2",
+    "id": "ci-repair-ci-9b6002ebebcf807a-0cba1a670472",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-9b6002ebebcf807a.md",
+      "tests/CMakeLists.txt",
+      "tests/fork-sources.txt",
+      "tests/no-ffmpeg-video-clips-compile-check.py",
+      "tests/src/core/VideoClipsTest.cpp",
+      "tests/upstream-modifications.txt"
+    ],
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "cc29a63dde09cf28bb00498a2d2a5b124d4d614d",
+    "status": "pending",
+    "summary": "CI regression: build / macos-arm64",
+    "train": "050/m0-train-33",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-9b6002ebebcf807a"
   }
 ]

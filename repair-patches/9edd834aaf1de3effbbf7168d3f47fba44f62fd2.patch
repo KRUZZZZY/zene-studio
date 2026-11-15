@@ -1,0 +1,490 @@
+From 9edd834aaf1de3effbbf7168d3f47fba44f62fd2 Mon Sep 17 00:00:00 2001
+From: Zene CI repair <noreply@zene.invalid>
+Date: Sun, 15 Nov 2026 15:45:19 +0000
+Subject: [PATCH] fix(ci): CI regression: build / macos-arm64
+
+CI-Repair-Id: ci-repair-ci-9b6002ebebcf807a-0cba1a670472
+---
+ .../cluster-ci-9b6002ebebcf807a.md            | 184 ++++++++++++++++
+ tests/CMakeLists.txt                          |  15 ++
+ tests/fork-sources.txt                        |   4 +
+ tests/no-ffmpeg-video-clips-compile-check.py  | 205 ++++++++++++++++++
+ tests/src/core/VideoClipsTest.cpp             |   4 +
+ tests/upstream-modifications.txt              |   1 +
+ 6 files changed, 413 insertions(+)
+ create mode 100644 docs/qwen-fixes-2026-10/cluster-ci-9b6002ebebcf807a.md
+ create mode 100644 tests/no-ffmpeg-video-clips-compile-check.py
+
+diff --git a/docs/qwen-fixes-2026-10/cluster-ci-9b6002ebebcf807a.md b/docs/qwen-fixes-2026-10/cluster-ci-9b6002ebebcf807a.md
+new file mode 100644
+index 0000000000..de8ced884b
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/cluster-ci-9b6002ebebcf807a.md
+@@ -0,0 +1,184 @@
++FIXED
++
++# cluster ci-9b6002ebebcf807a — macOS arm64: VideoClipsTest referenced an FFmpeg-only fixture helper unguarded
++
++## Verdict and classification
++
++**REAL — test portability defect (not product runtime, not infrastructure).**
++
++The hosted `macos-arm64` job at the pinned train-33 commit `cc29a63dde09cf28bb00498a2d2a5b124d4d614d`
++builds with `ZENE_WANT_FFMPEG=ON` but no FFmpeg development files, so `lmmsconfig.h` does **not** define
++`ZENE_HAVE_FFMPEG`. `tests/src/core/VideoTestClip.h:50` opens the FFmpeg-only section and line 229 declares
++`videotest::makeClip` inside it. `tests/src/core/VideoClipsTest.cpp:530` (pre-fix) called that helper with no
++guard, so the translation unit did not compile in exactly the CI configuration:
++
++```
++tests/src/core/VideoClipsTest.cpp:530:19: error: no member named 'makeClip' in namespace 'videotest'
++tests/src/core/VideoClipsTest.cpp:530:46: error: no member named 'makeClip' in namespace 'videotest'
++```
++
++The checkout under repair is the exact pinned base (HEAD `cc29a63dde`, branch
++`bugs/qwen-ci-9b6002ebebcf807a`) and still had the unguarded call, so this reproduced rather than being
++accepted as already fixed. The local lane build has FFmpeg (`build/lmmsconfig.h:42` defines
++`ZENE_HAVE_FFMPEG`), which is why an ordinary native build does not expose the defect; the regression
++probe below compiles the **real** translation unit with the FFmpeg define removed.
++
++## Reproduction
++
++Reproduced on the exact commit with `tests/no-ffmpeg-video-clips-compile-check.py`, which takes the real
++`VideoClipsTest.cpp` compile line from `build/compile_commands.json` and prepends a shadow `lmmsconfig.h`
++that has `#define ZENE_HAVE_FFMPEG` turned into `/* #undef ZENE_HAVE_FFMPEG */`. Its two controls prove the
++shadow configuration is the no-FFmpeg one before it compiles the test:
++
++```
++PASS: the shadow configuration does not define ZENE_HAVE_FFMPEG
++PASS: videotest::makeClip is not declared without ZENE_HAVE_FFMPEG
++FAIL: tests/src/core/VideoClipsTest.cpp does not compile without FFmpeg:
++  .../tests/src/core/VideoClipsTest.cpp:530:33: error: ‘makeClip’ is not a member of ‘videotest’
++  .../tests/src/core/VideoClipsTest.cpp:530:60: error: ‘makeClip’ is not a member of ‘videotest’
++```
++
++That is the same source line and the same missing declaration as the hosted diagnostic. Exit **1**
++(`test-1-red-probe.log`).
++
++## Fix
++
++`tests/src/core/VideoClipsTest.cpp:524-538`: `needClips()` now guards its fixture construction with
++`#ifdef ZENE_HAVE_FFMPEG`, matching the already-established sibling pattern in
++`tests/src/core/VideoTrackTest.cpp:300-304` (runtime `VideoDecoder::available()` check, then the helper call
++inside the define). In a build without FFmpeg the function returns `false`, so every slot keeps its existing
++`QSKIP("no FFmpeg in this build, or the test clips could not be made")` behaviour
++(`VideoClipsTest.cpp:230,277,314,333,361,375,411,432,459,493`). No product code, save format, command, undo
++or audio path changes; the fixture-dependent assertions are untouched.
++
++All `videotest::makeClip` call sites were audited after the change:
++
++* `tests/src/core/VideoTrackTest.cpp:302` — inside `#ifdef ZENE_HAVE_FFMPEG` (pre-existing).
++* `tests/src/core/VideoTrackTestParts1.h:234` — inside `#ifdef ZENE_HAVE_FFMPEG` at line 233.
++* `tests/src/core/VideoFfmpegTest.cpp:69,98` — slots are wrapped in `#ifdef ZENE_HAVE_FFMPEG`.
++* `tests/src/core/VideoTestClipTest.cpp:110` — slot is wrapped in `#ifndef`/`#ifdef ZENE_HAVE_FFMPEG`.
++* `tests/src/core/VideoClipsTest.cpp:531` — now guarded by this fix.
++
++The only remaining unguarded `videotest::` uses in `VideoClipsTest.cpp` are `Width`, `Height`, `Fps` and
++`Palette`, which are declared before the FFmpeg conditional (`VideoTestClip.h:36-48`) precisely so the
++shape/palette constants are known in every build.
++
++## Regression test
++
++New `tests/no-ffmpeg-video-clips-compile-check.py`, registered as CTest
++`NoFfmpegVideoClipsCompileCheck` (`tests/CMakeLists.txt:6237-6252`, guarded on `PYTHON3_EXECUTABLE` and
++`CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang"`). It:
++
++* reads this build's own `compile_commands.json` and recompiles the **actual** `tests/src/core/VideoClipsTest.cpp`
++  with a shadow `lmmsconfig.h` copied from `build/lmmsconfig.h` minus `ZENE_HAVE_FFMPEG`;
++* first proves the shadow really lacks FFmpeg, and that `videotest::makeClip` really is undeclared there
++  (a check that cannot fail fails);
++* is deterministic: it compiles a fixed header configuration and checks compiler exit status and the
++  `makeClip` diagnostic; no clock, sleep, race or network.
++
++Test matrix:
++
++| Path | Evidence |
++|---|---|
++| no-FFmpeg compile (the failing CI configuration) | RED on pre-fix tree, `makeClip` at line 530; GREEN after fix (`test-1`, `test-2`) |
++| FFmpeg build, normal fixture path | `VideoClipsTest` builds and all 10 clip slots run: 12 passed, 0 failed, 0 skipped (`test-7`) |
++| FFmpeg build, sibling video tests | `VideoTrackTest`, `VideoFfmpegTest`, `VideoTestClipTest` all pass (`test-4`, 5/5 with the probe) |
++| unavailable-FFmpeg runtime path | unchanged: `needClips()` returns `false` after `VideoDecoder::available()`, so the existing `QSKIP` lines still fire; compile path is exercised by the probe |
++| boundary / invalid input / failure paths | untouched by this fix; `VideoClipsTest`'s empty-range, junk-attach, stale-frame and undo cases all still pass (`test-7`) |
++| portability | no platform branch added; the guard is the same one the sibling `VideoTrackTest` uses, and the probe only registers on GCC/Clang-style command lines |
++
++## Commands and exit codes
++
++The instruction's canonical log folder
++(`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-9b6002ebebcf807a.r1/logs`) returned `EACCES` even
++for `touch` (owner/mode were correct; the harness denies `$HOME` outside the worktree), so the same
++numbered files were written to the writable run-log store the harness exposes:
++`/home/kruzzzzy/.local/share/zene-bunny-fix/dsh/home/ci-9b6002ebebcf807a.r1-logs/`.
++
++| # | Command | Exit |
++|---|---|---|
++| 1 | `cmake --build build --target VideoClipsTest -j20` (baseline, FFmpeg on) | **0** |
++| 2 | `python3 tests/no-ffmpeg-video-clips-compile-check.py --source-root . --build-dir build` (unfixed) | **1** (RED: `makeClip` at line 530) |
++| 3 | `python3 tests/no-ffmpeg-video-clips-compile-check.py --source-root . --build-dir build` (fixed) | **0** (GREEN) |
++| 4 | `cmake --build build --target VideoClipsTest -j20` (fixed) | **0** |
++| 5 | `cmake --build build --target VideoTrackTest VideoTestClipTest VideoFfmpegTest -j20` | **0** |
++| 6 | `cd build/tests && ctest -R "NoFfmpegVideoClipsCompileCheck\|VideoClipsTest\|VideoTrackTest\|VideoTestClipTest\|VideoFfmpegTest" --output-on-failure` | **0**, 5/5 passed |
++| 7 | `git diff -- tests/src/core/VideoClipsTest.cpp > .../fix.patch` | **0** |
++| 8 | `git apply -R .../fix.patch` (revert the fix) | **0** |
++| 9 | `cmake --build build --target VideoClipsTest -j20` (reverted) | **0** |
++| 10 | `cd build/tests && ctest -R NoFfmpegVideoClipsCompileCheck --output-on-failure` (reverted) | **8**, 0/1 — RED at line 530 |
++| 11 | `git apply .../fix.patch` (restore) | **0** |
++| 12 | `cmake --build build --target VideoClipsTest -j20` (restored) | **0** |
++| 13 | `cd build/tests && ctest -R "NoFfmpegVideoClipsCompileCheck\|VideoClipsTest" --output-on-failure` (restored) | **0**, 2/2 passed |
++| 14 | `QT_QPA_PLATFORM=offscreen ./build/tests/VideoClipsTest` | **0**, 12 passed, 0 failed, 0 skipped |
++| 15 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | **0**, RESULT: PASS |
++
++The reverse/restore proof uses `tests/src/core/VideoClipsTest.cpp` because the defect is in the test
++translation unit itself; there is no product-file hunk to reverse. The probe compiles whatever that file
++contains, so it is red on the reverted tree (row 10) and green on the fixed tree (rows 3 and 13).
++
++Gate table (`gates-1.log`):
++
++```
++PASS  fork-sources
++PASS  all-sources-reproduce
++PASS  no-upstream-regression
++PASS  check-namespace
++PASS  no-tautology
++PASS  doc-figures
++PASS  complexity              no new item in your files
++PASS  file-length             no new item in your files
++RESULT: PASS
++```
++
++## No collateral damage
++
++* Only the test's fixture-construction guard changed; no assertion, tolerance, timeout or gate was weakened.
++* `VideoClipsTest`'s 10 clip/undo/save/playback/render slots still run and pass in the FFmpeg build with the
++  same assertions (12 passed including init/cleanup).
++* A no-FFmpeg build still compiles the test and reaches the pre-existing `QSKIP` path; nothing is silently
++  treated as passing.
++* No product code, project format, undo stack, command surface or audio-thread path is touched. No new
++  control command was added.
++* Sibling video tests were rebuilt and run unchanged (5/5 with the probe).
++
++## Independent QA
++
++An independent, read-only QA pass (separate agent, no worktree edits, no cmake configure/build) verified seven
++checks against HEAD `3302fd79f7`; all PASS, `git status --porcelain` empty before and after:
++
++1. **Base bug and HEAD fix:** `git rev-parse HEAD^` is `cc29a63dde`; the base file at line 530 has the
++   unguarded `makeClip` call, while HEAD has `#ifdef ZENE_HAVE_FFMPEG` (527), the call (531), `#else`
++   `return false;` (535-536) and `#endif` (537).
++2. **Header guard:** `VideoTestClip.h:50` opens the FFmpeg conditional, `makeClip` is declared at 228, and
++   the conditional closes at 237.
++3. **All callers guarded:** the six `videotest::makeClip` sites in `tests/src/core` were inspected; every
++   sibling site is inside a `ZENE_HAVE_FFMPEG` guard (some with a no-FFmpeg `QSKIP` branch), and the fixed
++   site is inside the new guard. No `using videotest::`/`using namespace videotest` shortcut exists.
++4. **Probe is real and deterministic:** the script compiles the tracked `tests/src/core/VideoClipsTest.cpp`
++   (blob `15f447d9...` equals `HEAD:...`), not a fixture; the instrumented command ends in that absolute
++   path with the shadow `-I` first. The shadow replaces exactly the one `ZENE_HAVE_FFMPEG` define. Two runs
++   exited 0; imports contain no time/sleep/thread/random/network (the 300 s subprocess timeout is a hang
++   guard only).
++5. **Tests:** `ctest -R "NoFfmpegVideoClipsCompileCheck|VideoClipsTest"` exited 0, 2/2 passed; the direct
++   binary reported 12 passed, 0 failed, 0 skipped.
++6. **Diff scope:** exactly the six expected files, all 0 deletions, no assertion/gate/timeout weakened;
++   `git show --check` clean.
++7. **Clean tree:** empty `git status --porcelain` before and after the probes.
++
++## Self-check
++
++* **Decision with evidence:** FIXED. The pinned HEAD still had the unguarded call at
++  `tests/src/core/VideoClipsTest.cpp:530`; `VideoTestClip.h:50,229` shows `makeClip` is declared only under
++  `ZENE_HAVE_FFMPEG`; the probe reproduces the hosted diagnostic exactly.
++* **Regression fails without the fix and passes with it:** yes — rows 2/3 and 8-13. Reverted: ctest EXIT 8
++  (0/1, `makeClip` at line 530). Restored: ctest EXIT 0 (2/2), family EXIT 0 (5/5).
++* **Deterministic:** yes. The probe compiles fixed source with a fixed shadow header; no timing, sleep,
++  race or network.
++* **Cause and completeness:** yes. The one unguarded caller is fixed, and every `videotest::makeClip` caller
++  was audited; the other four are already inside `ZENE_HAVE_FFMPEG`.
++* **No collateral damage:** yes, as summarised above; FFmpeg-supported behaviour and no-FFmpeg skip
++  behaviour are both preserved.
++* **Registration and gates:** `tests/fork-sources.txt` names the new probe and this report;
++  `tests/upstream-modifications.txt` records the `tests/CMakeLists.txt` registration; the unchanged gate
++  suite is PASS.
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 96fe7d539c..04a5011767 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -6234,6 +6234,21 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
+ 	set_tests_properties(Train43Portability PROPERTIES TIMEOUT 300)
+ endif()
+ 
++# cluster ci-9b6002ebebcf807a: the hosted macos-arm64 job builds without FFmpeg, so
++# VideoTestClip.h does not declare videotest::makeClip while VideoClipsTest's needClips()
++# called it unconditionally. Compile the real translation unit from this build's own
++# compile_commands.json against a shadow lmmsconfig.h with ZENE_HAVE_FFMPEG off, so a
++# missing guard is red on a Linux host that has FFmpeg. GCC/Clang only: the probe walks
++# the recorded GCC-style command line.
++if(PYTHON3_EXECUTABLE AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
++	add_test(NAME NoFfmpegVideoClipsCompileCheck
++		COMMAND ${PYTHON3_EXECUTABLE}
++			${CMAKE_CURRENT_SOURCE_DIR}/no-ffmpeg-video-clips-compile-check.py
++			--source-root ${CMAKE_SOURCE_DIR}
++			--build-dir ${CMAKE_BINARY_DIR})
++	set_tests_properties(NoFfmpegVideoClipsCompileCheck PROPERTIES TIMEOUT 300)
++endif()
++
+ # Accepted CI portability regressions, consolidated for train 32.
+ if(PYTHON3_EXECUTABLE)
+ 	add_test(NAME Qt5QStringListAssignmentCheck
+diff --git a/tests/fork-sources.txt b/tests/fork-sources.txt
+index b966ddd530..4d09577087 100644
+--- a/tests/fork-sources.txt
++++ b/tests/fork-sources.txt
+@@ -3935,3 +3935,7 @@ tests/src/plugins/CarlaVst2LegacyStateTest.cpp
+ tests/src/gui/LegacyVst2ProjectTest.cpp
+ tests/data/legacy-projects/vst2-vestige-vsteffect.mmp
+ tests/data/legacy-projects/vst2-vestige-vsteffect.reference.json
++
++# cluster ci-9b6002ebebcf807a: the no-FFmpeg VideoClipsTest compile regression and its report.
++tests/no-ffmpeg-video-clips-compile-check.py
++docs/qwen-fixes-2026-10/cluster-ci-9b6002ebebcf807a.md
+diff --git a/tests/no-ffmpeg-video-clips-compile-check.py b/tests/no-ffmpeg-video-clips-compile-check.py
+new file mode 100644
+index 0000000000..7f514bea13
+--- /dev/null
++++ b/tests/no-ffmpeg-video-clips-compile-check.py
+@@ -0,0 +1,205 @@
++#!/usr/bin/env python3
++"""Fail when VideoClipsTest.cpp compiles only while FFmpeg is enabled.
++
++Cluster ci-9b6002ebebcf807a (2026-11-15). The hosted macos-arm64 job has no FFmpeg
++(ZENE_WANT_FFMPEG=ON, but pkg-config found no libav*), so lmmsconfig.h does not define
++ZENE_HAVE_FFMPEG and VideoTestClip.h does not declare videotest::makeClip. VideoClipsTest's
++needClips() called it unconditionally and that build stopped at:
++
++    tests/src/core/VideoClipsTest.cpp:530:19: error: no member named 'makeClip' in namespace 'videotest'
++
++VideoTrackTest already guards the same call with #ifdef ZENE_HAVE_FFMPEG and keeps its
++runtime skip for a build without the library. This check recompiles the real translation
++unit from this build's own compile_commands.json with a shadow lmmsconfig.h that does not
++define ZENE_HAVE_FFMPEG - the configuration the macOS job builds - so the defect is red on
++a Linux host that has FFmpeg.
++
++Two probes run first: the shadow configuration must really lack ZENE_HAVE_FFMPEG, and
++videotest::makeClip must really be undeclared there. A check that cannot fail fails here.
++
++Deterministic: it compiles the recorded command against a fixed shadow header; no clock,
++sleep, network or configure.
++
++Usage: no-ffmpeg-video-clips-compile-check.py --source-root <tree> --build-dir <build>
++"""
++
++import argparse
++import json
++import os
++import shlex
++import subprocess
++import sys
++import tempfile
++
++TARGET = "tests/src/core/VideoClipsTest.cpp"
++CONFIG_PROBE = """#include "lmmsconfig.h"
++#ifdef ZENE_HAVE_FFMPEG
++#error the shadow configuration still defines ZENE_HAVE_FFMPEG
++#endif
++int main() { return 0; }
++"""
++ABSENT_PROBE = """#include <QString>
++#include "VideoTestClip.h"
++int main() { return videotest::makeClip(QStringLiteral("x")) ? 0 : 1; }
++"""
++
++
++def run(command, cwd, timeout=300):
++	return subprocess.run(command, cwd=cwd, capture_output=True, text=True, timeout=timeout)
++
++
++def split_command(entry):
++	if entry.get("command"):
++		return shlex.split(entry["command"])
++	return list(entry.get("arguments") or [])
++
++
++def source_of(entry):
++	path = entry["file"]
++	if not os.path.isabs(path):
++		path = os.path.join(entry["directory"], path)
++	return os.path.normpath(path)
++
++
++def include_position(command):
++	"""Where to put the shadow -I so it wins over every recorded include directory."""
++	for index, argument in enumerate(command[1:], 1):
++		if argument == "-I" or argument.startswith("-I") or argument == "-isystem" or argument.startswith("-isystem"):
++			return index
++	return len(command)
++
++
++def syntax_command(entry, shadow):
++	"""The recorded compile line, with the shadow include and no output/compile action."""
++	cleaned = []
++	skip = False
++	for argument in split_command(entry):
++		if skip:
++			skip = False
++			continue
++		if argument in ("-o", "-MF", "-MT", "-MQ"):
++			skip = True
++			continue
++		if argument in ("-c", "-MD", "-MMD", "-MP"):
++			continue
++		if argument.startswith(("-o", "-MF", "-MT", "-MQ")):
++			continue
++		cleaned.append(argument)
++	if not cleaned:
++		return None
++	cleaned.insert(include_position(cleaned), "-I" + shadow)
++	cleaned.append("-fsyntax-only")
++	return cleaned
++
++
++def load_entry(build_dir, source_root):
++	path = os.path.join(os.path.abspath(build_dir), "compile_commands.json")
++	if not os.path.isfile(path):
++		return None, "no compile_commands.json in " + os.path.abspath(build_dir)
++	with open(path, encoding="utf-8") as stream:
++		entries = json.load(stream)
++	wanted = os.path.normpath(os.path.join(os.path.abspath(source_root), TARGET))
++	for entry in entries:
++		if source_of(entry) == wanted:
++			return entry, ""
++	return None, TARGET + " is not in compile_commands.json (was it renamed?)"
++
++
++def shadow_header(build_dir, shadow):
++	"""A copy of the build's lmmsconfig.h with ZENE_HAVE_FFMPEG off."""
++	path = os.path.join(os.path.abspath(build_dir), "lmmsconfig.h")
++	if not os.path.isfile(path):
++		return "no lmmsconfig.h in " + os.path.abspath(build_dir)
++	with open(path, encoding="utf-8") as stream:
++		lines = stream.readlines()
++	written = False
++	for index, line in enumerate(lines):
++		if line.strip() == "#define ZENE_HAVE_FFMPEG":
++			lines[index] = "/* #undef ZENE_HAVE_FFMPEG */\n"
++			written = True
++	with open(os.path.join(shadow, "lmmsconfig.h"), "w", encoding="utf-8") as stream:
++		stream.writelines(lines)
++	return "" if written else "the build's lmmsconfig.h does not enable FFmpeg (checking that configuration)"
++
++
++def probe_source(command, entry, probe):
++	"""The real compile line, with the translation unit replaced by a probe.
++
++	The probe lives in the build tree, so the real source directory is added for the quoted
++	include of VideoTestClip.h that the original translation unit gets from its own location.
++	"""
++	source = source_of(entry)
++	for index, argument in enumerate(command):
++		if os.path.normpath(argument) == source:
++			command[index] = probe
++			command.insert(1, "-I" + os.path.dirname(source))
++			return command
++	return None
++
++
++def error_lines(result):
++	lines = [line for line in (result.stderr or result.stdout).splitlines() if "error" in line.lower()]
++	return "; ".join(lines[:3]) or "compiler exited %d" % result.returncode
++
++
++def main():
++	parser = argparse.ArgumentParser(description=__doc__)
++	parser.add_argument("--source-root", required=True)
++	parser.add_argument("--build-dir", required=True)
++	options = parser.parse_args()
++
++	entry, error = load_entry(options.build_dir, options.source_root)
++	if entry is None:
++		print("FAIL:", error)
++		return 1
++	command = split_command(entry)
++	if not command:
++		print("FAIL:", TARGET, "has no compile command")
++		return 1
++	compiler = command[0]
++
++	with tempfile.TemporaryDirectory(prefix="zene-no-ffmpeg-video-", dir=os.path.abspath(options.build_dir)) as temporary:
++		shadow = os.path.join(temporary, "shadow")
++		os.makedirs(shadow)
++		note = shadow_header(options.build_dir, shadow)
++		if note.startswith("no "):
++			print("FAIL:", note)
++			return 1
++		if note:
++			print("NOTE:", note)
++
++		config = os.path.join(temporary, "config.cpp")
++		with open(config, "w", encoding="utf-8") as stream:
++			stream.write(CONFIG_PROBE)
++		config_result = run([compiler, "-std=c++20", "-fsyntax-only", "-I" + shadow, config], temporary)
++		if config_result.returncode != 0:
++			print("FAIL: the shadow header still enables FFmpeg:", error_lines(config_result))
++			return 1
++		print("PASS: the shadow configuration does not define ZENE_HAVE_FFMPEG")
++
++		absent = os.path.join(temporary, "absent.cpp")
++		with open(absent, "w", encoding="utf-8") as stream:
++			stream.write(ABSENT_PROBE)
++		absent_line = probe_source(syntax_command(entry, shadow), entry, absent)
++		if absent_line is None:
++			print("FAIL: could not find the translation unit in the recorded compile line")
++			return 1
++		absent_result = run(absent_line, entry["directory"])
++		if absent_result.returncode == 0:
++			print("FAIL: videotest::makeClip is declared without ZENE_HAVE_FFMPEG, so this check cannot detect the defect")
++			return 1
++		if "makeClip" not in (absent_result.stderr + absent_result.stdout):
++			print("FAIL: the no-FFmpeg probe failed for a different reason:", error_lines(absent_result))
++			return 1
++		print("PASS: videotest::makeClip is not declared without ZENE_HAVE_FFMPEG")
++
++		result = run(syntax_command(entry, shadow), entry["directory"])
++		if result.returncode != 0:
++			print("FAIL:", TARGET, "does not compile without FFmpeg:", error_lines(result))
++			return 1
++		print("PASS:", TARGET, "compiles without FFmpeg (its clip cases keep their runtime skip)")
++	return 0
++
++
++if __name__ == "__main__":
++	sys.exit(main())
+diff --git a/tests/src/core/VideoClipsTest.cpp b/tests/src/core/VideoClipsTest.cpp
+index ea1d264c7e..15f447d914 100644
+--- a/tests/src/core/VideoClipsTest.cpp
++++ b/tests/src/core/VideoClipsTest.cpp
+@@ -524,6 +524,7 @@ private:
+ 	bool needClips()
+ 	{
+ 		if (!VideoDecoder::available()) { return false; }
++#ifdef ZENE_HAVE_FFMPEG
+ 		if (!m_a.isEmpty() && !m_b.isEmpty()) { return true; }
+ 		const QString a = m_dir.filePath(QStringLiteral("first.mkv"));
+ 		const QString b = m_dir.filePath(QStringLiteral("second.mkv"));
+@@ -531,6 +532,9 @@ private:
+ 		m_a = a;
+ 		m_b = b;
+ 		return true;
++#else
++		return false;  // no FFmpeg: available() is false, and the fixture helper is not declared
++#endif
+ 	}
+ 
+ 	QTemporaryDir m_dir;
+diff --git a/tests/upstream-modifications.txt b/tests/upstream-modifications.txt
+index 30b5db0b3d..f590cd186d 100644
+--- a/tests/upstream-modifications.txt
++++ b/tests/upstream-modifications.txt
+@@ -5967,3 +5967,4 @@ src/tracks/InstrumentTrack.cpp	Q050-481.3: convert legacy VeSTige/VST-effect dev
+ src/core/EffectChain.cpp	Q050-481.3: convert legacy VeSTige/VST-effect devices to Carla on load
+ plugins/Vestige/Vestige.cpp	Q050-481.3: a VeSTige plug-in that fails to load keeps its saved path (it was cleared, so saving the project lost which plug-in it was); held by LegacyVst2ProjectTest::aMissingBinaryKeepsTheLegacyDevice
+ include/InstrumentTrack.h	Q050-481.3: declare the legacy instrument conversion helper.
++tests/CMakeLists.txt	cluster ci-9b6002ebebcf807a: registers NoFfmpegVideoClipsCompileCheck, the compile probe over VideoClipsTest.cpp against a shadow lmmsconfig.h that omits ZENE_HAVE_FFMPEG. Registration only: no existing test's flags, environment, timeout or properties change.
+-- 
+2.56.0
+
