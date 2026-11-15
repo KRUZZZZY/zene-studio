@@ -297,6 +297,94 @@ private slots:
 		QCOMPARE(clip->clipEffects()->effects().size(), std::size_t{0});
 	}
 
+	//! The chain's storage, headless: a clip without a chain writes none, a chain built through the agent surface
+	//! reads back in order and settings, and a chain emptied again leaves none in the file.
+	void theStorageRoundTripsAndOmitsEmptyChains()
+	{
+		buildSong();
+		const QString path = m_dir.filePath(QStringLiteral("clip-storage.mmp"));
+		// Saves the song, then counts in the file the <sampleclip> elements and those with a direct <fxchain>
+		// child. The track's own <fxchain> is not counted: a clip's chain is a child of the clip, not of the track.
+		const auto saveAndCount = [this, &path]() -> std::pair<int, int> {
+			if (!song()->saveProjectFile(path)) { return {-1, -1}; }
+			QFile file(path);
+			QDomDocument doc;
+			if (!file.open(QIODevice::ReadOnly) || !doc.setContent(file.readAll())) { return {-1, -1}; }
+			const QDomNodeList clips = doc.elementsByTagName(QStringLiteral("sampleclip"));
+			int withChain = 0;
+			for (int i = 0; i < clips.count(); ++i)
+			{
+				if (!clips.at(i).toElement().firstChildElement(QStringLiteral("fxchain")).isNull()) { ++withChain; }
+			}
+			return {static_cast<int>(clips.count()), withChain};
+		};
+
+		const auto untouched = saveAndCount();
+		QCOMPARE(untouched.first, 2);
+		QCOMPARE(untouched.second, 0);
+		song()->loadProject(path);
+		QVERIFY(firstClip() != nullptr);
+		QVERIFY(secondClip() != nullptr);
+		QCOMPARE(firstClip()->clipEffects()->effects().size(), std::size_t{0});
+		QCOMPARE(secondClip()->clipEffects()->effects().size(), std::size_t{0});
+
+		const QString first = control::clipIdOf(firstClip());
+		const QString low = addAmplifier(first, 50.0);
+		const QString high = addAmplifier(first, 120.0);
+		QVERIFY(!low.isEmpty());
+		QVERIFY(!high.isEmpty());
+		QVERIFY(run(QStringLiteral("plugin.move"), {{QStringLiteral("target"), first}, {QStringLiteral("plugin"), high},
+			{QStringLiteral("position"), 0}}).ok);
+		QVERIFY(run(QStringLiteral("plugin.bypass"), {{QStringLiteral("target"), first}, {QStringLiteral("plugin"), high},
+			{QStringLiteral("bypass"), true}}).ok);
+		const QJsonArray built = devicesOf(first);
+		QCOMPARE(built.size(), 2);
+		QCOMPARE(built.at(0).toObject().value(QStringLiteral("id")).toString(), high);
+		QCOMPARE(built.at(1).toObject().value(QStringLiteral("id")).toString(), low);
+
+		// The settings a reopened chain must carry: order, volume, bypass. Ids are not compared across a reload.
+		const auto expectSettings = [this]() {
+			const QJsonArray devices = devicesOf(control::clipIdOf(firstClip()));
+			QCOMPARE(devices.size(), 2);
+			const QJsonObject slot0 = devices.at(0).toObject();
+			const QJsonObject slot1 = devices.at(1).toObject();
+			QCOMPARE(slot0.value(QStringLiteral("plugin")).toString(), QStringLiteral("amplifier"));
+			QCOMPARE(parameterValue(slot0, QStringLiteral("Volume")), 120.0);
+			QCOMPARE(slot0.value(QStringLiteral("enabled")).toBool(), false);
+			QCOMPARE(slot1.value(QStringLiteral("plugin")).toString(), QStringLiteral("amplifier"));
+			QCOMPARE(parameterValue(slot1, QStringLiteral("Volume")), 50.0);
+			QCOMPARE(slot1.value(QStringLiteral("enabled")).toBool(), true);
+		};
+		expectSettings();
+
+		const auto withChain = saveAndCount();
+		QCOMPARE(withChain.first, 2);
+		QCOMPARE(withChain.second, 1);
+		song()->loadProject(path);
+		QVERIFY(firstClip() != nullptr);
+		QVERIFY(secondClip() != nullptr);
+		expectSettings();
+		QCOMPARE(secondClip()->clipEffects()->effects().size(), std::size_t{0});
+
+		// Unload both devices, using the ids dsp.get_state reports: the chain is empty and writes nothing.
+		const QJsonArray live = devicesOf(control::clipIdOf(firstClip()));
+		QCOMPARE(live.size(), 2);
+		for (const QJsonValue& device : live)
+		{
+			QVERIFY(run(QStringLiteral("plugin.unload"), {{QStringLiteral("target"), control::clipIdOf(firstClip())},
+				{QStringLiteral("plugin"), device.toObject().value(QStringLiteral("id")).toString()}}).ok);
+		}
+		QCOMPARE(firstClip()->clipEffects()->effects().size(), std::size_t{0});
+		const auto cleared = saveAndCount();
+		QCOMPARE(cleared.first, 2);
+		QCOMPARE(cleared.second, 0);
+		song()->loadProject(path);
+		QVERIFY(firstClip() != nullptr);
+		QVERIFY(secondClip() != nullptr);
+		QCOMPARE(firstClip()->clipEffects()->effects().size(), std::size_t{0});
+		QCOMPARE(secondClip()->clipEffects()->effects().size(), std::size_t{0});
+	}
+
 	//! Claim 4: every edit through the agent surface, each one control.undo step.
 	void theAgentEditsTheChainOneUndoStepEach()
 	{
