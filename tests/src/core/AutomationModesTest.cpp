@@ -919,7 +919,9 @@ private slots:
 
 		const auto before = timeMapBits(rig.clip);
 		const auto pendingBefore = rig.clip.pendingWriteCount();
+		const auto registrationFailures = Engine::audioEngine()->automatableModelRegistrationFailures();
 		playFromZero(song, 8);
+		QCOMPARE(Engine::audioEngine()->automatableModelRegistrationFailures(), registrationFailures);
 		QCOMPARE(rig.clip.pendingWriteCount(), pendingBefore);
 		QVERIFY(drainAutomationWrites(song));
 		QCOMPARE(timeMapBits(rig.clip), before);
