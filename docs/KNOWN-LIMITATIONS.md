@@ -775,6 +775,17 @@ library to work.
   build for the family to be hostable at all, which is what the table is for. Full document:
   `docs/OUT-OF-PROCESS-BEYOND-ZYN.md`.
 
+## ARA2 and Melodyne-style pitch editing — deferred, not in 0.5.0 (Q050-344, 2026-11-15)
+
+The owner explicitly deferred ARA2 and Melodyne-style pitch editing for 0.5.0 (owner decision, 2026-11-14). Zene Studio cannot host ARA plug-ins. There is no ARA extension path, no Melodyne-style note-blob or pitch editing of audio clips, and no `ara.*` agent commands. Each item below is a capability gap: what a user might expect, and what to use today.
+
+- **ARA2** — deferred. A user would expect Zene to host a vendor's ARA2 plug-in inside a clip; Zene has no ARA2 host, and hosting first needs an ARA2 SDK licence decision.
+- **Melodyne-style clip editing** — deferred. A user would expect note-level pitch and timing editing of an audio clip; there is no such editor. Use the per-clip warp choice (`warp.stretch`) for rate and pitch behaviour instead.
+- **Track-wide ARA** — deferred. A user would expect one ARA session spanning every clip on a track; Zene has no track-level ARA, and the per-clip path above is not built either.
+- **ARA processing-order extensions** — deferred. A user would expect ARA plug-ins to set the render order of the processing chain; no such extension exists, so the processing chain stays as it is.
+
+No 0.5.0 implementation lane exists for any of these four items, and no support promise is made. The 11 member requests — R-editing-41, R-editing-112, R-editing-114, R-editing-115, R-effects-18, R-effects-19, R-effects-22, R-instruments-18, R-instruments-30, R-recording-18 and R-workflow-118 — are recorded here as deferred. Revisiting any of them needs a new owner decision.
+
 ## Where the quality bars are not met yet
 
 - **Renders are reproducible — with two exceptions.** Exports now render on a single thread, so for **7 of the
