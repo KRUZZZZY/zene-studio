@@ -1,1 +1,78 @@
-[]
+[
+  {
+    "at": "2026-11-15T13:26:58",
+    "base": "cc29a63dde09cf28bb00498a2d2a5b124d4d614d",
+    "branch": "fix/sol-repair-1794749218500302546",
+    "checks": [
+      {
+        "argv": [
+          "bash",
+          "tests/no-upstream-regression-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-33-1794748336516906466",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794749145091737049.log"
+      },
+      {
+        "argv": [
+          "bash",
+          "tests/evidence-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-33-1794748336516906466",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794749152971833925.log"
+      },
+      {
+        "argv": [
+          "cmake",
+          "--build",
+          "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-33-1794748336516906466/build",
+          "--target",
+          "zene",
+          "SfzPlayerTest",
+          "VideoClipsTest",
+          "VideoClipsGuiTest",
+          "VideoTestClipTest",
+          "RenderSourceGuardTest",
+          "ExportWavWriteErrorTest",
+          "-j12"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-33-1794748336516906466",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794749165058337877.log"
+      },
+      {
+        "argv": [
+          "ctest",
+          "-R",
+          "^(SfzPlayerTest|VideoClipsTest|VideoClipsGuiTest|VideoTestClipTest|RenderSourceGuardTest|ExportWavWriteErrorTest|Train48Portability|Train41-render|FileLengthGate|NoteCanvasComplexityGate)$",
+          "-j1",
+          "--timeout",
+          "900",
+          "--no-tests=error",
+          "--output-on-failure"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-33-1794748336516906466/build/tests",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794749165380786235.log"
+      }
+    ],
+    "commit": "9910a2ea75ac3b2301dd8ab57b1f454ac1177f52",
+    "id": "sol-repair-1794749218500302546",
+    "paths": [
+      "docs/qwen-fixes-2026-10/sol-train-33-hosted-portability-48.md",
+      "tests/CMakeLists.txt",
+      "tests/fork-sources.txt",
+      "tests/src/core/ExportWavWriteErrorTest.cpp",
+      "tests/src/core/RenderSourceGuardTest.cpp",
+      "tests/src/core/VideoTestClip.h",
+      "tests/train-48-portability-check.py",
+      "tests/upstream-modifications.txt"
+    ],
+    "source_head": "cc29a63dde09cf28bb00498a2d2a5b124d4d614d",
+    "status": "pending",
+    "summary": "Fixed SFZ dependency includes, the no-FFmpeg fixture API, Windows moc slot guards and a Unix-only WAV helper; added compiler regressions and verification evidence.",
+    "train": "050/m0-train-33",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-33-1794748336516906466"
+  }
+]
