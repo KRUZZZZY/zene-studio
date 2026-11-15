@@ -74,5 +74,72 @@
     "summary": "Fixed SFZ dependency includes, the no-FFmpeg fixture API, Windows moc slot guards and a Unix-only WAV helper; added compiler regressions and verification evidence.",
     "train": "050/m0-train-33",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-33-1794748336516906466"
+  },
+  {
+    "at": "2026-11-15T14:33:28",
+    "base": "cc29a63dde09cf28bb00498a2d2a5b124d4d614d",
+    "branch": "fix/ci-repair-ci-77e0405b9f559208-b701aa293aff",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-77e0405b9f559208.r1.md",
+        "negative_control": {
+          "artifact_hashes": {},
+          "detail": "no product change, no changed test, or a dirty tree",
+          "ok": null,
+          "proof_base": "dec3f1d45c62b26bce955875521780db173a0228",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-77e0405b9f559208.r1/negctl",
+          "proof_key": "84146cacb45fe6dc80f20c582c384fdaf960d612d26d57644d31020928f6b16f"
+        },
+        "verdict": "ACCEPT-NOTE"
+      }
+    ],
+    "commit": "b2f2e346a45e3725ff87cc0e03d9370c54786ce8",
+    "id": "ci-repair-ci-77e0405b9f559208-b701aa293aff",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-77e0405b9f559208.md",
+      "tests/src/core/ControlShutdownHookTest.cpp",
+      "tests/src/core/ControlShutdownHookTestParts1.h"
+    ],
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "dec3f1d45c62b26bce955875521780db173a0228",
+    "status": "pending",
+    "summary": "CI regression: build / windows-arm64",
+    "train": "050/m0-train-32",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-77e0405b9f559208"
+  },
+  {
+    "at": "2026-11-15T14:37:38",
+    "base": "cc29a63dde09cf28bb00498a2d2a5b124d4d614d",
+    "branch": "fix/ci-repair-ci-e58078851126eac9-e38c40db77d1",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-e58078851126eac9.r1.md",
+        "negative_control": {
+          "artifact_hashes": {},
+          "detail": "no product change, no changed test, or a dirty tree",
+          "ok": null,
+          "proof_base": "dec3f1d45c62b26bce955875521780db173a0228",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-e58078851126eac9.r1/negctl",
+          "proof_key": "1a2a7b485710f95799dd8a87acd1b3bb9b98be38cf247e2ed30b28c3ba07923e"
+        },
+        "verdict": "ACCEPT"
+      }
+    ],
+    "commit": "5c2d695b09a0ad177d6b24974b4408acb4ea3cd6",
+    "id": "ci-repair-ci-e58078851126eac9-e38c40db77d1",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-e58078851126eac9.md",
+      "tests/CMakeLists.txt",
+      "tests/Qt5QJsonToIntegerCheck.py",
+      "tests/fork-sources.txt",
+      "tests/src/core/ScriptClockTest.cpp",
+      "tests/upstream-modifications.txt"
+    ],
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "dec3f1d45c62b26bce955875521780db173a0228",
+    "status": "pending",
+    "summary": "CI regression: build / linux-x86_64",
+    "train": "050/m0-train-32",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-e58078851126eac9"
   }
 ]

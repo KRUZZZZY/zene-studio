@@ -1,0 +1,450 @@
+From 5c2d695b09a0ad177d6b24974b4408acb4ea3cd6 Mon Sep 17 00:00:00 2001
+From: Zene CI repair <noreply@zene.invalid>
+Date: Sun, 15 Nov 2026 14:37:38 +0000
+Subject: [PATCH] fix(ci): CI regression: build / linux-x86_64
+
+CI-Repair-Id: ci-repair-ci-e58078851126eac9-e38c40db77d1
+---
+ .../cluster-ci-e58078851126eac9.md            | 194 ++++++++++++++++++
+ tests/CMakeLists.txt                          |  12 ++
+ tests/Qt5QJsonToIntegerCheck.py               | 143 +++++++++++++
+ tests/fork-sources.txt                        |   8 +
+ tests/src/core/ScriptClockTest.cpp            |   5 +-
+ tests/upstream-modifications.txt              |   2 +
+ 6 files changed, 362 insertions(+), 2 deletions(-)
+ create mode 100644 docs/qwen-fixes-2026-10/cluster-ci-e58078851126eac9.md
+ create mode 100644 tests/Qt5QJsonToIntegerCheck.py
+
+diff --git a/docs/qwen-fixes-2026-10/cluster-ci-e58078851126eac9.md b/docs/qwen-fixes-2026-10/cluster-ci-e58078851126eac9.md
+new file mode 100644
+index 0000000000..7f60a029cf
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/cluster-ci-e58078851126eac9.md
+@@ -0,0 +1,194 @@
++FIXED - cluster ci-e58078851126eac9: ScriptClockTest used QJsonValue::toInteger, a Qt 6-only member, and stopped the hosted Qt 5 build
++
++Verdict: FIXED (REAL). The reported line is exactly the defect on this branch: the
++Qt 5.15 build of `tests/src/core/ScriptClockTest.cpp` fails at the two
++`toInteger(-1)` reads, and the hosted `build / linux-x86_64` job is a Qt 5 job.
++The product code is not wrong; the test translation unit called an API that only
++Qt 6 declares. The fix is the portable adapter the tree already carries.
++
++## The reported failure
++
++Hosted CI, train 050/m0-train-32, commit
++`dec3f1d45c62b26bce955875521780db173a0228` (this checkout's HEAD), job
++`run-43681793608-job-132713785008`, step Build:
++
++```
++tests/src/core/ScriptClockTest.cpp:408:92: error: 'class QJsonValue' has no member named 'toInteger'
++  408 | const qint64 perId = clock.scheduleState(id).value(QStringLiteral("source_bytes")).toInteger(-1);
++tests/src/core/ScriptClockTest.cpp:415:69: error: 'class QJsonValue' has no member named 'toInteger'
++  415 |     inState = one.value(QStringLiteral("source_bytes")).toInteger(-1);
++gmake[2]: *** [tests/CMakeFiles/ScriptClockTest.dir/build.make:99: .../ScriptClockTest.cpp.o] Error 1
++```
++
++The job is Qt 5: `.github/workflows/build.yml:158` sources
++`/opt/qt5*/bin/qt5*-env.sh` and passes no `-DWANT_QT6=ON` (the Qt 6 jobs pass it
++explicitly, e.g. `quality-gates.yml:157`). `CMakeLists.txt:373` still declares a
++Qt 5.15 minimum, so Qt 5 is a supported build configuration.
++
++The two reads at `tests/src/core/ScriptClockTest.cpp:408,415` are the only
++first-party `toInteger` call sites (`rg -n 'toInteger'`; the other hits are the
++guarded adapter and vendored Carla/JUCE). `QJsonValue::toInteger` was added in
++Qt 6. The repository's own portable read is
++`include/DeprecationHelper.h:104-123`:
++
++```cpp
++inline qint64 jsonInteger(const QJsonValue& value, qint64 defaultValue = 0)
++{
++#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
++	return value.toInteger(defaultValue);
++#else
++	// checked whole-number double conversion
++...
++```
++
++That adapter is already used by product code (`src/gui/BrowserResults.cpp:104`,
++`src/core/ControlCommandsRecordTools.cpp:106`) and by the control-suite tests
++(`ControlSuccessPathsTest.cpp:308`, `ArrangingCatchUpTest.cpp:153`, ...). The
++test was simply the one new caller that used the raw Qt 6 member.
++
++## Reproduction on Qt 5
++
++A separate Qt 5 build tree was configured inside the worktree (`build-qt5`,
++git-ignored by `/build*/`) with the box's Qt 5.15.19 and the distro Qt5Svg
++package extracted under the local dependency root (this box's system Qt 5 has no
++Svg module):
++
++```
++/usr/bin/cmake -S . -B build-qt5 -DUSE_WERROR=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo \
++  -DTARGET_UARCH=none -DUSE_COMPILE_CACHE=ON -DWANT_DEBUG_CPACK=ON \
++  -DWANT_VST3=OFF -DWANT_CLAP=OFF -DWANT_QT6=OFF \
++  -DQt5Svg_DIR=/home/kruzzzzy/.local/zene-deps/qt5svg-root/usr/lib/cmake/Qt5Svg
++```
++
++Exit 0; the configure log says `Experimental Qt6 support : Disabled`. With the
++fix reversed, building the target reproduces the CI error byte-for-byte:
++
++```
++/usr/bin/cmake --build build-qt5 --target ScriptClockTest -j8
++...
++../../tests/src/core/ScriptClockTest.cpp:408:92: error: 'class QJsonValue' has no member named 'toInteger'
++../../tests/src/core/ScriptClockTest.cpp:415:69: error: 'class QJsonValue' has no member named 'toInteger'
++make[3]: *** [tests/CMakeFiles/ScriptClockTest.dir/build.make:99: .../ScriptClockTest.cpp.o] Error 1
++```
++
++Exit 2 (`build-5-qt5-red-reversed.log`). With the fix restored the same target
++builds (exit 0, `build-6-qt5-green-restored.log`) and
++`ctest -R '^ScriptClockTest$'` passes 1/1 (`test-10-qt5-green-restored-ctest.log`).
++The Qt 5 build compiles all 1114 link objects of the target, so this is the real
++job's compiler input, not a probe.
++
++## The fix (2 lines + one include)
++
++- `tests/src/core/ScriptClockTest.cpp`: include `DeprecationHelper.h`; read both
++  `source_bytes` values with `jsonInteger(value, -1)` instead of
++  `value.toInteger(-1)`. The assertions are unchanged (`-1` still means "not
++  present"), and on Qt 6 `jsonInteger` is exactly `toInteger(default)`, so the
++  Qt 6 behaviour is identical.
++
++No product source changes: the product already compiles on both toolchains. The
++fix is at the cause (the test's Qt-6-only API), not at a symptom.
++
++## The regression test
++
++`tests/Qt5QJsonToIntegerCheck.py` (new, registered as ctest
++`Qt5QJsonToIntegerCheck` in `tests/CMakeLists.txt`): scans every first-party
++C/C++ source under `src/`, `include/`, `plugins/` and `tests/src/` for
++`QJsonValue::toInteger` and names the `jsonInteger` replacement. It is red on
++the Qt 6 hosts too, where the failing line compiles, so a reintroduction is
++caught before the Qt 5 job. The one exempt site is the adapter itself
++(`include/DeprecationHelper.h`), whose Qt 6 branch is the legitimate guarded
++call. A built-in fixture proves the scanner can fail: a `toInteger` fixture must
++be flagged, a `jsonInteger` fixture must not.
++
++The existing `ScriptClockTest::scheduleStateReportsUtf8Bytes` slot is the
++behavioural test; it was only blocked from compiling on Qt 5. It is unchanged.
++
++## Evidence
++
++The requested LOG FOLDER is not writable by this session's file jail:
++`echo probe > .../ci-e58078851126eac9.r1/logs/probe.log` fails with
++`bash: ... Permission denied` and exit 1 (`test-0-logdir-probe.log`; the
++`write` tool returns `EACCES` in the same directory). The logs below are
++therefore in the on-disk scratch directory
++`/home/kruzzzzy/.cache/zene-tmp/zene-ci-e58078851126eac9-logs/`, which is
++`$TMPDIR/zene-ci-e58078851126eac9-logs`. Every command was run with its exit
++code measured directly (`cmd > log 2>&1; echo EXIT=$?`).
++
++| # | Stage | Exact command | Exit | Log |
++|---:|---|---|---:|---|
++| 1 | Qt 5 configure | `/usr/bin/cmake -S . -B build-qt5 ... -DWANT_QT6=OFF -DQt5Svg_DIR=...` | 0 | `build-1-qt5-configure.log` |
++| 2 | Scanner self-test | `python3 tests/Qt5QJsonToIntegerCheck.py --self-test` | 0 | `test-1-selftest.log` |
++| 3 | **RED** scan, pre-fix | `python3 tests/Qt5QJsonToIntegerCheck.py --root .` | **1** (2 findings at 408/415) | `test-2-red-scan.log` |
++| 4 | GREEN scan, post-fix | same | 0 (4262 files, no finding) | `test-3-green-scan.log` |
++| 5 | ctest GREEN, post-fix | `QT_QPA_PLATFORM=offscreen ctest -R '^Qt5QJsonToIntegerCheck$' --output-on-failure` (build/tests) | 0 (1/1) | `test-4-ctest-green-scan.log` |
++| 6 | **RED** ctest, fix reversed | same command after `git apply -R fix.patch` | **8** (0/1 failed) | `test-5-ctest-red-scan.log` |
++| 7 | GREEN ctest, restored | same command after `git apply fix.patch` | 0 (1/1) | `test-6-ctest-green-restored.log` |
++| 8 | Qt 6 rebuild | `/usr/bin/cmake --build build --target ScriptClockTest -j8` | 0 | `build-4-qt6-test.log` |
++| 9 | Qt 6 family | `QT_QPA_PLATFORM=offscreen ctest -R '^(ScriptClockTest\|Qt5QJsonToIntegerCheck)$'` | 0 (2/2) | `test-7-qt6-ctest.log` |
++| 10 | Qt 5 build, fixed | `/usr/bin/cmake --build build-qt5 --target ScriptClockTest -j8` | 0 | `build-2-qt5-green-fixed.log` |
++| 11 | Qt 5 ctest, fixed | `QT_QPA_PLATFORM=offscreen ctest -R '^ScriptClockTest$'` (build-qt5/tests) | 0 (1/1) | `test-8-qt5-green-ctest.log` |
++| 12 | **RED** Qt 5 build, fix reversed | `git apply -R fix.patch && cmake --build build-qt5 --target ScriptClockTest -j8` after deleting the binary/object | **2** (the CI error) | `build-5-qt5-red-reversed.log` |
++| 13 | **RED** Qt 5 ctest | same ctest command (binary absent) | **8** (`Not Run`) | `test-9-qt5-red-ctest.log` |
++| 14 | GREEN Qt 5 build, restored | `git apply fix.patch && cmake --build build-qt5 --target ScriptClockTest -j8` | 0 | `build-6-qt5-green-restored.log` |
++| 15 | GREEN Qt 5 ctest, restored | same ctest command | 0 (1/1) | `test-10-qt5-green-restored-ctest.log` |
++| 16 | Qt 6 reconfigure | `/usr/bin/cmake -S . -B build` | 0 | `build-3-qt6-reconfigure.log` |
++| 17 | Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 (all PASS) | `gate-2-feature-check-post-commit.log` |
++| 18 | Completion check | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> ci-e58078851126eac9` | 0 | `gate-3-submit-check.log` |
++
++`fix.patch` is the two-hunk diff of `tests/src/core/ScriptClockTest.cpp` (the fixed
++translation unit) only; the regression-test script and its registration are not
++in the reversal patch, so the reversed run leaves the ctest registered and red.
++
++## Test matrix
++
++| Path | Covered by |
++|---|---|
++| Normal read (slot passes on Qt 6) | Qt6 `ScriptClockTest`, exit 0, 2/2 family |
++| Normal read on the supported Qt 5 build | Qt5 build exit 0 + ctest 1/1 |
++| Failure face (the exact CI breakage) | Qt5 build with fix reversed, exit 2; scanner scan exit 1; ctest exit 8 |
++| Exhaustion / reconfiguration | not applicable: a JSON value read, no queue, cap or state |
++| Audio thread | not applicable: the diff touches one QtTest file and a Python source scan; no `processImpl`/`playImpl`/mixer/render path |
++| Supported-platform build | Qt 5.15.19 (this box, the hosted job's compiler input) and Qt 6.12 (this box) both build and pass |
++| Saved data / old projects | not applicable: no serialization, schema or product code changed |
++
++## Self-check
++
++- **The regression test FAILS with the fix reverted and PASSES with it.** RED:
++  `git apply -R fix.patch` then Qt 5 build exit **2** (`build-5-qt5-red-reversed.log`)
++  and ctest exit **8** (`test-9-qt5-red-ctest.log`, `Not Run`); the scanner alone
++  exits **1** (`test-2-red-scan.log`) and its ctest exits **8**
++  (`test-5-ctest-red-scan.log`). GREEN: `git apply fix.patch` then Qt 5 build exit
++  **0** and ctest exit **0** (`test-10-qt5-green-restored-ctest.log`); scanner
++  exit **0** and ctest exit **0**. The binary and test object were deleted before
++  the RED build, so no stale binary could launder the result.
++- **Deterministic, no wall-clock timing, sleeps or races.** The new test is a
++  source scan; its only inputs are the repository files, and its self-test writes
++  two fixed strings to a temporary directory. No clocks, threads or sleeps. The
++  Qt 5 ctest exercises a fixed schedule id and fixed byte strings.
++- **The fix is at the cause and complete.** Every first-party `toInteger` call
++  was re-grepped; after the fix the only first-party occurrence is the guarded
++  adapter at `include/DeprecationHelper.h:109`, and the scanner reports 0 over
++  4262 files. The two reads in `ScriptClockTest` are the only affected callers.
++  The Qt 6 path is bit-for-bit the same (`jsonInteger` calls `toInteger` there),
++  and the Qt 5 path is the adapter's checked `double` conversion, which the other
++  control tests already use.
++- **No collateral damage.** No product source, save format, command, schema or
++  limit changed. The test's assertions and the `-1` sentinel are unchanged, so
++  old projects and saved data are untouched. The scanner only reads sources; it
++  refuses nothing at runtime.
++- **Realtime / undo / commands.** Nothing on an audio path changed; the diff is a
++  QtTest source and a static check. No new command id, so
++  `ControlCommandsSnapshot` is not moved and undo semantics are untouched.
++- **Registration.** `tests/Qt5QJsonToIntegerCheck.py` is registered in
++  `tests/fork-sources.txt` and as ctest `Qt5QJsonToIntegerCheck` in
++  `tests/CMakeLists.txt`; the inherited `tests/CMakeLists.txt` change is recorded
++  in `tests/upstream-modifications.txt`. `ScriptClockTest.cpp` was already a
++  fork-NEW source in `tests/fork-sources.txt`; no registration change was needed
++  for it.
++- **The ALREADY-FIXED / FALSE-POSITIVE question does not apply.** The verdict is
++  FIXED: the failure reproduces on Qt 5 at `ScriptClockTest.cpp:408,415` and
++  disappears with the fix, as the RED/GREEN builds and ctests above show.
++- **Portability.** Qt 5.15.19 and Qt 6.12 both build the target and pass the
++  test. No platform-specific API was added; the Python check is plain
++  `argparse`/`os`/`re`/`tempfile`, so it runs wherever python3 does (the same
++  rule as the existing Qt 5 checks).
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 5486a10abd..b0c7e3b1c5 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -6264,6 +6264,18 @@ if(PYTHON3_EXECUTABLE)
+ 	set_tests_properties(Qt5QStringListAssignCheck PROPERTIES TIMEOUT 300)
+ endif()
+ 
++# cluster ci-e58078851126eac9: ScriptClockTest.cpp read QJsonValue with toInteger(), which
++# Qt 6 added, and the hosted linux-x86_64 (Qt 5.15) build stopped there. The scan is red on
++# the Qt 6 hosts too, so a reintroduction never reaches that job; the adapter it names,
++# jsonInteger(), is the guarded spelling the control-suite tests already use.
++if(PYTHON3_EXECUTABLE)
++	add_test(NAME Qt5QJsonToIntegerCheck
++		COMMAND ${PYTHON3_EXECUTABLE}
++			${CMAKE_CURRENT_SOURCE_DIR}/Qt5QJsonToIntegerCheck.py
++			--root ${CMAKE_SOURCE_DIR})
++	set_tests_properties(Qt5QJsonToIntegerCheck PROPERTIES TIMEOUT 120)
++endif()
++
+ if(PYTHON3_EXECUTABLE AND NOT WIN32 AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+ 	add_test(NAME MacosSyncAvailabilityCheck
+ 		COMMAND ${PYTHON3_EXECUTABLE}
+diff --git a/tests/Qt5QJsonToIntegerCheck.py b/tests/Qt5QJsonToIntegerCheck.py
+new file mode 100644
+index 0000000000..b59bf8ba01
+--- /dev/null
++++ b/tests/Qt5QJsonToIntegerCheck.py
+@@ -0,0 +1,143 @@
++#!/usr/bin/env python3
++"""Fail when first-party code calls QJsonValue::toInteger, which Qt 6 added.
++
++Cluster ci-e58078851126eac9 (2026-11-15), hosted `build / linux-x86_64` at
++dec3f1d45c62b26bce955875521780db173a0228: that job builds Qt 5.15 (build.yml
++sources `/opt/qt5*/bin/qt5*-env.sh` and passes no -DWANT_QT6=ON), where
++QJsonValue declares no toInteger(), so
++
++    tests/src/core/ScriptClockTest.cpp:408:92:
++        error: 'class QJsonValue' has no member named 'toInteger'
++
++stopped the whole build. Qt 6 added the member, and every Qt 6 host here
++compiles the same line, so only the hosted Qt 5 job sees the defect.
++
++The portable read is jsonInteger(value, defaultValue) from
++include/DeprecationHelper.h: on Qt 6 it is value.toInteger(default) and on Qt 5
++it is a checked whole-number conversion of the value's double. That adapter is
++already used by the control-suite tests (ControlSuccessPathsTest.cpp,
++ArrangingCatchUpTest.cpp, AafImportTest.cpp) and by product code.
++
++This source scan is red on the Qt 6 hosts too, so a reintroduction is caught
++before the Qt 5 job. The one exempt site is the adapter itself, whose Qt 6
++branch is the only legitimate toInteger call and is guarded by QT_VERSION.
++
++Usage: Qt5QJsonToIntegerCheck.py [--root DIR]
++       Qt5QJsonToIntegerCheck.py --self-test
++Exit codes: 0 = clean, 1 = finding (or a failed fixture), 2 = usage error.
++"""
++
++import argparse
++import os
++import re
++import sys
++import tempfile
++
++SOURCE_DIRS = ("src", "include", "plugins", "tests/src")
++SOURCE_SUFFIXES = (".c", ".cc", ".cpp", ".cxx", ".h", ".hpp")
++# Vendored trees are not this repo's code (tests/fork-sources.txt excludes them).
++EXCLUDED_PREFIXES = (
++    "src/3rdparty/",
++    "plugins/CarlaBase/carla/",
++    "plugins/NeuralAmp/nam/",
++    "plugins/NeuralAmp/rtneural/",
++    "plugins/NeuralAmp/tests/",
++    "plugins/RnnoiseDenoiser/rnnoise/",
++    "plugins/SfzPlayer/sfizz/",
++)
++ADAPTER = "include/DeprecationHelper.h"
++CALL = re.compile(r"\.\s*toInteger\s*\(")
++ADVICE = ("QJsonValue::toInteger is Qt 6 only; read it with "
++          "jsonInteger(value, defaultValue) from DeprecationHelper.h")
++
++BAD_FIXTURE = 'int n = value(QStringLiteral("source_bytes")).toInteger(-1);\n'
++GOOD_FIXTURE = ('int n = jsonInteger(value(QStringLiteral("source_bytes")), -1);\n')
++
++
++def scan_text(relative, text):
++    """[(line number, line)] for every toInteger call in one source file."""
++    if relative == ADAPTER:
++        return []
++    return [(number, line.strip())
++            for number, line in enumerate(text.splitlines(), 1)
++            if CALL.search(line)]
++
++
++def source_files(root):
++    """Every first-party C/C++ source under the scanned directories."""
++    for directory in SOURCE_DIRS:
++        base = os.path.join(root, directory)
++        for current, _dirs, names in os.walk(base):
++            for name in sorted(names):
++                if not name.endswith(SOURCE_SUFFIXES):
++                    continue
++                path = os.path.join(current, name)
++                relative = os.path.relpath(path, root).replace(os.sep, "/")
++                if relative.startswith(EXCLUDED_PREFIXES):
++                    continue
++                yield path, relative
++
++
++def self_test():
++    """The scanner must flag the failing shape and accept the portable one."""
++    with tempfile.TemporaryDirectory(prefix="qt5-qjson-tointeger-") as workdir:
++        findings = {}
++        for name, text in (("bad.cpp", BAD_FIXTURE), ("good.cpp", GOOD_FIXTURE)):
++            path = os.path.join(workdir, name)
++            with open(path, "w", encoding="utf-8") as handle:
++                handle.write(text)
++            findings[name] = scan_text(name, text)
++        if not findings["bad.cpp"]:
++            print("SELF-TEST FAIL: the scanner accepted a QJsonValue::toInteger call")
++            return 1
++        if findings["good.cpp"]:
++            print("SELF-TEST FAIL: the scanner rejected the jsonInteger form")
++            return 1
++    print("self-test: the scanner flags toInteger and accepts jsonInteger")
++    return 0
++
++
++def check(root):
++    findings = []
++    scanned = 0
++    for path, relative in source_files(root):
++        scanned += 1
++        try:
++            with open(path, encoding="utf-8", errors="replace") as handle:
++                text = handle.read()
++        except OSError as error:
++            print(f"{relative}: cannot read: {error}", file=sys.stderr)
++            return 2
++        for number, line in scan_text(relative, text):
++            findings.append(f"{relative}:{number}: {line}")
++    print(f"scanned {scanned} first-party C/C++ source file(s)")
++    if not findings:
++        print("PASS: no first-party QJsonValue::toInteger call")
++        return 0
++    for finding in findings:
++        print(f"{finding}\n  {ADVICE}")
++    print(f"FAIL: {len(findings)} QJsonValue::toInteger call(s) will not compile on Qt 5.15")
++    return 1
++
++
++def main(argv):
++    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
++    parser.add_argument("--root",
++                        default=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
++    parser.add_argument("--self-test", action="store_true")
++    args = parser.parse_args(argv[1:])
++    if args.self_test:
++        return self_test()
++    root = os.path.abspath(args.root)
++    if not os.path.isdir(root):
++        print(f"error: not a directory: {root}", file=sys.stderr)
++        return 2
++    return check(root)
++
++
++if __name__ == "__main__":
++    try:
++        sys.exit(main(sys.argv))
++    except (OSError, ValueError) as error:
++        print(f"Qt 5 QJsonValue::toInteger check: {error}", file=sys.stderr)
++        sys.exit(1)
+diff --git a/tests/fork-sources.txt b/tests/fork-sources.txt
+index 8bab20b4fb..93e3172f59 100644
+--- a/tests/fork-sources.txt
++++ b/tests/fork-sources.txt
+@@ -915,6 +915,14 @@ tests/Qt5QStringListAssignCheck.py
+ # cluster ci-aa1160348d9be203: the fix and verification report for the hosted linux-arm64
+ # Qt 5 QStringList brace-assignment build regression.
+ docs/qwen-fixes-2026-10/cluster-ci-aa1160348d9be203.md
++# cluster ci-e58078851126eac9 (2026-11-15): the hosted linux-x86_64 Qt 5 build stopped at
++# ScriptClockTest.cpp:408 on QJsonValue::toInteger(), which Qt 6 added; the QJsonValue qint64
++# read is jsonInteger() from DeprecationHelper.h on that platform. The check scans first-party
++# sources only, so it is red on the Qt 6 hosts too, and is named after its ctest
++# (tests/CMakeLists.txt -> Qt5QJsonToIntegerCheck).
++tests/Qt5QJsonToIntegerCheck.py
++# cluster ci-e58078851126eac9: the fix and verification report for that build regression.
++docs/qwen-fixes-2026-10/cluster-ci-e58078851126eac9.md
+ # cluster ci-61ad26e4f8b135f9 (2026-11-14): Apple's libc++ marks <barrier>, <latch>, <semaphore>
+ # and the std::atomic wait/notify members unavailable below macOS 11, while this product's floor
+ # is 10.13, so the hosted macos-x86_64 job stopped on the fork-new RemotePluginShmFifoTest. The
+diff --git a/tests/src/core/ScriptClockTest.cpp b/tests/src/core/ScriptClockTest.cpp
+index 6f38e9678f..a208ea8c75 100644
+--- a/tests/src/core/ScriptClockTest.cpp
++++ b/tests/src/core/ScriptClockTest.cpp
+@@ -45,6 +45,7 @@
+ #include <limits>
+ 
+ #include "ControlReversibility.h"
++#include "DeprecationHelper.h"
+ #include "Engine.h"
+ #include "MicroTimer.h"
+ #include "ScriptClock.h"
+@@ -405,14 +406,14 @@ void ScriptClockTest::scheduleStateReportsUtf8Bytes()
+ 
+ 	// Read everything first and unschedule before any assertion, so a failure
+ 	// here cannot leave the id registered for the tests that follow.
+-	const qint64 perId = clock.scheduleState(id).value(QStringLiteral("source_bytes")).toInteger(-1);
++	const qint64 perId = jsonInteger(clock.scheduleState(id).value(QStringLiteral("source_bytes")), -1);
+ 	qint64 inState = -1;
+ 	const QJsonArray schedules = clock.stateJson().value(QStringLiteral("schedules")).toArray();
+ 	for (const QJsonValue& value : schedules)
+ 	{
+ 		const QJsonObject one = value.toObject();
+ 		if (one.value(QStringLiteral("id")).toString() != id) { continue; }
+-		inState = one.value(QStringLiteral("source_bytes")).toInteger(-1);
++		inState = jsonInteger(one.value(QStringLiteral("source_bytes")), -1);
+ 	}
+ 	QVERIFY2(clock.removeSchedule(id, &error), qPrintable(error));
+ 
+diff --git a/tests/upstream-modifications.txt b/tests/upstream-modifications.txt
+index a72121acb4..361ca1b7f0 100644
+--- a/tests/upstream-modifications.txt
++++ b/tests/upstream-modifications.txt
+@@ -5964,3 +5964,5 @@ src/tracks/InstrumentTrack.cpp	Q050-481.3: convert legacy VeSTige/VST-effect dev
+ src/core/EffectChain.cpp	Q050-481.3: convert legacy VeSTige/VST-effect devices to Carla on load
+ plugins/Vestige/Vestige.cpp	Q050-481.3: a VeSTige plug-in that fails to load keeps its saved path (it was cleared, so saving the project lost which plug-in it was); held by LegacyVst2ProjectTest::aMissingBinaryKeepsTheLegacyDevice
+ include/InstrumentTrack.h	Q050-481.3: declare the legacy instrument conversion helper.
++
++tests/CMakeLists.txt	cluster ci-e58078851126eac9: registers Qt5QJsonToIntegerCheck, the source-scan regression for QJsonValue::toInteger (Qt 6 only) in ScriptClockTest.cpp; registration only, no existing test changes.
+-- 
+2.56.0
+
