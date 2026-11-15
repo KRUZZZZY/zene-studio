@@ -3749,6 +3749,7 @@ include/OfflineRenderBarrier.h
 src/core/OfflineRenderBarrier.cpp
 docs/050-features/Q050-481.2.md
 docs/050-features/Q050-481.3.md
+docs/050-features/Q050-481.4.md
 docs/qwen-fixes-2026-10/cluster-Q050-481.2.md
 include/AudioDeviceDiagnostics.h
 src/core/AudioDeviceDiagnostics.cpp

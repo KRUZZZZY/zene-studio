@@ -158,10 +158,9 @@ what it has *tested* is a much smaller set. Read this before you expect a partic
 library to work.
 
 - **Formats this Linux build loads** — from the interface and the agent surface alike: **VST3** effects and
-  instruments, **CLAP** effects and instruments, **VST2** through Vestige, **LV2**, **LADSPA**,
+  instruments, **CLAP** effects and instruments, **VST2** through Carla, **LV2**, **LADSPA**,
   **SoundFont2** and GUS patches, plus the built-in instruments. Format availability varies by platform:
-  this list is the Linux build's, and each platform's build enables its own set — CMake disables VST
-  hosting on Apple builds, so a macOS build has no VST2/Vestige path. Discovery is Linux-native: plug-ins
+  this list is the Linux build's, and each platform's build enables its own set — a macOS build has no VST2 host for macOS (.vst) plug-ins: its Carla VST2 modules accept only Linux ELF (.so) and Windows PE (.dll) binaries, and that path is untested on macOS. Discovery is Linux-native: plug-ins
   are found in each format's standard folders and in your own (`plugin.paths_get` /
   `plugin.paths_set`), and a scan records every candidate file.
 - **SFZ instruments play in the built-in SFZ Player** (Q050-484; the sfizz engine, built into the module on every
@@ -324,7 +323,7 @@ library to work.
   uses; `ControlDeviceCatalogueTest` holds the fixture-backed proof). *(Corrected 2026-10-09, Q050-003.)*
   Output buses past the main one are routable (MX-114: `Vst3Instrument::enableOutputBus`,
   `plugins/Vst3Instrument/Vst3Instrument.cpp:239`; see "F2, instruments") and the instrument reports its
-  latency to delay compensation (MX-157, `:262`; see "Hosted instrument latency"; the native CLAP, VST3 and LV2 instrument hosts report, built-in instruments are 0, and the out-of-process, VST2 (Vestige) and Carla paths report nothing to it - corrected 2026-10-19, Q050-169); the in-tree VST3 fixture has
+  latency to delay compensation (MX-157, `:262`; see "Hosted instrument latency"; the native CLAP, VST3 and LV2 instrument hosts report, built-in instruments are 0, and the out-of-process and Carla paths report nothing to it - corrected 2026-10-19, Q050-169); the in-tree VST3 fixture has
   one output bus, so the routing of a real multi-output VST3 plug-in is unproven (`plugin.output_*` is measured
   against the stand-in `buses_test_instrument`, `Vst3BusMapTest::testOutputBusesKeepInactiveOnes` covers the bus
   map). There is still no read of the plug-in's own preset (program) lists and no out-of-process hosting. **CLAP instrument
@@ -763,8 +762,7 @@ library to work.
   choice was and remains a checkbox in the ZynAddSubFx instrument view, and *everything else* — the family
   table, the crash counts, the refusal, the restart, the mode of any device — is **drivable through
   `--control-socket`, not from the interface**. In this build **one** family (`zynaddsubfx`) has an
-  out-of-process path to choose and one more (`vestige`/`vsteffect`, VST2) is always out of process because
-  it has no in-process path at all; the other thirteen families the table classifies (CLAP effect and
+  out-of-process path to choose; the thirteen other families the table classifies (CLAP effect and
   instrument, VST3 effect and instrument, LADSPA, LV2 effect and instrument, SF2, GIG, the three Carla
   modules) ship **no client executable in this build** and are refused, by name and with that reason, rather
   than quietly run in-process. Three further limits are stated rather than left to be discovered: a client
@@ -922,7 +920,7 @@ library to work.
   themselves, or not at all. The mapping is fixed - there is no per-instrument mapping editor.)* **What consumes
   the two new axes, stated plainly:** the per-note built-in synthesisers, through `MpeSynthExpression` (above);
   the single-streamed built-ins do not. The built-ins never see MIDI themselves - they are driven by a note's
-  frequency and volume - so on a hosted instrument (Vestige / LV2 / CLAP / Carla) or a MIDI output port the
+  frequency and volume - so on a hosted instrument (LV2 / CLAP / Carla) or a MIDI output port the
   axes arrive as MIDI and that instrument's own mapping decides what is heard. The *MIDI-route proof* applies them to an in-tree MIT test instrument
   (`tests/src/plugins/MpeTestConsumer.cpp`, built from `tests/`, never installed), which is the vehicle of the
   registered ctest `MpePlaybackTest`. That test is a measured comparison, not a smoke test: one audio block
@@ -1346,7 +1344,7 @@ Dither (off / TPDF / noise-shaped) and Resampling (linear / sinc fastest, medium
     set, with no capacity warning.)*
   - Only the native CLAP, VST3 and LV2 instrument hosts report, so those three are the supported
     instrument hosts for delay compensation. Built-in instruments report 0 (none is latent). The
-    out-of-process, VST2 (Vestige) and Carla paths are unsupported for delay compensation, not for
+    out-of-process and Carla paths are unsupported for delay compensation, not for
     hosting: they host and play, but report no instrument latency to PDC, so nothing is
     compensated for them.
   - Automation compensation (`AutomationLatency`) does not count an instrument's latency: an automated

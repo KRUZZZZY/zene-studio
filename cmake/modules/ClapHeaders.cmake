@@ -2,7 +2,7 @@
 #
 # CLAP (https://github.com/free-audio/clap) is MIT licensed, which makes
 # in-process hosting compatible with LMMS' GPL-2.0-or-later licence without any
-# exception (unlike VST2, which stays Vestige-only).
+# exception (VST2 is hosted through Carla).
 #
 # PIN: tag 1.2.10, commit 195b42a004144fab0b3cf95e9c067187d15365b7
 #      https://github.com/free-audio/clap.git

@@ -88,8 +88,7 @@ diffs are where this project's changes have historically stalled.
 
 These are hard requirements, not preferences:
 
-- **Never vendor Steinberg's VST2 headers.** Vestige, the built-in VST2 host, is the only VST2
-  path this project has or will have.
+- **Never vendor Steinberg's VST2 headers.** VST2 is hosted only through Carla; no VST2 header is compiled in this tree.
 - **Third-party dependencies must be GPL-2.0-or-later-compatible** — MIT/BSD for the vendored
   libraries, and no licence that adds a restriction conflicting with the GPL. The per-plugin
   notices under `plugins/*/LICENSE-NOTICE.md` are the pattern to follow.
