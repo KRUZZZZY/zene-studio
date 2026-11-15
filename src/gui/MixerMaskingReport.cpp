@@ -27,6 +27,7 @@
 #include <QComboBox>
 #include <QDialog>
 #include <QHeaderView>
+#include <QItemSelectionModel>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QLabel>
@@ -57,6 +58,7 @@ public:
 		QDialog(parent),
 		m_channels(new QTableWidget(0, 2, this)),
 		m_clashes(new QTableWidget(0, 4, this)),
+		m_apply(new QPushButton(QObject::tr("Apply"), this)),
 		m_summary(new QLabel(QObject::tr("Tick two or more channels and press Report."), this))
 	{
 		setWindowTitle(QObject::tr("Masking Report"));
@@ -67,8 +69,16 @@ public:
 		m_clashes->setAccessibleName(QObject::tr("Clashes"));
 		m_clashes->setHorizontalHeaderLabels({QObject::tr("Channels"), QObject::tr("Range"), QObject::tr("Proposed cut"), QObject::tr("Reason")});
 		m_clashes->setEditTriggers(QAbstractItemView::NoEditTriggers);
+		m_clashes->setSelectionBehavior(QAbstractItemView::SelectRows);
+		m_clashes->setSelectionMode(QAbstractItemView::SingleSelection);
 		for (QTableWidget* table : {m_channels, m_clashes}) { table->horizontalHeader()->setStretchLastSection(true); }
 		fillChannels();
+		m_apply->setAccessibleName(QObject::tr("Apply proposal"));
+		m_apply->setToolTip(QObject::tr("Write the selected clash's proposed cut to the target channel's strip EQ; one undo step"));
+		m_apply->setProperty("controlCommand", QStringLiteral("mixer.apply_masking_proposal"));
+		m_apply->setEnabled(false);
+		connect(m_apply, &QPushButton::clicked, this, [this] { applyProposal(); });
+		connect(m_clashes, &QTableWidget::itemSelectionChanged, this, [this] { updateApplyEnabled(); });
 		auto* report = new QPushButton(QObject::tr("Report"), this);
 		report->setAccessibleName(QObject::tr("Report"));
 		report->setToolTip(QObject::tr("Compare the ticked channels' audio; changes no EQ"));
@@ -77,6 +87,7 @@ public:
 		layout->addWidget(m_channels, 1);
 		layout->addWidget(report);
 		layout->addWidget(m_clashes, 2);
+		layout->addWidget(m_apply);
 		layout->addWidget(m_summary);
 		resize(620, 480);
 	}
@@ -114,6 +125,29 @@ private:
 		return id;
 	}
 
+	void updateApplyEnabled()
+	{
+		const QItemSelectionModel* selection = m_clashes->selectionModel();
+		m_apply->setEnabled(selection != nullptr && !selection->selectedRows().isEmpty());
+	}
+
+	void applyProposal()
+	{
+		const QItemSelectionModel* selection = m_clashes->selectionModel();
+		if (selection == nullptr || selection->selectedRows().isEmpty()) { return; }
+		const QJsonObject clash = m_clashes->item(selection->selectedRows().first().row(), 0)->data(Qt::UserRole).toJsonObject();
+		const ControlResult result = ControlRegistry::instance()->invoke(QStringLiteral("mixer.apply_masking_proposal"),
+			{{QStringLiteral("strip_eq"), clash.value(QStringLiteral("strip_eq"))}});
+		if (!result.ok)
+		{
+			m_summary->setText(QObject::tr("Could not apply: %1").arg(result.errorMessage));
+			return;
+		}
+		runReport();
+		m_summary->setText(QObject::tr("Applied %1 dB on %2. Undo (Ctrl+Z) puts the EQ back.")
+			.arg(clash.value(QStringLiteral("cut_db")).toDouble(), 0, 'f', 1).arg(nameOf(clash.value(QStringLiteral("target")).toString())));
+	}
+
 	void runReport()
 	{
 		QJsonArray ids;
@@ -128,6 +162,7 @@ private:
 		const ControlResult result = ControlRegistry::instance()->invoke(QStringLiteral("mixer.masking_report"),
 			{{QStringLiteral("channels"), ids}, {QStringLiteral("priorities"), priorities}});
 		m_clashes->setRowCount(0);
+		updateApplyEnabled();
 		if (!result.ok)
 		{
 			m_summary->setText(QObject::tr("Could not report: %1").arg(result.errorMessage));
@@ -136,7 +171,8 @@ private:
 		const QJsonArray clashes = result.result.value(QStringLiteral("clashes")).toArray();
 		for (const QJsonValue& value : clashes) { addClash(value.toObject()); }
 		m_summary->setText(clashes.isEmpty() ? QObject::tr("No clashes between these channels.")
-			: QObject::tr("%n clash(es). Nothing was changed: apply a cut with the channel's EQ.", nullptr, static_cast<int>(clashes.size())));
+			: QObject::tr("%n clash(es). Select one and press Apply to make its cut on the target's strip EQ; Report itself changes nothing.",
+				nullptr, static_cast<int>(clashes.size())));
 	}
 
 	void addClash(const QJsonObject& clash)
@@ -156,6 +192,7 @@ private:
 
 	QTableWidget* m_channels;
 	QTableWidget* m_clashes;
+	QPushButton* m_apply;
 	QLabel* m_summary;
 };
 
