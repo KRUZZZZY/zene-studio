@@ -31,7 +31,8 @@ Commits: `f44ddd0095` (gate, red on current docs), `7579e79eef` (gate locators a
 ## Self-check
 
 Completion check run before the commit: `logs/submit-3-pre.log` (`RESULT: FAIL - 3 item(s)`). Gate run:
-`logs/feature-3-pre.log` (`RESULT: FAIL`, only `complexity` failing). Both are re-run after the commit: `logs/submit-4.log` and `logs/feature-4.log`.
+`logs/feature-3-pre.log` (`RESULT: FAIL`, only `complexity` failing). Both are re-run after the commit: `logs/submit-4.log` (exit 0, `RESULT: PASS - submit`) and
+`logs/feature-4.log` (exit 0, `RESULT: PASS`).
 
 - Each new test fails with the product change reverted: no product code changed, so there is nothing
   to revert. The gate's own RED is the doc revert: `logs/revert-3.log` exit 1 (4 problems), restored
