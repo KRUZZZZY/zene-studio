@@ -1,0 +1,10 @@
+31f559ab479dcd1b822545aae477222f58f32c0d	Revert "Merge feat/050-Q050-481.4-oc (accepted; 050/m0-train-34, automatic train)"
+50942f1aea61c919d726a3cd5fdc6a308cbbbd4b	chore(train-34): snapshot regenerated live (933 ids / 78 groups, wasm.* out), canary, A16 histogram, all-sources re-derived (automatic merge train)
+d9a26d06ad5ebaffba3ba995c964dfa637618694	fix(train-sol): Reconciled thirteen overlapping CI repairs, preserving every regression and both already-applied repairs. Targeted rebuild, 24 CTest entries, unchanged gates, whitespace checks and
+45e15d0d217e75b18d19ef78dbc429319b64fa1d	fix(ci): CI regression: build / windows-arm64
+9feb23eb1b80d348e709fd56a99a1603de0c67b8	fix(train-sol): Fixed SFZ dependency includes, the no-FFmpeg fixture API, Windows moc slot guards and a Unix-only WAV helper; added compiler regressions and verification evidence.
+44ba171a15723199bef600260ddaadc89902ca0c	Merge feat/050-Q050-471-oc (accepted; 050/m0-train-34, automatic train)
+8bfcb3d6c30f98cc3d4468c7edf9f573a0190a37	Merge feat/050-Q050-481.4-oc (accepted; 050/m0-train-34, automatic train)
+194dd9cba244973a2c89f1bc8e4206cfe58a9d8e	Merge feat/050-Q050-231.3-oc (accepted; 050/m0-train-34, automatic train)
+7cea56ee12af1ba4ad81482086f3e403d699908e	Merge feat/050-Q050-344-oc (accepted; 050/m0-train-34, automatic train)
+5026852e81d58d0c13a08846c1d513b04ef95d04	Merge integration/gui-1115-menu-help-accessibility-check-cc29a63dde (accepted; 050/m0-train-34, automatic train)

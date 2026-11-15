@@ -69,8 +69,9 @@
       "tests/train-48-portability-check.py",
       "tests/upstream-modifications.txt"
     ],
+    "promoted_train": "050/m0-train-34",
     "source_head": "cc29a63dde09cf28bb00498a2d2a5b124d4d614d",
-    "status": "pending",
+    "status": "promoted",
     "summary": "Fixed SFZ dependency includes, the no-FFmpeg fixture API, Windows moc slot guards and a Unix-only WAV helper; added compiler regressions and verification evidence.",
     "train": "050/m0-train-33",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-33-1794748336516906466"
@@ -100,9 +101,10 @@
       "tests/src/core/ControlShutdownHookTest.cpp",
       "tests/src/core/ControlShutdownHookTestParts1.h"
     ],
+    "promoted_train": "050/m0-train-34",
     "source": "independently-reviewed-ci-agent",
     "source_head": "dec3f1d45c62b26bce955875521780db173a0228",
-    "status": "pending",
+    "status": "promoted",
     "summary": "CI regression: build / windows-arm64",
     "train": "050/m0-train-32",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-77e0405b9f559208"
@@ -681,8 +683,9 @@
       "tests/upstream-modifications.txt",
       "tests/vcpkg-pcre2-gitlink-test.py"
     ],
+    "promoted_train": "050/m0-train-34",
     "source_head": "f20d6ff8736b90a10a13294d2394d1f83eb8ef86",
-    "status": "pending",
+    "status": "promoted",
     "summary": "Reconciled thirteen overlapping CI repairs, preserving every regression and both already-applied repairs. Targeted rebuild, 24 CTest entries, unchanged gates, whitespace checks and independent review pass.",
     "train": "050/m0-train-34",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-34-1794760028802047733"

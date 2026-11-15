@@ -241,9 +241,10 @@
       "tests/src/core/ControlShutdownHookTest.cpp",
       "tests/src/core/ControlShutdownHookTestParts1.h"
     ],
+    "promoted_train": "050/m0-train-34",
     "source": "independently-reviewed-ci-agent",
     "source_head": "dec3f1d45c62b26bce955875521780db173a0228",
-    "status": "pending",
+    "status": "promoted",
     "summary": "CI regression: build / windows-arm64",
     "train": "050/m0-train-32",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-77e0405b9f559208"

@@ -1,0 +1,20 @@
+{
+  "base": "050/m0-train-33",
+  "display_version": "0.4.23.0-alpha",
+  "evidence": "validated-promotion",
+  "feature_items": [
+    "Q050-231.3",
+    "Q050-344",
+    "Q050-471",
+    "Q050-481.4"
+  ],
+  "feature_train": 23,
+  "kind": "feature",
+  "milestone": "0.4",
+  "revision": 0,
+  "sha": "31f559ab479dcd1b822545aae477222f58f32c0d",
+  "stage": "alpha",
+  "train": "050/m0-train-34",
+  "train_label": "23.0",
+  "version": "0.4.23-alpha.0"
+}
