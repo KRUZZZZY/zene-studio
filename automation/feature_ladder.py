@@ -272,17 +272,54 @@ def freeze_packet(item, folder):
         child.mkdir(exist_ok=True)
         freeze_packet(companion, child)
     if item.get('feature_ladder') and item.get('packet_hash'):
-        packet = read(item.get('task_packet', '/nonexistent'))
+        source = Path(item.get('task_packet', '/nonexistent'))
+        packet = read(source)
         if packet.get('packet_hash') != item['packet_hash']:
-            raise StalePacket('Prepared packet changed after dispatch; retry with current ranking')
+            # Only the mutable preparation queue can be refreshed by reranking.
+            # A paused rework pins historical evidence, even after its run moves.
+            if source.parent == ROOT / 'task-packets':
+                raise StalePacket('Prepared packet changed after dispatch; retry with current ranking')
+            packet = recover_packet(source, item['packet_hash'])
     else:
         packet = packet_for(item)
     if packet:
         verify_packet(packet, item.get('packet_hash'))
         target = Path(folder) / 'task-packet.json'
+        evidence = ROOT / 'task-packet-evidence'
+        evidence.mkdir(exist_ok=True)
+        stable = evidence / (packet['packet_hash'] + '.json')
+        with (evidence / '.lock').open('a') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            if stable.exists():
+                stored = read(stable)
+                if stored.get('packet_hash') != packet['packet_hash']:
+                    raise ValueError(f'Immutable task packet evidence is damaged: {stable}')
+                verify_packet(stored, packet['packet_hash'])
+            else:
+                write(stable, packet)
         write(target, packet)
-        item.update(task_packet=str(target), packet_hash=packet['packet_hash'])
+        item.update(task_packet=str(stable), packet_hash=packet['packet_hash'])
     return packet
+
+
+def recover_packet(source, expected):
+    """Recover legacy run references by exact hash; never substitute newer preparation."""
+    if not re.fullmatch(r'[0-9a-f]{64}', expected):
+        raise ValueError('Invalid pinned task packet hash')
+    candidates = [ROOT / 'task-packet-evidence' / (expected + '.json')]
+    try:
+        relative = source.relative_to(ROOT / 'runs')
+    except ValueError:
+        relative = None
+    if relative and len(relative.parts) > 1 and not relative.parts[0].startswith('_'):
+        for kind in ('_usage-limit', '_free-limit', '_infrastructure'):
+            candidates.extend((ROOT / 'runs' / kind).glob(
+                relative.parts[0] + '-*/' + str(Path(*relative.parts[1:]))))
+    for path in candidates:
+        packet = read(path)
+        if packet.get('packet_hash') == expected:
+            return verify_packet(packet, expected)
+    raise ValueError(f'Pinned task packet {expected} is unavailable at {source} or its archives; preserve job for repair')
 
 
 def verify_packet(packet, expected=None):

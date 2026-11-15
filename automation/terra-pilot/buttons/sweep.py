@@ -513,10 +513,16 @@ def stage_triage(run, train, how="one left click on the control, from a fresh pr
              for v in jsonl(run / "verdicts.jsonl") if v.get("verdict") in verdicts
              and results.get(v['id'], {}).get('outcome') != 'not-exercised']
     (QUEUE / "queue").mkdir(parents=True, exist_ok=True)
-    known = {r.get("control_id") for q in ("easy", "needs_context", "hard") for r in jsonl(QUEUE / f"queue/{q}.jsonl")}
-    known |= {r.get("control_id") for r in jsonl(QUEUE / "duplicates.jsonl")}   # folded into an earlier finding
-    fails = [f for f in fails if f["id"] not in known]       # already queued by an earlier train's sweep
-    revision = subprocess.run(["git", "-C", str(TREE), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+    revision = subprocess.run(["git", "-C", str(TREE), "rev-parse", "HEAD"], capture_output=True,
+                              text=True, check=True).stdout.strip()
+    if not re.fullmatch(r'[0-9a-f]{40,64}', revision):
+        raise ValueError('Triage requires a verified source revision')
+    # A control can fail again after its accepted repair. Only the same revision
+    # is already triaged; historical controls and duplicates cannot hide regressions.
+    known = {r.get("control_id") for q in ("easy", "needs_context", "hard")
+             for r in jsonl(QUEUE / f"queue/{q}.jsonl") if r.get('revision') == revision}
+    known |= {r.get("control_id") for r in jsonl(QUEUE / "duplicates.jsonl") if r.get('revision') == revision}
+    fails = [f for f in fails if f["id"] not in known]
     added, urgent = [], []
     for i in range(0, len(fails), TRIAGE_BATCH):
         if not openai_wait(run):
@@ -575,7 +581,7 @@ def stage_triage(run, train, how="one left click on the control, from a fresh pr
             if not v.get("real") and not force_real:
                 continue
             slug = re.sub(r"[^a-z0-9]+", "-", f"{f['view']}-{f.get('name', '')}".lower()).strip("-")[:40]
-            cluster = f"gui-{datetime.date.today():%m%d}-{slug}"
+            cluster = f"gui-{datetime.date.today():%m%d}-{slug}-{revision[:12]}"
             row = {"pass": 0, "finding_id": cluster, "cluster": cluster, "control_id": f["id"],
                    "title": v.get("title", f"GUI: {f.get('name')} does not work"), "file": v.get("file", ""),
                    "line": v.get("line") or 0,
@@ -597,6 +603,7 @@ def stage_triage(run, train, how="one left click on the control, from a fresh pr
             if twin:
                 with open(QUEUE / "duplicates.jsonl", "a") as d:
                     d.write(json.dumps({"at": datetime.datetime.now().isoformat(timespec="seconds"), "train": train,
+                                        "revision": revision,
                                         "control_id": f["id"], "duplicate_of": twin, "title": row["title"],
                                         "file": row["file"], "line": row["line"]}) + "\n")
                 log(run, f"triage: {f['id']} folded into {twin} (same title, file and line)")
