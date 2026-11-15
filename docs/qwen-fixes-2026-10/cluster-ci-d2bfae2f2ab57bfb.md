@@ -88,8 +88,8 @@ and are named below. Command output was captured unpiped; the exit codes are the
 
 | Command | Exit | Result |
 | --- | ---: | --- |
-| `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-d2bfae2f2ab57bfb` | see below | see below |
-| `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py …/zene-qwen-ci-d2bfae2f2ab57bfb ci-d2bfae2f2ab57bfb` | see below | see below |
+| `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-d2bfae2f2ab57bfb` | 0 | `gate-1.log` (before commit) and `gate-2-after-commit.log` (after commit): all eight rows PASS, `RESULT: PASS`, including `fork-sources` with the report registration and `all-sources-reproduce`. |
+| `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-d2bfae2f2ab57bfb ci-d2bfae2f2ab57bfb` | 0 | `submit-1.log`: `PRE-SUBMIT CHECK … RESULT: PASS - submit`; commits, clean tree, report, changed test and gates all PASS, and every ASK item is answered above. |
 
 ## Self-check
 
