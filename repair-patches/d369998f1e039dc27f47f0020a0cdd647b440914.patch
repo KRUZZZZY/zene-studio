@@ -1,0 +1,1037 @@
+From d369998f1e039dc27f47f0020a0cdd647b440914 Mon Sep 17 00:00:00 2001
+From: Zene CI repair <noreply@zene.invalid>
+Date: Sun, 15 Nov 2026 01:52:51 +0000
+Subject: [PATCH] fix(ci): CI regression: build / windows-arm64
+
+CI-Repair-Id: ci-repair-ci-443a2931bcb5dacc-b8247392f093
+---
+ .../cluster-ci-443a2931bcb5dacc.md            | 222 +++++++++
+ plugins/NeuralAmp/tests/CMakeLists.txt        |  20 +
+ plugins/NeuralAmp/tests/HarnessClock.h        |  45 ++
+ plugins/NeuralAmp/tests/HarnessClockPosix.cpp |  39 ++
+ .../NeuralAmp/tests/HarnessClockWindows.cpp   |  67 +++
+ plugins/NeuralAmp/tests/nam_harness.cpp       |  19 +-
+ tests/CMakeLists.txt                          |  26 ++
+ tests/fork-sources.txt                        |  10 +
+ tests/nam-harness-windows-clock-check.py      | 426 ++++++++++++++++++
+ tests/upstream-modifications.txt              |   3 +
+ 10 files changed, 866 insertions(+), 11 deletions(-)
+ create mode 100644 docs/qwen-fixes-2026-10/cluster-ci-443a2931bcb5dacc.md
+ create mode 100644 plugins/NeuralAmp/tests/HarnessClock.h
+ create mode 100644 plugins/NeuralAmp/tests/HarnessClockPosix.cpp
+ create mode 100644 plugins/NeuralAmp/tests/HarnessClockWindows.cpp
+ create mode 100644 tests/nam-harness-windows-clock-check.py
+
+diff --git a/docs/qwen-fixes-2026-10/cluster-ci-443a2931bcb5dacc.md b/docs/qwen-fixes-2026-10/cluster-ci-443a2931bcb5dacc.md
+new file mode 100644
+index 0000000000..0c67eddf41
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/cluster-ci-443a2931bcb5dacc.md
+@@ -0,0 +1,222 @@
++FIXED — cluster ci-443a2931bcb5dacc (CI regression: build / windows-arm64)
++
++## Verdict and cause
++
++REAL on this branch. The defect is in the headless NAM harness's own test source, not in
++the CI infrastructure and not in the plugin's runtime path.
++
++The hosted `build / windows-arm64` job (run 43611324689, job 132496796733) stopped at
++`[2690/6489] Linking CXX executable plugins\nam_harness.exe`:
++
++    FAILED: [code=1] plugins/nam_harness.exe
++    ld.lld: error: undefined symbol: clock_gettime64
++    >>> referenced by C:/a/_temp/msys64/clangarm64/include/pthread_time.h:102
++    >>>               plugins/NeuralAmp/tests/CMakeFiles/nam_harness.dir/nam_harness.cpp.obj:(main)
++    >>> referenced 1 more times
++
++The link line in that log names exactly three objects — `nam_harness.cpp.obj`,
++`NamModel.cpp.obj`, `NamModelLoader.cpp.obj` — and no `-lwinpthread`. The failing object is
++the harness's own translation unit:
++
++- At `c20ef591b5`, `plugins/NeuralAmp/tests/nam_harness.cpp:34` includes `<ctime>` and
++  :634, :636, :754 and :756 call `clock_gettime(CLOCK_THREAD_CPUTIME_ID, ...)` directly.
++- On MSYS2's mingw-w64, `<time.h>` includes `<pthread_time.h>` (upstream
++  `mingw-w64-headers/crt/time.h:203`). That header defines `clock_gettime()` as an inline
++  that calls `clock_gettime64()` when `WINPTHREADS_TIME_BITS == 64` — the line the linker
++  names is `pthread_time.h:102`.
++- `nam_harness` links only `${NEURALAMP_M_LIB} ${CMAKE_DL_LIBS}`
++  (`plugins/NeuralAmp/tests/CMakeLists.txt:72`). GCC's mingw64 driver links winpthread
++  implicitly, so mingw64 linked the same source; clangarm64's driver does not, so only
++  windows-arm64 failed.
++- The profiler is not the cause: `plugins/NeuralAmp/nam/NamProfile.h:63` and
++  `plugins/NeuralAmp/tests/nam_profile.cpp:72` also name `clock_gettime`, but only under
++  `NAM_PROFILE_LAYERS`, which is defined solely for the `nam_profile` target
++  (`plugins/NeuralAmp/tests/CMakeLists.txt:94-107`), and that target is `IF(NOT WIN32)`.
++  The harness's object proved free of the symbol after the fix (below).
++
++It is not ALREADY-FIXED: the symbol is still referenced by the pre-fix harness source, and
++the regression reproduces that reference on Linux (`test-1-red.log`). It is not a
++FALSE-POSITIVE: the hosted linker output names the harness object at `main`, not a
++dependency artefact.
++
++## Fix
++
++One platform clock behind a header, selected at configure time:
++
++- `plugins/NeuralAmp/tests/HarnessClock.h` (new): declares
++  `lmms::nam::threadCpuTimeUs()` in microseconds, returning 0 on failure, documented as an
++  offline measurement that must not run on the audio thread (`HarnessClock.h:38-41`).
++- `plugins/NeuralAmp/tests/HarnessClockPosix.cpp` (new, `:31-37`): the same
++  `clock_gettime(CLOCK_THREAD_CPUTIME_ID, ...)` arithmetic as before, now in its own
++  translation unit. POSIX semantics are unchanged.
++- `plugins/NeuralAmp/tests/HarnessClockWindows.cpp` (new, `:57-65`): `GetThreadTimes()` on
++  `GetCurrentThread()`; kernel and user `FILETIME`s are 100 ns ticks, `ticks / 10` is
++  microseconds (`:47-53`); a failed call returns 0. It uses the Win32 API directly, so the
++  harness no longer depends on winpthreads at all (MSVC has none either).
++- `plugins/NeuralAmp/tests/CMakeLists.txt:30-41` selects the implementation (`WIN32` ->
++  Windows, otherwise Posix), adds the chosen source and the header to `nam_harness`
++  (:56-61), and publishes the choice as global property `ZENE_NAM_HARNESS_CLOCK_SOURCE`.
++- `plugins/NeuralAmp/tests/nam_harness.cpp:27,636-638,753-755` calls the interface at both
++  timed loops. The measured quantity and the reported `cpu per block` are unchanged
++  (`run-1-harness-cpu.log`: finite output, `cpu per block: 5.54 us`, all checks PASS).
++
++Sibling and completeness:
++
++- `tests/src/core/NeuralAmpWavInputTest.cpp:24` includes `nam_harness.cpp` directly, so
++  `NeuralAmpWavInputTest` compiles the harness TU too. It failed to link with
++  `undefined reference to lmms::nam::threadCpuTimeUs()` (`build-4-missing.log`) until
++  `tests/CMakeLists.txt:3290-3296` gave it the same platform source through the exported
++  property. That target now builds and passes.
++- A tree-wide search finds `clock_gettime` only in the new POSIX clock, the Windows-only
++  profiler path above, and the new regression; no other target compiles the harness TU.
++- Linking `-lwinpthread` was rejected: it would leave the CLI source naming a POSIX clock
++  and would not cover MSVC. `GetThreadTimes` is the native equivalent of
++  `CLOCK_THREAD_CPUTIME_ID`.
++
++No product runtime, audio-thread path, control command, undo step or saved-data path is
++touched: the diff is confined to the offline harness, its CMake source selection, CTest
++registration and the project's registration ledgers.
++
++## Regression test and RED/GREEN proof
++
++`tests/nam-harness-windows-clock-check.py` (new, 426 lines; CTest
++`NamHarnessWindowsClockCheck` registered at `tests/CMakeLists.txt:9055-9062`, Linux-only).
++It has four deterministic halves:
++
++1. **Detector self-test.** A fixture that calls `clock_gettime` must be seen in `nm -u`, and
++   a clean fixture must stay unseen. A check that cannot fail therefore fails this test.
++2. **The real harness TU.** `nam_harness.cpp` is recompiled with the configured tree's own
++   recorded command from `build/compile_commands.json`, and its undefined symbols are
++   inspected. Any `clock_gettime`, `clock_gettime32` or `clock_gettime64` is a failure. On
++   Linux this reproduces the hosted Windows link failure at the object level.
++3. **The POSIX implementation.** `HarnessClockPosix.cpp` is compiled and run; the value
++   must be finite, non-negative and non-decreasing across two immediate calls. No sleeps
++   and no wall-clock threshold.
++4. **The Win32 implementation.** `HarnessClockWindows.cpp` is compiled against a model of
++   the Microsoft declarations it uses and linked with a stub `GetThreadTimes`: 1000 + 500
++   ticks must yield exactly 150 us, and a failed call must yield 0.
++
++It also reads the generated `build/tests/CTestTestfile.cmake` and requires its own
++registration, so a tree that silently drops the CTest fails the check.
++
++Reverted-state output, from `test-10-red-final.log`:
++
++    PASS: the detector sees clock_gettime in a red fixture and stays silent on a clean one
++    FAIL: plugins/NeuralAmp/tests/nam_harness.cpp itself references a POSIX clock: clock_gettime
++          The Windows jobs cannot link that (MSYS2 clangarm64's <pthread_time.h>
++          calls clock_gettime64 and the link line has no libwinpthread); use
++          lmms::nam::threadCpuTimeUs() from HarnessClock.h instead.
++
++Restored-state output, from `test-11-green-restored.log`:
++
++    PASS: the detector sees clock_gettime in a red fixture and stays silent on a clean one
++    PASS: plugins/NeuralAmp/tests/nam_harness.cpp references no POSIX clock symbol
++    PASS: POSIX clock: finite, non-negative, non-decreasing thread CPU time
++    PASS: Win32 clock: kernel+user 100 ns ticks are microseconds; failure yields 0
++    PASS: the configured tree registered NamHarnessWindowsClockCheck
++
++## Test matrix
++
++Every ctest row below was run from `build/tests`; every direct script row from the worktree
++root. `EXIT` is the command's own exit code.
++
++| Requirement | Test / command | Result |
++|---|---|---|
++| Harness TU names no POSIX clock | `python3 tests/nam-harness-windows-clock-check.py --source-root . --build-dir build` after the fix (`test-9-green-final.log`, `test-11-green-restored.log`) | PASS, EXIT 0 |
++| Same check with the product change reverted | `git apply -R fix.patch` then the script (`test-10-red-final.log`) | FAIL, EXIT 1 |
++| POSIX clock still measures this thread | POSIX probe inside `NamHarnessWindowsClockCheck` | PASS |
++| Win32 clock arithmetic and failure path | Win32 probe against the `<windows.h>` model | PASS |
++| Sibling target that includes the harness | `NeuralAmpWavInputTest` after the source was added (`build-5-siblings.log`; ctest family) | PASS |
++| Harness output and CPU report unchanged | `nam_harness --model ... --cpu` (`run-1-harness-cpu.log`) | PASS, EXIT 0 |
++| NAM harness/loader family | `ctest -R "NeuralAmpWavInputTest|AudioPluginTest|NAMHarnessWavWriteFailure|NeuralAmpCompareRateTest|NamLoaderTest_|NeuralAmpWavRunSampleRateWarning|NeuralAmpHarnessRateValidation|NamHarnessWindowsClockCheck|NeuralAmpHarnessBlockCount" --output-on-failure` (`test-12-family-final.log`) | PASS, 18/18, EXIT 0 |
++| Native windows-arm64 link | needs the hosted runner; see "Blocked capability" | not runnable here |
++
++## Evidence (exact commands and exit codes)
++
++Worktree:
++`/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-443a2931bcb5dacc`.
++`LOGS` below is
++`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-443a2931bcb5dacc.r1/logs`.
++
++| Step | Command | Exit |
++|---|---|---|
++| RED before the fix | `python3 tests/nam-harness-windows-clock-check.py --source-root . --build-dir build` (`test-1-red.log`) | 1 |
++| Build the fixed harness | `cmake --build build --target nam_harness` (`build-1.log`) | 0 |
++| GREEN after the fix | the script (`test-2-green.log`) | 0 |
++| Family build (NAM/AudioPlugin targets) | `cmake --build build --target ...` (`build-3-audioplugintest.log`, `build-5-siblings.log`) | 0 |
++| Sibling failure before the source was added | `NeuralAmpWavInputTest` link (`build-4-missing.log`) | 2 (undefined `lmms::nam::threadCpuTimeUs()`) |
++| Sibling fixed | `cmake --build build --target nam_harness NeuralAmpWavInputTest` (`build-5-siblings.log`) | 0 |
++| Family suite before the 4b pass | `/usr/bin/ctest -R ...` from `build/tests` (`test-4-family-green.log`) | 0 (18/18) |
++| 4b: reverse the product change | `git apply -R "$LOGS/fix.patch"` (`proof-3-reverse.log`) | 0 |
++| 4b: RED after the reverse | the script (`test-10-red-final.log`) | 1 |
++| 4b: restore the product change | `git apply "$LOGS/fix.patch"` (`proof-4-restore.log`) | 0 |
++| 4b: GREEN after the restore | the script (`test-11-green-restored.log`) | 0 |
++| Final rebuild of the rebuilt targets | `cmake --build build --target nam_harness NeuralAmpWavInputTest` (`build-8-final.log`) | 0 |
++| Final family suite | `/usr/bin/ctest -R ...` from `build/tests` (`test-12-family-final.log`) | 0 (18/18) |
++| Harness behavioural sanity | built harness on the minimal model (`run-1-harness-cpu.log`) | 0 |
++| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (`feature-check-2-with-report.log`) | 0 (all eight rows PASS) |
++| Pre-submit check | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> ci-443a2931bcb5dacc` (`submit-check-1.log`) | 0 (no FAIL; every ASK answered below) |
++
++`fix.patch` in `LOGS` is the product diff (`nam_harness.cpp`, the platform source selection,
++and the three new `HarnessClock*` files). The registration test and the report are not in
++it, so the 4b pass reverses only the product change and leaves the regression in place.
++
++## Blocked capability
++
++- **Hosted windows-arm64 native link.** This workspace is Linux; an MSYS2 clangarm64 link
++  cannot run here. The object-level detector reproduces the hosted condition on this host
++  (the pre-fix TU names `clock_gettime`), and the Win32 implementation's arithmetic and
++  failure path are proven against the Microsoft declarations. Native confirmation still
++  needs the hosted job; that is the job this change unblocks.
++
++## Self-check
++
++- **The regression FAILS with the product change reverted and PASSES with it.** Reverted:
++  direct script EXIT 1 with the exact finding above (`test-10-red-final.log`), after
++  `git apply -R fix.patch` exited 0. Restored: `git apply fix.patch` exited 0, direct script
++  EXIT 0 (`test-11-green-restored.log`), CTest family 18/18 EXIT 0
++  (`test-12-family-final.log`). The detector self-test also proves the pre-fix fixture is
++  seen, so the check cannot pass by failing to detect the defect.
++- **Deterministic.** No wall-clock threshold, sleep, network or race. The check recompiles
++  fixed sources with the build's recorded command, inspects `nm -u` names, and runs two
++  probes with injected values (Win32: 1000 + 500 ticks -> exactly 150 us, then a failed
++  call -> 0; POSIX: finite, non-negative, non-decreasing across two immediate calls, with
++  equality allowed). It also reads the generated `CTestTestfile.cmake`. Nothing depends on
++  machine speed or on a binary built earlier.
++- **The fix is at the cause and complete: every caller and sibling was checked.**
++  `nam_harness.cpp` had four direct calls in two loops; both now call
++  `threadCpuTimeUs()`. Its only other compilation is `NeuralAmpWavInputTest`, which
++  `#include`s the TU (`tests/src/core/NeuralAmpWavInputTest.cpp:24`); it now compiles the
++  same platform source, and its earlier undefined reference (`build-4-missing.log`) is
++  fixed. The only other `clock_gettime` users in the tree are
++  `NamProfile.h:63`/`nam_profile.cpp:72`, which are behind `NAM_PROFILE_LAYERS` for the
++  POSIX-only `nam_profile` target; the harness does not define that macro. No other target
++  compiles the harness TU.
++- **No collateral damage.** The change is confined to the offline harness and its CTest:
++  no product source, no saved-data format, no project load/render path and no control
++  command changes. No limit or check was added to product code. The harness's measured
++  quantity is unchanged (same thread CPU microseconds), as the rebuilt harness shows
++  (`run-1-harness-cpu.log`: `cpu per block: 5.54 us`, output finite and non-zero), and the
++  18-test NAM/AudioPlugin family passes unchanged.
++- **Verdict is REAL, not ALREADY-FIXED or FALSE-POSITIVE.** The pre-fix harness source
++  references the clock (RED above), the hosted linker names that object at `main`, and the
++  fix removes the reference rather than masking the link.
++- **Registration and gates.** The new header, both implementations, the regression script
++  and this report are registered in `tests/fork-sources.txt`; the inherited
++  `nam_harness.cpp`, `plugins/NeuralAmp/tests/CMakeLists.txt` and `tests/CMakeLists.txt`
++  changes are recorded in `tests/upstream-modifications.txt`, in the same commit.
++  `feature_check.py` exits 0 with every row PASS (`feature-check-2-with-report.log`); the
++  complexity gate's first run flagged the regression's first `main` at CCN 27, which was
++  split into helpers (largest CCN now 9), not waived. `submit_check.py` reports no FAIL.
++
++## Files committed
++
++- `plugins/NeuralAmp/tests/nam_harness.cpp` (both timed loops use `threadCpuTimeUs()`)
++- `plugins/NeuralAmp/tests/HarnessClock.h` (new interface)
++- `plugins/NeuralAmp/tests/HarnessClockPosix.cpp` (new POSIX implementation)
++- `plugins/NeuralAmp/tests/HarnessClockWindows.cpp` (new Win32 implementation)
++- `plugins/NeuralAmp/tests/CMakeLists.txt` (per-platform source selection, global property)
++- `tests/CMakeLists.txt` (`NeuralAmpWavInputTest` clock source; `NamHarnessWindowsClockCheck`)
++- `tests/nam-harness-windows-clock-check.py` (regression; new)
++- `tests/fork-sources.txt`, `tests/upstream-modifications.txt` (same-commit registrations)
++- `docs/qwen-fixes-2026-10/cluster-ci-443a2931bcb5dacc.md` (this report)
+diff --git a/plugins/NeuralAmp/tests/CMakeLists.txt b/plugins/NeuralAmp/tests/CMakeLists.txt
+index f6e4b2f573..0f3d41156a 100644
+--- a/plugins/NeuralAmp/tests/CMakeLists.txt
++++ b/plugins/NeuralAmp/tests/CMakeLists.txt
+@@ -22,6 +22,24 @@ SET(NEURALAMP_ENGINE_SOURCES
+ 	"${CMAKE_CURRENT_SOURCE_DIR}/../nam/NamModelLoader.cpp"
+ )
+ 
++# The harness's CPU measurement must not name a platform clock in its own translation unit:
++# on Windows, <time.h> includes winpthreads' <pthread_time.h>, whose inline clock_gettime()
++# calls clock_gettime64() - a symbol the MSYS2 clangarm64 link line does not resolve
++# (cluster ci-443a2931bcb5dacc: "undefined symbol: clock_gettime64" at link).
++# One implementation per platform, selected here; HarnessClock.h is the only interface.
++IF(WIN32)
++	SET(NEURALAMP_HARNESS_CLOCK_SOURCE
++		"${CMAKE_CURRENT_SOURCE_DIR}/HarnessClockWindows.cpp")
++ELSE()
++	SET(NEURALAMP_HARNESS_CLOCK_SOURCE
++		"${CMAKE_CURRENT_SOURCE_DIR}/HarnessClockPosix.cpp")
++ENDIF()
++
++# NeuralAmpWavInputTest #includes nam_harness.cpp, so tests/CMakeLists.txt compiles the
++# harness's clock interface too; it reads the same choice from here.
++SET_PROPERTY(GLOBAL PROPERTY ZENE_NAM_HARNESS_CLOCK_SOURCE
++	"${NEURALAMP_HARNESS_CLOCK_SOURCE}")
++
+ SET(NEURALAMP_TEST_INCLUDES
+ 	"${CMAKE_CURRENT_SOURCE_DIR}/.."
+ 	"${CMAKE_CURRENT_SOURCE_DIR}/../rtneural/modules/Eigen"
+@@ -37,6 +55,8 @@ SET(NEURALAMP_ENGINE_OPTIONS $<$<CONFIG:Debug>:-O2>
+ 
+ ADD_EXECUTABLE(nam_harness EXCLUDE_FROM_ALL
+ 	nam_harness.cpp
++	HarnessClock.h
++	${NEURALAMP_HARNESS_CLOCK_SOURCE}
+ 	${NEURALAMP_ENGINE_SOURCES}
+ )
+ # libm is a Unix convention — MSVC keeps the math routines in the CRT, so asking for m.lib
+diff --git a/plugins/NeuralAmp/tests/HarnessClock.h b/plugins/NeuralAmp/tests/HarnessClock.h
+new file mode 100644
+index 0000000000..9e426f5d78
+--- /dev/null
++++ b/plugins/NeuralAmp/tests/HarnessClock.h
+@@ -0,0 +1,45 @@
++/*
++ * HarnessClock.h - thread CPU clock for the headless NAM harness
++ *
++ * Copyright (c) 2026 AI-KOS Team
++ *
++ * This file is part of LMMS - https://lmms.io
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public
++ * License as published by the Free Software Foundation; either
++ * version 2 of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public
++ * License along with this program (see COPYING); if not, write to the
++ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
++ * Boston, MA 02110-1301 USA.
++ *
++ * The implementation is selected by plugins/NeuralAmp/tests/CMakeLists.txt:
++ * HarnessClockPosix.cpp reads clock_gettime(CLOCK_THREAD_CPUTIME_ID) and
++ * HarnessClockWindows.cpp reads GetThreadTimes(). The harness's own
++ * translation unit must not name either platform clock: on Windows, <time.h>
++ * includes winpthreads' <pthread_time.h>, whose inline clock_gettime() calls
++ * clock_gettime64() - a symbol the MSYS2 clangarm64 link line does not resolve
++ * (cluster ci-443a2931bcb5dacc).
++ */
++
++#ifndef LMMS_NAM_HARNESS_CLOCK_H
++#define LMMS_NAM_HARNESS_CLOCK_H
++
++namespace lmms::nam
++{
++
++/// CPU time consumed by the calling thread, in microseconds. Returns 0 when
++/// the platform call fails. This is an offline measurement: never call it from
++/// an audio-thread path.
++double threadCpuTimeUs();
++
++}  // namespace lmms::nam
++
++#endif  // LMMS_NAM_HARNESS_CLOCK_H
+diff --git a/plugins/NeuralAmp/tests/HarnessClockPosix.cpp b/plugins/NeuralAmp/tests/HarnessClockPosix.cpp
+new file mode 100644
+index 0000000000..8ad8c48fa2
+--- /dev/null
++++ b/plugins/NeuralAmp/tests/HarnessClockPosix.cpp
+@@ -0,0 +1,39 @@
++/*
++ * HarnessClockPosix.cpp - thread CPU clock for the headless NAM harness (POSIX)
++ *
++ * Copyright (c) 2026 AI-KOS Team
++ *
++ * This file is part of LMMS - https://lmms.io
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public
++ * License as published by the Free Software Foundation; either
++ * version 2 of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public
++ * License along with this program (see COPYING); if not, write to the
++ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
++ * Boston, MA 02110-1301 USA.
++ */
++
++#include "HarnessClock.h"
++
++#include <ctime>
++
++namespace lmms::nam
++{
++
++double threadCpuTimeUs()
++{
++	timespec now{};
++	if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &now) != 0) { return 0.0; }
++	return static_cast<double>(now.tv_sec) * 1e6 +
++		static_cast<double>(now.tv_nsec) / 1e3;
++}
++
++}  // namespace lmms::nam
+diff --git a/plugins/NeuralAmp/tests/HarnessClockWindows.cpp b/plugins/NeuralAmp/tests/HarnessClockWindows.cpp
+new file mode 100644
+index 0000000000..b19660ff89
+--- /dev/null
++++ b/plugins/NeuralAmp/tests/HarnessClockWindows.cpp
+@@ -0,0 +1,67 @@
++/*
++ * HarnessClockWindows.cpp - thread CPU clock for the headless NAM harness (Win32)
++ *
++ * Copyright (c) 2026 AI-KOS Team
++ *
++ * This file is part of LMMS - https://lmms.io
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public
++ * License as published by the Free Software Foundation; either
++ * version 2 of the License, or (at your option) any later version.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public
++ * License along with this program (see COPYING); if not, write to the
++ * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
++ * Boston, MA 02110-1301 USA.
++ *
++ * Windows has no clock_gettime(CLOCK_THREAD_CPUTIME_ID). GetThreadTimes()
++ * reports the calling thread's kernel and user time as FILETIMEs, i.e. in
++ * 100 ns ticks, which is the same quantity the POSIX clock reports and does
++ * not depend on winpthreads (cluster ci-443a2931bcb5dacc).
++ */
++
++#include "HarnessClock.h"
++
++#ifndef WIN32_LEAN_AND_MEAN
++#define WIN32_LEAN_AND_MEAN
++#endif
++#ifndef NOMINMAX
++#define NOMINMAX
++#endif
++#include <windows.h>
++
++#include <cstdint>
++
++namespace lmms::nam
++{
++
++namespace
++{
++
++double fileTimeToUs(const FILETIME& time)
++{
++	const std::uint64_t ticks =
++		(static_cast<std::uint64_t>(time.dwHighDateTime) << 32) |
++		static_cast<std::uint64_t>(time.dwLowDateTime);
++	return static_cast<double>(ticks) / 10.0;
++}
++
++}  // namespace
++
++double threadCpuTimeUs()
++{
++	FILETIME creation{}, exitTime{}, kernel{}, user{};
++	if (GetThreadTimes(GetCurrentThread(), &creation, &exitTime, &kernel, &user) == 0)
++	{
++		return 0.0;
++	}
++	return fileTimeToUs(kernel) + fileTimeToUs(user);
++}
++
++}  // namespace lmms::nam
+diff --git a/plugins/NeuralAmp/tests/nam_harness.cpp b/plugins/NeuralAmp/tests/nam_harness.cpp
+index 4817425363..d04ae16c98 100644
+--- a/plugins/NeuralAmp/tests/nam_harness.cpp
++++ b/plugins/NeuralAmp/tests/nam_harness.cpp
+@@ -14,13 +14,17 @@
+  *   g++ -O3 -march=native -std=c++20 -I plugins/NeuralAmp \
+  *       -I plugins/NeuralAmp/rtneural/modules/Eigen \
+  *       plugins/NeuralAmp/tests/nam_harness.cpp \
++ *       plugins/NeuralAmp/tests/HarnessClockPosix.cpp \
+  *       plugins/NeuralAmp/nam/NamModel.cpp \
+  *       plugins/NeuralAmp/nam/NamModelLoader.cpp -o build/nam_harness
++ * (A Windows build uses HarnessClockWindows.cpp instead of HarnessClockPosix.cpp;
++ * the CMake target selects it, and the harness TU itself names no platform clock.)
+  *
+  * Copyright (c) 2026 AI-KOS Team. GPL-2.0-or-later (see plugin sources).
+  */
+ 
+ #include "nam/NamModel.h"
++#include "HarnessClock.h"
+ 
+ #include <algorithm>
+ #include <array>
+@@ -31,7 +35,6 @@
+ #include <cstdio>
+ #include <cstdlib>
+ #include <cstring>
+-#include <ctime>
+ #include <fstream>
+ #include <limits>
+ #include <string>
+@@ -625,16 +628,14 @@ int main(int argc, char** argv)
+ 		std::vector<float> wavOut(wavIn.size(), 0.0f);
+ 		std::vector<float> inB(opt.blockSize), outB(opt.blockSize);
+ 		size_t pos = 0;
+-		timespec t0{}, t1{};
+ 		double cpuUs = 0.0;
+ 		while (pos < wavIn.size())
+ 		{
+ 			const size_t n = std::min(static_cast<size_t>(opt.blockSize), wavIn.size() - pos);
+ 			std::memcpy(inB.data(), wavIn.data() + pos, n * sizeof(float));
+-			clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t0);
++			const double t0 = lmms::nam::threadCpuTimeUs();
+ 			model->process(inB.data(), outB.data(), static_cast<int>(n));
+-			clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t1);
+-			cpuUs += (t1.tv_sec - t0.tv_sec) * 1e6 + (t1.tv_nsec - t0.tv_nsec) / 1e3;
++			cpuUs += lmms::nam::threadCpuTimeUs() - t0;
+ 			std::memcpy(wavOut.data() + pos, outB.data(), n * sizeof(float));
+ 			pos += n;
+ 		}
+@@ -749,14 +750,10 @@ int main(int argc, char** argv)
+ 		std::memcpy(inBlock.data(), input.data() + off,
+ 			static_cast<size_t>(opt.blockSize) * sizeof(float));
+ 
+-		timespec t0{};
+-		timespec t1{};
+-		clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t0);
++		const double t0 = lmms::nam::threadCpuTimeUs();
+ 		model->process(inBlock.data(), outBlock.data(), opt.blockSize);
+-		clock_gettime(CLOCK_THREAD_CPUTIME_ID, &t1);
++		const double cpuUs = lmms::nam::threadCpuTimeUs() - t0;
+ 
+-		const double cpuUs = (t1.tv_sec - t0.tv_sec) * 1e6 +
+-			(t1.tv_nsec - t0.tv_nsec) / 1e3;
+ 		cpuTotalUs += cpuUs;
+ 		blockUs.push_back(cpuUs);
+ 
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 526928a9d5..2c259ef9ec 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -3284,10 +3284,15 @@ set_tests_properties(TapTempoTest PROPERTIES
+ 
+ # The NAM harness WAV reader is private to its CLI translation unit. Include
+ # that source with its main renamed so this test exercises the reader directly.
++# The harness's thread-clock implementation is a separate translation unit
++# selected by plugins/NeuralAmp/tests/CMakeLists.txt; this target compiles
++# nam_harness.cpp, so it needs the same choice.
++get_property(NAM_HARNESS_CLOCK_SOURCE GLOBAL PROPERTY ZENE_NAM_HARNESS_CLOCK_SOURCE)
+ add_executable(NeuralAmpWavInputTest
+ 	src/core/NeuralAmpWavInputTest.cpp
+ 	 "${CMAKE_SOURCE_DIR}/plugins/NeuralAmp/nam/NamModel.cpp"
+ 	 "${CMAKE_SOURCE_DIR}/plugins/NeuralAmp/nam/NamModelLoader.cpp"
++	 "${NAM_HARNESS_CLOCK_SOURCE}"
+ )
+ target_include_directories(NeuralAmpWavInputTest PRIVATE
+ 	 "${CMAKE_SOURCE_DIR}/plugins/NeuralAmp"
+@@ -9035,6 +9040,27 @@ if(PYTHON3_EXECUTABLE AND TARGET nam_harness)
+ 	set_tests_properties(NeuralAmpHarnessRateValidation PROPERTIES TIMEOUT 60)
+ endif()
+ 
++# The hosted windows-arm64 job links nam_harness with clangarm64's driver, which names no
++# libwinpthread. MSYS2's mingw-w64 <time.h> includes <pthread_time.h>, whose inline
++# clock_gettime() calls clock_gettime64(); the harness's own call therefore ended the build at
++#   ld.lld: error: undefined symbol: clock_gettime64
++#   >>> plugins/NeuralAmp/tests/CMakeFiles/nam_harness.dir/nam_harness.cpp.obj:(main)
++# (GCC's mingw64 driver links winpthread, so mingw64 linked the same source.) The harness now
++# calls lmms::nam::threadCpuTimeUs(); plugins/NeuralAmp/tests/CMakeLists.txt selects the POSIX
++# or the Win32 implementation. This check recompiles the real identifier translation unit with
++# the configured tree's own command and fails when its undefined symbols name a POSIX clock;
++# it also compiles and runs both platform implementations (the Win32 one against a model of
++# the Microsoft declarations, since this host is not Windows). Linux-only, like the NAM loader
++# portability check: the hosted Windows jobs prove the real link natively.
++if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
++	add_test(NAME NamHarnessWindowsClockCheck
++		COMMAND ${PYTHON3_EXECUTABLE}
++			${CMAKE_CURRENT_SOURCE_DIR}/nam-harness-windows-clock-check.py
++			--source-root ${CMAKE_SOURCE_DIR}
++			--build-dir ${CMAKE_BINARY_DIR})
++	set_tests_properties(NamHarnessWindowsClockCheck PROPERTIES TIMEOUT 300)
++endif()
++
+ # Regression for the NeuralAmp harness's generated-run block-count overflow.
+ # The test drives the separately built, headless harness with a minimal valid
+ # .nam model, an oversized block count and the counts around it. The test
+diff --git a/tests/fork-sources.txt b/tests/fork-sources.txt
+index 05e640c9f6..243b3efc57 100644
+--- a/tests/fork-sources.txt
++++ b/tests/fork-sources.txt
+@@ -3820,3 +3820,13 @@ include/ShellRecordMenu.h
+ src/gui/shell/ShellRecordMenu.cpp
+ # cluster new-p10-318 (2026-10): fix and verification report for the Peak Controller zero-frame block (fork-NEW).
+ docs/qwen-fixes-2026-10/cluster-new-p10-318.md
++# cluster ci-443a2931bcb5dacc (2026-11): the headless NAM harness's platform-selected thread CPU clock -
++# POSIX clock_gettime in its own translation unit, Win32 GetThreadTimes on Windows - split out of
++# nam_harness.cpp so the clangarm64 link line, which names no libwinpthread, no longer meets winpthreads'
++# inline clock_gettime() -> clock_gettime64. The regression is tests/nam-harness-windows-clock-check.py
++# (CTest NamHarnessWindowsClockCheck); the report records the failure and the RED/GREEN proof.
++plugins/NeuralAmp/tests/HarnessClock.h
++plugins/NeuralAmp/tests/HarnessClockPosix.cpp
++plugins/NeuralAmp/tests/HarnessClockWindows.cpp
++tests/nam-harness-windows-clock-check.py
++docs/qwen-fixes-2026-10/cluster-ci-443a2931bcb5dacc.md
+diff --git a/tests/nam-harness-windows-clock-check.py b/tests/nam-harness-windows-clock-check.py
+new file mode 100644
+index 0000000000..7116da3a10
+--- /dev/null
++++ b/tests/nam-harness-windows-clock-check.py
+@@ -0,0 +1,426 @@
++#!/usr/bin/env python3
++"""Fail when the NAM harness asks its own translation unit for a POSIX thread clock.
++
++Cluster ci-443a2931bcb5dacc (2026-11-14). The hosted `build / windows-arm64` job stopped at
++
++    [2690/6489] Linking CXX executable plugins\\nam_harness.exe
++    FAILED: [code=1] plugins/nam_harness.exe
++    ld.lld: error: undefined symbol: clock_gettime64
++    >>> referenced by C:/a/_temp/msys64/clangarm64/include/pthread_time.h:102
++    >>>               plugins/NeuralAmp/tests/CMakeFiles/nam_harness.dir/nam_harness.cpp.obj:(main)
++
++MSYS2's mingw-w64 <time.h> includes <pthread_time.h> (the POSIX 2008 contract), and the
++current winpthreads header defines clock_gettime() as a static inline that calls
++clock_gettime64(). The clangarm64 driver's link line does not name libwinpthread, so the
++object's reference is undefined. GCC's mingw64 driver links winpthread, which is why the same
++source linked on mingw64 and only the clang-arm64 job failed.
++
++The contract: nam_harness.cpp must not reference a platform clock itself. It calls
++lmms::nam::threadCpuTimeUs() from HarnessClock.h; plugins/NeuralAmp/tests/CMakeLists.txt
++selects HarnessClockPosix.cpp (clock_gettime) or HarnessClockWindows.cpp (GetThreadTimes).
++
++This check has four deterministic halves, each reading sources or running compiled code:
++
++  1. Two symbol fixtures prove the detector: a translation unit that calls clock_gettime
++     must be SEEN, one that does not must stay unseen.
++  2. The real nam_harness.cpp is recompiled with the build's own recorded compile command
++     (build/compile_commands.json) and its undefined symbols are inspected. A POSIX clock
++     there is the hosted failure on every host that provides the symbol, so this is red on
++     Linux before the fix and green after it.
++  3. HarnessClockPosix.cpp is compiled and run: the value must be finite, non-negative and
++     non-decreasing across two immediate calls (no wall clock, no sleeps).
++  4. HarnessClockWindows.cpp is compiled against a model of the Microsoft declarations it
++     uses (the hosted Windows job compiles it natively) and run with a stub GetThreadTimes:
++     kernel+user 100 ns ticks must become microseconds, and a failed call must yield 0.
++
++Usage: nam-harness-windows-clock-check.py --source-root <tree> --build-dir <build>
++Exit codes: 0 = clean, 1 = finding, 2 = usage/environment error.
++"""
++
++import argparse
++import json
++import os
++import re
++import shlex
++import shutil
++import subprocess
++import sys
++import tempfile
++
++HARNESS = "plugins/NeuralAmp/tests/nam_harness.cpp"
++WINDOWS_CLOCK = "plugins/NeuralAmp/tests/HarnessClockWindows.cpp"
++POSIX_CLOCK = "plugins/NeuralAmp/tests/HarnessClockPosix.cpp"
++TEST_NAME = "NamHarnessWindowsClockCheck"
++
++# clock_gettime plus the 32/64-bit spellings winpthreads uses on Windows.
++CLOCK_SYMBOL = re.compile(r"clock_gettime(?:32|64)?$")
++UNDEFINED = re.compile(r"^\s+U\s+(\S+)")
++VERSIONED = re.compile(r"@")
++
++
++def run(command, cwd, timeout=300):
++	return subprocess.run(command, cwd=cwd, capture_output=True, text=True, timeout=timeout)
++
++
++def split_command(entry):
++	if entry.get("command"):
++		return shlex.split(entry["command"])
++	return list(entry.get("arguments") or [])
++
++
++def source_of(entry):
++	path = entry["file"]
++	if not os.path.isabs(path):
++		path = os.path.join(entry["directory"], path)
++	return os.path.normpath(path)
++
++
++def find_entry(build_dir, source_root, relative):
++	path = os.path.join(os.path.abspath(build_dir), "compile_commands.json")
++	if not os.path.isfile(path):
++		return None, "no compile_commands.json in " + os.path.abspath(build_dir)
++	with open(path, encoding="utf-8") as stream:
++		entries = json.load(stream)
++	wanted = os.path.normpath(os.path.join(os.path.abspath(source_root), relative))
++	for entry in entries:
++		if source_of(entry) == wanted:
++			return entry, ""
++	return None, relative + " is not in compile_commands.json (was it renamed?)"
++
++
++def compiler_of(entry):
++	command = split_command(entry)
++	while command and os.path.basename(command[0]) in ("ccache", "sccache", "distcc"):
++		command = command[1:]
++	if not command:
++		return None
++	return command[0]
++
++
++def object_command(entry, output):
++	"""The recorded compile line, retargeted at `output` and without dependency files."""
++	cleaned = []
++	skip = False
++	for argument in split_command(entry):
++		if skip:
++			skip = False
++			continue
++		if argument in ("-o", "-MF", "-MT", "-MQ"):
++			skip = True
++			continue
++		if argument.startswith(("-o", "-MF", "-MT", "-MQ")):
++			continue
++		if argument in ("-c", "-MD", "-MMD", "-MP"):
++			continue
++		cleaned.append(argument)
++	while cleaned and os.path.basename(cleaned[0]) in ("ccache", "sccache", "distcc"):
++		cleaned = cleaned[1:]
++	if not cleaned:
++		return None
++	cleaned.extend(["-c", "-o", output])
++	return cleaned
++
++
++def undefined_symbols(path):
++	result = run(["nm", "-u", path], os.path.dirname(path) or ".")
++	if result.returncode != 0:
++		return None, (result.stderr or result.stdout).strip()
++	names = set()
++	for line in (result.stdout or "").splitlines():
++		match = UNDEFINED.match(line)
++		if match:
++			names.add(VERSIONED.sub("", match.group(1)))
++	return names, ""
++
++
++def clock_symbols(names):
++	return sorted(name for name in names
++		if CLOCK_SYMBOL.search(name.lstrip("_")))
++
++
++def compile_object(command, cwd):
++	result = run(command, cwd)
++	return result, (result.stderr or result.stdout).strip()
++
++
++FAKE_WINDOWS_H = """\
++#ifndef ZENE_PROBE_WINDOWS_H
++#define ZENE_PROBE_WINDOWS_H
++/* The declarations HarnessClockWindows.cpp uses, in the shape <windows.h> gives them. */
++typedef unsigned long DWORD;
++typedef struct _FILETIME
++{
++	DWORD dwLowDateTime;
++	DWORD dwHighDateTime;
++} FILETIME;
++#define ZENE_PROBE_WINDOWS_H 1
++extern "C"
++{
++	void* GetCurrentThread(void);
++	int GetThreadTimes(void* thread, FILETIME* creation, FILETIME* exitTime,
++		FILETIME* kernel, FILETIME* user);
++}
++#endif
++"""
++
++WINDOWS_PROBE = """\
++#include "HarnessClock.h"
++
++#include <cstdio>
++#include <windows.h>
++
++#ifndef ZENE_PROBE_WINDOWS_H
++#error "the probe must compile against the model of <windows.h>"
++#endif
++
++namespace
++{
++unsigned long long gKernelTicks = 1000;
++unsigned long long gUserTicks = 500;
++bool gFail = false;
++
++void splitTicks(unsigned long long ticks, FILETIME& time)
++{
++	time.dwLowDateTime = static_cast<DWORD>(ticks & 0xffffffffull);
++	time.dwHighDateTime = static_cast<DWORD>(ticks >> 32);
++}
++}
++
++extern "C" void* GetCurrentThread(void) { return nullptr; }
++
++extern "C" int GetThreadTimes(void*, FILETIME*, FILETIME*, FILETIME* kernel, FILETIME* user)
++{
++	if (gFail) { return 0; }
++	splitTicks(gKernelTicks, *kernel);
++	splitTicks(gUserTicks, *user);
++	return 1;
++}
++
++int main()
++{
++	const double ok = lmms::nam::threadCpuTimeUs();
++	if (ok != 150.0)
++	{
++		std::printf("FAIL: 1000+500 FILETIME ticks must be 150 us, got %.3f\\n", ok);
++		return 1;
++	}
++	gFail = true;
++	const double failed = lmms::nam::threadCpuTimeUs();
++	if (failed != 0.0)
++	{
++		std::printf("FAIL: a failed GetThreadTimes must yield 0 us, got %.3f\\n", failed);
++		return 1;
++	}
++	std::printf("PASS: Win32 clock: kernel+user 100 ns ticks are microseconds; failure yields 0\\n");
++	return 0;
++}
++"""
++
++POSIX_PROBE = """\
++#include "HarnessClock.h"
++
++#include <cmath>
++#include <cstdio>
++
++int main()
++{
++	const double first = lmms::nam::threadCpuTimeUs();
++	const double second = lmms::nam::threadCpuTimeUs();
++	if (!std::isfinite(first) || first < 0.0 || !std::isfinite(second) || second < first)
++	{
++		std::printf("FAIL: thread CPU time must be finite, non-negative and not go backwards"
++			" (%.3f, %.3f)\\n", first, second);
++		return 1;
++	}
++	std::printf("PASS: POSIX clock: finite, non-negative, non-decreasing thread CPU time\\n");
++	return 0;
++}
++"""
++
++CLOCK_FIXTURE = """\
++#include <ctime>
++int main()
++{
++	timespec now{};
++	return clock_gettime(CLOCK_THREAD_CPUTIME_ID, &now);
++}
++"""
++
++PLAIN_FIXTURE = """\
++double threadCpuTimeUs();
++int main() { return threadCpuTimeUs() < 0.0; }
++"""
++
++
++def self_test(cxx):
++	"""Prove the undefined-symbol detector can see the defect and leave a clean TU alone."""
++	with tempfile.TemporaryDirectory(prefix="nam-clock-selftest-") as scratch:
++		seen = []
++		for name, text in (("red", CLOCK_FIXTURE), ("green", PLAIN_FIXTURE)):
++			source = os.path.join(scratch, name + ".cpp")
++			output = os.path.join(scratch, name + ".o")
++			with open(source, "w", encoding="utf-8") as stream:
++				stream.write(text)
++			result, detail = compile_object(
++				[cxx, "-std=c++20", "-c", source, "-o", output], scratch)
++			if result.returncode != 0:
++				print("FAIL: the " + name + " fixture did not compile:\n" + detail)
++				return False
++			names, error = undefined_symbols(output)
++			if names is None:
++				print("FAIL: nm could not read the " + name + " fixture: " + error)
++				return False
++			seen.append(clock_symbols(names))
++		if not seen[0]:
++			print("FAIL: the detector does not see clock_gettime in the red fixture")
++			return False
++		if seen[1]:
++			print("FAIL: the detector reports a clock in the clean fixture: " + " ".join(seen[1]))
++			return False
++	print("PASS: the detector sees clock_gettime in a red fixture and stays silent on a clean one")
++	return True
++
++
++def check_harness_symbols(entry, scratch):
++	"""Recompile the real harness TU and refuse any POSIX clock in its undefined symbols."""
++	output = os.path.join(scratch, "nam_harness.o")
++	command = object_command(entry, output)
++	if command is None:
++		print("FAIL: the recorded command for " + HARNESS + " is empty")
++		return 2
++	result, detail = compile_object(command, entry["directory"])
++	if result.returncode != 0:
++		print("FAIL: the real " + HARNESS + " did not compile:\n" + detail)
++		return 1
++	names, error = undefined_symbols(output)
++	if names is None:
++		print("FAIL: nm could not read the real " + HARNESS + ": " + error)
++		return 2
++	found = clock_symbols(names)
++	if found:
++		print("FAIL: " + HARNESS + " itself references a POSIX clock: " + " ".join(found))
++		print("      The Windows jobs cannot link that (MSYS2 clangarm64's <pthread_time.h>")
++		print("      calls clock_gettime64 and the link line has no libwinpthread); use")
++		print("      lmms::nam::threadCpuTimeUs() from HarnessClock.h instead.")
++		return 1
++	print("PASS: " + HARNESS + " references no POSIX clock symbol")
++	return 0
++
++
++def include_flags(paths):
++	flags = []
++	for path in paths:
++		flags.extend(["-I", path])
++	return flags
++
++
++def compile_source(cxx, source, output, include_args, scratch, label):
++	result, detail = compile_object(
++		[cxx, "-std=c++20"] + include_args + ["-c", source, "-o", output], scratch)
++	if result.returncode != 0:
++		print("FAIL: " + label + " did not compile:\n" + detail)
++		return False
++	return True
++
++
++def build_probe(cxx, tests_dir, scratch, name, includes, probe_text):
++	"""Compile and link one platform clock implementation with its probe, then run it."""
++	relative = "plugins/NeuralAmp/tests/" + name + ".cpp"
++	source = os.path.join(tests_dir, name + ".cpp")
++	if not os.path.isfile(source):
++		print("FAIL: no " + relative)
++		return 1
++	probe = os.path.join(scratch, name.lower() + "_probe.cpp")
++	with open(probe, "w", encoding="utf-8") as stream:
++		stream.write(probe_text)
++	include_args = include_flags(includes)
++	source_object = os.path.join(scratch, name + ".o")
++	probe_object = os.path.join(scratch, name.lower() + "_probe.o")
++	binary = os.path.join(scratch, name.lower() + "_probe")
++	if not compile_source(
++		cxx, source, source_object, include_args, scratch, relative):
++		return 1
++	if not compile_source(
++		cxx, probe, probe_object, include_args, scratch, "the " + name + " probe"):
++		return 1
++	result = run([cxx, source_object, probe_object, "-o", binary], scratch)
++	if result.returncode != 0:
++		print("FAIL: the " + name + " probe did not link:\n" +
++			(result.stderr or result.stdout).strip())
++		return 1
++	result = run([binary], scratch)
++	if result.returncode != 0:
++		print("FAIL: " + (result.stdout or result.stderr).strip())
++		return 1
++	print((result.stdout or "").strip())
++	return 0
++
++
++def check_posix_clock(cxx, root, scratch):
++	"""The POSIX implementation must still measure this thread on this host."""
++	tests_dir = os.path.join(root, "plugins", "NeuralAmp", "tests")
++	return build_probe(cxx, tests_dir, scratch, "HarnessClockPosix", [tests_dir], POSIX_PROBE)
++
++
++def check_windows_clock(cxx, root, scratch):
++	"""Compile the Win32 implementation against the Microsoft declarations and run its stub."""
++	tests_dir = os.path.join(root, "plugins", "NeuralAmp", "tests")
++	fake = os.path.join(scratch, "win32")
++	os.makedirs(fake, exist_ok=True)
++	with open(os.path.join(fake, "windows.h"), "w", encoding="utf-8") as stream:
++		stream.write(FAKE_WINDOWS_H)
++	return build_probe(
++		cxx, tests_dir, scratch, "HarnessClockWindows", [fake, tests_dir], WINDOWS_PROBE)
++
++
++def check_registration(build):
++	"""The configured tree must actually register this CTest."""
++	generated = os.path.join(build, "tests", "CTestTestfile.cmake")
++	if not os.path.isfile(generated):
++		print("FAIL: no generated " + generated + " (was this tree configured?)")
++		return 1
++	with open(generated, encoding="utf-8") as stream:
++		if ("add_test(" + TEST_NAME) not in stream.read():
++			print("FAIL: the configured tree did not register " + TEST_NAME)
++			return 1
++	print("PASS: the configured tree registered " + TEST_NAME)
++	return 0
++
++
++def main():
++	parser = argparse.ArgumentParser(description=__doc__)
++	parser.add_argument("--source-root", default=".")
++	parser.add_argument("--build-dir", required=True)
++	options = parser.parse_args()
++	root = os.path.abspath(options.source_root)
++	build = os.path.abspath(options.build_dir)
++
++	if shutil.which("nm") is None:
++		print("FAIL: nm is required to inspect undefined symbols")
++		return 2
++	entry, problem = find_entry(build, root, HARNESS)
++	if entry is None:
++		print("FAIL: " + problem)
++		return 2
++	cxx = compiler_of(entry)
++	if cxx is None:
++		print("FAIL: the recorded command for " + HARNESS + " names no compiler")
++		return 2
++	if not self_test(cxx):
++		return 1
++
++	with tempfile.TemporaryDirectory(prefix="nam-clock-check-") as scratch:
++		status = check_harness_symbols(entry, scratch)
++		if status != 0:
++			return status
++		status = check_posix_clock(cxx, root, scratch)
++		if status != 0:
++			return status
++		status = check_windows_clock(cxx, root, scratch)
++		if status != 0:
++			return status
++	return check_registration(build)
++
++
++if __name__ == "__main__":
++	sys.exit(main())
+diff --git a/tests/upstream-modifications.txt b/tests/upstream-modifications.txt
+index f02a6814f8..de1088fd5e 100644
+--- a/tests/upstream-modifications.txt
++++ b/tests/upstream-modifications.txt
+@@ -5931,3 +5931,6 @@ include/LadspaManager.h	cluster new-p10-193: keep scanned LADSPA QLibraries aliv
+ src/core/LadspaManager.cpp	cluster new-p10-193: store each successfully scanned QLibrary in m_loadedLibraries instead of destroying the local after the scan, so descriptor function pointers in m_ladspaManagerMap never dangle into an unloaded library; isLibraryLoaded() reports ownership under LMMS_TESTING.
+ include/AutomationEditor.h	new-p15-275: AutomationEditor::m_clip is a QPointer<AutomationClip> (was a raw pointer) so deleting the open clip clears the editor instead of leaving a dangling pointer for update/paint to dereference. Same pattern as the existing QPointer ghost pointers; held by tests/src/gui/AutomationEditorEditingTest.cpp deletingTheOpenClipClearsTheEditor.
+ tests/src/gui/AutomationEditorEditingTest.cpp	# The automation editor can retain a dangling clip pointer
++plugins/NeuralAmp/tests/nam_harness.cpp	cluster ci-443a2931bcb5dacc: both timed loops call lmms::nam::threadCpuTimeUs() from the new HarnessClock.h instead of naming clock_gettime(CLOCK_THREAD_CPUTIME_ID) in the harness translation unit; on Windows <time.h> includes winpthreads' pthread_time.h, whose inline clock_gettime() calls clock_gettime64(), and the MSYS2 clangarm64 link line names no libwinpthread. The measurement is unchanged (microseconds of caller-thread CPU time; HarnessClockPosix.cpp keeps clock_gettime, HarnessClockWindows.cpp uses GetThreadTimes); regression tests/nam-harness-windows-clock-check.py (CTest NamHarnessWindowsClockCheck).
++plugins/NeuralAmp/tests/CMakeLists.txt	cluster ci-443a2931bcb5dacc: select HarnessClockPosix.cpp or HarnessClockWindows.cpp per platform, add the chosen source and HarnessClock.h to nam_harness, and publish the choice in the global property ZENE_NAM_HARNESS_CLOCK_SOURCE so the test target that includes nam_harness.cpp compiles the same implementation. Registration and source selection only; no existing target's flags or behaviour change.
++tests/CMakeLists.txt	cluster ci-443a2931bcb5dacc: give NeuralAmpWavInputTest the platform clock source selected by plugins/NeuralAmp/tests/CMakeLists.txt (it includes nam_harness.cpp and otherwise fails to link threadCpuTimeUs), and register the Linux-only CTest NamHarnessWindowsClockCheck running tests/nam-harness-windows-clock-check.py. Registration only; no existing test's registration, environment, timeout or property changes.
+-- 
+2.56.0
+

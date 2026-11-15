@@ -434,5 +434,63 @@
     "summary": "CI regression: build / macos-x86_64",
     "train": "050/m0-train-31",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-61ad26e4f8b135f9"
+  },
+  {
+    "at": "2026-11-15T01:52:51",
+    "base": "c20ef591b571e3c3dc7b108107d166497f1b34be",
+    "branch": "fix/ci-repair-ci-443a2931bcb5dacc-b8247392f093",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-443a2931bcb5dacc.r1.md",
+        "negative_control": {
+          "artifact_hashes": {},
+          "detail": "AudioPluginTest, NamHarnessWindowsClockCheck, NeuralAmpCompareRateTest, NeuralAmpHarnessBlockCount, NeuralAmpHarnessRateValidation, NeuralAmpWavInputTest, NeuralAmpWavRunSampleRateWarning: the build fails without the change and pass with it",
+          "ok": true,
+          "product_files": [
+            "plugins/NeuralAmp/tests/HarnessClock.h",
+            "plugins/NeuralAmp/tests/HarnessClockPosix.cpp",
+            "plugins/NeuralAmp/tests/HarnessClockWindows.cpp",
+            "plugins/NeuralAmp/tests/nam_harness.cpp"
+          ],
+          "proof_base": "c20ef591b571e3c3dc7b108107d166497f1b34be",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-443a2931bcb5dacc.r1/negctl",
+          "proof_key": "e7ea9c1c8e30d90d617446a0c1fdbde369eaeff904eab23fd8a50c768ed61d91",
+          "restored_rc": 0,
+          "reverted_build_rc": 2,
+          "reverted_rc": 1,
+          "tests": [
+            "AudioPluginTest",
+            "NamHarnessWindowsClockCheck",
+            "NeuralAmpCompareRateTest",
+            "NeuralAmpHarnessBlockCount",
+            "NeuralAmpHarnessRateValidation",
+            "NeuralAmpWavInputTest",
+            "NeuralAmpWavRunSampleRateWarning"
+          ],
+          "tree_clean": true
+        },
+        "verdict": "ACCEPT"
+      }
+    ],
+    "commit": "d369998f1e039dc27f47f0020a0cdd647b440914",
+    "id": "ci-repair-ci-443a2931bcb5dacc-b8247392f093",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-443a2931bcb5dacc.md",
+      "plugins/NeuralAmp/tests/CMakeLists.txt",
+      "plugins/NeuralAmp/tests/HarnessClock.h",
+      "plugins/NeuralAmp/tests/HarnessClockPosix.cpp",
+      "plugins/NeuralAmp/tests/HarnessClockWindows.cpp",
+      "plugins/NeuralAmp/tests/nam_harness.cpp",
+      "tests/CMakeLists.txt",
+      "tests/fork-sources.txt",
+      "tests/nam-harness-windows-clock-check.py",
+      "tests/upstream-modifications.txt"
+    ],
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "c20ef591b571e3c3dc7b108107d166497f1b34be",
+    "status": "pending",
+    "summary": "CI regression: build / windows-arm64",
+    "train": "050/m0-train-31",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-443a2931bcb5dacc"
   }
 ]
