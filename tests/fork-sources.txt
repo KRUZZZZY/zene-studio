@@ -939,6 +939,10 @@ docs/qwen-fixes-2026-10/cluster-ci-61ad26e4f8b135f9.md
 docs/qwen-fixes-2026-10/sol-train-32-portability-replay.md
 docs/qwen-fixes-2026-10/sol-train-32-sdk-complexity.md
 
+# Train 47: source-derived Qt5/Windows compiler and Qt target usage regressions.
+tests/train-47-portability-check.py
+docs/qwen-fixes-2026-10/sol-train-32-hosted-portability-47.md
+
 # Train 43 hosted compiler contracts, native CPU timing adapter and verification report.
 plugins/NeuralAmp/tests/NamHarnessCpuClock.h
 tests/train-43-portability-check.py

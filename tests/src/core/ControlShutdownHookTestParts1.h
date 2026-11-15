@@ -146,19 +146,19 @@ void ControlShutdownHookTest::anIdleNamedPipePeerIsDisconnected() {
 	if (ReadFile(pipe.handle, &byte, sizeof(byte), &bytesRead, &operation))
 	{
 		QCOMPARE(bytesRead, DWORD{0});
-		QVERIFY(idleWait.elapsed() >= ClientIdleTimeoutMs - 5000);
+		QVERIFY(idleWait.elapsed() >= ControlServer::ClientIdleTimeoutMs - 5000);
 		return;
 	}
 	const DWORD startError = GetLastError();
 	if (startError == ERROR_BROKEN_PIPE || startError == ERROR_PIPE_NOT_CONNECTED)
 	{
-		QVERIFY(idleWait.elapsed() >= ClientIdleTimeoutMs - 5000);
+		QVERIFY(idleWait.elapsed() >= ControlServer::ClientIdleTimeoutMs - 5000);
 		return;
 	}
 	QVERIFY2(startError == ERROR_IO_PENDING, "the named-pipe read did not pend");
 
 	const DWORD wait = WaitForSingleObject(event.handle,
-		static_cast<DWORD>(ClientIdleTimeoutMs + 5000));
+		static_cast<DWORD>(ControlServer::ClientIdleTimeoutMs + 5000));
 	if (wait != WAIT_OBJECT_0)
 	{
 		CancelIoEx(pipe.handle, &operation);
@@ -166,7 +166,7 @@ void ControlShutdownHookTest::anIdleNamedPipePeerIsDisconnected() {
 		QVERIFY2(false, "the idle named-pipe client was not disconnected before the deadline");
 	}
 
-	QVERIFY(idleWait.elapsed() >= ClientIdleTimeoutMs - 5000);
+	QVERIFY(idleWait.elapsed() >= ControlServer::ClientIdleTimeoutMs - 5000);
 	const BOOL completed = GetOverlappedResult(pipe.handle, &operation, &bytesRead, FALSE);
 	const DWORD completionError = completed ? ERROR_SUCCESS : GetLastError();
 	const bool disconnected = (completed && bytesRead == 0)
@@ -193,7 +193,7 @@ void ControlShutdownHookTest::aTrickledIncompleteNamedPipeRequestDoesNotExtendTh
 	QElapsedTimer trickleWait;
 	trickleWait.start();
 	bool disconnected = false;
-	while (trickleWait.elapsed() < ClientIdleTimeoutMs + 5000)
+	while (trickleWait.elapsed() < ControlServer::ClientIdleTimeoutMs + 5000)
 	{
 		DWORD writeError = ERROR_SUCCESS;
 		if (!writeIncompletePipeByte(pipe.handle, writeEvent.handle, &writeError))
@@ -206,7 +206,7 @@ void ControlShutdownHookTest::aTrickledIncompleteNamedPipeRequestDoesNotExtendTh
 		Sleep(250);
 	}
 
-	QVERIFY(trickleWait.elapsed() >= ClientIdleTimeoutMs - 5000);
+	QVERIFY(trickleWait.elapsed() >= ControlServer::ClientIdleTimeoutMs - 5000);
 	QVERIFY2(disconnected,
 		"trickling an incomplete request kept the named-pipe client alive past its deadline");
 }
