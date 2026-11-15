@@ -26,6 +26,9 @@
 # (2026-09-09 form of this file: an empty allowlist used only for "compile-only fixes".
 # It never held a line, and Gate 6 was red from the first behavioural change.)
 
+# Train 47: preserve all hosted fixture assertions and Qt compiler usage requirements.
+tests/CMakeLists.txt	Train 47: link RemotePluginShmFifoCompileCheck to Qt for transitive compiler requirements and register Train47Portability source-derived compiler regressions.
+
 # Train 43: preserve hosted platform support, tests and unchanged gates.
 plugins/NeuralAmp/tests/nam_harness.cpp	Train 43: use native per-thread CPU timing on Windows, retaining POSIX thread timing elsewhere; remove unresolved clock_gettime64 dependency without substituting wall time.
 tests/CMakeLists.txt	Train 43: register compiler contracts for older macOS, Qt5/MinGW and Windows CPU timing; existing runtime assertions and gates retained.

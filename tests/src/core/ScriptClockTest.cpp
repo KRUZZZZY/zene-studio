@@ -405,14 +405,14 @@ void ScriptClockTest::scheduleStateReportsUtf8Bytes()
 
 	// Read everything first and unschedule before any assertion, so a failure
 	// here cannot leave the id registered for the tests that follow.
-	const qint64 perId = clock.scheduleState(id).value(QStringLiteral("source_bytes")).toInteger(-1);
+	const qint64 perId = static_cast<qint64>(clock.scheduleState(id).value(QStringLiteral("source_bytes")).toDouble(-1));
 	qint64 inState = -1;
 	const QJsonArray schedules = clock.stateJson().value(QStringLiteral("schedules")).toArray();
 	for (const QJsonValue& value : schedules)
 	{
 		const QJsonObject one = value.toObject();
 		if (one.value(QStringLiteral("id")).toString() != id) { continue; }
-		inState = one.value(QStringLiteral("source_bytes")).toInteger(-1);
+		inState = static_cast<qint64>(one.value(QStringLiteral("source_bytes")).toDouble(-1));
 	}
 	QVERIFY2(clock.removeSchedule(id, &error), qPrintable(error));
 

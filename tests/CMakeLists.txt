@@ -3119,6 +3119,8 @@ add_test(NAME RemotePluginShmFifoTest COMMAND RemotePluginShmFifoTest)
 add_library(RemotePluginShmFifoCompileCheck OBJECT ${CMAKE_SOURCE_DIR}/src/common/RemotePluginBase.cpp)
 target_include_directories(RemotePluginShmFifoCompileCheck PRIVATE
 	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>)
+# Qt exports compiler requirements too (including MSVC /Zc:__cplusplus).
+target_link_libraries(RemotePluginShmFifoCompileCheck PRIVATE ${QT_LIBRARIES})
 target_compile_features(RemotePluginShmFifoCompileCheck PRIVATE cxx_std_20)
 # LMMS_STATIC_DEFINE: this TU defines LMMS_EXPORT members, and outside lmmsobjs
 # lmms_export.h makes those __declspec(dllimport) on Windows (cluster ci-v041-5).
@@ -6135,6 +6137,14 @@ if(PYTHON3_EXECUTABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/nam-portability-registration-check.py
 			${NAM_PORTABILITY_REGISTRATION_ARGS})
 	set_tests_properties(NamPortabilityRegistrationCheck PROPERTIES TIMEOUT 120)
+endif()
+
+# Train 47: exercise the Qt5 JSON and Windows fixture compiler contracts.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
+	add_test(NAME Train47Portability COMMAND ${PYTHON3_EXECUTABLE}
+		${CMAKE_CURRENT_SOURCE_DIR}/train-47-portability-check.py
+		--source-root ${CMAKE_SOURCE_DIR} --build-dir ${CMAKE_BINARY_DIR})
+	set_tests_properties(Train47Portability PROPERTIES TIMEOUT 120)
 endif()
 
 # Train 43: compile hosted API contracts without changing deployment targets.
