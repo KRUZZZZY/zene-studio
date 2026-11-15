@@ -60,8 +60,8 @@ LANE_PHRASE = "No 0.5.0 implementation lane"
 SUPPORT_PHRASE = "no support promise"
 OLD_LICENCE_LINE = "**Licence-gated.** ARA2 hosting: it needs an ARA2 SDK decision and a real plugin."
 
-KL_HEADING_RE = re.compile(r"^## .*\bara\b.*deferred", re.I)
-FL_DEFERRAL_RE = re.compile(r"\*\*Deferred.*\bARA\b")
+KL_HEADING_RE = re.compile(r"^## .*\bara2?\b.*deferred", re.I)
+FL_DEFERRAL_RE = re.compile(r"\*\*Deferred.*\bARA2?\b")
 ARA_RE = re.compile(r"\bARA2?\b|Melodyne")
 ARA_CMD_RE = re.compile(r"\bara\.[a-z*_]")
 TAG_RE = re.compile(r"<[^>]*>")
@@ -287,8 +287,14 @@ def write_file(root, rel, text):
         fh.write(text)
 
 
+KL_HEADING_LEAD = "## ARA and Melodyne are deferred"
+FL_LEAD = "**Deferred, not 0.5.0 - ARA and Melodyne are out of the 0.5.0 build.**"
+ARA2_KL_HEADING_LEAD = "## ARA2 and Melodyne are deferred"
+ARA2_FL_LEAD = "**Deferred, not 0.5.0 — ARA2 and Melodyne-style pitch editing.**"
+
+
 def write_tree(root, kl_drop=None, kl_drop_lane=False, fl_drop=None, readme_extra="",
-               snapshot_ids=("clip.trim",)):
+               snapshot_ids=("clip.trim",), ara2_heading=False):
     kl_lines = []
     for cand in CANDIDATES:
         line = KL_CANDIDATE_LINES[cand]
@@ -301,10 +307,15 @@ def write_tree(root, kl_drop=None, kl_drop_lane=False, fl_drop=None, readme_extr
         if cand == fl_drop:
             sentence = sentence.replace("deferred", "pending")
         fl_sentences.append(sentence)
-    write_file(root, KNOWN_LIMITATIONS, KL_TEMPLATE.format(
+    kl_text = KL_TEMPLATE.format(
         lines="\n".join(kl_lines),
-        lane="No lane" if kl_drop_lane else LANE_PHRASE))
-    write_file(root, FEATURE_LIST, FL_TEMPLATE.format(sentences=" ".join(fl_sentences)))
+        lane="No lane" if kl_drop_lane else LANE_PHRASE)
+    fl_text = FL_TEMPLATE.format(sentences=" ".join(fl_sentences))
+    if ara2_heading:
+        kl_text = kl_text.replace(KL_HEADING_LEAD, ARA2_KL_HEADING_LEAD)
+        fl_text = fl_text.replace(FL_LEAD, ARA2_FL_LEAD)
+    write_file(root, KNOWN_LIMITATIONS, kl_text)
+    write_file(root, FEATURE_LIST, fl_text)
     write_file(root, README, "# Zene\n\nA fixture README.\n" + readme_extra)
     write_file(root, MANUAL, "<html><body><p>ok</p></body></html>\n")
     write_file(root, SNAPSHOT, json.dumps({"commands": [{"id": c} for c in snapshot_ids]}))
@@ -350,6 +361,8 @@ def self_test():
         ("(g) FEATURE-LIST deleted (setup error)", 2, [FEATURE_LIST], drop_feature_list),
         ("(h) lane phrase dropped from KNOWN-LIMITATIONS", 1, [LANE_PHRASE],
          lambda r: write_tree(r, kl_drop_lane=True)),
+        ("(i) ARA2 headings and lead strings still pass", 0, [],
+         lambda r: write_tree(r, ara2_heading=True)),
     ]
     results = [run_case(*case) for case in cases]
     print(f"ara-deferral-docs-gate self-test: {sum(results)}/{len(results)} cases PASS")
