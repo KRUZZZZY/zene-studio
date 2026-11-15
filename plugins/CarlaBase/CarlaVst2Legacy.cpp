@@ -73,8 +73,10 @@ void applyLegacyState(const QDomElement& legacy, const LegacyCalls& calls)
 		calls.setChunk(chunk.constData());
 		return;
 	}
-	const int count = legacy.attribute("numparams").toInt();
-	for (int i = 0; i < count; ++i)
+	const uint32_t available = calls.parameterCount();
+	const int saved = legacy.attribute("numparams").toInt();
+	const uint32_t count = saved > 0 && static_cast<uint32_t>(saved) < available ? static_cast<uint32_t>(saved) : (saved > 0 ? available : 0u);
+	for (uint32_t i = 0; i < count; ++i)
 	{
 		const QString value = legacy.attribute(QStringLiteral("param") + QString::number(i));
 		const auto entry = parseDumpEntry(value, calls);

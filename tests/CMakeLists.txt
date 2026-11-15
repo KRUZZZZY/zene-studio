@@ -6079,6 +6079,17 @@ if(TARGET carlabase)
 		LMMS_TESTING
 		CARLA_HEADER_PATH="${CMAKE_SOURCE_DIR}/plugins/CarlaBase/Carla.h")
 	set_target_properties(CarlaParamFloatModelTest PROPERTIES ENABLE_EXPORTS ON)
+	# Q050-481.3 r3: a legacy VST2 dump never applies more entries than the plug-in has parameters.
+	add_executable(CarlaVst2LegacyStateTest src/plugins/CarlaVst2LegacyStateTest.cpp ${CMAKE_SOURCE_DIR}/plugins/CarlaBase/CarlaVst2Legacy.cpp)
+	add_test(NAME CarlaVst2LegacyStateTest COMMAND CarlaVst2LegacyStateTest)
+	set_tests_properties(CarlaVst2LegacyStateTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+	target_include_directories(CarlaVst2LegacyStateTest PRIVATE
+		$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+		${CMAKE_SOURCE_DIR}/plugins/CarlaBase
+		${CMAKE_BINARY_DIR}/plugins/CarlaBase)
+	target_compile_definitions(CarlaVst2LegacyStateTest PRIVATE CARLABASE_STATIC_DEFINE)
+	target_link_libraries(CarlaVst2LegacyStateTest PRIVATE ${QT_LIBRARIES} ${QT_QTTEST_LIBRARY})
+	target_compile_features(CarlaVst2LegacyStateTest PRIVATE cxx_std_20)
 endif()
 
 # The raw ReverbSC support loop is a separate C source, so compile that exact
