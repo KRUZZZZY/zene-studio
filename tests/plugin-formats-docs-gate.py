@@ -38,7 +38,7 @@ WHAT IT CHECKS (all file reads; no network, no instance, no build):
      plug-in (a `Plugin::Descriptor` symbol), not merely exists - a loader that stopped registering
      would catch a stale claim that a file exists somewhere.
   7. The platform qualification is real: our own `CMakeLists.txt` disables VST hosting in the Apple
-     build, so the README may not claim VST2/Vestige there.
+     build, so the README may not claim VST2 there.
   8. data/manual/index.html names the same list.
 
 `--self-test` is the gate's own red/green control: it builds a throwaway root (copies of every real
@@ -70,11 +70,11 @@ REQUIRED_COMMANDS = (
 # The Linux format list the docs advertise, each paired with the loader source that REGISTERS it in
 # the build. The gate reads the registered symbol, so the advertised list is verified against the
 # build - not only against the existence of a path - and a loader that stopped registering a format
-# is caught. (VST2 is LMMS's Vestige host; GUS is the Patman instrument.)
+# is caught. (VST2 is hosted through Carla; GUS is the Patman instrument.)
 LINUX_FORMATS = (
     ("VST3", "plugins/Vst3Effect/Vst3Effect.cpp", "vst3effect_plugin_descriptor"),
     ("CLAP", "plugins/ClapEffect/ClapEffect.cpp", "clapeffect_plugin_descriptor"),
-    ("VST2", "plugins/VstEffect/VstEffect.cpp", "vsteffect_plugin_descriptor"),
+    ("VST2", "plugins/CarlaVst2Effect/CarlaVst2Effect.cpp", "carlavst2effect_plugin_descriptor"),
     ("LV2", "plugins/Lv2Effect/Lv2Effect.cpp", "lv2effect_plugin_descriptor"),
     ("LADSPA", "plugins/LadspaEffect/LadspaEffect.cpp", "ladspaeffect_plugin_descriptor"),
     ("SoundFont2", "plugins/Sf2Player/Sf2Player.cpp", "sf2player_plugin_descriptor"),
@@ -196,7 +196,7 @@ def run_checks(root, report):
     check("the other platforms alike" not in freadme,
           "README.md: no 'on Linux and the other platforms alike' overstatement")
     check("VST2" in readme_formats and "macOS build has no VST2" in readme_formats,
-          "README.md plug-in formats paragraph: says a macOS build has no VST2/Vestige path")
+          "README.md plug-in formats paragraph: says a macOS build has no VST2 path")
     # The earlier DAW-core inventory's inherited format list is qualified in place - inside its own
     # bounded region, so the claim cannot pass on the formats paragraph's mention.
     readme_inventory = flat(section(freadme, README_INVENTORY_START, README_INVENTORY_END))
