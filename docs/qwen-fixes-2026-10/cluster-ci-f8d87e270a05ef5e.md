@@ -55,6 +55,8 @@ the log destination differs.
 | Reverse-patch RED (step 4b) | `git diff -- tests/src/core/ExportWavWriteErrorTest.cpp > "$PWD/build/qwen-logs/fix.patch"; git apply -R "$PWD/build/qwen-logs/fix.patch"` then `ctest -R 'Train41-wav-write-error' --output-on-failure > .../005-ctest-without-fix.log 2>&1` (from `build/tests`) | Reverse EXIT=0; ctest EXIT=8, 0% passed, the same line-201 `-Werror=unused-function` failure |
 | Restored GREEN | `git apply "$PWD/build/qwen-logs/fix.patch"`; `cmake --build build --target ExportWavWriteErrorTest > .../006-rebuild-with-fix.log 2>&1`; then `ctest -R 'ExportWavWriteError\|Train41-wav-write-error' --output-on-failure > .../007-ctest-with-fix.log 2>&1` (from `build/tests`) | Apply EXIT=0; rebuild EXIT=0; ctest EXIT=0, 2/2 tests passed |
 | Quality gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py "$PWD" > "$PWD/build/qwen-logs/008-feature-check.log" 2>&1` | EXIT=0; all 8 gates PASS; complexity and file-length report "no new item in your files" |
+| Final quality gates after the report | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py "$PWD" > "$PWD/build/qwen-logs/015-feature-check-final.log" 2>&1` | EXIT=0; all 8 gates PASS |
+| Completion check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py "$PWD" ci-f8d87e270a05ef5e > "$PWD/build/qwen-logs/016-submit-check-final.log" 2>&1` | EXIT=0; `RESULT: PASS - submit` |
 
 ## Test matrix
 
