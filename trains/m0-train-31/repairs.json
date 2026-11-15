@@ -326,5 +326,40 @@
     "summary": "CI regression: build / macos-arm64",
     "train": "050/m0-train-31",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-b5ac4280f3e4b317"
+  },
+  {
+    "at": "2026-11-15T01:01:43",
+    "base": "c20ef591b571e3c3dc7b108107d166497f1b34be",
+    "branch": "fix/ci-repair-ci-aa1160348d9be203-e220f67204df",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-aa1160348d9be203.r2.md",
+        "negative_control": {
+          "artifact_hashes": {},
+          "detail": "no product change, no changed test, or a dirty tree",
+          "ok": null,
+          "proof_base": "c20ef591b571e3c3dc7b108107d166497f1b34be",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-aa1160348d9be203.r2/negctl",
+          "proof_key": "14f982cd309319de39f94023dd7c68857e84733a8fd578033396fec271d6f54f"
+        },
+        "verdict": "ACCEPT"
+      }
+    ],
+    "commit": "852fa9252631b9d0492cfeb2ca159f6b55f4afb7",
+    "id": "ci-repair-ci-aa1160348d9be203-e220f67204df",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-aa1160348d9be203.md",
+      "tests/CMakeLists.txt",
+      "tests/Qt5QStringListAssignCheck.py",
+      "tests/fork-sources.txt",
+      "tests/src/core/ImportTrackIoTest.cpp",
+      "tests/upstream-modifications.txt"
+    ],
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "c20ef591b571e3c3dc7b108107d166497f1b34be",
+    "status": "pending",
+    "summary": "CI regression: build / linux-arm64",
+    "train": "050/m0-train-31",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-aa1160348d9be203"
   }
 ]
