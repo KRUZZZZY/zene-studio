@@ -3935,3 +3935,6 @@ tests/src/plugins/CarlaVst2LegacyStateTest.cpp
 tests/src/gui/LegacyVst2ProjectTest.cpp
 tests/data/legacy-projects/vst2-vestige-vsteffect.mmp
 tests/data/legacy-projects/vst2-vestige-vsteffect.reference.json
+
+# cluster ci-d2bfae2f2ab57bfb (2026-11): the windows-arm64 SfzPlayerTest include-root fix and its evidence.
+docs/qwen-fixes-2026-10/cluster-ci-d2bfae2f2ab57bfb.md

@@ -2261,6 +2261,15 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/external/simde)
 		target_link_libraries(${LMMS_TEST_NAME} PRIVATE sfzplayer_sfizz)
 	endif()
+	if(LMMS_TEST_NAME STREQUAL "SfzPlayerTest")
+		# Cluster ci-d2bfae2f2ab57bfb: this test compiles the vendored Abseil internal header that backs its
+		# state-saver regression, so its nested `absl/...` includes must resolve inside the same vendored tree.
+		# Without this root a host Abseil masked the hole on Linux and windows-arm64 (which has none) stopped
+		# at "absl/meta/type_traits.h file not found". The test's static_assert then fails the build whenever
+		# a host Abseil is selected. Same include root as the sfizz white-box tests above.
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/external/abseil-cpp)
+	endif()
 	if(LMMS_TEST_NAME STREQUAL "ReverbSCBaseTest")
 		target_sources(${LMMS_TEST_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/plugins/ReverbSC/base.c)
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/plugins/ReverbSC)
