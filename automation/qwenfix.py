@@ -39,6 +39,7 @@ import workflow_evidence
 import stuck_detector
 import review_diversity
 import claude_accounts
+import lane_groups
 import feature_ladder
 import reset_reserve
 import prompt_context
@@ -2210,6 +2211,7 @@ def fix_loop():
         # limit (CLAUDE-LIMIT-UNTIL, set when a session is refused) stops them, since a refused session is no fix.
         lanes_ok = (ROOT / "FEATURES-ON").exists()
         if claude_lanes():
+            configured_lanes = claude_lanes()
             running_lanes = {lane_of.get(f) for f in active}
             # owner 2026-10-19: LANES.json "max_concurrent" caps open lanes; a lane is open while a session runs or
             # one of its units is in review/rework (owner 2026-10-19: "the one that is in review counts as an open lane")
@@ -2220,7 +2222,7 @@ def fix_loop():
             open_lanes = {l["name"] for l in claude_lanes() if (l["name"] in running_lanes or lane_holding(l["name"]))
                           and not (l.get("bug_queue") or {}).get("urgent_only")}
             lane_names = {l["name"] for l in claude_lanes()}
-            for lane in sorted(claude_lanes(), key=lambda l: not (l.get("bug_queue") or {}).get("urgent_only")):
+            for lane in lane_groups.ordered(configured_lanes, ROOT):
                 if lane["name"] in running_lanes:
                     continue
                 if (lane.get("bug_queue") or {}).get("urgent_only"):
@@ -2242,9 +2244,12 @@ def fix_loop():
                 # 2026-10-19 owner "allow singular claude lanes": the cap also bounds running sessions, so a lane
                 # resuming a unit it holds waits while another lane's session runs (two held units ran at once)
                 urgent_names = {l["name"] for l in claude_lanes() if (l.get("bug_queue") or {}).get("urgent_only")}
-                if len(running_lanes & (lane_names - urgent_names)) >= cap:
+                if len(lane_groups.slots(running_lanes & (lane_names - urgent_names), configured_lanes)) >= cap:
                     break
-                if lane["name"] not in open_lanes and len(open_lanes) >= cap:
+                if not lane_groups.available(lane, configured_lanes, running_lanes, open_lanes):
+                    continue
+                if (lane_groups.slot(lane) not in lane_groups.slots(open_lanes, configured_lanes)
+                        and len(lane_groups.slots(open_lanes, configured_lanes)) >= cap):
                     continue
                 # 2026-10-30 owner "limit the ram a bit better": a Claude session needs headroom too
                 if autoscale.ram_starts(float(k.get("ram_claude_gb", 3.0)), k) < 1:
@@ -2262,6 +2267,7 @@ def fix_loop():
                 fut = pool.submit(run_job, job, rework_file, "claude")
                 active[fut] = (s_, "claude")
                 lane_of[fut] = lane["name"]
+                lane_groups.started(lane, ROOT)
                 open_lanes.add(lane["name"])
                 running_lanes.add(lane["name"])
                 started += 1

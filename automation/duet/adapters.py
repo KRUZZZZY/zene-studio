@@ -247,6 +247,7 @@ def run_claude(profile, prompt, cwd, out, log, *, write, resume=None, persist=Fa
 # ---------------------------------------------------------------- opencode (OpenCode, DeepSeek Harness, MiniMax Code)
 
 _OPENCODE = r"""
+import os
 import sys
 from pathlib import Path
 sys.path.insert(0, sys.argv[1])
@@ -256,6 +257,10 @@ try:
     # Duet calls run_model directly, bypassing the ordinary dispatcher's cooldown checks.
     # Never let the shared picker's fallback select a resting or exhausted provider.
     if o.uses_dsh(model):
+        provider = os.environ.get("DUET_DSH_PROVIDER")
+        if provider:
+            # Duet can pin its tested Go route without changing other fixers' providers.
+            o.dsh_provider_weights = lambda: {provider: 1.0}
         awake = o.dsh_providers_awake()
         pinned = o.load(o.DSH_PROVIDERS, {}).get(session) if session else None
         if not awake or (pinned and pinned not in awake):
@@ -279,6 +284,9 @@ def run_opencode(profile, prompt, cwd, out, log, *, write, resume=None, persist=
     if rules:
         prompt = rules + "\n\n" + prompt
     env = dict(os.environ, **(env_extra or {}))
+    env.pop("DUET_DSH_PROVIDER", None)
+    if profile.get("provider"):
+        env["DUET_DSH_PROVIDER"] = profile["provider"]
     cmd = [sys.executable, "-c", _OPENCODE, str(QWEN), model, str(cwd), str(out), resume or ""]
     usage, state = Usage(), {"steps": 0}
 
