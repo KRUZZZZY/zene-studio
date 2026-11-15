@@ -9008,6 +9008,16 @@ if(PYTHON3_EXECUTABLE)
 	add_test(NAME PluginFormatsDocsGateSelfTest
 		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/plugin-formats-docs-gate.py
 			--self-test)
+	# Q050-344 (R-editing-41 / R-workflow-118): ARA/Melodyne deferral docs gate. The ARA2 and
+	# Melodyne-style editing items are DEFERRED, not a 0.5.0 lane; the gate reads KNOWN-LIMITATIONS,
+	# the FEATURE-LIST deferral paragraph, the public docs and the command snapshot (file reads only).
+	# AraDeferralDocsSelfTest is the gate's own red/green control (synthetic fixture, one mutation per case).
+	add_test(NAME AraDeferralDocs
+		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/ara-deferral-docs-gate.py
+			--root ${CMAKE_SOURCE_DIR})
+	add_test(NAME AraDeferralDocsSelfTest
+		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/ara-deferral-docs-gate.py
+			--self-test)
 	# Q050-484: sfizz's render callback runs no file-pool garbage collection (the symbol table of the built library says so).
 	if(TARGET sfzplayer_sfizz AND NOT MSVC)
 		add_custom_target(SfzRenderThreadGateDeps)
