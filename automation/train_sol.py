@@ -53,6 +53,7 @@ JAIL = mt.PROG / "tools/haiku/jail.py"
 MODEL = "gpt-6.1-sol"
 EFFORT = "medium"
 COMPACT_AT = 254000
+TOOL_OUTPUT_TOKENS = 2500
 TIMEOUT_S = 90 * 60
 MAX_EXCLUDE = 3
 UNIT = "zene-train-sol"
@@ -503,9 +504,34 @@ def promoted_repairs(base, train):
             save(REPAIRS, rows)
 
 
+def delegation_policy():
+    return f"""CURRENT SOL/LUNA WORKING POLICY (owner 2026-11-15; supersedes earlier workflow suggestions)
+You lead the shared CI/train session: plan, assess evidence and submit the verdict. Use `{ROOT}/luna-task` for
+bulk log reading, repository searches, bisects, implementation, builds/tests/gates and mechanical checks.
+Give each worker one bounded task with exact paths, relevant evidence, expected result and log location; it has
+no prior memory. Keep the existing two-worker limit. Parallelise only independent tasks, use one writer per
+checkout, and review an implementation after its diff settles. After a reported fix, inspect its diff and critical
+evidence; do not repeat a full audit of unchanged files. Delegate a scoped independent review of the changed
+surface. If it finds a defect, request the correction and then check that defect; retain earlier valid evidence.
+Do not replace independent review with the implementer's own assertion, and do not omit required tests or gates.
+
+Context discipline applies to YOUR commands as well as workers: run builds, tests, gates and verbose diagnostics
+through `{Path.home()}/.local/share/zene-bunny-fix/duet/quiet-run LABEL -- COMMAND [ARGS...]`.
+Do not cat complete logs, registry files, patches or worker transcripts into context. Read named line ranges,
+error excerpts or short diffs; keep complete evidence on disk and pass paths to workers. Tool output is limited
+to {TOOL_OUTPUT_TOKENS} tokens per command, so truncation is not complete evidence: inspect a targeted excerpt.
+Keep the working summary short: pinned SHA, failure, current hypothesis, files changed, verified checks, remaining
+blocker and evidence paths. Reuse it after compaction; preserve this persistent thread and its {COMPACT_AT}-token
+compaction setting. No new broad survey after each handoff. A Luna exit 75 means paused/busy: wait if possible;
+if direct work is necessary, use the same bounded scope and quiet runner. A nonzero worker exit is not success,
+even when a partial report exists. Existing account/usage guards, issue budgets and release gates still apply.
+"""
+
+
 def codex_cmd(out, thread):
     """Always the same model, effort and compaction; resume the one session when it exists."""
     head = ["codex", "exec", "-c", f'model_reasoning_effort="{EFFORT}"', "-c", f"model_auto_compact_token_limit={COMPACT_AT}",
+            "-c", f"tool_output_token_limit={TOOL_OUTPUT_TOKENS}",
             "-c", 'approval_policy="never"', "-s", "danger-full-access", "-C", str(WT)]
     tail = ["-m", MODEL, "--skip-git-repo-check", "--json", "-o", str(out), "-"]
     return head + (["resume", thread] if thread else []) + tail
@@ -513,7 +539,8 @@ def codex_cmd(out, thread):
 
 def session(prompt, out):
     """One turn in the persistent session. Returns (final text, thread id)."""
-    prompt = prompt_context.stamp(prompt)
+    # Apply at the final delivery boundary, including corrections and postponed-train turns.
+    prompt = prompt_context.stamp(prompt + "\n\n" + delegation_policy())
     SCRATCH.mkdir(parents=True, exist_ok=True)
     sess = load(SESSION, {})
     jail = jail_prefix()[:-1]

@@ -62,6 +62,14 @@ def main():
         cmd += ["--rw", path]
     cmd += ["--", "codex", "exec", "-m", MODEL, "-c", f'model_reasoning_effort="{a.effort}"',
             "-s", "danger-full-access", "--skip-git-repo-check", "-C", cwd, "-o", os.path.abspath(a.out), "-"]
+    # Scoped overrides for bounded Sol/Luna worker packets; other callers keep their defaults.
+    for variable, setting in (("LUNA_TOOL_OUTPUT_TOKEN_LIMIT", "tool_output_token_limit"),
+                              ("LUNA_AUTO_COMPACT_TOKEN_LIMIT", "model_auto_compact_token_limit")):
+        value = os.environ.get(variable)
+        if value is not None:
+            if not value.isdecimal() or int(value) <= 0:
+                p.error(f"{variable} must be a positive integer")
+            cmd[-1:-1] = ["-c", f"{setting}={int(value)}"]
     env = dict(os.environ, **NO_PUSH)
     env.pop("LMMS_PLUGIN_DIR", None)          # never a global plugin dir (CLAUDE.md)
     return subprocess.run(cmd, cwd=cwd, env=env, input=prompt, text=True).returncode
