@@ -278,8 +278,9 @@
     ],
     "source": "independently-reviewed-ci-agent",
     "source_head": "dec3f1d45c62b26bce955875521780db173a0228",
-    "status": "pending",
+    "status": "superseded",
     "summary": "CI regression: build / linux-x86_64",
+    "superseded_by": "sol-repair-1794761095687846673",
     "train": "050/m0-train-32",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-e58078851126eac9"
   },
@@ -312,8 +313,9 @@
     ],
     "source": "independently-reviewed-ci-agent",
     "source_head": "dec3f1d45c62b26bce955875521780db173a0228",
-    "status": "pending",
+    "status": "superseded",
     "summary": "CI regression: build / linux-arm64",
+    "superseded_by": "sol-repair-1794761095687846673",
     "train": "050/m0-train-32",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-9b3cdba8549c073f"
   },
@@ -344,8 +346,9 @@
     ],
     "source": "independently-reviewed-ci-agent",
     "source_head": "dec3f1d45c62b26bce955875521780db173a0228",
-    "status": "pending",
+    "status": "superseded",
     "summary": "CI regression: build / mingw64",
+    "superseded_by": "sol-repair-1794761095687846673",
     "train": "050/m0-train-32",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-2fd63d3310176c0c"
   },
@@ -379,8 +382,9 @@
     ],
     "source": "independently-reviewed-ci-agent",
     "source_head": "dec3f1d45c62b26bce955875521780db173a0228",
-    "status": "pending",
+    "status": "superseded",
     "summary": "CI regression: build / macos-arm64",
+    "superseded_by": "sol-repair-1794761095687846673",
     "train": "050/m0-train-32",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-2fac5540e1a657f0"
   },
@@ -413,8 +417,9 @@
     ],
     "source": "independently-reviewed-ci-agent",
     "source_head": "dec3f1d45c62b26bce955875521780db173a0228",
-    "status": "pending",
+    "status": "superseded",
     "summary": "CI regression: build / msvc-x64",
+    "superseded_by": "sol-repair-1794761095687846673",
     "train": "050/m0-train-32",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-a0493fd29d4e9b4b"
   },
@@ -448,8 +453,9 @@
     ],
     "source": "independently-reviewed-ci-agent",
     "source_head": "dec3f1d45c62b26bce955875521780db173a0228",
-    "status": "pending",
+    "status": "superseded",
     "summary": "CI regression: build / macos-x86_64",
+    "superseded_by": "sol-repair-1794761095687846673",
     "train": "050/m0-train-32",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-bbbeb2c8d6e707a8"
   }

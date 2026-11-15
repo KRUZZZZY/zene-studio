@@ -672,8 +672,9 @@
     ],
     "source": "independently-reviewed-ci-agent",
     "source_head": "c20ef591b571e3c3dc7b108107d166497f1b34be",
-    "status": "pending",
+    "status": "superseded",
     "summary": "CI regression: build / msvc-x64",
+    "superseded_by": "sol-repair-1794761095687846673",
     "train": "050/m0-train-31",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-619dd453d973527c"
   }
