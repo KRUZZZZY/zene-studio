@@ -26,6 +26,9 @@
 # (2026-09-09 form of this file: an empty allowlist used only for "compile-only fixes".
 # It never held a line, and Gate 6 was red from the first behavioural change.)
 
+# Train 48: preserve complete fixture tests across hosted platform configurations.
+tests/CMakeLists.txt	Train 48: give SfzPlayerTest its direct Abseil dependency include root and register Train48Portability compiler regressions; preserve every existing test and option.
+
 # Train 47: preserve all hosted fixture assertions and Qt compiler usage requirements.
 tests/CMakeLists.txt	Train 47: link RemotePluginShmFifoCompileCheck to Qt for transitive compiler requirements and register Train47Portability source-derived compiler regressions.
 

@@ -26,6 +26,7 @@
 #define LMMS_VIDEO_TEST_CLIP_H
 
 #include "lmmsconfig.h"
+#include <QString>
 
 namespace videotest
 {
@@ -232,6 +233,17 @@ inline bool makeClip(const QString& path, Palette palette = Palette::RedBlue)
 	return encodeWithLibavcodec(path, palette);
 }
 
+} // namespace videotest
+
+#else
+
+namespace videotest
+{
+//! Keep the fixture API available to callers; no encoder exists in this build.
+inline bool makeClip(const QString&, Palette = Palette::RedBlue)
+{
+	return false;
+}
 } // namespace videotest
 
 #endif // ZENE_HAVE_FFMPEG
