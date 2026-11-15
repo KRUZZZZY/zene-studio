@@ -3,18 +3,6 @@
   "runs": [
     {
       "conclusion": "success",
-      "name": "doxygen",
-      "status": "completed",
-      "url": "https://github.com/KRUZZZZY/zene-studio/actions/runs/43611324701"
-    },
-    {
-      "conclusion": "failure",
-      "name": "build",
-      "status": "completed",
-      "url": "https://github.com/KRUZZZZY/zene-studio/actions/runs/43611324689"
-    },
-    {
-      "conclusion": "success",
       "name": "checks",
       "status": "completed",
       "url": "https://github.com/KRUZZZZY/zene-studio/actions/runs/43611324684"
@@ -24,6 +12,18 @@
       "name": "quality-gates",
       "status": "completed",
       "url": "https://github.com/KRUZZZZY/zene-studio/actions/runs/43611324675"
+    },
+    {
+      "conclusion": "success",
+      "name": "doxygen",
+      "status": "completed",
+      "url": "https://github.com/KRUZZZZY/zene-studio/actions/runs/43611324701"
+    },
+    {
+      "conclusion": "failure",
+      "name": "build",
+      "status": "completed",
+      "url": "https://github.com/KRUZZZZY/zene-studio/actions/runs/43611324689"
     }
   ],
   "status": "failed",
