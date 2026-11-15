@@ -31,7 +31,7 @@ ClipSerialisationTest, log 008-test-green-1). Build logs 002-build-2 and 007-bui
 ## Revert method
 
 The save hook is `saveClipEffects(_doc, _this);` at src/core/SampleClip.cpp:1072. It was commented out in the tree
-and the test executables rebuilt (log 005-build-red-1, built). ClipEffectsTest then ran (log 006-test-red-1):
+and ClipEffectsTest was rebuilt (log 005-build-red-1, built). ClipEffectsTest then ran (log 006-test-red-1):
 
 - `theStorageRoundTripsAndOmitsEmptyChains` fails at `tests/src/core/ClipEffectsTest.cpp(362)`, `withChain.second`
   Actual 0, Expected 1.
@@ -39,7 +39,7 @@ and the test executables rebuilt (log 005-build-red-1, built). ClipEffectsTest t
   `devices.size()` Actual 0, Expected 2.
 - Totals: `7 passed, 2 failed`; ctest `0% tests passed, 1 tests failed out of 1`; exit 8.
 
-The line was restored from a copy, the executables rebuilt, and the three tests re-run: `100% tests passed out of 3`
+The line was restored to its original text, the three test executables were rebuilt, and the three tests re-run: `100% tests passed out of 3`
 (log 008-test-green-1).
 
 ## Self-check
@@ -67,6 +67,7 @@ The line was restored from a copy, the executables rebuilt, and the three tests 
   `ClipEffectsDialogTest` (Q050-111), which drives the menu and buttons. This unit did not change it.
 - **Portability:** no product API added. The new test uses `QFile`, `QDomDocument`, `QDomNodeList` and `std::pair`.
   The test target compiled with the new slot present (log 005-build-red-1, built). No Qt 6-only or POSIX-only call.
+- **Completion check:** feature_check.py RESULT: PASS (log 010-gate-feature.log, exit 0); submit_check.py RESULT: PASS - submit (log 011-submit-check.log, exit 0); doc-figures-gate.py RESULT: PASS (log 009-gate-docs.log, exit 0). The four submit_check WARNs are the expected GUI/command/manual ones explained below.
 
 ### Expected submit_check WARNs
 
