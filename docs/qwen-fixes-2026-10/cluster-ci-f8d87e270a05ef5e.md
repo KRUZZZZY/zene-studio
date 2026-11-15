@@ -51,6 +51,7 @@ the log destination differs.
 | Probe after the fix | same command with `002-green-portability-probe.log` | EXIT=0; real TU compiles under simulated non-Unix with `-Werror=unused-function` |
 | Build the affected target | `cmake --build build --target ExportWavWriteErrorTest > "$PWD/build/qwen-logs/003-build-target.log" 2>&1` | EXIT=0; target linked |
 | Affected ctest family, fixed | from `build/tests`: `ctest -R 'ExportWavWriteError\|Train41-wav-write-error' --output-on-failure > "$PWD/build/qwen-logs/004-ctest-family.log" 2>&1` | EXIT=0; 2/2 tests passed (`ExportWavWriteErrorTest`, `Train41-wav-write-error`) |
+| Whole portability family | from `build/tests`: `ctest -R '^Train41' --output-on-failure > "$PWD/build/qwen-logs/013-ctest-train41-family-rebuilt.log" 2>&1` | EXIT=0; 7/7 tests passed. The first attempt (`011`) failed only in `Train41-darwin-tu` because `CrashReporterArmTest.moc` was absent from the partially built tree; `cmake --build build --target CrashReporterArmTest` (`012`) EXIT=0, then the rerun (`013`) is green. |
 | Reverse-patch RED (step 4b) | `git diff -- tests/src/core/ExportWavWriteErrorTest.cpp > "$PWD/build/qwen-logs/fix.patch"; git apply -R "$PWD/build/qwen-logs/fix.patch"` then `ctest -R 'Train41-wav-write-error' --output-on-failure > .../005-ctest-without-fix.log 2>&1` (from `build/tests`) | Reverse EXIT=0; ctest EXIT=8, 0% passed, the same line-201 `-Werror=unused-function` failure |
 | Restored GREEN | `git apply "$PWD/build/qwen-logs/fix.patch"`; `cmake --build build --target ExportWavWriteErrorTest > .../006-rebuild-with-fix.log 2>&1`; then `ctest -R 'ExportWavWriteError\|Train41-wav-write-error' --output-on-failure > .../007-ctest-with-fix.log 2>&1` (from `build/tests`) | Apply EXIT=0; rebuild EXIT=0; ctest EXIT=0, 2/2 tests passed |
 | Quality gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py "$PWD" > "$PWD/build/qwen-logs/008-feature-check.log" 2>&1` | EXIT=0; all 8 gates PASS; complexity and file-length report "no new item in your files" |
@@ -81,7 +82,9 @@ the log destination differs.
   whole TU with `-Werror=unused-function` proves no other unguarded free function remains.
 - **No collateral damage:** The Unix test bodies, assertions, tolerances and thresholds are
   untouched; only the preprocessor guard moved. No product runtime, project format, save
-  path, undo step, command or realtime path changed.
+  path, undo step, command or realtime path changed. The whole `Train41` portability family
+  still passes (7/7, `013-ctest-train41-family-rebuilt.log`, EXIT=0) after building the
+  `CrashReporterArmTest` dependency the probe needs.
 - **Verdict evidence:** REAL/FIXED because the pre-fix source at line 201 defines a helper
   whose sole call is inside `#ifdef Q_OS_UNIX` at line 310, and the reverse-patch probe
   reproduces the exact hosted failure.
