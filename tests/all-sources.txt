@@ -503,6 +503,7 @@ include/LcdSpinBox.h
 include/LcdWidget.h
 include/LedCheckBox.h
 include/LeftRightNav.h
+include/LegacyVst2Conversion.h
 include/LevelBar.h
 include/LfoController.h
 include/LfoGraph.h
@@ -1066,6 +1067,8 @@ plugins/CarlaBase/CarlaConfig/config.h
 plugins/CarlaBase/CarlaMidiHandoff.h
 plugins/CarlaBase/CarlaVst2Discovery.cpp
 plugins/CarlaBase/CarlaVst2Discovery.h
+plugins/CarlaBase/CarlaVst2Legacy.cpp
+plugins/CarlaBase/CarlaVst2Legacy.h
 plugins/CarlaBase/DummyCarla.cpp
 plugins/CarlaPatchbay/CarlaPatchbay.cpp
 plugins/CarlaRack/CarlaRack.cpp
@@ -2085,6 +2088,7 @@ src/core/LadspaControl.cpp
 src/core/LadspaManager.cpp
 src/core/LatencyCompensation.cpp
 src/core/LaunchBindings.cpp
+src/core/LegacyVst2Conversion.cpp
 src/core/LfoController.cpp
 src/core/LibraryCellAudio.cpp
 src/core/LinkAudioCodec.cpp
@@ -3019,6 +3023,7 @@ tests/src/core/LadspaManagerTest.cpp
 tests/src/core/LadspaPortCountFixture.cpp
 tests/src/core/LanesUpconvertTest.cpp
 tests/src/core/LegacyPatternUpgradeTest.cpp
+tests/src/core/LegacyVst2ConversionTest.cpp
 tests/src/core/LfoControllerUserWaveTest.cpp
 tests/src/core/LibraryBrowserTest.cpp
 tests/src/core/LibraryProjectsTest.cpp
@@ -3421,6 +3426,7 @@ tests/src/gui/KnobKeyboardTest.cpp
 tests/src/gui/LadspaDescriptionTest.cpp
 tests/src/gui/LadspaPortDialogTest.cpp
 tests/src/gui/LaneReadoutTest.cpp
+tests/src/gui/LegacyVst2ProjectTest.cpp
 tests/src/gui/LfoGraphTest.cpp
 tests/src/gui/LibraryMenusTest.cpp
 tests/src/gui/LinkedModelGroupViewLifetimeTest.cpp
@@ -3561,6 +3567,7 @@ tests/src/plugins/BitInvaderAllocationTest.cpp
 tests/src/plugins/BusesTestInstrument.cpp
 tests/src/plugins/CarlaMidiHandoffTest.cpp
 tests/src/plugins/CarlaParamFloatModelTest.cpp
+tests/src/plugins/CarlaVst2LegacyStateTest.cpp
 tests/src/plugins/ClapBusMapTest.cpp
 tests/src/plugins/ClapEffectIntegrationTest.cpp
 tests/src/plugins/ClapHostTest.cpp

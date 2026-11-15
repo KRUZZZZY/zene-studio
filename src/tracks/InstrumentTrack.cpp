@@ -33,6 +33,7 @@
 #include "InstrumentTrackView.h"
 #include "Instrument.h"
 #include "Keymap.h"
+#include "LegacyVst2Conversion.h"
 #include "MidiClient.h"
 #include "MidiClip.h"
 #include "MidiPlayback.h"
@@ -1286,7 +1287,7 @@ void InstrumentTrack::loadTrackSpecificSettings(const QDomElement& thisElement, 
 				{
 					m_instrument->restoreState(node.firstChildElement());
 				}
-				else
+				else if (!loadConvertedInstrument(node.toElement()))
 				{
 					destroyInstrument();
 					m_instrument = Instrument::instantiate(
@@ -1311,6 +1312,18 @@ void InstrumentTrack::loadTrackSpecificSettings(const QDomElement& thisElement, 
 					ControllerConnection::classNodeName() != node.nodeName() &&
 					!node.toElement().hasAttribute( "id" ))
 			{
+				if (node.nodeName() == "vestige")
+				{
+					QDomDocument doc = node.ownerDocument();
+					QDomElement wrapped = doc.createElement("instrument");
+					wrapped.setAttribute("name", "vestige");
+					wrapped.appendChild(node.cloneNode(true));
+					if (loadConvertedInstrument(wrapped))
+					{
+						node = node.nextSibling();
+						continue;
+					}
+				}
 				destroyInstrument();
 				m_instrument = Instrument::instantiate(
 					node.nodeName(), this, nullptr, true);
@@ -1335,6 +1348,27 @@ void InstrumentTrack::loadTrackSpecificSettings(const QDomElement& thisElement, 
 }
 
 
+
+
+bool InstrumentTrack::loadConvertedInstrument(const QDomElement& instrumentNode)
+{
+	const QDomElement converted = legacyvst2::convertInstrument(instrumentNode);
+	if (converted.isNull()) { return false; }
+	destroyInstrument();
+	using PluginKey = Plugin::Descriptor::SubPluginFeatures::Key;
+	PluginKey key(converted.elementsByTagName("key").item(0).toElement());
+	m_instrument = Instrument::instantiate(converted.attribute("name"), this, &key);
+	m_instrument->restoreState(converted.firstChildElement());
+	if (m_instrument->nodeName() != "carlavst2" || !m_instrument->unavailableReason().isEmpty())
+	{
+		destroyInstrument();
+		return false;
+	}
+	capturePlaceholder(converted);
+	emit instrumentChanged();
+	qInfo("Converted legacy VeSTige instrument '%s' to Carla", qPrintable(key.attributes.value("file")));
+	return true;
+}
 
 
 void InstrumentTrack::capturePlaceholder(const QDomElement& instrumentNode)

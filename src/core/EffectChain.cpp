@@ -39,11 +39,32 @@
 #include "PluginVendors.h"
 #include "Engine.h"
 #include "LatencyCompensation.h"
+#include "LegacyVst2Conversion.h"
 #include "RoutingChainNodes.h"
 #include "RoutingGraph.h"
 
 namespace lmms
 {
+
+
+namespace
+{
+Effect* loadConvertedEffect(const QDomElement& effectData, EffectChain* chain)
+{
+	// This runs on the GUI thread inside the existing changes guard; VST2 discovery is cached per session.
+	const QDomElement converted = legacyvst2::convertEffect(effectData);
+	if (converted.isNull()) { return nullptr; }
+	EffectKey key(converted.elementsByTagName("key").item(0).toElement());
+	Effect* e = Effect::instantiate(converted.attribute("name").toUtf8(), chain, &key);
+	if (e != nullptr && e->isOkay() && e->nodeName() == converted.nodeName() && e->unavailableReason().isEmpty())
+	{
+		e->restoreState(converted);
+		return e;
+	}
+	delete e;
+	return nullptr;
+}
+}
 
 
 #ifdef LMMS_TESTING
@@ -195,24 +216,29 @@ void EffectChain::loadSettings( const QDomElement & _this )
 		{
 			QDomElement effectData = node.toElement();
 
-			const QString name = effectData.attribute( "name" );
-			EffectKey key( effectData.elementsByTagName( "key" ).item( 0 ).toElement() );
-
-			Effect* e = Effect::instantiate( name.toUtf8(), this, &key );
-
-			if( e != nullptr && e->isOkay() && e->nodeName() == node.nodeName() )
+			Effect* e = loadConvertedEffect(effectData, this);
+			if (e == nullptr)
 			{
-				e->restoreState( effectData );
-				// 0.5.0 Q050-018: a hosted plug-in binary that is missing leaves a placeholder; keep the file's XML.
-				if (!e->unavailableReason().isEmpty())
+				const QString name = effectData.attribute( "name" );
+				EffectKey key( effectData.elementsByTagName( "key" ).item( 0 ).toElement() );
+
+				e = Effect::instantiate( name.toUtf8(), this, &key );
+
+				if( e != nullptr && e->isOkay() && e->nodeName() == node.nodeName() )
 				{
-					e->setPreservedPluginData(missingdevices::detachedCopy(effectData));
+					e->restoreState( effectData );
+					// 0.5.0 Q050-018: a hosted plug-in binary that is missing leaves a placeholder; keep the file's XML.
+					if (!e->unavailableReason().isEmpty())
+					{
+						e->setPreservedPluginData(missingdevices::detachedCopy(effectData));
+					}
 				}
-			}
-			else
-			{
-				delete e;
-				e = new DummyEffect( parentModel(), effectData );
+				else
+				{
+					delete e;
+					e = new DummyEffect( parentModel(), effectData );
+				}
+
 			}
 
 			e->setEffectChain( this );
