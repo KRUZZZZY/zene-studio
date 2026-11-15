@@ -59,6 +59,7 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QJsonArray>
+#include <QRegularExpression>
 #include <QSignalSpy>
 #include <QSignalSpy>
 #include <QTemporaryDir>
@@ -281,6 +282,39 @@ bool isNamedPipeDisconnect(DWORD error)
 
 #endif
 
+// Code-only view of one source file, for the Windows-build scan below. Block
+// comments are replaced by the newlines they contain and a `//` tail is dropped,
+// but every line and its number are kept, so an offender is reported where a
+// reviewer can open it.
+QString withoutBlockComments(const QString& text)
+{
+	static const QRegularExpression comment(QStringLiteral(R"(/\*.*?\*/)"),
+		QRegularExpression::DotMatchesEverythingOption);
+	QString code;
+	int copied = 0;
+	QRegularExpressionMatchIterator matches = comment.globalMatch(text);
+	while (matches.hasNext())
+	{
+		const QRegularExpressionMatch match = matches.next();
+		code += text.mid(copied, match.capturedStart() - copied);
+		code += QString(match.captured().count(QLatin1Char('\n')), QLatin1Char('\n'));
+		copied = match.capturedEnd();
+	}
+	code += text.mid(copied);
+	return code;
+}
+
+QStringList sourceCodeLines(const QString& text)
+{
+	QStringList lines = withoutBlockComments(text).split(QLatin1Char('\n'));
+	for (QString& line : lines)
+	{
+		const int comment = line.indexOf(QLatin1String("//"));
+		if (comment >= 0) { line.truncate(comment); }
+	}
+	return lines;
+}
+
 } // namespace
 
 class ControlShutdownHookTest : public QObject
@@ -291,6 +325,11 @@ private slots:
 	void init();
 
 	void windowsCapsActivePipeClientsAndReusesFreedSlot();
+
+	//! The named-pipe cases are compiled only on Windows, so this host cannot
+	//! observe an unqualified ControlServer constant in them. Read the part
+	//! headers and require the qualifier the windows-arm64 build needs.
+	void windowsPipeCasesNameTheIdleDeadlineThroughTheServer();
 
 	void everyNonblankRequestEmitsItsExchange();
 
@@ -352,6 +391,42 @@ private slots:
 	//! wall-clock behaviour.
 	void aClientDeadlineIsAnchoredToTheMonotonicClock();
 };
+
+// The windows-arm64 lane compiles the named-pipe cases that a POSIX host
+// preprocesses away. Read them (the same source seam that
+// windowsBuildHasNoUnusedTestHelpers uses) and require
+// ControlServer::ClientIdleTimeoutMs, so a missing qualifier fails here
+// instead of only on the Windows runner.
+void ControlShutdownHookTest::windowsPipeCasesNameTheIdleDeadlineThroughTheServer()
+{
+	const QStringList parts = {
+		QStringLiteral("src/core/ControlShutdownHookTestParts1.h"),
+		QStringLiteral("src/core/ControlShutdownHookTestParts2.h"),
+	};
+	QStringList unqualified;
+	for (const QString& part : parts)
+	{
+		QFile file(QDir(QStringLiteral(QT_TESTCASE_SOURCEDIR)).filePath(part));
+		QVERIFY2(file.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(file.fileName()));
+		const QStringList lines = sourceCodeLines(QString::fromUtf8(file.readAll()));
+		for (int line = 0; line < lines.size(); ++line)
+		{
+			const QString& code = lines.at(line);
+			for (int at = code.indexOf(QLatin1String("ClientIdleTimeoutMs")); at >= 0;
+				at = code.indexOf(QLatin1String("ClientIdleTimeoutMs"), at + 1))
+			{
+				if (!code.left(at).endsWith(QLatin1String("ControlServer::")))
+				{
+					unqualified << QStringLiteral("%1:%2").arg(part).arg(line + 1);
+				}
+			}
+		}
+	}
+	QVERIFY2(unqualified.isEmpty(), qPrintable(QStringLiteral(
+		"these idle-deadline references would fail the windows-arm64 build because "
+		"ClientIdleTimeoutMs is a ControlServer member, not a free name:\n")
+		+ unqualified.join(QLatin1Char('\n'))));
+}
 
 #include "ControlShutdownHookTestParts1.h"
 #include "ControlShutdownHookTestParts2.h"
