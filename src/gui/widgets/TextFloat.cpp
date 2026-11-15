@@ -69,13 +69,8 @@ TextFloat::TextFloat() :
 }
 
 TextFloat::TextFloat(const QString & title, const QString & text, const QPixmap & pixmap) :
-	// gui-1115: a notice must outlive the menu that ran its command. A Qt::ToolTip is an override-redirect
-	// transient on X11, so the reactivated main window can cover it when the menu closes; a frameless tool
-	// window, kept above its parent, stays readable and still does not take the keyboard focus.
-	QWidget(getGUI()->mainWindow(), Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint)
+	QWidget(getGUI()->mainWindow(), Qt::ToolTip)
 {
-	setAttribute(Qt::WA_ShowWithoutActivating);
-	setAttribute(Qt::WA_QuitOnClose, false);  // a tooltip never closed the application; a notice must not either
 	QHBoxLayout * mainLayout = new QHBoxLayout();
 	setLayout(mainLayout);
 

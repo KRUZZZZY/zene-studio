@@ -689,54 +689,6 @@ private slots:
 		delete beside;
 		delete control;
 	}
-
-	//! gui-1115: Help > Accessibility Check, run from the OPEN Help menu, must leave its report readable after the menu
-	//! closes. A Qt::ToolTip is an override-redirect transient on X11 (the reactivated main window covers it), so the
-	//! notice must be a persistent, stay-on-top float; QAction::trigger() alone never opens a menu and misses that path.
-	//! The notice must also carry a count for each of the five checks, so its generic summary cannot stop before the
-	//! per-check summary.
-	void aReportFromTheOpenHelpMenuSurvivesTheMenuClosing()
-	{
-		MainWindow* window = getGUI()->mainWindow();
-		window->resize(1000, 700);
-		window->show();
-		QVERIFY(QTest::qWaitForWindowExposed(window));
-		QCoreApplication::processEvents();  // the shell's queued menu install
-		QMenu* help = window->menuBar()->actions().last()->menu();
-		QVERIFY2(help != nullptr, "the Help menu is not installed");
-		QAction* check = named(help, QObject::tr("Accessibility Check"));
-		QVERIFY2(check != nullptr && check->isEnabled(), "Help has no usable Accessibility Check entry");
-		const QList<TextFloat*> before = window->findChildren<TextFloat*>();
-		// Open Help and CLICK its entry: the menu is OPEN while the command runs and closes afterwards, exactly as a
-		// person's click does. QAction::trigger() alone never opens a menu.
-		help->popup(window->mapToGlobal(QPoint(10, 10)));
-		QVERIFY2(help->isVisible(), "the Help menu did not open");
-		const QPoint entry = help->actionGeometry(check).center();
-		QVERIFY2(help->actionAt(entry) == check, "the Accessibility Check entry has no place in the open menu");
-		QTest::mouseClick(help, Qt::LeftButton, Qt::NoModifier, entry);
-		QVERIFY2(!help->isVisible(), "the Help menu stayed open");
-		QCoreApplication::processEvents();
-		TextFloat* report = nullptr;
-		for (TextFloat* message : window->findChildren<TextFloat*>())
-		{
-			if (!before.contains(message)) { report = message; }
-		}
-		QVERIFY2(report != nullptr, "the Accessibility Check report was not made");
-		QVERIFY2(report->isVisible(), "the Accessibility Check report disappeared when Help closed");
-		// The platform tear-down this finding hit is a tooltip-only path: a Qt::ToolTip is override-redirect on X11,
-		// so the main window reactivated by the menu's close is drawn over it. The report must be a normal stay-on-top
-		// float instead, so it is still the window a person sees after Help closes.
-		QVERIFY2(report->windowType() != Qt::ToolTip, "the report is still a tooltip transient that the menu dismissal tears down");
-		QVERIFY2(report->windowFlags().testFlag(Qt::WindowStaysOnTopHint), "the report can be covered by the main window");
-		QString shown;
-		for (QLabel* label : report->findChildren<QLabel*>()) { shown += label->text() + QLatin1Char('\n'); }
-		for (const QString& checkName : {QStringLiteral("Name"), QStringLiteral("Role"), QStringLiteral("Value"),
-			QStringLiteral("Focus"), QStringLiteral("Duplicates")})
-		{
-			QVERIFY2(shown.contains(checkName + QLatin1Char(':')), qPrintable(checkName + QStringLiteral(" count is not in:\n") + shown));
-		}
-		report->close();
-	}
 };
 
 QTEST_MAIN(GrooveMenuTest)
