@@ -236,6 +236,12 @@ def run(job, rework_file, engine, fix_one, driver):
             if isinstance(exc, feature_ladder.StalePacket):
                 driver["log"]("fix", str(exc))
                 return
+            if isinstance(exc, feature_ladder.PacketEvidenceError):
+                # A rerank cannot restore historical evidence. Keep the exact
+                # rework, scope and round, and hold it without spending a session.
+                L.block(item, 'blocked-diagnostic', str(exc), integration_jobs_tree(item, driver))
+                driver['log']('fix', f"{L.issue_id(item)}: pinned packet evidence unavailable; queued job retained: {exc}")
+                return
             folder = driver['D']['runs'] / f"{driver['slug'](item['cluster'])}.r{job['round']}"
             # A usage-limit pause is not a preparation failure: fix_one has already archived the run folder and
             # requeued the job; blocking here would hold the issue until its build inputs changed.

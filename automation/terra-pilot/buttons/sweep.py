@@ -523,10 +523,13 @@ def stage_triage(run, train, how="one left click on the control, from a fresh pr
              for r in jsonl(QUEUE / f"queue/{q}.jsonl") if r.get('revision') == revision}
     known |= {r.get("control_id") for r in jsonl(QUEUE / "duplicates.jsonl") if r.get('revision') == revision}
     fails = [f for f in fails if f["id"] not in known]
+    pending = {f['id']: f for f in fails}
+    pending_path = run / 'triage-pending.jsonl'
+    write_jsonl(pending_path, list(pending.values()))
     added, urgent = [], []
     for i in range(0, len(fails), TRIAGE_BATCH):
         if not openai_wait(run):
-            break
+            raise RuntimeError(f'Terra triage allowance unavailable; findings retained in {pending_path}')
         batch = fails[i:i + TRIAGE_BATCH]
         evidence = "\n\n".join(json.dumps({k: f.get(k) for k in ("id", "view", "role", "name", "tooltip", "expected",
                                                                   "outcome", "saw", "errors")})
@@ -555,9 +558,15 @@ def stage_triage(run, train, how="one left click on the control, from a fresh pr
             '"root_cause": "...", "repro": "...", "difficulty": "easy", "urgent": false, "urgent_why": "", '
             '"not_real_why": "", "test_valid": true, "invalid_test_reason": ""}\n\nFAILURES:\n' + evidence)
         prompt = prompt_context.stamp(prompt)
-        subprocess.run([str(LUNA), "-C", str(TREE), "-o", str(out), "--read-only", prompt],
-                       capture_output=True, text=True, timeout=3600)
+        result = subprocess.run([str(LUNA), "-C", str(TREE), "-o", str(out), "--read-only", prompt],
+                                capture_output=True, text=True, timeout=3600)
+        (run / f'triage-{i // TRIAGE_BATCH}.runner.log').write_text(
+            (getattr(result, 'stdout', '') or '') + (getattr(result, 'stderr', '') or ''))
+        if result.returncode:
+            raise RuntimeError(f'Terra triage failed (rc {result.returncode}); findings retained in {pending_path}; '
+                               f'see triage-{i // TRIAGE_BATCH}.runner.log')
         by_id = {f["id"]: f for f in batch}
+        answered = set()
         for line in (out.read_text() if out.exists() else "").splitlines():
             line = line.strip().strip("`")
             if not line.startswith("{"):
@@ -567,8 +576,9 @@ def stage_triage(run, train, how="one left click on the control, from a fresh pr
             except ValueError:
                 continue
             f = by_id.get(v.get("id"))
-            if f is None:
+            if f is None or f['id'] in answered:
                 continue
+            answered.add(f['id'])
             with open(QUEUE / "decisions.jsonl", "a") as dj:
                 dj.write(json.dumps({"at": datetime.datetime.now().isoformat(timespec="seconds"), "train": train,
                                      "control_id": f["id"], **v}) + "\n")
@@ -616,6 +626,12 @@ def stage_triage(run, train, how="one left click on the control, from a fresh pr
                 urgent.append(row)
                 with open(URGENT, "a") as u:
                     u.write(f"{cluster}\t{row['title'][:120]}\n")
+        for identity in answered:
+            pending.pop(identity, None)
+        write_jsonl(pending_path, list(pending.values()))
+        missing = set(by_id) - answered
+        if missing:
+            raise RuntimeError(f'Terra triage missing verdict for {sorted(missing)}; findings retained in {pending_path}')
     log(run, f"triage: {len(added)} bugs queued ({len(urgent)} urgent) from {len(fails)} failures")
     return added, urgent
 

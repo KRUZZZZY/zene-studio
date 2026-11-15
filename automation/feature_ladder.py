@@ -18,6 +18,10 @@ class StalePacket(RuntimeError):
     pass
 
 
+class PacketEvidenceError(ValueError):
+    """Pinned evidence needs repair; retain its queued job and stop redispatch."""
+
+
 LEGACY = {"free": "haiku-max", "muse": "haiku-max", "sonnet": "sonnet-high", "opus": "opus-medium",
           "fable-low": "opus-xhigh", "fable-medium": "opus-xhigh", "fable-high": "opus-xhigh"}
 
@@ -293,7 +297,7 @@ def freeze_packet(item, folder):
             if stable.exists():
                 stored = read(stable)
                 if stored.get('packet_hash') != packet['packet_hash']:
-                    raise ValueError(f'Immutable task packet evidence is damaged: {stable}')
+                    raise PacketEvidenceError(f'Immutable task packet evidence is damaged: {stable}')
                 verify_packet(stored, packet['packet_hash'])
             else:
                 write(stable, packet)
@@ -305,7 +309,7 @@ def freeze_packet(item, folder):
 def recover_packet(source, expected):
     """Recover legacy run references by exact hash; never substitute newer preparation."""
     if not re.fullmatch(r'[0-9a-f]{64}', expected):
-        raise ValueError('Invalid pinned task packet hash')
+        raise PacketEvidenceError('Invalid pinned task packet hash')
     candidates = [ROOT / 'task-packet-evidence' / (expected + '.json')]
     try:
         relative = source.relative_to(ROOT / 'runs')
@@ -318,8 +322,11 @@ def recover_packet(source, expected):
     for path in candidates:
         packet = read(path)
         if packet.get('packet_hash') == expected:
-            return verify_packet(packet, expected)
-    raise ValueError(f'Pinned task packet {expected} is unavailable at {source} or its archives; preserve job for repair')
+            try:
+                return verify_packet(packet, expected)
+            except ValueError as exc:
+                raise PacketEvidenceError(str(exc)) from exc
+    raise PacketEvidenceError(f'Pinned task packet {expected} is unavailable at {source} or its archives; preserve job for repair')
 
 
 def verify_packet(packet, expected=None):
