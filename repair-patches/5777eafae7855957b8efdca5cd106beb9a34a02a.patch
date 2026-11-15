@@ -1,0 +1,555 @@
+From 5777eafae7855957b8efdca5cd106beb9a34a02a Mon Sep 17 00:00:00 2001
+From: Zene CI repair <noreply@zene.invalid>
+Date: Sun, 15 Nov 2026 15:58:46 +0000
+Subject: [PATCH] fix(ci): CI regression: build / macos-x86_64
+
+CI-Repair-Id: ci-repair-ci-78cca41150908714-62b2bb468573
+---
+ .../cluster-ci-78cca41150908714.md            | 119 +++++++
+ tests/CMakeLists.txt                          |  17 +
+ tests/VideoClipsNoFfmpegCheck.py              | 315 ++++++++++++++++++
+ tests/fork-sources.txt                        |   1 +
+ tests/src/core/VideoClipsTest.cpp             |   5 +
+ tests/src/gui/VideoClipsGuiTest.cpp           |   5 +
+ 6 files changed, 462 insertions(+)
+ create mode 100644 docs/qwen-fixes-2026-10/cluster-ci-78cca41150908714.md
+ create mode 100755 tests/VideoClipsNoFfmpegCheck.py
+
+diff --git a/docs/qwen-fixes-2026-10/cluster-ci-78cca41150908714.md b/docs/qwen-fixes-2026-10/cluster-ci-78cca41150908714.md
+new file mode 100644
+index 0000000000..19ff115fbf
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/cluster-ci-78cca41150908714.md
+@@ -0,0 +1,119 @@
++FIXED
++
++# cluster ci-78cca41150908714 - builds without FFmpeg could not compile the multi-clip video tests
++
++## Verdict
++
++**REAL** - a test-source portability defect, not product behaviour and not infrastructure. The hosted
++`build / macos-x86_64` job at `cc29a63dde09cf28bb00498a2d2a5b124d4d614d` compiles the video tests in a
++configuration without `ZENE_HAVE_FFMPEG`. `tests/src/core/VideoTestClip.h:50` opens the FFmpeg-only block,
++`:228` defines `videotest::makeClip` inside it, and `:237` closes it, so the helper does not exist in that
++configuration. `tests/src/core/VideoClipsTest.cpp:530` called it unconditionally, which is exactly the CI
++diagnostic:
++
++    VideoClipsTest.cpp:530:33: error: 'makeClip' is not a member of 'videotest'
++    VideoClipsTest.cpp:530:60: error: 'makeClip' is not a member of 'videotest'
++
++The same unguarded helper call existed in the GUI sibling `tests/src/gui/VideoClipsGuiTest.cpp:337`; the CI
++log stopped at the first failing target, so the hosted job would have failed there next. Every other caller
++is already inside the same `#ifdef ZENE_HAVE_FFMPEG` guard:
++
++- `tests/src/core/VideoTrackTest.cpp:298-306` (the sibling `needClip()` the fix follows)
++- `tests/src/core/VideoTrackTestParts1.h:233-236`
++- `tests/src/core/VideoFfmpegTest.cpp:65-69` and `:94-98`
++- `tests/src/gui/ArrangerOverlaysVideoLaneTest.cpp:400-404`
++- `tests/src/core/VideoTestClipTest.cpp:104-110`
++
++## Cause and fix
++
++`needClips()` already returns early when `VideoDecoder::available()` is false, so the helper is never called
++at run time in a no-FFmpeg build; only the compile-time reference was missing. Both `needClips()` functions
++now guard the clip construction with `#ifdef ZENE_HAVE_FFMPEG` and return `false` otherwise, matching
++`VideoTrackTest::needClip()`. The FFmpeg branch is byte-for-byte the previous code, so the multi-clip
++acceptance path (identity/offsets/metadata across save and reopen, legacy one-`<video>` load, `project.new`
++clearing, one undo step per edit, playback frame selection without stale frames, and `video.render_frames`
++across clips and gaps) is unchanged. With no FFmpeg the existing `QSKIP("no FFmpeg in this build, or the test
++clips could not be made")` path is preserved.
++
++Changed:
++
++- `tests/src/core/VideoClipsTest.cpp:524-539`
++- `tests/src/gui/VideoClipsGuiTest.cpp:331-346`
++- `tests/CMakeLists.txt:9317-9333` registers `VideoClipsNoFfmpegCheck` (CTest #977)
++- `tests/VideoClipsNoFfmpegCheck.py` (new regression check)
++
++## Regression test
++
++`tests/VideoClipsNoFfmpegCheck.py` reads the build's `compile_commands.json`, takes the real command line for
++each of `tests/src/core/VideoClipsTest.cpp` and `tests/src/gui/VideoClipsGuiTest.cpp`, and compiles each one
++twice with syntax-only: as configured, then against a shadow `lmmsconfig.h` whose `#define ZENE_HAVE_FFMPEG`
++line is removed. Two fixtures prove the shadow actually takes effect in both directions (the configured header
++still defines the macro; the shadow removes it). The unit is generated with the configured Qt moc. Missing
++`compile_commands.json`, entry or moc exits 2 instead of passing. No timing, sleep or race is involved: the
++only inputs are the recorded compile line and the shadowed configuration header.
++
++## Test matrix
++
++| Path | What is exercised | Result |
++| --- | --- | --- |
++| normal build (FFmpeg present) | both TUs compile unchanged; `VideoClipsTest` and `VideoClipsGuiTest` run their multi-clip contract | PASS, family 9/9 |
++| reconfiguration at the cause (no FFmpeg) | shadowed `lmmsconfig.h`, both TUs compiled with the helper absent | PASS (RED before the fix) |
++| invalid setup | missing `compile_commands.json`, entry or moc | exit 2, never a silent pass |
++| boundary | the existing multi-clip fixture covers two clips, a gap, save/reopen, undo and frame selection; the guard changes none of it | covered by `VideoClipsTest` |
++| audio thread | no product or render code changed; the guard is compile-time only | no new work on any audio path |
++| supported platforms | the check uses the recorded compiler (`-fsyntax-only`/`-I` for gcc/clang, `/Zs`/`/I` for cl/clang-cl) and the configured Qt moc | runs on Linux, macOS and Windows hosted shapes |
++
++## Evidence table
++
++| Step | Exact command | Exit |
++| --- | --- | --- |
++| reproduce on unfixed tree (RED) | `python3 tests/VideoClipsNoFfmpegCheck.py --source-root "$PWD" --build-dir "$PWD/build" --moc /usr/lib/qt6/moc` | 1 |
++| regression RED, fix reversed (both files) | `git apply -R .../logs/fix.patch; python3 tests/VideoClipsNoFfmpegCheck.py ...` | 1 |
++| rebuild reverted | `cmake --build build --target VideoClipsTest VideoClipsGuiTest` | 0 |
++| regression GREEN, fix restored | `git apply .../logs/fix.patch; python3 tests/VideoClipsNoFfmpegCheck.py ...` | 0 |
++| rebuild restored | `cmake --build build --target VideoClipsTest VideoClipsGuiTest` | 0 |
++| ordinary path | `cd build/tests && ctest -R '^VideoClipsTest$' --output-on-failure` (1/1) | 0 |
++| affected family | `cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R 'Video' --output-on-failure` (9/9) | 0 |
++| registered check | `cd build/tests && ctest -R '^VideoClipsNoFfmpegCheck$' --output-on-failure` (1/1) | 0 |
++| setup failure path | same check with `--build-dir /nonexistent` | 2 |
++| moc failure path | same check with `--moc /nonexistent/moc` | 2 |
++| gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py "$PWD"` (all PASS) | 0 |
++
++The RED run's diagnostics name both unguarded lines after the fix is reversed:
++
++    tests/src/core/VideoClipsTest.cpp:530:33: error: 'makeClip' is not a member of 'videotest'
++    tests/src/gui/VideoClipsGuiTest.cpp:337:33: error: 'makeClip' is not a member of 'videotest'
++
++Logs (numbered, in the run log folder): `01` first RED attempt (wrong Qt5 moc, setup), `02` reproduced RED
++on the exact pinned commit, `03`/`04` fixed target build and test, `06` registered CTest green, `07`/`08`
++first reverse/restore proof, `09`/`10`/`11` family setup and green, `12` gates, `14` extended two-TU check,
++`15` both-target build, `16`/`17` earlier reverse/restore proof, `18` earlier family green, `19` setup paths,
++`20` gates after the first commit, `23` refactored check green, `25` final reverse/restore proof after the
++complexity refactor, `26` final gates, `27` final family green.
++`fix.patch` in the log folder is the exact code patch reversed and re-applied for `25`.
++
++## Self-check
++
++- **Regression fails with the product change reverted, passes restored.** Reverted both guarded functions
++  and ran the current check: `EXIT=1`, with `'makeClip' is not a member of 'videotest'` at both lines.
++  Restored and reran: `EXIT=0`. Logs `25a-red-reverted.log`, `25c-green-restored.log`; `fix.patch` holds the
++  reverted diff. The earlier pre-refactor run has the same result in `16b`/`17b`.
++- **Deterministic.** No wall-clock timing, sleeps, retries or races. The test uses the exact
++  `compile_commands.json` entry and a shadow `lmmsconfig.h` produced by deleting one `#define`; fixtures
++  assert the macro is present in the configured header and absent in the shadow before the TUs are compiled.
++- **Fix at the cause and complete.** Every `videotest::makeClip` occurrence in the tree was checked. Only
++  `VideoClipsTest.cpp:530` and `VideoClipsGuiTest.cpp:337` were unguarded; both now use the same
++  `#ifdef ZENE_HAVE_FFMPEG` shape as `VideoTrackTest.cpp:298-306`, and the other four call sites were already
++  guarded. The regression check compiles both affected TUs, so either can no longer regress silently.
++- **No collateral damage.** The FFmpeg branch is unchanged, so old projects and saved data load exactly as
++  before; no format, limit, check or command changed. The no-FFmpeg branch returns `false` only after
++  `VideoDecoder::available()` already returned false, preserving the previous skip behaviour. The 9-test
++  video family (including `VideoClipsTest`, `VideoClipsGuiTest`, `VideoTrackTest`, `VideoFfmpegTest`,
++  `VideoTestClipTest`, `VideoAudioNameTest`, `ArrangerOverlaysVideoLaneTest`, `ControlVideoClipsMcp`) passes.
++- **Gates.** `feature_check.py` exits 0 on every row (log `26`). The check's entry point was split into
++  `load_entries`, `collect_sources`, `prepare_all` and `shadow_compiles`, so no new function is over the
++  complexity target and the gate reports no new item in the changed files.
++- **Realtime/undo.** No production, audio-thread or command code changed; no allocation, lock, wait or I/O
++  was added to a render path, and the tests' existing one-undo-step assertions are untouched.
++- **ALREADY-FIXED / FALSE-POSITIVE counter-evidence.** Not applicable: the verdict is FIXED, and the RED run
++  at `cc29a63dde09cf28bb00498a2d2a5b124d4d614d` reproduced the CI diagnostic from the actual source.
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 96fe7d539c..b8e3654d54 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -9314,6 +9314,23 @@ if(PYTHON3_EXECUTABLE)
+ 	set_tests_properties(Qt5QFileInfoDateCheck PROPERTIES TIMEOUT 900)
+ endif()
+ 
++# cluster ci-78cca41150908714: the video test sources are registered for every build, but
++# tests/src/core/VideoTestClip.h defines videotest::makeClip only inside its
++# #ifdef ZENE_HAVE_FFMPEG block. The hosted macos-x86_64 job builds without FFmpeg and
++# stopped on tests/src/core/VideoClipsTest.cpp:530 with "no member named 'makeClip' in
++# namespace 'videotest'". Compile the real translation unit through its own
++# compile_commands.json line against a shadow lmmsconfig.h with the define removed, so the
++# hosted shape is reproduced on every host; the shadow is proved in both directions first.
++if(PYTHON3_EXECUTABLE)
++	add_test(NAME VideoClipsNoFfmpegCheck
++		COMMAND ${PYTHON3_EXECUTABLE}
++			${CMAKE_CURRENT_SOURCE_DIR}/VideoClipsNoFfmpegCheck.py
++			--source-root ${CMAKE_SOURCE_DIR}
++			--build-dir ${CMAKE_BINARY_DIR}
++			--moc $<TARGET_FILE:Qt${QT_VERSION_MAJOR}::moc>)
++	set_tests_properties(VideoClipsNoFfmpegCheck PROPERTIES TIMEOUT 600)
++endif()
++
+ # Reproduce strict hosted compiler contracts against this build's actual sources.
+ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
+ 	foreach(mode linux nam darwin-signature darwin-tu render)
+diff --git a/tests/VideoClipsNoFfmpegCheck.py b/tests/VideoClipsNoFfmpegCheck.py
+new file mode 100755
+index 0000000000..9a989a41b2
+--- /dev/null
++++ b/tests/VideoClipsNoFfmpegCheck.py
+@@ -0,0 +1,315 @@
++#!/usr/bin/env python3
++"""The multi-clip video tests must compile when the build has no FFmpeg.
++
++Cluster ci-78cca41150908714, hosted ``build / macos-x86_64``: the video test
++sources are registered for every build, but VideoTestClip.h defines
++``videotest::makeClip`` only inside its ``#ifdef ZENE_HAVE_FFMPEG`` block. The
++tests called the helper unguarded, so the job without FFmpeg stopped the build:
++
++    tests/src/core/VideoClipsTest.cpp:530:19: error: no member named 'makeClip'
++        in namespace 'videotest'
++
++VideoClipsTest and its GUI sibling VideoClipsGuiTest share that needClips() call
++and both must compile in the same configuration. This check compiles each real
++translation unit through its own line in build/compile_commands.json, first as
++configured and then against a shadow lmmsconfig.h with ZENE_HAVE_FFMPEG removed
++- the hosted shape. The shadow is proved in both directions with fixtures before
++the translation units are compiled. Exit codes: 0 = every compile passes, 1 =
++the test-source defect, 2 = the check cannot run.
++"""
++
++import argparse
++import json
++import os
++import re
++import shlex
++import subprocess
++import sys
++import tempfile
++
++SOURCES = (
++    os.path.join("tests", "src", "core", "VideoClipsTest.cpp"),
++    os.path.join("tests", "src", "gui", "VideoClipsGuiTest.cpp"),
++)
++CONFIG = "lmmsconfig.h"
++MARKER = "ZENE_HAVE_FFMPEG"
++
++WINDOWS_COMMAND_RE = re.compile(r"(?:^|[\s=\"'])[A-Za-z]:[\\/]|\\\\[^\"']")
++
++
++def fail(message):
++    print("VideoClipsNoFfmpegCheck: " + message, file=sys.stderr)
++    return 2
++
++
++def split_command(entry):
++    """The recorded compile line as an argument list (response files stay literal)."""
++    if entry.get("command"):
++        command = entry["command"]
++        if WINDOWS_COMMAND_RE.search(command):
++            escaped_quote = "\uE000"
++            command = command.replace('\\"', escaped_quote)
++            lexer = shlex.shlex(command, posix=True)
++            lexer.whitespace_split = True
++            lexer.commenters = ""
++            lexer.escape = ""
++            return [arg.replace(escaped_quote, '"') for arg in lexer]
++        return shlex.split(command)
++    return list(entry.get("arguments") or [])
++
++
++def compile_flags(entry):
++    """The recorded command without its output/depfile arguments or compile action."""
++    args = split_command(entry)
++    out, index = [], 0
++    while index < len(args):
++        arg = args[index]
++        if arg in ("-o", "-MF", "-MT", "/Fo"):
++            index += 2
++            continue
++        if arg.startswith("/Fo") or arg in ("-MD", "-MMD", "-MP", "-c", "/c"):
++            index += 1
++            continue
++        out.append(arg)
++        index += 1
++    return out
++
++
++def is_msvc(compiler):
++    """True for the MSVC driver family: cl.exe and clang-cl."""
++    return os.path.basename(compiler.replace("\\", "/")).lower() in (
++        "cl", "cl.exe", "clang-cl", "clang-cl.exe")
++
++
++def switch(compiler, msvc, other):
++    """MSVC's spelling of a switch on cl/clang-cl, the gcc/clang one elsewhere."""
++    return msvc if is_msvc(compiler) else other
++
++
++def include_dirs(args):
++    out, index = [], 0
++    while index < len(args):
++        arg = args[index]
++        if arg in ("-I", "-isystem", "/I", "/external:I") and index + 1 < len(args):
++            out.append(args[index + 1])
++            index += 2
++            continue
++        if arg.startswith(("-I", "/I", "/external:I")):
++            value = arg[len("/external:I"):] if arg.lower().startswith("/external:i") else arg[2:]
++            if value:
++                out.append(value)
++        elif arg.startswith("-isystem") and len(arg) > len("-isystem"):
++            out.append(arg[len("-isystem"):])
++        index += 1
++    return out
++
++
++def run(command, directory, timeout=600):
++    return subprocess.run(command, cwd=directory, capture_output=True, text=True, timeout=timeout)
++
++
++def errors_of(result):
++    output = (result.stderr or "") + "\n" + (result.stdout or "")
++    return [line.strip() for line in output.splitlines() if "error" in line.lower()]
++
++
++def tu_command(entry, includes):
++    """The recorded compile line, made syntax-only and preceded by @includes."""
++    args = compile_flags(entry)
++    return ([args[0], switch(args[0], "/Zs", "-fsyntax-only")]
++            + [switch(args[0], "/I", "-I") + path for path in includes] + args[1:])
++
++
++def fixture_command(compiler, includes, source):
++    return ([compiler, switch(compiler, "/Zs", "-fsyntax-only")]
++            + [switch(compiler, "/I", "-I") + path for path in includes] + [source])
++
++
++def source_path(root, entry):
++    path = entry["file"]
++    return os.path.normpath(path if os.path.isabs(path) else os.path.join(entry["directory"], path))
++
++
++def find_entry(entries, root, relative):
++    wanted = os.path.normpath(os.path.join(root, relative))
++    for entry in entries:
++        if os.path.normcase(source_path(root, entry)) == os.path.normcase(wanted):
++            return entry
++    return None
++
++
++def find_config(entry):
++    """The lmmsconfig.h the recorded command actually sees."""
++    for include in include_dirs(compile_flags(entry)):
++        directory = include if os.path.isabs(include) else os.path.join(entry["directory"], include)
++        candidate = os.path.normpath(os.path.join(directory, CONFIG))
++        if os.path.isfile(candidate):
++            return candidate
++    return None
++
++
++def moc_include(entry, source, tempdir, moc):
++    """Generate the .moc the test TU includes itself; (directory or None, detail)."""
++    match = re.search(r'#include\s+"([\w.+-]+\.moc)"',
++                      open(source, encoding="utf-8", errors="replace").read())
++    if match is None:
++        return None, ""
++    if not moc or not os.path.isfile(moc):
++        return None, "includes %s but no usable moc was given" % match.group(1)
++    output = os.path.join(tempdir, match.group(1))
++    command = [moc, source, "-o", output]
++    for directory in include_dirs(compile_flags(entry)):
++        command += ["-I", directory]
++    produced = run(command, entry["directory"])
++    if produced.returncode != 0:
++        detail = (produced.stderr or produced.stdout).strip().splitlines()
++        return None, "moc failed: " + (detail[-1] if detail else "no output")
++    return tempdir, ""
++
++
++def write_shadow(real, shadow):
++    """Copy lmmsconfig.h without its ZENE_HAVE_FFMPEG define; return the define count."""
++    text = open(real, encoding="utf-8", errors="replace").read()
++    text, removed = re.subn(r"^[ \t]*#[ \t]*define[ \t]+" + MARKER + r"\b.*$",
++                            "/* shadow: " + MARKER + " removed for the no-FFmpeg check */",
++                            text, flags=re.M)
++    if removed:
++        with open(os.path.join(shadow, CONFIG), "w", encoding="utf-8") as handle:
++            handle.write(text)
++    return removed
++
++
++def prove_shadow(entry, shadow, tempdir):
++    """Fixtures prove the shadow removes the define and the configured header keeps it."""
++    compiler = compile_flags(entry)[0]
++    recorded = include_dirs(compile_flags(entry))
++    base = os.path.join(tempdir, "fixture-configured.cpp")
++    strict = os.path.join(tempdir, "fixture-shadowed.cpp")
++    with open(base, "w", encoding="utf-8") as handle:
++        handle.write('#include "%s"\n#ifndef %s\n#error configured header lost %s\n#endif\n'
++                     % (CONFIG, MARKER, MARKER))
++    with open(strict, "w", encoding="utf-8") as handle:
++        handle.write('#include "%s"\n#ifdef %s\n#error shadow header kept %s\n#endif\n'
++                     % (CONFIG, MARKER, MARKER))
++    configured = run(fixture_command(compiler, recorded, base), entry["directory"])
++    shadowed = run(fixture_command(compiler, [shadow] + recorded, strict), entry["directory"])
++    print("shadow removes %s: %s" % (MARKER, "yes" if shadowed.returncode == 0 else "NO"))
++    print("configured header defines %s: %s" % (MARKER, "yes" if configured.returncode == 0 else "NO"))
++    if shadowed.returncode or configured.returncode:
++        for result in (configured, shadowed):
++            for line in errors_of(result):
++                print("  " + line)
++        return False
++    return True
++
++
++def compile_tu(entry, includes, label):
++    result = run(tu_command(entry, includes), entry["directory"])
++    print("%s: %s (exit %d)" % (label, "PASS" if result.returncode == 0 else "FAIL", result.returncode))
++    if result.returncode:
++        for line in errors_of(result):
++            print("  " + line)
++    return result.returncode == 0
++
++
++def prepare_tu(entry, source, tempdir, moc):
++    """The generated .moc include directory for a test TU; (includes, error)."""
++    moc_dir, detail = moc_include(entry, source, tempdir, moc)
++    if moc_dir is None and detail:
++        return None, detail
++    return ([moc_dir] if moc_dir else []), ""
++
++
++def load_entries(build):
++    """The build's compile_commands.json; (entries, error)."""
++    commands = os.path.join(build, "compile_commands.json")
++    if not os.path.isfile(commands):
++        return None, "no compile_commands.json in " + build
++    entries = json.load(open(commands))
++    if not isinstance(entries, list) or not entries:
++        return None, "invalid or empty compile_commands.json in " + build
++    return entries, ""
++
++
++def collect_sources(entries, root):
++    """(relative, entry, source) for every TU the check compiles; (found, error)."""
++    found = []
++    for relative in SOURCES:
++        entry = find_entry(entries, root, relative)
++        if entry is None:
++            return None, "no compile_commands.json entry for " + os.path.join(root, relative)
++        source = os.path.join(root, relative)
++        if not os.path.isfile(source):
++            return None, "missing source " + source
++        found.append((relative, entry, source))
++    return found, ""
++
++
++def prepare_all(found, tempdir, moc):
++    """Compile each TU as configured; (prepared, error)."""
++    prepared = []
++    for relative, entry, source in found:
++        includes, detail = prepare_tu(entry, source, tempdir, moc)
++        if includes is None:
++            return None, detail
++        if not compile_tu(entry, includes, relative + " configured"):
++            return None, relative + " does not compile as configured"
++        prepared.append((relative, entry, includes))
++    return prepared, ""
++
++
++def shadow_compiles(prepared, shadow):
++    """Compile each prepared TU without the macro; the failing relatives."""
++    failed = []
++    for relative, entry, includes in prepared:
++        if not compile_tu(entry, [shadow] + includes, relative + " without " + MARKER):
++            failed.append(relative)
++    return failed
++
++
++def check(root, build, moc):
++    entries, error = load_entries(build)
++    if entries is None:
++        return fail(error)
++    found, error = collect_sources(entries, root)
++    if found is None:
++        return fail(error)
++    with tempfile.TemporaryDirectory(prefix="videoclips-noffmpeg-") as tempdir:
++        prepared, error = prepare_all(found, tempdir, moc)
++        if prepared is None:
++            return fail(error)
++        real = find_config(found[0][1])
++        if real is None:
++            return fail("could not find " + CONFIG + " on the recorded include path")
++        shadow = os.path.join(tempdir, "shadow")
++        os.makedirs(shadow)
++        if not write_shadow(real, shadow):
++            print("this build's %s already lacks %s; the configured compiles are the no-FFmpeg proof"
++                  % (CONFIG, MARKER))
++            return 0
++        if not prove_shadow(found[0][1], shadow, tempdir):
++            return fail("the shadow header does not take effect")
++        failed = shadow_compiles(prepared, shadow)
++        if failed:
++            print("FAIL: %s do not compile without %s" % (", ".join(failed), MARKER))
++            return 1
++        print("PASS: every video clip test compiles in a build without " + MARKER)
++    return 0
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--source-root", required=True)
++    parser.add_argument("--build-dir", required=True)
++    parser.add_argument("--moc", default="")
++    args = parser.parse_args()
++    root = os.path.abspath(args.source_root)
++    build = os.path.abspath(args.build_dir)
++    return check(root, build, args.moc)
++
++
++if __name__ == "__main__":
++    try:
++        sys.exit(main())
++    except (OSError, ValueError, subprocess.SubprocessError) as error:
++        sys.exit(fail(str(error)))
+diff --git a/tests/fork-sources.txt b/tests/fork-sources.txt
+index b966ddd530..9675cb2fc9 100644
+--- a/tests/fork-sources.txt
++++ b/tests/fork-sources.txt
+@@ -3935,3 +3935,4 @@ tests/src/plugins/CarlaVst2LegacyStateTest.cpp
+ tests/src/gui/LegacyVst2ProjectTest.cpp
+ tests/data/legacy-projects/vst2-vestige-vsteffect.mmp
+ tests/data/legacy-projects/vst2-vestige-vsteffect.reference.json
++tests/VideoClipsNoFfmpegCheck.py
+diff --git a/tests/src/core/VideoClipsTest.cpp b/tests/src/core/VideoClipsTest.cpp
+index ea1d264c7e..748855abf0 100644
+--- a/tests/src/core/VideoClipsTest.cpp
++++ b/tests/src/core/VideoClipsTest.cpp
+@@ -521,16 +521,21 @@ private slots:
+ 	}
+ 
+ private:
++	//! Make both clips once; skips the calling test in a build without FFmpeg (VideoTrackTest's needClip).
+ 	bool needClips()
+ 	{
+ 		if (!VideoDecoder::available()) { return false; }
+ 		if (!m_a.isEmpty() && !m_b.isEmpty()) { return true; }
++#ifdef ZENE_HAVE_FFMPEG
+ 		const QString a = m_dir.filePath(QStringLiteral("first.mkv"));
+ 		const QString b = m_dir.filePath(QStringLiteral("second.mkv"));
+ 		if (!videotest::makeClip(a) || !videotest::makeClip(b, videotest::Palette::GreenYellow)) { return false; }
+ 		m_a = a;
+ 		m_b = b;
+ 		return true;
++#else
++		return false;
++#endif
+ 	}
+ 
+ 	QTemporaryDir m_dir;
+diff --git a/tests/src/gui/VideoClipsGuiTest.cpp b/tests/src/gui/VideoClipsGuiTest.cpp
+index 31953196c8..617c64bec5 100644
+--- a/tests/src/gui/VideoClipsGuiTest.cpp
++++ b/tests/src/gui/VideoClipsGuiTest.cpp
+@@ -328,16 +328,21 @@ private:
+ 		return nullptr;
+ 	}
+ 
++	//! Make both clips once; skips the calling test in a build without FFmpeg (VideoTrackTest's needClip).
+ 	bool needClips()
+ 	{
+ 		if (!VideoDecoder::available()) { return false; }
+ 		if (!m_a.isEmpty() && !m_b.isEmpty()) { return true; }
++#ifdef ZENE_HAVE_FFMPEG
+ 		const QString a = m_home.filePath(QStringLiteral("first.mkv"));
+ 		const QString b = m_home.filePath(QStringLiteral("second.mkv"));
+ 		if (!videotest::makeClip(a) || !videotest::makeClip(b, videotest::Palette::GreenYellow)) { return false; }
+ 		m_a = a;
+ 		m_b = b;
+ 		return true;
++#else
++		return false;
++#endif
+ 	}
+ 
+ 	QTemporaryDir m_home;
+-- 
+2.56.0
+
