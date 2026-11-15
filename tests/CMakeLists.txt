@@ -2734,6 +2734,12 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 			LMMS_TEST_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
 	endif()
 
+	# SfzPlayerTest exercises sfizz's state saver directly, including its Abseil dependencies.
+	if(LMMS_TEST_NAME STREQUAL "SfzPlayerTest")
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/external/abseil-cpp)
+	endif()
+
 	# Q050-103: the envelope and voice-reuse test renders through the build's audiofileprocessor module.
 	# Q050-484: the SFZ tests load the build's sfzplayer module (sfizz) and render through it.
 	if((LMMS_TEST_NAME STREQUAL "SfzPlayerTest" OR LMMS_TEST_NAME STREQUAL "SfzPlayerRealtimeTest") AND TARGET sfzplayer)
@@ -6143,6 +6149,15 @@ if(PYTHON3_EXECUTABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/nam-portability-registration-check.py
 			${NAM_PORTABILITY_REGISTRATION_ARGS})
 	set_tests_properties(NamPortabilityRegistrationCheck PROPERTIES TIMEOUT 120)
+endif()
+
+# Train 48: optional FFmpeg and platform-specific fixture compilation.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
+	add_test(NAME Train48Portability COMMAND ${PYTHON3_EXECUTABLE}
+		${CMAKE_CURRENT_SOURCE_DIR}/train-48-portability-check.py
+		--source-root ${CMAKE_SOURCE_DIR} --build-dir ${CMAKE_BINARY_DIR}
+		--moc $<TARGET_FILE:Qt${QT_VERSION_MAJOR}::moc> --qt-major ${QT_VERSION_MAJOR})
+	set_tests_properties(Train48Portability PROPERTIES TIMEOUT 300)
 endif()
 
 # Train 47: exercise the Qt5 JSON and Windows fixture compiler contracts.

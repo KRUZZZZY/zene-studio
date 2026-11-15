@@ -307,7 +307,7 @@ private slots:
 		QCOMPARE(contents(project), original);
 	}
 
-#ifndef _WIN32
+#if !defined(Q_OS_WIN) && !defined(_WIN32)
 	void successfulRenderKeepsSymbolicLinkDestination()
 	{
 		QTemporaryDir dir;
