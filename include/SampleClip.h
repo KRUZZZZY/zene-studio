@@ -340,7 +340,9 @@ private:
 	void journalArmStep();
 	//! Main thread: an armed clip's take on a new take lane; \a newestIsActive makes it the active
 	//! take even over a take the user chose (Keep History).
-	void addRecordedLane(std::shared_ptr<const SampleBuffer> take, bool newestIsActive = false);
+	//! \a loopPass: the pass of a loop recording; in Overdub it switches the track's Play all takes on, so the
+	//! earlier passes stay audible (Replace and Keep History keep only the newest active).
+	void addRecordedLane(std::shared_ptr<const SampleBuffer> take, bool newestIsActive = false, bool loopPass = false);
 	//! Main thread (Q050-094): this clip's own audio, as a copy, on a new take lane of its group.
 	void addHistoryLane();
 	//! Main thread: a clip for take lane \a lane of this clip's group, a copy of \a source or (no source)
