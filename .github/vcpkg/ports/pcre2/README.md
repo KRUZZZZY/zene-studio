@@ -36,6 +36,11 @@ used, hash-checked, and the head path to still query.
 The three upstream patches are stored as lossless `*.patch.json` strings because
 unified-diff blank context lines contain a trailing space. Before any dependency
 fetch, the portfile reconstructs them under `CURRENT_BUILDTREES_DIR/zene-patches`,
-checks each original SHA512, and passes those exact files to vcpkg. The regression
-checks both decoded inputs and materialized files, plus missing/tampered inputs.
-The full repository `git diff --check` remains enabled without exemptions.
+checks each original SHA512, and passes those exact files to vcpkg. The reconstruction
+uses `file(CONFIGURE ... NEWLINE_STYLE UNIX)` rather than `file(WRITE)`: CMake opens a
+plain write in text mode, so on Windows the decoded LF bytes became CRLF and the pinned
+SHA512 failed (hosted msvc-x64, cluster ci-619dd453d973527c). A single
+`@patch_content@` expansion keeps both `@...@` and `${...}` tokens inside the patch
+text literal. The regression checks both decoded inputs and materialized files,
+including the Windows text-mode translation, plus missing/tampered inputs. The full
+repository `git diff --check` remains enabled without exemptions.

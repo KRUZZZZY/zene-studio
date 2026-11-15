@@ -41,7 +41,17 @@
 #include "PluginFactory.h"
 #include "../core/ReversibilityTestSupport.h"
 #include "SfzTestSupport.h"
-#include "../../../plugins/SfzPlayer/sfizz/external/abseil-cpp/absl/random/internal/iostream_state_saver.h"
+// The test exercises the vendored Abseil copy through the include root tests/CMakeLists.txt gives this
+// target. The old relative include found this one header by path but left its own `absl/...` includes to the
+// compiler's search order: a host Abseil masked the misconfiguration on Linux, and windows-arm64, which has
+// none, stopped at "absl/meta/type_traits.h file not found".
+#include "absl/base/config.h"
+#include "absl/random/internal/iostream_state_saver.h"
+
+// The save/restore behaviour below is the vendored tree's (sfizz 1.2.3 pins Abseil 20230125.3). If the
+// compiler resolved a host Abseil instead, the test would silently cover the wrong code, so fail the build.
+static_assert(ABSL_LTS_RELEASE_VERSION == 20230125,
+              "SfzPlayerTest must compile against the vendored Abseil 20230125; add its include root to this target");
 
 using namespace lmms;
 using namespace lmms::sfz_test;

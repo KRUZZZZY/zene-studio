@@ -46,6 +46,14 @@ Assertions:
 Deterministic: no network, no wall clock, no sleeps. Inputs are committed files; the
 only seam is the CMake stub table (URL -> action) built below.
 
+CLUSTER ci-619dd453d973527c. The hosted msvc-x64 Configure failed the very SHA512 check
+above for pcre2-10.35_fix-uwp.patch. The encoded input was right, but the portfile
+materialized it with `file(WRITE)`, which CMake opens in text mode: on Windows every LF
+in the decoded content became CRLF, so the pinned SHA512 no longer matched. The Windows
+check below re-runs the real portfile with `file(WRITE)`/`file(APPEND)` translated the
+way Windows' text mode translates them (LF -> CRLF); `file(CONFIGURE ... NEWLINE_STYLE
+UNIX)` is binary and must keep the exact bytes. This is behavioural, not a source grep.
+
 Exit codes: 0 = pass, 1 = regression, 2 = harness/setup error.
 """
 
@@ -208,6 +216,19 @@ function(vcpkg_install_copyright)
     tx("COPYRIGHT" "${ARGN}")
 endfunction()
 
+# Windows text-mode seam. The portfile under test is rewritten to call these instead of
+# file(WRITE)/file(APPEND) when the Windows check runs; CMake opens both of those in text
+# mode on Windows, which is exactly the LF -> CRLF translation reproduced here.
+function(zene_windows_file_write path content)
+    string(REPLACE "\n" "\r\n" windows_content "${content}")
+    file(WRITE "${path}" "${windows_content}")
+endfunction()
+
+function(zene_windows_file_append path content)
+    string(REPLACE "\n" "\r\n" windows_content "${content}")
+    file(APPEND "${path}" "${windows_content}")
+endfunction()
+
 include("${PORTFILE}")
 
 tx("SOURCE-DIR" "${SOURCE_PATH}")
@@ -295,6 +316,23 @@ endmacro()
     return proc, entries
 
 
+def windows_text_mode_port(port_dir, tmp):
+    """Copy the overlay port and rewrite the patch-materialization function to the Windows
+    text-mode commands. CMake's file(WRITE)/file(APPEND) open in text mode there, turning
+    every LF into CRLF; this seam reproduces that without needing a Windows host."""
+    copy = Path(tmp) / "windows-port"
+    shutil.copytree(port_dir, copy)
+    portfile = copy / "portfile.cmake"
+    text = portfile.read_text()
+    start = text.index("function(zene_pcre2_patch")
+    end = text.index("\nendfunction()", start) + len("\nendfunction()")
+    body = text[start:end]
+    body = re.sub(r"file\((WRITE|APPEND)\s+",
+                  lambda m: f"zene_windows_file_{m.group(1).lower()}(", body)
+    portfile.write_text(text[:start] + body + text[end:])
+    return portfile
+
+
 def load_config(checker):
     """The repository's vcpkg configuration, or {} when it does not exist. A missing or
     unparsable configuration is a FAIL, not a harness error: without it vcpkg falls back to
@@ -370,6 +408,22 @@ def check_tagged_release(checker, portfile, tmp):
                   "sljit tarball is the pinned commit and hash", github)
     checker.check(any("PCRE2_SUPPORT_JIT=ON" in c for c in entries.get("CONFIGURE", [])),
                   "the jit feature still reaches the build", str(entries.get("CONFIGURE")))
+
+
+def check_windows_text_mode(checker, port_dir, tmp):
+    """The hosted msvc-x64 failure: file(WRITE) is text mode on Windows, so the decoded
+    patch's LFs became CRLFs before the SHA512 check. Re-run the real portfile with that
+    translation applied; the pinned bytes and the dependency fetch must survive it."""
+    print("Windows text mode (the hosted msvc-x64 Configure failure)")
+    portfile = windows_text_mode_port(port_dir, tmp)
+    proc, entries = run_portfile(portfile, Path(tmp) / "windows-work")
+    combined = proc.stdout + proc.stderr
+    checker.check(proc.returncode == 0, "portfile completes with Windows LF->CRLF text-mode writes",
+                  combined[-800:])
+    checker.check(sorted(entries.get("PATCH-BYTES", [])) ==
+                  sorted(f"{name} {sha}" for name, sha in PATCH_SHA512.items()),
+                  "all three patches stay byte-identical through Windows text mode",
+                  str(entries.get("PATCH-BYTES")))
 
 
 def check_builtin_control(checker, tmp):
@@ -480,9 +534,10 @@ def main():
         check_builtin_control(checker, tmp)
         check_head_control(checker, portfile, tmp)
         if port_dir is not None:
+            check_windows_text_mode(checker, port_dir, tmp)
+            check_literal_patch_control(checker, port_dir, tmp)
             check_tampered_control(checker, port_dir, tmp)
             check_missing_control(checker, port_dir, tmp)
-            check_literal_patch_control(checker, port_dir, tmp)
             check_patch_control(checker, port_dir, tmp, missing=False)
             check_patch_control(checker, port_dir, tmp, missing=True)
 

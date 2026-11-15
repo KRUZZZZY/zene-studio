@@ -62,7 +62,7 @@ def qt5_flags():
     tool = shutil.which("pkg-config")
     if tool is None:
         fail("required tool is missing: pkg-config")
-    result = invoke([tool, "--cflags", "Qt5Core"])
+    result = invoke([tool, "--cflags", "Qt5Core", "Qt5Gui", "Qt5Xml"])
     if result.returncode:
         fail(f"pkg-config Qt5Core failed: {result.stderr.strip()}")
     return shlex.split(result.stdout)
@@ -83,7 +83,9 @@ def probe_json(root, tmp):
     first, second = source_statements(root)
     flags = qt5_flags()
     compiler_tool = compiler()
-    fixture = '''#include <QJsonArray>
+    fixture = '''#include "DeprecationHelper.h"
+using lmms::jsonInteger;
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QJsonValue>
 struct ClockProxy {
@@ -104,12 +106,12 @@ int main() {
 '''
     good = tmp / "qt5-json.cpp"
     good.write_text(fixture % (first, second), encoding="utf-8")
-    command = [compiler_tool, "-std=c++17", "-fPIC", *flags,
+    command = [compiler_tool, "-std=c++20", "-fPIC", "-I" + str(root / "include"), *flags,
                "-fsyntax-only", str(good)]
     compile_probe(command, root, True, "Qt5 source_bytes statements")
     bad = tmp / "qt5-json-original.cpp"
-    bad.write_text(fixture % (first.replace("toDouble", "toInteger"),
-                              second.replace("toDouble", "toInteger")), encoding="utf-8")
+    bad.write_text(fixture % ('const qint64 perId = clock.scheduleState(id).value(QStringLiteral("source_bytes")).toInteger(-1);',
+                              'inState = one.value(QStringLiteral("source_bytes")).toInteger(-1);'), encoding="utf-8")
     compile_probe([*command[:-1], str(bad)], root, False,
                   "Qt5 toInteger negative control")
 

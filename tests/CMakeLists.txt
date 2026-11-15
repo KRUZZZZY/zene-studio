@@ -1207,6 +1207,7 @@ set(LMMS_TESTS
 	# 0.5.0 L12 (Q050-042): old-version patterns keep their note and pattern lengths after upgrade and save/reopen.
 	src/core/LegacyPatternUpgradeTest.cpp
 	src/core/VideoTestClipTest.cpp
+	src/core/VideoTestClipPortabilityTest.cpp
 	# cluster new-p9-66 (BUG 8): the default extraction WAV never names a file that is already there
 	src/core/VideoAudioNameTest.cpp
 	src/core/StableTrackIdsTest.cpp
@@ -9329,9 +9330,49 @@ if(PYTHON3_EXECUTABLE)
 	set_tests_properties(Qt5QFileInfoDateCheck PROPERTIES TIMEOUT 900)
 endif()
 
+# Qt 5 hosted compiler regressions use the same source-derived portability section as the
+# other host checks, so Qt 6 builders exercise the checks too.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME Qt5QJsonToIntegerCheck
+		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/Qt5QJsonToIntegerCheck.py
+			--root ${CMAKE_SOURCE_DIR})
+	set_tests_properties(Qt5QJsonToIntegerCheck PROPERTIES TIMEOUT 120)
+	add_test(NAME Qt5JsonIntegerCheck
+		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/Qt5JsonIntegerCheck.py
+			--root ${CMAKE_SOURCE_DIR} --build-dir ${CMAKE_BINARY_DIR})
+	set_tests_properties(Qt5JsonIntegerCheck PROPERTIES TIMEOUT 300)
+	add_test(NAME Qt5QJsonValueIntegerCheck
+		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/Qt5QJsonValueIntegerCheck.py
+			--root ${CMAKE_SOURCE_DIR} --build-dir ${CMAKE_BINARY_DIR} --cxx ${CMAKE_CXX_COMPILER})
+	set_tests_properties(Qt5QJsonValueIntegerCheck PROPERTIES TIMEOUT 300 SKIP_RETURN_CODE 77)
+	execute_process(COMMAND pkg-config --exists Qt5Core RESULT_VARIABLE ZENE_HAS_QT5_CORE
+		OUTPUT_QUIET ERROR_QUIET)
+	if(ZENE_HAS_QT5_CORE EQUAL 0)
+		add_test(NAME Qt5JsonValueIntegerCheck
+			COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/Qt5JsonValueIntegerCheck.py
+				--source-root ${CMAKE_SOURCE_DIR})
+		set_tests_properties(Qt5JsonValueIntegerCheck PROPERTIES TIMEOUT 120)
+	endif()
+	add_test(NAME RemotePluginShmFifoQtUsageCheck
+		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/remote-plugin-shm-fifo-qt-usage-check.py
+			--source-root ${CMAKE_SOURCE_DIR} --build-dir ${CMAKE_BINARY_DIR} --cmake ${CMAKE_COMMAND})
+	set_tests_properties(RemotePluginShmFifoQtUsageCheck PROPERTIES TIMEOUT 180)
+endif()
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME NoFfmpegVideoClipsCompileCheck
+		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/no-ffmpeg-video-clips-compile-check.py
+			--source-root ${CMAKE_SOURCE_DIR} --build-dir ${CMAKE_BINARY_DIR})
+	set_tests_properties(NoFfmpegVideoClipsCompileCheck PROPERTIES TIMEOUT 300)
+	add_test(NAME VideoClipsNoFfmpegCheck
+		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/VideoClipsNoFfmpegCheck.py
+			--source-root ${CMAKE_SOURCE_DIR} --build-dir ${CMAKE_BINARY_DIR}
+			--moc $<TARGET_FILE:Qt${QT_VERSION_MAJOR}::moc>)
+	set_tests_properties(VideoClipsNoFfmpegCheck PROPERTIES TIMEOUT 600)
+endif()
+
 # Reproduce strict hosted compiler contracts against this build's actual sources.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
-	foreach(mode linux nam darwin-signature darwin-tu render)
+	foreach(mode linux nam darwin-signature darwin-tu render wav-write-error)
 		add_test(NAME Train41-${mode} COMMAND ${PYTHON3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/train-41-portability-check.py
 			--source-root ${CMAKE_SOURCE_DIR} --build-dir ${CMAKE_BINARY_DIR}

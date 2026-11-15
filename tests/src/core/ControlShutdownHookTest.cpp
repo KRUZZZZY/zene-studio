@@ -304,13 +304,58 @@ QString withoutBlockComments(const QString& text)
 	return code;
 }
 
-QStringList sourceCodeLines(const QString& text)
+QStringList mingwSourceCodeLines(const QString& text)
 {
 	QStringList lines = withoutBlockComments(text).split(QLatin1Char('\n'));
 	for (QString& line : lines)
 	{
 		const int comment = line.indexOf(QLatin1String("//"));
 		if (comment >= 0) { line.truncate(comment); }
+	}
+	return lines;
+}
+
+// Code-only view of one source file for the Windows-build scan below. Comment
+// characters become spaces and a `//` tail is dropped, but every line keeps its
+// number, so a failure names the same line a Windows compiler would name.
+QStringList sourceCodeLines(const QString& text)
+{
+	QStringList lines = text.split(QLatin1Char('\n'));
+	bool inBlockComment = false;
+	for (QString& line : lines)
+	{
+		// One trailing sentinel keeps the lookahead in bounds without a branch.
+		const QString source = line + QLatin1Char(' ');
+		QString code;
+		code.reserve(line.size());
+		for (int index = 0; index < line.size(); ++index)
+		{
+			const QChar current = source.at(index);
+			const QChar next = source.at(index + 1);
+			if (inBlockComment)
+			{
+				if (current == QLatin1Char('*') && next == QLatin1Char('/'))
+				{
+					inBlockComment = false;
+					++index;
+				}
+				code += QLatin1Char(' ');
+				continue;
+			}
+			if (current == QLatin1Char('/'))
+			{
+				if (next == QLatin1Char('/')) { break; }
+				if (next == QLatin1Char('*'))
+				{
+					inBlockComment = true;
+					++index;
+					code += QLatin1Char(' ');
+					continue;
+				}
+			}
+			code += current;
+		}
+		line = code;
 	}
 	return lines;
 }
@@ -325,6 +370,7 @@ private slots:
 	void init();
 
 	void windowsCapsActivePipeClientsAndReusesFreedSlot();
+	void mingwPipeCasesNameTheIdleDeadlineThroughTheServer();
 
 	//! The named-pipe cases are compiled only on Windows, so this host cannot
 	//! observe an unqualified ControlServer constant in them. Read the part
@@ -424,6 +470,47 @@ void ControlShutdownHookTest::windowsPipeCasesNameTheIdleDeadlineThroughTheServe
 	}
 	QVERIFY2(unqualified.isEmpty(), qPrintable(QStringLiteral(
 		"these idle-deadline references would fail the windows-arm64 build because "
+		"ClientIdleTimeoutMs is a ControlServer member, not a free name:\n")
+		+ unqualified.join(QLatin1Char('\n'))));
+}
+
+// The mingw64 lane compiles the named-pipe cases that a POSIX host preprocesses
+// away. Read them through the source seam the build already defines and require
+// ControlServer::ClientIdleTimeoutMs, so a missing qualifier fails here instead
+// of only on the Windows runner: ClientIdleTimeoutMs is a static member of
+// ControlServer (include/ControlServer.h), and a using-directive never imports a
+// class member into the test function's scope.
+void ControlShutdownHookTest::mingwPipeCasesNameTheIdleDeadlineThroughTheServer()
+{
+	const QStringList parts = {
+		QStringLiteral("src/core/ControlShutdownHookTestParts1.h"),
+		QStringLiteral("src/core/ControlShutdownHookTestParts2.h"),
+	};
+	QStringList unqualified;
+	int references = 0;
+	for (const QString& part : parts)
+	{
+		QFile file(QDir(QStringLiteral(QT_TESTCASE_SOURCEDIR)).filePath(part));
+		QVERIFY2(file.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(file.fileName()));
+		const QStringList lines = mingwSourceCodeLines(QString::fromUtf8(file.readAll()));
+		for (int line = 0; line < lines.size(); ++line)
+		{
+			const QString& code = lines.at(line);
+			for (int at = code.indexOf(QLatin1String("ClientIdleTimeoutMs")); at >= 0;
+				at = code.indexOf(QLatin1String("ClientIdleTimeoutMs"), at + 1))
+			{
+				++references;
+				if (!code.left(at).endsWith(QLatin1String("ControlServer::")))
+				{
+					unqualified << QStringLiteral("%1:%2").arg(part).arg(line + 1);
+				}
+			}
+		}
+	}
+	QVERIFY2(references >= 6, qPrintable(QStringLiteral(
+		"expected the Windows idle-deadline references, found %1").arg(references)));
+	QVERIFY2(unqualified.isEmpty(), qPrintable(QStringLiteral(
+		"these idle-deadline references would fail the mingw64 build because "
 		"ClientIdleTimeoutMs is a ControlServer member, not a free name:\n")
 		+ unqualified.join(QLatin1Char('\n'))));
 }
