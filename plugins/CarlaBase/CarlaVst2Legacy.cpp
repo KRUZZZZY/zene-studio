@@ -23,6 +23,9 @@
  */
 
 #include "CarlaVst2Legacy.h"
+#include <optional>
+#include <utility>
+
 #include <QDebug>
 #include "LocaleHelper.h"
 
@@ -33,7 +36,9 @@ QString legacyStateTag()
 	return QStringLiteral("zene-legacy-vst2");
 }
 
-void applyLegacyState(const QDomElement& legacy, const LegacyCalls& calls)
+namespace
+{
+void applyProgram(const QDomElement& legacy, const LegacyCalls& calls)
 {
 	bool ok = false;
 	const int program = legacy.attribute("program").toInt(&ok);
@@ -41,6 +46,27 @@ void applyLegacyState(const QDomElement& legacy, const LegacyCalls& calls)
 	{
 		calls.setProgram(program);
 	}
+}
+
+std::optional<std::pair<uint32_t, float>> parseDumpEntry(const QString& value, const LegacyCalls& calls)
+{
+	const int first = value.indexOf(':');
+	const int last = value.lastIndexOf(':');
+	bool indexOk = false, valueOk = false;
+	const int index = value.left(first).toInt(&indexOk);
+	const float number = LocaleHelper::toFloat(value.mid(last + 1), &valueOk);
+	if (first < 0 || last <= first || !indexOk || index < 0 ||
+		static_cast<uint32_t>(index) >= calls.parameterCount() || !valueOk)
+	{
+		return std::nullopt;
+	}
+	return std::make_pair(static_cast<uint32_t>(index), number);
+}
+} // namespace
+
+void applyLegacyState(const QDomElement& legacy, const LegacyCalls& calls)
+{
+	applyProgram(legacy, calls);
 	const QByteArray chunk = legacy.attribute("chunk").toUtf8();
 	if (!chunk.isEmpty() && !QByteArray::fromBase64(chunk).isEmpty())
 	{
@@ -51,18 +77,13 @@ void applyLegacyState(const QDomElement& legacy, const LegacyCalls& calls)
 	for (int i = 0; i < count; ++i)
 	{
 		const QString value = legacy.attribute(QStringLiteral("param") + QString::number(i));
-		const int first = value.indexOf(':');
-		const int last = value.lastIndexOf(':');
-		bool indexOk = false, valueOk = false;
-		const int index = value.left(first).toInt(&indexOk);
-		const float number = LocaleHelper::toFloat(value.mid(last + 1), &valueOk);
-		if (first < 0 || last <= first || !indexOk || index < 0 ||
-			static_cast<uint32_t>(index) >= calls.parameterCount() || !valueOk)
+		const auto entry = parseDumpEntry(value, calls);
+		if (!entry)
 		{
 			qWarning() << "Invalid legacy VST2 parameter" << value;
 			continue;
 		}
-		calls.setParameter(static_cast<uint32_t>(index), number);
+		calls.setParameter(entry->first, entry->second);
 	}
 }
 
@@ -98,4 +119,4 @@ void warnExtraModelSettings(const QDomElement& state, std::size_t count)
 		}
 	}
 }
-}
+} // namespace lmms::carlavst2

@@ -45,4 +45,4 @@ CARLABASE_EXPORT QString legacyStateTag();
 CARLABASE_EXPORT void applyLegacyState(const QDomElement& legacy, const LegacyCalls& calls);
 CARLABASE_EXPORT bool hasModelSettings(const QDomElement& state, const QString& name);
 CARLABASE_EXPORT void warnExtraModelSettings(const QDomElement& state, std::size_t count);
-}
+} // namespace lmms::carlavst2

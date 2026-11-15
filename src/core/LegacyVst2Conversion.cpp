@@ -96,6 +96,25 @@ std::optional<Attributes> resolvePath(const QString& path, Plugin::Type type, co
 	if (path.isEmpty()) { return std::nullopt; }
 	return resolver(PathUtil::toAbsolute(path), type);
 }
+const Plugin::Descriptor* findHostDescriptor(Plugin::Type type, const char* host)
+{
+	for (const auto* descriptor : getPluginFactory()->descriptors(type))
+	{
+		if (descriptor && QLatin1String(descriptor->name) == QLatin1String(host)) { return descriptor; }
+	}
+	return nullptr;
+}
+
+std::optional<Attributes> findMatchingKey(const Plugin::Descriptor::SubPluginFeatures::KeyList& keys, const QFileInfo& file)
+{
+	for (const auto& key : keys)
+	{
+		const auto candidate = QFileInfo(key.attributes.value(QStringLiteral("file"))).canonicalFilePath();
+		if (!candidate.isEmpty() && candidate == file.canonicalFilePath()) { return key.attributes; }
+	}
+	return std::nullopt;
+}
+
 }
 
 QString legacyStateTagName() { return QStringLiteral("zene-legacy-vst2"); }
@@ -107,20 +126,12 @@ std::optional<Attributes> resolveFromFactory(const QString& absoluteFile, Plugin
 	const QFileInfo file(absoluteFile);
 	if (!file.exists() || (type != Plugin::Type::Instrument && type != Plugin::Type::Effect)) { return std::nullopt; }
 	const auto host = type == Plugin::Type::Instrument ? "carlavst2" : "carlavst2effect";
-	for (const auto* descriptor : getPluginFactory()->descriptors(type))
-	{
-		if (!descriptor || QLatin1String(descriptor->name) != QLatin1String(host)) { continue; }
-		if (!descriptor->subPluginFeatures) { return std::nullopt; }
-		Plugin::Descriptor::SubPluginFeatures::KeyList keys;
-		descriptor->subPluginFeatures->listSubPluginKeys(descriptor, keys);
-		for (const auto& key : keys)
-		{
-			const auto candidate = QFileInfo(key.attributes.value(QStringLiteral("file"))).canonicalFilePath();
-			if (!candidate.isEmpty() && candidate == file.canonicalFilePath()) { return key.attributes; }
-		}
-		return Attributes{{QStringLiteral("file"), absoluteFile}, {QStringLiteral("name"), file.completeBaseName()}};
-	}
-	return std::nullopt;
+	const auto* descriptor = findHostDescriptor(type, host);
+	if (!descriptor || !descriptor->subPluginFeatures) { return std::nullopt; }
+	Plugin::Descriptor::SubPluginFeatures::KeyList keys;
+	descriptor->subPluginFeatures->listSubPluginKeys(descriptor, keys);
+	if (const auto match = findMatchingKey(keys, file)) { return match; }
+	return Attributes{{QStringLiteral("file"), absoluteFile}, {QStringLiteral("name"), file.completeBaseName()}};
 }
 
 QDomElement convertInstrument(const QDomElement& node, const Resolver& resolve)
@@ -158,4 +169,4 @@ QDomElement convertEffect(const QDomElement& node, const Resolver& resolve)
 	}
 	return result;
 }
-}
+} // namespace lmms::legacyvst2

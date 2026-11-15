@@ -260,28 +260,7 @@ void CarlaVst2Instrument::loadSettings(const QDomElement& elem)
 	m_renderer.pause();
 	const auto legacy = elem.firstChildElement(carlavst2::legacyStateTag());
 	if (legacy.isNull()) { CarlaInstrument::loadSettings(elem); }
-	else
-	{
-		if (!m_hostHandle || !m_api.programCount || !m_api.setProgram || !m_api.setChunk ||
-			!m_api.parameterCount || !m_api.setParameter)
-		{ m_loadError = QStringLiteral("Carla host API cannot restore legacy VST2 state"); }
-		else
-		{
-			carlavst2::applyLegacyState(legacy, {
-				[this] { return m_api.programCount(m_hostHandle, 0); },
-				[this](uint32_t p) { m_api.setProgram(m_hostHandle, 0, p); },
-				[this](const char* c) { m_api.setChunk(m_hostHandle, 0, c); },
-				[this] { return m_api.parameterCount(m_hostHandle, 0); },
-				[this](uint32_t i, float v) { m_api.setParameter(m_hostHandle, 0, i, v); }});
-		}
-		reloadParameters();
-		for (std::size_t i = 0; i < paramModels().size(); ++i)
-		{
-			const QString name = QStringLiteral("PARAM_KNOB_") + QString::number(i);
-			if (carlavst2::hasModelSettings(elem, name)) { paramModels()[i]->loadSettings(elem, name); }
-		}
-		carlavst2::warnExtraModelSettings(elem, paramModels().size());
-	}
+	else { loadLegacySettings(elem, legacy); }
 	std::fill(m_sentValues.begin(), m_sentValues.end(), std::numeric_limits<float>::quiet_NaN());
 	m_renderer.resume();
 	if (m_hostHandle != nullptr && m_api.pluginCount(m_hostHandle) == 0)
@@ -289,6 +268,29 @@ void CarlaVst2Instrument::loadSettings(const QDomElement& elem)
 		m_loadError = QStringLiteral("Carla could not restore the saved VST2 plug-in: %1")
 			.arg(QString::fromUtf8(m_api.lastError(m_hostHandle)));
 	}
+}
+
+void CarlaVst2Instrument::loadLegacySettings(const QDomElement& elem, const QDomElement& legacy)
+{
+	if (!m_hostHandle || !m_api.programCount || !m_api.setProgram || !m_api.setChunk ||
+		!m_api.parameterCount || !m_api.setParameter)
+	{ m_loadError = QStringLiteral("Carla host API cannot restore legacy VST2 state"); }
+	else
+	{
+		carlavst2::applyLegacyState(legacy, {
+			[this] { return m_api.programCount(m_hostHandle, 0); },
+			[this](uint32_t p) { m_api.setProgram(m_hostHandle, 0, p); },
+			[this](const char* c) { m_api.setChunk(m_hostHandle, 0, c); },
+			[this] { return m_api.parameterCount(m_hostHandle, 0); },
+			[this](uint32_t i, float v) { m_api.setParameter(m_hostHandle, 0, i, v); }});
+	}
+	reloadParameters();
+	for (std::size_t i = 0; i < paramModels().size(); ++i)
+	{
+		const QString name = QStringLiteral("PARAM_KNOB_") + QString::number(i);
+		if (carlavst2::hasModelSettings(elem, name)) { paramModels()[i]->loadSettings(elem, name); }
+	}
+	carlavst2::warnExtraModelSettings(elem, paramModels().size());
 }
 
 void CarlaVst2Instrument::playImpl(std::span<SampleFrame> out)

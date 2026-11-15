@@ -79,6 +79,8 @@ public:
 	bool nativeEditorOpen() const override;
 
 private:
+	void loadLegacySettings(const QDomElement& elem, const QDomElement& legacy);
+
 	//! The few CarlaHost.h functions this host needs, resolved from the Carla runtime's
 	//! libcarla_host-plugin beside libcarla_native-plugin (the pairing Carla documents for
 	//! carla_create_native_plugin_host_handle).
