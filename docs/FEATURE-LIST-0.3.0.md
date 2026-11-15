@@ -87,7 +87,7 @@ document a reader happens to open first.
 **multicore graph scheduling**, plus the decision-shaped rows `ARCH-5`/`ARCH-7`/`ARCH-8`. **A dependency is
 not a gate** — an item whose only dependency is engine work this line is already doing is in. Taste, UI and
 UX are not placed by the ladder at all, and Bar 3 (`34` devices / `35` content / `36` design system), ARA2
-and the hardware- or ear-bound items are out.
+(deferred — see the Deferred paragraph below, and not in 0.5.0 either) and the hardware- or ear-bound items are out.
 
 ---
 
@@ -334,7 +334,7 @@ half of arbitrary input count, MIDI-learn by hand, the nightly plugin-compatibil
 ranker (`#610` wave 3 needs pick-logs). An engine half may land — e.g. the retrospective-capture engine in
 rows 15 and 16 — but it ships as **"unverified on real hardware"**, and that sentence goes in the notes.
 
-**Licence-gated.** ARA2 hosting: it needs an ARA2 SDK decision and a real plugin.
+**Deferred, not 0.5.0 — ARA2 and Melodyne-style pitch editing (owner decision, 2026-11-14).** ARA2 hosting, Melodyne-style clip editing, track-wide ARA and ARA processing-order extensions are all deferred. They would still need an ARA2 SDK licence decision and a real ARA plug-in, which is why none of them is scheduled. No 0.5.0 implementation lane exists for any of them, and there are no `ara.*` commands. This is a deferral, not a promise for a later release; the capability gap is stated in the "ARA2 and Melodyne-style pitch editing" section of `docs/KNOWN-LIMITATIONS.md`.
 
 **Architectural, deliberately separate — 0.4.0.** A new document model (`ARCH-4`: scenes, lanes and warp as
 native concepts, removing `WANT_SESSION_VIEW`) and **multicore graph scheduling** (a scheduler over the
@@ -357,7 +357,7 @@ model)". It is not committed here.
 **Also 0.5.0, not 0.3.0** — the layout/workspace-presets half of OWNER-31 items 3/20/21, anything found
 incomplete during the 0.3.0 or 0.4.0 verification passes, and the release-readiness items that need real
 users or machines: the beta period and bug backlog, the nightly plugin-compatibility matrix, the measured
-crash-free rate, the project-format stability guarantee, the manual and localisation, and support capacity.
+crash-free rate, the project-format stability guarantee, the manual and localisation, and support capacity. ARA2 and Melodyne-style clip editing are not part of this list — they are deferred (see above).
 
 **Deliberately not planned at all** (not a 0.3.0 question): notation/score, surround/immersive, expression
 maps/articulation switching, and the ecosystem "noise" list. The register of record is

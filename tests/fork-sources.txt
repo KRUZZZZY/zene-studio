@@ -2484,6 +2484,8 @@ src/wasm/WasmWorkerPool.cpp
 src/wasm/WasmWorkerPool.h
 tests/agent-surface-gate.py
 tests/agent_surface_lib.py
+# Q050-344 (R-editing-41 / R-workflow-118): ARA/Melodyne deferral docs gate
+tests/ara-deferral-docs-gate.py
 tests/control-absent-socket.py
 tests/control-arrangement-group-edits.py
 tests/control-background-tasks.py
