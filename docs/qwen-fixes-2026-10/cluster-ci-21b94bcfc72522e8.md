@@ -79,7 +79,8 @@ therefore in `build/qwen-logs/ci-21b94bcfc72522e8.r1/` (build directory, not com
 | Family binaries | `cmake --build build --target RemotePluginClientE2ETest RemotePluginShmFifoTest` (`12-family-build.log`) | EXIT=0 |
 | Family tests | `cd build/tests && ctest -R 'RemotePlugin' --output-on-failure` (`13-family-ctest-after-build.log`) | EXIT=0; 4/4 passed |
 | Product target still builds | `cmake --build build --target zene` (`15-zene-build.log`) | EXIT=0; `Built target zene` |
-| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (`14-feature-check.log`) | EXIT=0; 8/8 PASS |
+| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (`14-feature-check.log`, again after the report/registration in `16-feature-check-final.log`) | EXIT=0; 8/8 PASS both times |
+| Completion check | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> ci-21b94bcfc72522e8` (`18-submit-check.log`) | EXIT=0; `RESULT: PASS - submit` |
 
 ## Self-check
 
@@ -102,3 +103,7 @@ therefore in `build/qwen-logs/ci-21b94bcfc72522e8.r1/` (build directory, not com
 - **Registration.** `tests/upstream-modifications.txt` records the two inherited files changed
   (`tests/src/core/RemotePluginAudioPortsTest.cpp`, `tests/CMakeLists.txt`) with the reason. The new report is
   registered in `tests/fork-sources.txt`. `tests/fork-sources.txt` ends with a newline.
+- **ALREADY-FIXED / FALSE-POSITIVE.** Not applicable: the verdict is FIXED. The unguarded helper is present at
+  this commit (`:73-82` before the fix) and the compile check reproduces the CI diagnostic (EXIT=2); the header's
+  `SYNC_WITH_SHM_FIFO` selection for a host without `<sys/ipc.h>` is the intended contract
+  (`include/RemotePluginBase.h:48-51`), not a stray build flag.
