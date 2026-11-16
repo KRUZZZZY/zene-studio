@@ -1743,7 +1743,11 @@ def fix_one(job, rework_file, engine="qwen"):
         lane = feature_ladder.select(lane, job)
         account = claude_accounts.account_for(lane, job)
         job["claude_account"] = account
+        if rework_file and rework_file.exists():
+            write_json(rework_file, job)  # persist account handoff under the existing issue claim
         rec.update(lane=lane["name"], effort=lane.get("effort", "high"), claude_account=account)
+        if job.get('account_failovers'):
+            rec['account_failovers'] = job['account_failovers']
         if item.get("feature_ladder"):
             rec["routing"] = {k: item.get(k) for k in ("feature_tier", "rank", "pct", "rank_method", "packet_hash", "task_packet")}
         trailer = {"claude-opus-5-5": "Claude Opus 5.5", "claude-sonnet-5-5": "Claude Sonnet 5.5"}.get(lane["model"], lane["model"])
@@ -1801,6 +1805,11 @@ def fix_one(job, rework_file, engine="qwen"):
             rc = run_session(session_command(engine, wt, run_dir), brief, lf, env, run_dir, s, name)
         except OSError:
             rc = 124
+    if engine == 'claude':
+        try:
+            claude_accounts.observe_run(account, run_dir)
+        except (OSError, ValueError, TypeError):
+            log('fix', f'{s}: Claude usage observation unavailable; account guards remain in effect')
     if engine == "luna" and light_engine() == "luna":
         workflow_runtime.capture_luna(run_dir, light_model())
     head1 = git(wt, "rev-parse", "HEAD")
@@ -1856,8 +1865,7 @@ def fix_one(job, rework_file, engine="qwen"):
         arch = D["runs"] / "_usage-limit"
         arch.mkdir(exist_ok=True)
         shutil.move(str(run_dir), str(arch / f"{run_dir.name}-{int(time.time())}"))
-        if not rework_file:           # a new unit: keep it with its lane, unchanged, for after the limit
-            write_json(D["rework"] / f"{s}.json", {k: v for k, v in job.items()})
+        write_json(D["rework"] / f"{s}.json", {k: v for k, v in job.items()})
         raise LunaLimit(f"{s}: Claude usage limit - not an attempt; lane {lane['name']} waits until {paused_until_in(claude_accounts.flag(account, "LIMIT")):%H:%M}")
     if engine == "luna" and rc != 0 and head1 == head0 and note_luna_limit(run_dir / "session.log"):
         save_leftovers(wt, run_dir)
@@ -2229,7 +2237,7 @@ def fix_loop():
                     job, rework_file = next_claude_item(lane, set(claimed))
                     if job is not None:
                         claude_accounts.pin_selected(lane, job, rework_file)
-                        if claude_accounts.available(claude_accounts.account_for(lane, job), paused_until_in, urgent=True):
+                        if claude_accounts.select_available(lane, job, paused_until_in, urgent=True):
                             s_ = slug(job["item"]["cluster"])
                             claimed.add(s_)
                             claimed.update(str(b["cluster"]) for b in job["item"].get("batch") or [])
@@ -2258,7 +2266,7 @@ def fix_loop():
                 if job is None:
                     continue
                 claude_accounts.pin_selected(lane, job, rework_file)
-                if not claude_accounts.available(claude_accounts.account_for(lane, job), paused_until_in):
+                if not claude_accounts.select_available(lane, job, paused_until_in):
                     continue
                 s_ = slug(job["item"]["cluster"])
                 claimed.add(s_)
