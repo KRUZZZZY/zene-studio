@@ -175,6 +175,12 @@ bool readToneNumber(const QJsonObject& args, const QString& key, double low, dou
 	return true;
 }
 
+//! True when @a slot belongs to @a engine and its handle has been retired, so its bus and sample may be freed.
+bool reclaimable(const Slot& slot, const AudioEngine* engine)
+{
+	return slot.engine == engine && slot.handle && slot.handle->retired();
+}
+
 //! Frees the handles the engine has retired, with their buses and samples. Control thread only. It holds the engine's
 //! change guard, so no render period is still using them. Slots of another engine, or of one that is gone, are left
 //! alone: they are never freed.
@@ -186,14 +192,14 @@ void reclaim()
 	bool any = false;
 	for (const Slot& slot : table)
 	{
-		if (slot.engine == engine && slot.handle && slot.handle->retired()) { any = true; break; }
+		if (reclaimable(slot, engine)) { any = true; break; }
 	}
 	if (!any) { return; }
 
 	const auto guard = engine->requestChangesGuard();
 	for (Slot& slot : table)
 	{
-		if (slot.engine != engine || !slot.handle || !slot.handle->retired()) { continue; }
+		if (!reclaimable(slot, engine)) { continue; }
 		slot.handle.reset();
 		slot.bus.reset();
 		slot.sample.reset();
