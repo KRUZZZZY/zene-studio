@@ -1,0 +1,340 @@
+From 10e0b569f1834850bae6ba9ce7fe662cd8a77f8c Mon Sep 17 00:00:00 2001
+From: Zene CI repair <noreply@zene.invalid>
+Date: Mon, 16 Nov 2026 04:41:38 +0000
+Subject: [PATCH] fix(ci): CI regression: build / macos-arm64
+
+CI-Repair-Id: ci-repair-ci-2d4c2b9f536c76c4-34be11566ab4
+---
+ .../cluster-ci-2d4c2b9f536c76c4.md            | 122 ++++++++++++++++++
+ tests/CMakeLists.txt                          |   8 ++
+ tests/fork-sources.txt                        |   4 +
+ ...mixer-sends-on-faders-portability-check.py | 121 +++++++++++++++++
+ tests/src/gui/MixerSendsOnFadersTest.cpp      |   4 +-
+ tests/upstream-modifications.txt              |   4 +
+ 6 files changed, 262 insertions(+), 1 deletion(-)
+ create mode 100644 docs/qwen-fixes-2026-10/cluster-ci-2d4c2b9f536c76c4.md
+ create mode 100644 tests/mixer-sends-on-faders-portability-check.py
+
+diff --git a/docs/qwen-fixes-2026-10/cluster-ci-2d4c2b9f536c76c4.md b/docs/qwen-fixes-2026-10/cluster-ci-2d4c2b9f536c76c4.md
+new file mode 100644
+index 0000000000..ef1c7db0f5
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/cluster-ci-2d4c2b9f536c76c4.md
+@@ -0,0 +1,122 @@
++FIXED
++
++# cluster ci-2d4c2b9f536c76c4 - macos-arm64 Qt 5 test-source compilation
++
++Pinned commit: `fa4a5f2e785c73e32216931e33cdbe140c06647d` (`050/m0-train-35`). Verdict:
++REAL, a test-source portability defect; not a product defect and not an infrastructure
++defect. The checkout was clean at that commit before any change. The pre-fix
++`tests/src/gui/MixerSendsOnFadersTest.cpp` hash is
++`6cf2870fee6131674b75d417240523c8a810cca41cf7caf1cec92da59a0b306a`, matching the task
++packet's `source_sha256`.
++
++## Evidence
++
++- `tests/src/gui/MixerSendsOnFadersTest.cpp:278` (before the fix) constructed the expected
++  list with `QStringList(channels, QStringLiteral("volume"))`. Qt 5's `QStringList` has no
++  `(count, value)` constructor; Qt 6's `QList` base has one. The hosted `macos-arm64` job
++  builds against Homebrew `qt@5`, so the test target stopped at exactly the diagnostic in the
++  finding: `no matching constructor for initialization of 'QStringList'`.
++- The expression was the only `QStringList(count, value)` construction under `tests/src` or
++  `src`; the other `QStringList(...)` uses in that area are single-argument initializer lists.
++- The failure is a compile failure in the test source, so it happens before any test runs; no
++  product code or runtime behaviour is involved.
++
++## Fix
++
++`tests/src/gui/MixerSendsOnFadersTest.cpp` now builds the expected list with
++`QVector<QString>(channels, QStringLiteral("volume"))` (the fill constructor exists on Qt 5
++and Qt 6) and converts it with `toList()`:
++
++```cpp
++// QStringList's (count, value) constructor is Qt 6 only; QVector's fill constructor is on Qt 5 too.
++QVERIFY(faders == QStringList(QVector<QString>(channels, QStringLiteral("volume")).toList()));
++```
++
++`#include <QVector>` was added. The expected content (`channels` copies of `"volume"`), the
++equality comparison and every preceding assertion are unchanged. No product behaviour, save
++format, undo step, command or audio-thread path changes.
++
++## Regression
++
++Added `tests/mixer-sends-on-faders-portability-check.py`, registered as CTest
++`MixerSendsOnFadersPortability` on Linux (the same pattern as the existing
++`Train51Portability` compiler regression) and listed in `tests/fork-sources.txt`.
++
++The checker reads the current `QVERIFY(faders == ...)` line from the test source and compiles
++it in a small fixture with the installed Qt 5 and Qt 6 headers (`Qt5Test`/`Qt5Core`,
++`Qt6Test`/`Qt6Core`), after checking that the line still depends on `channels` and still names
++`QStringLiteral("volume")`. It also compiles the original Qt 5 spelling as a negative control
++that must fail. The test is deterministic and compile-only: no timestamps, sleeps, races or
++wall-clock behaviour.
++
++## Commands and results
++
++Environment note: the supplied LOG FOLDER
++`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-2d4c2b9f536c76c4.r1/logs` was not
++writable from this session - creating any file there returns `EACCES` even though the
++directory is owned by uid 1000 with mode `0755` (`chmod` on the directory succeeds, `touch`
++inside it fails). Every log below was therefore written to the git-ignored directory
++`build/qwen-logs/ci-2d4c2b9f536c76c4/` in the worktree.
++
++| Step | Exact command | EXIT | Log |
++|---|---|---|---|
++| RED, direct | `python3 tests/mixer-sends-on-faders-portability-check.py --source-root "$PWD"` | 1 | `001-probe-red.log` |
++| RED, rebuild+CTest | `cmake --build build --target MixerSendsOnFadersTest -j20` then `cd build/tests && ctest -R '^MixerSendsOnFadersPortability$' --output-on-failure` | build 0, ctest 8 (0 % passed, 1 failed) | `002-build-reconfigure.log`, `003-ctest-red.log` |
++| GREEN, rebuild+CTest | same build, then `ctest -R '^(MixerSendsOnFadersTest\|MixerSendsOnFadersPortability)$' --output-on-failure` | build 0, ctest 0 (2/2) | `004-build-green.log`, `005-ctest-green.log` |
++| Whole test TU against Qt 5, after fix | Qt 5 `moc` output plus the `MixerSendsOnFadersTest.cpp` compile flags from `build/compile_commands.json`, Qt 6 include roots swapped for Qt 5 (`c++ ... -fsyntax-only`) | 0 | `007-qt5-tu-syntax-moc5.log` |
++| Step 4b, save patch | `git diff -- tests/src/gui/MixerSendsOnFadersTest.cpp > build/qwen-logs/ci-2d4c2b9f536c76c4/008-fix.patch` | 0 | `008-fix.patch` |
++| Step 4b, reverse | `git apply -R build/qwen-logs/ci-2d4c2b9f536c76c4/008-fix.patch` | 0 | - |
++| Step 4b, rebuild+CTest with fix reverted | `cmake --build build --target MixerSendsOnFadersTest -j20` then `ctest -R '^(MixerSendsOnFadersTest\|MixerSendsOnFadersPortability)$' --output-on-failure` | build 0, ctest 8 (1/2 passed; `MixerSendsOnFadersPortability` failed, the Qt 6 runtime test still passed) | `009-build-reverted.log`, `010-ctest-reverted.log` |
++| Step 4b, whole TU against Qt 5, reverted | same Qt 5 syntax command | 1: `QStringList.cpp:278:81: error: no matching function for call to 'QStringList::QStringList(const int&, QString)'` | `011-qt5-tu-reverted.log` |
++| Step 4b, restore | `git apply build/qwen-logs/ci-2d4c2b9f536c76c4/008-fix.patch` | 0 | - |
++| Step 4b, rebuild+CTest restored | `cmake --build build --target MixerSendsOnFadersTest -j20` then `ctest -R '^(MixerSendsOnFadersTest\|MixerSendsOnFadersPortability)$' --output-on-failure` | build 0, ctest 0 (2/2) | `012-build-restored.log`, `013-ctest-restored.log` |
++| Whole TU against Qt 5, restored | same Qt 5 syntax command | 0 | `014-qt5-tu-restored.log` |
++| Family build | `cmake --build build -j20 --target` the 22 other `Mixer*`/`PdcMixerTest` targets | 0 | `016-build-mixer-family.log` |
++| Family CTest | `cd build/tests && ctest -R 'Mixer' --no-tests=error --output-on-failure -j4` | 0 (24/24 passed) | `017-ctest-mixer-family.log` |
++
++The first family CTest attempt (`015-ctest-mixer-family.log`) ran before those 22 targets were
++built and reported them `Not Run`; they were built in step 016 and all 24 passed in step 017.
++The Qt 5 syntax check is supplemental: it compiles the whole real test translation unit with
++Qt 5.15.19 headers (including a Qt 5 `moc` output) and fails at the same line without the fix.
++A full Qt 5 CMake build is not available in this container (the `Qt5Svg` development files are
++absent), so this check reuses the Qt 6 build's compile flags with the include roots swapped to
++Qt 5 and substitutes Qt 5 `moc` output for the Qt 6 one; the Qt 6 target itself is built and
++run normally.
++
++## Gates
++
++`python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py "$PWD"` exited 0
++(full output in `build/qwen-logs/ci-2d4c2b9f536c76c4/018-feature-check.log`):
++
++```
++PASS  fork-sources            exit 0
++PASS  all-sources-reproduce   exit 0
++PASS  no-upstream-regression  exit 0
++PASS  check-namespace         exit 0
++PASS  no-tautology            exit 0
++PASS  doc-figures             exit 0
++PASS  complexity              no new item in your files
++PASS  file-length             no new item in your files
++RESULT: PASS
++```
++
++## Self-check
++
++- **The regression test FAILS with the product change reverted and PASSES with it.** Reverting
++  the non-test-source hunks is not applicable: the only fix hunk is in the test source itself,
++  so the patch in step 4b reverts that hunk. With it reverted, CTest
++  `MixerSendsOnFadersPortability` fails (exit 8, log `010-ctest-reverted.log`) and the whole
++  test TU fails against Qt 5 (exit 1, log `011-qt5-tu-reverted.log`). Restored, both pass
++  (exit 0, logs `013-ctest-restored.log` and `014-qt5-tu-restored.log`).
++- **Deterministic.** The regression is compile-only against installed Qt 5.15.19 and Qt 6.12.0
++  headers; it uses no timestamps, sleeps, races or wall-clock values.
++- **Cause and completeness.** `QStringList(count, value)` was the only such construction in
++  `tests/src`/`src`; the same line is compiled by the regression under both Qt versions, and
++  the whole test TU is compiled against Qt 5.15.19. The runtime equality assertion is
++  unchanged.
++- **No collateral damage.** The fix changes only how the expected list is built. The runtime
++  test `MixerSendsOnFadersTest` kept passing before and after (it passes on Qt 6 either way),
++  the 24-test Mixer family passes, and no product/save/undo/audio code was touched.
++- **Verdict evidence.** The verdict is FIXED, not ALREADY-FIXED or FALSE-POSITIVE; the
++  pre-fix source at `tests/src/gui/MixerSendsOnFadersTest.cpp:278` contains the rejected
++  constructor, and the Qt 5 compile of the real TU failed at that line.
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 50cd2de83c..a61b43a86c 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -6232,6 +6232,14 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
+ 	set_tests_properties(Train51Portability PROPERTIES TIMEOUT 120)
+ endif()
+ 
++# ci-2d4c2b9f536c76c4: MixerSendsOnFadersTest's expected-fader-list assertion must compile on Qt 5.
++if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
++	add_test(NAME MixerSendsOnFadersPortability COMMAND ${PYTHON3_EXECUTABLE}
++		${CMAKE_CURRENT_SOURCE_DIR}/mixer-sends-on-faders-portability-check.py
++		--source-root ${CMAKE_SOURCE_DIR})
++	set_tests_properties(MixerSendsOnFadersPortability PROPERTIES TIMEOUT 120)
++endif()
++
+ # Train 48: optional FFmpeg and platform-specific fixture compilation.
+ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
+ 	add_test(NAME Train48Portability COMMAND ${PYTHON3_EXECUTABLE}
+diff --git a/tests/fork-sources.txt b/tests/fork-sources.txt
+index 194bfbf6e6..48d67dd630 100644
+--- a/tests/fork-sources.txt
++++ b/tests/fork-sources.txt
+@@ -3974,3 +3974,7 @@ tests/src/plugins/CarlaVst2LegacyStateTest.cpp
+ tests/src/gui/LegacyVst2ProjectTest.cpp
+ tests/data/legacy-projects/vst2-vestige-vsteffect.mmp
+ tests/data/legacy-projects/vst2-vestige-vsteffect.reference.json
++
++# ci-2d4c2b9f536c76c4: Qt 5 compilation regression for MixerSendsOnFadersTest.
++tests/mixer-sends-on-faders-portability-check.py
++docs/qwen-fixes-2026-10/cluster-ci-2d4c2b9f536c76c4.md
+diff --git a/tests/mixer-sends-on-faders-portability-check.py b/tests/mixer-sends-on-faders-portability-check.py
+new file mode 100644
+index 0000000000..49407f8d18
+--- /dev/null
++++ b/tests/mixer-sends-on-faders-portability-check.py
+@@ -0,0 +1,121 @@
++#!/usr/bin/env python3
++"""Qt 5/6 compiler regression for MixerSendsOnFadersTest's expected-fader-list assertion."""
++
++# Copyright (c) 2026 Zene Studio contributors
++#
++# This file is part of LMMS - https://lmms.io
++#
++# This program is free software; you can redistribute it and/or modify it under
++# the terms of the GNU General Public License as published by the Free
++# Software Foundation; either version 2 of the License, or (at your option)
++# any later version.
++
++import argparse
++from pathlib import Path
++import re
++import shlex
++import shutil
++import subprocess
++import sys
++import tempfile
++
++
++def fail(message):
++    raise RuntimeError(message)
++
++
++def invoke(command, cwd=None):
++    return subprocess.run(command, cwd=cwd, text=True, stdout=subprocess.PIPE,
++                          stderr=subprocess.PIPE, check=False)
++
++
++def pkg_flags(pkg, modules):
++    tool = shutil.which(pkg)
++    if tool is None:
++        fail(f"required tool is missing: {pkg}")
++    result = invoke([tool, "--cflags", *modules])
++    if result.returncode:
++        fail(f"{pkg} {' '.join(modules)} failed: {result.stderr.strip()}")
++    return shlex.split(result.stdout)
++
++
++def pkg_exists(pkg, modules):
++    tool = shutil.which(pkg)
++    return tool is not None and invoke([tool, "--exists", *modules]).returncode == 0
++
++
++def compile_source(compiler, source, directory, label, *, success, flags=()):
++    path = directory / f"{label}.cpp"
++    path.write_text(source, encoding="utf-8")
++    result = invoke([compiler, "-std=c++20", "-Wall", "-Werror", *flags,
++                     "-c", str(path), "-o", str(directory / f"{label}.o")])
++    if (result.returncode == 0) != success:
++        fail(f"{label}: expected {'compile success' if success else 'compile failure'}; "
++             f"exit {result.returncode}: {result.stderr.strip()}")
++    print(f"PASS {label}: {'compiled' if success else 'failed as expected'}")
++
++
++def fader_assertion(root):
++    source = (root / "tests/src/gui/MixerSendsOnFadersTest.cpp").read_text(encoding="utf-8")
++    match = re.search(r"^\t\tQVERIFY\(faders == .*QStringLiteral\(\"volume\"\).*\);\s*$",
++                      source, re.M)
++    if match is None:
++        fail("MixerSendsOnFadersTest no longer has the expected-fader-list assertion")
++    assertion = match.group(0).strip()
++    if "channels" not in assertion:
++        fail("the expected fader list no longer depends on the mixer channel count")
++    if "QVector<" in assertion and "#include <QVector>" not in source:
++        fail("the expected fader list uses QVector without including <QVector>")
++    return assertion
++
++
++def fixture(assertion):
++    # The assertion is the test's own source line: faders and channels are the only names it needs.
++    return """#include <QtTest>
++#include <QStringList>
++#include <QVector>
++
++void probe()
++{
++	const int channels = 3;
++	QStringList faders;
++	for (int i = 0; i < channels; ++i) { faders.append(QStringLiteral("volume")); }
++	%s
++}
++""" % assertion
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--source-root", required=True, type=Path)
++    args = parser.parse_args()
++    root = args.source_root.resolve()
++    compiler = shutil.which("c++")
++    if compiler is None:
++        fail("required tool is missing: c++")
++    assertion = fader_assertion(root)
++    source = fixture(assertion)
++    with tempfile.TemporaryDirectory(prefix="mixer-sends-portability-") as directory:
++        temporary = Path(directory)
++        qt5 = pkg_flags("pkg-config", ["Qt5Test", "Qt5Core"])
++        compile_source(compiler, source, temporary, "faders-qt5-assertion", success=True,
++                       flags=[*qt5, "-fPIC"])
++        if pkg_exists("pkg-config", ["Qt6Test", "Qt6Core"]):
++            qt6 = pkg_flags("pkg-config", ["Qt6Test", "Qt6Core"])
++            compile_source(compiler, source, temporary, "faders-qt6-assertion", success=True,
++                           flags=[*qt6, "-fPIC"])
++        else:
++            print("OMITTED faders-qt6-assertion: Qt6Test/Qt6Core unavailable")
++        original = source.replace(
++            assertion, 'QVERIFY(faders == QStringList(channels, QStringLiteral("volume")));')
++        compile_source(compiler, original, temporary, "faders-qt5-original", success=False,
++                       flags=[*qt5, "-fPIC"])
++    return 0
++
++
++if __name__ == "__main__":
++    try:
++        sys.exit(main())
++    except (OSError, RuntimeError, ValueError) as error:
++        print(f"mixer sends portability check: {error}", file=sys.stderr)
++        sys.exit(1)
+diff --git a/tests/src/gui/MixerSendsOnFadersTest.cpp b/tests/src/gui/MixerSendsOnFadersTest.cpp
+index 877e1718f8..a0ebd2a870 100644
+--- a/tests/src/gui/MixerSendsOnFadersTest.cpp
++++ b/tests/src/gui/MixerSendsOnFadersTest.cpp
+@@ -35,6 +35,7 @@
+ #include <QLabel>
+ #include <QLineEdit>
+ #include <QPushButton>
++#include <QVector>
+ 
+ #include "ControlMixerSupport.h"
+ #include "ControlRegistry.h"
+@@ -275,7 +276,8 @@ private slots:
+ 
+ 		// Back on the channel faders (an empty sends_on_faders) every entry is the level.
+ 		const QStringList faders = drivesOf(run(QStringLiteral("window.mixer_view"), {{QStringLiteral("sends_on_faders"), QString()}}));
+-		QVERIFY(faders == QStringList(channels, QStringLiteral("volume")));
++		// QStringList's (count, value) constructor is Qt 6 only; QVector's fill constructor is on Qt 5 too.
++		QVERIFY(faders == QStringList(QVector<QString>(channels, QStringLiteral("volume")).toList()));
+ 	}
+ 
+ private:
+diff --git a/tests/upstream-modifications.txt b/tests/upstream-modifications.txt
+index 0f0ef7e07a..c75eaa5e37 100644
+--- a/tests/upstream-modifications.txt
++++ b/tests/upstream-modifications.txt
+@@ -5988,3 +5988,7 @@ src/gui/widgets/TextFloat.cpp	cluster gui-1115-menu-help-accessibility-check: a
+ include/TextFloat.h	cluster gui-1115-menu-help-accessibility-check: declare TextFloat::event, which returns activation to the notice's owning window so a floating result never holds the application focus.
+ tests/src/gui/GrooveMenuTest.cpp	cluster gui-1115-menu-help-accessibility-check: opens the real Help menu, clicks Accessibility Check, and requires the report to survive the menu's close with all five per-check counts.
+ src/core/ProjectJournal.cpp	gui-1115-session-undo-and-redo: restoreStep() captures every live object's post-state before restoring any of them, so a merged step naming a clip and its track records the state the step left (Track::restoreState re-creates the clips) and redo reapplies the drag instead of replaying the undone position; regression UndoBoundsTest::aMovedClipRedoesThroughItsMergedTrackCheckpoint.
++
++# ci-2d4c2b9f536c76c4: the hosted macos-arm64 Qt 5 build rejected the expected-fader-list assertion.
++tests/src/gui/MixerSendsOnFadersTest.cpp	ci-2d4c2b9f536c76c4: build the expected fader list with QVector's Qt 5/6 fill constructor instead of QStringList(count, value), which Qt 5 lacks; the channel count, the "volume" value and the equality assertion are unchanged.
++tests/CMakeLists.txt	ci-2d4c2b9f536c76c4: register MixerSendsOnFadersPortability, the source-derived Qt 5/6 compiler regression; registration only, no existing test changes.
+-- 
+2.56.0
+
