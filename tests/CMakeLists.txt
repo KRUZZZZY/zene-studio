@@ -8214,7 +8214,12 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/control-no-audio-device.py
 			$<TARGET_FILE:zene>
 	)
-	add_test(NAME ControlNegativeControl
+	add_test(NAME ControlAudioTestTone
+			COMMAND ${PYTHON3_EXECUTABLE}
+				${CMAKE_CURRENT_SOURCE_DIR}/control-audio-test-tone.py
+				$<TARGET_FILE:zene>
+		)
+		add_test(NAME ControlNegativeControl
 		COMMAND ${PYTHON3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/control-negative-control.py
 			$<TARGET_FILE:zene>
@@ -8280,7 +8285,7 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			${CMAKE_CURRENT_SOURCE_DIR}/control-hybrid-track-role-transcript.py
 			$<TARGET_FILE:zene>
 	)
-	set_tests_properties(ControlShutdown ControlReadiness ControlNoAudioDevice
+	set_tests_properties(ControlShutdown ControlReadiness ControlNoAudioDevice ControlAudioTestTone
 		ControlNegativeControl ControlStableIdsSlice2 ControlStableIds
 		ControlReversibilityTranscript ControlMediaAgentTranscript ControlTransientRepeatTranscript
 		ControlHybridTrackTranscript ControlHybridTrackRoleTranscript PROPERTIES

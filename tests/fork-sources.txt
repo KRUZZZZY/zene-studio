@@ -3981,3 +3981,4 @@ src/core/ControlCommandsAudioTestTone.cpp
 include/AudioOutputStatusBox.h
 src/gui/modals/AudioOutputStatusBox.cpp
 tests/src/gui/AudioOutputStatusBoxTest.cpp
+tests/control-audio-test-tone.py
