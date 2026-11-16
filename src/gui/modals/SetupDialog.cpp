@@ -35,7 +35,6 @@
 
 #include "AudioEngine.h"
 #include "AudioOutputStatusBox.h"
-#include "AudioOutputStatusBox.h"
 #include "ControlRegistry.h"
 #include "embed.h"
 #include "Engine.h"

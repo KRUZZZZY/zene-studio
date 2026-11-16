@@ -38,6 +38,7 @@ namespace lmms::gui
 //! audio.test_tone and audio.test_tone_stop.
 class AudioOutputStatusBox : public QGroupBox
 {
+	Q_OBJECT
 public:
 	//! 'unavailableChoice' is the saved device that was not in the list when the dialog opened; the
 	//! dialog then replaced it with the running one, so the box says so once.
