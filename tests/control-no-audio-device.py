@@ -141,6 +141,54 @@ def check_audio_device_inverse(client, problems):
                      "could not restore the original audio backend setting: %r" % reset)
 
 
+def check_audio_status(client, problems):
+    """Q050-183.1: audio.device_list and the test tone tell the same fallback story.
+
+    The status names the requested backend, says the start failed and why, and the
+    running device is the dummy. The test tone is harmless on the dummy: it must
+    succeed, report not audible, and play through the running (dummy) device.
+    """
+    ping = client.call(30, "control.ping")
+    ping_message = ((ping.get("result") or {}).get("audio") or {}).get("message") or ""
+    listed = client.call(31, "audio.device_list")
+    problems.require(listed.get("ok") is True,
+                     "audio.device_list failed on the fallback: %r" % listed)
+    if listed.get("ok") is not True:
+        return
+    status = listed.get("result") or {}
+    problems.require(status.get("requested") == BROKEN_DEVICE,
+                     "audio.device_list requested is %r, expected %r"
+                     % (status.get("requested"), BROKEN_DEVICE))
+    problems.require(status.get("fallback") is True,
+                     "audio.device_list fallback is %r, expected true" % status.get("fallback"))
+    problems.require(status.get("start_failed") is True,
+                     "audio.device_list start_failed is %r, expected true"
+                     % status.get("start_failed"))
+    reason = status.get("failure_reason")
+    problems.require(isinstance(reason, str) and reason != ""
+                     and (BROKEN_DEVICE in reason or reason == ping_message),
+                     "audio.device_list failure_reason %r must be non-empty and name %r "
+                     "or match the ping message %r" % (reason, BROKEN_DEVICE, ping_message))
+    current = status.get("current")
+    problems.require(current != status.get("requested"),
+                     "audio.device_list current %r must differ from requested %r on the fallback"
+                     % (current, status.get("requested")))
+    tone = client.call(32, "audio.test_tone", {"seconds": 0.3})
+    problems.require(tone.get("ok") is True,
+                     "audio.test_tone must succeed on the dummy fallback: %r" % tone)
+    if tone.get("ok") is True:
+        result = tone.get("result") or {}
+        problems.require(result.get("audible") is False,
+                         "audio.test_tone audible is %r on the dummy, expected false"
+                         % result.get("audible"))
+        problems.require(result.get("output") == current,
+                         "audio.test_tone output %r must equal the running device %r"
+                         % (result.get("output"), current))
+    stopped = client.call(33, "audio.test_tone_stop")
+    problems.require(stopped.get("ok") is True,
+                     "audio.test_tone_stop failed on the fallback: %r" % stopped)
+
+
 def drive_no_audio_device(inst, problems):
     """The whole client side. Returns the quit reply, or None when never ready."""
     client = Client(inst.socket_path)
@@ -153,6 +201,7 @@ def drive_no_audio_device(inst, problems):
             return None
         print("ready after %.2fs with audiodev=%s" % (elapsed, BROKEN_DEVICE))
         problems.extend(check_audio_fallback(ping or {}, BROKEN_DEVICE))
+        check_audio_status(client, problems)
         print("ping report: %r" % (ping or {}).get("result"))
         check_device_dependent_command(client, problems)
         check_engine_still_usable(client, problems)
