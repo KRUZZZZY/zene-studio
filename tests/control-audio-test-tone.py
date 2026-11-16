@@ -18,6 +18,7 @@ Usage: control-audio-test-tone.py <lmms-binary>
 
 import os
 import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -32,6 +33,12 @@ TONE_SECONDS = 5.0
 # part of "the transport was left alone"; everything else must be identical.
 WALL_CLOCK_MARKERS = ("wall", "clock", "timestamp", "elapsed")
 REFUSALS = ({"frequency": 5}, {"seconds": 0}, {"level_db": 0}, {"frequency": "x"})
+SHORT_TONE_SECONDS = 0.1
+# A tone that ends by itself is waited out for this long before it is stopped.
+SHORT_TONE_WAIT = 0.8
+# The module holds 8 slots, so 12 tones only pass if finished tones are reclaimed.
+REPEAT_TONE_COUNT = 12
+REPEAT_TONE_GAP = 0.3
 
 
 def add_step(steps, name):
@@ -144,6 +151,35 @@ def check_refusals(client, problems):
                          "audio.test_tone %r must be refused with invalid_args: %r" % (args, reply))
 
 
+def check_tone_ends_itself(client, problems):
+    """(h) a tone that has ended by itself is not reported as playing when stopped."""
+    tone = client.call(50, "audio.test_tone", {"seconds": SHORT_TONE_SECONDS})
+    problems.require(tone.get("ok") is True, "audio.test_tone failed: %r" % tone)
+    time.sleep(SHORT_TONE_WAIT)
+    stop = client.call(51, "audio.test_tone_stop")
+    problems.require(stop.get("ok") is True, "audio.test_tone_stop failed: %r" % stop)
+    was_playing = (stop.get("result") or {}).get("was_playing")
+    problems.require(was_playing is False,
+                     "audio.test_tone_stop was_playing is %r after a tone that ended, expected false"
+                     % was_playing)
+    print("h: a %.1fs tone ended by itself; audio.test_tone_stop was_playing=%r"
+          % (SHORT_TONE_SECONDS, was_playing))
+
+
+def check_repeated_tones(client, problems):
+    """(i) finished tones are reclaimed: 12 short tones in turn are all accepted."""
+    for index in range(REPEAT_TONE_COUNT):
+        reply = client.call(60 + index, "audio.test_tone", {"seconds": SHORT_TONE_SECONDS})
+        problems.require(reply.get("ok") is True,
+                         "audio.test_tone %d of %d refused; finished tones were not reclaimed: %r"
+                         % (index + 1, REPEAT_TONE_COUNT, reply))
+        time.sleep(REPEAT_TONE_GAP)
+    stop = client.call(72, "audio.test_tone_stop")
+    problems.require(stop.get("ok") is True, "audio.test_tone_stop failed: %r" % stop)
+    print("i: %d repeated %.1fs tones all accepted; audio.test_tone_stop ok=%r"
+          % (REPEAT_TONE_COUNT, SHORT_TONE_SECONDS, stop.get("ok")))
+
+
 def drive(client, steps):
     """The client side, one Problems per step. Returns the quit reply."""
     device = add_step(steps, "a: audio.device_list reports the configured backend running")
@@ -158,6 +194,10 @@ def drive(client, steps):
     check_test_tone_stop(client, stop)
     refusals = add_step(steps, "f: audio.test_tone refuses bad arguments with invalid_args")
     check_refusals(client, refusals)
+    ended = add_step(steps, "h: a tone that ends by itself is not reported playing")
+    check_tone_ends_itself(client, ended)
+    reclaimed = add_step(steps, "i: repeated tones are reclaimed")
+    check_repeated_tones(client, reclaimed)
     return client.call(40, "control.quit")
 
 
