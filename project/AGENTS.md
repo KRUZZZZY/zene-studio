@@ -54,6 +54,9 @@ hunt process, v6) â†’ `plans/DELEGATION-RULES.md` (how delegated work is run) â†
   `id:-1` reply.
 
 ## Where the work is tracked
+- **Review evidence and prevention:** `plans/REVIEW-EVIDENCE.md` supplements current review
+  checks with reachable workflow proof and executable prevention of confirmed recurring defects.
+  Existing acceptance categories, independent verification and Terra priority still apply.
 - **Defect register + campaign record:** `BUGS_FOUND.md` (~52 verified defects found and fixed
   across audits, sweeps, the full suite, and open find-and-fix passes; fix commits land on
   `0.4.0/train-w1`).
