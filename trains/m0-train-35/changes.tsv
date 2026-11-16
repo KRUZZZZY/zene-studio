@@ -1,0 +1,3 @@
+fa4a5f2e785c73e32216931e33cdbe140c06647d	chore(train-35): snapshot regenerated live (933 ids / 78 groups, wasm.* out), canary, A16 histogram, all-sources re-derived (automatic merge train)
+f3b5426267a4c253cb6c30cfa857554a574895ab	fix(train-sol): Fixed four test compilation defects across seven hosted jobs, preserving assertions and allocation checks. Rebuilt affected targets; seven CTest entries, compiler negative controls
+0fdb475021981f0945abc8313dc5b3fc13a90d42	Merge bugs/qwen-gui-1115-session-undo-and-redo-31f559ab479d (accepted; 050/m0-train-35, automatic train)

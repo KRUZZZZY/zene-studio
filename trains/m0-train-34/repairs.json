@@ -213,8 +213,9 @@
       "tests/train-51-portability-check.py",
       "tests/upstream-modifications.txt"
     ],
+    "promoted_train": "050/m0-train-35",
     "source_head": "31f559ab479dcd1b822545aae477222f58f32c0d",
-    "status": "pending",
+    "status": "promoted",
     "summary": "Fixed four test compilation defects across seven hosted jobs, preserving assertions and allocation checks. Rebuilt affected targets; seven CTest entries, compiler negative controls, unchanged gates, whitespace checks and independent review pass.",
     "train": "050/m0-train-34",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-34-1794786219093718118"
@@ -243,9 +244,10 @@
       "docs/qwen-fixes-2026-10/cluster-ci-1660dea90b5a288f.md",
       "tests/src/gui/RowTableViewTest.cpp"
     ],
+    "promoted_train": "050/m0-train-35",
     "source": "independently-reviewed-ci-agent",
     "source_head": "31f559ab479dcd1b822545aae477222f58f32c0d",
-    "status": "pending",
+    "status": "promoted",
     "summary": "CI regression: build / linux-x86_64",
     "train": "050/m0-train-34",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-1660dea90b5a288f"
@@ -274,9 +276,10 @@
       "docs/qwen-fixes-2026-10/cluster-ci-a70284ef7d26941c.md",
       "tests/src/gui/RowTableViewTest.cpp"
     ],
+    "promoted_train": "050/m0-train-35",
     "source": "independently-reviewed-ci-agent",
     "source_head": "31f559ab479dcd1b822545aae477222f58f32c0d",
-    "status": "pending",
+    "status": "promoted",
     "summary": "CI regression: build / macos-x86_64",
     "train": "050/m0-train-34",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-a70284ef7d26941c"
@@ -309,9 +312,10 @@
       "tests/upstream-modifications.txt",
       "tests/windows-arm64-aligned-new-check.py"
     ],
+    "promoted_train": "050/m0-train-35",
     "source": "independently-reviewed-ci-agent",
     "source_head": "31f559ab479dcd1b822545aae477222f58f32c0d",
-    "status": "pending",
+    "status": "promoted",
     "summary": "CI regression: build / windows-arm64",
     "train": "050/m0-train-34",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-00e6f05f41fa4f1a"
@@ -340,9 +344,10 @@
       "docs/qwen-fixes-2026-10/cluster-ci-1755c410599471fe.md",
       "tests/src/gui/RowTableViewTest.cpp"
     ],
+    "promoted_train": "050/m0-train-35",
     "source": "independently-reviewed-ci-agent",
     "source_head": "31f559ab479dcd1b822545aae477222f58f32c0d",
-    "status": "pending",
+    "status": "promoted",
     "summary": "CI regression: build / linux-arm64",
     "train": "050/m0-train-34",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-1755c410599471fe"
@@ -373,9 +378,10 @@
       "tests/src/core/MidiOutTimingTest.cpp",
       "tests/train-41-portability-check.py"
     ],
+    "promoted_train": "050/m0-train-35",
     "source": "independently-reviewed-ci-agent",
     "source_head": "31f559ab479dcd1b822545aae477222f58f32c0d",
-    "status": "pending",
+    "status": "promoted",
     "summary": "CI regression: build / mingw64",
     "train": "050/m0-train-34",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-f10986b0b93b91c1"
@@ -404,9 +410,10 @@
       "docs/qwen-fixes-2026-10/cluster-ci-b303065974a069ae.md",
       "tests/src/gui/RowTableViewTest.cpp"
     ],
+    "promoted_train": "050/m0-train-35",
     "source": "independently-reviewed-ci-agent",
     "source_head": "31f559ab479dcd1b822545aae477222f58f32c0d",
-    "status": "pending",
+    "status": "promoted",
     "summary": "CI regression: build / macos-arm64",
     "train": "050/m0-train-34",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-b303065974a069ae"

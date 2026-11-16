@@ -1,0 +1,15 @@
+{
+  "base": "050/m0-train-34",
+  "display_version": "0.4.23.1-alpha",
+  "evidence": "validated-promotion",
+  "feature_items": [],
+  "feature_train": 23,
+  "kind": "maintenance",
+  "milestone": "0.4",
+  "revision": 1,
+  "sha": "fa4a5f2e785c73e32216931e33cdbe140c06647d",
+  "stage": "alpha",
+  "train": "050/m0-train-35",
+  "train_label": "23.1",
+  "version": "0.4.23-alpha.1"
+}
