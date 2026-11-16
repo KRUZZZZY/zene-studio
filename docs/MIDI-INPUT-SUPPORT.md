@@ -24,7 +24,7 @@ There are two input paths.
 
 PLANNED. Not built, not scheduled. The ALSA path is the planned route.
 
-The following are **undefined** in this repository. None is decided here, and none should be read as a commitment:
+The following are **not defined** in this repository. None is decided here, and none should be read as a commitment:
 
 - **Scope:** ALSA sequencer, ALSA rawmidi, or both.
 - **Message families:** which UMP message types are handled.
