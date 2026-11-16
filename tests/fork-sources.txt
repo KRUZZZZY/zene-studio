@@ -966,6 +966,10 @@ docs/qwen-fixes-2026-10/cluster-ci-61ad26e4f8b135f9.md
 docs/qwen-fixes-2026-10/sol-train-32-portability-replay.md
 docs/qwen-fixes-2026-10/sol-train-32-sdk-complexity.md
 
+# Train 51: hosted test portability repairs and source-derived red/green compiler checks.
+tests/train-51-portability-check.py
+docs/qwen-fixes-2026-10/sol-train-34-hosted-portability-51.md
+
 # Train 48: optional-codec and Windows test compiler contracts with verification.
 tests/train-48-portability-check.py
 docs/qwen-fixes-2026-10/sol-train-33-hosted-portability-48.md

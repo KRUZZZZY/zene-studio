@@ -51,10 +51,10 @@ private slots:
 		RowTableView view;
 		view.setModel(&model);
 
-		const QAbstractItemDelegate* existingRowDelegate = view.itemDelegateForIndex(model.index(0, 0));
+		const QAbstractItemDelegate* existingRowDelegate = view.itemDelegate(model.index(0, 0));
 		QVERIFY(existingRowDelegate);
 		QVERIFY(model.insertRow(1));
-		QCOMPARE(view.itemDelegateForIndex(model.index(1, 0)), existingRowDelegate);
+		QCOMPARE(view.itemDelegate(model.index(1, 0)), existingRowDelegate);
 	}
 
 	void tabAndBacktabWithoutModelAreSafe()

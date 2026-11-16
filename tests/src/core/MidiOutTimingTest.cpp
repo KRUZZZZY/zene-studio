@@ -66,6 +66,7 @@ using namespace lmms;
 namespace
 {
 
+#ifdef LMMS_HAVE_ALSA
 constexpr int Notes = 33;                 //!< 32 intervals
 constexpr double TargetMs = 62.5;         //!< a 1/32 note at 120 BPM
 constexpr f_cnt_t PeriodFrames = 256;
@@ -119,8 +120,6 @@ void measureAgainstRequested(Jitter* out, const std::vector<std::int64_t>& stamp
 	}
 	if (n > 0) { out->outputMeanAbsMs = sumAbs / n; }
 }
-
-#ifdef LMMS_HAVE_ALSA
 
 struct Receiver
 {
