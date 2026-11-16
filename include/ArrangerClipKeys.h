@@ -58,7 +58,10 @@ class Clip;
  *  - Delete: delete them (track.folder_span_delete); Escape: select nothing.
  *
  *  Cluster gui-1106: Ctrl+C / Ctrl+X copy / cut the selected clips (their context menu's Copy / Cut) and Ctrl+V pastes
- *  the copied clips at the play position, on the selected clip's track, else on the track they were copied from. */
+ *  the copied clips at the play position, on the selected clip's track, else on the track they were copied from.
+ *
+ *  - Tab / Shift+Tab: the play position to the next / previous audio transient (arrangement.next_transient), only
+ *    while the arranger itself has the focus. */
 namespace lmms::gui
 {
 
@@ -71,6 +74,9 @@ namespace arrangerkeys
 LMMS_EXPORT bool claims(const QKeyEvent* event);
 //! Act on @a event in @a editor; false when it is not one of the keys above.
 LMMS_EXPORT bool handle(SongEditor* editor, const QKeyEvent* event);
+//! Tab / Shift+Tab in @a editor: move the play position to the next / previous transient (arrangement.next_transient);
+//! false unless @a editor itself has the focus and nothing but Shift is held, so text fields keep their Tab.
+LMMS_EXPORT bool handleTransientKey(SongEditor* editor, const QKeyEvent* event);
 //! Select @a clip in the shell (window.select) and in @a editor's own selection (null: the shell only); false, with
 //! the refusal announced, when window.select refused it.
 LMMS_EXPORT bool selectClip(SongEditor* editor, Clip* clip);
