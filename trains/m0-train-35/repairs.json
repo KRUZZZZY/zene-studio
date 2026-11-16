@@ -88,5 +88,37 @@
     "summary": "Fixed remaining ClipView ambiguity, FIFO helper guards and Qt5 list construction; strengthened source-derived compiler regressions. Targeted rebuild, six CTest checks, four unchanged gates, whitespace checks and independent reviews pass.",
     "train": "050/m0-train-35",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-35-1794800358225163647"
+  },
+  {
+    "at": "2026-11-16T04:20:11",
+    "base": "fa4a5f2e785c73e32216931e33cdbe140c06647d",
+    "branch": "fix/ci-repair-ci-ec26fd9bddef0dd4-421f6f13ae93",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-ec26fd9bddef0dd4.r1.md",
+        "negative_control": {
+          "artifact_hashes": {},
+          "detail": "no product change, no changed test, or a dirty tree",
+          "ok": null,
+          "proof_base": "fa4a5f2e785c73e32216931e33cdbe140c06647d",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-ec26fd9bddef0dd4.r1/negctl",
+          "proof_key": "3f8f83c757aa80e6aa67e1ecc8b0556a3f5db0e6387bb0b893114168f76d2df7"
+        },
+        "verdict": "ACCEPT-NOTE"
+      }
+    ],
+    "commit": "d0e8792465c877c3e24bc8fa84f685acedff8d86",
+    "id": "ci-repair-ci-ec26fd9bddef0dd4-421f6f13ae93",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-ec26fd9bddef0dd4.md",
+      "tests/src/gui/MixerSendsOnFadersTest.cpp",
+      "tests/train-51-portability-check.py"
+    ],
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "fa4a5f2e785c73e32216931e33cdbe140c06647d",
+    "status": "pending",
+    "summary": "CI regression: build / linux-arm64",
+    "train": "050/m0-train-35",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-ec26fd9bddef0dd4"
   }
 ]
