@@ -991,7 +991,10 @@ SetupDialog::SetupDialog(ConfigTab tab_to_open) :
 	// Ensure that we cannot make the dialog smaller than it wants to be
 	setMinimumWidth(width());
 
-	show();
+	// Deliberately no show() here: a caller that wants this dialog non-modal (window.settings)
+	// must be able to set that before the first show. Showing it in the constructor made it
+	// application-modal first, and the later setModal(false) did not remove it from Qt's modal
+	// stack, so the main window ignored menus and keys. Exec()/show() by the caller displays it.
 }
 
 
