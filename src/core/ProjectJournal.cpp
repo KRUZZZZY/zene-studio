@@ -94,6 +94,14 @@ void ProjectJournal::restoreState( SavedObject & saved )
 //! is one undoable step, however many objects it wrote).
 bool ProjectJournal::restoreStep( CheckPoint & step, CheckPoint * redo )
 {
+	// Capture EVERY live object's current state before restoring ANY of them.
+	// The step's objects can contain one another (a dragged clip and the track
+	// that serialises it), and a restore reloads the container - Track::restoreState()
+	// deletes and re-creates its clips. Capturing the track after the clip has
+	// already been put back records the UNDONE position as the redo state, so
+	// redo replays the move away again (or undoes it a second time). The states
+	// are the post-state of the same step on both sides, so they are all taken
+	// while that state is still the live one.
 	bool restoredAny = false;
 	for( SavedObject & saved : step.objects )
 	{
@@ -103,10 +111,11 @@ bool ProjectJournal::restoreStep( CheckPoint & step, CheckPoint * redo )
 		captureState( jo, &current );
 		redo->bytes += current.bytes;
 		redo->objects.append( current );
-		restoreState( saved );
 		restoredAny = true;
 	}
-	return restoredAny;
+	if( !restoredAny ) { return false; }
+	for( SavedObject & saved : step.objects ) { restoreState( saved ); }
+	return true;
 }
 
 namespace
