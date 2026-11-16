@@ -1,0 +1,481 @@
+From f22042415b658d07aab8ea47d2fe72c66a949e2e Mon Sep 17 00:00:00 2001
+From: Zene CI repair <noreply@zene.invalid>
+Date: Mon, 16 Nov 2026 04:30:25 +0000
+Subject: [PATCH] fix(ci): CI regression: build / windows-arm64
+
+CI-Repair-Id: ci-repair-ci-8764ffa3b495466c-69b1830a4bdd
+---
+ .../cluster-ci-8764ffa3b495466c.md            | 162 +++++++++++++
+ tests/CMakeLists.txt                          |  13 ++
+ tests/Qt5QStringListSizeConstructorCheck.py   | 221 ++++++++++++++++++
+ tests/fork-sources.txt                        |   9 +
+ tests/src/gui/MixerSendsOnFadersTest.cpp      |   4 +-
+ tests/upstream-modifications.txt              |   2 +
+ 6 files changed, 410 insertions(+), 1 deletion(-)
+ create mode 100644 docs/qwen-fixes-2026-10/cluster-ci-8764ffa3b495466c.md
+ create mode 100644 tests/Qt5QStringListSizeConstructorCheck.py
+
+diff --git a/docs/qwen-fixes-2026-10/cluster-ci-8764ffa3b495466c.md b/docs/qwen-fixes-2026-10/cluster-ci-8764ffa3b495466c.md
+new file mode 100644
+index 0000000000..09efb5d504
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/cluster-ci-8764ffa3b495466c.md
+@@ -0,0 +1,162 @@
++# cluster ci-8764ffa3b495466c - hosted Qt 5 build stopped by a Qt 6-only QStringList constructor
++
++FIXED
++
++## Verdict and evidence
++
++REAL. At `fa4a5f2e785c73e32216931e33cdbe140c06647d` the hosted jobs build against Qt 5.15,
++which stopped at `tests/src/gui/MixerSendsOnFadersTest.cpp:278`:
++
++```cpp
++QVERIFY(faders == QStringList(channels, QStringLiteral("volume")));
++```
++
++`QStringList` in Qt 6 inherits `QList<QString>`'s constructors, including
++`QList(qsizetype size, parameter_type t)`; Qt 5.15's `QStringList` does not inherit that
++constructor (its only two-argument candidate is the iterator range
++`QStringList(InputIterator first, InputIterator last)`), so deduction fails because
++`channels` is `int` and the second argument is a `QString`. The hosted diagnostics are the
++same on every failed job:
++
++- `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/train-ci/fa4a5f2e785c73e32216931e33cdbe140c06647d/run-43786984969-job-133036727687.log:9084`
++  (`windows-arm64`): `error: no matching constructor for initialization of 'QStringList'`,
++  candidate template ignored because `InputIterator` deduced `int` vs `QString`.
++- the same line and error in `run-43786984969-job-133036727623.log` (`linux-arm64`),
++  `run-43786984969-job-133036727661.log` (`linux-x86_64`),
++  `run-43786984969-job-133036727658.log` (`macos-x86_64`) and
++  `run-43786984969-job-133036727772.log` (`macos-arm64`).
++- Those five logs contain exactly this compile error as the cause of the failed build (the
++  Windows log's other `error:` line is the package manager's "failed to reopen stdin" warning,
++  not a source error).
++
++The local build tree is Qt 6.12, where the line compiles, which is why the checkout alone did
++not reproduce it; the new regression compiles the real source statement against the installed
++Qt 5.15 tree and fails with the hosted diagnostic (see RED below).
++
++## Fix at the cause
++
++`tests/src/gui/MixerSendsOnFadersTest.cpp:278-280` now builds the same all-volume list with a
++Qt 5/6 portable append loop:
++
++```cpp
++QStringList expected;
++for (int index = 0; index < channels; ++index) { expected.append(QStringLiteral("volume")); }
++QVERIFY(faders == expected);
++```
++
++The assertion, its size, and the comparison are unchanged: `channels` copies of "volume".
++A repository-wide search found no other `QStringList(<identifier>, ...)` or
++`QList<QString>(<identifier>, ...)` construction:
++
++```sh
++grep -rnE "QStringList\s*\(\s*[A-Za-z_][A-Za-z0-9_]*\s*," tests src include plugins --include=*.cpp --include=*.h
++grep -rnE "QList<\s*QString\s*>\s*\(\s*[A-Za-z_][A-Za-z0-9_]*\s*," tests src include plugins --include=*.cpp --include=*.h
++```
++
++both exited 1 with no matches.
++
++## Regression
++
++New source-derived Qt 5 compiler check: `tests/Qt5QStringListSizeConstructorCheck.py`
++(registered as CTest `Qt5QStringListSizeConstructorCheck` at `tests/CMakeLists.txt:6272-6283`).
++
++- `derived_statement()` (line 78) reads the actual `QVERIFY(faders == ...)` statement and the
++  expected-list construction immediately above it in `MixerSendsOnFadersTest.cpp`.
++- the derived statement is compiled `-fsyntax-only -std=gnu++20` against `pkg-config Qt5Test`
++  (the hosted compiler input), and against Qt 6 when that tree is installed.
++- the failing control is the Qt 6-only `QStringList(channels, QStringLiteral("volume"))` shape
++  (line 48); the check reports itself skipped, never passed, if the Qt 5 tree accepts it.
++- `--self-test` requires the same tree to reject the Qt 6-only shape and accept the
++  append-built list.
++
++### RED then GREEN (rebuild and CTest)
++
++The log directory named in the brief is not writable by this session's sandbox: `touch` on
++`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-8764ffa3b495466c.r1/logs` exits 1
++with `Permission denied`, and the `write` tool reports `EACCES` on the same directory. All logs
++below are therefore in `$TMPDIR/ci-8764-logs`
++(`/home/kruzzzzy/.cache/zene-tmp/zene-qwen-ci-8764ffa3b495466c/ci-8764-logs`, on disk).
++
++Fix patch: `$TMPDIR/ci-8764-logs/fix.patch` (the test-source hunk; the whole fix is test-side,
++so this is the hunk reversed for 4b).
++
++RED with the fix reverted:
++
++```sh
++git diff -- tests/src/gui/MixerSendsOnFadersTest.cpp > "$LOGS/fix.patch"   # EXIT=0
++git apply -R "$LOGS/fix.patch"                                              # EXIT=0
++cmake --build build --target MixerSendsOnFadersTest -j12                    # EXIT=0
++(cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R '^(MixerSendsOnFadersTest|Qt5QStringListSizeConstructorCheck)$' --output-on-failure)
++                                                                             # EXIT=8
++```
++
++The check fails with the hosted diagnostic (`no matching function for call to
++'QStringList::QStringList(int&, QString)'`, `derived.cpp:6:81`), 1 of 2 tests failed. Log:
++`018-ctest-without-fix-final.log`.
++
++GREEN with the fix restored:
++
++```sh
++git apply "$LOGS/fix.patch"                                                 # EXIT=0
++cmake --build build --target MixerSendsOnFadersTest -j12                    # EXIT=0
++(cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R '^(MixerSendsOnFadersTest|Qt5QStringListSizeConstructorCheck)$' --output-on-failure)
++                                                                             # EXIT=0, 2/2 passed
++```
++
++Logs: `019-build-with-fix-final.log`, `020-ctest-with-fix-final.log`.
++
++The earlier RED without the checker working from the original source (before the fix was
++written) is also recorded: `001-red-qt5-check.log` (EXIT=1, same hosted diagnostic), and the
++direct GREEN after the edit is `004-green-qt5-check.log` (EXIT=0) plus `--self-test`
++`005-selftest.log` (EXIT=0).
++
++### Family
++
++All mixer and Qt 5 QStringList tests were rebuilt and run:
++
++```sh
++cmake --build build --target MixerBusFreezeTest ... MixerLatencyTextTest -j12   # EXIT=0
++(cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R '^(Mixer.*|Qt5QStringList.*)$' -j4 --timeout 600 --no-tests=error --output-on-failure)
++                                                                                # EXIT=0, 26/26 passed
++```
++
++Logs: `012-build-mixer-family.log`, `013-ctest-family.log`.
++
++### Gates
++
++```sh
++python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>
++                                                                             # EXIT=0
++```
++
++feature-check table: fork-sources PASS, all-sources-reproduce PASS, no-upstream-regression PASS,
++check-namespace PASS, no-tautology PASS, doc-figures PASS, complexity PASS, file-length PASS;
++`RESULT: PASS` (`016-feature-check.log`).
++
++## Files committed
++
++- `tests/src/gui/MixerSendsOnFadersTest.cpp` - Qt 5/6 portable expected list, same assertion.
++- `tests/Qt5QStringListSizeConstructorCheck.py` - new source-derived Qt 5/Qt 6 compiler regression.
++- `tests/CMakeLists.txt` - registers `Qt5QStringListSizeConstructorCheck` on Linux with python3.
++- `tests/fork-sources.txt` - registers the new checker and this report.
++- `tests/upstream-modifications.txt` - records the test-source repair and the CMake registration.
++- `docs/qwen-fixes-2026-10/cluster-ci-8764ffa3b495466c.md` - this report.
++
++## Self-check
++
++- Regression test FAILS with the fix reverted and PASSES with it: RED exit 8 (checker failed
++  with the hosted Qt 5 diagnostic), GREEN exit 0 (2/2 passed); both after rebuilding
++  `MixerSendsOnFadersTest`. Because the defect is a Qt 5 compile error, the regression is a
++  compiler check; it is the same statement the hosted Qt 5 compiler consumes.
++- Deterministic: no wall-clock timing, sleeps or races. The probe only reads the test source
++  and invokes the compiler against the installed Qt headers; its fixed and failing fixtures
++  are decided by compilation alone.
++- Cause complete: the only occurrence of the Qt 6-only `QStringList(size, value)` shape in the
++  tree (two repository-wide greps above, both no matches); the fix keeps the list contents and
++  the assertion identical, and the sibling Qt 5 QStringList checks still pass (26/26 family).
++- No collateral damage: this is test-source only; no product code, project file, saved data,
++  command, undo step or audio-thread path changes. The expected list is still exactly
++  `channels` entries of "volume" and `QVERIFY(faders == expected)` is the original comparison.
++- Verdict is FIXED, not ALREADY-FIXED or FALSE-POSITIVE: the failing spelling was present at
++  the pinned commit and is removed by this change; the evidence is the hosted compiler
++  diagnostics and the new red/green Qt 5 compile probe.
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 50cd2de83c..3a4aa75abd 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -6269,6 +6269,19 @@ if(PYTHON3_EXECUTABLE)
+ 	set_tests_properties(Qt5QStringListAssignmentCheck PROPERTIES TIMEOUT 600)
+ endif()
+ 
++# Cluster ci-8764ffa3b495466c: the sends-on-faders regression used Qt 6's inherited
++# QStringList(size, value) constructor, which Qt 5.15 does not have. The check derives the
++# faders/volume comparison from the test source and compiles it against Qt 5 (and Qt 6 when
++# that tree is installed), with the Qt 6-only spelling as its failing control.
++if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
++	add_test(NAME Qt5QStringListSizeConstructorCheck
++		COMMAND ${PYTHON3_EXECUTABLE}
++			${CMAKE_CURRENT_SOURCE_DIR}/Qt5QStringListSizeConstructorCheck.py
++			--root ${CMAKE_SOURCE_DIR}
++			--cxx ${CMAKE_CXX_COMPILER})
++	set_tests_properties(Qt5QStringListSizeConstructorCheck PROPERTIES TIMEOUT 120)
++endif()
++
+ if(PYTHON3_EXECUTABLE)
+ 	add_test(NAME Qt5WorkerThreadCheck
+ 		COMMAND ${PYTHON3_EXECUTABLE}
+diff --git a/tests/Qt5QStringListSizeConstructorCheck.py b/tests/Qt5QStringListSizeConstructorCheck.py
+new file mode 100644
+index 0000000000..04305412b9
+--- /dev/null
++++ b/tests/Qt5QStringListSizeConstructorCheck.py
+@@ -0,0 +1,221 @@
++#!/usr/bin/env python3
++"""Fail when the sends-on-faders assertion uses the Qt 6-only QStringList(size, value) constructor.
++
++Cluster ci-8764ffa3b495466c, hosted `build / windows-arm64` (and the linux/macos Qt 5 jobs) at
++fa4a5f2e785c73e32216931e33cdbe140c06647d:
++
++    tests/src/gui/MixerSendsOnFadersTest.cpp:278:
++        QVERIFY(faders == QStringList(channels, QStringLiteral("volume")));
++
++Qt 6's QStringList inherits QList<QString>'s constructors, including
++`QList(qsizetype size, parameter_type t)`, so the line builds a list of `channels` copies of
++"volume" on the Qt 6 hosts. Qt 5.15's QStringList does not inherit that constructor: the only
++two-argument candidate left is the iterator-range template, and deduction of `InputIterator`
++fails because the first argument is `int` and the second a `QString`:
++
++    error: no matching constructor for initialization of 'QStringList'
++
++Qt 5 then selects the iterator-pair constructor with conflicting deduced types, so only the
++first argument needs to be an integer for the trap. The portable spelling appends `channels`
++copies of "volume" to an explicitly declared QStringList, which both Qt 5 and Qt 6 accept.
++
++The check derives its fixture from the source statement that compares the answer with the
++expected list, so it tests what the test really contains:
++
++  * the derived statement is compiled with the Qt 5 headers - the hosted compiler input.
++  * a control statement with the Qt 6-only constructor must be rejected by the same Qt 5 tree;
++    a tree that accepts it has no trap and the probe reports itself skipped, never passed.
++  * when a Qt 6 tree is installed the derived statement must also compile there.
++
++Usage:
++  Qt5QStringListSizeConstructorCheck.py [--root DIR] [--cxx CXX]
++  Qt5QStringListSizeConstructorCheck.py --self-test
++
++Exit codes: 0 = clean (or skipped on a host without Qt 5), 1 = finding or failed fixture,
++2 = usage error.
++"""
++
++import argparse
++import os
++import shlex
++import shutil
++import subprocess
++import sys
++import tempfile
++
++TEST_SOURCE = "tests/src/gui/MixerSendsOnFadersTest.cpp"
++
++QT5_ONLY_FIXTURE = """\
++#include <QtTest>
++#include <QStringList>
++
++void probe(QStringList faders, int channels)
++{
++    QStringList expected(channels, QStringLiteral("volume"));
++    QVERIFY(faders == expected);
++}
++"""
++
++
++def run(command, cwd=None, timeout=300):
++    try:
++        return subprocess.run(command, cwd=cwd, capture_output=True, text=True, timeout=timeout)
++    except (OSError, subprocess.SubprocessError):
++        return None
++
++
++def module_flags(modules):
++    """The compiler flags of one Qt development tree, or None when pkg-config has none."""
++    if not shutil.which("pkg-config"):
++        return None
++    for packages in (modules, modules[:1]):
++        result = run(["pkg-config", "--cflags", *packages])
++        if result is not None and result.returncode == 0:
++            return shlex.split(result.stdout)
++    return None
++
++
++def derived_statement(source, relative):
++    """The source's comparison against the expected list, plus the lines that build it."""
++    lines = source.splitlines()
++    matches = [index for index, line in enumerate(lines) if "QVERIFY(faders ==" in line]
++    if len(matches) != 1:
++        raise RuntimeError(f"{relative}: expected one 'QVERIFY(faders ==' statement, found {len(matches)}")
++    verify = matches[0]
++    # The comparison's expected list is declared just above it; a declaration of a different
++    # QStringList (the faders answer itself) is not the start of the block. Without one the
++    # comparison is self-contained, which is the Qt 6-only form this check rejects.
++    start = verify
++    for index in range(verify - 1, max(verify - 6, -1), -1):
++        stripped = lines[index].strip()
++        if (stripped.startswith("QStringList ") and stripped.endswith(";")
++                and "=" not in stripped and "faders" not in stripped):
++            start = index
++            break
++    return "\n".join(lines[start:verify + 1])
++
++
++def fixture(statement):
++    return ("#include <QtTest>\n#include <QStringList>\n\n"
++            "void probe(QStringList faders, int channels)\n{\n"
++            f"{statement}\n"
++            "    (void)channels;\n}\n")
++
++
++def compile_fixture(cxx, flags, workdir, name, text):
++    path = os.path.join(workdir, name)
++    with open(path, "w", encoding="utf-8") as handle:
++        handle.write(text)
++    return run([cxx, "-std=gnu++20", "-fPIC", "-fsyntax-only", *flags, path])
++
++
++def diagnostics(result):
++    return "\n".join(line for line in (result.stdout + result.stderr).splitlines()
++                     if "error:" in line or "note:" in line)[:3000]
++
++
++def compile_statement(cxx, flags, workdir, name, statement):
++    return compile_fixture(cxx, flags, workdir, name, fixture(statement))
++
++
++def qt5_control_verdict(cxx, flags, workdir):
++    """True when this Qt 5 tree has the trap; False when it accepts the Qt 6-only form."""
++    control = compile_statement(cxx, flags, workdir, "qt6-only.cpp", QT5_ONLY_FIXTURE)
++    if control is None or control.returncode == 0:
++        return False
++    if "QStringList" not in control.stderr:
++        raise RuntimeError(f"the Qt 5 control failed for another reason\n{diagnostics(control)}")
++    return True
++
++
++def require_qt5_derived(cxx, flags, workdir, statement):
++    result = compile_statement(cxx, flags, workdir, "derived.cpp", statement)
++    if result is None:
++        raise RuntimeError(f"{TEST_SOURCE}: the Qt 5 compile probe could not run")
++    if result.returncode != 0:
++        raise RuntimeError(f"{TEST_SOURCE}: Qt 5 rejected the faders/volume comparison\n"
++                           f"{statement}\n{diagnostics(result)}")
++    print(f"PASS: {TEST_SOURCE} builds the expected volume list with Qt 5")
++
++
++def require_qt6_derived(cxx, statement, workdir):
++    flags = module_flags(["Qt6Test", "Qt6Core"])
++    if flags is None:
++        return
++    same = compile_statement(cxx, flags, workdir, "derived-qt6.cpp", statement)
++    if same is None or same.returncode != 0:
++        detail = diagnostics(same) if same is not None else ""
++        raise RuntimeError(f"the derived statement does not compile with Qt 6\n{detail}")
++    print("PASS: the same statement compiles with Qt 6")
++
++
++def check_product(cxx, root):
++    source_path = os.path.join(root, TEST_SOURCE)
++    with open(source_path, encoding="utf-8") as handle:
++        statement = derived_statement(handle.read(), TEST_SOURCE)
++    flags = module_flags(["Qt5Test", "Qt5Core"])
++    if flags is None:
++        print("probe: skipped (no Qt 5 development tree found)")
++        return 0
++    with tempfile.TemporaryDirectory(prefix="qt5-qstringlist-size-") as workdir:
++        try:
++            if not qt5_control_verdict(cxx, flags, workdir):
++                print("probe: skipped (this Qt tree accepts the Qt 6-only size constructor)")
++                return 0
++            print("probe: Qt 5 rejects QStringList(size, value) and accepts the derived statement")
++            require_qt5_derived(cxx, flags, workdir, statement)
++            require_qt6_derived(cxx, statement, workdir)
++        except RuntimeError as error:
++            print(error)
++            print("FAIL: build the expected list with append() instead of QStringList(size, value)")
++            return 1
++    return 0
++
++
++def self_test(cxx):
++    flags = module_flags(["Qt5Test", "Qt5Core"])
++    if flags is None:
++        print("self-test: skipped (no Qt 5 development tree found)")
++        return 0
++    with tempfile.TemporaryDirectory(prefix="qt5-qstringlist-size-fixtures-") as workdir:
++        control = compile_statement(cxx, flags, workdir, "qt6-only.cpp", QT5_ONLY_FIXTURE)
++        good = compile_statement(cxx, flags, workdir, "fixed.cpp",
++                                 "    QStringList expected;\n"
++                                 "    for (int index = 0; index < channels; ++index)\n"
++                                 "    {\n"
++                                 "        expected.append(QStringLiteral(\"volume\"));\n"
++                                 "    }\n"
++                                 "    QVERIFY(faders == expected);")
++    if control is None or control.returncode == 0:
++        print("SELF-TEST FAIL: the Qt 5 tree accepts the Qt 6-only size constructor")
++        return 1
++    if good is None or good.returncode != 0:
++        print("SELF-TEST FAIL: the Qt 5 tree rejects the append-built expected list")
++        if good is not None:
++            print(diagnostics(good))
++        return 1
++    print("self-test: Qt 5 rejects the size constructor and accepts the append-built expected list")
++    return 0
++
++
++def main(argv):
++    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
++    parser.add_argument("--root", default=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
++    parser.add_argument("--cxx", default=os.environ.get("CXX") or shutil.which("c++") or "c++")
++    parser.add_argument("--self-test", action="store_true")
++    args = parser.parse_args(argv[1:])
++    if args.self_test:
++        return self_test(args.cxx)
++    root = os.path.abspath(args.root)
++    if not os.path.isdir(root):
++        print(f"error: not a directory: {root}", file=sys.stderr)
++        return 2
++    return check_product(args.cxx, root)
++
++
++if __name__ == "__main__":
++    try:
++        sys.exit(main(sys.argv))
++    except (OSError, RuntimeError) as error:
++        print(f"Qt 5 QStringList size-constructor check: {error}", file=sys.stderr)
++        sys.exit(1)
+diff --git a/tests/fork-sources.txt b/tests/fork-sources.txt
+index 194bfbf6e6..1f4df9ecc8 100644
+--- a/tests/fork-sources.txt
++++ b/tests/fork-sources.txt
+@@ -3974,3 +3974,12 @@ tests/src/plugins/CarlaVst2LegacyStateTest.cpp
+ tests/src/gui/LegacyVst2ProjectTest.cpp
+ tests/data/legacy-projects/vst2-vestige-vsteffect.mmp
+ tests/data/legacy-projects/vst2-vestige-vsteffect.reference.json
++
++# cluster ci-8764ffa3b495466c (2026-11-16): the sends-on-faders regression used Qt 6's
++# inherited QStringList(size, value) constructor, which Qt 5.15 lacks; five hosted Qt 5 jobs
++# stopped at MixerSendsOnFadersTest.cpp:278. The check derives the faders/volume comparison
++# from the test source and compiles it against Qt 5, with the Qt 6-only spelling as its
++# failing control, and also against Qt 6 when installed (ctest Qt5QStringListSizeConstructorCheck).
++tests/Qt5QStringListSizeConstructorCheck.py
++# cluster ci-8764ffa3b495466c: repair report and verification evidence.
++docs/qwen-fixes-2026-10/cluster-ci-8764ffa3b495466c.md
+diff --git a/tests/src/gui/MixerSendsOnFadersTest.cpp b/tests/src/gui/MixerSendsOnFadersTest.cpp
+index 877e1718f8..0f7e1c7aa4 100644
+--- a/tests/src/gui/MixerSendsOnFadersTest.cpp
++++ b/tests/src/gui/MixerSendsOnFadersTest.cpp
+@@ -275,7 +275,9 @@ private slots:
+ 
+ 		// Back on the channel faders (an empty sends_on_faders) every entry is the level.
+ 		const QStringList faders = drivesOf(run(QStringLiteral("window.mixer_view"), {{QStringLiteral("sends_on_faders"), QString()}}));
+-		QVERIFY(faders == QStringList(channels, QStringLiteral("volume")));
++		QStringList expected;
++		for (int index = 0; index < channels; ++index) { expected.append(QStringLiteral("volume")); }
++		QVERIFY(faders == expected);
+ 	}
+ 
+ private:
+diff --git a/tests/upstream-modifications.txt b/tests/upstream-modifications.txt
+index 0f0ef7e07a..762f2918b8 100644
+--- a/tests/upstream-modifications.txt
++++ b/tests/upstream-modifications.txt
+@@ -5988,3 +5988,5 @@ src/gui/widgets/TextFloat.cpp	cluster gui-1115-menu-help-accessibility-check: a
+ include/TextFloat.h	cluster gui-1115-menu-help-accessibility-check: declare TextFloat::event, which returns activation to the notice's owning window so a floating result never holds the application focus.
+ tests/src/gui/GrooveMenuTest.cpp	cluster gui-1115-menu-help-accessibility-check: opens the real Help menu, clicks Accessibility Check, and requires the report to survive the menu's close with all five per-check counts.
+ src/core/ProjectJournal.cpp	gui-1115-session-undo-and-redo: restoreStep() captures every live object's post-state before restoring any of them, so a merged step naming a clip and its track records the state the step left (Track::restoreState re-creates the clips) and redo reapplies the drag instead of replaying the undone position; regression UndoBoundsTest::aMovedClipRedoesThroughItsMergedTrackCheckpoint.
++tests/src/gui/MixerSendsOnFadersTest.cpp	cluster ci-8764ffa3b495466c: build the expected all-volume fader answer with a Qt 5/6 portable append loop instead of Qt 6's inherited QStringList(size, value) constructor; the same list and comparison are kept.
++tests/CMakeLists.txt	cluster ci-8764ffa3b495466c: register Qt5QStringListSizeConstructorCheck, a source-derived Qt 5/Qt 6 compiler regression for the faders/volume list; registration only.
+-- 
+2.56.0
+

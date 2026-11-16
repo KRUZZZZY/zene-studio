@@ -155,5 +155,108 @@
     "summary": "CI regression: build / linux-x86_64",
     "train": "050/m0-train-35",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-b71ed146fd535ea5"
+  },
+  {
+    "at": "2026-11-16T04:26:58",
+    "base": "fa4a5f2e785c73e32216931e33cdbe140c06647d",
+    "branch": "fix/ci-repair-ci-d3e29f18fa53a626-257e9290e0ed",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-d3e29f18fa53a626.r1.md",
+        "negative_control": {
+          "artifact_hashes": {},
+          "detail": "no product change, no changed test, or a dirty tree",
+          "ok": null,
+          "proof_base": "fa4a5f2e785c73e32216931e33cdbe140c06647d",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-d3e29f18fa53a626.r1/negctl",
+          "proof_key": "e708e6c91574cc6bbbbce25cbbc6beee95fd856f1f2605135afef9c9b68f7b0b"
+        },
+        "verdict": "ACCEPT"
+      }
+    ],
+    "commit": "aa522d68d36e03f5e09a3e83c1a84562362aaa42",
+    "id": "ci-repair-ci-d3e29f18fa53a626-257e9290e0ed",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-d3e29f18fa53a626.md",
+      "tests/CMakeLists.txt",
+      "tests/ci-d3e29f18-mixer-faders-portability-check.py",
+      "tests/fork-sources.txt",
+      "tests/src/gui/MixerSendsOnFadersTest.cpp"
+    ],
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "fa4a5f2e785c73e32216931e33cdbe140c06647d",
+    "status": "pending",
+    "summary": "CI regression: build / macos-x86_64",
+    "train": "050/m0-train-35",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-d3e29f18fa53a626"
+  },
+  {
+    "at": "2026-11-16T04:28:45",
+    "base": "fa4a5f2e785c73e32216931e33cdbe140c06647d",
+    "branch": "fix/ci-repair-ci-21b94bcfc72522e8-02ee85c689b2",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-21b94bcfc72522e8.r1.md",
+        "negative_control": {
+          "artifact_hashes": {},
+          "detail": "no product change, no changed test, or a dirty tree",
+          "ok": null,
+          "proof_base": "fa4a5f2e785c73e32216931e33cdbe140c06647d",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-21b94bcfc72522e8.r1/negctl",
+          "proof_key": "2dae77e4a048635fbce487885291d7b10e922c46a2f1c62c5dd0e1aea2ba0ab5"
+        },
+        "verdict": "ACCEPT-NOTE"
+      }
+    ],
+    "commit": "ea0a77aab05306bdc8b19696d01b0b564010737f",
+    "id": "ci-repair-ci-21b94bcfc72522e8-02ee85c689b2",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-21b94bcfc72522e8.md",
+      "tests/CMakeLists.txt",
+      "tests/fork-sources.txt",
+      "tests/src/core/RemotePluginAudioPortsTest.cpp",
+      "tests/upstream-modifications.txt"
+    ],
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "fa4a5f2e785c73e32216931e33cdbe140c06647d",
+    "status": "pending",
+    "summary": "CI regression: build / mingw64",
+    "train": "050/m0-train-35",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-21b94bcfc72522e8"
+  },
+  {
+    "at": "2026-11-16T04:30:25",
+    "base": "fa4a5f2e785c73e32216931e33cdbe140c06647d",
+    "branch": "fix/ci-repair-ci-8764ffa3b495466c-69b1830a4bdd",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-8764ffa3b495466c.r1.md",
+        "negative_control": {
+          "artifact_hashes": {},
+          "detail": "no product change, no changed test, or a dirty tree",
+          "ok": null,
+          "proof_base": "fa4a5f2e785c73e32216931e33cdbe140c06647d",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-8764ffa3b495466c.r1/negctl",
+          "proof_key": "fc4d2d00f5c20da579eb2b033d0e0d4919d03803ee577c0ef554cbf711301c94"
+        },
+        "verdict": "ACCEPT"
+      }
+    ],
+    "commit": "f22042415b658d07aab8ea47d2fe72c66a949e2e",
+    "id": "ci-repair-ci-8764ffa3b495466c-69b1830a4bdd",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-8764ffa3b495466c.md",
+      "tests/CMakeLists.txt",
+      "tests/Qt5QStringListSizeConstructorCheck.py",
+      "tests/fork-sources.txt",
+      "tests/src/gui/MixerSendsOnFadersTest.cpp",
+      "tests/upstream-modifications.txt"
+    ],
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "fa4a5f2e785c73e32216931e33cdbe140c06647d",
+    "status": "pending",
+    "summary": "CI regression: build / windows-arm64",
+    "train": "050/m0-train-35",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-8764ffa3b495466c"
   }
 ]
