@@ -1,0 +1,554 @@
+From 9aa3410444467e8f191ab49bc67b29444c4d99ef Mon Sep 17 00:00:00 2001
+From: Zene CI repair <noreply@zene.invalid>
+Date: Mon, 16 Nov 2026 00:20:33 +0000
+Subject: [PATCH] fix(ci): CI regression: build / windows-arm64
+
+CI-Repair-Id: ci-repair-ci-00e6f05f41fa4f1a-855a8a94830e
+---
+ .../cluster-ci-00e6f05f41fa4f1a.md            | 211 ++++++++++++++++++
+ tests/CMakeLists.txt                          |  11 +
+ tests/fork-sources.txt                        |  10 +-
+ tests/src/plugins/SfzDistoBuffersTest.cpp     |  12 +-
+ tests/upstream-modifications.txt              |   1 +
+ tests/windows-arm64-aligned-new-check.py      | 185 +++++++++++++++
+ 6 files changed, 424 insertions(+), 6 deletions(-)
+ create mode 100644 docs/qwen-fixes-2026-10/cluster-ci-00e6f05f41fa4f1a.md
+ create mode 100644 tests/windows-arm64-aligned-new-check.py
+
+diff --git a/docs/qwen-fixes-2026-10/cluster-ci-00e6f05f41fa4f1a.md b/docs/qwen-fixes-2026-10/cluster-ci-00e6f05f41fa4f1a.md
+new file mode 100644
+index 0000000000..10cc633dd0
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/cluster-ci-00e6f05f41fa4f1a.md
+@@ -0,0 +1,211 @@
++FIXED
++
++# Cluster ci-00e6f05f41fa4f1a — build / windows-arm64 (SfzDistoBuffersTest's aligned `operator new`)
++
++## Verdict
++
++FIXED. The failing target is test infrastructure, and the bug is a real, deterministic
++compile failure on the hosted Windows-arm64 runner: the aligned allocation operators in
++`tests/src/plugins/SfzDistoBuffersTest.cpp` were guarded with `_MSC_VER`, but that runner
++compiles with clang on the mingw runtime (`MSYSTEM=CLANGARM64`), which defines `_WIN32`
++and does **not** define `_MSC_VER`. The test therefore fell through to the POSIX branch and
++called `posix_memalign`, which the Windows CRT does not declare:
++
++```
++tests/src/plugins/SfzDistoBuffersTest.cpp:60:6: error: use of undeclared identifier 'posix_memalign'
++```
++
++That is the exact diagnostic in the finding's CI log (run-43764792400-job-132967358917.log,
++commit 31f559ab479dcd1b822545aae477222f58f32c0d, the commit this worktree is on).
++
++## Evidence: where the wrong guard is and what the correct contract is
++
++- Before the fix: `tests/src/plugins/SfzDistoBuffersTest.cpp:10,56,82` used
++  `#if defined(_MSC_VER)` for the `<malloc.h>` include, the aligned `operator new`, and
++  the aligned `operator delete`. On clang/mingw all three are false, so the code included
++  no Windows header and called `posix_memalign` at line 59.
++- The sibling in the same test tree already had the correct contract:
++  `tests/src/core/AllocationProbe.cpp:31` (`#ifdef _WIN32` for `<malloc.h>`), `:124-131`
++  (`_aligned_malloc` on `_WIN32`, `posix_memalign` otherwise) and `:190-192`
++  (`_aligned_free` on `_WIN32`, `std::free` otherwise). This cluster makes
++  `SfzDistoBuffersTest` follow that same contract, so the allocation and its matching free
++  agree on every platform (a mismatched `_aligned_malloc`/`std::free` pair would corrupt the
++  Windows heap even if the build succeeded).
++- The fix: `tests/src/plugins/SfzDistoBuffersTest.cpp:11,59,87` now use
++  `#if defined(_WIN32)`. No behaviour changes on Linux (the POSIX branch is selected as
++  before) or on MSVC (MSVC defines `_WIN32` too). `_aligned_malloc`/`_aligned_free` are the
++  CRT contract on every Windows compiler, including clang/mingw.
++
++## Regression test (deterministic, no clock, no race)
++
++`tests/windows-arm64-aligned-new-check.py` reads the three marked platform blocks out of the
++real test source (markers `zene-portable-aligned-include/new/delete` in
++`tests/src/plugins/SfzDistoBuffersTest.cpp:10-14,53-67,83-93`) and compiles them twice with
++the host compiler:
++
++1. native (no `-D_WIN32`): the POSIX branch must allocate with the real `posix_memalign`
++   and free with `std::free`;
++2. simulated Windows (`-D_WIN32`, shim `malloc.h` declaring `_aligned_malloc`/`_aligned_free`
++   exactly as the Windows CRT does, `posix_memalign` poisoned to return ENOMEM): the
++   operators must select `_aligned_malloc`; if they fall through to `posix_memalign` the
++   probe's `operator new` throws `std::bad_alloc` and the check fails with
++   "the POSIX posix_memalign branch was selected".
++
++The shim only *declares* `_aligned_malloc`; its definition and the poison live after the
++extracted operators, so the extracted `#include <malloc.h>` guard is load-bearing too: a
++wrong include guard makes the probe fail to compile, exactly as the Windows build did.
++Registered as CTest `WindowsArm64AlignedNewCheck` in `tests/CMakeLists.txt:6237-6245`
++(Linux host, same pattern as the existing source-derived `Train*Portability` checks).
++
++Test matrix covered:
++- normal path: native `operator new(std::size_t, std::align_val_t)` returns 32-byte-aligned
++  storage and the matching delete frees it;
++- Windows path: `_WIN32` select the CRT helpers, and the aligned delete routes to
++  `_aligned_free` (the probe aborts if it does not);
++- failure/exhaustion: the poisoned POSIX entry point makes a wrong branch throw
++  `std::bad_alloc`, which is reported as a failure rather than passing silently;
++- platform-build requirement: the include/declaration path is compiled, not source-scanned.
++
++## Commands and exit codes
++
++Log folder note: the brief's folder
++`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-00e6f05f41fa4f1a.r1/logs` is not
++writable from this session even though the directory and its ancestors show `drwxr-xr-x`
++owned by this user; `touch` there returns `Permission denied` (the session sandbox grants
++writes outside the worktree only under `$DSH_HOME`). All logs are therefore in
++`/home/kruzzzzy/.local/share/zene-bunny-fix/dsh/home/ci-00e6f05f41fa4f1a-logs/`; the
++commands and exit codes are copied below.
++
++RED before the fix (original `_MSC_VER` guards, harness in place):
++
++| # | command | exit |
++|---|---------|------|
++| 1 | `python3 tests/windows-arm64-aligned-new-check.py --source-root .` | `1` (`check-01-red.log`: "the POSIX posix_memalign branch was selected") |
++| 2 | `cmake --build build --target SfzDistoBuffersTest -j2` | `0` (`build-04-prove-red.log`) |
++| 3 | `cd build/tests && ctest -R WindowsArm64AlignedNewCheck --output-on-failure` | `8` (1 test failed, `test-05-prove-red.log`) |
++
++GREEN after the fix:
++
++| # | command | exit |
++|---|---------|------|
++| 4 | `python3 tests/windows-arm64-aligned-new-check.py --source-root .` | `0` (`check-02-green.log`) |
++| 5 | `cmake --build build --target SfzDistoBuffersTest -j2` | `0` (`build-02-green.log`, re-run as `build-06-prove-green.log`) |
++| 6 | `cd build/tests && ctest -R "WindowsArm64AlignedNewCheck\|SfzDistoBuffersTest" --output-on-failure` | `0` (2/2, `test-03-green.log`) |
++| 7 | `cd build/tests && ctest -R WindowsArm64AlignedNewCheck --output-on-failure` after re-applying the patch | `0` (`test-07-prove-green.log`) |
++
++Step 4b proof (the patch is a guard-only diff, because the only code changed is the
++test-side allocator; it was made with `diff -u` between a copy with `_MSC_VER` and the fixed
++file, then applied with `git apply`):
++
++```
++cp tests/src/plugins/SfzDistoBuffersTest.cpp $LOGS/fixed.cpp
++sed 's/^#if defined(_WIN32)$/#if defined(_MSC_VER)/' $LOGS/fixed.cpp > $LOGS/buggy.cpp
++diff -u --label a/tests/src/plugins/SfzDistoBuffersTest.cpp \
++        --label b/tests/src/plugins/SfzDistoBuffersTest.cpp \
++        $LOGS/buggy.cpp $LOGS/fixed.cpp > $LOGS/fix.patch          # exit 1 (differences, expected)
++git apply -R $LOGS/fix.patch                                        # exit 0
++cmake --build build --target SfzDistoBuffersTest -j2                # exit 0 (build-04-prove-red.log)
++cd build/tests && ctest -R WindowsArm64AlignedNewCheck --output-on-failure  # exit 8 (test-05-prove-red.log)
++git apply $LOGS/fix.patch                                           # exit 0
++cmake --build build --target SfzDistoBuffersTest -j2                # exit 0 (build-06-prove-green.log)
++cd build/tests && ctest -R WindowsArm64AlignedNewCheck --output-on-failure  # exit 0 (test-07-prove-green.log)
++```
++
++The RED failure text is the intended one, not a harness error:
++
++```
++windows-arm64 aligned-new check: windows: the POSIX posix_memalign branch was selected
++(stub returned ENOMEM); the aligned operators must use the Windows CRT under _WIN32
++```
++
++Family (all Sfz/Disto tests built first with
++`cmake --build build --target SfzPlayerTest SfzPlayerRealtimeTest SfzFilePoolTest
++SfzEffectBusViewTest SfzSimdHelperAlignmentTest SfzEQPoolExhaustionTest
++SfzFlexEnvelopeZeroStageTest SfzFilterEqDescriptionTest SfzSimdGainAVXTest -j2`, exit `0`,
++`build-09-family.log`):
++
++```
++cd build/tests && ctest -R "Sfz|Disto|AlignedNew" --output-on-failure
++```
++
++`12/12` tests passed, exit `0` (`test-10-family.log`), including `SfzDistoBuffersTest`,
++`SfzPlayerTest`, `SfzPlayerRealtimeTest`, `SfzEffectBusViewTest`, the Sfz SIMD/EQ/envelope
++tests, `SfzRenderThreadGate` and the new `WindowsArm64AlignedNewCheck`.
++
++## Collateral, realtime, undo, and sibling checks
++
++- The changed code is a test executable's replacement global `operator new/delete`; no
++  product source, no audio-thread path, no control command, no undo step and no saved-data
++  format is touched.
++- `AllocationProbe.cpp` (the other test allocation probe) already used `_WIN32`; it was left
++  unchanged. A repo-wide search found no other `_MSC_VER`+`posix_memalign` pairing (only
++  third-party/vendored trees and the allocation probes above).
++- The native Linux branch is behaviour-preserving (`posix_memalign`/`std::free`, same
++  arguments and same `bad_alloc` on failure).
++- `tests/fork-sources.txt` registers the new Python check; `tests/upstream-modifications.txt`
++  records the `tests/CMakeLists.txt` registration reason. `tests/src/plugins/SfzDistoBuffersTest.cpp`
++  is already a registered fork-NEW source, so it needs no upstream entry.
++
++## Self-check (answers to the review ASKs)
++
++- **Real vs already fixed**: REAL; the failing commit is this worktree's HEAD
++  (`31f559ab479dcd1b822545aae477222f58f32c0d`) and the old guard was still the wrong one at
++  `SfzDistoBuffersTest.cpp:56,82`. The correct pattern is in the same tree at
++  `AllocationProbe.cpp:31,124,190`, so this is a verified cause, not a guess.
++- **Test proves the change (reverted = FAIL, with fix = PASS)**: `git apply -R fix.patch` +
++  rebuild + `ctest -R WindowsArm64AlignedNewCheck` gave exit `8`
++  (`test-05-prove-red.log`), then `git apply fix.patch` + rebuild + the same ctest gave exit
++  `0` (`test-07-prove-green.log`). Before any fix the direct check also exited `1`
++  (`check-01-red.log`). The RED text is the intended branch-selection failure, not a
++  harness error.
++- **Deterministic**: no wall-clock time, sleep, thread or race is involved. The seam is the
++  extracted platform blocks plus a compile-time `-D_WIN32` and a static shim `malloc.h`
++  declaring `_aligned_malloc`/`_aligned_free`; the only injected value is the poisoned
++  `posix_memalign` returning `ENOMEM` (`12`). Two subprocesses compile then run the probe
++  and compare its exit code; repeated runs give the same result.
++- **Complete fix / callers and siblings**: the three guards (include, new, delete) are all
++  changed together so declaration, allocation and deallocation agree. The only sibling,
++  `AllocationProbe.cpp`, already follows `_WIN32` and needs no change; the repo-wide search
++  found no other matching wrong guard.
++- **No collateral damage**: Linux and MSVC behaviour is unchanged; no project file, saved
++  state, stream, undo journal or command surface is involved, so old projects and saved data
++  load exactly as before; no limit or check was added.
++- **Realtime / undo / commands**: not applicable — test-only global operator replacements;
++  no command added.
++- **Registration and gates**: new file registered in `tests/fork-sources.txt`, CMake change
++  declared in `tests/upstream-modifications.txt`, CTest registered as
++  `WindowsArm64AlignedNewCheck`. `python3 .../feature_check.py <worktree>` exited `0` with
++  all eight rows PASS (`feature-check-11.log`); `python3 .../submit_check.py <worktree>
++  ci-00e6f05f41fa4f1a` exited `0` with every mechanical row PASS (`submit-check-12.log`).
++- **ALREADY-FIXED / FALSE-POSITIVE evidence**: not applicable — the verdict is FIXED; the
++  evidence for the real cause is the guard in the old file (`SfzDistoBuffersTest.cpp:56,82`)
++  against the compiler contract `_WIN32`/`_MSC_VER` and the sibling `AllocationProbe.cpp`.
++
++## Gates (after the commit)
++
++`python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>`
++exited `0` (`feature-check-11.log`):
++
++| gate | result |
++|------|--------|
++| fork-sources | PASS (exit 0) |
++| all-sources-reproduce | PASS (exit 0) |
++| no-upstream-regression | PASS (exit 0) |
++| check-namespace | PASS (exit 0) |
++| no-tautology | PASS (exit 0) |
++| doc-figures | PASS (exit 0) |
++| complexity | PASS — no new item in my files |
++| file-length | PASS — no new item in my files |
++
++`python3 .../submit_check.py <worktree> ci-00e6f05f41fa4f1a` exited `0`
++(`submit-check-12.log`): commits on the branch, clean tree, report, changed tests and the
++gate table all PASS; every ASK is answered above.
++
++## Files committed
++
++- `tests/src/plugins/SfzDistoBuffersTest.cpp` (fix: `_WIN32` guards + extraction markers)
++- `tests/windows-arm64-aligned-new-check.py` (new regression check)
++- `tests/CMakeLists.txt` (CTest registration)
++- `tests/fork-sources.txt` (registration)
++- `tests/upstream-modifications.txt` (declaration for the inherited CMake file)
++- `docs/qwen-fixes-2026-10/cluster-ci-00e6f05f41fa4f1a.md` (this report)
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index cd97d2b638..0bc2e74c30 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -6233,6 +6233,17 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
+ 	set_tests_properties(Train48Portability PROPERTIES TIMEOUT 300)
+ endif()
+ 
++# Cluster ci-00e6f05f41fa4f1a: the Windows-arm64 runner is clang/mingw, which
++# defines _WIN32 but not _MSC_VER. SfzDistoBuffersTest's aligned operators must
++# follow the Windows CRT there, not posix_memalign. The probe compiles the
++# platform blocks extracted from the real source, natively and with _WIN32.
++if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
++	add_test(NAME WindowsArm64AlignedNewCheck COMMAND ${PYTHON3_EXECUTABLE}
++		${CMAKE_CURRENT_SOURCE_DIR}/windows-arm64-aligned-new-check.py
++		--source-root ${CMAKE_SOURCE_DIR})
++	set_tests_properties(WindowsArm64AlignedNewCheck PROPERTIES TIMEOUT 120)
++endif()
++
+ # Train 47: exercise the Qt5 JSON and Windows fixture compiler contracts.
+ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
+ 	add_test(NAME Train47Portability COMMAND ${PYTHON3_EXECUTABLE}
+diff --git a/tests/fork-sources.txt b/tests/fork-sources.txt
+index 88f20c09de..d3ac254d91 100644
+--- a/tests/fork-sources.txt
++++ b/tests/fork-sources.txt
+@@ -151,7 +151,7 @@
+ #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/doc-pricing-model-gate.py ; \
+ #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/NeuralAmpHarnessBlockCount.cpp tests/src/plugins/NeuralAmpProfileArgumentsTest.cpp ; \
+ #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/ClapTestInstrumentUnitTest.cpp ; \
+-#   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/Qt5QJsonToIntegerCheck.py tests/Qt5JsonIntegerCheck.py tests/Qt5JsonValueIntegerCheck.py tests/Qt5QJsonValueIntegerCheck.py tests/remote-plugin-shm-fifo-qt-usage-check.py tests/no-ffmpeg-video-clips-compile-check.py tests/VideoClipsNoFfmpegCheck.py docs/qwen-fixes-2026-10/cluster-ci-e58078851126eac9.md docs/qwen-fixes-2026-10/cluster-ci-619dd453d973527c.md docs/qwen-fixes-2026-10/cluster-ci-9b3cdba8549c073f.md docs/qwen-fixes-2026-10/cluster-ci-2fd63d3310176c0c.md docs/qwen-fixes-2026-10/cluster-ci-2fac5540e1a657f0.md docs/qwen-fixes-2026-10/cluster-ci-d2bfae2f2ab57bfb.md docs/qwen-fixes-2026-10/cluster-ci-a0493fd29d4e9b4b.md docs/qwen-fixes-2026-10/cluster-ci-f8d87e270a05ef5e.md docs/qwen-fixes-2026-10/cluster-ci-6422986f4db9676f.md docs/qwen-fixes-2026-10/cluster-ci-9b6002ebebcf807a.md docs/qwen-fixes-2026-10/cluster-ci-bbbeb2c8d6e707a8.md docs/qwen-fixes-2026-10/cluster-ci-e8063221c62bcc38.md docs/qwen-fixes-2026-10/cluster-ci-78cca41150908714.md ; \
++#   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/Qt5QJsonToIntegerCheck.py tests/Qt5JsonIntegerCheck.py tests/Qt5JsonValueIntegerCheck.py tests/Qt5QJsonValueIntegerCheck.py tests/remote-plugin-shm-fifo-qt-usage-check.py tests/no-ffmpeg-video-clips-compile-check.py tests/VideoClipsNoFfmpegCheck.py docs/qwen-fixes-2026-10/cluster-ci-e58078851126eac9.md docs/qwen-fixes-2026-10/cluster-ci-619dd453d973527c.md docs/qwen-fixes-2026-10/cluster-ci-9b3cdba8549c073f.md docs/qwen-fixes-2026-10/cluster-ci-2fd63d3310176c0c.md docs/qwen-fixes-2026-10/cluster-ci-2fac5540e1a657f0.md docs/qwen-fixes-2026-10/cluster-ci-d2bfae2f2ab57bfb.md docs/qwen-fixes-2026-10/cluster-ci-a0493fd29d4e9b4b.md docs/qwen-fixes-2026-10/cluster-ci-f8d87e270a05ef5e.md docs/qwen-fixes-2026-10/cluster-ci-6422986f4db9676f.md docs/qwen-fixes-2026-10/cluster-ci-9b6002ebebcf807a.md docs/qwen-fixes-2026-10/cluster-ci-bbbeb2c8d6e707a8.md docs/qwen-fixes-2026-10/cluster-ci-e8063221c62bcc38.md docs/qwen-fixes-2026-10/cluster-ci-78cca41150908714.md tests/windows-arm64-aligned-new-check.py ; \
+ #   } | LC_ALL=C sort -u
+ # Verify it - this must print REPRODUCES and nothing else:
+ #   diff <(grep -vE '^[[:space:]]*(#|$)' tests/fork-sources.txt) \
+@@ -254,12 +254,12 @@
+ #        git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/gui/CPULoadWidgetTest.cpp ; \
+ #        git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/NeuralAmpHarnessBlockCount.cpp tests/src/plugins/NeuralAmpProfileArgumentsTest.cpp ; \
+ #        git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/ClapTestInstrumentUnitTest.cpp ; \
+-#          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/Qt5QJsonToIntegerCheck.py tests/Qt5JsonIntegerCheck.py tests/Qt5JsonValueIntegerCheck.py tests/Qt5QJsonValueIntegerCheck.py tests/remote-plugin-shm-fifo-qt-usage-check.py tests/no-ffmpeg-video-clips-compile-check.py tests/VideoClipsNoFfmpegCheck.py docs/qwen-fixes-2026-10/cluster-ci-e58078851126eac9.md docs/qwen-fixes-2026-10/cluster-ci-619dd453d973527c.md docs/qwen-fixes-2026-10/cluster-ci-9b3cdba8549c073f.md docs/qwen-fixes-2026-10/cluster-ci-2fd63d3310176c0c.md docs/qwen-fixes-2026-10/cluster-ci-2fac5540e1a657f0.md docs/qwen-fixes-2026-10/cluster-ci-d2bfae2f2ab57bfb.md docs/qwen-fixes-2026-10/cluster-ci-a0493fd29d4e9b4b.md docs/qwen-fixes-2026-10/cluster-ci-f8d87e270a05ef5e.md docs/qwen-fixes-2026-10/cluster-ci-6422986f4db9676f.md docs/qwen-fixes-2026-10/cluster-ci-9b6002ebebcf807a.md docs/qwen-fixes-2026-10/cluster-ci-bbbeb2c8d6e707a8.md docs/qwen-fixes-2026-10/cluster-ci-e8063221c62bcc38.md docs/qwen-fixes-2026-10/cluster-ci-78cca41150908714.md ; \
++#          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/Qt5QJsonToIntegerCheck.py tests/Qt5JsonIntegerCheck.py tests/Qt5JsonValueIntegerCheck.py tests/Qt5QJsonValueIntegerCheck.py tests/remote-plugin-shm-fifo-qt-usage-check.py tests/no-ffmpeg-video-clips-compile-check.py tests/VideoClipsNoFfmpegCheck.py docs/qwen-fixes-2026-10/cluster-ci-e58078851126eac9.md docs/qwen-fixes-2026-10/cluster-ci-619dd453d973527c.md docs/qwen-fixes-2026-10/cluster-ci-9b3cdba8549c073f.md docs/qwen-fixes-2026-10/cluster-ci-2fd63d3310176c0c.md docs/qwen-fixes-2026-10/cluster-ci-2fac5540e1a657f0.md docs/qwen-fixes-2026-10/cluster-ci-d2bfae2f2ab57bfb.md docs/qwen-fixes-2026-10/cluster-ci-a0493fd29d4e9b4b.md docs/qwen-fixes-2026-10/cluster-ci-f8d87e270a05ef5e.md docs/qwen-fixes-2026-10/cluster-ci-6422986f4db9676f.md docs/qwen-fixes-2026-10/cluster-ci-9b6002ebebcf807a.md docs/qwen-fixes-2026-10/cluster-ci-bbbeb2c8d6e707a8.md docs/qwen-fixes-2026-10/cluster-ci-e8063221c62bcc38.md docs/qwen-fixes-2026-10/cluster-ci-78cca41150908714.md tests/windows-arm64-aligned-new-check.py ; \
+ #        } | LC_ALL=C sort -u) && echo REPRODUCES
+ # 2026-10-10 (new-p10-108): XyPadPairTest now exercises the Delay plug-in's XyPad directly. Its two test-local headers
+ #   provide AUTOMOC inputs for the already-configured target without changing the CMake build graph.
+ #          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/EqFilterTest.cpp ; \
+-#          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/Qt5QJsonToIntegerCheck.py tests/Qt5JsonIntegerCheck.py tests/Qt5JsonValueIntegerCheck.py tests/Qt5QJsonValueIntegerCheck.py tests/remote-plugin-shm-fifo-qt-usage-check.py tests/no-ffmpeg-video-clips-compile-check.py tests/VideoClipsNoFfmpegCheck.py docs/qwen-fixes-2026-10/cluster-ci-e58078851126eac9.md docs/qwen-fixes-2026-10/cluster-ci-619dd453d973527c.md docs/qwen-fixes-2026-10/cluster-ci-9b3cdba8549c073f.md docs/qwen-fixes-2026-10/cluster-ci-2fd63d3310176c0c.md docs/qwen-fixes-2026-10/cluster-ci-2fac5540e1a657f0.md docs/qwen-fixes-2026-10/cluster-ci-d2bfae2f2ab57bfb.md docs/qwen-fixes-2026-10/cluster-ci-a0493fd29d4e9b4b.md docs/qwen-fixes-2026-10/cluster-ci-f8d87e270a05ef5e.md docs/qwen-fixes-2026-10/cluster-ci-6422986f4db9676f.md docs/qwen-fixes-2026-10/cluster-ci-9b6002ebebcf807a.md docs/qwen-fixes-2026-10/cluster-ci-bbbeb2c8d6e707a8.md docs/qwen-fixes-2026-10/cluster-ci-e8063221c62bcc38.md docs/qwen-fixes-2026-10/cluster-ci-78cca41150908714.md ; \
++#          git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/Qt5QJsonToIntegerCheck.py tests/Qt5JsonIntegerCheck.py tests/Qt5JsonValueIntegerCheck.py tests/Qt5QJsonValueIntegerCheck.py tests/remote-plugin-shm-fifo-qt-usage-check.py tests/no-ffmpeg-video-clips-compile-check.py tests/VideoClipsNoFfmpegCheck.py docs/qwen-fixes-2026-10/cluster-ci-e58078851126eac9.md docs/qwen-fixes-2026-10/cluster-ci-619dd453d973527c.md docs/qwen-fixes-2026-10/cluster-ci-9b3cdba8549c073f.md docs/qwen-fixes-2026-10/cluster-ci-2fd63d3310176c0c.md docs/qwen-fixes-2026-10/cluster-ci-2fac5540e1a657f0.md docs/qwen-fixes-2026-10/cluster-ci-d2bfae2f2ab57bfb.md docs/qwen-fixes-2026-10/cluster-ci-a0493fd29d4e9b4b.md docs/qwen-fixes-2026-10/cluster-ci-f8d87e270a05ef5e.md docs/qwen-fixes-2026-10/cluster-ci-6422986f4db9676f.md docs/qwen-fixes-2026-10/cluster-ci-9b6002ebebcf807a.md docs/qwen-fixes-2026-10/cluster-ci-bbbeb2c8d6e707a8.md docs/qwen-fixes-2026-10/cluster-ci-e8063221c62bcc38.md docs/qwen-fixes-2026-10/cluster-ci-78cca41150908714.md tests/windows-arm64-aligned-new-check.py ; \
+ #        } | LC_ALL=C sort -u) && echo REPRODUCES
+ # 2026-10-11 (new-p9-120): the peak EQ Nyquist regression source is named in both pathspec
+ # blocks above and registered here, keeping this fork-specific source list reproducible.
+@@ -3970,3 +3970,7 @@ tests/src/plugins/CarlaVst2LegacyStateTest.cpp
+ tests/src/gui/LegacyVst2ProjectTest.cpp
+ tests/data/legacy-projects/vst2-vestige-vsteffect.mmp
+ tests/data/legacy-projects/vst2-vestige-vsteffect.reference.json
++
++# Cluster ci-00e6f05f41fa4f1a: Windows-arm64 aligned-new compiler regression.
++tests/windows-arm64-aligned-new-check.py
++docs/qwen-fixes-2026-10/cluster-ci-00e6f05f41fa4f1a.md
+diff --git a/tests/src/plugins/SfzDistoBuffersTest.cpp b/tests/src/plugins/SfzDistoBuffersTest.cpp
+index 155f765f33..c69ad8ac04 100644
+--- a/tests/src/plugins/SfzDistoBuffersTest.cpp
++++ b/tests/src/plugins/SfzDistoBuffersTest.cpp
+@@ -7,9 +7,11 @@
+ #include <cstdlib>
+ #include <new>
+ #include <vector>
+-#if defined(_MSC_VER)
++// zene-portable-aligned-include: begin
++#if defined(_WIN32)
+ #include <malloc.h>
+ #endif
++// zene-portable-aligned-include: end
+ #include "sfizz/effects/Disto.h"
+ #include "sfizz/Synth.h"
+ #include "sfizz/AudioSpan.h"
+@@ -48,12 +50,13 @@ void *operator new[](std::size_t s, std::nothrow_t) noexcept
+ 	noteA();
+ 	return std::malloc(s != 0 ? s : 1);
+ }
++// zene-portable-aligned-new: begin
+ void *operator new(std::size_t s, std::align_val_t a)
+ {
+ 	noteA();
+ 	auto align = static_cast<std::size_t>(a);
+ 	auto bytes = s != 0 ? s : 1;
+-#if defined(_MSC_VER)
++#if defined(_WIN32)
+ 	if (void *p = _aligned_malloc(bytes, align < sizeof(void *) ? sizeof(void *) : align)) { return p; }
+ #else
+ 	void *p = nullptr;
+@@ -61,6 +64,7 @@ void *operator new(std::size_t s, std::align_val_t a)
+ #endif
+ 	throw std::bad_alloc();
+ }
++// zene-portable-aligned-new: end
+ void *operator new[](std::size_t s, std::align_val_t a) { return ::operator new(s, a); }
+ void *operator new(std::size_t s, std::align_val_t a, std::nothrow_t) noexcept
+ {
+@@ -76,15 +80,17 @@ void operator delete(void *p, std::size_t) noexcept { ::operator delete(p); }
+ void operator delete[](void *p, std::size_t) noexcept { ::operator delete(p); }
+ void operator delete(void *p, std::nothrow_t) noexcept { ::operator delete(p); }
+ void operator delete[](void *p, std::nothrow_t) noexcept { ::operator delete(p); }
++// zene-portable-aligned-delete: begin
+ void operator delete(void *p, std::align_val_t) noexcept
+ {
+ 	noteF(p);
+-#if defined(_MSC_VER)
++#if defined(_WIN32)
+ 	_aligned_free(p);
+ #else
+ 	std::free(p);
+ #endif
+ }
++// zene-portable-aligned-delete: end
+ void operator delete[](void *p, std::align_val_t a) noexcept { ::operator delete(p, a); }
+ void operator delete(void *p, std::size_t, std::align_val_t a) noexcept { ::operator delete(p, a); }
+ void operator delete[](void *p, std::size_t, std::align_val_t a) noexcept { ::operator delete(p, a); }
+diff --git a/tests/upstream-modifications.txt b/tests/upstream-modifications.txt
+index a8369bfc33..85edf496a4 100644
+--- a/tests/upstream-modifications.txt
++++ b/tests/upstream-modifications.txt
+@@ -5980,3 +5980,4 @@ include/InstrumentTrack.h	Q050-481.3: declare the legacy instrument conversion h
+ src/gui/widgets/TextFloat.cpp	cluster gui-1115-menu-help-accessibility-check: a floating notice is a frameless stay-on-top tool window, not a Qt::ToolTip transient (a menu's close reactivates the main window over the tooltip, hiding Help > Accessibility Check's report); integration fix: the notice is marked non-focusable and hands activation back to its window, so a result shown from an open menu or command form no longer clears the focused panel (PanelShortcutsTest); covered by GrooveMenuTest aReportFromTheOpenHelpMenuSurvivesTheMenuClosing.
+ include/TextFloat.h	cluster gui-1115-menu-help-accessibility-check: declare TextFloat::event, which returns activation to the notice's owning window so a floating result never holds the application focus.
+ tests/src/gui/GrooveMenuTest.cpp	cluster gui-1115-menu-help-accessibility-check: opens the real Help menu, clicks Accessibility Check, and requires the report to survive the menu's close with all five per-check counts.
++tests/CMakeLists.txt	cluster ci-00e6f05f41fa4f1a: register WindowsArm64AlignedNewCheck, which compiles the aligned allocation blocks extracted from SfzDistoBuffersTest with _WIN32 simulated; no existing test changes.
+diff --git a/tests/windows-arm64-aligned-new-check.py b/tests/windows-arm64-aligned-new-check.py
+new file mode 100644
+index 0000000000..346431d4be
+--- /dev/null
++++ b/tests/windows-arm64-aligned-new-check.py
+@@ -0,0 +1,185 @@
++#!/usr/bin/env python3
++"""Compile the hosted Windows contract of SfzDistoBuffersTest's aligned operators.
++
++Cluster ci-00e6f05f41fa4f1a: the Windows-arm64 runner compiles with clang (mingw
++runtime), which defines `_WIN32` but not `_MSC_VER`.  The test's aligned
++operator new/delete branched on `_MSC_VER`, so that build fell through to
++`posix_memalign`, a function the Windows runtime does not have:
++
++    tests/src/plugins/SfzDistoBuffersTest.cpp:60:6: error: use of undeclared
++    identifier 'posix_memalign'
++
++This check extracts the three platform-dependent blocks from the real test
++source (unique begin/end markers) and compiles them twice:
++
++  * native: the POSIX branch must allocate and free normally;
++  * simulated Windows (`-D_WIN32`): `malloc.h` comes from a shim declaring the
++    Windows CRT's `_aligned_malloc`/`_aligned_free`, exactly as the real
++    windows-arm64 build gets them.  `posix_memalign` is poisoned with ENOMEM,
++    so a test that still selects it throws std::bad_alloc and the probe fails.
++
++The marking of the guard as `_WIN32` is therefore load-bearing in both the
++include block (the declaration of `_aligned_malloc`) and the operators.
++"""
++
++# Copyright (c) 2026 Zene Studio contributors
++#
++# This file is part of LMMS - https://lmms.io
++#
++# This program is free software; you can redistribute it and/or modify it under
++# the terms of the GNU General Public License as published by the Free Software
++# Foundation; either version 2 of the License, or (at your option) any later
++# version.
++#
++# This program is distributed in the hope that it will be useful, but WITHOUT
++# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
++# FOR A PARTICULAR PURPOSE.  See the GNU General Public License for more
++# details.
++
++import argparse
++import shutil
++import subprocess
++import sys
++import tempfile
++from pathlib import Path
++
++SOURCE = "tests/src/plugins/SfzDistoBuffersTest.cpp"
++BLOCKS = {
++    "include": "// zene-portable-aligned-include",
++    "new": "// zene-portable-aligned-new",
++    "delete": "// zene-portable-aligned-delete",
++}
++
++
++def fail(message):
++    raise RuntimeError(message)
++
++
++def extract_block(text, name):
++    begin = f"{BLOCKS[name]}: begin"
++    end = f"{BLOCKS[name]}: end"
++    start = text.find(begin)
++    if start < 0:
++        fail(f"missing marker {begin!r} in {SOURCE}")
++    start = text.find("\n", start)
++    stop = text.find(end, start + 1)
++    if stop < 0:
++        fail(f"missing marker {end!r} in {SOURCE}")
++    block = text[start + 1:stop]
++    if not block.strip():
++        fail(f"empty block between {begin!r} and {end!r} in {SOURCE}")
++    return block
++
++
++def probe_source(blocks):
++    return (
++        "#include <cstddef>\n"
++        "#include <cstdint>\n"
++        "#include <cstdlib>\n"
++        "#include <new>\n"
++        "\n"
++        "static void noteA() {}\n"
++        "static void noteF(void*) {}\n"
++        "\n"
++        f"{blocks['include']}\n"
++        f"{blocks['new']}\n"
++        f"{blocks['delete']}\n"
++        "\n"
++        "#if defined(_WIN32)\n"
++        "static char zeneAlignedStorage[64];\n"
++        "// Definitions come after the extracted operators on purpose: the only\n"
++        "// declaration of _aligned_malloc is the one the extracted include block\n"
++        "// gets from the (shim) Windows malloc.h.\n"
++        "extern \"C\" void* _aligned_malloc(std::size_t, std::size_t)\n"
++        "{ return zeneAlignedStorage; }\n"
++        "extern \"C\" void _aligned_free(void* p)\n"
++        "{ if (p != zeneAlignedStorage) { std::abort(); } }\n"
++        "extern \"C\" int posix_memalign(void**, std::size_t, std::size_t)\n"
++        "{ return 12; } // ENOMEM: the Windows runtime has no posix_memalign.\n"
++        "#endif\n"
++        "\n"
++        "int main()\n"
++        "{\n"
++        "    try {\n"
++        "        void* p = ::operator new(std::size_t{16}, std::align_val_t{32});\n"
++        "#if defined(_WIN32)\n"
++        "        if (p != zeneAlignedStorage) { return 2; }\n"
++        "#else\n"
++        "        if (reinterpret_cast<std::uintptr_t>(p) % 32 != 0) { return 2; }\n"
++        "#endif\n"
++        "        ::operator delete(p, std::align_val_t{32});\n"
++        "    } catch (std::bad_alloc const&) {\n"
++        "        return 1;\n"
++        "    }\n"
++        "    return 0;\n"
++        "}\n"
++    )
++
++
++def run_probe(compiler, probe, shim, temporary, windows, label):
++    binary = Path(temporary) / f"aligned-{label}"
++    command = [compiler, "-std=c++20"]
++    if windows:
++        command.append("-D_WIN32")
++        command.extend(["-I", str(shim)])
++    command.extend([str(probe), "-o", str(binary)])
++    built = subprocess.run(command, text=True, stdout=subprocess.PIPE,
++                           stderr=subprocess.PIPE, check=False)
++    if built.returncode:
++        fail(f"{label} probe did not compile ({built.returncode}):\n{built.stderr}")
++    ran = subprocess.run([str(binary)], text=True, stdout=subprocess.PIPE,
++                         stderr=subprocess.PIPE, check=False)
++    if ran.returncode == 0:
++        return
++    meanings = {
++        1: "the POSIX posix_memalign branch was selected (stub returned ENOMEM); "
++           "the aligned operators must use the Windows CRT under _WIN32",
++        2: "the probe returned an unusable pointer",
++        3: "the aligned delete did not route through the Windows CRT",
++    }
++    detail = meanings.get(ran.returncode, f"probe exited {ran.returncode}")
++    fail(f"{label}: {detail}")
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--source-root", required=True, type=Path)
++    args = parser.parse_args()
++    root = args.source_root.resolve()
++
++    source = root / SOURCE
++    if not source.is_file():
++        fail(f"required source is missing: {source}")
++    text = source.read_text(encoding="utf-8")
++    blocks = {name: extract_block(text, name) for name in BLOCKS}
++
++    compiler = shutil.which("c++")
++    if compiler is None:
++        fail("required tool is missing: c++")
++
++    with tempfile.TemporaryDirectory(prefix="zene-windows-aligned-") as temporary:
++        tmp = Path(temporary)
++        shim = tmp / "win-shim"
++        shim.mkdir()
++        (shim / "malloc.h").write_text(
++            "#ifndef ZENE_SIMULATED_WINDOWS_MALLOC_H\n"
++            "#define ZENE_SIMULATED_WINDOWS_MALLOC_H\n"
++            "#include <cstddef>\n"
++            "extern \"C\" {\n"
++            "void* _aligned_malloc(std::size_t size, std::size_t alignment);\n"
++            "void _aligned_free(void* ptr);\n"
++            "}\n"
++            "#endif\n", encoding="utf-8")
++        probe = tmp / "aligned-operators.cpp"
++        probe.write_text(probe_source(blocks), encoding="utf-8")
++        run_probe(compiler, probe, shim, tmp, windows=False, label="native")
++        run_probe(compiler, probe, shim, tmp, windows=True, label="windows")
++    return 0
++
++
++if __name__ == "__main__":
++    try:
++        sys.exit(main())
++    except (OSError, RuntimeError, ValueError) as error:
++        print(f"windows-arm64 aligned-new check: {error}", file=sys.stderr)
++        sys.exit(1)
+-- 
+2.56.0
+
