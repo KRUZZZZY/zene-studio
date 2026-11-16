@@ -3983,3 +3983,5 @@ src/gui/modals/AudioOutputStatusBox.cpp
 tests/src/gui/AudioOutputStatusBoxTest.cpp
 tests/control-audio-test-tone.py
 docs/050-features/Q050-183.1.md
+# Q050-183.1 (stage 1/2): verification report with acceptance evidence and self-check.
+docs/qwen-fixes-2026-10/cluster-Q050-183.1.md
