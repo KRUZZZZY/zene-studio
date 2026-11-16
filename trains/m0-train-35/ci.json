@@ -2,10 +2,10 @@
   "branch": "ci/m0-train-35-fa4a5f2e785c",
   "runs": [
     {
-      "conclusion": null,
-      "name": "build",
-      "status": "in_progress",
-      "url": "https://github.com/KRUZZZZY/zene-studio/actions/runs/43786984969"
+      "conclusion": "success",
+      "name": "doxygen",
+      "status": "completed",
+      "url": "https://github.com/KRUZZZZY/zene-studio/actions/runs/43786984995"
     },
     {
       "conclusion": "success",
@@ -20,10 +20,10 @@
       "url": "https://github.com/KRUZZZZY/zene-studio/actions/runs/43786985069"
     },
     {
-      "conclusion": "success",
-      "name": "doxygen",
-      "status": "completed",
-      "url": "https://github.com/KRUZZZZY/zene-studio/actions/runs/43786984995"
+      "conclusion": null,
+      "name": "build",
+      "status": "in_progress",
+      "url": "https://github.com/KRUZZZZY/zene-studio/actions/runs/43786984969"
     }
   ],
   "status": "running",
