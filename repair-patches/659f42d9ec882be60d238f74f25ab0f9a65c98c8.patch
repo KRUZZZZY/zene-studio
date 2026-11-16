@@ -1,0 +1,331 @@
+From 659f42d9ec882be60d238f74f25ab0f9a65c98c8 Mon Sep 17 00:00:00 2001
+From: Zene train Sol <noreply@zene.invalid>
+Date: Mon, 16 Nov 2026 04:06:41 +0000
+Subject: [PATCH] fix(train-sol): Fixed remaining ClipView ambiguity, FIFO
+ helper guards and Qt5 list construction; strengthened source-derived compiler
+ regressions. Targeted rebuild, six CTest checks, four unchang
+
+Sol-Repair-Id: sol-repair-1794802001090206250
+---
+ .../sol-train-35-hosted-portability.md        |  71 ++++++++++++
+ tests/fork-sources.txt                        |   3 +-
+ tests/src/core/RemotePluginAudioPortsTest.cpp |   2 +
+ tests/src/gui/MixerSendsOnFadersTest.cpp      |   4 +-
+ tests/src/gui/TouchLayoutTest.cpp             |   6 +-
+ tests/train-51-portability-check.py           | 108 ++++++++++++++++--
+ tests/upstream-modifications.txt              |   8 +-
+ 7 files changed, 183 insertions(+), 19 deletions(-)
+ create mode 100644 docs/qwen-fixes-2026-10/sol-train-35-hosted-portability.md
+
+diff --git a/docs/qwen-fixes-2026-10/sol-train-35-hosted-portability.md b/docs/qwen-fixes-2026-10/sol-train-35-hosted-portability.md
+new file mode 100644
+index 0000000000..495c873a87
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/sol-train-35-hosted-portability.md
+@@ -0,0 +1,71 @@
++# Train 35 hosted test portability
++
++Audit: `/tmp/sol35-ci-audit.md`, Train 35 SHA `fa4a5f2e785c73e32216931e33cdbe140c06647d`, run `43786984969`. This is a source-only repair; the concurrent build worker owns generated build files.
++
++## Repairs
++
++- `tests/src/gui/TouchLayoutTest.cpp`: qualify `viewOf`'s return type, range variable and `findChildren` template type, plus both local view declarations. This covers the MSVC C2872 ambiguity between `lmms::ClipView` and `lmms::gui::ClipView` (audit log line 5102 and follow-ons 5111/5113). Existing touch assertions remain unchanged.
++- `tests/src/core/RemotePluginAudioPortsTest.cpp`: guard `g_criticalsSeen` and `countCriticals` with `SYNC_WITH_SHM_FIFO`, matching their two guarded users at source lines 1284 and 1340. Both critical-message assertions remain.
++- `tests/src/gui/MixerSendsOnFadersTest.cpp`: create the expected volume list with a count-bounded append loop, preserving count and order without relying on the removed Qt list repeat constructor. Existing comparisons remain.
++- `tests/train-51-portability-check.py`: extend the registered Train 51 checker. The touch probe compiles the extracted real helper and actual declarations with both `lmms::ClipView` and `lmms::gui::ClipView` visible; separate negative controls unqualify the real helper use and `lowerView`. The remote probe compiles the extracted guarded definitions in an anonymous namespace with `-c -o` and requires `countCriticals` plus `unused-function` in the red diagnostic. The list probe compiles the fixed source expression and the original repeat expression with Qt 5 headers; Qt 6 green is optional when installed. Existing RowTableView Qt 5/optional Qt 6, MIDI unused-function and SFZ missing-API controls remain.
++
++## Targets
++
++Audit jobs covered: `msvc-x64` (TouchLayoutTest); `mingw64` (RemotePluginAudioPortsTest); `linux-arm64`, `macos-x86_64`, `linux-x86_64`, `windows-arm64`, and `macos-arm64` (MixerSendsOnFadersTest). The audit's Windows ARM stdin warning was not a source failure. Four earlier Train 51 fixes and all their assertions remain untouched.
++
++## Checks
++
++Initial implementer phase (the source-only portability edits): no configure, build, CTest, or gates were run at that stage. Later build preparation and verification are recorded below. Focused checker commands used the quiet runner:
++
++| Command | Result | Quiet-run log |
++|---|---:|---|
++| `/home/kruzzzzy/.local/share/zene-bunny-fix/duet/quiet-run sol35-portability -- python3 tests/train-51-portability-check.py --source-root "$PWD"` | 1; initial helper stand-in returned the wrong pointer container | `/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261116-034600-sol35-implement/logs/001-sol35-portability.log` |
++| `/home/kruzzzzy/.local/share/zene-bunny-fix/duet/quiet-run sol35-portability-r2 -- python3 tests/train-51-portability-check.py --source-root "$PWD"` | 1; Qt list `fill` unavailable | `/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261116-034600-sol35-implement/logs/002-sol35-portability-r2.log` |
++| `/home/kruzzzzy/.local/share/zene-bunny-fix/duet/quiet-run sol35-portability-r3 -- python3 tests/train-51-portability-check.py --source-root "$PWD"` | 1; local Qt 6 accepted the original expression | `/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261116-034600-sol35-implement/logs/003-sol35-portability-r3.log` |
++| `/home/kruzzzzy/.local/share/zene-bunny-fix/duet/quiet-run sol35-portability-r4 -- python3 tests/train-51-portability-check.py --source-root "$PWD"` | 1; corrected negative control showed the original expression fails with installed Qt 5 headers | `/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261116-034600-sol35-implement/logs/004-sol35-portability-r4.log` |
++| `/home/kruzzzzy/.local/share/zene-bunny-fix/duet/quiet-run sol35-portability-r5 -- python3 tests/train-51-portability-check.py --source-root "$PWD"` | 0; all controls passed, including Qt 5 and optional Qt 6 fixed probes | `/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261116-034600-sol35-implement/logs/005-sol35-portability-r5.log` |
++| `/home/kruzzzzy/.local/share/zene-bunny-fix/duet/quiet-run sol35-portability-r6 -- python3 tests/train-51-portability-check.py --source-root "$PWD"` | 0; final check compiles declaration and repeated-value lines extracted directly from source | `/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261116-034600-sol35-implement/logs/006-sol35-portability-r6.log` |
++
++## Build preparation
++
++The initial statement above describes only the implementer phase. A later preparation phase configured and built the targets; exact configure command from `/tmp/sol35-build-prep.md`:
++
++```sh
++cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo -DCMAKE_EXE_LINKER_FLAGS:STRING=-Wl,--strip-debug -DUSE_WERROR:BOOL=ON -DWANT_ABLETON_LINK:BOOL=ON -DWANT_ALSA:BOOL=ON -DWANT_CALF:BOOL=ON -DWANT_CAPS:BOOL=ON -DWANT_CARLA:BOOL=ON -DWANT_CMT:BOOL=ON -DWANT_COLLAB:BOOL=ON -DWANT_DEBUG_CPACK:BOOL=ON -DWANT_GIG:BOOL=ON -DWANT_JACK:BOOL=ON -DWANT_LV2:BOOL=ON -DWANT_MP3LAME:BOOL=ON -DWANT_OGGVORBIS:BOOL=ON -DWANT_OSS:BOOL=ON -DWANT_PORTAUDIO:BOOL=ON -DWANT_PULSEAUDIO:BOOL=ON -DWANT_QT6:BOOL=ON -DWANT_RUBBERBAND:BOOL=ON -DWANT_SDL:BOOL=ON -DWANT_SF2:BOOL=ON -DWANT_SID:BOOL=ON -DWANT_SNDIO:BOOL=ON -DWANT_SOUNDIO:BOOL=ON -DWANT_STEM_SPLIT:BOOL=ON -DWANT_STK:BOOL=ON -DWANT_SUIL:BOOL=ON -DWANT_SWH:BOOL=ON -DWANT_TAP:BOOL=ON -DWANT_VST:BOOL=ON -DWANT_VST3_TEST_INSTRUMENT:BOOL=ON -DWANT_VST_32:BOOL=ON -DWANT_VST_64:BOOL=ON -DWANT_WASM:BOOL=ON -DWANT_WEAKJACK:BOOL=ON -DZENE_TELEMETRY:BOOL=ON -DZENE_WANT_FFMPEG:BOOL=ON -DZENE_WANT_LIBAAF:BOOL=ON -DWANT_COVERAGE:BOOL=OFF -DWANT_CPACK_TARBALL:BOOL=OFF -DWANT_DEBUG_ASAN:BOOL=OFF -DWANT_DEBUG_FPE:BOOL=OFF -DWANT_DEBUG_GPROF:BOOL=OFF -DWANT_DEBUG_MSAN:BOOL=OFF -DWANT_DEBUG_RTSAN:BOOL=OFF -DWANT_DEBUG_TSAN:BOOL=OFF -DWANT_DEBUG_UBSAN:BOOL=OFF -DWANT_WINMM:BOOL=OFF -DWANT_CLAP:STRING=ON -DWANT_VST3:STRING=ON -DLMMS_CLAP_FETCH=ON -DONNXRUNTIME_ROOT=/home/kruzzzzy/.local/zene-deps/onnxruntime-linux-x64-1.28.0 -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache '-DCMAKE_CXX_FLAGS=-isystem /usr/include/cairo -Wno-error=deprecated-declarations -Wno-error=unused-result -Wno-error=sfinae-incomplete' '-DCMAKE_C_FLAGS=-isystem /usr/include/cairo -Wno-error=deprecated-declarations -Wno-error=unused-result -Wno-error=sfinae-incomplete'
++```
++
++Configure exited 0 in 49 s; build `cmake --build build --target zene TouchLayoutTest -j12` exited 0 in 327 s. Logs: `/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261116-033946-sol35-build-prep/logs/001-sol35-configure.log` and `002-sol35-build.log`.
++
++## Current train 35 verification
++
++- Configure command and results are recorded above from `/tmp/sol35-build-prep.md`; configure passed (exit 0, 49 s) and the prior `zene TouchLayoutTest` build passed (exit 0, 327 s). Preparation logs: `/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261116-033946-sol35-build-prep/logs/001-sol35-configure.log` and `002-sol35-build.log`.
++- Free space before this verification build was 177 GB available; the 12 GB stop threshold was not reached.
++- `/home/kruzzzzy/.local/share/zene-bunny-fix/duet/quiet-run sol35-currenttrain35-build -- cmake --build build --target zene TouchLayoutTest RemotePluginAudioPortsTest MixerSendsOnFadersTest -j12` — exit 0 after 9 s. Log: `/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261116-035335-sol35-verify/logs/001-sol35-currenttrain35-build.log`.
++- From `build/tests`, with `PATH=/tmp/sol45-lizard125/bin:$PATH PYTHONPATH=/tmp/sol45-lizard125`, ran quiet-run with `ctest -R '^(TouchLayoutTest|RemotePluginAudioPortsTest|MixerSendsOnFadersTest|Train51Portability|FileLengthGate|NoteCanvasComplexityGate)$' -j1 --timeout900 --no-tests=error --output-on-failure` — exit 1 before test discovery. CTest reported `Unknown argument: --timeout900` and `Run 'ctest --help' for all supported options.` Log: `/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261116-035335-sol35-verify/logs/002-sol35-currenttrain35-ctest.log`. Required six matches were not established; zero tests ran. Stopped at this failure, so the four gates, diff checks, and scoped review were not run.
++- Exact invocation: `(cd build/tests && PATH=/tmp/sol45-lizard125/bin:$PATH PYTHONPATH=/tmp/sol45-lizard125 /home/kruzzzzy/.local/share/zene-bunny-fix/duet/quiet-run sol35-currenttrain35-ctest -- ctest -R '^(TouchLayoutTest|RemotePluginAudioPortsTest|MixerSendsOnFadersTest|Train51Portability|FileLengthGate|NoteCanvasComplexityGate)$' -j1 --timeout900 --no-tests=error --output-on-failure)`.
++
++## Final correction and verification
++
++- `tests/train-51-portability-check.py`: added `-fPIC` to the Qt package flags for `mixer-sends-qt5-fixed`, `mixer-sends-qt5-original`, and optional `mixer-sends-qt6-fixed`, matching the existing row probe. This addresses Ubuntu's PIE-default compiler with Qt 5 reduce-relocations. No C++ or CMake rebuild was run; only the requested source correction was made before CTest.
++- The previous CTest invocation above used the malformed single token `--timeout900`; it exited 1 before discovery and ran zero tests. This was an invocation error, not a source failure. Corrected invocation from `build/tests`: `PATH=/tmp/sol45-lizard125/bin:$PATH PYTHONPATH=/tmp/sol45-lizard125 /home/kruzzzzy/.local/share/zene-bunny-fix/duet/quiet-run sol35-currenttrain35-ctest-r2 -- ctest -R '^(TouchLayoutTest|RemotePluginAudioPortsTest|MixerSendsOnFadersTest|Train51Portability|FileLengthGate|NoteCanvasComplexityGate)$' -j1 --timeout 900 --no-tests=error --output-on-failure` — exit 8, six tests discovered and run. Log: `/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261116-035629-sol35-final-verify/logs/001-sol35-currenttrain35-ctest-r2.log`; detailed CTest output: `build/tests/Testing/Temporary/LastTest.log`.
++- Corrected CTest results: RemotePluginAudioPortsTest, TouchLayoutTest, MixerSendsOnFadersTest, Train51Portability, and NoteCanvasComplexityGate passed; FileLengthGate failed because `tests/src/core/RemotePluginAudioPortsTest.cpp` is a new 870-code-line source over the 500-line ratchet. No limits or expectations were changed. `LastTest.log` reports 31/31, 12/12, and 9/9 QTest cases passing with zero skipped for the three Qt suites; the touch and mixer plugin scans report zero known-bad skipped plugins. Train51Portability reports all listed Qt 5/Qt 6, MIDI, SFZ, touch, mixer and remote controls passed; no optional Qt probe was omitted. CTest reported no skipped selected tests.
++- The earlier build remains passed (exit 0, exact command and log above); the independent scoped review remains passed with no blocker (log `/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261116-035334-sol35-review/session.log`, report `/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261116-035334-sol35-review/report.md`).
++- Unchanged gates, each run via `/home/kruzzzzy/.local/share/zene-bunny-fix/duet/quiet-run` and each exiting 0: `bash tests/no-upstream-regression-gate.sh` (label `sol35-final-no-upstream-regression`; log `/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261116-035629-sol35-final-verify/logs/002-sol35-final-no-upstream-regression.log`); `bash tests/evidence-gate.sh` (label `sol35-final-evidence-gate`; log `/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261116-035629-sol35-final-verify/logs/002-sol35-final-evidence-gate.log`); `bash tests/fork-sources-gate.sh` (label `sol35-final-fork-sources-gate`; log `/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261116-035629-sol35-final-verify/logs/002-sol35-final-fork-sources-gate.log`); `bash tests/unregistered-tests-gate.sh` (label `sol35-final-unregistered-tests-gate`; log `/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261116-035629-sol35-final-verify/logs/005-sol35-final-unregistered-tests-gate.log`). The unregistered-tests gate lists two declared-not-built probes: `PhaseDPerfBench.cpp` (machine-noise-sensitive benchmark) and `TwoTrackAlsaCaptureProbe.cpp` (requires real ALSA capture hardware).
++- Independent diff checks both exited 0 after this report was appended: `/home/kruzzzzy/.local/share/zene-bunny-fix/duet/quiet-run sol35-final2-diff-head-check -- git diff HEAD --check` (log `/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261116-035629-sol35-final-verify/logs/008-sol35-final2-diff-head-check.log`) and `/home/kruzzzzy/.local/share/zene-bunny-fix/duet/quiet-run sol35-final2-diff-cached-check -- git diff --cached --check` (log `/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261116-035629-sol35-final-verify/logs/009-sol35-final2-diff-cached-check.log`).
++- Full native hosted and full train verification remain required; this bounded run did not perform them.
++
++## Registration correction and rerun
++
++`tests/fork-sources-gate.sh` documents `tests/fork-sources.txt` as the fork-NEW product ratchet scope; the no-upstream-regression gate routes changed inherited paths through `tests/upstream-modifications.txt`. Git tracks all three test files, and their inherited changes have entries in `tests/upstream-modifications.txt` (TouchLayoutTest at line 33, RemotePluginAudioPortsTest at line 35, MixerSendsOnFadersTest at line 36). The implementer had added three redundant fork-NEW declarations; those declarations were removed. Existing test files and inherited modification declarations remain. This resolves the FileLengthGate false classification of RemotePluginAudioPortsTest.cpp as a new 870-line source over the 500-line fork-source limit. No gate, baseline, limit, or test expectation changed.
++
++After the correction, requested commands and results (all through quiet-run):
++
++- From `build/tests`, `PATH=/tmp/sol45-lizard125/bin:$PATH PYTHONPATH=/tmp/sol45-lizard125 ctest -R "^(TouchLayoutTest|RemotePluginAudioPortsTest|MixerSendsOnFadersTest|Train51Portability|FileLengthGate|NoteCanvasComplexityGate)$" -j1 --timeout 900 --no-tests=error --output-on-failure` — exit 0, 6/6 passed. Log: `/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261116-040121-sol35-registration-correction/logs/001-sol35-registration-ctest.log`.
++- `bash tests/no-upstream-regression-gate.sh` — exit 0. Log: `/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261116-040121-sol35-registration-correction/logs/003-sol35-registration-no-upstream-regression-gate.log`.
++- `bash tests/evidence-gate.sh` — exit 0. Log: `/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261116-040121-sol35-registration-correction/logs/003-sol35-registration-evidence-gate.log`.
++- `bash tests/fork-sources-gate.sh` — exit 0. Log: `/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261116-040121-sol35-registration-correction/logs/003-sol35-registration-fork-sources-gate.log`.
++- `bash tests/unregistered-tests-gate.sh` — exit 0. Log: `/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261116-040121-sol35-registration-correction/logs/002-sol35-registration-unregistered-tests-gate.log`.
++- `/home/kruzzzzy/.local/share/zene-bunny-fix/duet/quiet-run sol35-registration-diff-head-check -- git diff HEAD --check` — exit 0. Log: `/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261116-040121-sol35-registration-correction/logs/006-sol35-registration-diff-head-check.log`.
++- `/home/kruzzzzy/.local/share/zene-bunny-fix/duet/quiet-run sol35-registration-diff-cached-check -- git diff --cached --check` — exit 0. Log: `/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261116-040121-sol35-registration-correction/logs/007-sol35-registration-diff-cached-check.log`.
++
++Independent follow-up review passed: the original whole-tree registrations and existing TouchLayout fork registration remain intact; only redundant new scope entries were removed. The three mixer compiler-probe `-fPIC` flags are correct for Qt headers requiring PIC. Review evidence: `/home/kruzzzzy/.cache/zene-tmp/sol/035-sol35-scope-review.log`.
+diff --git a/tests/fork-sources.txt b/tests/fork-sources.txt
+index 194bfbf6e6..a0e03a2463 100644
+--- a/tests/fork-sources.txt
++++ b/tests/fork-sources.txt
+@@ -966,9 +966,10 @@ docs/qwen-fixes-2026-10/cluster-ci-61ad26e4f8b135f9.md
+ docs/qwen-fixes-2026-10/sol-train-32-portability-replay.md
+ docs/qwen-fixes-2026-10/sol-train-32-sdk-complexity.md
+ 
+-# Train 51: hosted test portability repairs and source-derived red/green compiler checks.
++# Train 51/35: hosted test portability repairs and source-derived red/green compiler checks.
+ tests/train-51-portability-check.py
+ docs/qwen-fixes-2026-10/sol-train-34-hosted-portability-51.md
++docs/qwen-fixes-2026-10/sol-train-35-hosted-portability.md
+ 
+ # Train 48: optional-codec and Windows test compiler contracts with verification.
+ tests/train-48-portability-check.py
+diff --git a/tests/src/core/RemotePluginAudioPortsTest.cpp b/tests/src/core/RemotePluginAudioPortsTest.cpp
+index 40adc15f8d..eb0d67f7a1 100644
+--- a/tests/src/core/RemotePluginAudioPortsTest.cpp
++++ b/tests/src/core/RemotePluginAudioPortsTest.cpp
+@@ -71,11 +71,13 @@ void countWarnings(QtMsgType type, const QMessageLogContext&, const QString&)
+ }
+ 
+ //! Criticals seen while a malformed message is refused, for the same reason as above.
++#ifndef SYNC_WITH_SHM_FIFO
+ int g_criticalsSeen = 0;
+ void countCriticals(QtMsgType type, const QMessageLogContext&, const QString&)
+ {
+ 	if (type == QtCriticalMsg) { ++g_criticalsSeen; }
+ }
++#endif
+ 
+ //! AudioPortsModel is abstract (bufferPropertiesChanging)
+ class TestAudioPortsModel : public AudioPortsModel
+diff --git a/tests/src/gui/MixerSendsOnFadersTest.cpp b/tests/src/gui/MixerSendsOnFadersTest.cpp
+index 877e1718f8..c1d4035b11 100644
+--- a/tests/src/gui/MixerSendsOnFadersTest.cpp
++++ b/tests/src/gui/MixerSendsOnFadersTest.cpp
+@@ -275,7 +275,9 @@ private slots:
+ 
+ 		// Back on the channel faders (an empty sends_on_faders) every entry is the level.
+ 		const QStringList faders = drivesOf(run(QStringLiteral("window.mixer_view"), {{QStringLiteral("sends_on_faders"), QString()}}));
+-		QVERIFY(faders == QStringList(channels, QStringLiteral("volume")));
++		QStringList expectedFaders;
++		for (int i = 0; i < channels; ++i) { expectedFaders << QStringLiteral("volume"); }
++		QVERIFY(faders == expectedFaders);
+ 	}
+ 
+ private:
+diff --git a/tests/src/gui/TouchLayoutTest.cpp b/tests/src/gui/TouchLayoutTest.cpp
+index bd27d4030d..3269ead434 100644
+--- a/tests/src/gui/TouchLayoutTest.cpp
++++ b/tests/src/gui/TouchLayoutTest.cpp
+@@ -83,9 +83,9 @@ namespace
+ 
+ constexpr tick_t Bar = 192;
+ 
+-ClipView* viewOf(const Clip* clip)
++lmms::gui::ClipView* viewOf(const Clip* clip)
+ {
+-	for (ClipView* view : getGUI()->songEditor()->m_editor->findChildren<ClipView*>())
++	for (lmms::gui::ClipView* view : getGUI()->songEditor()->m_editor->findChildren<lmms::gui::ClipView*>())
+ 	{
+ 		if (view->getClip() == clip) { return view; }
+ 	}
+@@ -341,7 +341,7 @@ private slots:
+ 		QVERIFY(lower != nullptr);
+ 		lower->changeLength(TimePos(4 * Bar));
+ 		QTRY_VERIFY(viewOf(lower) != nullptr);
+-		ClipView* lowerView = viewOf(lower);
++		lmms::gui::ClipView* lowerView = viewOf(lower);
+ 		const int upperBottom = view->mapTo(m_editor, QPoint(0, view->height())).y();
+ 		const int lowerTop = lowerView->mapTo(m_editor, QPoint()).y();
+ 		QVERIFY2(lowerTop - upperBottom >= 8,
+diff --git a/tests/train-51-portability-check.py b/tests/train-51-portability-check.py
+index cc19cb00e2..1291ba5eac 100644
+--- a/tests/train-51-portability-check.py
++++ b/tests/train-51-portability-check.py
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env python3
+-"""Red/green compiler regressions for the four case51 hosted test failures."""
++"""Red/green compiler regressions for hosted test portability failures."""
+ 
+ # Copyright (c) 2026 Zene Studio contributors
+ #
+@@ -144,22 +144,104 @@ inline void _aligned_free(void*) {}
+ 
+ def touch_probe(root, compiler, temporary):
+     source = (root / "tests/src/gui/TouchLayoutTest.cpp").read_text(encoding="utf-8")
+-    declaration = "\t\tlmms::gui::ClipView* view = viewOf(clip);"
+-    if declaration not in source:
+-        fail("TouchLayoutTest qualified ClipView declaration is missing")
+-    fixture = """namespace lmms { struct ClipView {}; namespace gui { struct ClipView {}; } }
++    start = source.index("lmms::gui::ClipView* viewOf(const Clip* clip)")
++    finish = source.index("\n}\n", start) + 2
++    helper = source[start:finish]
++    declarations = []
++    for marker in ("view = viewOf(clip);", "lowerView = viewOf(lower);"):
++        matches = [line for line in source.splitlines() if marker in line]
++        if len(matches) != 1 or "lmms::gui::ClipView*" not in matches[0]:
++            fail("TouchLayoutTest qualified ClipView declaration is missing")
++        declarations.append(matches[0])
++    fixture = """#include <vector>
++namespace lmms {
++struct Clip {};
++struct ClipView {};
++namespace gui {
++struct ClipView { const lmms::Clip* getClip() const { return nullptr; } };
++}
++}
+ using namespace lmms;
+ using namespace lmms::gui;
+-struct Clip {};
+-lmms::gui::ClipView* viewOf(Clip*) { return nullptr; }
+-void probe(Clip* clip) {
++struct Editor {
++    template<class T> std::vector<T> findChildren() { return {}; }
++};
++struct SongEditor { Editor* m_editor; };
++struct GUI { SongEditor* songEditor(); };
++GUI* getGUI();
+ %s
++void probe(Clip* clip) {
++    %s
++    Clip* lower = clip;
++    %s
+     (void)view;
++    (void)lowerView;
+ }
+-""" % declaration
+-    compile_source(compiler, fixture, temporary, "touch-qualified-fixed", success=True)
+-    original = fixture.replace("lmms::gui::ClipView* view", "ClipView* view")
+-    compile_source(compiler, original, temporary, "touch-unqualified-original", success=False)
++""" % (helper, declarations[0].strip(), declarations[1].strip())
++    compile_source(compiler, fixture, temporary, "touch-helper-and-declarations-fixed",
++                   success=True)
++    unqualified_helper = helper.replace("lmms::gui::ClipView", "ClipView")
++    compile_source(compiler, fixture.replace(helper, unqualified_helper), temporary,
++                   "touch-helper-unqualified-original", success=False)
++    unqualified_lower = fixture.replace(declarations[1].strip(),
++                                        "ClipView* lowerView = viewOf(lower);")
++    compile_source(compiler, unqualified_lower, temporary,
++                   "touch-lower-view-unqualified-original", success=False)
++
++
++def mixer_sends_probe(root, compiler, temporary):
++    source = (root / "tests/src/gui/MixerSendsOnFadersTest.cpp").read_text(encoding="utf-8")
++    declaration = next((line for line in source.splitlines()
++                        if "QStringList expectedFaders;" in line), "")
++    fill = next((line for line in source.splitlines()
++                 if "expectedFaders << QStringLiteral(\"volume\")" in line), "")
++    if not declaration or not fill:
++        fail("MixerSendsOnFadersTest repeated-value expression is missing")
++    qt5 = pkg_flags("pkg-config", ["Qt5Core"])
++    fixed = """#include <QStringList>
++QStringList probe(int channels) {
++%s
++%s
++return expectedFaders;
++}
++""" % (declaration.strip(), fill.strip())
++    compile_source(compiler, fixed, temporary, "mixer-sends-qt5-fixed", success=True,
++                   flags=[*qt5, "-fPIC"])
++    old_expression = """QStringList(channels, QStringLiteral("volume"))"""
++    qt5_original = """#include <QStringList>
++QStringList probe(int channels) {
++    return %s;
++}
++""" % old_expression
++    compile_source(compiler, qt5_original, temporary, "mixer-sends-qt5-original",
++                   success=False, flags=[*qt5, "-fPIC"])
++    if pkg_exists("pkg-config", ["Qt6Core"]):
++        qt6 = pkg_flags("pkg-config", ["Qt6Core"])
++        compile_source(compiler, fixed, temporary, "mixer-sends-qt6-fixed",
++                       success=True, flags=[*qt6, "-fPIC"])
++    else:
++        print("OMITTED mixer-sends-qt6-red-green: Qt6Core unavailable")
++
++
++def remote_critical_probe(root, compiler, temporary):
++    source = (root / "tests/src/core/RemotePluginAudioPortsTest.cpp").read_text(
++        encoding="utf-8")
++    start = source.index("#ifndef SYNC_WITH_SHM_FIFO\nint g_criticalsSeen")
++    finish = source.index("#endif", start) + len("#endif")
++    guarded = source[start:finish]
++    if "countCriticals" not in guarded or "QtCriticalMsg" not in guarded:
++        fail("RemotePluginAudioPortsTest critical counter guard is missing")
++    prelude = """enum QtMsgType { QtCriticalMsg };
++struct QMessageLogContext {};
++struct QString {};
++"""
++    fixed = prelude + "namespace {\n#define SYNC_WITH_SHM_FIFO 1\n" + guarded + "\n}\n"
++    compile_source(compiler, fixed, temporary, "remote-critical-guard-fixed", success=True)
++    original = guarded.replace("#ifndef SYNC_WITH_SHM_FIFO\n", "", 1)
++    original = original.rsplit("#endif", 1)[0]
++    compile_source(compiler, prelude + "namespace {\n" + original + "\n}\n",
++                   temporary, "remote-critical-guard-original", success=False,
++                   expected_diagnostic=("countCriticals", "unused-function"))
+ 
+ 
+ def main():
+@@ -176,6 +258,8 @@ def main():
+         midi_probe(root, compiler, temporary)
+         sfz_probe(root, compiler, temporary)
+         touch_probe(root, compiler, temporary)
++        mixer_sends_probe(root, compiler, temporary)
++        remote_critical_probe(root, compiler, temporary)
+     return 0
+ 
+ 
+diff --git a/tests/upstream-modifications.txt b/tests/upstream-modifications.txt
+index 0f0ef7e07a..9d68375bda 100644
+--- a/tests/upstream-modifications.txt
++++ b/tests/upstream-modifications.txt
+@@ -27,11 +27,15 @@
+ # It never held a line, and Gate 6 was red from the first behavioural change.)
+ 
+ # Train 51: repair hosted test compilation while preserving the existing behavioral assertions.
+-tests/CMakeLists.txt	Train 51: register source-derived red/green compiler regressions for all four hosted test-source fixes.
++tests/CMakeLists.txt	Train 51: register source-derived red/green compiler regressions for hosted test-source fixes.
+ tests/src/core/MidiOutTimingTest.cpp	Train 51: compile timing helpers only for the ALSA-backed test path that uses them; keep every runtime case and assertion.
+ tests/src/gui/RowTableViewTest.cpp	Train 51: use QAbstractItemView's effective delegate-for-index API on Qt 5 and 6; retain both inserted-row delegate comparisons.
+-tests/src/gui/TouchLayoutTest.cpp	Train 51: qualify the arranger's lmms::gui::ClipView where lmms::ClipView and lmms::gui::ClipView are both visible.
++tests/src/gui/TouchLayoutTest.cpp	Train 51/35: qualify all arranger gui::ClipView uses in viewOf, the local view and lowerView, where lmms::ClipView and lmms::gui::ClipView are both visible.
+ tests/src/plugins/SfzDistoBuffersTest.cpp	Train 51: pair Windows aligned allocation/free APIs on every Windows compiler while retaining allocation tracking and failure checks.
++tests/src/core/RemotePluginAudioPortsTest.cpp	Train 35: guard countCriticals and its counter with SYNC_WITH_SHM_FIFO to match every guarded user; retain both critical-message assertions.
++tests/src/gui/MixerSendsOnFadersTest.cpp	Train 35: build the expected repeated volume list with a Qt 5/6-compatible loop; retain equality, size, role and ordering assertions.
++tests/train-51-portability-check.py	Train 35: compile the real TouchLayout helper/declarations and the guarded critical helper with red controls; compile repeated-list expressions against Qt 5 and optional Qt 6.
++docs/qwen-fixes-2026-10/sol-train-35-hosted-portability.md	Train 35: record audit causes, source-derived compiler probe commands/results, hosted targets and preservation notes.
+ 
+ # Train 48: preserve complete fixture tests across hosted platform configurations.
+ tests/CMakeLists.txt	Train 48: give SfzPlayerTest its direct Abseil dependency include root and register Train48Portability compiler regressions; preserve every existing test and option.
+-- 
+2.56.0
+

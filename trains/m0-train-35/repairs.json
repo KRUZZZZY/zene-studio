@@ -1,1 +1,92 @@
-[]
+[
+  {
+    "at": "2026-11-16T04:06:41",
+    "base": "fa4a5f2e785c73e32216931e33cdbe140c06647d",
+    "branch": "fix/sol-repair-1794802001090206250",
+    "checks": [
+      {
+        "argv": [
+          "bash",
+          "tests/no-upstream-regression-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-35-1794800358225163647",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794801913437852742.log"
+      },
+      {
+        "argv": [
+          "bash",
+          "tests/evidence-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-35-1794800358225163647",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794801922892289936.log"
+      },
+      {
+        "argv": [
+          "bash",
+          "tests/fork-sources-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-35-1794800358225163647",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794801934177732595.log"
+      },
+      {
+        "argv": [
+          "bash",
+          "tests/unregistered-tests-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-35-1794800358225163647",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794801934443031434.log"
+      },
+      {
+        "argv": [
+          "cmake",
+          "--build",
+          "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-35-1794800358225163647/build",
+          "--target",
+          "zene",
+          "TouchLayoutTest",
+          "RemotePluginAudioPortsTest",
+          "MixerSendsOnFadersTest",
+          "-j12"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-35-1794800358225163647",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794801934508202602.log"
+      },
+      {
+        "argv": [
+          "ctest",
+          "-R",
+          "^(TouchLayoutTest|RemotePluginAudioPortsTest|MixerSendsOnFadersTest|Train51Portability|FileLengthGate|NoteCanvasComplexityGate)$",
+          "-j1",
+          "--timeout",
+          "900",
+          "--no-tests=error",
+          "--output-on-failure"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-35-1794800358225163647/build/tests",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794801934823436954.log"
+      }
+    ],
+    "commit": "659f42d9ec882be60d238f74f25ab0f9a65c98c8",
+    "id": "sol-repair-1794802001090206250",
+    "paths": [
+      "docs/qwen-fixes-2026-10/sol-train-35-hosted-portability.md",
+      "tests/fork-sources.txt",
+      "tests/src/core/RemotePluginAudioPortsTest.cpp",
+      "tests/src/gui/MixerSendsOnFadersTest.cpp",
+      "tests/src/gui/TouchLayoutTest.cpp",
+      "tests/train-51-portability-check.py",
+      "tests/upstream-modifications.txt"
+    ],
+    "source_head": "fa4a5f2e785c73e32216931e33cdbe140c06647d",
+    "status": "pending",
+    "summary": "Fixed remaining ClipView ambiguity, FIFO helper guards and Qt5 list construction; strengthened source-derived compiler regressions. Targeted rebuild, six CTest checks, four unchanged gates, whitespace checks and independent reviews pass.",
+    "train": "050/m0-train-35",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-35-1794800358225163647"
+  }
+]
