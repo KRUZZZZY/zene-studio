@@ -275,7 +275,9 @@ private slots:
 
 		// Back on the channel faders (an empty sends_on_faders) every entry is the level.
 		const QStringList faders = drivesOf(run(QStringLiteral("window.mixer_view"), {{QStringLiteral("sends_on_faders"), QString()}}));
-		QVERIFY(faders == QStringList(channels, QStringLiteral("volume")));
+		QStringList expectedFaders;
+		for (int i = 0; i < channels; ++i) { expectedFaders << QStringLiteral("volume"); }
+		QVERIFY(faders == expectedFaders);
 	}
 
 private:

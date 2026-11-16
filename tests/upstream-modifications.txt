@@ -27,11 +27,15 @@
 # It never held a line, and Gate 6 was red from the first behavioural change.)
 
 # Train 51: repair hosted test compilation while preserving the existing behavioral assertions.
-tests/CMakeLists.txt	Train 51: register source-derived red/green compiler regressions for all four hosted test-source fixes.
+tests/CMakeLists.txt	Train 51: register source-derived red/green compiler regressions for hosted test-source fixes.
 tests/src/core/MidiOutTimingTest.cpp	Train 51: compile timing helpers only for the ALSA-backed test path that uses them; keep every runtime case and assertion.
 tests/src/gui/RowTableViewTest.cpp	Train 51: use QAbstractItemView's effective delegate-for-index API on Qt 5 and 6; retain both inserted-row delegate comparisons.
-tests/src/gui/TouchLayoutTest.cpp	Train 51: qualify the arranger's lmms::gui::ClipView where lmms::ClipView and lmms::gui::ClipView are both visible.
+tests/src/gui/TouchLayoutTest.cpp	Train 51/35: qualify all arranger gui::ClipView uses in viewOf, the local view and lowerView, where lmms::ClipView and lmms::gui::ClipView are both visible.
 tests/src/plugins/SfzDistoBuffersTest.cpp	Train 51: pair Windows aligned allocation/free APIs on every Windows compiler while retaining allocation tracking and failure checks.
+tests/src/core/RemotePluginAudioPortsTest.cpp	Train 35: guard countCriticals and its counter with SYNC_WITH_SHM_FIFO to match every guarded user; retain both critical-message assertions.
+tests/src/gui/MixerSendsOnFadersTest.cpp	Train 35: build the expected repeated volume list with a Qt 5/6-compatible loop; retain equality, size, role and ordering assertions.
+tests/train-51-portability-check.py	Train 35: compile the real TouchLayout helper/declarations and the guarded critical helper with red controls; compile repeated-list expressions against Qt 5 and optional Qt 6.
+docs/qwen-fixes-2026-10/sol-train-35-hosted-portability.md	Train 35: record audit causes, source-derived compiler probe commands/results, hosted targets and preservation notes.
 
 # Train 48: preserve complete fixture tests across hosted platform configurations.
 tests/CMakeLists.txt	Train 48: give SfzPlayerTest its direct Abseil dependency include root and register Train48Portability compiler regressions; preserve every existing test and option.

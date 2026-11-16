@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Red/green compiler regressions for the four case51 hosted test failures."""
+"""Red/green compiler regressions for hosted test portability failures."""
 
 # Copyright (c) 2026 Zene Studio contributors
 #
@@ -144,22 +144,104 @@ inline void _aligned_free(void*) {}
 
 def touch_probe(root, compiler, temporary):
     source = (root / "tests/src/gui/TouchLayoutTest.cpp").read_text(encoding="utf-8")
-    declaration = "\t\tlmms::gui::ClipView* view = viewOf(clip);"
-    if declaration not in source:
-        fail("TouchLayoutTest qualified ClipView declaration is missing")
-    fixture = """namespace lmms { struct ClipView {}; namespace gui { struct ClipView {}; } }
+    start = source.index("lmms::gui::ClipView* viewOf(const Clip* clip)")
+    finish = source.index("\n}\n", start) + 2
+    helper = source[start:finish]
+    declarations = []
+    for marker in ("view = viewOf(clip);", "lowerView = viewOf(lower);"):
+        matches = [line for line in source.splitlines() if marker in line]
+        if len(matches) != 1 or "lmms::gui::ClipView*" not in matches[0]:
+            fail("TouchLayoutTest qualified ClipView declaration is missing")
+        declarations.append(matches[0])
+    fixture = """#include <vector>
+namespace lmms {
+struct Clip {};
+struct ClipView {};
+namespace gui {
+struct ClipView { const lmms::Clip* getClip() const { return nullptr; } };
+}
+}
 using namespace lmms;
 using namespace lmms::gui;
-struct Clip {};
-lmms::gui::ClipView* viewOf(Clip*) { return nullptr; }
-void probe(Clip* clip) {
+struct Editor {
+    template<class T> std::vector<T> findChildren() { return {}; }
+};
+struct SongEditor { Editor* m_editor; };
+struct GUI { SongEditor* songEditor(); };
+GUI* getGUI();
 %s
+void probe(Clip* clip) {
+    %s
+    Clip* lower = clip;
+    %s
     (void)view;
+    (void)lowerView;
 }
-""" % declaration
-    compile_source(compiler, fixture, temporary, "touch-qualified-fixed", success=True)
-    original = fixture.replace("lmms::gui::ClipView* view", "ClipView* view")
-    compile_source(compiler, original, temporary, "touch-unqualified-original", success=False)
+""" % (helper, declarations[0].strip(), declarations[1].strip())
+    compile_source(compiler, fixture, temporary, "touch-helper-and-declarations-fixed",
+                   success=True)
+    unqualified_helper = helper.replace("lmms::gui::ClipView", "ClipView")
+    compile_source(compiler, fixture.replace(helper, unqualified_helper), temporary,
+                   "touch-helper-unqualified-original", success=False)
+    unqualified_lower = fixture.replace(declarations[1].strip(),
+                                        "ClipView* lowerView = viewOf(lower);")
+    compile_source(compiler, unqualified_lower, temporary,
+                   "touch-lower-view-unqualified-original", success=False)
+
+
+def mixer_sends_probe(root, compiler, temporary):
+    source = (root / "tests/src/gui/MixerSendsOnFadersTest.cpp").read_text(encoding="utf-8")
+    declaration = next((line for line in source.splitlines()
+                        if "QStringList expectedFaders;" in line), "")
+    fill = next((line for line in source.splitlines()
+                 if "expectedFaders << QStringLiteral(\"volume\")" in line), "")
+    if not declaration or not fill:
+        fail("MixerSendsOnFadersTest repeated-value expression is missing")
+    qt5 = pkg_flags("pkg-config", ["Qt5Core"])
+    fixed = """#include <QStringList>
+QStringList probe(int channels) {
+%s
+%s
+return expectedFaders;
+}
+""" % (declaration.strip(), fill.strip())
+    compile_source(compiler, fixed, temporary, "mixer-sends-qt5-fixed", success=True,
+                   flags=[*qt5, "-fPIC"])
+    old_expression = """QStringList(channels, QStringLiteral("volume"))"""
+    qt5_original = """#include <QStringList>
+QStringList probe(int channels) {
+    return %s;
+}
+""" % old_expression
+    compile_source(compiler, qt5_original, temporary, "mixer-sends-qt5-original",
+                   success=False, flags=[*qt5, "-fPIC"])
+    if pkg_exists("pkg-config", ["Qt6Core"]):
+        qt6 = pkg_flags("pkg-config", ["Qt6Core"])
+        compile_source(compiler, fixed, temporary, "mixer-sends-qt6-fixed",
+                       success=True, flags=[*qt6, "-fPIC"])
+    else:
+        print("OMITTED mixer-sends-qt6-red-green: Qt6Core unavailable")
+
+
+def remote_critical_probe(root, compiler, temporary):
+    source = (root / "tests/src/core/RemotePluginAudioPortsTest.cpp").read_text(
+        encoding="utf-8")
+    start = source.index("#ifndef SYNC_WITH_SHM_FIFO\nint g_criticalsSeen")
+    finish = source.index("#endif", start) + len("#endif")
+    guarded = source[start:finish]
+    if "countCriticals" not in guarded or "QtCriticalMsg" not in guarded:
+        fail("RemotePluginAudioPortsTest critical counter guard is missing")
+    prelude = """enum QtMsgType { QtCriticalMsg };
+struct QMessageLogContext {};
+struct QString {};
+"""
+    fixed = prelude + "namespace {\n#define SYNC_WITH_SHM_FIFO 1\n" + guarded + "\n}\n"
+    compile_source(compiler, fixed, temporary, "remote-critical-guard-fixed", success=True)
+    original = guarded.replace("#ifndef SYNC_WITH_SHM_FIFO\n", "", 1)
+    original = original.rsplit("#endif", 1)[0]
+    compile_source(compiler, prelude + "namespace {\n" + original + "\n}\n",
+                   temporary, "remote-critical-guard-original", success=False,
+                   expected_diagnostic=("countCriticals", "unused-function"))
 
 
 def main():
@@ -176,6 +258,8 @@ def main():
         midi_probe(root, compiler, temporary)
         sfz_probe(root, compiler, temporary)
         touch_probe(root, compiler, temporary)
+        mixer_sends_probe(root, compiler, temporary)
+        remote_critical_probe(root, compiler, temporary)
     return 0
 
 

@@ -71,11 +71,13 @@ void countWarnings(QtMsgType type, const QMessageLogContext&, const QString&)
 }
 
 //! Criticals seen while a malformed message is refused, for the same reason as above.
+#ifndef SYNC_WITH_SHM_FIFO
 int g_criticalsSeen = 0;
 void countCriticals(QtMsgType type, const QMessageLogContext&, const QString&)
 {
 	if (type == QtCriticalMsg) { ++g_criticalsSeen; }
 }
+#endif
 
 //! AudioPortsModel is abstract (bufferPropertiesChanging)
 class TestAudioPortsModel : public AudioPortsModel

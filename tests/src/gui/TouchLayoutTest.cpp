@@ -83,9 +83,9 @@ namespace
 
 constexpr tick_t Bar = 192;
 
-ClipView* viewOf(const Clip* clip)
+lmms::gui::ClipView* viewOf(const Clip* clip)
 {
-	for (ClipView* view : getGUI()->songEditor()->m_editor->findChildren<ClipView*>())
+	for (lmms::gui::ClipView* view : getGUI()->songEditor()->m_editor->findChildren<lmms::gui::ClipView*>())
 	{
 		if (view->getClip() == clip) { return view; }
 	}
@@ -341,7 +341,7 @@ private slots:
 		QVERIFY(lower != nullptr);
 		lower->changeLength(TimePos(4 * Bar));
 		QTRY_VERIFY(viewOf(lower) != nullptr);
-		ClipView* lowerView = viewOf(lower);
+		lmms::gui::ClipView* lowerView = viewOf(lower);
 		const int upperBottom = view->mapTo(m_editor, QPoint(0, view->height())).y();
 		const int lowerTop = lowerView->mapTo(m_editor, QPoint()).y();
 		QVERIFY2(lowerTop - upperBottom >= 8,
