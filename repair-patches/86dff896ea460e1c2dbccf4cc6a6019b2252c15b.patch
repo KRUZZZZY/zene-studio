@@ -1,0 +1,228 @@
+From 86dff896ea460e1c2dbccf4cc6a6019b2252c15b Mon Sep 17 00:00:00 2001
+From: Zene CI repair <noreply@zene.invalid>
+Date: Mon, 16 Nov 2026 00:30:43 +0000
+Subject: [PATCH] fix(ci): CI regression: build / mingw64
+
+CI-Repair-Id: ci-repair-ci-f10986b0b93b91c1-b7d26ed16e20
+---
+ .../cluster-ci-f10986b0b93b91c1.md            | 109 ++++++++++++++++++
+ tests/CMakeLists.txt                          |   2 +-
+ tests/src/core/MidiOutTimingTest.cpp          |   4 +-
+ tests/train-41-portability-check.py           |  36 +++++-
+ 4 files changed, 147 insertions(+), 4 deletions(-)
+ create mode 100644 docs/qwen-fixes-2026-10/cluster-ci-f10986b0b93b91c1.md
+
+diff --git a/docs/qwen-fixes-2026-10/cluster-ci-f10986b0b93b91c1.md b/docs/qwen-fixes-2026-10/cluster-ci-f10986b0b93b91c1.md
+new file mode 100644
+index 0000000000..35c00852ae
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/cluster-ci-f10986b0b93b91c1.md
+@@ -0,0 +1,109 @@
++FIXED
++
++# cluster ci-f10986b0b93b91c1 — mingw64 build: ALSA-only test helpers left unguarded
++
++## Verdict
++
++REAL. The hosted `mingw64` job failed at `31f559ab479dcd1b822545aae477222f58f32c0d`
++while compiling `tests/src/core/MidiOutTimingTest.cpp`:
++
++```text
++tests/src/core/MidiOutTimingTest.cpp:107:6: error: 'void {anonymous}::measureAgainstRequested(...)' defined but not used [-Werror=unused-function]
++tests/src/core/MidiOutTimingTest.cpp:83:8: error: '{anonymous}::Jitter {anonymous}::measure(...)' defined but not used [-Werror=unused-function]
++cc1plus: all warnings being treated as errors
++```
++
++The translation unit defined `Jitter`, `measure` and `measureAgainstRequested` in the
++anonymous namespace outside any ALSA guard (`tests/src/core/MidiOutTimingTest.cpp:73-121`
++before the fix), but their only call sites are `run()` at
++`tests/src/core/MidiOutTimingTest.cpp:288-289`, inside the class section guarded by
++`#ifdef LMMS_HAVE_ALSA` (`:268`). MinGW64 has no ALSA, so all three definitions had
++internal linkage and no use, and the project's `-Werror` turned the warning into the
++hosted build failure. This is a test-target build-portability defect; product sources,
++save formats, commands and the realtime path are untouched.
++
++## Fix
++
++The existing `#ifdef LMMS_HAVE_ALSA` now starts before the first ALSA-only helper
++(`tests/src/core/MidiOutTimingTest.cpp:69`) and still closes at `:260`, so the constants,
++`Jitter`, `measure`, `measureAgainstRequested` and the receiver/loopback helpers all
++compile out together on a non-ALSA build. The ALSA header block (`:55`), the runtime
++ALSA-unavailable `QSKIP` (`:318`) and every assertion and test body are unchanged.
++
++A scan of the other ALSA-conditional test sources found only `MidiOutQueueTest.cpp`,
++`AudioDeviceDiagnosticsTest.cpp` and `CpuDiagnosticsDialogTest.cpp`; the hosted log shows
++those targets built successfully at the same commit, so no sibling has this defect.
++
++## Regression
++
++New mode `midi-out-timing-no-alsa` in `tests/train-41-portability-check.py:230`,
++registered as CTest `Train41-midi-out-timing-no-alsa` in `tests/CMakeLists.txt:9385`.
++It is deterministic and compile-only: it reuses the build's recorded
++`compile_commands.json` flags for the real translation unit, places a shadow
++`lmmsconfig.h` first on the include path (the generated header defines ALSA and has no
++include guard, so the shadow includes it and then `#undef LMMS_HAVE_ALSA`), regenerates
++the meta-object with `moc -ULMMS_HAVE_ALSA`, and compiles with
++`-Werror=unused-function`. There is no clock, sleep, thread or render in the check; the
++only input is the tree and the build database.
++
++## Evidence table
++
++The required log folder
++`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-f10986b0b93b91c1.r1/logs` is
++not writable in this session (`touch .../logs/probe.tmp` → `Permission denied`,
++EXIT=1; the `write` tool likewise returned `EACCES`). Following the precedent of
++`cluster-ci-f8d87e270a05ef5e.md`, all numbered logs were written to the gitignored
++`<worktree>/build/qwen-logs/`; the commands and exit codes below are exact.
++
++| Check | Exact command | Result |
++|---|---|---|
++| RED probe before fix | `python3 tests/train-41-portability-check.py --source-root "$PWD" --build-dir "$PWD/build" --qt-major 6 --moc /usr/lib/qt6/moc --mode midi-out-timing-no-alsa` | EXIT=1; `measureAgainstRequested` at `:107` and `measure` at `:83` "defined but not used" (`003-red-portability-probe.log`) |
++| RED CTest before fix | from `build/tests`: `ctest -R '^Train41-midi-out-timing-no-alsa$' --output-on-failure` | EXIT=8; 0% passed, 1 failed, the same two diagnostics (`006-ctest-red.log`) |
++| Build affected target | `cmake --build build --target MidiOutTimingTest -j12` | EXIT=0 (`008-build-test-target-fixed.log`) |
++| GREEN probe after fix | same probe command as above | EXIT=0; the real non-ALSA TU compiles clean (`007-green-portability-probe.log`) |
++| GREEN CTest after fix | from `build/tests`: `ctest -R '^(Train41-midi-out-timing-no-alsa\|MidiOutTimingTest)$' --output-on-failure` | EXIT=0; 2/2 passed (`013-ctest-with-fix.log`) |
++| Reverse-patch RED (step 4b) | `git diff -- tests/src/core/MidiOutTimingTest.cpp > build/qwen-logs/fix.patch`; `git apply -R build/qwen-logs/fix.patch` (EXIT=0); rebuild target (EXIT=0); from `build/tests`: `ctest -R '^Train41-midi-out-timing-no-alsa$' --output-on-failure` | CTEST EXIT=8; the same `:107`/`:83` errors (`010-rebuild-without-fix.log`, `011-ctest-without-fix.log`) |
++| Restored GREEN | `git apply build/qwen-logs/fix.patch` (EXIT=0); rebuild target (EXIT=0); same CTest pair | CTEST EXIT=0; 2/2 passed (`012-rebuild-with-fix.log`, `013-ctest-with-fix.log`) |
++| Affected portability family | from `build/tests`: `ctest -R '^Train41' --output-on-failure` | EXIT=0 after building the pre-existing `CrashReporterArmTest` dependency; 8/8 passed (`015-build-crashreporter-arm.log`, `016-ctest-train41-family-rebuilt.log`). The first run was 7/8 only because `CrashReporterArmTest.moc` was absent from the partially built tree (`014-ctest-train41-family.log`), not because of this change. |
++| Quality gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py "$PWD"` | EXIT=0; all 8 gates PASS, complexity and file-length "no new item in your files" (`017-feature-check.log`) |
++| Completion check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py "$PWD" ci-f10986b0b93b91c1` | EXIT=0 after the fix commit; `RESULT: PASS - submit`, every mechanical item PASS (`020-submit-check-after-commit.log`). The pre-commit invocation correctly reported the uncommitted tree and exited 1 (`018-submit-check-final.log`). |
++
++`fix.patch` contains only the `MidiOutTimingTest.cpp` guard move; the regression mode and
++its registration are not in the patch, so reversing it leaves the regression in place
++and removes only the fix.
++
++## Test matrix
++
++| Path | What is exercised | Result |
++|---|---|---|
++| Normal Linux/ALSA build | `MidiOutTimingTest` still builds and runs both loopback cases through the real ALSA sequencer; all assertions and tolerances unchanged | GREEN, 1/1 passed (`013-ctest-with-fix.log`) |
++| Non-ALSA build (hosted MinGW64 shape) | The real translation unit with `LMMS_HAVE_ALSA` undefined, the build's own flags and `-Werror` | RED before fix (EXIT=1/8), GREEN after (EXIT=0) |
++| ALSA runtime-unavailable path | The existing `QSKIP` at `tests/src/core/MidiOutTimingTest.cpp:318` is unchanged; the test still reports a skip instead of failing when the sequencer cannot be opened | Unchanged |
++| Audio-thread constraints | No product or audio-path file changed; only a test translation unit and a compile probe | No new allocation, lock, log or wait on any audio path |
++| Save/load, undo, commands | No model, serializer, undo or control-command source changed | Unchanged |
++
++## Files committed
++
++- `tests/src/core/MidiOutTimingTest.cpp` — move the ALSA guard before the ALSA-only helpers.
++- `tests/train-41-portability-check.py` — add the deterministic non-ALSA compile probe.
++- `tests/CMakeLists.txt` — register `Train41-midi-out-timing-no-alsa`.
++- `docs/qwen-fixes-2026-10/cluster-ci-f10986b0b93b91c1.md` — this report.
++
++## Self-check
++
++- **Regression fails with the fix reverted, passes with it:** reverse `fix.patch` →
++  `Train41-midi-out-timing-no-alsa` EXIT=8 with the exact pre-fix diagnostics at `:107`
++  and `:83`; apply it → EXIT=0, 2/2 including the normal `MidiOutTimingTest`
++  (`011-ctest-without-fix.log`, `013-ctest-with-fix.log`).
++- **Deterministic:** the probe compiles the real TU with the build's recorded flags and
++  injects only the platform preprocessor state through a shadow `lmmsconfig.h` and
++  `moc -ULMMS_HAVE_ALSA`; no wall-clock timing, sleep, thread or race is involved.
++- **Cause and completeness:** the two unused functions are guarded with their only
++  caller; a scan of all other `LMMS_HAVE_ALSA` test sources found no comparable
++  unguarded helper, and the hosted log shows those targets already built.
++- **No collateral damage:** the ALSA runtime test, its assertions, the skip path and the
++  product sources are unchanged; no save format, project data, undo step, command or
++  realtime path is affected.
++- **Log destination:** the mandated log folder rejects writes in this session, so the
++  numbered logs live in the gitignored `build/qwen-logs/`; the exact commands and exit
++  codes are above. No result is claimed that was not observed.
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index cd97d2b638..3f09ce15e2 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -9382,7 +9382,7 @@ endif()
+ 
+ # Reproduce strict hosted compiler contracts against this build's actual sources.
+ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
+-	foreach(mode linux nam darwin-signature darwin-tu render wav-write-error)
++	foreach(mode linux nam darwin-signature darwin-tu render wav-write-error midi-out-timing-no-alsa)
+ 		add_test(NAME Train41-${mode} COMMAND ${PYTHON3_EXECUTABLE}
+ 			${CMAKE_CURRENT_SOURCE_DIR}/train-41-portability-check.py
+ 			--source-root ${CMAKE_SOURCE_DIR} --build-dir ${CMAKE_BINARY_DIR}
+diff --git a/tests/src/core/MidiOutTimingTest.cpp b/tests/src/core/MidiOutTimingTest.cpp
+index 154c0def06..2ba94e4f2a 100644
+--- a/tests/src/core/MidiOutTimingTest.cpp
++++ b/tests/src/core/MidiOutTimingTest.cpp
+@@ -66,6 +66,8 @@ using namespace lmms;
+ namespace
+ {
+ 
++#ifdef LMMS_HAVE_ALSA
++
+ constexpr int Notes = 33;                 //!< 32 intervals
+ constexpr double TargetMs = 62.5;         //!< a 1/32 note at 120 BPM
+ constexpr f_cnt_t PeriodFrames = 256;
+@@ -120,8 +122,6 @@ void measureAgainstRequested(Jitter* out, const std::vector<std::int64_t>& stamp
+ 	if (n > 0) { out->outputMeanAbsMs = sumAbs / n; }
+ }
+ 
+-#ifdef LMMS_HAVE_ALSA
+-
+ struct Receiver
+ {
+ 	snd_seq_t* seq = nullptr;
+diff --git a/tests/train-41-portability-check.py b/tests/train-41-portability-check.py
+index 6cd5615622..e8645821e0 100755
+--- a/tests/train-41-portability-check.py
++++ b/tests/train-41-portability-check.py
+@@ -227,6 +227,39 @@ def mode_wav_write_error(root, build, moc):
+         run(args, cwd=entry["directory"])
+ 
+ 
++def mode_midi_out_timing_no_alsa(root, build, moc):
++    # A non-ALSA translation unit: the hosted mingw64 build has LMMS_HAVE_ALSA
++    # undefined, so every ALSA-only case and helper disappears and the compiler's
++    # -Wunused-function can see a helper left outside the guard. The generated
++    # lmmsconfig.h defines ALSA and has no include guard, so a shadow header placed
++    # first on the include path includes it and then undefines ALSA on every use.
++    source = root / "tests/src/core/MidiOutTimingTest.cpp"
++    config = build / "lmmsconfig.h"
++    require_file(source)
++    require_file(config)
++    entries = compile_database(build)
++    entry, command = entry_for(entries, root, "tests/src/core/MidiOutTimingTest.cpp")
++    with tempfile.TemporaryDirectory(prefix="train41-midi-out-timing-no-alsa-") as temporary:
++        shadow = Path(temporary) / "lmmsconfig.h"
++        shadow.write_text(f'#include "{config.as_posix()}"\n#undef LMMS_HAVE_ALSA\n',
++                          encoding="utf-8")
++        preinclude = Path(temporary) / "headers_then_no_alsa.h"
++        lines = []
++        for header in source_headers(source):
++            lines.append(f'#include "{header}"' if isinstance(header, Path) else f"#include {header}")
++        lines.append("#undef LMMS_HAVE_ALSA")
++        preinclude.write_text("\n".join(lines) + "\n", encoding="utf-8")
++        # moc preprocesses the same way, so the generated meta-object matches the TU.
++        run([moc, "-ULMMS_HAVE_ALSA", str(source), "-o",
++             str(Path(temporary) / "MidiOutTimingTest.moc")], cwd=root)
++        args = syntax_command(entry, command,
++                              ["-include", str(preinclude), "-Werror=unused-function"])
++        args.insert(1, "-I" + temporary)
++        args.remove("-fsyntax-only")
++        args.extend(["-c", "-o", str(Path(temporary) / "midi-out-timing-no-alsa.o")])
++        run(args, cwd=entry["directory"])
++
++
+ MODES = {
+     "linux": mode_linux,
+     "eq": mode_eq,
+@@ -235,6 +268,7 @@ MODES = {
+     "nam": mode_nam,
+     "render": mode_render,
+     "wav-write-error": mode_wav_write_error,
++    "midi-out-timing-no-alsa": mode_midi_out_timing_no_alsa,
+ }
+ 
+ 
+@@ -254,7 +288,7 @@ def main():
+         print(f"[{name}]", flush=True)
+         if name == "linux":
+             check(root, args.qt_major)
+-        elif name in {"render", "wav-write-error"}:
++        elif name in {"render", "wav-write-error", "midi-out-timing-no-alsa"}:
+             check(root, build, args.moc)
+         elif name in {"eq", "darwin-tu", "nam"}:
+             check(root, build)
+-- 
+2.56.0
+

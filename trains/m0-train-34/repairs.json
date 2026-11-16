@@ -315,5 +315,69 @@
     "summary": "CI regression: build / windows-arm64",
     "train": "050/m0-train-34",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-00e6f05f41fa4f1a"
+  },
+  {
+    "at": "2026-11-16T00:25:46",
+    "base": "31f559ab479dcd1b822545aae477222f58f32c0d",
+    "branch": "fix/ci-repair-ci-1755c410599471fe-f6ceecd61944",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-1755c410599471fe.r1.md",
+        "negative_control": {
+          "artifact_hashes": {},
+          "detail": "no product change, no changed test, or a dirty tree",
+          "ok": null,
+          "proof_base": "31f559ab479dcd1b822545aae477222f58f32c0d",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-1755c410599471fe.r1/negctl",
+          "proof_key": "49ac9fab97618206617ed0397fcbe96bae6cf4f265c748b366285731d38be842"
+        },
+        "verdict": "ACCEPT"
+      }
+    ],
+    "commit": "ba1f16654a0168e1cb07bb673e19d0223fe23e04",
+    "id": "ci-repair-ci-1755c410599471fe-f6ceecd61944",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-1755c410599471fe.md",
+      "tests/src/gui/RowTableViewTest.cpp"
+    ],
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "31f559ab479dcd1b822545aae477222f58f32c0d",
+    "status": "pending",
+    "summary": "CI regression: build / linux-arm64",
+    "train": "050/m0-train-34",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-1755c410599471fe"
+  },
+  {
+    "at": "2026-11-16T00:30:43",
+    "base": "31f559ab479dcd1b822545aae477222f58f32c0d",
+    "branch": "fix/ci-repair-ci-f10986b0b93b91c1-b7d26ed16e20",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-f10986b0b93b91c1.r1.md",
+        "negative_control": {
+          "artifact_hashes": {},
+          "detail": "no product change, no changed test, or a dirty tree",
+          "ok": null,
+          "proof_base": "31f559ab479dcd1b822545aae477222f58f32c0d",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-f10986b0b93b91c1.r1/negctl",
+          "proof_key": "39324fa6e993cb848b4a3383bca2bfd172a496a461f2d26ff4323fad3933da8b"
+        },
+        "verdict": "ACCEPT-NOTE"
+      }
+    ],
+    "commit": "86dff896ea460e1c2dbccf4cc6a6019b2252c15b",
+    "id": "ci-repair-ci-f10986b0b93b91c1-b7d26ed16e20",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-f10986b0b93b91c1.md",
+      "tests/CMakeLists.txt",
+      "tests/src/core/MidiOutTimingTest.cpp",
+      "tests/train-41-portability-check.py"
+    ],
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "31f559ab479dcd1b822545aae477222f58f32c0d",
+    "status": "pending",
+    "summary": "CI regression: build / mingw64",
+    "train": "050/m0-train-34",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-f10986b0b93b91c1"
   }
 ]

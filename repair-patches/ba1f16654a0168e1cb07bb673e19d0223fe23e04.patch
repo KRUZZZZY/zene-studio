@@ -1,0 +1,164 @@
+From ba1f16654a0168e1cb07bb673e19d0223fe23e04 Mon Sep 17 00:00:00 2001
+From: Zene CI repair <noreply@zene.invalid>
+Date: Mon, 16 Nov 2026 00:25:46 +0000
+Subject: [PATCH] fix(ci): CI regression: build / linux-arm64
+
+CI-Repair-Id: ci-repair-ci-1755c410599471fe-f6ceecd61944
+---
+ .../cluster-ci-1755c410599471fe.md            | 109 ++++++++++++++++++
+ tests/src/gui/RowTableViewTest.cpp            |  14 ++-
+ 2 files changed, 121 insertions(+), 2 deletions(-)
+ create mode 100644 docs/qwen-fixes-2026-10/cluster-ci-1755c410599471fe.md
+
+diff --git a/docs/qwen-fixes-2026-10/cluster-ci-1755c410599471fe.md b/docs/qwen-fixes-2026-10/cluster-ci-1755c410599471fe.md
+new file mode 100644
+index 0000000000..2f0052fb85
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/cluster-ci-1755c410599471fe.md
+@@ -0,0 +1,109 @@
++FIXED
++
++# Cluster ci-1755c410599471fe — RowTableViewTest uses the Qt 6-only `itemDelegateForIndex`
++
++**Decision: REAL (test-side build regression), fixed.** The hosted `linux-arm64` Qt 5 build of the pinned commit
++`31f559ab479dcd1b822545aae477222f58f32c0d` stops at `tests/src/gui/RowTableViewTest.cpp:54` and `:57` because
++`QAbstractItemView::itemDelegateForIndex` does not exist in Qt 5. The product class is not involved: `RowTableView`
++inherits `QTableView`, and the two test queries are the only uses of that spelling in the tree. The test now selects
++the API by Qt version and keeps the same assertion.
++
++## Evidence
++
++- Hosted CI log
++  `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/train-ci/31f559ab479dcd1b822545aae477222f58f32c0d/run-43764792400-job-132967358689.log:6725`
++  and `:6732`:
++  `error: 'class lmms::gui::RowTableView' has no member named 'itemDelegateForIndex'; did you mean 'itemDelegateForRow'?`
++  at `tests/src/gui/RowTableViewTest.cpp:54` and `:57`, followed by the `gmake` failure of
++  `tests/CMakeFiles/RowTableViewTest.dir`.
++- HEAD is the pinned commit: `git log -1 --oneline` = `31f559ab47 Revert "Merge feat/050-Q050-481.4-oc ..."`.
++- Qt 5.15.19 header `/usr/include/qt/QtWidgets/qabstractitemview.h:226` declares
++  `itemDelegate(const QModelIndex &index) const`; it has no `itemDelegateForIndex`. Qt 6 header
++  `/usr/include/qt6/QtWidgets/qabstractitemview.h:204-208` deprecates `itemDelegate(index)` in favour of the virtual
++  `itemDelegateForIndex(index)`, so replacing the call unconditionally with the Qt 5 spelling would break a
++  `-Werror` Qt 6 build.
++- `grep -rn itemDelegateForIndex --exclude-dir=build .` before the fix found exactly the two test uses at `:54` and
++  `:57`; there is no product use and no other caller to keep consistent.
++- The local configured build tree is Qt 6; the local Qt 5.15.19 toolchain (`moc` 5.15.19, `qmake` using Qt 5.15.19
++  in `/usr/lib`) is used to reproduce the hosted Qt 5 failure directly.
++
++## Fix
++
++`tests/src/gui/RowTableViewTest.cpp:32-40` adds one local helper:
++
++```cpp
++// QAbstractItemView::itemDelegateForIndex is Qt 6; Qt 5's spelling is itemDelegate(index).
++static const QAbstractItemDelegate* rowDelegate(const RowTableView& view, const QModelIndex& index)
++{
++#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
++	return view.itemDelegateForIndex(index);
++#else
++	return view.itemDelegate(index);
++#endif
++}
++```
++
++Both call sites (`:64`, `:67`) use it. The assertion is unchanged: the delegate on the inserted row is compared with
++the delegate on the pre-existing row. This is a test-only portability fix; no product code, command, save format,
++undo step or audio-thread path is touched.
++
++## Regression proof (exact commands, copied from the logs)
++
++The defect is a translation-unit compile failure, so the RED is necessarily a build exit code; there is no product
++hunk to reverse. The requested log folder is not writable in this session (see below), so the numbered logs are in
++`build/qwen-logs/` inside the worktree.
++
++| Step | Command (log) | EXIT |
++| --- | --- | --- |
++| RED, before fix: Qt 5 `moc` + `g++` of `RowTableViewTest.cpp` + `src/gui/RowTableView.cpp` (`001-qt5-red-compile.log`) | `moc tests/src/gui/RowTableViewTest.cpp -o build/qwen-logs/qt5-probe/RowTableViewTest.moc` then `g++ -std=c++20 -fPIC -Iinclude -Ibuild/qwen-logs/qt5-probe $(pkg-config --cflags Qt5Test Qt5Widgets) tests/src/gui/RowTableViewTest.cpp src/gui/RowTableView.cpp -o build/qwen-logs/qt5-probe/RowTableViewTest $(pkg-config --libs Qt5Test Qt5Widgets)` | moc **0**, g++ **1** (`has no member named 'itemDelegateForIndex'` at `:54` and `:57`) |
++| GREEN, after fix: same Qt 5 build with both mocs (`004-qt5-green-compile-run.log`) | `moc include/RowTableView.h -o .../moc_RowTableView.cpp`; same `g++` command plus `.../moc_RowTableView.cpp`; `QT_QPA_PLATFORM=offscreen .../RowTableViewTest` | build **0**, run **0** (`Totals: 6 passed, 0 failed, 0 skipped`) |
++| Qt 6 target (`005-qt6-build-after-fix.log`) | `cmake --build build --target RowTableViewTest` | **0** |
++| Affected ctest family (`006-qt6-ctest-after-fix.log`) | `cd build/tests && ctest -R '^RowTableViewTest$' --output-on-failure` | **0**, `1/1` passed; `ctest -N -R '^RowTableView'` shows exactly this one test (`012`) |
++| 4b reverse (`007-4b-generate-and-reverse.log`) | `git diff -- tests/src/gui/RowTableViewTest.cpp > build/qwen-logs/fix.patch && git apply -R build/qwen-logs/fix.patch` | **0** |
++| 4b RED, reversed (`008-4b-qt5-red-after-revert.log`) | Qt 5 `moc` + `g++` as in the GREEN row | **1**, same two errors at `:54` and `:57` |
++| 4b reapply (`009-4b-reapply.log`) | `git apply build/qwen-logs/fix.patch` | **0** |
++| 4b GREEN, restored (`010-4b-qt5-green-restored.log`) | Qt 5 `moc` + `g++` + offscreen run | build **0**, run **0** (`6 passed`) |
++| Gates (`011-feature-check.log`) | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | **0** (all eight rows PASS) |
++
++The only changed hunk is the test's Qt-version selection. `fix.patch` therefore reverses the test hunk rather than a
++product hunk; the RED/GREEN pair proves the same thing: without the selection the Qt 5 build fails at the hosted
++lines, and with it the test builds and all six test slots pass.
++
++## Log-folder limitation
++
++The requested folder
++`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-1755c410599471fe.r1/logs` reports `drwxr-xr-x kruzzzzy
++kruzzzzy` but rejects writes from this session even though the process is `uid=1000(kruzzzzy)`:
++`touch .../logs/write-probe` -> `Permission denied`, `TOUCH_EXIT=1`; `mkdir .../logs/qt5-probe` -> `Permission
++denied`, `MKDIR_EXIT=1` (`000-log-folder-write-probe.log`). Written logs and `fix.patch` are under
++`build/qwen-logs/` in the worktree, which is inside the writable tree.
++
++## Registration
++
++- No new file. `tests/src/gui/RowTableViewTest.cpp` is already registered at `tests/CMakeLists.txt:1295` and
++  `tests/all-sources.txt:3507`.
++- `tests/upstream-modifications.txt` is unchanged: the changed path is under `tests/`, and no product file changed.
++- No command was added or changed; the commands snapshot is untouched.
++
++## Self-check
++
++- **The regression test FAILS with the change reverted and PASSES with it (exit codes).** There is no product hunk:
++  the bug is the test's Qt 6-only call. Reversing the only hunk (`git apply -R fix.patch`, EXIT 0) makes the Qt 5
++  compile fail at `:54`/`:57` (EXIT 1, `008`); restoring it (`git apply fix.patch`, EXIT 0) makes the Qt 5 build and
++  run pass (build EXIT 0, run EXIT 0, `6 passed`, `010`). The original RED/GREEN pair is `001` (EXIT 1) / `004`
++  (build 0, run 0), and the Qt 6 target/ctest pass too (`005`/`006`).
++- **Deterministic.** Selection is a compile-time `QT_VERSION` check; the model has fixed rows (0 then inserted row 1)
++  and no timing, sleep, thread, random input or external state is used. The Qt 5 probe is a plain compile plus run
++  (24-35 ms).
++- **At the cause and complete.** Both uses in the tree were `RowTableViewTest.cpp:54` and `:57`; both now go through
++  the helper. `grep -rn itemDelegateForIndex` after the fix finds only the guarded Qt 6 branch. The Qt 6 branch
++  calls exactly what the test called before; the Qt 5 branch calls Qt 5's documented equivalent.
++- **No collateral damage.** Only the test's query is adapted. No project/save format, limit, command, undo state,
++  audio-thread code or product behaviour changes; the Qt 6 target and ctest still pass. Old projects and saved data
++  are untouched.
++- **ALREADY-FIXED / FALSE-POSITIVE evidence.** Not applicable to this tree: the failure is present on this branch's
++  HEAD (`31f559ab47`) and reproduced with local Qt 5.15.19. The same test-side change was accepted earlier on another
++  line as commit `9ccb6cc841`; this branch does not contain it.
++- **Qt 5.15 / MSVC / macOS portability.** The only platform difference is guarded with `QT_VERSION_CHECK`; the code
++  uses `QAbstractItemDelegate`, `QModelIndex` and `QT_VERSION_CHECK`, already available through `<QtTest>`. No
++  Qt-6-only API is used without a guard. Local proof is Qt 5.15.19 and Qt 6 (configured `build/`).
+diff --git a/tests/src/gui/RowTableViewTest.cpp b/tests/src/gui/RowTableViewTest.cpp
+index 18d4e6f386..a3c5a74921 100644
+--- a/tests/src/gui/RowTableViewTest.cpp
++++ b/tests/src/gui/RowTableViewTest.cpp
+@@ -29,6 +29,16 @@
+ 
+ using lmms::gui::RowTableView;
+ 
++// QAbstractItemView::itemDelegateForIndex is Qt 6; Qt 5's spelling is itemDelegate(index).
++static const QAbstractItemDelegate* rowDelegate(const RowTableView& view, const QModelIndex& index)
++{
++#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
++	return view.itemDelegateForIndex(index);
++#else
++	return view.itemDelegate(index);
++#endif
++}
++
+ class RowTableViewTest : public QObject
+ {
+ 	Q_OBJECT
+@@ -51,10 +61,10 @@ private slots:
+ 		RowTableView view;
+ 		view.setModel(&model);
+ 
+-		const QAbstractItemDelegate* existingRowDelegate = view.itemDelegateForIndex(model.index(0, 0));
++		const QAbstractItemDelegate* existingRowDelegate = rowDelegate(view, model.index(0, 0));
+ 		QVERIFY(existingRowDelegate);
+ 		QVERIFY(model.insertRow(1));
+-		QCOMPARE(view.itemDelegateForIndex(model.index(1, 0)), existingRowDelegate);
++		QCOMPARE(rowDelegate(view, model.index(1, 0)), existingRowDelegate);
+ 	}
+ 
+ 	void tabAndBacktabWithoutModelAreSafe()
+-- 
+2.56.0
+
