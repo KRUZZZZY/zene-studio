@@ -125,5 +125,98 @@
     "summary": "Reconciled thirteen overlapping CI repairs, preserving every regression and both already-applied repairs. Targeted rebuild, 24 CTest entries, unchanged gates, whitespace checks and independent review pass.",
     "train": "050/m0-train-34",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-34-1794760028802047733"
+  },
+  {
+    "at": "2026-11-16T00:07:15",
+    "base": "31f559ab479dcd1b822545aae477222f58f32c0d",
+    "branch": "fix/sol-repair-1794787635717871614",
+    "checks": [
+      {
+        "argv": [
+          "bash",
+          "tests/no-upstream-regression-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-34-1794786219093718118",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794787574341820436.log"
+      },
+      {
+        "argv": [
+          "bash",
+          "tests/evidence-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-34-1794786219093718118",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794787583681055215.log"
+      },
+      {
+        "argv": [
+          "bash",
+          "tests/fork-sources-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-34-1794786219093718118",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794787597079563322.log"
+      },
+      {
+        "argv": [
+          "bash",
+          "tests/unregistered-tests-gate.sh"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-34-1794786219093718118",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794787597344871394.log"
+      },
+      {
+        "argv": [
+          "cmake",
+          "--build",
+          "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-34-1794786219093718118/build",
+          "--target",
+          "zene",
+          "RowTableViewTest",
+          "MidiOutTimingTest",
+          "SfzDistoBuffersTest",
+          "TouchLayoutTest",
+          "-j12"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-34-1794786219093718118",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794787597411177099.log"
+      },
+      {
+        "argv": [
+          "ctest",
+          "-R",
+          "^(RowTableViewTest|MidiOutTimingTest|SfzDistoBuffersTest|TouchLayoutTest|Train51Portability|FileLengthGate|NoteCanvasComplexityGate)$",
+          "-j1",
+          "--timeout",
+          "900",
+          "--no-tests=error",
+          "--output-on-failure"
+        ],
+        "cwd": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-34-1794786219093718118/build/tests",
+        "exit": 0,
+        "log": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/merge/sol/repair-check-1794787597876742621.log"
+      }
+    ],
+    "commit": "2814e03d8e49ea3305264aaba4a76cb12e0c8100",
+    "id": "sol-repair-1794787635717871614",
+    "paths": [
+      "docs/qwen-fixes-2026-10/sol-train-34-hosted-portability-51.md",
+      "tests/CMakeLists.txt",
+      "tests/fork-sources.txt",
+      "tests/src/core/MidiOutTimingTest.cpp",
+      "tests/src/gui/RowTableViewTest.cpp",
+      "tests/src/gui/TouchLayoutTest.cpp",
+      "tests/src/plugins/SfzDistoBuffersTest.cpp",
+      "tests/train-51-portability-check.py",
+      "tests/upstream-modifications.txt"
+    ],
+    "source_head": "31f559ab479dcd1b822545aae477222f58f32c0d",
+    "status": "pending",
+    "summary": "Fixed four test compilation defects across seven hosted jobs, preserving assertions and allocation checks. Rebuilt affected targets; seven CTest entries, compiler negative controls, unchanged gates, whitespace checks and independent review pass.",
+    "train": "050/m0-train-34",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-34-1794786219093718118"
   }
 ]

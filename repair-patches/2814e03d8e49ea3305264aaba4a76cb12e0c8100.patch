@@ -1,0 +1,472 @@
+From 2814e03d8e49ea3305264aaba4a76cb12e0c8100 Mon Sep 17 00:00:00 2001
+From: Zene train Sol <noreply@zene.invalid>
+Date: Mon, 16 Nov 2026 00:07:15 +0000
+Subject: [PATCH] fix(train-sol): Fixed four test compilation defects across
+ seven hosted jobs, preserving assertions and allocation checks. Rebuilt
+ affected targets; seven CTest entries, compiler negative controls
+
+Sol-Repair-Id: sol-repair-1794787635717871614
+---
+ .../sol-train-34-hosted-portability-51.md     | 114 +++++++++++
+ tests/CMakeLists.txt                          |   8 +
+ tests/fork-sources.txt                        |   4 +
+ tests/src/core/MidiOutTimingTest.cpp          |   3 +-
+ tests/src/gui/RowTableViewTest.cpp            |   4 +-
+ tests/src/gui/TouchLayoutTest.cpp             |   2 +-
+ tests/src/plugins/SfzDistoBuffersTest.cpp     |   6 +-
+ tests/train-51-portability-check.py           | 187 ++++++++++++++++++
+ tests/upstream-modifications.txt              |   7 +
+ 9 files changed, 327 insertions(+), 8 deletions(-)
+ create mode 100644 docs/qwen-fixes-2026-10/sol-train-34-hosted-portability-51.md
+ create mode 100644 tests/train-51-portability-check.py
+
+diff --git a/docs/qwen-fixes-2026-10/sol-train-34-hosted-portability-51.md b/docs/qwen-fixes-2026-10/sol-train-34-hosted-portability-51.md
+new file mode 100644
+index 0000000000..1693c00632
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/sol-train-34-hosted-portability-51.md
+@@ -0,0 +1,114 @@
++# Train 51 hosted test portability repairs
++
++Pinned case: `31f559ab` (`31f559ab479dcd1b822545aae477222f58f32c0d`). The audit at
++`/tmp/sol51-ci-audit.md` records four source compilation causes across seven hosted
++jobs. The queue entry mentioned by the audit was not used as evidence of a repair.
++
++## Repairs and diagnosis
++
++- `tests/src/gui/RowTableViewTest.cpp:54,57`: Qt's `itemDelegateForIndex` API is
++  unavailable in the Qt 5 job. Both checks now call the effective
++  `QAbstractItemView::itemDelegate(const QModelIndex&)`, retaining the two
++  inserted-row delegate comparisons; this does not substitute row-only behavior.
++- `tests/src/core/MidiOutTimingTest.cpp:69-260`: `measure` and
++  `measureAgainstRequested` are only used by the ALSA-backed cases. Their
++  constants, helpers, and those cases now share the `LMMS_HAVE_ALSA` guard, so
++  MinGW's no-ALSA build no longer diagnoses unused functions. Runtime cases and
++  assertions are retained.
++- `tests/src/plugins/SfzDistoBuffersTest.cpp:56-61,82-86`: the Windows branch
++  now uses `_aligned_malloc` / `_aligned_free` for every Windows compiler;
++  non-Windows retains `posix_memalign` / `free`. Allocation tracking and
++  allocation-failure checks remain enabled.
++- `tests/src/gui/TouchLayoutTest.cpp:300`: the view pointer is explicitly
++  `lmms::gui::ClipView`, resolving the collision with `lmms::ClipView`.
++
++Affected audit jobs and targets: `linux-arm64`, `macos-arm64`,
++`linux-x86_64`, and `macos-x86_64` (`RowTableViewTest`); `mingw64`
++(`MidiOutTimingTest`); `windows-arm64` (`SfzDistoBuffersTest`); and
++`msvc-x64` (`TouchLayoutTest`). The Windows-arm64 log also has an earlier
++package-install stdin message, but the fatal stop is the later undeclared
++`posix_memalign` compile error.
++
++## Regression and verification
++
++Added `tests/train-51-portability-check.py`, registered as CTest
++`Train51Portability` on Linux and in `tests/fork-sources.txt`. It compiles
++source-derived snippets: fixed Qt assertions under installed Qt 5 and Qt 6,
++with the original Qt 5 spelling as a failing control; guarded MIDI helpers with
++and without the guard under `-Werror=unused-function`; Windows aligned
++allocation/free with the original POSIX-only Windows branch as a failing
++control; and the qualified ClipView declaration with the original ambiguous
++declaration as a failing control. `tests/all-sources.txt` is the C/C++ source
++inventory, so a Python checker does not belong in that manifest.
++
++Command:
++
++```sh
++/home/kruzzzzy/.local/share/zene-bunny-fix/duet/quiet-run train51-probe -- python3 tests/train-51-portability-check.py --source-root "$PWD"
++```
++
++Result: exit 0 after 22 seconds; the checker produced no output. Quiet-run log:
++`/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261115-234807-sol51-implement/logs/001-train51-probe.log`.
++At this first implementation step, no configure, build, CTest, or gate command
++was run because the RowTableView build was assigned to a separate worker. The
++later independent build and gate results are recorded below.
++
++### Independent bounded verification (2026-11-15)
++
++All commands below were run through `/home/kruzzzzy/.local/share/zene-bunny-fix/duet/quiet-run`.
++Build ran with 176G free beforehand (stop threshold: 12G).
++
++- `cmake --build build --target zene RowTableViewTest MidiOutTimingTest SfzDistoBuffersTest TouchLayoutTest -j12`: exit 0, 74 s. Log: `/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261115-235622-sol51-verify/logs/001-sol51-build-expanded.log`.
++- `env PATH=/tmp/sol45-lizard125/bin:$PATH PYTHONPATH=/tmp/sol45-lizard125 ctest --test-dir build/tests -R '^(RowTableViewTest|MidiOutTimingTest|SfzDistoBuffersTest|TouchLayoutTest|Train51Portability|FileLengthGate|NoteCanvasComplexityGate)$' -j1 --timeout 900 --no-tests=error --output-on-failure`: exit 0, 7/7 passed. Log: `/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261115-235622-sol51-verify/logs/002-sol51-ctest.log`.
++- `tests/evidence-gate.sh`: exit 0. Log: `/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261115-235622-sol51-verify/logs/003-sol51-evidence-gate.log`.
++- `tests/no-upstream-regression-gate.sh`: exit 0. Log: `/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261115-235622-sol51-verify/logs/004-sol51-no-upstream-regression-gate.log`.
++- `tests/fork-sources-gate.sh`: exit 0. Log: `/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261115-235622-sol51-verify/logs/005-sol51-fork-sources-gate.log`.
++- Direct `tests/unregistered-tests-gate.sh` invocation was refused by quiet-run (exit 127, permission denied; log `/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261115-235622-sol51-verify/logs/006-sol51-unregistered-tests-gate.log`). Running unchanged script as `bash tests/unregistered-tests-gate.sh` then exited 0. Log: `/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261115-235622-sol51-verify/logs/009-sol51-unregistered-tests-gate-bash.log`.
++- `git diff HEAD --check`: exit 0 (rechecked after this report update). Log: `/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261115-235622-sol51-verify/logs/010-sol51-final-diff-head-check.log`.
++- `git diff --cached --check`: exit 0 (rechecked after this report update). Log: `/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261115-235622-sol51-verify/logs/011-sol51-final-diff-cached-check.log`.
++
++### Final checker correction (2026-11-16)
++
++The original MIDI helper compiler control now requires all three expected
++diagnostics: `measure(`, `measureAgainstRequested(`, and `unused-function`.
++This ensures the source-derived anonymous-namespace helpers fail actual C++
++compilation specifically with the unused-function warning promoted to an
++error, rather than passing merely because compilation failed for another
++reason. The checker continues to cover natural missing POSIX API failure and
++optional Qt 6 when installed.
++
++From `build/tests`, ran:
++
++```sh
++env PATH=/tmp/sol45-lizard125/bin:$PATH PYTHONPATH=/tmp/sol45-lizard125 ctest -R '^(RowTableViewTest|MidiOutTimingTest|SfzDistoBuffersTest|TouchLayoutTest|Train51Portability|FileLengthGate|NoteCanvasComplexityGate)$' -j1 --timeout 900 --no-tests=error --output-on-failure
++```
++
++Result: exit 0, all 7 matched tests passed. `Train51Portability` executes the
++corrected checker. Quiet-run log:
++`/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261116-000246-sol51-final-verify/logs/001-sol51-final-ctest.log`.
++No rebuild was needed because C++ sources were unchanged. The MIDI backend
++runtime test passed here without a skip; native hosted verification and the
++full train remain required.
++
++### Configure and initial build record
++
++The exact configure/build commands and results from `/tmp/sol51-build.md` follow.
++
++```sh
++cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE:STRING=RelWithDebInfo -DCMAKE_EXE_LINKER_FLAGS:STRING=-Wl,--strip-debug -DUSE_WERROR:BOOL=ON -DWANT_ABLETON_LINK:BOOL=ON -DWANT_ALSA:BOOL=ON -DWANT_CALF:BOOL=ON -DWANT_CAPS:BOOL=ON -DWANT_CARLA:BOOL=ON -DWANT_CMT:BOOL=ON -DWANT_COLLAB:BOOL=ON -DWANT_DEBUG_CPACK:BOOL=ON -DWANT_GIG:BOOL=ON -DWANT_JACK:BOOL=ON -DWANT_LV2:BOOL=ON -DWANT_MP3LAME:BOOL=ON -DWANT_OGGVORBIS:BOOL=ON -DWANT_OSS:BOOL=ON -DWANT_PORTAUDIO:BOOL=ON -DWANT_PULSEAUDIO:BOOL=ON -DWANT_QT6:BOOL=ON -DWANT_RUBBERBAND:BOOL=ON -DWANT_SDL:BOOL=ON -DWANT_SF2:BOOL=ON -DWANT_SID:BOOL=ON -DWANT_SNDIO:BOOL=ON -DWANT_SOUNDIO:BOOL=ON -DWANT_STEM_SPLIT:BOOL=ON -DWANT_STK:BOOL=ON -DWANT_SUIL:BOOL=ON -DWANT_SWH:BOOL=ON -DWANT_TAP:BOOL=ON -DWANT_VST:BOOL=ON -DWANT_VST3_TEST_INSTRUMENT:BOOL=ON -DWANT_VST_32:BOOL=ON -DWANT_VST_64:BOOL=ON -DWANT_WASM:BOOL=ON -DWANT_WEAKJACK:BOOL=ON -DZENE_TELEMETRY:BOOL=ON -DZENE_WANT_FFMPEG:BOOL=ON -DZENE_WANT_LIBAAF:BOOL=ON -DWANT_COVERAGE:BOOL=OFF -DWANT_CPACK_TARBALL:BOOL=OFF -DWANT_DEBUG_ASAN:BOOL=OFF -DWANT_DEBUG_FPE:BOOL=OFF -DWANT_DEBUG_GPROF:BOOL=OFF -DWANT_DEBUG_MSAN:BOOL=OFF -DWANT_DEBUG_RTSAN:BOOL=OFF -DWANT_DEBUG_TSAN:BOOL=OFF -DWANT_DEBUG_UBSAN:BOOL=OFF -DWANT_WINMM:BOOL=OFF -DWANT_CLAP:STRING=ON -DWANT_VST3:STRING=ON -DLMMS_CLAP_FETCH=ON -DONNXRUNTIME_ROOT=/home/kruzzzzy/.local/zene-deps/onnxruntime-linux-x64-1.28.0 -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache '-DCMAKE_CXX_FLAGS=-isystem /usr/include/cairo -Wno-error=deprecated-declarations -Wno-error=unused-result -Wno-error=sfinae-incomplete' '-DCMAKE_C_FLAGS=-isystem /usr/include/cairo -Wno-error=deprecated-declarations -Wno-error=unused-result -Wno-error=sfinae-incomplete'
++```
++
++Build command:
++```sh
++cmake --build build --target zene RowTableViewTest -j12
++```
++
++Results (both invoked via `/home/kruzzzzy/.local/share/zene-bunny-fix/duet/quiet-run`):
++- Configure: exit 0, 54 s. Log: `/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261115-234722-sol51-build/logs/001-sol51-configure.log`
++- Build: exit 0, 355 s. Log: `/home/kruzzzzy/.cache/zene-tmp/sol/luna/20261115-234722-sol51-build/logs/002-sol51-build.log`
++- Disk free before configure: 184G; lowest observed during build: 176G.
++- CTest was not run.
++
++### Final independent review
++
++The first scoped review accepted all four C++ repairs and found two compiler-probe issues. Both were corrected: MIDI retains anonymous linkage, removes both guard directives in its original control, compiles an object and requires both helper names plus the unused-function diagnostic; SFZ retains the real posix_memalign call under minimal Windows-model headers. The extra Qt6 probe is optional and explicitly reported when unavailable, while the real Qt5 fixed/original checks remain required. The final independent review found no remaining blocker: `/home/kruzzzzy/.cache/zene-tmp/sol/020-sol51-review-corrections.log`. Its conclusion does not replace the separately executed build, 7/7 CTest and unchanged gate results recorded above. The MIDI runtime output independently confirms 3 passed, 0 failed, 0 skipped (`quiet-run sol51-midi-result`, exit 0, `/home/kruzzzzy/.cache/zene-tmp/sol/021-sol51-midi-result.log`). No tests, assertions, gate executables, baselines, warnings, dependency pins or resource limits were weakened. Native hosted and full-train validation remain required.
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index cd97d2b638..50cd2de83c 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -6224,6 +6224,14 @@ if(PYTHON3_EXECUTABLE)
+ 	set_tests_properties(NamPortabilityRegistrationCheck PROPERTIES TIMEOUT 120)
+ endif()
+ 
++# Train 51: reproduce the four hosted test-source compiler failures on Linux.
++if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
++	add_test(NAME Train51Portability COMMAND ${PYTHON3_EXECUTABLE}
++		${CMAKE_CURRENT_SOURCE_DIR}/train-51-portability-check.py
++		--source-root ${CMAKE_SOURCE_DIR})
++	set_tests_properties(Train51Portability PROPERTIES TIMEOUT 120)
++endif()
++
+ # Train 48: optional FFmpeg and platform-specific fixture compilation.
+ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
+ 	add_test(NAME Train48Portability COMMAND ${PYTHON3_EXECUTABLE}
+diff --git a/tests/fork-sources.txt b/tests/fork-sources.txt
+index 88f20c09de..194bfbf6e6 100644
+--- a/tests/fork-sources.txt
++++ b/tests/fork-sources.txt
+@@ -966,6 +966,10 @@ docs/qwen-fixes-2026-10/cluster-ci-61ad26e4f8b135f9.md
+ docs/qwen-fixes-2026-10/sol-train-32-portability-replay.md
+ docs/qwen-fixes-2026-10/sol-train-32-sdk-complexity.md
+ 
++# Train 51: hosted test portability repairs and source-derived red/green compiler checks.
++tests/train-51-portability-check.py
++docs/qwen-fixes-2026-10/sol-train-34-hosted-portability-51.md
++
+ # Train 48: optional-codec and Windows test compiler contracts with verification.
+ tests/train-48-portability-check.py
+ docs/qwen-fixes-2026-10/sol-train-33-hosted-portability-48.md
+diff --git a/tests/src/core/MidiOutTimingTest.cpp b/tests/src/core/MidiOutTimingTest.cpp
+index 154c0def06..27459b73a8 100644
+--- a/tests/src/core/MidiOutTimingTest.cpp
++++ b/tests/src/core/MidiOutTimingTest.cpp
+@@ -66,6 +66,7 @@ using namespace lmms;
+ namespace
+ {
+ 
++#ifdef LMMS_HAVE_ALSA
+ constexpr int Notes = 33;                 //!< 32 intervals
+ constexpr double TargetMs = 62.5;         //!< a 1/32 note at 120 BPM
+ constexpr f_cnt_t PeriodFrames = 256;
+@@ -120,8 +121,6 @@ void measureAgainstRequested(Jitter* out, const std::vector<std::int64_t>& stamp
+ 	if (n > 0) { out->outputMeanAbsMs = sumAbs / n; }
+ }
+ 
+-#ifdef LMMS_HAVE_ALSA
+-
+ struct Receiver
+ {
+ 	snd_seq_t* seq = nullptr;
+diff --git a/tests/src/gui/RowTableViewTest.cpp b/tests/src/gui/RowTableViewTest.cpp
+index 18d4e6f386..95171fca69 100644
+--- a/tests/src/gui/RowTableViewTest.cpp
++++ b/tests/src/gui/RowTableViewTest.cpp
+@@ -51,10 +51,10 @@ private slots:
+ 		RowTableView view;
+ 		view.setModel(&model);
+ 
+-		const QAbstractItemDelegate* existingRowDelegate = view.itemDelegateForIndex(model.index(0, 0));
++		const QAbstractItemDelegate* existingRowDelegate = view.itemDelegate(model.index(0, 0));
+ 		QVERIFY(existingRowDelegate);
+ 		QVERIFY(model.insertRow(1));
+-		QCOMPARE(view.itemDelegateForIndex(model.index(1, 0)), existingRowDelegate);
++		QCOMPARE(view.itemDelegate(model.index(1, 0)), existingRowDelegate);
+ 	}
+ 
+ 	void tabAndBacktabWithoutModelAreSafe()
+diff --git a/tests/src/gui/TouchLayoutTest.cpp b/tests/src/gui/TouchLayoutTest.cpp
+index 354c69527d..bd27d4030d 100644
+--- a/tests/src/gui/TouchLayoutTest.cpp
++++ b/tests/src/gui/TouchLayoutTest.cpp
+@@ -297,7 +297,7 @@ private slots:
+ 		clip->changeLength(TimePos(4 * Bar));
+ 		clip->setAutoResize(false);
+ 		QTRY_VERIFY(viewOf(clip) != nullptr);
+-		ClipView* view = viewOf(clip);
++		lmms::gui::ClipView* view = viewOf(clip);
+ 		view->show();
+ 		QTest::qWait(30);
+ 
+diff --git a/tests/src/plugins/SfzDistoBuffersTest.cpp b/tests/src/plugins/SfzDistoBuffersTest.cpp
+index 155f765f33..10b328eee4 100644
+--- a/tests/src/plugins/SfzDistoBuffersTest.cpp
++++ b/tests/src/plugins/SfzDistoBuffersTest.cpp
+@@ -7,7 +7,7 @@
+ #include <cstdlib>
+ #include <new>
+ #include <vector>
+-#if defined(_MSC_VER)
++#if defined(_WIN32)
+ #include <malloc.h>
+ #endif
+ #include "sfizz/effects/Disto.h"
+@@ -53,7 +53,7 @@ void *operator new(std::size_t s, std::align_val_t a)
+ 	noteA();
+ 	auto align = static_cast<std::size_t>(a);
+ 	auto bytes = s != 0 ? s : 1;
+-#if defined(_MSC_VER)
++#if defined(_WIN32)
+ 	if (void *p = _aligned_malloc(bytes, align < sizeof(void *) ? sizeof(void *) : align)) { return p; }
+ #else
+ 	void *p = nullptr;
+@@ -79,7 +79,7 @@ void operator delete[](void *p, std::nothrow_t) noexcept { ::operator delete(p);
+ void operator delete(void *p, std::align_val_t) noexcept
+ {
+ 	noteF(p);
+-#if defined(_MSC_VER)
++#if defined(_WIN32)
+ 	_aligned_free(p);
+ #else
+ 	std::free(p);
+diff --git a/tests/train-51-portability-check.py b/tests/train-51-portability-check.py
+new file mode 100644
+index 0000000000..cc19cb00e2
+--- /dev/null
++++ b/tests/train-51-portability-check.py
+@@ -0,0 +1,187 @@
++#!/usr/bin/env python3
++"""Red/green compiler regressions for the four case51 hosted test failures."""
++
++# Copyright (c) 2026 Zene Studio contributors
++#
++# This file is part of LMMS - https://lmms.io
++#
++# This program is free software; you can redistribute it and/or modify it
++# under the terms of the GNU General Public License as published by the Free
++# Software Foundation; either version 2 of the License, or (at your option)
++# any later version.
++
++import argparse
++from pathlib import Path
++import shlex
++import shutil
++import subprocess
++import sys
++import tempfile
++
++
++def fail(message):
++    raise RuntimeError(message)
++
++
++def invoke(command, cwd=None):
++    return subprocess.run(command, cwd=cwd, text=True, stdout=subprocess.PIPE,
++                          stderr=subprocess.PIPE, check=False)
++
++
++def compile_source(compiler, source, directory, label, *, success, flags=(),
++                  expected_diagnostic=()):
++    path = directory / f"{label}.cpp"
++    path.write_text(source, encoding="utf-8")
++    result = invoke([compiler, "-std=c++20", "-Werror=unused-function", *flags,
++                     "-c", str(path), "-o", str(directory / f"{label}.o")])
++    if (result.returncode == 0) != success:
++        fail(f"{label}: expected {'compile success' if success else 'compile failure'}; "
++             f"exit {result.returncode}: {result.stderr.strip()}")
++    missing = [diagnostic for diagnostic in expected_diagnostic
++               if diagnostic not in result.stderr]
++    if missing:
++        fail(f"{label}: expected diagnostic(s) {', '.join(missing)}; "
++             f"stderr: {result.stderr.strip()}")
++    print(f"PASS {label}: {'compiled' if success else 'failed as expected'}")
++
++
++def pkg_flags(pkg, modules):
++    tool = shutil.which("pkg-config")
++    if tool is None:
++        fail("required tool is missing: pkg-config")
++    result = invoke([tool, "--cflags", *modules])
++    if result.returncode:
++        fail(f"pkg-config {' '.join(modules)} failed: {result.stderr.strip()}")
++    return shlex.split(result.stdout)
++
++
++def pkg_exists(pkg, modules):
++    tool = shutil.which(pkg)
++    return tool is not None and invoke([tool, "--exists", *modules]).returncode == 0
++
++
++def row_probe(root, compiler, temporary):
++    source = (root / "tests/src/gui/RowTableViewTest.cpp").read_text(encoding="utf-8")
++    begin = source.index("\t\tconst QAbstractItemDelegate* existingRowDelegate =")
++    end = source.index("\n\t}", begin)
++    assertions = source[begin:end]
++    if assertions.count("itemDelegate(") != 2:
++        fail("RowTableViewTest no longer has both effective index-delegate assertions")
++    fixture = """#include <QtTest>
++#include <QStandardItemModel>
++#include <QTableView>
++void probe() {
++    QStandardItemModel model(1, 1);
++    QTableView view;
++    view.setModel(&model);
++%s
++}
++""" % assertions
++    qt5 = pkg_flags("pkg-config", ["Qt5Test", "Qt5Widgets"])
++    compile_source(compiler, fixture, temporary, "row-qt5-fixed", success=True,
++                   flags=[*qt5, "-fPIC"])
++    if pkg_exists("pkg-config", ["Qt6Test", "Qt6Widgets"]):
++        qt6 = pkg_flags("pkg-config", ["Qt6Test", "Qt6Widgets"])
++        compile_source(compiler, fixture, temporary, "row-qt6-fixed", success=True,
++                       flags=[*qt6, "-fPIC"])
++    else:
++        print("OMITTED row-qt6-fixed: Qt6Test/Qt6Widgets unavailable")
++    original = fixture.replace("itemDelegate(", "itemDelegateForIndex(")
++    compile_source(compiler, original, temporary, "row-qt5-original", success=False,
++                   flags=[*qt5, "-fPIC"])
++
++
++def midi_probe(root, compiler, temporary):
++    source = (root / "tests/src/core/MidiOutTimingTest.cpp").read_text(encoding="utf-8")
++    start = source.index("#ifdef LMMS_HAVE_ALSA\nconstexpr int Notes")
++    finish = source.index("struct Receiver", start)
++    helpers = source[start:finish]
++    guarded = "namespace {\n" + helpers + "#endif\n}\n"
++    if "measureAgainstRequested" not in guarded or "#ifdef LMMS_HAVE_ALSA" not in guarded:
++        fail("MidiOutTimingTest helper guard or helper definition is missing")
++    prelude = """#include <algorithm>
++#include <cmath>
++#include <cstdint>
++#include <vector>
++using f_cnt_t = unsigned long;
++"""
++    compile_source(compiler, prelude + guarded, temporary, "midi-windows-fixed", success=True)
++    unguarded = helpers.replace("#ifdef LMMS_HAVE_ALSA\n", "", 1)
++    unguarded = unguarded.rstrip() + "\n"
++    original = "namespace {\n" + unguarded + "}\n"
++    compile_source(compiler, prelude + original, temporary, "midi-windows-original",
++                   success=False,
++                   expected_diagnostic=("measure(", "measureAgainstRequested(",
++                                        "unused-function"))
++
++
++def sfz_probe(root, compiler, temporary):
++    source = (root / "tests/src/plugins/SfzDistoBuffersTest.cpp").read_text(encoding="utf-8")
++    start = source.index("void *operator new(std::size_t s, std::align_val_t a)")
++    finish = source.index("void operator delete(void *p) noexcept", start)
++    allocation = source[start:finish]
++    delete_start = source.index("void operator delete(void *p, std::align_val_t)", finish)
++    delete_finish = source.index("\n}", delete_start) + 2
++    deallocation = source[delete_start:delete_finish]
++    if "_aligned_malloc" not in allocation or "_aligned_free" not in deallocation:
++        fail("SfzDistoBuffersTest Windows aligned allocation/free pair is missing")
++    prelude = """#include <cstddef>
++#include <new>
++namespace std { void free(void*); }
++#define _WIN32 1
++inline void noteA() noexcept {}
++inline void noteF(void const*) noexcept {}
++inline void* _aligned_malloc(std::size_t, std::size_t) { return nullptr; }
++inline void _aligned_free(void*) {}
++"""
++    compile_source(compiler, prelude + allocation + deallocation, temporary,
++                   "sfz-windows-fixed", success=True)
++    original = allocation.replace("#if defined(_WIN32)", "#if defined(_MSC_VER)")
++    compile_source(compiler, prelude + original + deallocation, temporary,
++                   "sfz-windows-original", success=False,
++                   expected_diagnostic=("posix_memalign",))
++
++
++def touch_probe(root, compiler, temporary):
++    source = (root / "tests/src/gui/TouchLayoutTest.cpp").read_text(encoding="utf-8")
++    declaration = "\t\tlmms::gui::ClipView* view = viewOf(clip);"
++    if declaration not in source:
++        fail("TouchLayoutTest qualified ClipView declaration is missing")
++    fixture = """namespace lmms { struct ClipView {}; namespace gui { struct ClipView {}; } }
++using namespace lmms;
++using namespace lmms::gui;
++struct Clip {};
++lmms::gui::ClipView* viewOf(Clip*) { return nullptr; }
++void probe(Clip* clip) {
++%s
++    (void)view;
++}
++""" % declaration
++    compile_source(compiler, fixture, temporary, "touch-qualified-fixed", success=True)
++    original = fixture.replace("lmms::gui::ClipView* view", "ClipView* view")
++    compile_source(compiler, original, temporary, "touch-unqualified-original", success=False)
++
++
++def main():
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--source-root", required=True, type=Path)
++    args = parser.parse_args()
++    root = args.source_root.resolve()
++    compiler = shutil.which("c++")
++    if compiler is None:
++        fail("required tool is missing: c++")
++    with tempfile.TemporaryDirectory(prefix="train51-portability-") as directory:
++        temporary = Path(directory)
++        row_probe(root, compiler, temporary)
++        midi_probe(root, compiler, temporary)
++        sfz_probe(root, compiler, temporary)
++        touch_probe(root, compiler, temporary)
++    return 0
++
++
++if __name__ == "__main__":
++    try:
++        sys.exit(main())
++    except (OSError, RuntimeError, ValueError) as error:
++        print(f"train51 portability check: {error}", file=sys.stderr)
++        sys.exit(1)
+diff --git a/tests/upstream-modifications.txt b/tests/upstream-modifications.txt
+index a8369bfc33..fc47a13d09 100644
+--- a/tests/upstream-modifications.txt
++++ b/tests/upstream-modifications.txt
+@@ -26,6 +26,13 @@
+ # (2026-09-09 form of this file: an empty allowlist used only for "compile-only fixes".
+ # It never held a line, and Gate 6 was red from the first behavioural change.)
+ 
++# Train 51: repair hosted test compilation while preserving the existing behavioral assertions.
++tests/CMakeLists.txt	Train 51: register source-derived red/green compiler regressions for all four hosted test-source fixes.
++tests/src/core/MidiOutTimingTest.cpp	Train 51: compile timing helpers only for the ALSA-backed test path that uses them; keep every runtime case and assertion.
++tests/src/gui/RowTableViewTest.cpp	Train 51: use QAbstractItemView's effective delegate-for-index API on Qt 5 and 6; retain both inserted-row delegate comparisons.
++tests/src/gui/TouchLayoutTest.cpp	Train 51: qualify the arranger's lmms::gui::ClipView where lmms::ClipView and lmms::gui::ClipView are both visible.
++tests/src/plugins/SfzDistoBuffersTest.cpp	Train 51: pair Windows aligned allocation/free APIs on every Windows compiler while retaining allocation tracking and failure checks.
++
+ # Train 48: preserve complete fixture tests across hosted platform configurations.
+ tests/CMakeLists.txt	Train 48: give SfzPlayerTest its direct Abseil dependency include root and register Train48Portability compiler regressions; preserve every existing test and option.
+ 
+-- 
+2.56.0
+
