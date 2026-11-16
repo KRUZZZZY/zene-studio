@@ -67,6 +67,13 @@ float periodPeak(std::span<const SampleFrame> period)
 	return peak;
 }
 
+//! Master periods that cover @a seconds of output, plus four so the tail of a tone is rendered too.
+int periodsFor(double seconds)
+{
+	const AudioEngine* engine = Engine::audioEngine();
+	return static_cast<int>(std::ceil(seconds * engine->outputSampleRate() / engine->framesPerPeriod())) + 4;
+}
+
 //! Renders @a periods master periods of the engine with the song stopped and returns the loudest sample among them.
 float renderPeak(int periods)
 {
@@ -92,6 +99,9 @@ private slots:
 		// A private working directory, as the library tests use: nothing this test does is written to the developer's own.
 		ConfigManager::inst()->setWorkingDir(QDir(m_dir.path()).filePath(QStringLiteral("work")));
 		ControlRegistry::setReady(true);
+		// The dummy device thread would render periods of its own while the cases render them, so every case
+		// renders deterministically on this thread with renderNextPeriod().
+		Engine::audioEngine()->audioDev()->stopProcessing();
 	}
 
 	void cleanupTestCase()
@@ -145,8 +155,6 @@ private slots:
 
 	void toneReachesOutput()
 	{
-		// The dummy device thread would render periods of its own while this test renders them.
-		Engine::audioEngine()->audioDev()->stopProcessing();
 		QVERIFY(!Engine::getSong()->isPlaying());
 
 		const ControlResult started = run(QStringLiteral("audio.test_tone"), {{QStringLiteral("seconds"), 0.5}});
@@ -187,6 +195,45 @@ private slots:
 			QVERIFY(run(QStringLiteral("audio.test_tone_stop")).ok);
 			QVERIFY(!audioTestToneActive());
 		}
+	}
+
+	void aNaturallyFinishedToneIsRetiredNotFreedOnTheRenderPath()
+	{
+		const ControlResult started = run(QStringLiteral("audio.test_tone"), {{QStringLiteral("seconds"), 0.1}});
+		QVERIFY2(started.ok, qPrintable(started.errorMessage));
+		renderPeak(periodsFor(0.1));
+		QVERIFY(!audioTestToneActive());
+		// The render path retired the handle but did not free it: the control thread still holds it.
+		QVERIFY(audioTestToneHandlesHeld() >= 1);
+
+		const ControlResult stopped = run(QStringLiteral("audio.test_tone_stop"));
+		QVERIFY2(stopped.ok, qPrintable(stopped.errorMessage));
+		QVERIFY(!stopped.result.value(QStringLiteral("was_playing")).toBool());
+		QCOMPARE(audioTestToneHandlesHeld(), 0);
+	}
+
+	void aStoppedToneIsRetiredByTheNextPeriod()
+	{
+		const ControlResult started = run(QStringLiteral("audio.test_tone"), {{QStringLiteral("seconds"), 1}});
+		QVERIFY2(started.ok, qPrintable(started.errorMessage));
+		QVERIFY(run(QStringLiteral("audio.test_tone_stop")).ok);
+		renderPeak(2);
+		const ControlResult second = run(QStringLiteral("audio.test_tone_stop"));
+		QVERIFY2(second.ok, qPrintable(second.errorMessage));
+		QCOMPARE(audioTestToneHandlesHeld(), 0);
+	}
+
+	void repeatedTonesAreReclaimed()
+	{
+		// There are eight slots: twenty tones start only if each finished tone is reclaimed before the next one needs one.
+		for (int i = 0; i < 20; ++i)
+		{
+			const ControlResult started = run(QStringLiteral("audio.test_tone"), {{QStringLiteral("seconds"), 0.1}});
+			QVERIFY2(started.ok, qPrintable(started.errorMessage));
+			renderPeak(periodsFor(0.1));
+		}
+		QVERIFY(run(QStringLiteral("audio.test_tone_stop")).ok);
+		QCOMPARE(audioTestToneHandlesHeld(), 0);
 	}
 
 private:

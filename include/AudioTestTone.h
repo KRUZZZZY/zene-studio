@@ -30,8 +30,12 @@ namespace lmms
 {
 
 //! True while the tone that audio.test_tone started is still sounding: it was started, it was not stopped
-//! by audio.test_tone_stop and it has not run out. Reads atomics only, so the audio thread may call it.
+//! by audio.test_tone_stop and it has not run out. Control thread only; not for the audio thread.
 LMMS_EXPORT bool audioTestToneActive();
+
+//! How many tone slots currently hold a handle, sounding or retired and not yet reclaimed. For tests and
+//! diagnostics. Control thread only; not for the audio thread.
+LMMS_EXPORT int audioTestToneHandlesHeld();
 
 } // namespace lmms
 
