@@ -3211,6 +3211,23 @@ target_compile_features(RemotePluginShmFifoCompileCheck PRIVATE cxx_std_20)
 # lmms_export.h makes those __declspec(dllimport) on Windows (cluster ci-v041-5).
 target_compile_definitions(RemotePluginShmFifoCompileCheck PRIVATE LMMS_STATIC_DEFINE LMMS_TESTING SYNC_WITH_SHM_FIFO)
 add_dependencies(RemotePluginShmFifoTest RemotePluginShmFifoCompileCheck)
+
+# RemotePluginAudioPortsTest has socket-transport-only helpers. A host without
+# <sys/ipc.h> (mingw64) selects SYNC_WITH_SHM_FIFO in RemotePluginBase.h, which
+# compiles those tests out; an unguarded helper is then -Werror=unused-function
+# and the whole hosted build stops (cluster ci-21b94bcfc72522e8). Compile the
+# real translation unit in that configuration on every host, so the Linux build
+# sees the branch the Windows job takes. Built with the tests: no link, no test
+# registration, and nothing the product links changes.
+add_library(RemotePluginAudioPortsShmCompileCheck OBJECT src/core/RemotePluginAudioPortsTest.cpp)
+target_include_directories(RemotePluginAudioPortsShmCompileCheck PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>)
+target_link_libraries(RemotePluginAudioPortsShmCompileCheck PRIVATE
+	${QT_LIBRARIES} ${QT_QTTEST_LIBRARY})
+target_compile_features(RemotePluginAudioPortsShmCompileCheck PRIVATE cxx_std_20)
+target_compile_definitions(RemotePluginAudioPortsShmCompileCheck PRIVATE
+	LMMS_STATIC_DEFINE LMMS_TESTING SYNC_WITH_SHM_FIFO)
+
 # RemotePluginBase.h on a host without <sys/ipc.h> (Windows): a shadow
 # lmmsconfig.h, first on this target's include path, takes the header's own
 # SYNC_WITH_SHM_FIFO branch on every host (cluster ci-v041-5).

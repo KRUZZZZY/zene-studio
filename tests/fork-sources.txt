@@ -3974,3 +3974,6 @@ tests/src/plugins/CarlaVst2LegacyStateTest.cpp
 tests/src/gui/LegacyVst2ProjectTest.cpp
 tests/data/legacy-projects/vst2-vestige-vsteffect.mmp
 tests/data/legacy-projects/vst2-vestige-vsteffect.reference.json
+
+# Cluster ci-21b94bcfc72522e8: the mingw64 test TU compiles its socket-only helpers out; this report records the guard and the SHM-configuration compile check.
+docs/qwen-fixes-2026-10/cluster-ci-21b94bcfc72522e8.md
