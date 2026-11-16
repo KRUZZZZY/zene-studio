@@ -218,5 +218,67 @@
     "summary": "Fixed four test compilation defects across seven hosted jobs, preserving assertions and allocation checks. Rebuilt affected targets; seven CTest entries, compiler negative controls, unchanged gates, whitespace checks and independent review pass.",
     "train": "050/m0-train-34",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-sol-repairs/m0-train-34-1794786219093718118"
+  },
+  {
+    "at": "2026-11-16T00:14:21",
+    "base": "31f559ab479dcd1b822545aae477222f58f32c0d",
+    "branch": "fix/ci-repair-ci-1660dea90b5a288f-a8ad91c1a09b",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-1660dea90b5a288f.r1.md",
+        "negative_control": {
+          "artifact_hashes": {},
+          "detail": "no product change, no changed test, or a dirty tree",
+          "ok": null,
+          "proof_base": "31f559ab479dcd1b822545aae477222f58f32c0d",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-1660dea90b5a288f.r1/negctl",
+          "proof_key": "55bc1a1fd96eee5c47abc08df5b4ed9ee08a5701c7f7381864f8f01f08515cce"
+        },
+        "verdict": "ACCEPT-NOTE"
+      }
+    ],
+    "commit": "d76bffa5e2c49620dd40bd27e72e1ab7e702f484",
+    "id": "ci-repair-ci-1660dea90b5a288f-a8ad91c1a09b",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-1660dea90b5a288f.md",
+      "tests/src/gui/RowTableViewTest.cpp"
+    ],
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "31f559ab479dcd1b822545aae477222f58f32c0d",
+    "status": "pending",
+    "summary": "CI regression: build / linux-x86_64",
+    "train": "050/m0-train-34",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-1660dea90b5a288f"
+  },
+  {
+    "at": "2026-11-16T00:14:47",
+    "base": "31f559ab479dcd1b822545aae477222f58f32c0d",
+    "branch": "fix/ci-repair-ci-a70284ef7d26941c-2eb481c6fd27",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-a70284ef7d26941c.r1.md",
+        "negative_control": {
+          "artifact_hashes": {},
+          "detail": "no product change, no changed test, or a dirty tree",
+          "ok": null,
+          "proof_base": "31f559ab479dcd1b822545aae477222f58f32c0d",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-a70284ef7d26941c.r1/negctl",
+          "proof_key": "33b1526e9db4f8322a3bf695ac8ad1bb1a38b46c7afae452664b142ac923fe50"
+        },
+        "verdict": "ACCEPT"
+      }
+    ],
+    "commit": "b563d434ff3fcb1221ecc17d21012f9946599c69",
+    "id": "ci-repair-ci-a70284ef7d26941c-2eb481c6fd27",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-a70284ef7d26941c.md",
+      "tests/src/gui/RowTableViewTest.cpp"
+    ],
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "31f559ab479dcd1b822545aae477222f58f32c0d",
+    "status": "pending",
+    "summary": "CI regression: build / macos-x86_64",
+    "train": "050/m0-train-34",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-a70284ef7d26941c"
   }
 ]
