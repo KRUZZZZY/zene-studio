@@ -210,6 +210,7 @@ include/AudioIoSetup.h
 include/AudioJack.h
 include/AudioOss.h
 include/AudioOssWrite.h
+include/AudioOutputStatusBox.h
 include/AudioPlugin.h
 include/AudioPortAudio.h
 include/AudioPorts.h
@@ -2645,6 +2646,7 @@ src/gui/menus/MidiPortMenu.cpp
 src/gui/menus/RecentProjectsMenu.cpp
 src/gui/menus/TemplatesMenu.cpp
 src/gui/modals/AboutDialog.cpp
+src/gui/modals/AudioOutputStatusBox.cpp
 src/gui/modals/ColorChooser.cpp
 src/gui/modals/ControllerConnectionDialog.cpp
 src/gui/modals/EffectPickerOrganiser.cpp
@@ -3366,6 +3368,7 @@ tests/src/gui/ArrangerTimelineTestParts4.h
 tests/src/gui/ArrangerZoomBoundTest.cpp
 tests/src/gui/ArticulationMapEditorTest.cpp
 tests/src/gui/AuHostingTest.cpp
+tests/src/gui/AudioOutputStatusBoxTest.cpp
 tests/src/gui/AutomationClipDisconnectTest.cpp
 tests/src/gui/AutomationEditorEditingTest.cpp
 tests/src/gui/AutomationLaneChildGuiTest.cpp

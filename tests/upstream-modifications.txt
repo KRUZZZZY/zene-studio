@@ -5804,6 +5804,7 @@ tests/CMakeLists.txt	Q050-501: registers UpdateCheckTest, UpdateCheckWindowsTest
 tests/fork-sources.txt	Q050-501: adds the update check's new sources and tests.
 tests/all-sources.txt	Q050-501: re-derived from its header recipe with the update check's new sources.
 src/gui/modals/SetupDialog.cpp	Q050-501: Settings > General > Updates, two check boxes saved through app.update_check_set; absent where the command is. No other setting changes (held by UpdateCheckWindowsTest).
+src/gui/modals/SetupDialog.cpp	Q050-183.1: Settings > Audio shows the running output box (running/configured/fallback reason, test tone through audio.test_tone).
 include/SetupDialog.h	Q050-501: declares the two Updates check boxes for Settings > General.
 data/manual/index.html	Q050-501: the Access section's help paragraphs describe the update check, exactly what it sends, and that installation stays manual.
 docs/KNOWN-LIMITATIONS.md	Q050-501: the update check's limits, exactly what is sent, and that installation stays manual.

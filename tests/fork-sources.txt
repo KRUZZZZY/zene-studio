@@ -3978,3 +3978,6 @@ tests/data/legacy-projects/vst2-vestige-vsteffect.reference.json
 # Q050-183.1: audio test tone command
 include/AudioTestTone.h
 src/core/ControlCommandsAudioTestTone.cpp
+include/AudioOutputStatusBox.h
+src/gui/modals/AudioOutputStatusBox.cpp
+tests/src/gui/AudioOutputStatusBoxTest.cpp
