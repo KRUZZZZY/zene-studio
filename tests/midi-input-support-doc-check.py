@@ -60,6 +60,65 @@ def count_lines(path):
         return sum(1 for _ in handle)
 
 
+def check_headings(secs):
+    return [f"(b) missing heading: {title}" for title in REQUIRED_TITLES if title not in secs]
+
+
+def check_status(secs):
+    status = secs.get("## Status", "")
+    failures = []
+    if not re.search(r"(?i)not yet supported", status):
+        failures.append("(c) ## Status does not say 'not yet supported'")
+    if "UMP" not in status:
+        failures.append("(c) ## Status does not mention UMP")
+    return failures
+
+
+def check_no_shipped_claim(lines):
+    return [f"(d) line {number} asserts shipped UMP input: {line.strip()}"
+            for number, line in enumerate(lines, 1) if UNSHIPPED_CLAIM.search(line)]
+
+
+def check_planned(secs):
+    planned = secs.get("## Planned: UMP input", "")
+    if not re.search(r"(?i)not defined", planned):
+        return ["(e) ## Planned: UMP input does not say 'not defined'"]
+    return []
+
+
+def check_platforms(secs):
+    platform = secs.get("## Supported-platform boundary", "")
+    return [f"(f) ## Supported-platform boundary does not name {label}"
+            for label, pattern in PLATFORM_NAMES if not re.search(pattern, platform)]
+
+
+def citation_failure(number, rel, need):
+    """One failure line for a path:line citation that does not resolve, or None."""
+    path = os.path.join(ROOT, rel)
+    if not os.path.isfile(path):
+        return f"(g) line {number}: {rel}:{need} - file not found"
+    have = count_lines(path)
+    if have < need:
+        return f"(g) line {number}: {rel}:{need} - file has only {have} lines"
+    return None
+
+
+def check_citations(lines):
+    failures = []
+    for number, line in enumerate(lines, 1):
+        for match in CITATION.finditer(line):
+            problem = citation_failure(number, match.group(1), int(match.group(2)))
+            if problem:
+                failures.append(problem)
+    return failures
+
+
+def run_checks(lines):
+    secs = sections(lines)
+    return (check_headings(secs) + check_status(secs) + check_no_shipped_claim(lines)
+            + check_planned(secs) + check_platforms(secs) + check_citations(lines))
+
+
 def main(argv):
     if len(argv) > 2:
         print("usage: midi-input-support-doc-check.py [doc]", file=sys.stderr)
@@ -71,42 +130,7 @@ def main(argv):
 
     with open(doc, encoding="utf-8", errors="replace") as handle:
         lines = handle.read().splitlines()
-    secs = sections(lines)
-    failures = []
-
-    for title in REQUIRED_TITLES:
-        if title not in secs:
-            failures.append(f"(b) missing heading: {title}")
-
-    status = secs.get("## Status", "")
-    if not re.search(r"(?i)not yet supported", status):
-        failures.append("(c) ## Status does not say 'not yet supported'")
-    if "UMP" not in status:
-        failures.append("(c) ## Status does not mention UMP")
-
-    for number, line in enumerate(lines, 1):
-        if UNSHIPPED_CLAIM.search(line):
-            failures.append(f"(d) line {number} asserts shipped UMP input: {line.strip()}")
-
-    planned = secs.get("## Planned: UMP input", "")
-    if not re.search(r"(?i)not defined", planned):
-        failures.append("(e) ## Planned: UMP input does not say 'not defined'")
-
-    platform = secs.get("## Supported-platform boundary", "")
-    for label, pattern in PLATFORM_NAMES:
-        if not re.search(pattern, platform):
-            failures.append(f"(f) ## Supported-platform boundary does not name {label}")
-
-    for number, line in enumerate(lines, 1):
-        for match in CITATION.finditer(line):
-            rel, need = match.group(1), int(match.group(2))
-            path = os.path.join(ROOT, rel)
-            if not os.path.isfile(path):
-                failures.append(f"(g) line {number}: {rel}:{need} - file not found")
-                continue
-            have = count_lines(path)
-            if have < need:
-                failures.append(f"(g) line {number}: {rel}:{need} - file has only {have} lines")
+    failures = run_checks(lines)
 
     if failures:
         for failure in failures:
