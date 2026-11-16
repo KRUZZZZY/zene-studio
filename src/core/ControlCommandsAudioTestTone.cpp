@@ -85,7 +85,11 @@ public:
 
 	~TestTonePlayHandle()
 	{
-		s_toneEndedGeneration.store(m_generation, std::memory_order_relaxed);
+		// The engine may destroy an older, superseded handle after a newer one ended; the marker must never move backwards.
+		int seen = s_toneEndedGeneration.load(std::memory_order_relaxed);
+		while (seen < m_generation && !s_toneEndedGeneration.compare_exchange_weak(seen, m_generation, std::memory_order_relaxed))
+		{
+		}
 	}
 
 	bool isFinished() const override
