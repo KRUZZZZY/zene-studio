@@ -3982,3 +3982,4 @@ include/AudioOutputStatusBox.h
 src/gui/modals/AudioOutputStatusBox.cpp
 tests/src/gui/AudioOutputStatusBoxTest.cpp
 tests/control-audio-test-tone.py
+docs/050-features/Q050-183.1.md
