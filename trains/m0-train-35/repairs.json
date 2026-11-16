@@ -120,5 +120,40 @@
     "summary": "CI regression: build / linux-arm64",
     "train": "050/m0-train-35",
     "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-ec26fd9bddef0dd4"
+  },
+  {
+    "at": "2026-11-16T04:23:19",
+    "base": "fa4a5f2e785c73e32216931e33cdbe140c06647d",
+    "branch": "fix/ci-repair-ci-b71ed146fd535ea5-6ec96744e3a8",
+    "checks": [
+      {
+        "independent_review": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/qa/reviews/ci-b71ed146fd535ea5.r1.md",
+        "negative_control": {
+          "artifact_hashes": {},
+          "detail": "no product change, no changed test, or a dirty tree",
+          "ok": null,
+          "proof_base": "fa4a5f2e785c73e32216931e33cdbe140c06647d",
+          "proof_dir": "/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-b71ed146fd535ea5.r1/negctl",
+          "proof_key": "2a710ef53f2a798a5b20e46028a3c3074f462002210e697ad784fb60244c268c"
+        },
+        "verdict": "ACCEPT"
+      }
+    ],
+    "commit": "9f3f784fd1b7f4b0c706e162bd0f32875b27f686",
+    "id": "ci-repair-ci-b71ed146fd535ea5-6ec96744e3a8",
+    "paths": [
+      "docs/qwen-fixes-2026-10/cluster-ci-b71ed146fd535ea5.md",
+      "tests/CMakeLists.txt",
+      "tests/Qt5QStringListSizeCheck.py",
+      "tests/fork-sources.txt",
+      "tests/src/gui/MixerSendsOnFadersTest.cpp",
+      "tests/upstream-modifications.txt"
+    ],
+    "source": "independently-reviewed-ci-agent",
+    "source_head": "fa4a5f2e785c73e32216931e33cdbe140c06647d",
+    "status": "pending",
+    "summary": "CI regression: build / linux-x86_64",
+    "train": "050/m0-train-35",
+    "worktree": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-qwen-ci-b71ed146fd535ea5"
   }
 ]

@@ -1,0 +1,691 @@
+From 9f3f784fd1b7f4b0c706e162bd0f32875b27f686 Mon Sep 17 00:00:00 2001
+From: Zene CI repair <noreply@zene.invalid>
+Date: Mon, 16 Nov 2026 04:23:19 +0000
+Subject: [PATCH] fix(ci): CI regression: build / linux-x86_64
+
+CI-Repair-Id: ci-repair-ci-b71ed146fd535ea5-6ec96744e3a8
+---
+ .../cluster-ci-b71ed146fd535ea5.md            | 135 ++++++
+ tests/CMakeLists.txt                          |  19 +
+ tests/Qt5QStringListSizeCheck.py              | 438 ++++++++++++++++++
+ tests/fork-sources.txt                        |  10 +
+ tests/src/gui/MixerSendsOnFadersTest.cpp      |   6 +-
+ tests/upstream-modifications.txt              |   3 +-
+ 6 files changed, 609 insertions(+), 2 deletions(-)
+ create mode 100644 docs/qwen-fixes-2026-10/cluster-ci-b71ed146fd535ea5.md
+ create mode 100644 tests/Qt5QStringListSizeCheck.py
+
+diff --git a/docs/qwen-fixes-2026-10/cluster-ci-b71ed146fd535ea5.md b/docs/qwen-fixes-2026-10/cluster-ci-b71ed146fd535ea5.md
+new file mode 100644
+index 0000000000..497c1c9510
+--- /dev/null
++++ b/docs/qwen-fixes-2026-10/cluster-ci-b71ed146fd535ea5.md
+@@ -0,0 +1,135 @@
++FIXED
++
++# cluster ci-b71ed146fd535ea5 - CI regression: build / linux-x86_64
++
++## Verdict
++
++FIXED. The finding is REAL on this branch at the pinned train commit
++`fa4a5f2e785c73e32216931e33cdbe140c06647d`: the hosted `build / linux-x86_64` job
++(run 43786984969, job 133036727661) stopped compiling the test target
++`MixerSendsOnFadersTest`, not the product:
++
++```
++tests/src/gui/MixerSendsOnFadersTest.cpp:278:81: error: no matching function for call to
++    'QStringList::QStringList(const int&, QString)'
++  note: candidate template ignored: deduced conflicting types for parameter
++        'InputIterator' ('int' and 'QString')
++```
++
++The job builds with Qt 5.15 (`/usr/include/x86_64-linux-gnu/qt5/QtCore/qstringlist.h`).
++There `QStringList` is its own class and its only two-argument constructor is the
++inherited iterator-pair template; `QStringList(count, value)` is a Qt 6
++`QList<QString>` constructor (`QList(qsizetype size, parameter_type value)`). Qt 6
++aliases `QStringList` to `QList<QString>`, so every Qt 6 host here compiled the same line.
++This is a test-source portability regression, not product behaviour and not runner
++infrastructure. It was introduced by `97d786c18e` (the new
++`theFaderAnswerNamesWhatEveryFaderDrives` case).
++
++The local Qt 5.15.19 tree reproduces the hosted compiler input exactly. Recompiling that
++translation unit against Qt 5 through the recorded compile command produced:
++
++```
++tests/src/gui/MixerSendsOnFadersTest.cpp:278:81: error: no matching function for call to
++    'QStringList::QStringList(const int&, QString)'
++  note: candidate template ignored: deduced conflicting types for parameter
++        'InputIterator' ('int' and 'QString')
++COMPILE_RC=1
++```
++
++## Cause and fix
++
++`tests/src/gui/MixerSendsOnFadersTest.cpp:278` (before the fix) built the expected fader
++list with `QStringList(channels, QStringLiteral("volume"))`. The assertion itself is
++correct and is preserved exactly: the list must have one `"volume"` entry per mixer
++channel. Only the construction is replaced with the portable spelling:
++
++```cpp
++QStringList expectedFaders;
++expectedFaders.reserve(channels);
++for (int index = 0; index < channels; ++index) { expectedFaders.append(QStringLiteral("volume")); }
++QVERIFY(faders == expectedFaders);
++```
++
++`reserve()` and `append()` are declared by both Qt 5's `QStringList`/`QList` and Qt 6's
++`QList<QString>`. A scan of every first-party C/C++ file found this as the only
++two-argument `QStringList(...)` construction; the neighbouring `QStringList({...})` and
++one-argument forms in `MixerPinnedStripsTest.cpp` and `ClipWarpPersistenceTest.cpp` are
++not affected.
++
++## Regression test
++
++New `tests/Qt5QStringListSizeCheck.py`, registered as ctest
++`Qt5QStringListSizeCheck` in `tests/CMakeLists.txt:9334` and in
++`tests/fork-sources.txt:852`. It has two deterministic halves:
++
++1. A source scan of first-party C/C++ for a two-argument `QStringList(...)` construction
++   that is not an iterator pair. Its own red fixture is the failing
++   `QStringList(count, value)` form; its green fixture is the append loop.
++2. Where `pkg-config` finds Qt 5, it regenerates the Qt 5 `.moc` for
++   `tests/src/gui/MixerSendsOnFadersTest.cpp` and recompiles that real translation unit
++   `-fsyntax-only` through `build/compile_commands.json` with the Qt 5 headers, i.e. the
++   hosted job's compiler input. The bad and good fixtures are compiled first and must
++   respectively fail and pass on that Qt 5 tree. A scan finding whose translation unit
++   compiles clean is dropped as a false positive; a host without Qt 5 reports the probe
++   as skipped, never as passed.
++
++## Verification (all commands unpiped; logs in the cluster LOG FOLDER)
++
++| Step | Command | Exit | Log |
++| --- | --- | --- | --- |
++| Qt 5 reproduction of the hosted input | retargeted `-fsyntax-only` of `MixerSendsOnFadersTest.cpp` | 1 (compile) | `02-qt5-actual-repro.log` |
++| RED, fix reverted | `python3 tests/Qt5QStringListSizeCheck.py --root . --build-dir build` | 1 | `21-check-reverted.log` |
++| Qt 6 target with the bug present | `cmake --build build --target MixerSendsOnFadersTest -j2` | 0 | `20-build-reverted.log` |
++| restore the fix | `git apply <LOGS>/fix.patch` | 0 | `fix.patch` |
++| GREEN build | `cmake --build build --target MixerSendsOnFadersTest -j2` | 0 | `22-build-restored.log` |
++| GREEN check | `python3 tests/Qt5QStringListSizeCheck.py --root . --build-dir build` | 0 | `23-check-restored.log` |
++| ctest form | `cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R '^Qt5QStringListSizeCheck$' --output-on-failure` | 0 | `35-ctest-final.log` |
++| affected family | `cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R '^(MixerSendsOnFadersTest\|Qt5QStringListSizeCheck\|MixerPinnedStripsTest\|Qt5QListApiCheck\|Qt5QStringListAssignmentCheck\|Qt5QStringListBraceCheck\|Qt5QStringListAssignCheck)$' --output-on-failure` | 0 (7/7 passed) | `25-ctest-family-final.log` |
++| gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 | `36-feature-check-final2.log` |
++
++The Qt 6 target building while the Qt 5 check fails is the point of the regression: the
++Qt 6 hosts never saw this defect. `fix.patch` contains only the test-source hunk because
++the defect is in test source; reversing it is the product-change equivalent for this
++finding (there is no `src/`, `include/` or `plugins/` hunk to reverse).
++
++## Files changed
++
++* `tests/src/gui/MixerSendsOnFadersTest.cpp:278-282` - portable expected-list construction, same exact-list assertion.
++* `tests/Qt5QStringListSizeCheck.py` - new deterministic Qt 5 source/compile regression.
++* `tests/CMakeLists.txt:9322-9339` - registers `Qt5QStringListSizeCheck`.
++* `tests/fork-sources.txt:846-855` - registers the new checker and this report.
++* `tests/upstream-modifications.txt:5991` - declares the `tests/CMakeLists.txt` registration; the `MixerSendsOnFadersTest.cpp` ledger entry now records this cluster too.
++* `docs/qwen-fixes-2026-10/cluster-ci-b71ed146fd535ea5.md` - this report.
++
++## Self-check
++
++* The regression test FAILS with the fix reverted and PASSES with it. Final RED:
++  `git apply -R <LOGS>/fix.patch` (exit 0), then
++  `python3 tests/Qt5QStringListSizeCheck.py --root . --build-dir build` exits **1**, with
++  one finding and the Qt 5 compile error quoted above (`21-check-reverted.log`). Final
++  GREEN: `git apply <LOGS>/fix.patch` (exit 0), the same checker exits **0**
++  (`23-check-restored.log`). The ctest form also exits **0** (`35-ctest-final.log`).
++* The test is deterministic: no wall-clock timing, sleeps or races. It reads checked-in
++  sources and the recorded compile command, retargets the Qt 6 include directories at the
++  pkg-config Qt 5 tree, generates the Qt 5 moc in a temporary directory, and compiles
++  `-fsyntax-only`. The only environment seam is the Qt 5 development tree; its absence is
++  reported as `probe: skipped`, not as a pass. The self-test fixtures run before the scan.
++* The fix is at the cause and complete: the expected list is built by the same
++  `reserve`/`append` primitives on both Qt generations, and the scan found no other
++  two-argument `QStringList(...)` construction in first-party sources. The assertion is
++  unchanged: it still compares the full list, one entry per mixer channel.
++* No collateral damage: only a test's expected-list construction changed. No product
++  source, audio path, undo state, command, project file or saved-data format was touched,
++  and no limit or check was added. The Qt 6 `MixerSendsOnFadersTest` still passes, as do
++  the neighbouring mixer and Qt 5 portability checks (7/7 above).
++* Not an ALREADY-FIXED or FALSE-POSITIVE verdict: the exact hosted line is present at
++  `tests/src/gui/MixerSendsOnFadersTest.cpp:278` on this branch and was reproduced with
++  the local Qt 5.15.19 headers before the fix.
++* Realtime: nothing in this change runs on the audio thread; it is test source and a
++  Python checker.
++* Undo/commands: no command, undo step, reversibility class or snapshot canary is
++  involved.
++* Independent QA: the reproduction is the two-command reversal above (`fix.patch`
++  reverse/apply, exit 1 then 0), and the checker is the entry point for the independent
++  verifier. No second agent ran it in this session, so this report does not claim an
++  independent result.
+diff --git a/tests/CMakeLists.txt b/tests/CMakeLists.txt
+index 50cd2de83c..b7ce79ec76 100644
+--- a/tests/CMakeLists.txt
++++ b/tests/CMakeLists.txt
+@@ -9320,6 +9320,25 @@ if(PYTHON3_EXECUTABLE)
+ 	set_tests_properties(Qt5QListApiCheck PROPERTIES TIMEOUT 300)
+ endif()
+ 
++# Qt 5 QStringList count+value portability (cluster ci-b71ed146fd535ea5, 2026-11-16).
++# The hosted linux-x86_64 job builds with Qt 5.15, where QStringList's only two-argument
++# constructor is the inherited iterator pair, so
++# `QStringList(channels, QStringLiteral("volume"))` in MixerSendsOnFadersTest.cpp:278
++# stopped the build with "deduced conflicting types for parameter 'InputIterator'"
++# ('int' and 'QString'). Qt 6 aliases QStringList to QList<QString>, whose size+value
++# constructor exists, so every Qt 6 host compiles the same line. The check scans
++# first-party sources (red on the Qt 6 hosts too) and, where pkg-config finds a Qt 5
++# tree, recompiles the watched translation unit from this build's compile_commands.json
++# against those headers - the hosted job's own input.
++if(PYTHON3_EXECUTABLE)
++	add_test(NAME Qt5QStringListSizeCheck
++		COMMAND ${PYTHON3_EXECUTABLE}
++			${CMAKE_CURRENT_SOURCE_DIR}/Qt5QStringListSizeCheck.py
++			--root ${CMAKE_SOURCE_DIR}
++			--build-dir ${CMAKE_BINARY_DIR})
++	set_tests_properties(Qt5QStringListSizeCheck PROPERTIES TIMEOUT 300)
++endif()
++
+ 
+ 
+ # Linux namespace tests must retry interrupted writes and reject failed/short handshakes.
+diff --git a/tests/Qt5QStringListSizeCheck.py b/tests/Qt5QStringListSizeCheck.py
+new file mode 100644
+index 0000000000..8749599187
+--- /dev/null
++++ b/tests/Qt5QStringListSizeCheck.py
+@@ -0,0 +1,438 @@
++#!/usr/bin/env python3
++"""Fail when first-party code constructs a QStringList from a count and a value.
++
++Cluster ci-b71ed146fd535ea5 (2026-11-16), hosted `build / linux-x86_64` job at
++fa4a5f2e785c73e32216931e33cdbe140c06647d.  That job builds with Qt 5.15, where
++QStringList is its own class: its only two-argument constructor is the inherited
++iterator-pair template, so
++
++    tests/src/gui/MixerSendsOnFadersTest.cpp:278
++        QStringList(channels, QStringLiteral("volume"))
++
++stopped the whole build:
++
++    error: no matching function for call to 'QStringList::QStringList(const int&, QString)'
++    note: candidate template ignored: deduced conflicting types for parameter
++          'InputIterator' ('int' and 'QString')
++
++Qt 6 aliases QStringList to QList<QString>, whose size+value constructor exists, so
++every Qt 6 host here compiled the same line.  The portable spelling appends to an
++existing list - `QStringList names; for (int i = 0; i < channels; ++i) { names.append(
++QStringLiteral("volume")); }` - which both versions declare (Qt 5's QList has no
++fill() either).
++
++The check has two deterministic halves:
++
++  * a source scan of every first-party C/C++ file for a two-argument QStringList
++    construction that is not an iterator pair.  It reads sources only, so it is red
++    on the Qt 6 hosts where the defect compiles.
++  * a compile probe: where pkg-config finds a Qt 5 tree, tests/src/gui/
++    MixerSendsOnFadersTest.cpp is recompiled `-fsyntax-only` through this build's
++    compile_commands.json against the Qt 5 headers (and the Qt 5 moc).  That is the
++    hosted job's compiler input, so a regression here is the hosted failure.  A scan
++    finding whose own translation unit compiles clean is a false positive and is not
++    reported.
++
++The scan's own fixtures prove both directions.  The probe reports itself skipped
++(never passed) when the host has no Qt 5 development tree.
++
++Usage:
++  Qt5QStringListSizeCheck.py [--root DIR] [--build-dir DIR] [--cxx CXX]
++  Qt5QStringListSizeCheck.py --self-test
++
++Exit codes: 0 = clean (or skipped on a host without Qt 5), 1 = finding or failed
++fixture, 2 = usage error.
++"""
++
++import argparse
++import json
++import os
++import re
++import shlex
++import shutil
++import subprocess
++import sys
++import tempfile
++
++SOURCE_SUFFIXES = (".h", ".hpp", ".hxx", ".cpp", ".cc", ".cxx")
++
++# Vendored third-party trees are not this repo's code (tests/all-sources.txt's list).
++EXCLUDED_PREFIXES = (
++    "src/3rdparty/",
++    "tests/reference/",
++    "plugins/CarlaBase/carla/",
++    "plugins/NeuralAmp/rtneural/",
++    "plugins/NeuralAmp/nam/",
++    "plugins/NeuralAmp/tests/",
++    "plugins/RnnoiseDenoiser/rnnoise/",
++    "plugins/SfzPlayer/sfizz/",
++)
++
++SKIP_DIRS = {".git", "build", "__pycache__"}
++
++# Comments and string/char literals are blanked before the shape scan (line numbers kept).
++NON_CODE = re.compile(r'//[^\n]*|/\*.*?\*/|"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\'', re.S)
++CONSTRUCTION = re.compile(r"\bQStringList\s*\(")
++
++# These arguments are an iterator range, the one two-argument form Qt 5 declares.
++ITERATOR_MARKERS = (
++    ".begin()", ".end()", ".cbegin()", ".cend()", ".constBegin()", ".constEnd()",
++    "std::begin(", "std::end(", "nullptr", "NULL",
++)
++
++BAD_FIXTURE = """\
++#include <QStringList>
++QStringList expected(int channels)
++{
++    return QStringList(channels, QStringLiteral("volume"));
++}
++"""
++
++GOOD_FIXTURE = """\
++#include <QStringList>
++QStringList expected(int channels)
++{
++    QStringList names;
++    for (int index = 0; index < channels; ++index) { names.append(QStringLiteral("volume")); }
++    return names;
++}
++"""
++
++BAD_PROBE = """\
++#include <QStringList>
++QStringList expected(int channels)
++{
++    return QStringList(channels, QStringLiteral("volume"));
++}
++"""
++
++GOOD_PROBE = """\
++#include <QStringList>
++QStringList expected(int channels)
++{
++    QStringList names;
++    for (int index = 0; index < channels; ++index) { names.append(QStringLiteral("volume")); }
++    return names;
++}
++"""
++
++
++def run(command, cwd=None, timeout=600):
++    try:
++        return subprocess.run(command, cwd=cwd, capture_output=True, text=True, timeout=timeout)
++    except (OSError, subprocess.SubprocessError):
++        return None
++
++
++def blank_non_code(text):
++    """Comments and literals become spaces; every newline and offset is kept."""
++    return NON_CODE.sub(lambda match: re.sub(r"[^\n]", " ", match.group(0)), text)
++
++
++def matching_paren(text, start):
++    """Index of the ')' closing the '(' at @a start, or -1."""
++    depth = 0
++    for index in range(start, len(text)):
++        if text[index] == "(":
++            depth += 1
++        elif text[index] == ")":
++            depth -= 1
++            if depth == 0:
++                return index
++    return -1
++
++
++def split_arguments(text):
++    """Top-level comma-separated arguments of an argument list, whitespace-stripped."""
++    parts, depth, current = [], 0, ""
++    for char in text:
++        if char in "([{<":
++            depth += 1
++        elif char in ")]}>":
++            depth -= 1
++        if char == "," and depth == 0:
++            parts.append(current.strip())
++            current = ""
++        else:
++            current += char
++    parts.append(current.strip())
++    return parts
++
++
++def scan_text(path, text):
++    """(path, line) for every count+value QStringList construction in @a text."""
++    code = blank_non_code(text)
++    findings = []
++    for match in CONSTRUCTION.finditer(code):
++        close = matching_paren(code, match.end() - 1)
++        if close < 0:
++            continue
++        arguments = split_arguments(code[match.end():close])
++        if len(arguments) != 2:
++            continue
++        if any(marker in argument for argument in arguments for marker in ITERATOR_MARKERS):
++            continue
++        findings.append((path, code[:match.start()].count("\n") + 1))
++    return findings
++
++
++def source_files(root):
++    for directory, subdirs, names in os.walk(root):
++        subdirs[:] = sorted(d for d in subdirs if d not in SKIP_DIRS and not d.startswith("."))
++        for name in sorted(names):
++            if not name.endswith(SOURCE_SUFFIXES):
++                continue
++            path = os.path.relpath(os.path.join(directory, name), root)
++            if path.startswith(EXCLUDED_PREFIXES):
++                continue
++            yield path
++
++
++def read_text(root, path):
++    with open(os.path.join(root, path), "r", encoding="utf-8", errors="replace") as handle:
++        return handle.read()
++
++
++def scan_tree(root):
++    findings = []
++    for path in source_files(root):
++        findings.extend(scan_text(path, read_text(root, path)))
++    return findings
++
++
++def self_test_fixtures():
++    failures = []
++    if len(scan_text("bad.cpp", BAD_FIXTURE)) != 1:
++        failures.append("the scan did not report the count+value fixture")
++    if scan_text("good.cpp", GOOD_FIXTURE):
++        failures.append("the scan reported the append-loop fixture")
++    return failures
++
++
++def qt5_flags():
++    """Compile flags of a Qt 5 development tree, or None when pkg-config has none."""
++    if not shutil.which("pkg-config"):
++        return None
++    if run(["pkg-config", "--exists", "Qt5Widgets"]).returncode != 0:
++        return None
++    result = run(["pkg-config", "--cflags", "Qt5Widgets", "Qt5Xml", "Qt5Network", "Qt5Test"])
++    if result is None or result.returncode != 0:
++        return None
++    return shlex.split(result.stdout)
++
++
++def is_qt5_moc(candidate):
++    version = run([candidate, "-v"])
++    return version is not None and version.stdout.strip().startswith("moc 5")
++
++
++def qt5_moc():
++    """The Qt 5 moc, or None. A Qt 6 moc cannot pre-process a Qt 5 translation unit."""
++    result = run(["pkg-config", "--variable=host_bins", "Qt5Core"])
++    if result is not None and result.returncode == 0 and result.stdout.strip():
++        candidate = os.path.join(result.stdout.strip(), "moc")
++        if os.path.isfile(candidate) and is_qt5_moc(candidate):
++            return candidate
++    for candidate in ("moc-qt5", "moc"):
++        found = shutil.which(candidate)
++        if found is not None and is_qt5_moc(found):
++            return found
++    return None
++
++
++def compile_fixture(cxx, flags, workdir, name, text):
++    path = os.path.join(workdir, name)
++    with open(path, "w", encoding="utf-8") as handle:
++        handle.write(text)
++    return run([cxx, "-std=gnu++20", "-fPIC", "-fsyntax-only", *flags, path])
++
++
++def fixture_verdict(cxx, flags, workdir):
++    """(usable, verdict): usable only when Qt 5 rejects BAD and accepts GOOD."""
++    bad = compile_fixture(cxx, flags, workdir, "bad.cpp", BAD_PROBE)
++    good = compile_fixture(cxx, flags, workdir, "good.cpp", GOOD_PROBE)
++    if bad is None or bad.returncode == 0:
++        return False, "no fixture"
++    if good is None or good.returncode != 0:
++        return False, "the Qt 5 tree rejected the append spelling"
++    combined = bad.stdout + bad.stderr
++    if not any(marker in combined for marker in ("InputIterator", "no matching", "deduced conflicting")):
++        return False, "the Qt 5 tree rejected the count+value probe for another reason"
++    return True, "probe: Qt 5 rejects QStringList(count, value) and accepts the append loop"
++
++
++def compile_database(build):
++    path = os.path.join(build, "compile_commands.json")
++    if not os.path.isfile(path):
++        return None
++    with open(path, encoding="utf-8", errors="replace") as handle:
++        entries = json.load(handle)
++    return entries if isinstance(entries, list) else None
++
++
++def entry_for(entries, root, relative):
++    wanted = os.path.realpath(os.path.join(root, relative))
++    for entry in entries:
++        if os.path.realpath(entry.get("file", "")) == wanted:
++            return entry
++    return None
++
++
++def is_qt6_include(directory):
++    parts = [part for part in re.split(r"[\\/]+", directory.rstrip("\\/")) if part]
++    return "qt6" in parts
++
++
++def is_qt6_compact(argument):
++    """Whether a joined -I/-isystem option names a Qt 6 include directory."""
++    for prefix in ("-isystem", "-I"):
++        if argument.startswith(prefix):
++            return is_qt6_include(argument[len(prefix):])
++    return False
++
++
++def retarget_step(arguments, index, source):
++    """(kept arguments, consumed count) for one recorded compile argument."""
++    argument = arguments[index]
++    if argument in ("-o", "-MF", "-MT"):
++        return [], 2
++    if argument in ("-c", "-MD", "-MMD", "-MP", "-Werror"):
++        return [], 1
++    if argument in ("-I", "-isystem") and index + 1 < len(arguments):
++        value = arguments[index + 1]
++        return ([] if is_qt6_include(value) else [argument, value]), 2
++    if argument == source or is_qt6_compact(argument):
++        return [], 1
++    return [argument], 1
++
++
++def retarget(entry, flags, source, include_dir):
++    """The recorded Qt 6 compile line retargeted at the Qt 5 headers."""
++    arguments = entry.get("arguments")
++    if arguments is None:
++        arguments = shlex.split(entry.get("command", ""))
++    out = [arguments[0]]
++    index = 1
++    while index < len(arguments):
++        kept, consumed = retarget_step(arguments, index, source)
++        out += kept
++        index += consumed
++    return out[:1] + ["-I" + include_dir] + out[1:] + list(flags) + ["-fsyntax-only", source]
++
++
++def generate_moc(moc, source, workdir, relative):
++    generated = os.path.join(workdir, os.path.basename(source).replace(".cpp", ".moc"))
++    made = run([moc, source, "-o", generated])
++    if made is not None and made.returncode == 0:
++        return None
++    return f"{relative}: the Qt 5 moc failed"
++
++
++def failure_diagnostic(result):
++    combined = result.stdout + result.stderr
++    diagnostic = "\n".join(line for line in combined.splitlines()
++                           if "error:" in line or "note:" in line)[:2000]
++    if any(marker in combined for marker in ("InputIterator", "no matching", "deduced conflicting")):
++        return f"Qt 5 rejected it ({diagnostic})"
++    return "Qt 5 rejected it for another reason (" + diagnostic + ")"
++
++
++def probe_translation_unit(flags, root, build, moc, workdir, relative):
++    """Compile a first-party translation unit against Qt 5; None when it is clean."""
++    entries = compile_database(build)
++    if entries is None:
++        return f"no compile database at {os.path.join(build, 'compile_commands.json')}"
++    entry = entry_for(entries, root, relative)
++    if entry is None:
++        return f"{relative}: no entry in the compile database"
++    source = os.path.realpath(os.path.join(root, relative))
++    failure = generate_moc(moc, source, workdir, relative)
++    if failure is not None:
++        return failure
++    result = run(retarget(entry, flags, source, workdir), cwd=entry.get("directory") or root)
++    if result is None:
++        return f"{relative}: the Qt 5 probe could not run"
++    if result.returncode == 0:
++        return None
++    return f"{relative}: " + failure_diagnostic(result)
++
++
++def confirm_findings(findings, flags, root, build, moc, workdir):
++    """Keep a finding unless its translation unit compiles clean against Qt 5."""
++    if flags is None or moc is None:
++        return findings, 0
++    kept, confirmed = [], 0
++    probes = {}
++    for path, line in findings:
++        relative = path.replace(os.sep, "/")
++        if relative not in probes:
++            probes[relative] = probe_translation_unit(flags, root, build, moc, workdir, relative)
++        if probes[relative] is None:
++            continue
++        kept.append((path, line, probes[relative]))
++        if "Qt 5 rejected it" in probes[relative]:
++            confirmed += 1
++    return kept, confirmed
++
++
++def run_self_test(cxx, workdir):
++    failures = self_test_fixtures()
++    flags = qt5_flags()
++    if flags is None:
++        print("probe: skipped (no Qt 5 development tree found)")
++        return failures
++    usable, verdict = fixture_verdict(cxx, flags, workdir)
++    print(verdict)
++    if not usable:
++        failures.append(verdict)
++    return failures
++
++
++def report_findings(findings, confirmed):
++    for path, line, why in findings:
++        print(f"{path}:{line}: QStringList(count, value) is not Qt 5 portable")
++        print(f"  {why}")
++    if not findings:
++        print("Qt5QStringListSizeCheck: PASS (no QStringList count+value construction)")
++        return 0
++    print(f"Qt5QStringListSizeCheck: {len(findings)} finding(s), {confirmed} confirmed by a Qt 5 compile")
++    return 1
++
++
++def check_tree(root, build, workdir):
++    findings = scan_tree(root)
++    flags = qt5_flags()
++    moc = qt5_moc()
++    if flags is not None and moc is None:
++        print("probe: skipped (no Qt 5 moc found)")
++    findings, confirmed = confirm_findings(findings, flags, root, build, moc, workdir)
++    return report_findings(findings, confirmed)
++
++
++def main(argv):
++    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
++    parser.add_argument("--root", default=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
++    parser.add_argument("--build-dir")
++    parser.add_argument("--cxx", default=os.environ.get("CXX") or shutil.which("c++") or "c++")
++    parser.add_argument("--self-test", action="store_true")
++    args = parser.parse_args(argv)
++
++    root = os.path.abspath(args.root)
++    build = os.path.abspath(args.build_dir or os.path.join(root, "build"))
++    workdir = tempfile.mkdtemp(prefix="qt5-qstringlist-")
++    try:
++        failures = run_self_test(args.cxx, workdir)
++        if failures:
++            for failure in failures:
++                print("FAIL: " + failure)
++            return 1
++        if args.self_test:
++            print("Qt5QStringListSizeCheck self-test: PASS")
++            return 0
++        return check_tree(root, build, workdir)
++    finally:
++        shutil.rmtree(workdir, ignore_errors=True)
++
++
++if __name__ == "__main__":
++    sys.exit(main(sys.argv[1:]))
+diff --git a/tests/fork-sources.txt b/tests/fork-sources.txt
+index 194bfbf6e6..f1560aa304 100644
+--- a/tests/fork-sources.txt
++++ b/tests/fork-sources.txt
+@@ -843,6 +843,16 @@ tests/Qt5QListApiCheck.py
+ # Cluster ci-151e338efff6843e: the fix and verification report for the Eq spectrum view's
+ # Qt 5 QList portability regression (hosted windows-arm64 build).
+ docs/qwen-fixes-2026-10/cluster-ci-151e338efff6843e.md
++# Cluster ci-b71ed146fd535ea5: the Qt 5 QStringList count+value portability regression.
++# Hosted linux-x86_64 builds against Qt 5.15, where QStringList has no size+value
++# constructor (its only two-argument form is the iterator pair); Qt 6's QStringList is
++# QList<QString>, which has it. The check scans first-party sources and, where a Qt 5 tree
++# is present, recompiles MixerSendsOnFadersTest.cpp against it (-fsyntax-only). The file is
++# named after its ctest (tests/CMakeLists.txt -> Qt5QStringListSizeCheck).
++tests/Qt5QStringListSizeCheck.py
++# Cluster ci-b71ed146fd535ea5: the fix and verification report for the hosted
++# linux-x86_64 QStringList count+value build regression.
++docs/qwen-fixes-2026-10/cluster-ci-b71ed146fd535ea5.md
+ # cluster ci-1e541b5d1279ed2d (2026-11): the crash reporter's ARM/DISARM proof must compile against Apple's
+ # <signal.h> - compiles the two real translation units with their recorded flags under a model of Apple's
+ # sigaction() (no exception specification) and sigemptyset() (a macro) (fork-NEW test, ctest
+diff --git a/tests/src/gui/MixerSendsOnFadersTest.cpp b/tests/src/gui/MixerSendsOnFadersTest.cpp
+index 877e1718f8..fb60c74c94 100644
+--- a/tests/src/gui/MixerSendsOnFadersTest.cpp
++++ b/tests/src/gui/MixerSendsOnFadersTest.cpp
+@@ -275,7 +275,11 @@ private slots:
+ 
+ 		// Back on the channel faders (an empty sends_on_faders) every entry is the level.
+ 		const QStringList faders = drivesOf(run(QStringLiteral("window.mixer_view"), {{QStringLiteral("sends_on_faders"), QString()}}));
+-		QVERIFY(faders == QStringList(channels, QStringLiteral("volume")));
++		// QStringList(count, value) is Qt 6's QList constructor; Qt 5 declares only the iterator pair.
++		QStringList expectedFaders;
++		expectedFaders.reserve(channels);
++		for (int index = 0; index < channels; ++index) { expectedFaders.append(QStringLiteral("volume")); }
++		QVERIFY(faders == expectedFaders);
+ 	}
+ 
+ private:
+diff --git a/tests/upstream-modifications.txt b/tests/upstream-modifications.txt
+index 0f0ef7e07a..47647318d9 100644
+--- a/tests/upstream-modifications.txt
++++ b/tests/upstream-modifications.txt
+@@ -5629,7 +5629,7 @@ tests/src/core/NoteTransformTest.cpp	new-p9-487: adds subTickTimePosGridIsANoop,
+ tests/src/core/PluginLogoResourceTest.cpp	# An invalid selector slot ID indexes outside the button array
+ src/core/DrumSynth.cpp	new-p16-63: bounds the rendered duration of a .ds file. LongestEnv's duration is refused before the buffer is sized when it exceeds the renderer's own 442000-sample hold at the 10x stretch clamp (plus LongestEnv's 2400-sample rounding base), so an envelope time such as 9999999 cannot request a huge allocation; the hold and the stretch clamp are named constants that UpdateEnv and the clamp now share. Shipped samples are unaffected (longest 438020). Covered by DrumSynthTest (refusesAnEnvelopeLongerThanTheRendererHold, rendersTheLongestShippedEnvelopeAtMaximumStretch).
+ include/Oscillator.h	cluster new-p16-156: waveTableBandFromFreq and getWtSampleControl check for zero, negative, NaN and infinite frequency or NaN frame before the float-to-int conversions (undefined for those inputs); finite inputs are unchanged, +inf saturates to the highest band.
+-tests/src/gui/MixerSendsOnFadersTest.cpp	# faderRoles indexes the role-name list without a bounds check
++tests/src/gui/MixerSendsOnFadersTest.cpp	cluster ci-b71ed146fd535ea5: build the expected all-volume fader list with an append loop instead of QStringList(count, value), which Qt 6's QList declares but Qt 5's QStringList does not; the same exact-list assertion remains. (Also carries new-p23-10: faderRoles indexes the role-name list without a bounds check.)
+ src/core/DrumSynth.cpp	cluster new-p15-56: clear the envelope token buffer at every delimiter and accept only exactly one sscanf conversion, so an empty envelope field is stored as zero instead of reusing the preceding token or an earlier parse; covered by DrumSynthTest::emptyEnvelopeFieldIsZeroNotAStaleToken and emptyEnvelopeFieldIgnoresAnEarlierParse.
+ src/core/BandLimitedWave.cpp	cluster new-p12-328: the saw, square and triangle generation loops test one shared Nyquist cutoff (2 * harm <= len) before adding a harmonic; the old do-while checked after the add and admitted one harmonic above Nyquist. Regression: tests/src/core/BandLimitedWaveTest.cpp.
+ data/wavetables/sqr.bin	cluster new-p12-328: regenerated with the corrected cutoff; the shipped table had an aliased harmonic for len >= 8. Regression: BandLimitedWaveShipped.
+@@ -5988,3 +5988,4 @@ src/gui/widgets/TextFloat.cpp	cluster gui-1115-menu-help-accessibility-check: a
+ include/TextFloat.h	cluster gui-1115-menu-help-accessibility-check: declare TextFloat::event, which returns activation to the notice's owning window so a floating result never holds the application focus.
+ tests/src/gui/GrooveMenuTest.cpp	cluster gui-1115-menu-help-accessibility-check: opens the real Help menu, clicks Accessibility Check, and requires the report to survive the menu's close with all five per-check counts.
+ src/core/ProjectJournal.cpp	gui-1115-session-undo-and-redo: restoreStep() captures every live object's post-state before restoring any of them, so a merged step naming a clip and its track records the state the step left (Track::restoreState re-creates the clips) and redo reapplies the drag instead of replaying the undone position; regression UndoBoundsTest::aMovedClipRedoesThroughItsMergedTrackCheckpoint.
++tests/CMakeLists.txt	cluster ci-b71ed146fd535ea5: register Qt5QStringListSizeCheck (tests/Qt5QStringListSizeCheck.py) beside the other Qt 5 portability checks so every host, Qt 5 or Qt 6, fails on a QStringList count+value construction; registration only, no existing target, test, environment or property changes.
+-- 
+2.56.0
+
