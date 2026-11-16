@@ -920,6 +920,11 @@ def next_claude_item(lane, claimed):
         if r.stem in claimed:
             continue
         job = json.loads(r.read_text())
+        state_path = D['state'] / r.name
+        state = json.loads(state_path.read_text()) if state_path.exists() else {}
+        if (str(state.get('outcome', '')).startswith(('accept', 'confirm'))
+                and int(state.get('round') or 0) >= int(job.get('round') or 1)):
+            continue  # an obsolete retry must not restart an independently accepted task
         ct = (job.get("item") or {}).get("claude_tier")
         if ct and ct in tiers_ and not held and not job.get("lane"):
             job["item"] = norm_item(job["item"])
@@ -973,7 +978,8 @@ def next_claude_item(lane, claimed):
     for item in jsonl(ROOT / "CLAUDE-QUEUE.jsonl"):
         q = item.get("cluster") or item.get("queue_id")
         if (item.get("feature_tier") not in tiers or q in claimed or q in taken
-                or (D["state"] / f"{slug(q)}.json").exists() or not item.get("acceptance")):
+                or (D["state"] / f"{slug(q)}.json").exists()
+                or (D["rework"] / f"{slug(q)}.json").exists() or not item.get("acceptance")):
             continue
         if not int(item.get("round_base") or 0):
             queue_rows = [r for r in jsonl(ROOT / "CLAUDE-QUEUE.jsonl") if r.get("feature_tier") in tiers
