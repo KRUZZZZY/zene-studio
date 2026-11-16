@@ -36,6 +36,7 @@ import workflow_runtime
 import terra_priority
 import integration_jobs
 import workflow_evidence
+import review_hooks
 import stuck_detector
 import review_diversity
 import claude_accounts
@@ -1689,6 +1690,8 @@ def fix_one(job, rework_file, engine="qwen"):
     control_notes = control_feedback.pending(job)
     job["notes"] = str(job.get("notes") or "") + control_feedback.notes_text(control_notes)
     brief = fix_brief(item, wt, rnd, job.get("notes"), logs=run_dir / "logs")
+    evidence_base = (item.get("integration") or {}).get("target_commit") or item.get("ci_source_sha") or git(wt, "merge-base", "HEAD", (ROOT / "FIX-BASE").read_text().strip()) or head0
+    evidence_note = review_hooks.author_note(wt, evidence_base, run_dir / "workflow-evidence", s)
     (run_dir / "brief.md").write_text(brief)
     # owner 2026-10-20: a model's sessions can be split between features and bugs (MULTI-SESSION.json kind_sessions)
     (run_dir / "job-kind.txt").write_text("feature" if is_feature(item) else "bug")
@@ -1734,6 +1737,7 @@ def fix_one(job, rework_file, engine="qwen"):
                  f"Your commits are on the branch. Address every point below on top of them, then rebuild, rerun the "
                  f"targeted tests and the gates, commit, and finish with the same final report as before (the verdict "
                  f"word on the last line).\n\n{job.get('notes') or ''}\n")
+        short += evidence_note
         write_json(run_dir / "resume.json", {**job["resume"], "brief": short})
         (run_dir / "prefer-models.txt").write_text(job["resume"]["model"])
         rec["resumed_session"] = job["resume"]["session"]
@@ -1776,6 +1780,8 @@ def fix_one(job, rework_file, engine="qwen"):
                      f"Address all evidenced blockers together, rebuild the focused targets, and update the same report.\n"
                      + str(job.get("notes") or ""))
             (run_dir / "brief.md").write_text(brief)
+    brief += evidence_note
+    (run_dir / "brief.md").write_text(brief)
     name = (f"Claude lane {lane['name']}" if engine == "claude" else light_name() if engine == "luna"
             else "OpenCode Free" if engine == "opencode" else "Qwen")
     rec["engine"] = engine
@@ -1914,6 +1920,7 @@ def fix_one(job, rework_file, engine="qwen"):
             item = {**item, "batch": keep}
             if not keep:
                 item.pop("batch")
+    rec["workflow_evidence"] = review_hooks.summarize(run_dir / "workflow-evidence", wt)
     write_json(run_dir / "record.json", rec)
     if rework_file:
         rework_file.unlink()
@@ -1923,7 +1930,7 @@ def fix_one(job, rework_file, engine="qwen"):
         # session (once per submission, not counted as a review round) before a reviewer sees it.
         try:
             import submit_check
-            res, asks = submit_check.check(wt, item["cluster"], item)
+            res, asks = submit_check.check(wt, item["cluster"], item, evidence_dir=run_dir / "workflow-evidence")
             fails = [r for r in res if r[0] == "FAIL"]
         except Exception as e:
             fails, asks = [], []
@@ -2046,6 +2053,7 @@ def answer_gpu_request_now():
 def fix_loop():
     import concurrent.futures
     (ROOT / "fix.pid").write_text(str(os.getpid()))
+    review_hooks.ready("fix", ROOT)
     log("fix", f"fixer start ({LUNA_WORKERS} cloud workers, one local and up to {opencode_free.MAX_WORKERS} free-model workers, one per model, when enabled; "
                f"no QA backlog cap, min free {MIN_FREE_GB} GB)")
     # One coordinator owns all claims: four Luna, one local, one free session.
@@ -2882,6 +2890,7 @@ def qa_one(path, reviewer=None):
     qa_logs.mkdir(parents=True, exist_ok=True)
     control_notes = control_feedback.pending(rec)
     brief = qa_brief(rec, reviewer) if reviewer in ("luna", "haiku") else qa_brief_qwen(rec, qa_logs)
+    brief += review_hooks.reviewer_note(rec, D["runs"] / f"{s}.r{rnd}" / "workflow-evidence")
     brief = prompt_context.stamp(brief)
     brief += control_feedback.notes_text(control_notes, review=True)
     out = D["qa/reviews"] / (f"{s}.r{rnd}.{rec.get('qa_stage', 'code')}.md" if rec.get("kind") == "feature" else f"{s}.r{rnd}.md")
@@ -3120,6 +3129,7 @@ def diversity_ok(rec, reviewer, path):
 def qa_loop():
     import concurrent.futures
     (ROOT / "qa.pid").write_text(str(os.getpid()))
+    review_hooks.ready("qa", ROOT)
     write_json(ROOT / "CONTROL-FEEDBACK-READY.json", {"version": control_feedback.VERSION, "pid": os.getpid()})
     log("qa", f"QA start ({QA_WORKERS} Luna reviews, plus autoscaled Haiku 5.5 second reviewers)")
     pool = concurrent.futures.ThreadPoolExecutor(max_workers=max(QA_WORKERS, 1) + 8)
