@@ -8215,11 +8215,11 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 			$<TARGET_FILE:zene>
 	)
 	add_test(NAME ControlAudioTestTone
-			COMMAND ${PYTHON3_EXECUTABLE}
-				${CMAKE_CURRENT_SOURCE_DIR}/control-audio-test-tone.py
-				$<TARGET_FILE:zene>
-		)
-		add_test(NAME ControlNegativeControl
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-audio-test-tone.py
+			$<TARGET_FILE:zene>
+	)
+	add_test(NAME ControlNegativeControl
 		COMMAND ${PYTHON3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/control-negative-control.py
 			$<TARGET_FILE:zene>

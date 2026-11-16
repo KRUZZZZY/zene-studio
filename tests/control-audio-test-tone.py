@@ -27,7 +27,7 @@ from control_socket_harness import (  # noqa: E402
 
 CONNECT_TIMEOUT = 60.0
 STDERR_DUMP_LIMIT = 4000
-TONE_SECONDS = 0.5
+TONE_SECONDS = 5.0
 # transport.get_state fields that legitimately move with the wall clock are not
 # part of "the transport was left alone"; everything else must be identical.
 WALL_CLOCK_MARKERS = ("wall", "clock", "timestamp", "elapsed")
