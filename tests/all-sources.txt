@@ -222,6 +222,7 @@ include/AudioSdl.h
 include/AudioSndio.h
 include/AudioSoundIo.h
 include/AudioStretcher.h
+include/AudioTestTone.h
 include/AudioWideInputStage.h
 include/AudioWorkerWake.h
 include/AutomatableButton.h
@@ -1650,6 +1651,7 @@ src/core/ControlCommandsArrangementState.cpp
 src/core/ControlCommandsAssistant.cpp
 src/core/ControlCommandsAudioAnalysis.cpp
 src/core/ControlCommandsAudioSlice.cpp
+src/core/ControlCommandsAudioTestTone.cpp
 src/core/ControlCommandsAutomation.cpp
 src/core/ControlCommandsAutomationEdit.cpp
 src/core/ControlCommandsAutomationLanes.cpp

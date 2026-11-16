@@ -3974,3 +3974,6 @@ tests/src/plugins/CarlaVst2LegacyStateTest.cpp
 tests/src/gui/LegacyVst2ProjectTest.cpp
 tests/data/legacy-projects/vst2-vestige-vsteffect.mmp
 tests/data/legacy-projects/vst2-vestige-vsteffect.reference.json
+# Q050-183.1: audio test tone command
+include/AudioTestTone.h
+src/core/ControlCommandsAudioTestTone.cpp

@@ -973,6 +973,8 @@ LMMS_EXPORT void registerProjectInfoCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerLibraryClipCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerBrowserIndexCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerBrowserMediaCommands(ControlRegistry& registry);
+//! Q050-183.1: audio.test_tone / audio.test_tone_stop (ControlCommandsAudioTestTone.cpp).
+LMMS_EXPORT void registerAudioTestToneCommands(ControlRegistry& registry);
 LMMS_EXPORT void registerBrowserNavigationCommands(ControlRegistry& registry);
 //! 0.5.0 L12 (W3): render.queue_add / convert / queue_list / queue_cancel / queue_clear / queue_report, app.tasks /
 //! task_cancel (ControlCommandsRenderQueue.cpp); track.flatten (ControlCommandsTrackFlatten.cpp).
