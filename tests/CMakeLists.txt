@@ -1086,6 +1086,8 @@ set(LMMS_TESTS
 	src/core/MasteringSequenceTest.cpp
 	# 0.5.0 L11 (W3): a clip into the library, the index and similar sounds, thumbnails, the matched preview, history.
 	src/core/LibraryBrowserTest.cpp
+	# Q050-183.1: audio.device_list's running-backend fields; audio.test_tone reaches the master output, stops, and leaves the project alone.
+	src/core/AudioTestToneTest.cpp
 	# 0.5.0 Q050-048: browser feature analysis decodes only its window (WAV/FLAC/OGG), duration from the header.
 	src/core/BrowserFeaturesWindowTest.cpp
 	src/core/LadspaManagerTest.cpp
