@@ -80,7 +80,8 @@ All commands were run from the worktree; `ctest` was run from `build/tests`.
 | 4b re-apply | `git apply LOGS/fix.patch` | 0 |
 | **GREEN build** | `cmake --build build --target zene MainWindowTest UpdateCheckWindowsTest UpdateCheckHiddenTest TrackAddRoutingTest AccessibilityWalkTest -j12` (`build-10-green.log`) | 0 |
 | **4b GREEN / affected family** | `ctest -R '^(MainWindowTest\|UpdateCheckWindowsTest\|UpdateCheckHiddenTest\|TrackAddRoutingTest\|AccessibilityWalkTest)$' --output-on-failure` (`test-10-green.log`, **5/5 passed**) | **0** |
-| **gates** | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (`gates-2.log`, 8/8 PASS: fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length) | **0** |
+| **gates** | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (`gates-3-final-working.log`, 8/8 PASS: fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length) | **0** |
+| **completion check** | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> gui-1116-session-free-exploration-fa4a5f2e785c` (`submit-1.log`) | **0, `RESULT: PASS - submit`** |
 
 The first gate invocation (`gates-1.log`, EXIT=1) was stopped by the lane guard because the shipped script checks out
 the base commit into its shared baseline tree. No gate limit or baseline was changed. The base listing was computed
@@ -122,3 +123,5 @@ files. No command was added, so the command snapshot canary is untouched.
 - **Sibling commands/dialogs:** no command file was changed. `window.settings` keeps its schema and `shown` result;
   `app.about` and the other `window.*` handlers still set `setModal(false)` before their own `show()` and are
   unaffected. The only shared class changed is `SetupDialog`, whose two real entry points are covered above.
+- **Completion check:** `submit_check.py` on the committed fix (`submit-1.log`) = EXIT=0, `RESULT: PASS - submit`;
+  every ASK item above is answered in this section.
