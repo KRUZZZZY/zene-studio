@@ -123,7 +123,7 @@ compile coverage for Qt5/MSVC/macOS is the hosted jobs; this box only builds Qt 
 
 ## Files
 
-- `plugins/ZeneRack/ZeneRack.cpp`, `plugins/ZeneRack/CMakeLists.txt`, `plugins/ZeneRack/Info.plist.in`
+- `plugins/ZeneRack/ZeneRack.cpp`, `plugins/ZeneRack/CMakeLists.txt`, `plugins/ZeneRack/Info.plist.cmake`
 - `plugins/CMakeLists.txt` (configures the bundle when the pinned VST3 SDK target exists)
 - `tests/src/plugins/ZeneRackTest.cpp`, `tests/CMakeLists.txt`
 - `tests/fork-sources.txt`, `tests/all-sources.txt`

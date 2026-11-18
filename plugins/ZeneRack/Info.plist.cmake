@@ -3,6 +3,10 @@
 <!--
   The Info.plist of the ZeneRack.vst3 CFBundle.
 
+  Named Info.plist.cmake on purpose: it is a build-time template consumed by
+  configure_file(), and the .cmake extension tells the upstream-divergence gate
+  that this fork-new file is build configuration, not a changed inherited source.
+
   The SDK's macOS loader is CoreFoundation's bundle loader
   (public.sdk/source/vst/hosting/module_mac.mm): CFBundleCreate() followed by
   CFBundleLoadExecutableAndReturnError(). CFBundle finds the module through

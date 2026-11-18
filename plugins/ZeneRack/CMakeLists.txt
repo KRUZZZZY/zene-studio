@@ -48,7 +48,7 @@ if(APPLE)
 	set(LMMS_ZENERACK_BUNDLE_FILE "${LMMS_ZENERACK_NAME}")
 	set(LMMS_ZENERACK_ENTRY_MAIN
 		"${LMMS_VST3_SDK_PATH}/public.sdk/source/main/macmain.cpp")
-	configure_file("${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in"
+	configure_file("${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.cmake"
 		"${CMAKE_CURRENT_BINARY_DIR}/bundle-Info.plist" @ONLY)
 elseif(WIN32)
 	if(LMMS_ZENERACK_MACHINE MATCHES "^(x86_64|X86_64|amd64|AMD64)$")
