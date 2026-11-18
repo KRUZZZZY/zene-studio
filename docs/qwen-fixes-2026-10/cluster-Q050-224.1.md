@@ -167,9 +167,11 @@ remaining limitation).
 - **Diagnostic checkpoint.** This harness gives the worker no subworker/provider channel (no packet call
   in the toolset), so the one-line liveness packet was not applicable; every exit code above comes from a
   command run in this session.
-- **Gates.** `bash tests/fork-sources-gate.sh`, `bash tests/no-upstream-regression-gate.sh`,
-  `python3 tests/doc-figures-gate.py`, `feature_check.py` and `submit_check.py` are run at the end of this
-  session; their exit codes are quoted here from those runs (all 0, `RESULT: PASS - submit`).
+- **Gates.** `bash tests/fork-sources-gate.sh` EXIT 0 (`gate-fork-sources.log`); the manifest
+  reproduces and every tracked source is registered. `bash tests/no-upstream-regression-gate.sh` EXIT 0
+  (`gate-no-upstream.log`). `python3 tests/doc-figures-gate.py` EXIT 0 (`gate-doc-figures.log`, 933 ids /
+  78 groups). `feature_check.py` EXIT 0 (`feature-check.log`, all 8 gates PASS). `submit_check.py` EXIT 0,
+  `RESULT: PASS - submit` (`submit-check-1.log`).
 - **Nothing weakened.** No existing test, assertion, gate or ratchet was changed: the Windows branch adds
   a real assertion (documented no-op) rather than a skip, the first slot still runs on every platform, and
   the second slot's Windows skip is the one accepted in round 2. `tests/CMakeLists.txt` only adds a test,
