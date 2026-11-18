@@ -229,7 +229,15 @@ private slots:
 
 void WorkerAltStackTest::lv2_worker_has_alternate_stack_before_first_work()
 {
-#ifdef LMMS_HAVE_LV2
+#if defined(WORKER_ALTSTACK_TEST_ASAN)
+	// The reporter's 32 KiB thread_local alternate stack is what ASan tries to
+	// unmap when a thread exits; the project's ASan recipe therefore disables its
+	// own sigaltstack handling (Q050-157), and this test never arms it there.
+	QSKIP("AddressSanitizer replaces the thread's alternate stack handling and the "
+		"project's ASan recipe sets use_sigaltstack=0 (Q050-157)");
+#elif !defined(LMMS_HAVE_LV2)
+	QSKIP("built without LV2: there is no Lv2Worker thread to exercise");
+#else
 	AltStackProbe probe;
 	FakeInstance instance;
 	instance.probe = &probe;
@@ -255,8 +263,6 @@ void WorkerAltStackTest::lv2_worker_has_alternate_stack_before_first_work()
 			"work() itself must run on the ordinary stack; the alternate stack is "
 			"for the handler (a callback running on it would prove the wrong thing)");
 	}
-#else
-	QSKIP("built without LV2: there is no Lv2Worker thread to exercise");
 #endif
 }
 
