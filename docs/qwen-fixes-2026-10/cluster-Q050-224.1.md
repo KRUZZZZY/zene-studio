@@ -49,9 +49,9 @@ cmake --build build --target zene WorkerAltStackTest WasmWorkerPoolTest -- -j4  
 | # | Criterion | Test / command | What it proves | Exit |
 |---|---|---|---|---|
 | 1 | Register the alternate stack at each in-scope thread startup | `ctest -R ^WorkerAltStackTest$` and `ctest -R ^WorkerAltStackRegistration$` from `build/tests` (`test-4.log`, `test-15-final.log`) | **Runtime (LV2):** a live `Lv2Worker` with a fake `LV2_Worker_Interface`; inside its first `work()` call, on the worker thread, `sigaltstack()` reports an enabled stack (non-zero size) and the callback's own frame is outside it. **All four sites:** the gate reads each real launch lambda and requires the registration before `workerFunc()`/`run()`/`workerLoop()`/`laneMain()`; the three negative probes (missing, after the entry call, on the caller's thread) are rejected and the positive fixture accepted. | 0; 0 |
-| 1n | The proof can fail | Gate run with the four product hunks reversed, then restored (`test-7-revert-gate.log`, `test-9-restored-gate.log`) | Reverted: exit **1**, failing on all four files. Restored: exit **0**, all four PASS. | 1 / 0 |
+| 1n | The proof can fail | Gate run with the four product hunks reversed, then restored (`test-7-revert-gate.log`, `test-9-restored-gate.log`; repeated on the committed tree in `test-17-revert-final-gate.log`, `test-19-restore-final.log`) | Reverted: exit **1**, failing on all four files. Restored: exit **0**, all four PASS. | 1 / 0 |
 | 2 | A non-main-thread overflow test produces a bounded report and confirms the child still terminates by the signal | `WorkerAltStackTest::forked_worker_overflow_reports_and_dies_by_signal` (`test-4.log`) | Forked child starts a live `Lv2Worker` whose fake `work()` overflows the ordinary stack for real. Asserted: child `WIFSIGNALED` with `WTERMSIG == SIGSEGV`; report exists, `startsWith("Zene Studio crash report v1\n")`, `signal=SIGSEGV(11)`, `thread=` != `pid=`, size `<= kMaxReportBytes`. | 0 |
-| 2n | That test fails without the product change | Four product hunks reversed at `HEAD~2` content, rebuilt, run (`build-5-revert.log`, `test-8-revert.log`), then restored and rebuilt (`build-11-restore2.log`) | Reverted: `2 passed, 2 failed` - `probe.enabled` false and the report empty, because the child dies by `SIGSEGV` with no handler stack. Restored: `4 passed, 0 failed`, 0 skipped. | 8 / 0 |
+| 2n | That test fails without the product change | Four product hunks reversed to the train content, rebuilt, run (`build-5-revert.log`, `test-8-revert.log`; repeated with the final test file in `build-13-revert-final.log`, `test-18-revert-final.log`), then restored and rebuilt (`build-11-restore2.log`, `build-14-restore-final.log`) | Reverted: `2 passed, 2 failed` - `probe.enabled` false and the report empty, because the child dies by `SIGSEGV` with no handler stack. Restored: `4 passed, 0 failed`, 0 skipped; the gate run on the restored final tree is 3/3, exit 0 (`test-19-restore-final.log`). | 8 / 0 |
 | - | No regression in neighbours | `ctest -R "^(WorkerAltStackTest\|WasmWorkerPoolTest\|WorkerAltStackRegistration\|CrashReporterTest\|CrashReporterArmTest\|StemJobManagerTest\|Lv2StateTest\|SampleClipRubberBandTest)$"` (`test-15-final.log`) | 8/8 passed. | 0 |
 | - | Gates | `bash tests/fork-sources-gate.sh`; `bash tests/no-upstream-regression-gate.sh`; `python3 tests/doc-figures-gate.py`; `python3 .../feature_check.py` | All PASS (see Self-check). | 0 each |
 
@@ -75,9 +75,10 @@ limitation).
   tests: product hunks reversed to `HEAD~2` content, `cmake --build build --target WorkerAltStackTest`
   EXIT 0 (`build-5-revert.log`), `ctest -R ^WorkerAltStackTest$` **EXIT 8** with the two intended failures
   (`test-8-revert.log`); the gate on the same tree **EXIT 1** on all four sites (`test-7-revert-gate.log`).
-  Restored files, rebuilt EXIT 0 (`build-11-restore2.log`), gate **EXIT 0** (`test-9-restored-gate.log`),
-  `ctest` 3/3 **EXIT 0** (`test-10-restored.log`) and 8/8 **EXIT 0** on the final tree
-  (`test-15-final.log`).
+  Restored files, rebuilt EXIT 0 (`build-11-restore2.log`; final cycle `build-13-revert-final.log` then
+  `build-14-restore-final.log`), gate **EXIT 0** (`test-9-restored-gate.log`,
+  `test-19-restore-final.log`), `ctest` 3/3 **EXIT 0** (`test-10-restored.log`,
+  `test-19-restore-final.log`) and 8/8 **EXIT 0** on the final tree (`test-15-final.log`).
 - **"Every acceptance criterion is proven by a test you ran."** Criterion 1: `WorkerAltStackTest`
   (LV2 runtime) + `WorkerAltStackRegistration` (all four), exit 0. Criterion 2:
   `WorkerAltStackTest::forked_worker_overflow_reports_and_dies_by_signal`, exit 0. Both are named with
