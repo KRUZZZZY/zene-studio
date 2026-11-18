@@ -57,6 +57,19 @@ ctest -R ZeneRackTest --output-on-failure                   # TEST_EXIT=0 (1/1 P
 A full revert of the whole product diff removes the `zenerack` target, so the build fails instead (the test target
 depends on it); the pass-through run above is the behavioural control that the test is not tautological.
 
+A second control reversed the chain report only: `kChainDescriptor` was temporarily changed to
+`Amplifier > WaveShaper > BassBooster`, rebuilt, and run:
+
+```
+ctest -R ZeneRackTest --output-on-failure                   # TEST_EXIT=8
+FAIL!  : ZeneRackTest::testModuleReportsTheSupportedChainInOrder() Compared values are not the same
+PASS   : ZeneRackTest::testExternalHostDiscoversTheRack()
+PASS   : ZeneRackTest::testProcessesTheDocumentedChainInThatOrder()
+```
+
+Restored to the committed source, the same command exited **0**. That isolates the report assertion: the discovery
+path and the render path still pass, while the chain report must match the documented string.
+
 ## Other commands run
 
 | Command | Exit |
@@ -72,8 +85,9 @@ depends on it); the pass-through run above is the behavioural control that the t
 **1. Each new test FAILS with the product change reverted.** `ZeneRackTest` is the only new test. With the stage
 processing replaced by a pass-through, `ctest -R ZeneRackTest` exited **8** and
 `testProcessesTheDocumentedChainInThatOrder` failed on the forward render (`largestForwardError` 0.827513). With the
-committed source restored, the same command exited **0**. The discovery and chain-report cases only pass when the
-bundle and its parameter/program/state surfaces exist.
+chain descriptor changed to the wrong order, the same command exited **8**, `testModuleReportsTheSupportedChainInOrder`
+failed on the compared string, and the discovery and render cases still passed. With the committed source restored,
+the same command exited **0** both times. The discovery case only passes when the bundle and its class id exist.
 
 **2. Every acceptance criterion is proven by a test I ran.** Criterion 1: `ctest -R ZeneRackTest`, exit **0**
 (`testExternalHostDiscoversTheRack` + `testProcessesTheDocumentedChainInThatOrder`). Criterion 2: the same test,
