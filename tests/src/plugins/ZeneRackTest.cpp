@@ -260,7 +260,7 @@ void ZeneRackTest::initTestCase ()
 	const QString path = QStringLiteral (ZENERACK_BUNDLE_PATH);
 	if (path.isEmpty () || !QFileInfo::exists (path))
 	{
-		QSKIP ("no ZeneRack.vst3 bundle available (build the zenerack target)");
+		QFAIL ("no ZeneRack.vst3 bundle available (the zenerack target must be built)");
 	}
 	std::string error;
 	m_module = VST3::Hosting::Module::create (path.toStdString (), error);
@@ -281,6 +281,15 @@ void ZeneRackTest::testExternalHostDiscoversTheRack ()
 	QString error;
 	Instance instance;
 	QVERIFY2 (instance.open (factory, info.ID (), &error), qPrintable (error));
+
+	// A host may probe with 0 on a side to mean "leave that side unchanged";
+	// VST3 does not mean "refuse" by it. Both no-change forms and the
+	// documented stereo pair are accepted.
+	SpeakerArrangement stereo = SpeakerArr::kStereo;
+	QVERIFY (instance.processor->setBusArrangements (nullptr, 0, nullptr, 0) == kResultOk);
+	QVERIFY (instance.processor->setBusArrangements (nullptr, 0, &stereo, 1) == kResultOk);
+	QVERIFY (instance.processor->setBusArrangements (&stereo, 1, nullptr, 0) == kResultOk);
+	QVERIFY (instance.processor->setBusArrangements (&stereo, 1, &stereo, 1) == kResultOk);
 }
 
 void ZeneRackTest::testModuleReportsTheSupportedChainInOrder ()

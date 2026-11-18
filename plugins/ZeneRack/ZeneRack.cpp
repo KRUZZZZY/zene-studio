@@ -28,8 +28,9 @@
  *   1. Amplifier   - linear gain (the Amplifier effect's wet gain)
  *   2. BassBooster - the FastBassBoost recurrence used by BassBooster
  *                    (frequency 100 * sampleRate / 44100, ratio 2.0)
- *   3. WaveShaper  - input drive then hard clip at -1..+1 (WaveShaper's
- *                    Input gain and Clip sections)
+ *   3. WaveShaper  - the Rack's documented subset: input drive then a forced
+ *                    hard clip at -1..+1 (WaveShaper's Input gain and Clip
+ *                    sections; the wave table and Output gain are not used)
  *
  * The order is part of the product contract: stage 1 runs before stage 2 and
  * stage 2 before stage 3 for every sample. The chain is reported three ways
@@ -130,6 +131,15 @@ inline float waveShaperStage (float sample, float drive)
 	// WaveShaperControls defaults: Input gain, then Clip enabled at -1..+1.
 	const float driven = sample * drive;
 	return driven < -1.0f ? -1.0f : (driven > 1.0f ? 1.0f : driven);
+}
+
+//------------------------------------------------------------------------
+//! VST3 treats 0 on a side as "leave that side unchanged"; a present side of
+//! this stereo-only effect must be one stereo bus.
+inline bool stereoOrUnchanged (const SpeakerArrangement* arrangements, int32 count)
+{
+	return count == 0
+	       || (count == 1 && arrangements != nullptr && arrangements[0] == SpeakerArr::kStereo);
 }
 
 //------------------------------------------------------------------------
@@ -280,12 +290,22 @@ tresult PLUGIN_API ZeneRack::setupProcessing (ProcessSetup& setup)
 tresult PLUGIN_API ZeneRack::setBusArrangements (SpeakerArrangement* inputs, int32 numIns,
                                                  SpeakerArrangement* outputs, int32 numOuts)
 {
-	if (numIns == 1 && numOuts == 1 && inputs != nullptr && outputs != nullptr
-	    && inputs[0] == SpeakerArr::kStereo && outputs[0] == SpeakerArr::kStereo)
+	// VST3 treats 0 on a side as "leave that side unchanged". The Rack has one
+	// stereo input bus and one stereo output bus, so a present side must be
+	// that stereo pair; 0/0 is a probe, not a refusal.
+	if (numIns < 0 || numOuts < 0)
 	{
-		return SingleComponentEffect::setBusArrangements (inputs, numIns, outputs, numOuts);
+		return kInvalidArgument;
 	}
-	return kResultFalse;
+	if (numIns > 1 || numOuts > 1)
+	{
+		return kResultFalse;
+	}
+	if (!stereoOrUnchanged (inputs, numIns) || !stereoOrUnchanged (outputs, numOuts))
+	{
+		return kResultFalse;
+	}
+	return SingleComponentEffect::setBusArrangements (inputs, numIns, outputs, numOuts);
 }
 
 //------------------------------------------------------------------------

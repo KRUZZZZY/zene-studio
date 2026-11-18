@@ -70,6 +70,27 @@ PASS   : ZeneRackTest::testProcessesTheDocumentedChainInThatOrder()
 Restored to the committed source, the same command exited **0**. That isolates the report assertion: the discovery
 path and the render path still pass, while the chain report must match the documented string.
 
+## Review round 2 changes
+
+The review's blocking item was registration: `tests/src/plugins/ZeneRackTest.cpp` is a fork-NEW test, so it now appears
+in `tests/fork-sources.txt` (commit `bb5e5acc73`, also re-checked in this round). Re-run after the change:
+
+```
+bash tests/fork-sources-gate.sh                             # EXIT=0, 2722 fork entries, 0 stale
+python3 .../feature_check.py <worktree>                     # EXIT=0, all gates PASS
+```
+
+Also addressed in the same review round:
+
+- `setBusArrangements` now follows the VST3 convention that `0` on a side means "leave that side unchanged". A
+  present side must still be the documented stereo pair; `0/0`, input-only and output-only probes are accepted.
+  `testExternalHostDiscoversTheRack` asserts all four forms. Reverting this method to the old 1-in/1-out-only body
+  made the test exit **8** on the `0/0` assertion; restored, it exits **0**.
+- `ZeneRackTest::initTestCase` now `QFAIL`s when the built bundle is missing instead of skipping, so a missing
+  bundle cannot look like a pass.
+- The file header now says the WaveShaper stage is the Rack's documented subset (input drive plus forced clip), not
+  the full built-in WaveShaper; block-quantised host automation is listed in the known limits.
+
 ## Other commands run
 
 | Command | Exit |
@@ -86,8 +107,11 @@ path and the render path still pass, while the chain report must match the docum
 processing replaced by a pass-through, `ctest -R ZeneRackTest` exited **8** and
 `testProcessesTheDocumentedChainInThatOrder` failed on the forward render (`largestForwardError` 0.827513). With the
 chain descriptor changed to the wrong order, the same command exited **8**, `testModuleReportsTheSupportedChainInOrder`
-failed on the compared string, and the discovery and render cases still passed. With the committed source restored,
-the same command exited **0** both times. The discovery case only passes when the bundle and its class id exist.
+failed on the compared string, and the discovery and render cases still passed. With `setBusArrangements` reverted to
+the old 1-in/1-out-only body, the same command exited **8** on the `0/0` no-change assertion. With the committed
+source restored, it exited **0** each time. The discovery case only passes when the bundle, its class id and the
+documented bus rules exist. The test file is registered in `tests/fork-sources.txt` so the fork-scoped ratchets
+measure it; `bash tests/fork-sources-gate.sh` exits **0**.
 
 **2. Every acceptance criterion is proven by a test I ran.** Criterion 1: `ctest -R ZeneRackTest`, exit **0**
 (`testExternalHostDiscoversTheRack` + `testProcessesTheDocumentedChainInThatOrder`). Criterion 2: the same test,
