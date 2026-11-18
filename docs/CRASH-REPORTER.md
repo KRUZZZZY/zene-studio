@@ -447,9 +447,23 @@ none:
    process-wide. `install()` registers the calling thread, and audio render
    and capture threads register at their entry points or callbacks; the
    engine's `renderNextPeriod()` is also a backstop for every render path.
-   A thread that never reaches a registration point (for example, a plugin's
-   private thread) still has no alternate stack, so a stack-overflow crash on
-   that thread is not covered.
+   Since Q050-224.1 the four Zene-owned DSP worker threads started by this
+   tree also register as the first statement of their `std::thread` launch
+   lambda, before their entry function runs: the LV2 plug-in worker
+   (`src/core/lv2/Lv2Worker.cpp`, proven at runtime by `WorkerAltStackTest`),
+   the Rubber Band voice recycler (`src/core/RubberBandStretch.cpp`), the stem
+   separation worker (`src/core/StemJobManager.cpp`) and every wasm DSP lane
+   (`src/wasm/WasmWorkerPool.cpp`); a source gate
+   (`tests/worker-altstack-registration-check.py`) holds all four in place.
+   Deliberately not covered in that stage, and why: recorder writing happens on
+   the (already registered) device capture thread, the diagnostics-only
+   profiler writer and the Windows control-server accept/worker threads are
+   not audio or DSP workers, the transport owns no long-running thread of its
+   own, MIDI I/O threads are started by their backends (ALSA/OSS/JACK/Sndio) as
+   `QThread`s rather than by a Zene launch lambda, and GUI `QThreadPool` jobs do
+   file work, not DSP. A thread that never reaches a registration point (for
+   example, a plugin's private thread) still has no alternate stack, so a
+   stack-overflow crash on that thread is not covered.
 4. **`pc` is architecture-dependent.** It is read from the signal `ucontext` on
    `aarch64` and on `x86_64` when `REG_RIP` is visible to the toolchain;
    elsewhere it is `0x0`. Only `x86_64` was exercised here.
