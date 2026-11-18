@@ -100,7 +100,7 @@ static constexpr int32 kStateVersion = 1;
 static constexpr int32 kStateBufferSize = 256;
 
 //! One state line per parameter. Fixed text, no locale-sensitive formatting
-//! beyond %f, written and read off the audio thread only.
+//! beyond %f, written off the audio thread only. Reading it back is stage 2.
 static const char kStateMagic[] = "ZENERACK-STATE";
 
 static_assert (std::atomic<float>::is_always_lock_free,
@@ -478,6 +478,10 @@ tresult ZeneRack::writeState (IBStream* stream) const
 	if (stream == nullptr)
 	{
 		return kInvalidArgument;
+	}
+	if (!parametersReady ())
+	{
+		return kResultFalse;
 	}
 	const float gain = static_cast<float> (
 		mGain->toPlain (static_cast<ParamValue> (mGainNormalized.load (std::memory_order_relaxed))));
