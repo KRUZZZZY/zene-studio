@@ -128,7 +128,9 @@ limitation).
 - **Gates.** `bash tests/fork-sources-gate.sh` EXIT 0 (3583 files scanned, 0 stale, manifest REPRODUCES);
   `bash tests/no-upstream-regression-gate.sh` EXIT 0; `python3 tests/doc-figures-gate.py` EXIT 0
   (`RESULT: PASS`, 933 ids / 78 groups); `feature_check.py` EXIT 0 (all 8 gates PASS);
-  `submit_check.py` run after this commit is recorded in the session log.
+  `submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-224.1 Q050-224.1`
+  EXIT 0, `RESULT: PASS - submit` (`submit-check-4.log`); `./build/zene --version` EXIT 0
+  (`version-1.log`), so the WASM-enabled binary links and runs.
 - **Nothing weakened.** No existing test, assertion, gate or ratchet was changed; the only edits to
   `tests/CMakeLists.txt` add a test, a gate and three source files to one target. The four manifests gain
   entries, none is removed.
